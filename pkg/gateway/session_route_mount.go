@@ -268,7 +268,10 @@ func liveDetached(live *LiveSession) bool {
 
 // Authority, local owner and row id a repoint of a session onto a messaging lane carries, the conversation's current head
 func conversationHead(ctx context.Context, runner any, sessionID string) (*SessionAuthority, *string, string, error) {
-	authority := activeAuthority(runner)
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, nil, "", err
+	}
 	var db *state.SessionDB
 	if authority != nil {
 		db = authority.DB

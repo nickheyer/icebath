@@ -101,8 +101,13 @@ func appendSwitchWarning(result *provider.ModelSwitchResult, text string) {
 // Python thousands grouping of an int
 func switchGroupedInt(n int) string { return pystr.GroupThousands(int64(n)) }
 
+// Configured route a gateway switch resolves the display context against, nil fields falling back to the agent
+type PreflightConfigured struct {
+	Model, Provider, BaseURL *string
+}
+
 // MergePreflightCompressionWarning warns on result when the next message after the switch will preflight compress
-func (a *AIAgent) MergePreflightCompressionWarning(ctx context.Context, result *provider.ModelSwitchResult, messages []map[string]any, customProviders []any, configContextLength *int) {
+func (a *AIAgent) MergePreflightCompressionWarning(ctx context.Context, result *provider.ModelSwitchResult, messages []map[string]any, customProviders []any, configContextLength *int, configured PreflightConfigured) {
 	if !result.Success || a == nil || !a.compressionEnabled || a.contextCompressor == nil {
 		return
 	}
@@ -127,7 +132,8 @@ func (a *AIAgent) MergePreflightCompressionWarning(ctx context.Context, result *
 	newCtx, ok := provider.ResolveDisplayContextLength(ctx, provider.DisplayContextRequest{
 		Model: result.NewModel, Provider: result.TargetProvider, BaseURL: baseURL, APIKey: apiKey,
 		ModelInfo: result.ModelInfo, CustomProviders: providers, ConfigContextLength: configContextLength,
-		ConfiguredModel: a.model, ConfiguredProvider: a.provider, ConfiguredBaseURL: a.baseURL})
+		ConfiguredModel: orAgentValue(configured.Model, a.model), ConfiguredProvider: orAgentValue(configured.Provider, a.provider),
+		ConfiguredBaseURL: orAgentValue(configured.BaseURL, a.baseURL)})
 	if !ok || newCtx == 0 {
 		return
 	}
@@ -161,4 +167,12 @@ func (a *AIAgent) SyncToSession(ctx context.Context, sessionID, parentSessionID,
 			a.memoryManager.OnSessionSwitch(ctx, sessionID, memory.SessionSwitchOptions{ParentSessionID: parentSessionID, Reason: reason})
 		}
 	}()
+}
+
+// Configured value when given, else the agent's own
+func orAgentValue(value *string, agentValue string) string {
+	if value != nil {
+		return *value
+	}
+	return agentValue
 }

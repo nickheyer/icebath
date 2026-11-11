@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -43,7 +44,7 @@ var (
 	fleetDeferManualServe     = DeferManualServe
 	fleetRecordFollowup       = updaterecord.RecordFollowup
 	fleetFinalizeReceipt      = updaterecord.FinalizeUpdateReceipt
-	fleetAutoMigrate          = maybeAutoMigrateAfterUpdate
+	fleetAutoMigrate          = gatewayrun.MaybeAutoMigrateAfterUpdate
 	fleetNamedStillOwed       = namedGatewaysStillOwed
 )
 

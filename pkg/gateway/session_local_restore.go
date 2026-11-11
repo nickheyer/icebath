@@ -17,19 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Registry of the authorities one runner serves, naming the served profile of each
-type authorityRegistry interface {
-	ProfileName(a *SessionAuthority) (string, bool)
-	Authorities() []*SessionAuthority
-	Active() *SessionAuthority
-	Serving() []*SessionAuthority
-	LaunchKey() string
-	ForHome(profileHome string) *SessionAuthority
-}
-
 // Runner that keeps a registry of served profile authorities
 type authorityRegistryRunner interface {
-	SessionAuthorities() authorityRegistry
+	SessionAuthorities() *SessionAuthorities
 }
 
 // Runner that predates the registry and holds its single launch authority
@@ -46,7 +36,7 @@ type adapterMapRunner interface {
 var localAdapterMu sync.Mutex
 
 // Registry of the runner serving the authority, nil for a bare runner
-func registryOf(runner any) authorityRegistry {
+func registryOf(runner any) *SessionAuthorities {
 	if r, ok := runner.(authorityRegistryRunner); ok {
 		return r.SessionAuthorities()
 	}

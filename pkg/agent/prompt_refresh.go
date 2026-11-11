@@ -20,10 +20,13 @@ func promptRefreshLog() *slog.Logger { return slog.Default().With("logger", "age
 
 // Newest refresh epoch recorded for the agent's session, zero without a request or a store
 func requestedEpoch(ctx context.Context, a *AIAgent) int {
-	if a.sessionDB == nil || a.sessionID == "" {
+	reader, ok := a.sessionDB.(interface {
+		PromptRefreshEpoch(ctx context.Context, sessionID string) (int, error)
+	})
+	if !ok || a.sessionID == "" {
 		return 0
 	}
-	epoch, err := a.sessionDB.PromptRefreshEpoch(ctx, a.sessionID)
+	epoch, err := reader.PromptRefreshEpoch(ctx, a.sessionID)
 	if err != nil {
 		promptRefreshLog().Warn(fmt.Sprintf("Prompt refresh epoch read failed (session=%s); reusing the stored prompt.", a.sessionID), "error", err)
 		return 0

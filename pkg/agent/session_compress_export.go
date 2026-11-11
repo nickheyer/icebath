@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Agent side of the gateway's canonical session compress
@@ -117,7 +116,7 @@ func sessionPluginEngine(ctx context.Context, job gateway.SessionCompressJob, re
 	}
 	engine.UpdateModel(job.Model, provider.GetModelContextLength(ctx, request), baseURL, apiKey, providerName, runtimeText(job.Runtime, "api_mode"))
 	if binder, ok := engine.(interface {
-		BindSessionState(db *state.DB, sessionID string) error
+		BindSessionState(db SessionStore, sessionID string) error
 	}); ok {
 		if err := binder.BindSessionState(job.DB, job.Target); err != nil {
 			return nil, err

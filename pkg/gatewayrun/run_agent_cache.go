@@ -5,109 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"slices"
 	"sort"
-	"strings"
-	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Override fields layered onto runtime kwargs when set so partial overrides keep the defaults
 var overrideApplyKeys = []string{
 	"provider", "requested_provider", "api_key", "base_url", "api_mode", "credential_pool", "capabilities", "max_tokens",
-}
-
-var (
-	memoryIdentityProviderMu   sync.Mutex
-	memoryIdentityProviderMemo = map[string]memory.Provider{}
-)
-
-// Config values whose change rebuilds the cached agent keyed section dot key, with registry generation and memory identity
-func extractCacheBustingConfig(ctx context.Context, userConfig map[string]any) map[string]any {
-	out := map[string]any{}
-	cfg := userConfig
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	defaults := map[string]any(config.Defaults())
-	for _, pair := range cacheBustingConfigKeys {
-		section, key := pair[0], pair[1]
-		def := cfgGetDefault(defaults, nil, section, key)
-		if b, ok := cfg[section].(bool); ok && section == "checkpoints" {
-			if key == "enabled" {
-				out[section+"."+key] = b
-			} else {
-				out[section+"."+key] = def
-			}
-			continue
-		}
-		out[section+"."+key] = cfgGetDefault(cfg, def, section, key)
-	}
-	out["tools.registry_generation"] = tools.Default.Generation()
-	for key, value := range memoryProviderIdentitySignature(ctx, cfgGetDefault(cfg, nil, "memory", "provider")) {
-		out["memory."+key] = value
-	}
-	return out
-}
-
-// Nested lookup through mappings returning the default on any miss and an explicit null as nil
-func cfgGetDefault(cfg map[string]any, def any, keys ...string) any {
-	if cfg == nil {
-		return def
-	}
-	var node any = cfg
-	for _, key := range keys {
-		m := config.AsMap(node)
-		if m == nil {
-			return def
-		}
-		v, ok := m[key]
-		if !ok {
-			return def
-		}
-		node = v
-	}
-	return node
-}
-
-// Identity signature of the named memory provider, empty when none, unloadable or its hook panics
-func memoryProviderIdentitySignature(ctx context.Context, providerName any) (out map[string]any) {
-	name, ok := providerName.(string)
-	if !ok || strings.TrimSpace(name) == "" {
-		return map[string]any{}
-	}
-	name = strings.TrimSpace(name)
-	defer func() {
-		if recover() != nil {
-			out = map[string]any{}
-		}
-	}()
-	memoryIdentityProviderMu.Lock()
-	instance := memoryIdentityProviderMemo[name]
-	memoryIdentityProviderMu.Unlock()
-	if instance == nil {
-		env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
-		instance = memory.LoadMemoryProviderWithSkills(ctx, env, name, false)
-		if instance == nil {
-			return map[string]any{}
-		}
-		memoryIdentityProviderMu.Lock()
-		memoryIdentityProviderMemo[name] = instance
-		memoryIdentityProviderMu.Unlock()
-	}
-	signature := instance.IdentitySignature(ctx)
-	if signature == nil {
-		return map[string]any{}
-	}
-	return maps.Clone(signature)
 }
 
 // Stable sixteen hex key of the agent config, a change rebuilding the cached agent and a match reusing it

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/app"
 
 	"github.com/mattn/go-isatty"
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
 	"github.com/nickheyer/icebath/pkg/commands"
@@ -26,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Release date of this build, hermes_cli.__release_date__
@@ -33,7 +35,13 @@ import (
 // Version the build stamps through ldflags, empty for a source build
 var version string
 
-// Hidden child modes a re-executed binary dispatches before anything else, the Python child entry scripts
+// Assigns every process hook and then runs the hidden child entry argv names, the first step of main
+func startProcess(ctx context.Context) {
+	installProcessWiring()
+	dispatchChildEntries(ctx)
+}
+
+// Hidden child modes a re-executed binary dispatches once the hooks their Python imports install are wired
 func dispatchChildEntries(ctx context.Context) {
 	home.DispatchScratchPruneEntry(ctx)
 	googlemeet.DispatchMeetBotEntry(ctx)
@@ -41,13 +49,18 @@ func dispatchChildEntries(ctx context.Context) {
 	gateway.DispatchStderrTimestampEntry()
 	gateway.DispatchGatewayRestartWatcherEntry(ctx)
 	gateway.DispatchDetachedRestartWatcherEntry(ctx)
+	gateway.DispatchUpdateHelperEntry(ctx)
 	gateway.DispatchSystemdStopMarkEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
+	gateway.DispatchKanbanWorkerClientEntry(ctx)
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
-	cron.DispatchExternalWorkerEntry()
+	cron.DispatchExternalWorkerEntry(exit)
+	agent.DispatchManagedWorkerEntry(exit)
 	app.DispatchUninstallModuleEntry(ctx)
+	app.DispatchSlashWorkerEntry(ctx, exit)
+	tuiserver.DispatchComputeHostEntry(ctx)
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal

@@ -1,3 +1,5 @@
+//go:build !windows
+
 package browser
 
 import (
@@ -286,17 +288,6 @@ func launchEphemeral(env *tools.Env, key string, opts LaunchOptions) (*LaunchedB
 		opts.ProcEnv = environ()
 	}
 	return launchChromium(context.Background(), env, key, opts)
-}
-
-func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
 }
 
 func gone(t *testing.T, pid int64) {

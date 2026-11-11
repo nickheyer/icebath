@@ -111,8 +111,10 @@ func (r *GatewayRunner) dropFromReconnectQueue(platform gateway.Platform, reason
 
 // Cancels profile scoped reconnects before their registry is torn down, waiting a bounded time
 func (r *GatewayRunner) cancelSecondaryProfileReconnectTasks(ctx context.Context) error {
+	r.profileFailedMu.Lock()
 	pending := r.profileFailedPlatforms
 	if pending == nil {
+		r.profileFailedMu.Unlock()
 		return nil
 	}
 	current := currentGatewayTask(ctx)
@@ -124,6 +126,7 @@ func (r *GatewayRunner) cancelSecondaryProfileReconnectTasks(ctx context.Context
 			}
 		}
 	}
+	r.profileFailedMu.Unlock()
 	for _, task := range tasks {
 		task.Cancel()
 	}
@@ -151,7 +154,9 @@ func (r *GatewayRunner) cancelSecondaryProfileReconnectTasks(ctx context.Context
 			runLog().Warn(fmt.Sprintf("Timed out waiting for %d secondary profile reconnect task(s) during shutdown", unfinished))
 		}
 	}
+	r.profileFailedMu.Lock()
 	clear(pending)
+	r.profileFailedMu.Unlock()
 	return nil
 }
 

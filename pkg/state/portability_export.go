@@ -145,7 +145,7 @@ func (d *SessionDB) FindForeignImport(ctx context.Context, origin *pyjson.Object
 }
 
 // Adopts or mints a foreign snapshot in one transaction with its provenance, a duplicate click returning the first
-func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *pyjson.Object, messages []any, title, cwd string, profile any) (*pyjson.Object, error) {
+func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *pyjson.Object, messages []any, title string, cwd, profile any) (*pyjson.Object, error) {
 	sessionID := NewSessionIDAt(time.Now(), 12)
 	tool, err := receiptItem(origin, "tool")
 	if err != nil {

@@ -307,10 +307,11 @@ func foreignDefaultRoot(source string) (string, error) {
 	return pypath.PathJoin(home, spec.defaultParts...), nil
 }
 
-// Path and modification time of one regular foreign log file
+// Path, modification time and size of one regular foreign log file
 type foreignFile struct {
 	path  string
 	mtime float64
+	size  int64
 }
 
 // Regular log files of a source under a root, newest first, escaping symlinks and unreadable entries skipped
@@ -349,7 +350,7 @@ func foreignWalk(source, root string) ([]foreignFile, error) {
 		}
 		if _, under := pypath.PathRelativeTo(resolved, root); under && st.Mode().IsRegular() {
 			mt := st.ModTime()
-			found = append(found, foreignFile{resolved, float64(mt.Unix()) + float64(mt.Nanosecond())*1e-9})
+			found = append(found, foreignFile{resolved, float64(mt.Unix()) + float64(mt.Nanosecond())*1e-9, st.Size()})
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool { return found[i].mtime > found[j].mtime })

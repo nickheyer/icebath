@@ -13,44 +13,11 @@ import (
 )
 
 // Number of a filter dict value as the store binds it, nil for None
-func filterNumber(v any) *float64 {
-	var f float64
-	switch n := v.(type) {
-	case int:
-		f = float64(n)
-	case int64:
-		f = float64(n)
-	case float64:
-		f = n
-	default:
-		return nil
-	}
-	return &f
-}
+func filterNumber(v any) *float64 { return state.FilterNumber(v) }
 
 // Store keyword arguments of a filter dict, the retention bound, the source and the remaining filters
 func pruneKwargs(filters map[string]any) (*float64, string, state.PruneFilters) {
-	text := func(key string) string {
-		s, _ := filters[key].(string)
-		return s
-	}
-	f := state.PruneFilters{
-		IncludePinned: pyrepr.Truthy(filters["include_pinned"]), LineageTipsOnly: pyrepr.Truthy(filters["lineage_tips_only"]),
-		IncludeOpen:      pyrepr.Truthy(filters["include_open"]),
-		LastActiveBefore: filterNumber(filters["last_active_before"]), LastActiveAfter: filterNumber(filters["last_active_after"]),
-		StartedBefore: filterNumber(filters["started_before"]), StartedAfter: filterNumber(filters["started_after"]),
-		TitleLike: text("title_like"), EndReason: text("end_reason"), CwdPrefix: text("cwd_prefix"),
-		MinMessages: filterNumber(filters["min_messages"]), MaxMessages: filterNumber(filters["max_messages"]),
-		ModelLike: text("model_like"), Provider: text("provider"), UserID: text("user_id"), ChatID: text("chat_id"),
-		ChatType: text("chat_type"), BranchLike: text("branch_like"),
-		MinTokens: filterNumber(filters["min_tokens"]), MaxTokens: filterNumber(filters["max_tokens"]),
-		MinCost: filterNumber(filters["min_cost"]), MaxCost: filterNumber(filters["max_cost"]),
-		MinToolCalls: filterNumber(filters["min_tool_calls"]), MaxToolCalls: filterNumber(filters["max_tool_calls"]),
-	}
-	if archived, ok := filters["archived"].(bool); ok {
-		f.Archived = &archived
-	}
-	return filterNumber(filters["older_than_days"]), text("source"), f
+	return state.PruneKwargs(filters)
 }
 
 // Messages of an exported session or segment as a list of rows, empty when unset

@@ -40,8 +40,8 @@ func PlatformSection(yamlCfg map[string]any, name string, gatewayPlatforms any) 
 }
 
 // Authority of the active runtime scope of a runner
-func ActiveAuthority(runner any) *SessionAuthority {
-	return activeAuthority(runner)
+func ActiveAuthority(ctx context.Context, runner any) (*SessionAuthority, error) {
+	return activeAuthority(ctx, runner)
 }
 
 // Profiles this multiplexer serves, the boot reservation once taken, else the live profiles directory

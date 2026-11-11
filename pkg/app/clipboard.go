@@ -104,12 +104,24 @@ type clipBackend struct {
 	save    func(string) bool
 }
 
+// Host probes and backends the dispatch reads, swapped by tests as hermes patches the clipboard module functions
+var (
+	clipIsWSL           = hostinfo.IsWSL
+	clipWSLHasImage     = wslHasImage
+	clipWSLSave         = wslSave
+	clipWaylandHasImage = waylandHasImage
+	clipWaylandSave     = waylandSave
+	clipXclipSave       = xclipSave
+	clipMacosHasImage   = macosHasImage
+	clipSaveImage       = saveClipboardImage
+)
+
 // Linux backends in fallthrough order of WSL, Wayland then X11
 func linuxClipBackends() []clipBackend {
 	return []clipBackend{
-		{hostinfo.IsWSL(), wslHasImage, wslSave},
-		{os.Getenv("WAYLAND_DISPLAY") != "", waylandHasImage, waylandSave},
-		{true, xclipHasImage, xclipSave},
+		{clipIsWSL(), clipWSLHasImage, clipWSLSave},
+		{os.Getenv("WAYLAND_DISPLAY") != "", clipWaylandHasImage, clipWaylandSave},
+		{true, xclipHasImage, clipXclipSave},
 	}
 }
 
@@ -129,7 +141,7 @@ func saveClipboardImage(dest string) bool {
 func hasClipboardImage() bool {
 	switch clipboardPlatform {
 	case "darwin":
-		return macosHasImage()
+		return clipMacosHasImage()
 	case "windows":
 		return windowsHasImage()
 	}

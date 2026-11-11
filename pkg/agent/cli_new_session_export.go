@@ -104,5 +104,5 @@ func (a *AIAgent) MemoryStore() *memory.Store { return a.memoryStore }
 
 // Forks the memory and skill review on demand with optional focus text, the explicit /refine run
 func (a *AIAgent) SpawnExplicitBackgroundReview(ctx context.Context, snapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string) {
-	a.spawnBackgroundReviewWith(ctx, snapshot, reviewMemory, reviewSkills, focus, true)
+	a.spawnBackgroundReview(ctx, snapshot, reviewMemory, reviewSkills, focus, true)
 }

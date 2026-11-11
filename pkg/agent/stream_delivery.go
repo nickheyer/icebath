@@ -2,11 +2,11 @@ package agent
 
 import (
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"reflect"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -450,51 +450,11 @@ func (a *AIAgent) streamReasoningDeltasEnabled() (enabled, ok bool) {
 }
 
 // Display metadata flag on a held turn's published reply whose commentary items stay for replay only
-const CommentaryWithheld = "commentary_withheld"
-
-// Visible text of each assistant message item whose phase is in the set
-func phaseMessageItems(msg map[string]any, phases map[string]bool) []string {
-	raw := msg["codex_message_items"]
-	if s, ok := raw.(string); ok {
-		parsed, err := pyjson.Loads(s)
-		if err != nil {
-			return nil
-		}
-		raw = pyjson.Plain(parsed)
-	}
-	items, ok := listOfAny(raw)
-	if !ok {
-		return nil
-	}
-	var out []string
-	for _, it := range items {
-		item, ok := it.(map[string]any)
-		if !ok || item["type"] != "message" || item["role"] != "assistant" {
-			continue
-		}
-		var allowed bool
-		switch p := item["phase"].(type) {
-		case nil:
-			allowed = false
-		case string:
-			allowed = phases[pystr.Lower(pystr.Strip(p))]
-		default:
-			continue
-		}
-		parts, isList := listOfAny(item["content"])
-		if !allowed || !isList {
-			continue
-		}
-		if text := outputTextOfParts(parts); text != "" {
-			out = append(out, text)
-		}
-	}
-	return out
-}
+const CommentaryWithheld = tuigateway.CommentaryWithheld
 
 // Commentary phase message texts of a row
 func commentaryItems(msg map[string]any) []string {
-	return phaseMessageItems(msg, map[string]bool{"commentary": true})
+	return tuigateway.CommentaryItems(msg)
 }
 
 // Types a held turn's model row hidden when it has visible text, the wire copy unchanged

@@ -18,7 +18,10 @@ func checkAutomationRoute(ctx context.Context, runner AuthorityRunner, payload *
 	if err != nil {
 		return nil, "", err
 	}
-	authority := activeAuthority(runner)
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, "", err
+	}
 	if authority == nil {
 		return nil, "", runtimeRefusal("not_found")
 	}

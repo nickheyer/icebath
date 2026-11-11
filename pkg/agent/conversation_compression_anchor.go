@@ -12,8 +12,6 @@ import (
 )
 
 const (
-	steerFallbackOpen             = "[OUT-OF-BAND USER MESSAGE"
-	steerFallbackClose            = "[/OUT-OF-BAND USER MESSAGE]"
 	compressedUserTurnInserted    = "inserted"
 	compressedUserTurnMerged      = "merged"
 	compressedUserTurnPresent     = "already_present"
@@ -35,34 +33,7 @@ func messageContainsBusySteer(message map[string]any) bool {
 
 // Inner user text of a steer marker, false when none is present
 func extractSteerTextFromMessage(message map[string]any) (string, bool) {
-	text := compressionMessageText(message)
-	if text == "" {
-		return "", false
-	}
-	open, close := steerMarkers()
-	start := strings.Index(text, open)
-	if start == -1 {
-		start = strings.Index(text, steerFallbackOpen)
-		if start == -1 {
-			return "", false
-		}
-		if nl := strings.Index(text[start:], "\n"); nl != -1 {
-			start += nl + 1
-		} else {
-			start += len(steerFallbackOpen)
-		}
-	} else {
-		start += len(open)
-	}
-	end := strings.Index(text[start:], close)
-	if end == -1 {
-		end = strings.Index(text[start:], steerFallbackClose)
-		if end == -1 {
-			return "", false
-		}
-	}
-	inner := pystr.Strip(text[start : start+end])
-	return inner, inner != ""
+	return state.ExtractSteerTextFromMessage(message)
 }
 
 // Whether a tool row of the transcript carries a steer marker

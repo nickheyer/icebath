@@ -414,7 +414,7 @@ func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any,
 	cause, _ := a.lastPersistenceErrorCause.(string)
 	dbPath := ""
 	if a.sessionDB != nil {
-		dbPath = a.sessionDB.Path()
+		dbPath = sessionStorePath(a.sessionDB)
 	}
 	explanation := formatTurnCompletionExplanation(ctx, exitReason, cause, dbPath, a.model)
 	if explanation == "" {
@@ -486,7 +486,7 @@ func mirrorTurnToMemory(a *AIAgent, originalUserMessage, final any, interrupted 
 				panic(r)
 			}
 		}()
-		a.spawnBackgroundReview(messagesToRows(messages), reviewMemory, reviewSkills)
+		a.spawnBackgroundReview(context.Background(), messagesToRows(messages), reviewMemory, reviewSkills, nil, false)
 	}()
 }
 

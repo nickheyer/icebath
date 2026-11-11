@@ -1268,7 +1268,10 @@ func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt,
 		return "", err
 	}
 	if authority == nil {
-		authority = activeAuthority(runner)
+		authority, err = activeAuthority(ctx, runner)
+		if err != nil {
+			return "", err
+		}
 	}
 	admitted := *receipt
 	task := spawnAdapterTask(context.WithoutCancel(ctx), func(taskCtx context.Context) error {

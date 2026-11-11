@@ -23,7 +23,8 @@ func uuidHex() string {
 
 var replayEpochToken = uuidHex()
 
-const (
+// Ring bounds per session and per process, swapped only where a hermes case patches them
+var (
 	replayBufferMax       = 512
 	replaySessionsMax     = 64
 	replayBufferBytesMax  = 4 * 1024 * 1024

@@ -5,5 +5,7 @@ func SwapCheckpointsCommandFns(status func(*Env, string) (CheckpointStatus, erro
 	prune func(*Env, CheckpointPruneOptions) (CheckpointPruneResult, error), input func(string) (string, error)) func() {
 	savedStatus, savedPrune, savedInput := checkpointsStoreStatusFn, checkpointsPruneFn, checkpointsInputFn
 	checkpointsStoreStatusFn, checkpointsPruneFn, checkpointsInputFn = status, prune, input
-	return func() { checkpointsStoreStatusFn, checkpointsPruneFn, checkpointsInputFn = savedStatus, savedPrune, savedInput }
+	return func() {
+		checkpointsStoreStatusFn, checkpointsPruneFn, checkpointsInputFn = savedStatus, savedPrune, savedInput
+	}
 }

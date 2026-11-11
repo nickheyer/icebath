@@ -362,10 +362,7 @@ func (c *CLI) askSwitchAnyway(title, detail string) bool {
 
 // Selection facts of the live agent from its last billed prompt, nil without a positive measurement
 func selectionContextForAgent(a *agent.AIAgent) *provider.SelectionContext {
-	if a == nil || a.ContextCompressor() == nil {
-		return nil
-	}
-	return provider.SelectionContextFor(a.ContextCompressor().Base().LastPromptTokens, a.Model())
+	return agent.SelectionContextForAgent(a)
 }
 
 // Asks before applying a costly switch, true when the switch may go ahead
@@ -421,7 +418,7 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 	if n := c.agent.ConfigContextLength(); n != 0 {
 		configContext = &n
 	}
-	c.agent.MergePreflightCompressionWarning(c.ctx, result, append([]map[string]any(nil), c.conversationHistory...), customProviders, configContext)
+	c.agent.MergePreflightCompressionWarning(c.ctx, result, append([]map[string]any(nil), c.conversationHistory...), customProviders, configContext, agent.PreflightConfigured{})
 }
 
 // Stages a switch onto the CLI fields then swaps the live agent, rolling the CLI back when the swap fails
@@ -645,7 +642,9 @@ func (c *CLI) commitModelSwitch(result *provider.ModelSwitchResult, persistGloba
 	} else if c.sessionID == "" {
 		sessionID = nil
 	}
-	observability.RecordModelSwitch(c.ctx, oldProvider, result.TargetProvider, "cli", oldModel, sessionID)
+	if !c.slashWorker {
+		observability.RecordModelSwitch(c.ctx, oldProvider, result.TargetProvider, "cli", oldModel, sessionID)
+	}
 	if !picker {
 		c.pendingOneTurnModelRestore = snapshot
 		if snapshot != nil && result.ResolvedViaAlias != "" {

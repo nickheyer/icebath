@@ -10,12 +10,25 @@ import (
 
 // Argparse style vars of a parsed invocation, every parser level from the root down with named positionals
 func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
-	ns := map[string]any{}
+	ns, given := map[string]any{}, map[string]bool{}
 	var chain []*cobra.Command
 	for level := cmd; level != nil; level = level.Parent() {
 		chain = append([]*cobra.Command{level}, chain...)
 	}
-	for _, level := range chain {
+	for i, level := range chain {
+		if key := level.Annotations["subdest"]; key != "" {
+			ns[key] = nil
+			if i+1 < len(chain) {
+				name := chain[i+1].CalledAs()
+				if name == "" {
+					name = chain[i+1].Name()
+				}
+				ns[key] = name
+			}
+		}
+		if key := level.Annotations["parser_default"]; key != "" {
+			ns[key] = level
+		}
 		level.LocalFlags().VisitAll(func(f *pflag.Flag) {
 			if f.Name == "help" || (level == c.Root && c.Root.PersistentFlags().Lookup(f.Name) != nil) {
 				return
@@ -23,7 +36,15 @@ func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 			if f.Annotations["suppress"] != nil && !f.Changed {
 				return
 			}
-			ns[flagDest(f)] = flagValue(f)
+			if f.Annotations["store_false"] != nil {
+				if f.Changed {
+					ns[flagDest(f)], given[flagDest(f)] = false, true
+				}
+				return
+			}
+			if !given[flagDest(f)] || f.Changed {
+				ns[flagDest(f)] = flagValue(f)
+			}
 		})
 	}
 	specs := c.positionals[cmd]
@@ -34,6 +55,8 @@ func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 				ns[s.Name] = append([]string{}, args[i:]...)
 			} else if s.Default != "" {
 				ns[s.Name] = s.Default
+			} else if emptyPositional(cmd, s.Name) {
+				ns[s.Name] = []string{}
 			} else {
 				ns[s.Name] = nil
 			}
@@ -103,6 +126,9 @@ func flagValue(f *pflag.Flag) any {
 	case "stringArray", "stringSlice":
 		if sv, ok := f.Value.(pflag.SliceValue); ok {
 			if !f.Changed && len(sv.GetSlice()) == 0 {
+				if f.Annotations["empty_list"] != nil {
+					return []string{}
+				}
 				return nil
 			}
 			return append([]string{}, sv.GetSlice()...)

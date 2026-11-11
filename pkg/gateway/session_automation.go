@@ -651,7 +651,10 @@ func admitAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformA
 
 // Commits a producer wake for a source's route into the authority FIFO, false when nothing there can take it
 func admitRouteWake(ctx context.Context, runner AuthorityRunner, adapter PlatformAdapter, source *SessionSource, text, kind string, metadata map[string]any) (bool, error) {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return false, err
+	}
 	key, err := runnerSessionKeyForSource(ctx, runner, source)
 	if err != nil {
 		return false, err

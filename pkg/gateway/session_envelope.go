@@ -531,7 +531,10 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	payload := pyjson.ObjectOf("text", event.Text, "native_text_v1", envelope)
 	if provenance != nil && !runner.MultiplexProfiles() {
-		authority := activeAuthority(runner)
+		authority, err := activeAuthority(ctx, runner)
+		if err != nil {
+			return nil, err
+		}
 		if entry := store.LookupBySessionKey(ctx, route); entry != nil {
 			legacy, _ := pyjson.Clone(payload).(*pyjson.Object)
 			wrapped, _ := legacy.Get("native_text_v1")

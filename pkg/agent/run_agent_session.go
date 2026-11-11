@@ -119,7 +119,7 @@ type engineCarryOver interface {
 
 // engineSessionBinder is the optional bind_session_state hook and the session id the engine is bound to
 type engineSessionBinder interface {
-	BindSessionState(db *state.DB, sessionID string) error
+	BindSessionState(db SessionStore, sessionID string) error
 	BoundSessionID() string
 }
 

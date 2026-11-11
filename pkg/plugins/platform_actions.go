@@ -44,7 +44,7 @@ type telegramTopicAdapter interface {
 }
 
 type discordThreadAdapter interface {
-	RenameThread(ctx context.Context, threadID, title string) (bool, error)
+	RenameThread(ctx context.Context, threadID, name string, opts ThreadRenameOptions) (bool, error)
 }
 
 type discordClientAdapter interface {
@@ -138,7 +138,7 @@ func discordSetThreadTitle(ctx context.Context, adapter any, args []string) (map
 	if !ok {
 		return nil, missingAdapterMethod(adapter, "rename_thread")
 	}
-	done, err := a.RenameThread(ctx, args[1], args[2])
+	done, err := a.RenameThread(ctx, args[1], args[2], ThreadRenameOptions{})
 	if err != nil {
 		return nil, err
 	}

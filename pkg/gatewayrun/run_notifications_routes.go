@@ -261,7 +261,10 @@ func safeResolveTransport(ctx context.Context, platform gateway.Platform, cfg *g
 
 // Relay a restored source was admitted through, proven by its route's last committed admission
 func (r *GatewayRunner) committedRelayAdapter(ctx context.Context, source *gateway.SessionSource) (gateway.PlatformAdapter, error) {
-	authority := gateway.ActiveAuthority(r)
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return nil, err
+	}
 	if authority == nil {
 		return nil, nil
 	}

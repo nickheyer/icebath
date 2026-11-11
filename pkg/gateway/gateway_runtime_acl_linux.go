@@ -7,15 +7,18 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Extended attribute listing the ACL check reads, replaced by tests the way hermes tests monkeypatch os.listxattr
+var aclListxattr = unix.Llistxattr
+
 // Whether a POSIX access ACL is present on path or its absence cannot be established
 func mayHaveAccessACL(path string) bool {
-	size, err := unix.Llistxattr(path, nil)
+	size, err := aclListxattr(path, nil)
 	for err == nil {
 		buf := make([]byte, size)
 		var n int
-		n, err = unix.Llistxattr(path, buf)
+		n, err = aclListxattr(path, buf)
 		if errors.Is(err, unix.ERANGE) {
-			size, err = unix.Llistxattr(path, nil)
+			size, err = aclListxattr(path, nil)
 			continue
 		}
 		if err != nil {

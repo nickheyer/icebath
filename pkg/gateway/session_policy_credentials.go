@@ -83,13 +83,13 @@ func (r *RecoveredSecrets) Len() int {
 }
 
 // Copy holding only the secrets outside the skipped sections
-func (r *RecoveredSecrets) without(skip map[string]bool) *RecoveredSecrets {
+func (r *RecoveredSecrets) without(skip map[any]bool) *RecoveredSecrets {
 	out := &RecoveredSecrets{}
 	if r == nil {
 		return out
 	}
 	for i, path := range r.paths {
-		if head, ok := path[0].(string); ok && skip[head] {
+		if skipped(path, skip) {
 			continue
 		}
 		out.Set(path, r.values[i])
@@ -543,13 +543,12 @@ func digestMatches(actual string, stored any) (bool, error) {
 }
 
 // Whether a path head is one of the skipped sections
-func skipped(path secretPath, skip map[string]bool) bool {
-	head, ok := path[0].(string)
-	return ok && skip[head]
+func skipped(path secretPath, skip map[any]bool) bool {
+	return skip[path[0]]
 }
 
 // Refuses a reference from another home or profile or a secret whose endpoint moved without a re-bind
-func checkSecretScope(ctx context.Context, owner launchSecretOwner, source map[string]any, policy *LocalSessionPolicy, home string, skip map[string]bool) error {
+func checkSecretScope(ctx context.Context, owner launchSecretOwner, source map[string]any, policy *LocalSessionPolicy, home string, skip map[any]bool) error {
 	for _, scope := range [][2]string{{"home", home}, {"profile", owner.launchOwnerProfileID()}} {
 		value, ok := source[scope[0]]
 		if !ok {
@@ -612,11 +611,11 @@ func referenceSource(ref string) (any, error) {
 }
 
 // Whether the current private values of the sections differ by fingerprint from those the reference froze
-func secretsMoved(ref *string, secrets *RecoveredSecrets, sections []string) (bool, error) {
+func secretsMoved(ref *string, secrets *RecoveredSecrets, sections []any) (bool, error) {
 	if ref != nil && !strings.HasPrefix(*ref, configSecretPrefix) {
 		return false, nil
 	}
-	in := map[string]bool{}
+	in := map[any]bool{}
 	for _, name := range sections {
 		in[name] = true
 	}
@@ -643,7 +642,7 @@ func secretsMoved(ref *string, secrets *RecoveredSecrets, sections []string) (bo
 			if err != nil {
 				return false, err
 			}
-			if head, isStr := path[0].(string); isStr && in[head] {
+			if in[path[0]] {
 				frozen[pathKey(path)] = fingerprint
 			}
 		}
@@ -657,7 +656,7 @@ func secretsMoved(ref *string, secrets *RecoveredSecrets, sections []string) (bo
 
 // Frozen config secrets with followed sections skipped for a following session
 func recoverConfigSecrets(ctx context.Context, owner launchSecretOwner, policy *LocalSessionPolicy) (*RecoveredSecrets, error) {
-	skip := map[string]bool{}
+	skip := map[any]bool{}
 	if policy.FollowsProfile() {
 		for _, name := range FollowSections {
 			skip[name] = true
@@ -667,7 +666,7 @@ func recoverConfigSecrets(ctx context.Context, owner launchSecretOwner, policy *
 }
 
 // Frozen config secrets, entries under a skipped section neither re-read nor checked
-func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, policy *LocalSessionPolicy, skip map[string]bool) (*RecoveredSecrets, error) {
+func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, policy *LocalSessionPolicy, skip map[any]bool) (*RecoveredSecrets, error) {
 	ref := ""
 	if policy.ConfigSecretRef != nil {
 		ref = *policy.ConfigSecretRef
@@ -707,7 +706,7 @@ func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, 
 }
 
 // Reference body checked against this owner and each entry re-read from the profile config
-func recoverReferencedSecrets(ctx context.Context, owner launchSecretOwner, policy *LocalSessionPolicy, ref string, skip map[string]bool, held func() *RecoveredSecrets) (*RecoveredSecrets, error) {
+func recoverReferencedSecrets(ctx context.Context, owner launchSecretOwner, policy *LocalSessionPolicy, ref string, skip map[any]bool, held func() *RecoveredSecrets) (*RecoveredSecrets, error) {
 	parsed, err := referenceSource(ref)
 	if err != nil {
 		return nil, err

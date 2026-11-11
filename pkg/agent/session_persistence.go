@@ -36,8 +36,8 @@ type sessionPersistenceState struct {
 
 // Session db writes the flush makes, swapped by tests that hold a writer inside its batch
 var (
-	sessionDBAppendBatch      = (*state.SessionDB).AppendMessagesBatch
-	sessionDBFlushTokenCounts = (*state.SessionDB).FlushTokenCounts
+	sessionDBAppendBatch      = SessionStore.AppendMessagesBatch
+	sessionDBFlushTokenCounts = SessionStore.FlushTokenCountsChecked
 )
 
 func sessionPersistenceLog() *slog.Logger { return slog.Default().With("logger", "run_agent") }
@@ -242,7 +242,10 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 	}
 	a.sessionMessages = persisted
 	if a.sessionDB != nil {
-		sessionDBFlushTokenCounts(a.sessionDB, 5.0)
+		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
+			sessionPersistenceLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
+			return false
+		}
 	}
 	noteTurnPersisted(a)
 	return true
@@ -381,7 +384,8 @@ func dbFlushRow(a *AIAgent, msg map[string]any, isCurrentTurnUser bool) map[stri
 
 // Carries an end of batch rewrite of already flushed tool results onto their durable rows, returning the count
 func syncRewrittenToolRowsDicts(a *AIAgent, batch []map[string]any, contentsBefore []any) int {
-	if a.persistDisabled || a.sessionID == "" || a.sessionDB == nil {
+	rewriter, ok := a.sessionDB.(prunedRowRewriter)
+	if a.persistDisabled || a.sessionID == "" || !ok {
 		return 0
 	}
 	var changedMsgs []map[string]any
@@ -409,7 +413,7 @@ func syncRewrittenToolRowsDicts(a *AIAgent, batch []map[string]any, contentsBefo
 	}
 	written, err := func() (int, error) {
 		defer persistLock(a)()
-		return a.sessionDB.RewritePrunedRows(a.homeContext(), a.sessionID, changes, state.PruneRewriteOptions{
+		return rewriter.RewritePrunedRows(a.homeContext(), a.sessionID, changes, state.PruneRewriteOptions{
 			TurnLeaseHolder: a.activeSessionTurnLeaseHolder, TurnLeaseTTLSeconds: &ttl,
 		})
 	}()
@@ -666,7 +670,9 @@ func (a *AIAgent) persistSession(messages *[]*state.Message, conversationHistory
 		sessionPersistenceLog().Debug("session flush failed", "error", err)
 	}
 	if a.sessionDB != nil {
-		sessionDBFlushTokenCounts(a.sessionDB, 5.0)
+		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
+			return err
+		}
 	}
 	noteTurnPersisted(a)
 	return nil

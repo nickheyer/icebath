@@ -213,16 +213,16 @@ func TestSecretsMovedComparesFingerprintsOfTheSections(t *testing.T) {
 	_, _, policy := boundSecretPolicy(t)
 	same := &RecoveredSecrets{}
 	same.Set(secretPath{"model", "api_key"}, "route-token")
-	if moved, err := secretsMoved(policy.ConfigSecretRef, same, []string{"model"}); err != nil || moved {
+	if moved, err := secretsMoved(policy.ConfigSecretRef, same, []any{"model"}); err != nil || moved {
 		t.Fatalf("unchanged %v %v", moved, err)
 	}
 	rotated := &RecoveredSecrets{}
 	rotated.Set(secretPath{"model", "api_key"}, "new")
-	if moved, _ := secretsMoved(policy.ConfigSecretRef, rotated, []string{"model"}); !moved {
+	if moved, _ := secretsMoved(policy.ConfigSecretRef, rotated, []any{"model"}); !moved {
 		t.Fatal("rotation not seen")
 	}
 	memory := "inst:1:s"
-	if moved, _ := secretsMoved(&memory, rotated, []string{"model"}); moved {
+	if moved, _ := secretsMoved(&memory, rotated, []any{"model"}); moved {
 		t.Fatal("in memory reference is unknown")
 	}
 }

@@ -562,7 +562,7 @@ func childSecretRef(ctx context.Context, a *SessionAuthority, child string, pare
 	if parent.ConfigSecretRef == nil || !strings.HasPrefix(*parent.ConfigSecretRef, configSecretPrefix) {
 		return policy, nil
 	}
-	secrets, err := recoverConfigSecretsSkipping(ctx, a, parent, map[string]bool{})
+	secrets, err := recoverConfigSecretsSkipping(ctx, a, parent, map[any]bool{})
 	if err != nil {
 		return nil, err
 	}

@@ -110,7 +110,7 @@ func stripOutboundCallbacks(ctx context.Context) {
 
 func iterTargets(t *testing.T, cfg any) []*OutboundWebhookTarget {
 	t.Helper()
-	targets, err := IterConfiguredOutboundWebhooks(cfg)
+	targets, err := IterConfiguredOutboundWebhooks(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

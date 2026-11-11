@@ -92,7 +92,7 @@ var (
 // Installs the process wide secret capture callback the CLI surface provides
 func SetSecretCaptureCallback(cb SecretCaptureFunc) {
 	secretCaptureMu.Lock()
-	secretCaptureCallback = cb
+	secretCaptureCallback, secretCaptureContextCallback = cb, nil
 	secretCaptureMu.Unlock()
 }
 
@@ -949,9 +949,7 @@ func (s *Scope) captureRequiredEnvironmentVariables(ctx context.Context, skillNa
 		return names, false, "Secure secret entry is not supported over messaging. Load this skill in the local CLI to be prompted, or add the key to ~/.icebath/.env manually."
 	}
 	if cb == nil {
-		secretCaptureMu.RLock()
-		cb = secretCaptureCallback
-		secretCaptureMu.RUnlock()
+		cb = processSecretCapture(ctx)
 	}
 	if cb == nil {
 		return names, false, nil

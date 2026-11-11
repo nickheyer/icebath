@@ -331,14 +331,14 @@ func ptAddViBindings(kb *ptKeyBindings, app *ptApplication) {
 	}, nil, "escape")
 	add(func(e *ptEvent) { e.currentBuffer().cursorUp(e.arg()) }, sel, "k")
 	add(func(e *ptEvent) { e.currentBuffer().cursorDown(e.arg()) }, sel, "j")
-	upNav := func(e *ptEvent) { e.currentBuffer().autoUp(e.arg(), false) }
+	upNav := func(e *ptEvent) { e.currentBuffer().lineOrHistoryUp(e.arg(), false) }
 	add(upNav, nav, "c-p")
 	add(upNav, nav, "up")
-	add(func(e *ptEvent) { e.currentBuffer().autoUp(e.arg(), true) }, nav, "k")
-	downNav := func(e *ptEvent) { e.currentBuffer().autoDown(e.arg(), false) }
+	add(func(e *ptEvent) { e.currentBuffer().lineOrHistoryUp(e.arg(), true) }, nav, "k")
+	downNav := func(e *ptEvent) { e.currentBuffer().lineOrHistoryDown(e.arg(), false) }
 	add(downNav, nav, "c-n")
 	add(downNav, nav, "down")
-	add(func(e *ptEvent) { e.currentBuffer().autoDown(e.arg(), true) }, nav, "j")
+	add(func(e *ptEvent) { e.currentBuffer().lineOrHistoryDown(e.arg(), true) }, nav, "j")
 	add(func(e *ptEvent) {
 		b := e.currentBuffer()
 		b.setCursorPosition(b.cursor + b.document().cursorLeftPosition(e.arg()))

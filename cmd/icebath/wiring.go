@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
@@ -17,9 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
+	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -35,6 +38,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
@@ -57,8 +61,55 @@ func installProcessWiring() {
 		return ok
 	}
 	gatewayrun.SlashConfirmClear = commands.Confirms.Clear
+	gatewayrun.SlashConfirmGetPending = func(sessionKey string) (string, bool) {
+		p, ok := commands.Confirms.Pending(sessionKey)
+		return p.ConfirmID, ok
+	}
+	gatewayrun.SlashConfirmResolve = func(ctx context.Context, sessionKey, confirmID, choice string) string {
+		reply, _ := commands.Confirms.Resolve(ctx, sessionKey, confirmID, choice, commands.ConfirmTimeout)
+		return reply
+	}
+	gateway.SlashConfirmResolve = gatewayrun.SlashConfirmResolve
+	gatewayrun.SlashConfirmClearIfStale = func(sessionKey string) bool {
+		return commands.Confirms.ClearIfStale(sessionKey, commands.ConfirmTimeout)
+	}
+	gatewayrun.RunGatewayExecQuickCommand = commands.RunGatewayExecQuickCommand
+	gatewayrun.SlashConfirmRegister = func(sessionKey, confirmID, command string, handler func(ctx context.Context, choice string) (string, error)) {
+		commands.Confirms.Register(sessionKey, confirmID, command, handler)
+	}
+	gatewayrun.SaveConfigValue = app.SaveConfigValue
+	gatewayrun.SanitizeTelegramName = commands.SanitizeTelegramName
+	gatewayrun.KanbanRunSlash = app.RunKanbanSlash
+	gatewayrun.RunCuratorSlash = app.RunCuratorSlash
+	gatewayrun.RandomTip = app.RandomTip
+	gatewayrun.ActivePersonalityName = commands.ActivePersonalityName
+	gatewayrun.AvailablePersonalities = func(cfg map[string]any) map[string]any { return commands.AvailablePersonalities(config.Tree(cfg)) }
+	gatewayrun.DescribePersonality = commands.DescribePersonality
+	gatewayrun.PersistPersonality = commands.PersistPersonality
+	gatewayrun.ResolvePersonality = func(value any, cfg map[string]any) (string, string, error) {
+		return commands.ResolvePersonality(value, config.Tree(cfg))
+	}
+	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport
+	gatewayrun.GatewayDebugUploadReply = selfupdate.GatewayDebugUploadReply
+	gatewayrun.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, requestedMode string) (string, error) {
+		result, err := commands.RunApprovalModeCommand(ctx, h, env, requestedMode)
+		return result.Message, err
+	}
+	gatewayrun.BuildInitPromptForCwd = app.BuildInitPromptForCwd
+	gatewayrun.ResolveCommandBusy = func(name string) (string, string, string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, string(d.BusyPolicy), d.BusyHandler, true
+		}
+		return "", "", "", false
+	}
 	gatewayrun.IsGatewayKnownCommand = func(name string) bool { return commands.IsGatewayKnownCommand(commands.Default, name) }
 	gatewayrun.GatewayKnownCommand = func(name string) bool { return commands.GatewayKnownCommands()[name] }
+	gatewayrun.ExecuteSlashCommand = func(ctx context.Context, name, surface, args string, options map[string]any) (gatewayrun.SlashCommandReply, error) {
+		reply, err := commands.ExecuteCommand(ctx, name, commands.CommandContext{Surface: surface, Args: args, Options: options})
+		return gatewayrun.SlashCommandReply{Text: reply.Text, Data: reply.Data, Format: reply.Format}, err
+	}
+	acp.NewSurfaceLabelReader = func(db *state.SessionDB) acp.RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
+	gatewaycli.InstallMigrateS6Hooks()
 	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
 	gateway.S6IsRunning = func(name string) (bool, error) {
 		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).IsRunning(name)
@@ -72,6 +123,16 @@ func installProcessWiring() {
 		return tools.CheckPaused(context.Background(), component, log)
 	})
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
+	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
+	gatewaycli.SealedSteward = selfupdate.SealedSteward
+	gateway.WebServer.ShouldRequireDashboardAuth = dashboard.ShouldRequireDashboardAuthAfterImport
+	provider.RetirementIdleProof = dashboard.RetirementIdleProof
+	dashboard.GatewayCLI.NeedsSudo = selfupdate.NeedsSudo
+	dashboard.GatewayCLI.SudoNoninteractiveOk = selfupdate.SudoNoninteractiveOk
+	dashboard.GatewayCLI.RefusalLines = gatewaycli.RefusalLines
+	dashboard.GatewayCLI.InstalledServices = gatewayrun.InstalledServiceCount
+	dashboard.TUILaunch.MakeArgv = app.MakeTUIArgv
+	dashboard.TUILaunch.ApplyPythonEnv = app.ApplyTUIPythonEnv
 	gateway.WebUISourceBuild.ProductCurrent = selfupdate.SourceProductCurrent
 	gateway.WebUISourceBuild.Env = func(ctx context.Context) (map[string]string, error) {
 		return selfupdate.SourceBuildEnv(ctx, nil, false, true)
@@ -81,6 +142,62 @@ func installProcessWiring() {
 		return selfupdate.BuildSourceWeb(ctx, projectRoot, env, "")
 	}
 	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
+	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
+	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
+	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
+	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
+	tuiserver.PersistPersonality = commands.PersistPersonality
+	tuiserver.CommandsByCategory = func() []tuiserver.HelpCategory {
+		var out []tuiserver.HelpCategory
+		for _, g := range commands.CommandsByCategory(commands.Default) {
+			category := tuiserver.HelpCategory{Category: g.Category}
+			for _, row := range g.Rows {
+				category.Rows = append(category.Rows, [2]string{row.Command, row.Description})
+			}
+			out = append(out, category)
+		}
+		return out
+	}
+	tuiserver.ActivePersonalityName = commands.ActivePersonalityName
+	tuiserver.AvailablePersonalities = func(cfg map[string]any) map[string]any {
+		return commands.AvailablePersonalities(config.Tree(cfg))
+	}
+	tuiserver.Banner.ReleaseDate = app.ReleaseDate
+	tuiserver.Banner.AvailableSkills = app.AvailableSkills
+	tuiserver.Banner.UpdateResult = app.UpdateResult
+	gateway.InventoryBanner.ReleaseDate = app.ReleaseDate
+	gateway.InventoryBanner.AvailableSkills = app.AvailableSkills
+	gateway.InventoryBanner.UpdateResult = app.UpdateResult
+	gateway.InventoryBanner.PrefetchUpdateCheck = app.PrefetchUpdateCheck
+	gateway.InventoryBanner.ToolsetAvailability = app.ToolsetAvailability
+	gateway.ConsumeTypedStopPhrase = tuiserver.ConsumeTypedStopPhrase
+	gateway.HasAnyProviderConfigured = hasAnyProviderConfigured
+	tuiserver.Prefill.ResolveFile = app.ResolvePrefillMessagesFile
+	tuiserver.Prefill.Load = app.LoadPrefillMessages
+	tuiserver.ForeignSessions.List = app.ListForeignSessions
+	tuiserver.ForeignSessions.Preview = app.PreviewForeignSession
+	tuiserver.ForeignSessions.Import = app.ImportBrowserSession
+	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
+	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
+	tuiserver.ResolveCommand = func(name string) (tuiserver.ResolvedCommand, bool) {
+		d := commands.Resolve(name)
+		if d == nil {
+			return tuiserver.ResolvedCommand{}, false
+		}
+		return tuiserver.ResolvedCommand{Name: d.Name, Category: d.Category, Describe: d.Describe,
+			DesktopSubcommands: commands.MetaOf(d.Name).DesktopSubcommands}, true
+	}
+	tuiserver.SlashCompleter = func(ctx context.Context, skillCommands, skillBundles skills.SkillCommands) func(string) []tuiserver.SlashCompletion {
+		completer := commands.TUISlashCompleter(ctx, skillCommands, skillBundles)
+		return func(text string) []tuiserver.SlashCompletion {
+			found := completer.Complete(text)
+			out := make([]tuiserver.SlashCompletion, len(found))
+			for i, c := range found {
+				out[i] = tuiserver.SlashCompletion{Text: c.Text, Display: c.Display, Meta: c.Meta}
+			}
+			return out
+		}
+	}
 	gateway.WebappRendererBuild.Prepare = func(ctx context.Context, projectRoot string, force, skipBuild, explicit bool) (string, error) {
 		return selfupdate.PrepareWebappRenderer(ctx, projectRoot, force, skipBuild, explicit)
 	}
@@ -101,6 +218,7 @@ func installProcessWiring() {
 	state.SpilloverSQLFilter = tools.SpilloverSQLFilter
 	state.SpilloverNamesInText = tools.SpilloverNamesInText
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
+	tools.IsWorkerProcess = agent.IsWorkerProcess
 	state.SessionKeyNamespace = gateway.SessionKeyNamespace
 	state.ExclusiveMaintenance = gateway.ExclusiveMaintenance
 	state.IsOwnershipConflict = func(err error) bool {
@@ -112,7 +230,35 @@ func installProcessWiring() {
 	state.ProfileLabelForHome = gateway.ProfileLabelForHome
 	state.ReadGatewayLockRecord = gateway.ReadGatewayLockRecord
 	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
+	gateway.AncillaryAgent.SubagentRecords = agent.SubagentRecords
+	gateway.AncillaryAgent.SteerSubagent = agent.SteerOwnedSubagent
+	gateway.AncillaryAgent.TranscriptPath = agent.SubagentTranscriptPath
+	gateway.AncillaryAgent.ControlSnapshot = agent.ControlSnapshotOrRefusal
+	gateway.AncillaryAgent.SetSpawnPaused = agent.SetSpawnPaused
+	gateway.PathCompletionItems = tuiserver.PathCompletionItems
+	gateway.OneshotAgent.TemplateKnown = agent.OneshotTemplateKnown
+	gateway.ContextAgent.UsageStats = agent.SessionUsageStats
+	gateway.ContextAgent.Breakdown = agent.SessionContextBreakdown
+	gateway.ContextAgent.StoredBreakdown = agent.SessionStoredContextBreakdown
+	gateway.ContextAgent.Marks = agent.SessionContextMarks
+	gateway.PromptAttachments.StageBrowserFile = tuiserver.StageBrowserFileAttachment
+	gateway.PromptAttachments.StageSessionFile = tuiserver.StageSessionFileAttachment
+	gateway.PromptAttachments.RefPath = tuiserver.AttachmentRefPath
+	gateway.PromptAttachments.FormatRefValue = tuiserver.FormatRefValue
+	gateway.ImageAttachments.MaxBytes = tuiserver.AttachBytesMaxBytes
+	gateway.ImageAttachments.DecodeBase64 = tuiserver.DecodeAttachBase64
+	gateway.ImageAttachments.SniffImageExt = tuiserver.SniffImageExt
+	gateway.ImageAttachments.StageImageBytes = tuiserver.StageImageBytes
+	gateway.MainRuntimeFromAgent = tuiserver.MainRuntimeFromAgent
+	tuiserver.BindHostedRoomServer()
+	gateway.RunOneshot = agent.RunOneshotCall
 	gateway.ReleaseVaultUnlocks = browser.ReleaseVaultSession
+	gateway.ResolvePersonality = commands.ResolvePersonality
+	gateway.PersistPersonality = commands.PersistPersonality
+	gateway.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, mode string) (bool, string, error) {
+		result, err := commands.RunApprovalModeCommand(ctx, h, env, mode)
+		return result.OK, result.Mode, err
+	}
 	gateway.ErrorSurfaceFromResult = agent.BuildErrorSurfaceFromResult
 	gateway.SessionCompress = agent.SessionCompressAgent{}
 	gateway.ExpandContextReferences = agent.ExpandGatewayContextReferences
@@ -124,6 +270,7 @@ func installProcessWiring() {
 	slack.SubcommandMap = func(ctx context.Context) map[string]string {
 		return commands.SlackSubcommandMap(commands.Default, rawConfigTree(ctx))
 	}
+	gateway.RelaySlackSubcommandMap = slack.SubcommandMap
 	telegram.InlineCommands = telegramInlineCommands{}
 	codeexec.BotDesktopEnv = botdesktop.DesktopEnv
 	codeexec.BotDesktopToolPlacement = botdesktop.ToolPlacement
@@ -360,6 +507,7 @@ func runAtExit() {
 	run(codeexec.ShutdownAllRemoteKernels)
 	run(codeexec.ShutdownComputerUseBackends)
 	run(cron.ShutdownParallelPools)
+	run(tuiserver.AtExit)
 	run(tools.RelayAtExit)
 	run(lspAtExit)
 	run(func() { mcp.ShutdownMCPServers(context.Background(), nil, nil, 15*time.Second) })

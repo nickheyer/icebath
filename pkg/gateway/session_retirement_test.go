@@ -223,7 +223,7 @@ func (infoTestAgent) ServiceTier() string { return "" }
 func (infoTestAgent) ReasoningConfig() map[string]any {
 	return map[string]any{"enabled": true, "effort": "high"}
 }
-func (a infoTestAgent) SessionRuntime() sessionRuntimeFacts { return a }
+func (a infoTestAgent) SessionRuntime() SessionRuntimeFacts { return a }
 func (a infoTestAgent) ToolDefinitions() []map[string]any {
 	return make([]map[string]any, a.tools)
 }

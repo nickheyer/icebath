@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/nickheyer/icebath/pkg/state"
+
 // Help pointer to the docs and the icebath-agent skill for sessions with skill_view
 const IcebathAgentHelpGuidance = "For help with Icebath Agent itself — configuring, setting up, using, extending, or troubleshooting it — or to understand your own features, tools, or capabilities, the documentation at https://hermes-agent.nousresearch.com/docs is your authoritative reference and always holds the latest, most up-to-date information. The `icebath-agent` skill has the actual commands and proven workflows — load it with skill_view(name='icebath-agent') before configuring, modifying, or troubleshooting Icebath so you don't guess or invent workarounds."
 
@@ -37,13 +39,13 @@ const OpenAIModelExecutionGuidance = "# Execution discipline\n<tool_persistence>
 const GoogleModelOperationalGuidance = "# Google model operational directives\nFollow these operational rules strictly:\n- **Absolute paths:** Always construct and use absolute file paths for all file system operations. Combine the project root with relative paths.\n- **Verify first:** Use read_file/search_files to check file contents and project structure before making changes. Never guess at file contents.\n- **Dependency checks:** Never assume a library is available. Check package.json, requirements.txt, Cargo.toml, etc. before importing.\n- **Conciseness:** Keep explanatory text brief — a few sentences, not paragraphs. Focus on actions and results over narration.\n- **Non-interactive commands:** Use flags like -y, --yes, --non-interactive to prevent CLI tools from hanging on prompts.\n- **Keep going:** Work autonomously until the task is fully resolved. Don't stop with a plan — execute it.\n"
 
 // Opening line of the self describing mid turn steer marker
-const SteerMarkerOpen = "[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]"
+const SteerMarkerOpen = state.SteerMarkerOpen
 
 // Closing line of the mid turn steer marker
-const SteerMarkerClose = "[/OUT-OF-BAND USER MESSAGE]"
+const SteerMarkerClose = state.SteerMarkerClose
 
 // Text after the bracket that opens one of the agent control frames
-var ControlFrameOpeners = []string{"/?OUT-OF-BAND USER MESSAGE", "CONTEXT COMPACTION", "CONTEXT SUMMARY]", "PRIOR CONTEXT", "Runtime note:", "System note:", "System:", "SYSTEM]", "IMPORTANT:", "Planning state preserved", "ASYNC DELEGATION"}
+var ControlFrameOpeners = state.ControlFrameOpeners
 
 // Display kind of the standalone user row a steer is delivered as
 const SteerDisplayKind = "steer"

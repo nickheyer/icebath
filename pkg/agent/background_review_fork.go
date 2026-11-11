@@ -208,7 +208,7 @@ func warnIgnoredReasoningEffort(ctx context.Context, a *AIAgent, taskCfg map[str
 
 // Context engine hook rebinding its session state, implemented by engines owning persistence
 type sessionStateBinder interface {
-	BindSessionState(db *state.DB, sessionID string) error
+	BindSessionState(db SessionStore, sessionID string) error
 }
 
 // Severs the fork compressor from the parent session and enables in place compaction only after the rebind succeeds

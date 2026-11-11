@@ -33,7 +33,7 @@ type emitCapture struct {
 func captureEmitter(t *testing.T) *emitCapture {
 	t.Helper()
 	c := &emitCapture{}
-	SetDesktopEmitter(func(sid, event string, payload map[string]any) error {
+	SetDesktopEmitter(func(_ *Env, sid, event string, payload map[string]any) error {
 		c.sid, c.event, c.payload = sid, event, payload
 		return nil
 	})

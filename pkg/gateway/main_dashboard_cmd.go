@@ -86,7 +86,7 @@ var (
 	dashboardReexec                = reexecDashboard
 	dashboardBuildWebUI            = BuildWebUI
 	dashboardStartServer           = startDashboardServer
-	dashboardRequiresAuth          = shouldRequireDashboardAuth
+	dashboardRequiresAuth          = webServerRequiresAuth
 	dashboardKillStale             = KillStaleDashboardProcesses
 	dashboardConsole               = cliui.Default
 	dashboardGetpass               = provider.Getpass
@@ -507,7 +507,11 @@ func maybeSetupDashboardAuthInteractively(ctx context.Context, l DashboardLaunch
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	if required, err := dashboardRequiresAuth(ctx, host); err != nil || !required {
+	required, err := dashboardRequiresAuth(ctx, host)
+	if err != nil {
+		return err
+	}
+	if !required {
 		return nil
 	}
 	if len(ListDashboardAuthProviders(ctx, "")) > 0 {

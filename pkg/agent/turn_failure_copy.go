@@ -24,10 +24,10 @@ var SiteFailureCodes = map[string]bool{
 
 // Turn boundary notices, display kind and open tail roles shared by the core closer and the gateway writer
 const (
-	FailedTurnNotice            = "Your request was not processed. Send it again if you still want me to carry it out."
-	PartialFailedTurnNotice     = "This turn did not complete. Some actions may already have run; verify their effects before resending."
-	AutomationInterruptedNotice = "An automated delivery was interrupted and was not run again. Some actions may already have run; verify their effects."
-	FailedTurnDisplayKind       = "failed_turn"
+	FailedTurnNotice            = state.FailedTurnNotice
+	PartialFailedTurnNotice     = state.PartialFailedTurnNotice
+	AutomationInterruptedNotice = state.AutomationInterruptedNotice
+	FailedTurnDisplayKind       = state.FailedTurnDisplayKind
 	ContentPolicyNextSteps      = provider.ContentPolicyNextSteps
 )
 
@@ -86,15 +86,7 @@ func StampFailure(result map[string]any, reason string, retryable bool) map[stri
 
 // Failed turn display kind for a boundary row persisted before closers typed it, false for anything else
 func UntypedFailedTurnDisplayKind(role, content any) (string, bool) {
-	text, ok := content.(string)
-	if role != "assistant" || !ok {
-		return "", false
-	}
-	switch pystr.Strip(text) {
-	case FailedTurnNotice, PartialFailedTurnNotice, AutomationInterruptedNotice:
-		return FailedTurnDisplayKind, true
-	}
-	return "", false
+	return state.UntypedFailedTurnDisplayKind(role, content)
 }
 
 // Boundary copy for a failed turn, partial whenever a tool may already have run

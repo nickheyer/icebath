@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/nickheyer/icebath/pkg/provider"
+import (
+	"context"
+
+	"github.com/nickheyer/icebath/pkg/provider"
+)
 
 func (a *AIAgent) RequestedProvider() string                         { return a.requestedProvider }
 func (a *AIAgent) APIKey() string                                    { return a.apiKey }
@@ -157,7 +161,9 @@ func (a *AIAgent) SyncExternalMemoryForTurnHook() func(originalUserMessage, fina
 }
 
 func (a *AIAgent) SpawnBackgroundReviewHook() func(messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool) {
-	return a.spawnBackgroundReview
+	return func(messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool) {
+		a.spawnBackgroundReview(context.Background(), messagesSnapshot, reviewMemory, reviewSkills, nil, false)
+	}
 }
 
 var _ provider.CodexRuntimeAgent = (*AIAgent)(nil)

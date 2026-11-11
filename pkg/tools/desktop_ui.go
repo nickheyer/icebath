@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// DesktopEmitter delivers one renderer event to the window or session identified by sid
-type DesktopEmitter func(sid, event string, payload map[string]any) error
+// DesktopEmitter delivers one renderer event to the window or session identified by sid or the turn env
+type DesktopEmitter func(env *Env, sid, event string, payload map[string]any) error
 
 var (
 	desktopEmitMu sync.RWMutex
@@ -81,7 +81,7 @@ func desktopEmitEvent(env *Env, event string, payload map[string]any) (bool, err
 	} else {
 		sid = sessionEnvValue(env, "ICEBATH_UI_SESSION_ID")
 	}
-	if err := fn(sid, event, payload); err != nil {
+	if err := fn(env, sid, event, payload); err != nil {
 		return false, err
 	}
 	return true, nil

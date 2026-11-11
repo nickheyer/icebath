@@ -265,7 +265,7 @@ func ownerControlDir(t *testing.T, h string, mode os.FileMode) string {
 	}
 	t.Cleanup(func() { os.RemoveAll(root) })
 	hash, _ := controlHomeHash(h)
-	dir := filepath.Join(root, "hermes-gw-"+hash)
+	dir := filepath.Join(root, "icebath-gw-"+hash)
 	os.Mkdir(dir, mode)
 	os.Chmod(dir, mode)
 	return dir
@@ -302,7 +302,7 @@ func TestFallbackPointerUsesOwnerLocationAndKeepsIdentityChecks(t *testing.T) {
 	if req := <-requests; !strings.Contains(req, `"verb":"identify"`) {
 		t.Fatalf("request %q", req)
 	}
-	os.WriteFile(pointer, []byte(filepath.Join(filepath.Dir(dir), "hermes-gw-wrong", "control.sock")), 0o600)
+	os.WriteFile(pointer, []byte(filepath.Join(filepath.Dir(dir), "icebath-gw-wrong", "control.sock")), 0o600)
 	var de *DiscoveryError
 	if _, err := QueryIdentify(h, 2*time.Second); !errors.As(err, &de) || de.Reason != "invalid_control_pointer" {
 		t.Fatalf("wrong dir %v", err)

@@ -80,7 +80,7 @@ type emittedReaction struct {
 func captureReactions(t *testing.T) *[]emittedReaction {
 	t.Helper()
 	var got []emittedReaction
-	tools.SetDesktopEmitter(func(sid, event string, payload map[string]any) error {
+	tools.SetDesktopEmitter(func(_ *tools.Env, sid, event string, payload map[string]any) error {
 		got = append(got, emittedReaction{event, payload})
 		return nil
 	})

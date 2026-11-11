@@ -50,7 +50,7 @@ func routeAuthority(runner AuthorityRunner, store *SessionStore, route string) (
 			return nil, nil
 		}
 		for _, authority := range registry.Serving() {
-			if home.Key(authority.ProfileID) == registry.LaunchKey() {
+			if home.Key(authority.ProfileID) == registry.LaunchKey {
 				return authority, nil
 			}
 		}

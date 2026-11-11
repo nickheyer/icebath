@@ -16,7 +16,10 @@ var routeWakeProducers = map[string]bool{"kanban-wake": true, "loop-tick": true}
 
 // Mutation lock of a session's live owner held across a route rotation, nil without one
 func routeOwnerLock(ctx context.Context, runner any, sessionID string) (*sync.Mutex, error) {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
 	if a == nil || sessionID == "" {
 		return nil, nil
 	}
@@ -44,7 +47,10 @@ func setdefaultLive(a *SessionAuthority, sessionID string, source *SessionSource
 
 // Carries the old owner's still queued route wakes to the route's fresh session after a rotation
 func moveRouteWakes(ctx context.Context, runner AuthorityRunner, sessionKey, oldSessionID string) error {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return err
+	}
 	if a == nil || oldSessionID == "" {
 		return nil
 	}
@@ -192,7 +198,10 @@ func containsText(values []string, target string) bool {
 // Compression exhaustion reset rotating the route and moving the old owner's queued messaging rows onto the fresh session
 func resetAndRehomeMessages(ctx context.Context, runner AuthorityRunner, sessionKey, oldSessionID string) (*SessionEntry, func(), error) {
 	noop := func() {}
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, nil, err
+	}
 	var old SessionRef
 	var live *LiveSession
 	if a != nil {

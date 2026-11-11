@@ -18,7 +18,7 @@ type desktopSeen struct {
 func recordDesktopEvents(t *testing.T) *[]desktopSeen {
 	t.Helper()
 	seen := &[]desktopSeen{}
-	SetDesktopEmitter(func(sid, event string, payload map[string]any) error {
+	SetDesktopEmitter(func(_ *Env, sid, event string, payload map[string]any) error {
 		*seen = append(*seen, desktopSeen{sid, event, payload})
 		return nil
 	})
@@ -80,7 +80,7 @@ func TestDesktopEmitOrErrorWritesPythonJSON(t *testing.T) {
 	if got := focusPaneTool(env, " Chat "); got != `{"success": true, "pane": "chat"}` {
 		t.Fatalf("%s", got)
 	}
-	SetDesktopEmitter(func(string, string, map[string]any) error { return errors.New("socket closed") })
+	SetDesktopEmitter(func(*Env, string, string, map[string]any) error { return errors.New("socket closed") })
 	if got := mustJSON(t, focusPaneTool(env, "chat")); got["error"] != "Failed to focus the chat pane: socket closed" {
 		t.Fatalf("%v", got)
 	}

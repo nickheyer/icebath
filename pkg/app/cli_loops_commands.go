@@ -216,6 +216,9 @@ func (c *CLI) cmdNew(cmdOriginal string) {
 
 // Counts one retry or undo against the model of the session's last turn
 func (c *CLI) recordModelFriction(signal string, turns int) {
+	if c.slashMetricsOff {
+		return
+	}
 	opts := observability.FrictionOptions{SessionID: c.sessionID, Provider: c.provider, Model: c.model, Turns: turns}
 	if c.agent != nil {
 		opts.Agent = c.agent

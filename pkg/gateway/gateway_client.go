@@ -747,8 +747,11 @@ func ConnectGatewayWith(ctx context.Context, opts ConnectGatewayOptions) (*Gatew
 		target, protocols = GatewayWSTarget(result.Endpoint, ticket)
 	}
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 10 * time.Second, Subprotocols: protocols}
-	conn, _, err := dialer.DialContext(ctx, target, http.Header{})
+	conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 	if err != nil {
+		if resp != nil && errors.Is(err, websocket.ErrBadHandshake) {
+			return nil, &InvalidStatusError{StatusCode: resp.StatusCode}
+		}
 		var netErr net.Error
 		var opErr *net.OpError
 		if errors.As(err, &netErr) || errors.As(err, &opErr) || errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {

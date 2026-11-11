@@ -309,6 +309,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 
 func (c *CLI) addGateway(root *cobra.Command) {
 	gw := c.newCmd(root, "gateway", "Messaging gateway management", "Manage the messaging gateway (Telegram, Discord, WhatsApp, Weixin, and more)")
+	subDest(gw, "gateway_command")
 	acceptHooks(gw)
 	run := c.newCmd(gw, "run", "Run gateway in foreground (recommended for WSL and Docker)", "")
 	cf(run, "verbose", "v", "Increase stderr log verbosity (-v=INFO, -vv=DEBUG)")
@@ -364,6 +365,9 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	bf(install, "no-start-now", "", "Do not start the gateway service after installing")
 	bf(install, "start-on-login", "", "Enable the service to start automatically on login/boot")
 	bf(install, "no-start-on-login", "", "Do not enable the service to start on login/boot")
+	noneDefault(install, "start-now", "start-on-login")
+	storeFalse(install, "no-start-now", "start_now")
+	storeFalse(install, "no-start-on-login", "start_on_login")
 	bf(install, "if-missing", "", "Do nothing when a gateway service is already installed")
 	bf(install, "force-unit-path", "", "Repoint a service definition that pins another ICEBATH_HOME at this one")
 	bf(install, "elevated-handoff", "", "")

@@ -45,7 +45,7 @@ func (r *fakeVoiceRecorder) ElapsedSeconds() float64       { return 0 }
 func (r *fakeVoiceRecorder) CurrentRMS() int               { return 0 }
 func (r *fakeVoiceRecorder) SupportsSilenceAutostop() bool { return r.autostop }
 func (r *fakeVoiceRecorder) SetOnLivePartial(func(string)) {}
-func (r *fakeVoiceRecorder) SetSilenceThreshold(int)       {}
+func (r *fakeVoiceRecorder) SetSilenceThreshold(float64)   {}
 func (r *fakeVoiceRecorder) SetSilenceDuration(float64)    {}
 func (r *fakeVoiceRecorder) SetMaxRecordingSeconds(seconds float64) {
 	r.mu.Lock()

@@ -1,22 +1,40 @@
 package agent
 
-// Whether the latest compression attempt recorded its per attempt signals
+import (
+	"context"
+
+	"github.com/nickheyer/icebath/pkg/observability"
+)
+
+// Whether a compression attempt recorded its signals this turn
 func (a *AIAgent) LastCompressionAttemptRecorded() bool { return a.lastCompressionAttemptRecorded }
 
-// Lock skip signal of the latest compression attempt, true or the holder text
+// Lock skip marker of the last compression attempt, a bool or the holder text
 func (a *AIAgent) CompressionSkippedDueToLock() any { return a.compressionSkippedDueToLock }
 
-// Transient block reason of the latest compression attempt
+// Transient block reason of the last compression attempt, nil when it was not blocked
 func (a *AIAgent) CompressionBlockedTransient() any { return a.compressionBlockedTransient }
 
-// In place outcome of the latest compression attempt, nil when it aborted before a commit boundary
+// Whether the last compression committed in place, nil when it aborted before commit
 func (a *AIAgent) LastCompressionAttemptInPlace() *bool { return a.lastCompressionAttemptInPlace }
 
-// Whether the latest compression summary timed out
-func (a *AIAgent) LastCompressionTimedOut() bool { return a.lastCompressionTimedOut }
+// Whether the last compression summary call timed out, the attribute mirror read under its writer's lock
+func (a *AIAgent) LastCompressionTimedOut() bool {
+	a.compressionTimeoutMu.Lock()
+	defer a.compressionTimeoutMu.Unlock()
+	return a.lastCompressionTimedOut
+}
 
-// Summary warning of the latest compression attempt
+// Warning the last compression summary left, nil when none
 func (a *AIAgent) LastCompressionSummaryWarning() *string { return a.lastCompressionSummaryWarning }
 
-// Whether the agent switched to a fallback provider during its run
+// Whether a fallback model activated during the run
 func (a *AIAgent) FallbackActivated() bool { return a.fallbackActivated }
+
+// Records one watchdog exit row for this agent's turn in its own profile
+func (a *AIAgent) RecordWatchdogTurnAbort(ctx context.Context) {
+	observability.RecordWatchdogTurnAbort(ctx, &a.turnExit)
+}
+
+// Whether a provider fallback serves this agent's run
+func (a *AIAgent) ProviderFallbackActive() bool { return a.providerFallbackActive }

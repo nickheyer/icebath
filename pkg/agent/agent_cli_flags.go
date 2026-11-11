@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/goals"
@@ -172,7 +173,13 @@ func (a *AIAgent) controlSnapshotRevision() (string, error) {
 
 // A state_meta value, empty when the key is absent
 func (a *AIAgent) controlMeta(ctx context.Context, key string) (string, error) {
-	raw, ok, err := a.sessionDB.GetMeta(ctx, key)
+	meta, has := a.sessionDB.(interface {
+		GetMeta(ctx context.Context, key string) (string, bool, error)
+	})
+	if !has {
+		return "", &workerStoreError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get_meta'", sessionStoreKind(a.sessionDB))}
+	}
+	raw, ok, err := meta.GetMeta(ctx, key)
 	if err != nil || !ok {
 		return "", err
 	}

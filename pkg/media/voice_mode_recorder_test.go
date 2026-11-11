@@ -518,7 +518,7 @@ func TestStopUsesConfiguredSilenceThresholdStopStillDiscardsBelowDefaultThreshol
 	withVoiceTempDir(t)
 	r := NewAudioRecorder()
 	if r.silenceThreshold != silenceRMSThreshold {
-		t.Fatalf("default threshold %d", r.silenceThreshold)
+		t.Fatalf("default threshold %v", r.silenceThreshold)
 	}
 	armRecorder(r, [][]int16{make([]int16, 16000)}, 160)
 	if path, _ := r.Stop(); path != "" {

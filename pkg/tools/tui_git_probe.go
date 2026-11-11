@@ -19,8 +19,28 @@ const (
 // How long a not a repo answer is trusted so a fresh git init shows within seconds
 var tuiGitNegTTL = 30 * time.Second
 
-// Git command the root probes run, swapped by tests
-var tuiRunGit = runTUIGit
+// Git command the root probes run, swapped by tests under its lock
+var (
+	tuiRunGitMu   sync.RWMutex
+	tuiRunGitHook = runTUIGit
+)
+
+// Runs git through the current probe runner, read under its lock so a swap never races a probe
+func tuiRunGit(cwd string, args ...string) string {
+	tuiRunGitMu.RLock()
+	run := tuiRunGitHook
+	tuiRunGitMu.RUnlock()
+	return run(cwd, args...)
+}
+
+// Installs a git probe runner and returns the one it replaced
+func setTUIRunGit(fn func(cwd string, args ...string) string) func(cwd string, args ...string) string {
+	tuiRunGitMu.Lock()
+	defer tuiRunGitMu.Unlock()
+	saved := tuiRunGitHook
+	tuiRunGitHook = fn
+	return saved
+}
 
 // Stripped stdout of git -C cwd args, empty for a missing directory or any failure
 func runTUIGit(cwd string, args ...string) string {

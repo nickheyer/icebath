@@ -9,4 +9,5 @@ type GatewayRunner struct {
 	runnerStartupState
 	runnerReconcileState
 	runnerRuntimeState
+	runnerSlashState
 }

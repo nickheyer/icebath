@@ -151,16 +151,41 @@ func isContainer() bool {
 	return false
 }
 
-// Reports whether the kanban environment is active for this process
+// Reports whether the kanban environment is active, a dispatcher owned worker or a kanban opted profile
 func (s *Scope) detectKanban() bool {
 	if os.Getenv("ICEBATH_KANBAN_TASK") != "" || os.Getenv("ICEBATH_KANBAN_BOARD") != "" {
+		if tools.IsDispatcherOwnedWorkerContext(s.Env) {
+			return true
+		}
+	}
+	return s.profileHasKanbanToolset()
+}
+
+// Whether the schema selection or the profile opts into kanban, false on any unreadable config
+func (s *Scope) profileHasKanbanToolset() (has bool) {
+	requested, inAssembly := tools.KanbanToolsetRequested(s.Env)
+	if requested {
 		return true
 	}
-	if cfg := s.tree(); cfg != nil {
-		for _, ts := range config.AsStrings(cfg["toolsets"]) {
-			if ts == "kanban" {
-				return true
-			}
+	defer func() {
+		if recover() != nil {
+			has = false
+		}
+	}()
+	cfg := s.tree()
+	if toolsets := cfg["toolsets"]; pyrepr.Truthy(toolsets) && tools.PyContainsKanban(toolsets) {
+		return true
+	}
+	if inAssembly {
+		return false
+	}
+	platforms, _ := cfg["platform_toolsets"].(map[string]any)
+	for platform, names := range platforms {
+		if _, isList := names.([]any); !isList {
+			continue
+		}
+		if tools.Default.PlatformTools(context.Background(), "", cfg, platform, tools.PlatformToolsOptions{})["kanban"] {
+			return true
 		}
 	}
 	return false

@@ -23,6 +23,6 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == ExternalWorkerEntry {
 		runOneJobSeam = runOneJob
 	}
-	DispatchExternalWorkerEntry()
+	DispatchExternalWorkerEntry(os.Exit)
 	os.Exit(m.Run())
 }

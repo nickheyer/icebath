@@ -148,9 +148,10 @@ func replaceMessageEvent(event *MessageEvent) *MessageEvent {
 	copied.notificationReplyMuted, copied.pendingSTTText, copied.pendingSTTTranscripts = nil, nil, nil
 	copied.pendingSTTClips, copied.pendingSTTEchoed = nil, 0
 	copied.turnMarkerHandoff, copied.activeTurnToken, copied.markerReleased = false, nil, nil
-	copied.activeTurnSessionKey, copied.turnRefusal = nil, nil
+	copied.activeTurnSessionKey, copied.turnRefusal, copied.streamedFinalResponse = nil, nil, nil
 	copied.heartbeatSessionID, copied.lastChunkLen, copied.busyArrival = nil, 0, nil
 	copied.botLoopAdmitted, copied.fifoOnly, copied.stopEpoch = false, false, 0
+	copied.slashCommandCounted = false
 	if event.Source != nil {
 		source := *event.Source
 		source.identity, source.transportAdapterRef = nil, nil

@@ -713,6 +713,8 @@ type PtySessionRegistryOptions struct {
 	BufferCap     int
 	ReadTimeout   time.Duration
 	DrainExecutor func(task func())
+	RetainIdle    bool
+	ReapIdle      func(ctx context.Context, now time.Time)
 }
 
 // PtySessionRegistry tracks keep alive sessions by attach key under one spawn reservation
@@ -949,8 +951,17 @@ func (r *PtySessionRegistry) reapable(s *PtySession, now time.Time) bool {
 	return !s.Alive() || !s.Bridge.IsAlive() || r.Expired(s, now)
 }
 
-// Closes every dead or expired session, skipping a key a concurrent reap or reattach already changed
+// Runs the reap pass an embedding registry installed, the default pass otherwise
 func (r *PtySessionRegistry) ReapIdle(ctx context.Context, now time.Time) {
+	if r.o.ReapIdle != nil {
+		r.o.ReapIdle(ctx, now)
+		return
+	}
+	r.reapIdleDefault(ctx, now)
+}
+
+// Closes every dead or expired session, skipping a key a concurrent reap or reattach already changed
+func (r *PtySessionRegistry) reapIdleDefault(ctx context.Context, now time.Time) {
 	if now.IsZero() {
 		now = ptyMonotonic()
 	}
@@ -981,8 +992,11 @@ func (r *PtySessionRegistry) ReapIdle(ctx context.Context, now time.Time) {
 	}
 }
 
-// Evicts the longest idle session to free a slot, RegistryFull when every session is viewed
+// Evicts the longest idle session to free a slot, RegistryFull when every session is viewed or idle ones are retained
 func (r *PtySessionRegistry) reapOneIdleOrRaiseLocked() error {
+	if r.o.RetainIdle {
+		return NewRegistryFull("")
+	}
 	var oldest *PtySession
 	var oldestAt time.Time
 	for _, key := range r.order {
@@ -1003,13 +1017,16 @@ func (r *PtySessionRegistry) reapOneIdleOrRaiseLocked() error {
 	return nil
 }
 
-// Closes a removed session on its own goroutine that shutdown still waits for
-func (r *PtySessionRegistry) closeInBackground(s *PtySession) {
+// Closes a removed session on its own goroutine that shutdown still waits for, the channel closed when done
+func (r *PtySessionRegistry) closeInBackground(s *PtySession) <-chan struct{} {
 	r.backgroundCloses.Add(1)
+	done := make(chan struct{})
 	go func() {
 		defer r.backgroundCloses.Done()
+		defer close(done)
 		_ = s.Close(context.Background())
 	}()
+	return done
 }
 
 // Takes spawns again after CloseAll

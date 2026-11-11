@@ -12,8 +12,8 @@ func (a *AIAgent) rejectedThinkingTracker() *provider.RejectedThinkingTracker {
 	t.Mode, t.BaseURL, t.Model = provider.APIMode(a.apiMode), a.baseURL, a.model
 	t.SessionID, t.PersistDisabled = a.sessionID, a.persistDisabled
 	t.Store = nil
-	if a.sessionDB != nil {
-		t.Store = a.sessionDB
+	if store, ok := a.sessionDB.(provider.RejectedThinkingStore); ok {
+		t.Store = store
 	}
 	t.ResetUsageAnchor = func() { a.setUsageAnchor(nil, false) }
 	if c, ok := a.contextCompressor.(*ContextCompressor); ok && c != nil {

@@ -31,6 +31,9 @@ type runnerAdapterState struct {
 	pluginRewireUnsubscribe map[string]func()
 
 	lastSessionStorePruneTs float64
+
+	profileFailedMu  sync.Mutex
+	retiringProfiles map[string]struct{}
 }
 
 // Profile name and platform of one secondary adapter slot

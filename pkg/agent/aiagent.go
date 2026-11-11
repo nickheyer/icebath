@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -10,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -48,7 +49,8 @@ type AIAgent struct {
 	nousModelSwitch                  *[2]string
 	sessionID                        string
 	parentSessionID                  string
-	sessionDB                        *state.DB
+	sessionDB                        SessionStore
+	recallDB                         *state.DB
 	sessionDBCreated                 bool
 	ownsSessionDB                    bool
 	persistDisabled                  bool
@@ -137,6 +139,7 @@ type AIAgent struct {
 	reasoningConfig                    map[string]any
 	serviceTier                        string
 	requestOverrides                   map[string]any
+	gatewayTurnRequestOverrides        map[string]any
 	prefillMessages                    []any
 	capabilities                       map[string]bool
 	runtimeCapabilities                map[string]bool
@@ -252,6 +255,7 @@ type AIAgent struct {
 	subagentFinalizationMu             sync.Mutex
 	delegateImages                     []string
 	liveTranscriptPath                 string
+	evictedOnFallback                  any
 	delegateRoute                      *pyjson.Object
 	delegationID                       string
 	progressIdentityRef                map[string]any
@@ -305,6 +309,7 @@ type AIAgent struct {
 	sessionCostSource                  string
 	apiLatencyHistory                  []float64
 	apiOutputHistory                   []int
+	viewerTurnOutputBase               *int
 	streamCallback                     func(string)
 	streamNeedsBreak                   bool
 	streamContextScrubber              *memory.StreamingContextScrubber
@@ -448,7 +453,7 @@ type AIAgentOptions struct {
 	ThreadID, GatewaySessionKey        string
 	SkipContextFiles, LoadSoulIdentity bool
 	SkipMemory, SkipBackgroundReview   bool
-	SessionDB                          *state.DB
+	SessionDB                          SessionStore
 	ParentSessionID                    string
 	IterationBudget                    *IterationBudget
 	RunBudgetSeconds                   *float64
@@ -566,8 +571,19 @@ func (a *AIAgent) StreamBaseURL() string             { return a.baseURL }
 func (a *AIAgent) ToolEnv() *tools.Env               { return a.env }
 func (a *AIAgent) EnabledToolsets() []string         { return a.enabledToolsets }
 
-// SessionDB is the session store the agent persists turns into, nil before one is attached
-func (a *AIAgent) SessionDB() *state.DB       { return a.sessionDB }
+// SessionDB is the canonical session database the agent persists into, nil before one is attached or for a worker store
+func (a *AIAgent) SessionDB() *state.DB { return canonicalSessionDB(a.sessionDB) }
+
+// Store the agent persists its session through, nil before one is attached
+func (a *AIAgent) SessionStore() SessionStore { return a.sessionDB }
+
+// Store the onboarding record reads and writes through, the agent's own session store
+func (a *AIAgent) OnboardingStore() tools.OnboardingStore {
+	if a.sessionDB == nil {
+		return nil
+	}
+	return a.sessionDB
+}
 func (a *AIAgent) DisabledToolsets() []string { return a.disabledToolsets }
 func (a *AIAgent) DelegationBackend() string  { return a.delegationBackend }
 func (a *AIAgent) IsOneshot() bool            { return a.agentIsOneshot() }

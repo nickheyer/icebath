@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -27,9 +28,26 @@ func OnOnboardingEnded(listener func(ended map[string]any)) {
 	onbEndedMu.Unlock()
 }
 
+// Session store the onboarding record reads and writes, the canonical SessionDB or a managed worker's store
+type OnboardingStore interface {
+	GetModelConfigValue(sessionID, key string) (any, bool, error)
+	UpdateConversationModelConfigValue(sessionID, key string, update func(current any) any) (string, error)
+	SessionIDsWithModelConfigKey(key string) ([]string, error)
+	ResolveResumeSessionID(sessionID string) (string, error)
+}
+
+// Whether the store is absent, a typed nil pointer read as None
+func onboardingStoreNil(db OnboardingStore) bool {
+	if db == nil {
+		return true
+	}
+	v := reflect.ValueOf(db)
+	return v.Kind() == reflect.Pointer && v.IsNil()
+}
+
 // LoadOnboardingRecord reads the session's run record, nil when none
-func LoadOnboardingRecord(db *state.DB, sessionID string) map[string]any {
-	if db == nil || sessionID == "" {
+func LoadOnboardingRecord(db OnboardingStore, sessionID string) map[string]any {
+	if onboardingStoreNil(db) || sessionID == "" {
 		return nil
 	}
 	value, ok, err := db.GetModelConfigValue(sessionID, OnboardingRecordKey)
@@ -63,7 +81,7 @@ func onbRecordString(record map[string]any, key string) string {
 func onbNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Applies the event and writes the result at the compression tip in one transaction, closing the install flag when the run ended
-func onbTransition(ctx context.Context, db *state.DB, sessionID string, event OnboardingEvent) (*OnboardingStep, error) {
+func onbTransition(ctx context.Context, db OnboardingStore, sessionID string, event OnboardingEvent) (*OnboardingStep, error) {
 	var step *OnboardingStep
 	wasActive := false
 	_, err := db.UpdateConversationModelConfigValue(sessionID, OnboardingRecordKey, func(current any) any {
@@ -119,8 +137,8 @@ func StartOnboarding(ctx context.Context, db *state.DB, sessionID string, facts 
 }
 
 // AdvanceOnboarding applies one event to the stored run, an error when the session has no run
-func AdvanceOnboarding(ctx context.Context, db *state.DB, sessionID string, event OnboardingEvent) (OnboardingStep, error) {
-	if db == nil || sessionID == "" {
+func AdvanceOnboarding(ctx context.Context, db OnboardingStore, sessionID string, event OnboardingEvent) (OnboardingStep, error) {
+	if onboardingStoreNil(db) || sessionID == "" {
 		return OnboardingStep{}, fmt.Errorf("session %s has no onboarding run", sessionID)
 	}
 	step, err := onbTransition(ctx, db, sessionID, event)
@@ -134,7 +152,7 @@ func AdvanceOnboarding(ctx context.Context, db *state.DB, sessionID string, even
 }
 
 // OpenOnboardingSessionIDs lists the chats whose run is still in progress, newest first, each at its compression tip
-func OpenOnboardingSessionIDs(db *state.DB) []string {
+func OpenOnboardingSessionIDs(db OnboardingStore) []string {
 	ids, err := db.SessionIDsWithModelConfigKey(OnboardingRecordKey)
 	if err != nil {
 		return nil
@@ -161,7 +179,7 @@ func OpenOnboardingSessionIDs(db *state.DB) []string {
 }
 
 // ActiveOnboardingSessionID is the newest chat with a run in progress, empty when none
-func ActiveOnboardingSessionID(db *state.DB) string {
+func ActiveOnboardingSessionID(db OnboardingStore) string {
 	open := OpenOnboardingSessionIDs(db)
 	if len(open) == 0 {
 		return ""
@@ -230,7 +248,7 @@ func onbEndDeleted(current map[string]any) map[string]any {
 }
 
 // ObserveOnboardingToolResult settles a beat from a general tool's result and adds the next step reminder when it did
-func ObserveOnboardingToolResult(ctx context.Context, db *state.DB, sessionID string, hasSetupBeat bool, name string, args map[string]any, result string) string {
+func ObserveOnboardingToolResult(ctx context.Context, db OnboardingStore, sessionID string, hasSetupBeat bool, name string, args map[string]any, result string) string {
 	if !OnboardingAppliesTo(name) || !hasSetupBeat {
 		return result
 	}

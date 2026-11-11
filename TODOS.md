@@ -1147,7 +1147,7 @@
 - [x] tools/mcp_tool_server_run.py
 - [x] tools/mcp_tool_transport.py
 
-### 15. pkg/browser: 37% (23 of 61 files completed)
+### 15. pkg/browser: 39% (24 of 61 files completed)
 #### Chromium launch, CDP sessions, page tools, supervisor, cloud providers, vault
 - [ ] agent/browser_page_backend.py
 - [ ] agent/browser_page_registry.py
@@ -1183,7 +1183,7 @@
 - [ ] tools/bot_desktop/lease.py
 - [ ] tools/bot_desktop/placement.py
 - [ ] tools/bot_desktop/resources.py
-- [ ] tools/bot_desktop/rfb_filter.py
+- [x] tools/bot_desktop/rfb_filter.py
 - [ ] tools/bot_desktop/runtime.py
 - [ ] tools/bot_desktop/sandbox_host.py
 - [ ] tools/bot_desktop/thumbnail.py
@@ -1809,29 +1809,29 @@
 - [x] impeccable/skill/scripts/live-browser.js
 - [x] impeccable/skill/scripts/modern-screenshot.umd.js
 
-### 19. pkg/kanban: 10% (6 of 59 files completed)
+### 19. pkg/kanban: 23% (14 of 59 files completed)
 #### Boards, worker swarm, task dispatch, hosted rooms, PR acceptance
 - [ ] agent/kanban_stop.py
 - [x] agent/kanban_turn_recovery.py
 - [ ] gateway/hosted_room_attachments.py
-- [ ] gateway/hosted_room_authority_history.py
+- [x] gateway/hosted_room_authority_history.py
 - [ ] gateway/hosted_room_discussion.py
 - [ ] gateway/hosted_room_driver.py
 - [ ] gateway/hosted_room_execution_policy.py
-- [ ] gateway/hosted_room_links.py
+- [x] gateway/hosted_room_links.py
 - [ ] gateway/hosted_room_peer.py
 - [ ] gateway/hosted_room_policy_checkpoint.py
-- [ ] gateway/hosted_room_replicas.py
-- [ ] gateway/hosted_room_task_input.py
-- [ ] gateway/hosted_room_work_lineage.py
+- [x] gateway/hosted_room_replicas.py
+- [x] gateway/hosted_room_task_input.py
+- [x] gateway/hosted_room_work_lineage.py
 - [ ] gateway/hosted_room_work_records.py
-- [ ] gateway/hosted_room_work_storage.py
+- [x] gateway/hosted_room_work_storage.py
 - [ ] gateway/hosted_rooms.py
 - [ ] gateway/hosted_rooms_common.py
 - [ ] gateway/hosted_rooms_gateway_import.py
 - [ ] gateway/hosted_rooms_legacy_import.py
 - [ ] gateway/kanban_watchers.py
-- [ ] gateway/kanban_watchers_common.py
+- [x] gateway/kanban_watchers_common.py
 - [ ] gateway/kanban_watchers_dispatcher.py
 - [ ] gateway/kanban_watchers_notifier.py
 - [ ] hermes_cli/kanban.py
@@ -1868,7 +1868,7 @@
 - [ ] tui_gateway/hosted_room_peer_http.py
 - [ ] tui_gateway/hosted_room_peer_transport.py
 - [ ] tui_gateway/hosted_room_prepare_stall.py
-- [ ] tui_gateway/hosted_room_server_rpc.py
+- [x] tui_gateway/hosted_room_server_rpc.py
 - [ ] tui_gateway/hosted_room_service.py
 
 ### 20. pkg/codeexec: 20% (5 of 24 files completed)
@@ -1898,7 +1898,7 @@
 - [ ] tools/computer_use/tool.py
 - [ ] tools/computer_use_tool.py
 
-### 21. pkg/app: 42% (30 of 71 files completed)
+### 21. pkg/app: 43% (31 of 71 files completed)
 #### Interactive TUI session driver, docks, streaming, modals, desktop app
 - [x] hermes_cli/banner.py
 - [x] hermes_cli/bundled_app.py
@@ -1942,7 +1942,7 @@
 - [ ] hermes_cli/cli_voice_mixin.py
 - [ ] hermes_cli/clipboard.py
 - [x] hermes_cli/colors.py
-- [ ] hermes_cli/console_engine.py
+- [x] hermes_cli/console_engine.py
 - [ ] hermes_cli/context_switch_guard.py
 - [x] hermes_cli/curses_ui.py
 - [x] hermes_cli/desktop_build_lock.py
@@ -2136,55 +2136,55 @@
 - [ ] trajectory_compressor.py
 - [ ] utils.py
 
-### 23. arena: 2% (3 of 115 files completed)
+### 23. arena: 31% (36 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
-- [ ] tui_gateway/_env.py
+- [x] tui_gateway/_env.py
 - [ ] tui_gateway/_stdin_recovery.py
 - [ ] tui_gateway/agent_callbacks.py
 - [ ] tui_gateway/agent_factory.py
 - [ ] tui_gateway/billing_view.py
-- [ ] tui_gateway/change_watcher.py
+- [x] tui_gateway/change_watcher.py
 - [ ] tui_gateway/checkpoints.py
 - [ ] tui_gateway/command_discovery.py
 - [ ] tui_gateway/compute_host.py
 - [ ] tui_gateway/compute_host_bridge.py
 - [ ] tui_gateway/connector_payload.py
-- [ ] tui_gateway/connector_refusals.py
-- [ ] tui_gateway/contracts/__init__.py
-- [ ] tui_gateway/contracts/base.py
-- [ ] tui_gateway/contracts/billing_delegation_pets.py
-- [ ] tui_gateway/contracts/canonical.py
-- [ ] tui_gateway/contracts/canonical_projections.py
-- [ ] tui_gateway/contracts/canonical_sessions.py
-- [ ] tui_gateway/contracts/common.py
-- [ ] tui_gateway/contracts/config_free_tier_control.py
-- [ ] tui_gateway/contracts/connectors.py
-- [ ] tui_gateway/contracts/connectors_operation.py
-- [ ] tui_gateway/contracts/display.py
-- [ ] tui_gateway/contracts/events.py
-- [ ] tui_gateway/contracts/groups_bot_relay.py
-- [ ] tui_gateway/contracts/i18n.py
-- [ ] tui_gateway/contracts/liveness.py
-- [ ] tui_gateway/contracts/machine.py
-- [ ] tui_gateway/contracts/profiles_vault_complete_foreign_subagents.py
-- [ ] tui_gateway/contracts/projects_pets.py
-- [ ] tui_gateway/contracts/prompt_voice.py
+- [x] tui_gateway/connector_refusals.py
+- [x] tui_gateway/contracts/__init__.py
+- [x] tui_gateway/contracts/base.py
+- [x] tui_gateway/contracts/billing_delegation_pets.py
+- [x] tui_gateway/contracts/canonical.py
+- [x] tui_gateway/contracts/canonical_projections.py
+- [x] tui_gateway/contracts/canonical_sessions.py
+- [x] tui_gateway/contracts/common.py
+- [x] tui_gateway/contracts/config_free_tier_control.py
+- [x] tui_gateway/contracts/connectors.py
+- [x] tui_gateway/contracts/connectors_operation.py
+- [x] tui_gateway/contracts/display.py
+- [x] tui_gateway/contracts/events.py
+- [x] tui_gateway/contracts/groups_bot_relay.py
+- [x] tui_gateway/contracts/i18n.py
+- [x] tui_gateway/contracts/liveness.py
+- [x] tui_gateway/contracts/machine.py
+- [x] tui_gateway/contracts/profiles_vault_complete_foreign_subagents.py
+- [x] tui_gateway/contracts/projects_pets.py
+- [x] tui_gateway/contracts/prompt_voice.py
 - [ ] tui_gateway/contracts/registry.py
-- [ ] tui_gateway/contracts/server_requests.py
-- [ ] tui_gateway/contracts/sessions.py
-- [ ] tui_gateway/contracts/tools_commands.py
-- [ ] tui_gateway/contracts/tools_mcp_plugins.py
+- [x] tui_gateway/contracts/server_requests.py
+- [x] tui_gateway/contracts/sessions.py
+- [x] tui_gateway/contracts/tools_commands.py
+- [x] tui_gateway/contracts/tools_mcp_plugins.py
 - [ ] tui_gateway/entry.py
 - [ ] tui_gateway/event_publisher.py
 - [ ] tui_gateway/event_replay.py
 - [ ] tui_gateway/free_tier_task_done.py
-- [ ] tui_gateway/git_probe.py
+- [x] tui_gateway/git_probe.py
 - [ ] tui_gateway/host_supervisor.py
 - [x] tui_gateway/launch_profile_policy.py
 - [ ] tui_gateway/loop_noise.py
 - [x] tui_gateway/mcp_oauth_sessions.py
 - [ ] tui_gateway/mcp_rpc_helpers.py
-- [ ] tui_gateway/method_ctx.py
+- [x] tui_gateway/method_ctx.py
 - [ ] tui_gateway/methods_bot_relay.py
 - [ ] tui_gateway/methods_browser.py
 - [ ] tui_gateway/methods_complete.py
@@ -2194,22 +2194,22 @@
 - [ ] tui_gateway/methods_connectors.py
 - [ ] tui_gateway/methods_connectors_account.py
 - [ ] tui_gateway/methods_display.py
-- [ ] tui_gateway/methods_display_watch.py
+- [x] tui_gateway/methods_display_watch.py
 - [ ] tui_gateway/methods_free_tier.py
 - [ ] tui_gateway/methods_groups.py
 - [ ] tui_gateway/methods_groups_forward.py
 - [ ] tui_gateway/methods_i18n.py
-- [ ] tui_gateway/methods_images.py
+- [x] tui_gateway/methods_images.py
 - [ ] tui_gateway/methods_machine.py
 - [ ] tui_gateway/methods_onboarding.py
-- [ ] tui_gateway/methods_plugin_catalog.py
+- [x] tui_gateway/methods_plugin_catalog.py
 - [ ] tui_gateway/methods_profiles.py
 - [ ] tui_gateway/methods_projects.py
 - [ ] tui_gateway/methods_prompt.py
 - [ ] tui_gateway/methods_session.py
 - [ ] tui_gateway/methods_session_branch.py
 - [ ] tui_gateway/methods_session_control.py
-- [ ] tui_gateway/methods_session_foreign.py
+- [x] tui_gateway/methods_session_foreign.py
 - [ ] tui_gateway/methods_session_interrupt.py
 - [ ] tui_gateway/methods_session_model_guard.py
 - [ ] tui_gateway/methods_shared_metrics.py
@@ -2225,7 +2225,7 @@
 - [ ] tui_gateway/pet_sheet.py
 - [ ] tui_gateway/plugin_inject.py
 - [ ] tui_gateway/profile_roster_cache.py
-- [ ] tui_gateway/project_tree.py
+- [x] tui_gateway/project_tree.py
 - [ ] tui_gateway/prompt_attachments.py
 - [ ] tui_gateway/prompt_turn.py
 - [ ] tui_gateway/render.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 26% (199 of 760 files completed)
+### 24. gateway: 33% (254 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2282,7 +2282,7 @@
 - [x] agent/monitoring/emitter.py
 - [x] agent/monitoring/events.py
 - [ ] agent/monitoring/gateway_health.py
-- [ ] agent/monitoring/gateway_health_export.py
+- [x] agent/monitoring/gateway_health_export.py
 - [ ] agent/monitoring/otlp_exporter.py
 - [x] agent/monitoring/policy.py
 - [x] agent/monitoring/redaction.py
@@ -2294,7 +2294,7 @@
 - [ ] gateway/authz_mixin.py
 - [ ] gateway/bot_loop_guard.py
 - [ ] gateway/cgroup_cleanup.py
-- [ ] gateway/channel_directory.py
+- [x] gateway/channel_directory.py
 - [x] gateway/code_skew.py
 - [ ] gateway/config.py
 - [x] gateway/config_env.py
@@ -2332,22 +2332,22 @@
 - [ ] gateway/platforms/_shared.py
 - [ ] gateway/platforms/access_policy_mixin.py
 - [ ] gateway/platforms/api_server.py
-- [ ] gateway/platforms/api_server_authority_runs.py
-- [ ] gateway/platforms/api_server_bot_chat.py
+- [x] gateway/platforms/api_server_authority_runs.py
+- [x] gateway/platforms/api_server_bot_chat.py
 - [ ] gateway/platforms/api_server_config_guard.py
 - [ ] gateway/platforms/api_server_fire_startup.py
 - [ ] gateway/platforms/api_server_memory_sessions.py
 - [ ] gateway/platforms/api_server_openai_routes.py
 - [ ] gateway/platforms/api_server_profile_prefix.py
 - [ ] gateway/platforms/api_server_request_options.py
-- [ ] gateway/platforms/api_server_response_admissions.py
+- [x] gateway/platforms/api_server_response_admissions.py
 - [ ] gateway/platforms/api_server_response_identity.py
 - [ ] gateway/platforms/api_server_response_store.py
-- [ ] gateway/platforms/api_server_room_dispatch.py
-- [ ] gateway/platforms/api_server_room_grants.py
+- [x] gateway/platforms/api_server_room_dispatch.py
+- [x] gateway/platforms/api_server_room_grants.py
 - [ ] gateway/platforms/api_server_run_idempotency.py
 - [ ] gateway/platforms/api_server_runs.py
-- [ ] gateway/platforms/api_server_store.py
+- [x] gateway/platforms/api_server_store.py
 - [ ] gateway/platforms/api_server_turn_boundary.py
 - [ ] gateway/platforms/base.py
 - [ ] gateway/platforms/base_exec_approval.py
@@ -2373,22 +2373,22 @@
 - [ ] gateway/plugin_keyless_inject.py
 - [x] gateway/plugin_messages.py
 - [x] gateway/profile_routing.py
-- [ ] gateway/readiness.py
+- [x] gateway/readiness.py
 - [ ] gateway/relay/__init__.py
 - [ ] gateway/relay/adapter.py
 - [ ] gateway/relay/adapter_discord_interaction.py
-- [ ] gateway/relay/auth.py
-- [ ] gateway/relay/command_manifest.py
+- [x] gateway/relay/auth.py
+- [x] gateway/relay/command_manifest.py
 - [ ] gateway/relay/descriptor.py
 - [ ] gateway/relay/egress.py
-- [ ] gateway/relay/http_diagnostics.py
+- [x] gateway/relay/http_diagnostics.py
 - [ ] gateway/relay/inbound_admission.py
 - [ ] gateway/relay/media.py
 - [ ] gateway/relay/transport.py
 - [ ] gateway/relay/ws_transport.py
 - [x] gateway/response_filters.py
 - [x] gateway/restart.py
-- [ ] gateway/restart_loop_guard.py
+- [x] gateway/restart_loop_guard.py
 - [ ] gateway/restart_notice.py
 - [ ] gateway/rich_sent_store.py
 - [ ] gateway/run.py
@@ -2429,7 +2429,7 @@
 - [ ] gateway/run_topics.py
 - [ ] gateway/run_turn.py
 - [ ] gateway/run_turn_followup_ack.py
-- [ ] gateway/run_turn_hygiene.py
+- [x] gateway/run_turn_hygiene.py
 - [ ] gateway/run_turn_persistence.py
 - [ ] gateway/run_turn_prepare.py
 - [ ] gateway/run_turn_progress.py
@@ -2441,10 +2441,10 @@
 - [ ] gateway/runtime_bootstrap.py
 - [ ] gateway/runtime_bootstrap_windows.py
 - [x] gateway/runtime_contract.py
-- [ ] gateway/runtime_downgrade_exit.py
-- [ ] gateway/runtime_footer.py
+- [x] gateway/runtime_downgrade_exit.py
+- [x] gateway/runtime_footer.py
 - [x] gateway/runtime_ownership.py
-- [ ] gateway/scale_to_zero.py
+- [x] gateway/scale_to_zero.py
 - [ ] gateway/session.py
 - [ ] gateway/session_a2a.py
 - [ ] gateway/session_acp_lifecycle.py
@@ -2466,10 +2466,10 @@
 - [ ] gateway/session_cold_review.py
 - [ ] gateway/session_command_sink.py
 - [ ] gateway/session_commands.py
-- [ ] gateway/session_complete_path.py
+- [x] gateway/session_complete_path.py
 - [ ] gateway/session_completion_notes.py
 - [ ] gateway/session_config.py
-- [ ] gateway/session_connections.py
+- [x] gateway/session_connections.py
 - [ ] gateway/session_context.py
 - [ ] gateway/session_context_refs.py
 - [x] gateway/session_contract.py
@@ -2501,7 +2501,7 @@
 - [ ] gateway/session_ingress_media.py
 - [ ] gateway/session_kanban.py
 - [ ] gateway/session_lifecycle.py
-- [ ] gateway/session_listing.py
+- [x] gateway/session_listing.py
 - [ ] gateway/session_live_listing.py
 - [ ] gateway/session_llm_oneshot.py
 - [ ] gateway/session_local.py
@@ -2513,7 +2513,7 @@
 - [ ] gateway/session_local_migration.py
 - [ ] gateway/session_local_recovery.py
 - [ ] gateway/session_local_route.py
-- [ ] gateway/session_local_title.py
+- [x] gateway/session_local_title.py
 - [ ] gateway/session_managed_worker.py
 - [ ] gateway/session_managed_worker_log.py
 - [ ] gateway/session_messaging_picks.py
@@ -2573,8 +2573,8 @@
 - [x] gateway/shutdown_forensics.py
 - [ ] gateway/shutdown_watchdog.py
 - [x] gateway/slash_access.py
-- [ ] gateway/slash_commands.py
-- [ ] gateway/slash_commands_branch_thread.py
+- [x] gateway/slash_commands.py
+- [x] gateway/slash_commands_branch_thread.py
 - [ ] gateway/slash_commands_goals.py
 - [ ] gateway/slash_commands_login.py
 - [ ] gateway/slash_commands_model.py
@@ -2589,15 +2589,15 @@
 - [ ] gateway/status_served.py
 - [ ] gateway/sticker_cache.py
 - [ ] gateway/stream_consumer.py
-- [ ] gateway/stream_consumer_directives.py
-- [ ] gateway/stream_consumer_fallback.py
-- [ ] gateway/stream_consumer_fences.py
-- [ ] gateway/stream_consumer_think.py
-- [ ] gateway/stream_consumer_transport.py
+- [x] gateway/stream_consumer_directives.py
+- [x] gateway/stream_consumer_fallback.py
+- [x] gateway/stream_consumer_fences.py
+- [x] gateway/stream_consumer_think.py
+- [x] gateway/stream_consumer_transport.py
 - [x] gateway/stream_dispatch.py
 - [x] gateway/stream_events.py
 - [ ] gateway/streaming_tts_consumer.py
-- [ ] gateway/stuck_loop_counts.py
+- [x] gateway/stuck_loop_counts.py
 - [ ] gateway/systemd_notify.py
 - [ ] gateway/systemd_stop_mark.py
 - [ ] gateway/turn_context.py
@@ -2612,7 +2612,7 @@
 - [ ] hermes_cli/connectors_cmd.py
 - [ ] hermes_cli/container_boot.py
 - [ ] hermes_cli/dashboard_auth/__init__.py
-- [ ] hermes_cli/dashboard_auth/audit.py
+- [x] hermes_cli/dashboard_auth/audit.py
 - [ ] hermes_cli/dashboard_auth/base.py
 - [ ] hermes_cli/dashboard_auth/body_limit.py
 - [ ] hermes_cli/dashboard_auth/cookies.py
@@ -2633,20 +2633,20 @@
 - [x] hermes_cli/dashboard_register.py
 - [ ] hermes_cli/dingtalk_auth.py
 - [ ] hermes_cli/foreign_sessions.py
-- [ ] hermes_cli/foreign_sessions_browser.py
+- [x] hermes_cli/foreign_sessions_browser.py
 - [ ] hermes_cli/gateway.py
 - [ ] hermes_cli/gateway_agent.py
 - [ ] hermes_cli/gateway_automation.py
 - [ ] hermes_cli/gateway_chat.py
-- [ ] hermes_cli/gateway_chat_commands.py
-- [ ] hermes_cli/gateway_chat_listing.py
+- [x] hermes_cli/gateway_chat_commands.py
+- [x] hermes_cli/gateway_chat_listing.py
 - [ ] hermes_cli/gateway_chat_startup.py
-- [ ] hermes_cli/gateway_chat_view.py
+- [x] hermes_cli/gateway_chat_view.py
 - [ ] hermes_cli/gateway_cli_commands.py
 - [ ] hermes_cli/gateway_client.py
-- [ ] hermes_cli/gateway_command_errors.py
+- [x] hermes_cli/gateway_command_errors.py
 - [ ] hermes_cli/gateway_connection.py
-- [ ] hermes_cli/gateway_enroll.py
+- [x] hermes_cli/gateway_enroll.py
 - [ ] hermes_cli/gateway_host_record.py
 - [ ] hermes_cli/gateway_launchd.py
 - [ ] hermes_cli/gateway_launchd_runtime.py
@@ -2656,14 +2656,14 @@
 - [ ] hermes_cli/gateway_multiplex_mode.py
 - [ ] hermes_cli/gateway_multiplex_s6.py
 - [ ] hermes_cli/gateway_multiplex_served.py
-- [ ] hermes_cli/gateway_mutations.py
+- [x] hermes_cli/gateway_mutations.py
 - [ ] hermes_cli/gateway_plugin_commands.py
 - [ ] hermes_cli/gateway_profile_lifecycle.py
 - [ ] hermes_cli/gateway_queue.py
 - [ ] hermes_cli/gateway_replay_gap.py
 - [ ] hermes_cli/gateway_rollback.py
 - [ ] hermes_cli/gateway_runtime.py
-- [ ] hermes_cli/gateway_runtime_cli.py
+- [x] hermes_cli/gateway_runtime_cli.py
 - [x] hermes_cli/gateway_runtime_discovery.py
 - [x] hermes_cli/gateway_runtime_multiplex.py
 - [ ] hermes_cli/gateway_runtime_replace.py
@@ -2676,7 +2676,7 @@
 - [ ] hermes_cli/gateway_setup_service.py
 - [ ] hermes_cli/gateway_setup_wizard.py
 - [ ] hermes_cli/gateway_side.py
-- [ ] hermes_cli/gateway_status_notes.py
+- [x] hermes_cli/gateway_status_notes.py
 - [ ] hermes_cli/gateway_supervised_restart.py
 - [ ] hermes_cli/gateway_tools.py
 - [ ] hermes_cli/gateway_tools_notify.py
@@ -2730,7 +2730,7 @@
 - [x] hermes_cli/setup_platforms.py
 - [ ] hermes_cli/shared_session_attach.py
 - [x] hermes_cli/slack_cli.py
-- [ ] hermes_cli/ssh_workspace_fs.py
+- [x] hermes_cli/ssh_workspace_fs.py
 - [ ] hermes_cli/staged_uploads.py
 - [ ] hermes_cli/steward.py
 - [x] hermes_cli/stream_json.py
@@ -2751,7 +2751,7 @@
 - [ ] hermes_cli/web_asset_mime_types.py
 - [x] hermes_cli/web_build_limits.py
 - [ ] hermes_cli/web_deps.py
-- [ ] hermes_cli/web_git.py
+- [x] hermes_cli/web_git.py
 - [ ] hermes_cli/web_host_terminal.py
 - [ ] hermes_cli/web_host_terminal_sessions.py
 - [ ] hermes_cli/web_models.py
@@ -2763,7 +2763,7 @@
 - [ ] hermes_cli/web_routers/audio.py
 - [ ] hermes_cli/web_routers/chat_workspaces.py
 - [ ] hermes_cli/web_routers/chat_ws.py
-- [ ] hermes_cli/web_routers/chat_ws_errors.py
+- [x] hermes_cli/web_routers/chat_ws_errors.py
 - [ ] hermes_cli/web_routers/config_env.py
 - [ ] hermes_cli/web_routers/cron.py
 - [ ] hermes_cli/web_routers/dashboard_ui.py
@@ -2781,7 +2781,7 @@
 - [ ] hermes_cli/web_routers/ops.py
 - [ ] hermes_cli/web_routers/profiles.py
 - [ ] hermes_cli/web_routers/sessions.py
-- [ ] hermes_cli/web_routers/shared_metrics.py
+- [x] hermes_cli/web_routers/shared_metrics.py
 - [ ] hermes_cli/web_routers/skills.py
 - [ ] hermes_cli/web_routers/status.py
 - [ ] hermes_cli/web_routers/tools.py
@@ -2796,7 +2796,7 @@
 - [ ] hermes_cli/web_server_config.py
 - [ ] hermes_cli/web_server_cron.py
 - [ ] hermes_cli/web_server_dashboard.py
-- [ ] hermes_cli/web_server_file_response.py
+- [x] hermes_cli/web_server_file_response.py
 - [ ] hermes_cli/web_server_file_tickets.py
 - [ ] hermes_cli/web_server_files.py
 - [ ] hermes_cli/web_server_gateway.py
@@ -2810,11 +2810,11 @@
 - [ ] hermes_cli/web_server_owner_exit.py
 - [ ] hermes_cli/web_server_plugin_profiles.py
 - [ ] hermes_cli/web_server_profiles.py
-- [ ] hermes_cli/web_server_remote_media.py
-- [ ] hermes_cli/web_server_session_token.py
+- [x] hermes_cli/web_server_remote_media.py
+- [x] hermes_cli/web_server_session_token.py
 - [ ] hermes_cli/web_server_sessions.py
-- [ ] hermes_cli/web_server_skew_exit.py
-- [ ] hermes_cli/web_server_static_assets.py
+- [x] hermes_cli/web_server_skew_exit.py
+- [x] hermes_cli/web_server_static_assets.py
 - [ ] hermes_cli/web_server_surface.py
 - [ ] hermes_cli/web_session_sockets.py
 - [ ] hermes_cli/web_upload_limit.py
@@ -2827,12 +2827,12 @@
 - [ ] hermes_cli/webapp_sign_in.py
 - [x] hermes_cli/webhook.py
 - [x] hermes_cli/windows_ssh_runtime.py
-- [ ] plugins/dashboard_auth/_shared.py
-- [ ] plugins/dashboard_auth/basic/__init__.py
-- [ ] plugins/dashboard_auth/drain/__init__.py
-- [ ] plugins/dashboard_auth/nous/__init__.py
-- [ ] plugins/dashboard_auth/self_hosted/__init__.py
-- [ ] plugins/dashboard_auth/session_token/__init__.py
+- [x] plugins/dashboard_auth/_shared.py
+- [x] plugins/dashboard_auth/basic/__init__.py
+- [x] plugins/dashboard_auth/drain/__init__.py
+- [x] plugins/dashboard_auth/nous/__init__.py
+- [x] plugins/dashboard_auth/self_hosted/__init__.py
+- [x] plugins/dashboard_auth/session_token/__init__.py
 - [ ] plugins/platforms/a2a/__init__.py
 - [ ] plugins/platforms/a2a/adapter.py
 - [x] plugins/platforms/a2a/protocol.py
@@ -2957,7 +2957,7 @@
 - [x] plugins/platforms/whatsapp/gateway_env.py
 - [ ] plugins/platforms/whatsapp_cloud/adapter.py
 - [x] plugins/platforms/whatsapp_cloud/gateway_env.py
-- [ ] plugins/platforms/whatsapp_cloud/setup_wizard.py
+- [x] plugins/platforms/whatsapp_cloud/setup_wizard.py
 - [ ] plugins/platforms/yuanbao/__init__.py
 - [ ] plugins/platforms/yuanbao/adapter.py
 - [x] plugins/platforms/yuanbao/gateway_env.py

@@ -398,6 +398,8 @@ type CLI struct {
 	secretState                     *secretModalState
 	pendingResumeSessions           []map[string]any
 	pendingAgentSeed                any
+	slashWorker                     bool
+	slashMetricsOff                 bool
 	secretDeadline                  float64
 	toolStartTime                   float64
 	pendingToolInfo                 map[string][]map[string]any

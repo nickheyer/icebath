@@ -2,6 +2,7 @@ package pymimetypes
 
 import (
 	"os"
+	"slices"
 	"strings"
 	"sync"
 
@@ -28,6 +29,7 @@ type DB struct {
 	encodings map[string]string
 	suffixes  map[string]string
 	types     [2]map[string]string
+	typesInv  [2]map[string][]string
 }
 
 // New builds a database from the CPython default tables only
@@ -53,7 +55,14 @@ func (d *DB) AddType(typ, ext string, strict bool) {
 	if typ == "" {
 		return
 	}
-	d.types[strictIndex(strict)][ext] = typ
+	i := strictIndex(strict)
+	d.types[i][ext] = typ
+	if d.typesInv[i] == nil {
+		d.typesInv[i] = map[string][]string{}
+	}
+	if !slices.Contains(d.typesInv[i][typ], ext) {
+		d.typesInv[i][typ] = append(d.typesInv[i][typ], ext)
+	}
 }
 
 func strictIndex(strict bool) int {

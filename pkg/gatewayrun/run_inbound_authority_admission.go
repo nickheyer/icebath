@@ -98,7 +98,10 @@ func (r *GatewayRunner) hmBusyPreempt(ctx context.Context, event *gateway.Messag
 
 // Hands the message to the routed profile's session authority when it owns it, false to continue in process
 func (r *GatewayRunner) hmAuthorityAdmission(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string, isInternal bool) (bool, any, error) {
-	authority := gateway.ActiveAuthority(r)
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return false, nil, err
+	}
 	_, isCommand := event.GetCommand()
 	if authority != nil && !isCommand && !isInternal && !gateway.ExecutingAdmission(ctx) {
 		fifoOnly, _ := event.FIFOOnly()
@@ -143,8 +146,14 @@ func (r *GatewayRunner) hmAdmitToFIFO(ctx context.Context, authority *gateway.Se
 		}
 		return true, *consumerReply, nil
 	}
-	if fifoOnly, stopEpoch := event.FIFOOnly(); fifoOnly && stopEpoch != r.routeStopEpoch(quickKey) {
-		return true, nil, nil
+	if fifoOnly, stopEpoch := event.FIFOOnly(); fifoOnly {
+		current, err := r.routeStopEpoch(ctx, quickKey)
+		if err != nil {
+			return false, nil, err
+		}
+		if stopEpoch != current {
+			return true, nil, nil
+		}
 	}
 	observability.NoteBusyAdmitting(ctx, gateway.BusyEventOf(event))
 	reply, err := gateway.AdmitMessage(ctx, authority, event)

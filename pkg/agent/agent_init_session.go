@@ -124,7 +124,7 @@ func initSessionState(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 		Enabled: o.CheckpointsEnabled, MaxSnapshots: o.CheckpointMaxSnapshots,
 		MaxTotalSizeMB: o.CheckpointMaxTotalSizeMB, MaxFileSizeMB: o.CheckpointMaxFileSizeMB,
 	})
-	a.sessionDB = o.SessionDB
+	a.sessionDB = sessionStoreOrNil(o.SessionDB)
 	a.parentSessionID = o.ParentSessionID
 	var reasoning, maxTokens any
 	if o.ReasoningConfig != nil {

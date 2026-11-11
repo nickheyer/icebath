@@ -48,8 +48,9 @@ const lockPollInterval = 50 * time.Millisecond
 
 // Refusal of an acquisition, the message for people and the reason as the contract
 type Refusal struct {
-	Message string
-	Reason  string
+	Message      string
+	Reason       string
+	LedgerStatus string
 }
 
 // Message of the refusal

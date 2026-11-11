@@ -307,7 +307,10 @@ const bootReceiptsSQL = "SELECT m.key FROM state_meta m LEFT JOIN sessions s " +
 
 // Restores the ended local session a background completion reports to after a restart left it unrestored
 func restoreCompletionRoute(ctx context.Context, runner any, sessionKey string) error {
-	authority := activeAuthority(runner)
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return err
+	}
 	parsed := parseSessionKey(sessionKey)
 	if authority == nil || parsed["platform"] != any(string(PlatformLocal)) {
 		return nil

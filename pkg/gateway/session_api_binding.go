@@ -33,7 +33,10 @@ func continuedAPISession(ctx context.Context, runner any, sessionID, requestID s
 	if sessionID == "" {
 		return sessionID, nil
 	}
-	authority := activeAuthority(runner)
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return "", err
+	}
 	if authority == nil {
 		return sessionID, nil
 	}

@@ -193,7 +193,7 @@ var hiSnapshot = []map[string]any{{"role": "user", "content": "hi"}}
 
 func TestWrapperDefersManagedLocalAuto(t *testing.T) {
 	a, calls := wrapperAgent(t, "auto", true)
-	a.spawnBackgroundReviewWith(context.Background(), hiSnapshot, true, false, nil, false)
+	a.spawnBackgroundReview(context.Background(), hiSnapshot, true, false, nil, false)
 	if len(calls.enqueued) != 1 || len(calls.spawned) != 0 {
 		t.Fatalf("enqueued %d spawned %d", len(calls.enqueued), len(calls.spawned))
 	}
@@ -204,7 +204,7 @@ func TestWrapperDefersManagedLocalAuto(t *testing.T) {
 
 func TestWrapperSpawnsImmediatelyForNonManaged(t *testing.T) {
 	a, calls := wrapperAgent(t, "auto", false)
-	a.spawnBackgroundReviewWith(context.Background(), hiSnapshot, false, true, nil, false)
+	a.spawnBackgroundReview(context.Background(), hiSnapshot, false, true, nil, false)
 	if len(calls.enqueued) != 0 || len(calls.spawned) != 1 {
 		t.Fatalf("enqueued %d spawned %d", len(calls.enqueued), len(calls.spawned))
 	}
@@ -212,7 +212,7 @@ func TestWrapperSpawnsImmediatelyForNonManaged(t *testing.T) {
 
 func TestWrapperDeferNeverIsOldBehavior(t *testing.T) {
 	a, calls := wrapperAgent(t, "never", true)
-	a.spawnBackgroundReviewWith(context.Background(), hiSnapshot, true, false, nil, false)
+	a.spawnBackgroundReview(context.Background(), hiSnapshot, true, false, nil, false)
 	if len(calls.enqueued) != 0 || len(calls.spawned) != 1 {
 		t.Fatalf("enqueued %d spawned %d", len(calls.enqueued), len(calls.spawned))
 	}
@@ -221,7 +221,7 @@ func TestWrapperDeferNeverIsOldBehavior(t *testing.T) {
 func TestWrapperRefineBypassesQueue(t *testing.T) {
 	a, calls := wrapperAgent(t, "auto", true)
 	focus := "save the deploy workflow"
-	a.spawnBackgroundReviewWith(context.Background(), hiSnapshot, true, false, &focus, false)
+	a.spawnBackgroundReview(context.Background(), hiSnapshot, true, false, &focus, false)
 	if len(calls.enqueued) != 0 || len(calls.spawned) != 1 || *calls.spawned[0].focus != focus {
 		t.Fatalf("enqueued %d spawned %+v", len(calls.enqueued), calls.spawned)
 	}
@@ -229,7 +229,7 @@ func TestWrapperRefineBypassesQueue(t *testing.T) {
 
 func TestWrapperBareRefineBypassesQueue(t *testing.T) {
 	a, calls := wrapperAgent(t, "auto", true)
-	a.spawnBackgroundReviewWith(context.Background(), hiSnapshot, true, false, nil, true)
+	a.spawnBackgroundReview(context.Background(), hiSnapshot, true, false, nil, true)
 	if len(calls.enqueued) != 0 || len(calls.spawned) != 1 {
 		t.Fatalf("enqueued %d spawned %d", len(calls.enqueued), len(calls.spawned))
 	}

@@ -106,8 +106,8 @@ type childBuildSpec struct {
 
 // Profile home of the live transcripts from the parent's session db path, empty for the ambient resolve
 func parentLiveHome(parent *AIAgent) string {
-	if parent.sessionDB != nil {
-		if p := parent.sessionDB.Path(); p != "" {
+	if _, hasPath := parent.sessionDB.(interface{ Path() string }); hasPath {
+		if p := sessionStorePath(parent.sessionDB); p != "" {
 			return filepath.Dir(p)
 		}
 		delegateLog().Debug("delegate_task: parent _session_db.db_path is '' (not a str/Path); " +

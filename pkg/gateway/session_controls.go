@@ -137,11 +137,6 @@ var profileImplicitMethods = map[string]bool{"session.create": true, "session.li
 	"prompt.resolve_unknown": true, "prompt.steer_queued": true, "prompt.replace_queued": true, "session.interrupt": true,
 	"session.events.since": true, "session.mutate": true, "session.stats": true, "approval.respond": true, "clarify.respond": true}
 
-// Served profile registry that still reports the slots whose authority is being built, SessionAuthorities.starting
-type profileStartRegistry interface {
-	Starting(ctx context.Context, profile string) (key string, started <-chan struct{}, ok bool)
-}
-
 // Authenticated projection of one client socket onto the authority, its principal, subscriptions and sibling routes
 type AuthorityConnection struct {
 	authority     *SessionAuthority
@@ -260,20 +255,16 @@ func (c *AuthorityConnection) HostScoped() bool {
 }
 
 // Served profile registry of the authority's runner, nil when the runner keeps none
-func runnerRegistry(a *SessionAuthority) authorityRegistry {
+func runnerRegistry(a *SessionAuthority) *SessionAuthorities {
 	if runner, ok := a.Runner.(authorityRegistryRunner); ok {
 		return runner.SessionAuthorities()
 	}
 	return nil
 }
 
-// Slot of a profile whose authority hot serve is still building, AttributeError for a registry that cannot say
-func registryStarting(ctx context.Context, registry authorityRegistry, profile string) (string, <-chan struct{}, bool, error) {
-	starting, ok := registry.(profileStartRegistry)
-	if !ok {
-		return "", nil, false, &PyError{Kind: "AttributeError", Msg: "'" + pyTypeName(registry) + "' object has no attribute 'starting'"}
-	}
-	key, started, found := starting.Starting(ctx, profile)
+// Slot of a profile whose authority hot serve is still building
+func registryStarting(ctx context.Context, registry *SessionAuthorities, profile string) (string, <-chan struct{}, bool, error) {
+	key, started, found := registry.Starting(ctx, profile)
 	return key, started, found, nil
 }
 

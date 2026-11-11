@@ -9,5 +9,9 @@ func SessionEnvSource(ctx context.Context, runner any, source *SessionSource) (*
 		return source, nil
 	}
 	sessionID, _ := detachedSessionID(*key)
-	return localSource(ctx, activeAuthority(runner), sessionID, strVal(source.UserID))
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
+	return localSource(ctx, authority, sessionID, strVal(source.UserID))
 }

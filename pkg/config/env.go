@@ -316,6 +316,8 @@ type EnvVar struct {
 	Tools []string
 	// Hidden from the setup checklist
 	Advanced bool
+	// Entry declares no password key, readers fall back to their own default
+	PasswordOmitted bool
 }
 
 // Optional secrets and settings of the upstream table in its declaration order
@@ -405,16 +407,16 @@ var optionalEnvDecl = []NamedEnvVar{
 	{"AIRTABLE_API_KEY", EnvVar{Description: "Airtable personal access token (used by the `airtable` skill)", Prompt: "Airtable API key", URL: "https://airtable.com/create/tokens", Password: true, Category: "skill", Advanced: true}},
 	{"TENOR_API_KEY", EnvVar{Description: "Tenor API key for GIF search (used by the `gif-search` skill)", Prompt: "Tenor API key", URL: "https://developers.google.com/tenor/guides/quickstart", Password: true, Category: "skill", Advanced: true}},
 	{"HONCHO_API_KEY", EnvVar{Description: "Honcho API key for AI-native persistent memory", Prompt: "Honcho API key", URL: "https://app.honcho.dev", Tools: []string{"honcho_context"}, Password: true, Category: "tool"}},
-	{"HONCHO_BASE_URL", EnvVar{Description: "Base URL for self-hosted Honcho instances (no API key needed)", Prompt: "Honcho base URL (e.g. http://localhost:8000)", Category: "tool"}},
+	{"HONCHO_BASE_URL", EnvVar{Description: "Base URL for self-hosted Honcho instances (no API key needed)", Prompt: "Honcho base URL (e.g. http://localhost:8000)", Category: "tool", PasswordOmitted: true}},
 	{"HINDSIGHT_API_KEY", EnvVar{Description: "Hindsight API key for graph-aware persistent memory", Prompt: "Hindsight API key", URL: "https://hindsight.vectorize.io", Tools: []string{"hindsight_recall"}, Password: true, Category: "tool"}},
-	{"HINDSIGHT_API_URL", EnvVar{Description: "Base URL for the Hindsight API (default: https://api.hindsight.vectorize.io)", Prompt: "Hindsight API URL", Category: "tool", Advanced: true}},
+	{"HINDSIGHT_API_URL", EnvVar{Description: "Base URL for the Hindsight API (default: https://api.hindsight.vectorize.io)", Prompt: "Hindsight API URL", Category: "tool", Advanced: true, PasswordOmitted: true}},
 	{"SUPERMEMORY_API_KEY", EnvVar{Description: "Supermemory API key for conversation-scoped persistent memory", Prompt: "Supermemory API key", URL: "https://supermemory.ai", Tools: []string{"supermemory_search"}, Password: true, Category: "tool"}},
 	{"MEM0_API_KEY", EnvVar{Description: "Mem0 Platform API key for semantic persistent memory", Prompt: "Mem0 API key", URL: "https://app.mem0.ai", Tools: []string{"mem0_search"}, Password: true, Category: "tool"}},
 	{"RETAINDB_API_KEY", EnvVar{Description: "RetainDB API key for persistent memory", Prompt: "RetainDB API key", URL: "https://retaindb.com", Tools: []string{"retaindb_search"}, Password: true, Category: "tool"}},
-	{"RETAINDB_BASE_URL", EnvVar{Description: "Base URL for self-hosted RetainDB instances (default: https://api.retaindb.com)", Prompt: "RetainDB base URL", Category: "tool", Advanced: true}},
+	{"RETAINDB_BASE_URL", EnvVar{Description: "Base URL for self-hosted RetainDB instances (default: https://api.retaindb.com)", Prompt: "RetainDB base URL", Category: "tool", Advanced: true, PasswordOmitted: true}},
 	{"BRV_API_KEY", EnvVar{Description: "ByteRover API key (optional, for cloud sync — local-first by default)", Prompt: "ByteRover API key", URL: "https://app.byterover.dev", Tools: []string{"brv_query"}, Password: true, Category: "tool"}},
 	{"OPENVIKING_API_KEY", EnvVar{Description: "OpenViking API key (leave blank for local dev mode)", Prompt: "OpenViking API key", Tools: []string{"viking_search"}, Password: true, Category: "tool"}},
-	{"OPENVIKING_ENDPOINT", EnvVar{Description: "OpenViking server URL (default: http://127.0.0.1:1933)", Prompt: "OpenViking endpoint", Category: "tool", Advanced: true}},
+	{"OPENVIKING_ENDPOINT", EnvVar{Description: "OpenViking server URL (default: http://127.0.0.1:1933)", Prompt: "OpenViking endpoint", Category: "tool", Advanced: true, PasswordOmitted: true}},
 	{"TELEGRAM_BOT_TOKEN", EnvVar{Description: "Complete Telegram bot token created by @BotFather (numeric bot ID followed by a colon and secret)", Prompt: "Telegram bot token", URL: "https://t.me/BotFather", Password: true, Category: "messaging"}},
 	{"TELEGRAM_ALLOWED_USERS", EnvVar{Description: "Optional comma-separated numeric Telegram user IDs allowed immediately; leave blank to approve new users through DM pairing", Prompt: "Allowed Telegram user IDs (comma-separated)", URL: "https://t.me/userinfobot", Category: "messaging"}},
 	{"TELEGRAM_PROXY", EnvVar{Description: "Proxy URL for Telegram connections (overrides HTTPS_PROXY). Supports http://, https://, socks5://", Prompt: "Telegram proxy URL (optional)", Category: "messaging"}},
@@ -442,15 +444,15 @@ var optionalEnvDecl = []NamedEnvVar{
 	{"BLUEBUBBLES_SERVER_URL", EnvVar{Description: "BlueBubbles server URL for iMessage integration (e.g. http://192.168.1.10:1234)", Prompt: "BlueBubbles server URL", URL: "https://bluebubbles.app/", Category: "messaging"}},
 	{"BLUEBUBBLES_PASSWORD", EnvVar{Description: "BlueBubbles server password (from BlueBubbles Server → Settings → API)", Prompt: "BlueBubbles server password", Password: true, Category: "messaging"}},
 	{"BLUEBUBBLES_ALLOWED_USERS", EnvVar{Description: "Comma-separated iMessage addresses (email or phone) allowed to use the bot", Prompt: "Allowed iMessage addresses (comma-separated)", Category: "messaging"}},
-	{"BLUEBUBBLES_ALLOW_ALL_USERS", EnvVar{Description: "Allow all BlueBubbles users without allowlist", Prompt: "Allow All BlueBubbles Users", Category: "messaging"}},
-	{"QQ_APP_ID", EnvVar{Description: "QQ Bot App ID from QQ Open Platform (q.qq.com)", Prompt: "QQ App ID", URL: "https://q.qq.com", Category: "messaging"}},
+	{"BLUEBUBBLES_ALLOW_ALL_USERS", EnvVar{Description: "Allow all BlueBubbles users without allowlist", Prompt: "Allow All BlueBubbles Users", Category: "messaging", PasswordOmitted: true}},
+	{"QQ_APP_ID", EnvVar{Description: "QQ Bot App ID from QQ Open Platform (q.qq.com)", Prompt: "QQ App ID", URL: "https://q.qq.com", Category: "messaging", PasswordOmitted: true}},
 	{"QQ_CLIENT_SECRET", EnvVar{Description: "QQ Bot Client Secret from QQ Open Platform", Prompt: "QQ Client Secret", Password: true, Category: "messaging"}},
-	{"QQ_ALLOWED_USERS", EnvVar{Description: "Comma-separated QQ user IDs allowed to use the bot", Prompt: "QQ Allowed Users", Category: "messaging"}},
-	{"QQ_GROUP_ALLOWED_USERS", EnvVar{Description: "Comma-separated QQ group IDs allowed to interact with the bot", Prompt: "QQ Group Allowed Users", Category: "messaging"}},
-	{"QQ_ALLOW_ALL_USERS", EnvVar{Description: "Allow all QQ users without an allowlist (true/false)", Prompt: "Allow All QQ Users", Category: "messaging"}},
-	{"QQBOT_HOME_CHANNEL", EnvVar{Description: "Default QQ channel/group for cron delivery and notifications", Prompt: "QQ Home Channel", Category: "messaging"}},
-	{"QQBOT_HOME_CHANNEL_NAME", EnvVar{Description: "Display name for the QQ home channel", Prompt: "QQ Home Channel Name", Category: "messaging"}},
-	{"QQ_SANDBOX", EnvVar{Description: "Enable QQ sandbox mode for development testing (true/false)", Prompt: "QQ Sandbox Mode", Category: "messaging"}},
+	{"QQ_ALLOWED_USERS", EnvVar{Description: "Comma-separated QQ user IDs allowed to use the bot", Prompt: "QQ Allowed Users", Category: "messaging", PasswordOmitted: true}},
+	{"QQ_GROUP_ALLOWED_USERS", EnvVar{Description: "Comma-separated QQ group IDs allowed to interact with the bot", Prompt: "QQ Group Allowed Users", Category: "messaging", PasswordOmitted: true}},
+	{"QQ_ALLOW_ALL_USERS", EnvVar{Description: "Allow all QQ users without an allowlist (true/false)", Prompt: "Allow All QQ Users", Category: "messaging", PasswordOmitted: true}},
+	{"QQBOT_HOME_CHANNEL", EnvVar{Description: "Default QQ channel/group for cron delivery and notifications", Prompt: "QQ Home Channel", Category: "messaging", PasswordOmitted: true}},
+	{"QQBOT_HOME_CHANNEL_NAME", EnvVar{Description: "Display name for the QQ home channel", Prompt: "QQ Home Channel Name", Category: "messaging", PasswordOmitted: true}},
+	{"QQ_SANDBOX", EnvVar{Description: "Enable QQ sandbox mode for development testing (true/false)", Prompt: "QQ Sandbox Mode", Category: "messaging", PasswordOmitted: true}},
 	{"IRC_SERVER", EnvVar{Description: "IRC server hostname (e.g. irc.libera.chat)", Prompt: "IRC server", Category: "messaging"}},
 	{"IRC_CHANNEL", EnvVar{Description: "IRC channel to join (e.g. #icebath)", Prompt: "IRC channel", Category: "messaging"}},
 	{"IRC_NICKNAME", EnvVar{Description: "Bot nickname on IRC (default: icebath-bot)", Prompt: "IRC nickname", Category: "messaging"}},

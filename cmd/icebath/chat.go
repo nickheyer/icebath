@@ -14,8 +14,8 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
@@ -454,8 +454,7 @@ func authStoreLoggedIn(authFile string, rows []*provider.Profile, strictProfileS
 }
 
 // Whether at least one inference provider is usable, never creating one
-func hasAnyProviderConfigured(strictProfileScope bool) bool {
-	ctx := context.Background()
+func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool {
 	h := home.Dir(ctx)
 	cfg, err := config.Load(h, nil)
 	if err != nil {
@@ -621,6 +620,12 @@ func readLineBeforeEOF() (string, bool) {
 
 // No provider configured, offers icebath setup on a TTY or exits 1 with guidance
 func firstRunSetupGuard(a *chatArgs) {
+	code, _ := firstRunSetupGuardCode(a)
+	exit(code)
+}
+
+// The first run guard, its exit code and whether it raised SystemExit, a completed setup returning normally
+func firstRunSetupGuardCode(a *chatArgs) (int, bool) {
 	fmt.Println()
 	fmt.Println("It looks like Icebath isn't configured yet -- no API keys or providers found.")
 	fmt.Println()
@@ -628,7 +633,7 @@ func firstRunSetupGuard(a *chatArgs) {
 	fmt.Println()
 	if !app.IsInteractiveStdin() {
 		app.PrintNoninteractiveSetupGuidance("No interactive TTY detected for the first-run setup prompt.")
-		exit(1)
+		return 1, true
 	}
 	fmt.Print("Run setup now? [Y/n] ")
 	reply, ok := readLineBeforeEOF()
@@ -637,11 +642,12 @@ func firstRunSetupGuard(a *chatArgs) {
 	}
 	reply = strings.ToLower(strings.TrimSpace(reply))
 	if reply == "" || reply == "y" || reply == "yes" {
-		exit(cmdSetup(a))
+		code := cmdSetup(a)
+		return code, code != 0
 	}
 	fmt.Println()
 	fmt.Println("You can run 'icebath setup' at any time to configure.")
-	exit(1)
+	return 1, true
 }
 
 // Termux bundled skills sync fingerprint, the checkout revision or the skills tree stat
@@ -753,7 +759,7 @@ func cmdChat(a *chatArgs) int {
 	}
 	resolveChatSessionArgs(a, useTUI)
 	warnRetiredXAIModels()
-	providerConfigured := hasAnyProviderConfigured(false)
+	providerConfigured := hasAnyProviderConfigured(context.Background(), false)
 	if !useTUI && !providerConfigured {
 		firstRunSetupGuard(a)
 		return 0
@@ -817,30 +823,93 @@ func readQueryFile(a *chatArgs) {
 	}
 }
 
-// Frontend startup check shared by classic chat and top level one shot, false when setup was offered
-func ensureLaunchProvider(a *chatArgs) bool {
-	if gateway.BypassLaunch(a.SafeMode, a.IgnoreUserConfig, a.TUI) {
-		return true
+// Frontend startup check shared by classic chat and top level one shot, false when setup was offered, hermes_cli/gateway_chat_startup.py ensure_launch_provider
+func ensureLaunchProvider(a *chatArgs) (bool, error) {
+	if app.BypassLaunch(gatewayChatNamespace(a)) {
+		return true, nil
 	}
 	if a.Resume != "" || strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_URL")) != "" || a.BaseURL != "" || a.APIKey != "" {
-		return true
+		return true, nil
 	}
 	provider.RunFreeTierBootstrap(provider.HomePoolEnv(home.Dir(context.Background())), false)
-	if hasAnyProviderConfigured(false) {
-		return true
+	if hasAnyProviderConfigured(context.Background(), false) {
+		return true, nil
 	}
-	firstRunSetupGuard(a)
-	return false
+	if code, exited := firstRunSetupGuardCode(a); exited {
+		return false, &pm.SystemExit{Code: code}
+	}
+	return false, nil
+}
+
+// The chat flags as the argparse namespace the gateway chat launch reads
+func gatewayChatNamespace(a *chatArgs) map[string]any {
+	ns := map[string]any{"output_format": a.OutputFormat}
+	text := func(key, value string) {
+		if value != "" {
+			ns[key] = value
+		}
+	}
+	flag := func(key string, value bool) {
+		if value {
+			ns[key] = true
+		}
+	}
+	text("query", a.Query)
+	text("query_file", a.QueryFile)
+	text("oneshot", a.Oneshot)
+	text("model", a.Model)
+	text("provider", a.Provider)
+	text("toolsets", a.Toolsets)
+	text("reasoning", a.Reasoning)
+	text("resume", a.Resume)
+	text("in_dir", a.In)
+	text("source", a.Source)
+	text("usage_file", a.UsageFile)
+	text("image", a.Image)
+	text("api_key", a.APIKey)
+	text("base_url", a.BaseURL)
+	switch {
+	case a.Continue == commands.FlagPresent:
+		ns["continue_last"] = true
+	case a.Continue != "":
+		ns["continue_last"] = a.Continue
+	}
+	if len(a.Skills) > 0 {
+		skills := make([]any, len(a.Skills))
+		for i, s := range a.Skills {
+			skills[i] = s
+		}
+		ns["skills"] = skills
+	}
+	if a.MaxTurns != nil {
+		ns["max_turns"] = int64(*a.MaxTurns)
+	}
+	if a.RunBudget != 0 {
+		ns["run_budget"] = a.RunBudget
+	}
+	flag("oneshot_exit", a.OneshotExit)
+	flag("create_if_missing", a.CreateIfMissing)
+	flag("safe_mode", a.SafeMode)
+	flag("ignore_user_config", a.IgnoreUserConfig)
+	flag("ignore_rules", a.IgnoreRules)
+	flag("yolo", a.Yolo)
+	flag("accept_hooks", a.AcceptHooks)
+	flag("quiet", a.Quiet)
+	flag("verbose", a.Verbose)
+	flag("checkpoints", a.Checkpoints)
+	flag("pass_session_id", a.PassSessionID)
+	flag("worktree", a.Worktree)
+	flag("no_restore_cwd", a.NoRestoreCWD)
+	flag("compact", a.Compact)
+	flag("tui", a.TUI)
+	return ns
 }
 
 // The transport launcher of a gateway run chat, hermes_cli/gateway_chat_startup.py launch_gateway_chat
 func launchGatewayChat(a *chatArgs) int {
-	if !gateway.BypassLaunch(a.SafeMode, a.IgnoreUserConfig, a.TUI) {
+	ns := gatewayChatNamespace(a)
+	if !app.BypassLaunch(ns) {
 		confirmStartupExpensiveModelOverride(a)
 	}
-	return gateway.LaunchChatFromArgs(context.Background(), gateway.ChatLaunchArgs{Query: a.Query, QueryFile: a.QueryFile, Oneshot: a.Oneshot,
-		OneshotExit: a.OneshotExit, Model: a.Model, Provider: a.Provider, Toolsets: a.Toolsets, Skills: a.Skills, Reasoning: a.Reasoning,
-		Resume: a.Resume, UsageFile: a.UsageFile, SafeMode: a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig, IgnoreRules: a.IgnoreRules,
-		TUI: a.TUI, Yolo: a.Yolo, AcceptHooks: a.AcceptHooks, OutputFormat: a.OutputFormat, Quiet: a.Quiet, Verbose: a.Verbose, Image: a.Image,
-		APIKey: a.APIKey, BaseURL: a.BaseURL, EnsureProvider: ensureLaunchProvider(a)})
+	return app.LaunchFromArgs(context.Background(), ns, func() (bool, error) { return ensureLaunchProvider(a) })
 }

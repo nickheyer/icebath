@@ -13,11 +13,13 @@ import (
 // Swaps the git runner and the negative TTL, invalidating the cache before and after
 func swapTUIGit(t *testing.T, run func(string, ...string) string, negTTL time.Duration) {
 	t.Helper()
-	oldRun, oldTTL := tuiRunGit, tuiGitNegTTL
-	tuiRunGit, tuiGitNegTTL = run, negTTL
+	oldTTL := tuiGitNegTTL
+	oldRun := setTUIRunGit(run)
+	tuiGitNegTTL = negTTL
 	GitProbeInvalidate()
 	t.Cleanup(func() {
-		tuiRunGit, tuiGitNegTTL = oldRun, oldTTL
+		setTUIRunGit(oldRun)
+		tuiGitNegTTL = oldTTL
 		GitProbeInvalidate()
 	})
 }

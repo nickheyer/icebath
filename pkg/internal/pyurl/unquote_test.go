@@ -13,3 +13,13 @@ func TestUnquoteMatchesUrllib(t *testing.T) {
 		}
 	}
 }
+
+func TestUnquoteLatin1MatchesUrllib(t *testing.T) {
+	for in, want := range map[string]string{
+		"r%C3%A9sum%C3%A9.pdf": "rÃ©sumÃ©.pdf", "100%": "100%", "%zz%4": "%zz%4", "%ff%41": "ÿA", "café%20x": "café x", "plain": "plain",
+	} {
+		if got := UnquoteLatin1(in); got != want {
+			t.Errorf("%q -> %q want %q", in, got, want)
+		}
+	}
+}

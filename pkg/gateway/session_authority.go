@@ -42,17 +42,29 @@ type LiveSession struct {
 	Detaching     int
 	ClosedStamp   *closedStamp
 	ReviewRun     reviewRun
+	ReviewLock    sync.Mutex
 	mutationLock  sync.Mutex
 	PauseNotified bool
 	ReaskPick     bool
 	// Principal and level of a reasoning command that arrived while a turn ran
 	PendingReasoning *pendingReasoning
 	CompressionCount int
+	// Context breakdown payload and the inputs it was built from
+	contextBreakdown *contextBreakdownCache
 	// Tool progress mode a viewer set for this session, empty when none was set
 	ToolProgressMode string
-	controls         *PendingControls
-	controlsOnce     sync.Once
-	claimGate        sync.Mutex
+	// Busy input mode a viewer negotiated for this session, empty when none was set
+	BusyInputMode string
+	// Reasoning display a viewer or the reasoning command set for this session, nil when unset
+	ShowReasoning *bool
+	// Control card publish tickets and the revision last painted, guarded by ControlMu
+	ControlMu           sync.Mutex
+	ControlSeq          int
+	ControlPublishedSeq int
+	ControlRevision     string
+	controls            *PendingControls
+	controlsOnce        sync.Once
+	claimGate           sync.Mutex
 }
 
 // Live session on a route with a fresh event stream
@@ -83,6 +95,8 @@ type SessionAuthority struct {
 	managedWorkers         map[string]managedWorkerHandle
 	managedSpawning        map[string]any
 	sideAgents             map[any]sideAgentHolder
+	turnWorkers            map[TurnWorkerHandle]sideAgentInterruptible
+	oneshotPool            *oneshotPool
 	retiredLocal           map[string]bool
 	launchSources          map[string]any
 	executing              map[string]int64
@@ -124,6 +138,10 @@ type SessionAuthority struct {
 	apiObservers           map[string][]*APIObserver
 	titledCreateLock       asyncLock
 	botReplyWatchers       map[string]*botReplyWatch
+	policyRefreshes        map[string]*trackedTask
+	pendingAdoptions       map[string]bool
+	viewerAutomation       map[string]*AuthorityConnection
+	viewerHeartbeat        map[string]*AuthorityConnection
 }
 
 // Authority over a profile store at its runtime epoch

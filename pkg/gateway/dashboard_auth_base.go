@@ -78,24 +78,8 @@ type DashboardAuthTypeError struct{ Msg string }
 func (e *DashboardAuthTypeError) Error() string      { return e.Msg }
 func (e *DashboardAuthTypeError) PyTypeName() string { return "TypeError" }
 
-var pyjwtParents = map[string]string{
-	"DecodeError": "InvalidTokenError", "InvalidSignatureError": "DecodeError", "ExpiredSignatureError": "InvalidTokenError",
-	"InvalidAudienceError": "InvalidTokenError", "InvalidIssuerError": "InvalidTokenError", "InvalidIssuedAtError": "InvalidTokenError",
-	"ImmatureSignatureError": "InvalidTokenError", "InvalidJTIError": "InvalidTokenError", "InvalidSubjectError": "InvalidTokenError",
-	"MissingRequiredClaimError": "InvalidTokenError", "InvalidAlgorithmError": "InvalidTokenError", "InvalidTokenError": "PyJWTError",
-	"InvalidKeyError": "PyJWTError", "PyJWKError": "PyJWTError", "MissingCryptographyError": "PyJWKError", "PyJWKSetError": "PyJWTError",
-	"PyJWKClientError": "PyJWTError", "PyJWKClientConnectionError": "PyJWKClientError",
-}
-
 // Whether a PyJWT exception class is the named class or one of its subclasses
-func pyjwtIsInstance(class, base string) bool {
-	for c := class; c != ""; c = pyjwtParents[c] {
-		if c == base {
-			return true
-		}
-	}
-	return false
-}
+func pyjwtIsInstance(class, base string) bool { return pyjwt.ClassIs(class, base) }
 
 // Python repr of an exception, its class name around the quoted message
 func exceptionRepr(err error) string {

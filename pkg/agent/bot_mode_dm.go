@@ -117,7 +117,7 @@ func ensureMessageAgentTool(ctx context.Context, a *AIAgent) (ok bool) {
 // The agent's own home from its session db path, the process home when it has none
 func botModeAgentHome(a *AIAgent) string {
 	if a.sessionDB != nil {
-		if p := a.sessionDB.Path(); p != "" {
+		if p := sessionStorePath(a.sessionDB); p != "" {
 			return filepath.Dir(p)
 		}
 	}

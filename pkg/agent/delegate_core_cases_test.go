@@ -212,8 +212,8 @@ func TestDelegateTaskChildDedicatedDbFollowsParentsDbPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	childDB := (*built)[0].SessionDB
-	if childDB == nil || childDB.Path() != parentDB.Path() || filepath.Base(filepath.Dir(childDB.Path())) != "profile-work" {
+	childDB := sessionStorePath((*built)[0].SessionDB)
+	if childDB == "" || childDB != parentDB.Path() || filepath.Base(filepath.Dir(childDB)) != "profile-work" {
 		t.Fatalf("child db %v", childDB)
 	}
 	closeChild(child, "")

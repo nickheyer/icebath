@@ -902,7 +902,7 @@ func (c *CLI) Execute(argv []string) error {
 		argv = append(append([]string{}, argv[:index]...), argv[index+consume:]...)
 	}
 	argv = c.joinOptionalValues(CoalesceSessionNameArgs(argv))
-	argv = rewriteMCPAddArgs(argv)
+	argv = c.expandNargsPlus(rewriteMCPAddArgs(argv))
 	c.argv = argv
 	c.Root.SetArgs(argv)
 	return argparseFlagError(c.Root, c.Root.Execute())

@@ -15,7 +15,7 @@ import (
 )
 
 // Route and effort a built agent reports as its session's own, mid voice turn included
-type sessionRuntimeFacts interface {
+type SessionRuntimeFacts interface {
 	Provider() string
 	BaseURL() string
 	APIMode() string
@@ -29,7 +29,7 @@ type sessionInfoAgent interface {
 	APIKey() string
 	ServiceTier() string
 	ToolDefinitions() []map[string]any
-	SessionRuntime() sessionRuntimeFacts
+	SessionRuntime() SessionRuntimeFacts
 }
 
 // Peeked session state of a route as session info reads it

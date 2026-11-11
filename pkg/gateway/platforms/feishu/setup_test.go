@@ -193,7 +193,9 @@ func runSetupFeishu(t *testing.T, qr *Registration, choices []int, prompts []str
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	captureOutput(t)
 	savedCLI, savedConfig, savedSetup := gateway.WizardCLI, gateway.WizardConfig, gateway.WizardSetup
-	t.Cleanup(func() { gateway.WizardCLI, gateway.WizardConfig, gateway.WizardSetup = savedCLI, savedConfig, savedSetup })
+	t.Cleanup(func() {
+		gateway.WizardCLI, gateway.WizardConfig, gateway.WizardSetup = savedCLI, savedConfig, savedSetup
+	})
 	saved, removed := map[string]string{}, []string{}
 	gateway.WizardConfig.SaveEnvValue = func(_ context.Context, k, v string) error { saved[k] = v; return nil }
 	gateway.WizardConfig.GetEnvValue = func(_ context.Context, k string) (string, error) { return existing[k], nil }

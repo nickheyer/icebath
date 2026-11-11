@@ -79,7 +79,7 @@ func envWriteBlocked(ctx context.Context, h, key, action string) bool {
 // Error carrying the refusal when the .env write lock forbids key
 func RequireEnvWritable(ctx context.Context, h, key, action string) error {
 	if refusal := EnvWriteRefusal(ctx, h, key, action); refusal != "" {
-		return errors.New(refusal)
+		return &EnvValueError{refusal}
 	}
 	return nil
 }
@@ -98,7 +98,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 		return false, nil
 	}
 	if !envVarNameRe.MatchString(key) {
-		return false, fmt.Errorf("Invalid environment variable name: %s", pyStringRepr(key))
+		return false, &EnvValueError{fmt.Sprintf("Invalid environment variable name: %s", pyStringRepr(key))}
 	}
 	path := home.EnvPath(h)
 	if _, err := os.Stat(path); err != nil {

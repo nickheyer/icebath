@@ -69,7 +69,10 @@ func frozenRouteProvider(frozen map[string]any) (string, error) {
 
 // Model and agent kwargs of a launch policy session from its frozen route and launch key, the chain walked unless fallback is off
 func resolvePolicyAgentRuntime(ctx context.Context, r *GatewayRunner, policy *gateway.LocalSessionPolicy, fallback bool) (string, map[string]any, error) {
-	authority := gateway.ActiveAuthority(r)
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return "", nil, err
+	}
 	frozen, model, err := policy.EffectiveFor(ctx, authority, true)
 	if err != nil {
 		return "", nil, err

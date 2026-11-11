@@ -104,7 +104,7 @@ func envVarPolicyName(key string) string {
 // Rejects an invalid name or one on the writer denylist before a generic persistence write
 func ValidateEnvNameForWrite(key string) error {
 	if !envVarNameRe.MatchString(key) {
-		return fmt.Errorf("Invalid environment variable name: %s", PyRepr(key))
+		return &EnvValueError{fmt.Sprintf("Invalid environment variable name: %s", PyRepr(key))}
 	}
 	policy := envVarPolicyName(key)
 	denied := envVarNameDenylist[policy]
@@ -115,10 +115,10 @@ func ValidateEnvNameForWrite(key string) error {
 		denied = denied || strings.HasPrefix(policy, prefix)
 	}
 	if denied {
-		return fmt.Errorf("Environment variable %s is on the writer denylist. "+
+		return &EnvValueError{fmt.Sprintf("Environment variable %s is on the writer denylist. "+
 			"Names that influence subprocess execution (LD_PRELOAD, PYTHONPATH, PATH, EDITOR, ...) "+
 			"or Icebath runtime location and security policy (ICEBATH_HOME, ICEBATH_YOLO_MODE, ...) "+
-			"cannot be persisted via the env writer. If you really need this, edit ~/.icebath/.env directly.", PyRepr(key))
+			"cannot be persisted via the env writer. If you really need this, edit ~/.icebath/.env directly.", PyRepr(key))}
 	}
 	return nil
 }

@@ -125,7 +125,11 @@ func (r *GatewayRunner) admitWatchNotification(ctx context.Context, adapter gate
 	if primer, ok := adapter.(gateway.RoutingCachePrimer); ok {
 		primer.PrimeRoutingCache(synthEvent)
 	}
-	if authority := gateway.ActiveAuthority(r); authority != nil {
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return err
+	}
+	if authority != nil {
 		if _, err := gateway.AdmitProcessNotice(ctx, r, authority, adapter, synthEvent, evt); err != nil {
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {

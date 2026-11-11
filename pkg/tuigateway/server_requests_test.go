@@ -9,24 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Model that accepts every value, standing for the catalog entries of the topic declarations
-type acceptingModel struct{}
-
-func (acceptingModel) ModelValidate(any) *ValidationError { return nil }
-
 type wireFrame struct{ event, id string }
 
 // Records request frames and events in wire order with every session answerable
 func wireSinks(t *testing.T) *[]wireFrame {
 	t.Helper()
-	for _, name := range []string{"sudo", "approval"} {
-		contractsMu.RLock()
-		_, declared := ServerRequests[name]
-		contractsMu.RUnlock()
-		if !declared {
-			ServerRequestOf(name, acceptingModel{}, acceptingModel{}, "")
-		}
-	}
 	var mu sync.Mutex
 	frames := &[]wireFrame{}
 	savedWrite, savedEmit, savedAnswerable, _ := currentSinks()

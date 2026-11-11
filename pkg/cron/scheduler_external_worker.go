@@ -120,8 +120,8 @@ func (w *execWorker) Poll() *int {
 	}
 }
 
-// Runs one handed off payload and exits when argv carries the entry, otherwise records that this binary handles it
-func DispatchExternalWorkerEntry() {
+// Runs one handed off payload and leaves through the binary's exit hooks when argv carries the entry
+func DispatchExternalWorkerEntry(exit func(code int)) {
 	externalWorkerEntryDispatched.Store(true)
 	if len(os.Args) < 2 || os.Args[1] != ExternalWorkerEntry {
 		return
@@ -133,16 +133,18 @@ func DispatchExternalWorkerEntry() {
 	ack := fs.String("ack-file", "", "")
 	if err := fs.Parse(os.Args[2:]); err != nil || *payload == "" || *ack == "" {
 		fmt.Fprintln(os.Stderr, "usage: --external-worker-file EXTERNAL_WORKER_FILE --ack-file ACK_FILE")
-		os.Exit(2)
+		exit(2)
+		return
 	}
 	if SetupWorkerLogging == nil {
 		panic("cron.SetupWorkerLogging is not wired, the binary assigns it before dispatching the worker entry")
 	}
 	_ = SetupWorkerLogging(home.Dir(context.Background()), "cron")
 	if runExternalWorkerPayload(context.Background(), *payload, *ack) {
-		os.Exit(0)
+		exit(0)
+		return
 	}
-	os.Exit(1)
+	exit(1)
 }
 
 // Hands the job to a restart safe worker under a managed gateway, false when the run stays in process

@@ -373,7 +373,7 @@ func (c *ContextCompressor) UpdateModel(model string, contextLength int, baseURL
 
 func (c *ContextCompressor) CloneForAgent() ContextEngine { return c.cloneForAgent() }
 
-func (c *ContextCompressor) BindSessionState(db *state.DB, sessionID string) error {
+func (c *ContextCompressor) BindSessionState(db SessionStore, sessionID string) error {
 	c.bindSessionState(sessionStoreOf(db), sessionID)
 	return nil
 }
@@ -549,7 +549,7 @@ func (c *ContextCompressor) SummaryFailureCooldownUntil() float64 {
 	return c.summaryFailureCooldownUntil
 }
 
-func (c *ContextCompressor) SetSessionDB(db *state.DB) { c.sessionDB = sessionStoreOf(db) }
+func (c *ContextCompressor) SetSessionDB(db SessionStore) { c.sessionDB = sessionStoreOf(db) }
 
 // Shares the agent rejected thinking fingerprints so the tail walk prices the replay the preflight prices
 func (c *ContextCompressor) SetRejectedThinkingTracker(t *provider.RejectedThinkingTracker) {

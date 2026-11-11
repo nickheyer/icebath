@@ -91,7 +91,10 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 	}
 	sessionKey := entry.SessionKey
 	if owner, generation, claimed := event.ClaimedOwner(); claimed {
-		authority := gateway.ActiveAuthority(r)
+		authority, err := gateway.ActiveAuthority(ctx, r)
+		if err != nil {
+			return nil, nil, "", err
+		}
 		if authority == nil {
 			return nil, nil, "", &gateway.PyError{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'pending_stops'"}
 		}

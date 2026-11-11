@@ -136,7 +136,7 @@ func (c *CLI) voiceStartRecording() error {
 	c.voiceLiveText = ""
 	rec.SetOnLivePartial(c.voiceOnLivePartial)
 	threshold, duration := 200.0, 3.0
-	rec.SetSilenceThreshold(int(*numericOr(voiceCfg["silence_threshold"], &threshold)))
+	rec.SetSilenceThreshold(*numericOr(voiceCfg["silence_threshold"], &threshold))
 	rec.SetSilenceDuration(*numericOr(voiceCfg["silence_duration"], &duration))
 	maxRec := 120.0
 	if m := numericOr(voiceCfg["max_recording_seconds"], nil); m != nil {

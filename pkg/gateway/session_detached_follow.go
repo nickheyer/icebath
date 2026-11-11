@@ -17,7 +17,10 @@ type completionOwnerRunner interface {
 
 // Running key of the conversation the chat's route names through its routing entry
 func chatRunningKey(ctx context.Context, runner AuthorityRunner, route string, entry *SessionEntry) (string, error) {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return "", err
+	}
 	if a == nil {
 		return route, nil
 	}

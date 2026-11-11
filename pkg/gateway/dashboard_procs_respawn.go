@@ -20,6 +20,9 @@ import (
 // Age under which an unowned Desktop local serve is still waiting for its lock record
 const reapMinAgeSeconds = 180.0
 
+// Settle window a Desktop gets to write its backend lock, shared with the dashboard owner watchdog
+const ReapMinAgeSeconds = reapMinAgeSeconds
+
 // Process scan, parent lookup and descendant snapshot of the orphan reap, swapped by tests
 var (
 	dashboardScan             = scanDashboardProcesses

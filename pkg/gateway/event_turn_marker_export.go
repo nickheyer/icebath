@@ -64,3 +64,20 @@ func DisplayEventOf(e *MessageEvent) DisplayEvent {
 	}
 	return messageDisplayEvent{e: e}
 }
+
+// Records the text streaming already delivered for the loop and goal hooks that read the turn result
+func (e *MessageEvent) SetStreamedFinalResponse(text string) {
+	eventTurnStateMu.Lock()
+	e.streamedFinalResponse = &text
+	eventTurnStateMu.Unlock()
+}
+
+// Text streaming already delivered for this turn, nil when the reply was not streamed
+func (e *MessageEvent) StreamedFinalResponse() *string {
+	eventTurnStateMu.Lock()
+	defer eventTurnStateMu.Unlock()
+	return e.streamedFinalResponse
+}
+
+// Records whether a queued chain's terminal notification reply is muted
+func (e *MessageEvent) SetNotificationReplyMuted(muted bool) { e.notificationReplyMuted = &muted }

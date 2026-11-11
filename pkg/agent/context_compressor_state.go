@@ -72,11 +72,11 @@ var (
 )
 
 // Session store as an untyped value, nil for a nil database pointer
-func sessionStoreOf(db *state.DB) any {
-	if db == nil {
-		return nil
+func sessionStoreOf(db SessionStore) any {
+	if store := sessionStoreOrNil(db); store != nil {
+		return store
 	}
-	return db
+	return nil
 }
 
 // Calls the named hermes getter on the store, ok false when the store lacks it

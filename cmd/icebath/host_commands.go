@@ -13,6 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsappcloud"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
@@ -290,8 +292,11 @@ func fallbackGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 
 func gatewayGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	ns := namespace(cli, cmd, path, args)
-	if path == "gateway enroll" {
+	switch path {
+	case "gateway enroll":
 		return gatewaycli.CmdGatewayEnroll(ctx, ns, cmd.OutOrStdout())
+	case "gateway ensure":
+		return gatewaycli.CmdGatewayEnsure(ctx, ns, cmd.OutOrStdout())
 	}
 	return gatewaycli.GatewayCommand(ctx, ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
@@ -555,11 +560,11 @@ func webappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 }
 
 func whatsappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdWhatsApp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return whatsapp.CmdWhatsApp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
 }
 
 func whatsappCloudGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdWhatsAppCloud(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return whatsappcloud.CmdWhatsAppCloud(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
 }
 
 func worktreeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

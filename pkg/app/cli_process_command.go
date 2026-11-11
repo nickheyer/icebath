@@ -92,7 +92,7 @@ func (c *CLI) processCommand(command string) bool {
 	if def != nil {
 		canonical = def.Name
 	}
-	if !redispatch {
+	if !redispatch && !c.slashMetricsOff {
 		observability.RecordSlashCommand(c.ctx, canonical, "cli")
 	}
 	if canonical != "resume" && canonical != "sessions" {

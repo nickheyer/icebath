@@ -146,7 +146,7 @@ type PlatformAdapter interface {
 	EnforcesOwnAccessPolicy() bool
 	AuthorizationIsUpstream() bool
 	SupportsDraftStreaming(chatType string, metadata map[string]any, chatID string) bool
-	PrefersFreshFinalStreaming(content string, metadata map[string]any) bool
+	PrefersFreshFinalStreaming(content string, metadata map[string]any, chatID string) bool
 	StreamingOverflowLimit() (int, bool)
 	SendDraft(ctx context.Context, chatID string, draftID int, content string, metadata map[string]any) (SendResult, error)
 	RenderMessageEvent(event StreamEvent, sink StreamSink)
@@ -241,6 +241,7 @@ type BasePlatformAdapter struct {
 
 	busySessionHandler        BusySessionHandler
 	ownerProfile              string
+	profileName               string
 	sharedListenerProfile     string
 	sharedIngress             *SharedIngress
 	authorizationCheck        AuthorizationCheck
@@ -439,7 +440,7 @@ func (b *BasePlatformAdapter) SupportsDraftStreaming(chatType string, metadata m
 }
 
 // Whether the stream consumer finalizes with a fresh message instead of editing the preview
-func (b *BasePlatformAdapter) PrefersFreshFinalStreaming(content string, metadata map[string]any) bool {
+func (b *BasePlatformAdapter) PrefersFreshFinalStreaming(content string, metadata map[string]any, chatID string) bool {
 	return false
 }
 

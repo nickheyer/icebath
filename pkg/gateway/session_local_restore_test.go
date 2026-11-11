@@ -359,25 +359,25 @@ func TestARestoreOnTheOwnerLoopHandsTheCatchUpToAWorker(t *testing.T) {
 	}
 }
 
-// Registry naming one served secondary profile beside the authorities it holds
-type recoverRegistry struct {
-	names map[*SessionAuthority]string
-	all   []*SessionAuthority
+// Multiplexed registry holding the launch authority in its slot and the served authority under its profile name
+func servedRegistry(t *testing.T, launch, served *SessionAuthority, name string) *SessionAuthorities {
+	t.Helper()
+	registry := NewSessionAuthorities(launch.ProfileID, true)
+	launchName := "default"
+	if err := registry.Add(launch.ProfileID, launch, &launchName); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Add(served.ProfileID, served, &name); err != nil {
+		t.Fatal(err)
+	}
+	return registry
 }
-
-func (r *recoverRegistry) ProfileName(a *SessionAuthority) (string, bool) {
-	name, served := r.names[a]
-	return name, served
-}
-func (r *recoverRegistry) Authorities() []*SessionAuthority { return r.all }
-func (r *recoverRegistry) Active() *SessionAuthority        { return r.all[0] }
-func (r *recoverRegistry) Serving() []*SessionAuthority     { return r.all }
-func (r *recoverRegistry) LaunchKey() string                { return "" }
-func (r *recoverRegistry) ForHome(string) *SessionAuthority { return nil }
 
 // Marks the authority as the served secondary profile of its runner, as a multiplex gateway builds one
-func recoverServe(a *SessionAuthority) *SessionAuthority {
-	a.Runner.(*recoverTestRunner).registry = &recoverRegistry{names: map[*SessionAuthority]string{a: "secondary"}, all: []*SessionAuthority{a}}
+func recoverServe(t *testing.T, a *SessionAuthority) *SessionAuthority {
+	t.Helper()
+	launch := &SessionAuthority{Runner: a.Runner, ProfileID: t.TempDir()}
+	a.Runner.(*recoverTestRunner).registry = servedRegistry(t, launch, a, "secondary")
 	return a
 }
 
@@ -432,7 +432,7 @@ func recoverLogLines(logs string, sid string) []string {
 
 func TestLiveSessionRebuildsARouteEntryMissingFromTheStore(t *testing.T) {
 	ctx, a, runner := newRecoverAuthority(t)
-	served := recoverServe(a)
+	served := recoverServe(t, a)
 	actor := Principal{Subject: "owner", ProfileID: served.ProfileID, TransportID: "socket",
 		Capabilities: map[string]bool{"session:create": true, "session:read": true}}
 	ref, _ := seedRecoverSession(t, ctx, served, actor, recoverGUIParams("live", t.TempDir()))
@@ -483,13 +483,13 @@ func TestARefusedReceiptNamesItsFailingCheckInTheLog(t *testing.T) {
 	for _, damage := range damages {
 		t.Run(damage.name, func(t *testing.T) {
 			ctx, a, _ := newRecoverAuthority(t)
-			served := recoverServe(a)
+			served := recoverServe(t, a)
 			actor := Principal{Subject: "owner", ProfileID: served.ProfileID, TransportID: "socket",
 				Capabilities: map[string]bool{"session:create": true, "session:read": true}}
 			ref, _ := seedRecoverSession(t, ctx, served, actor, recoverGUIParams(damage.name, t.TempDir()))
 			damage.apply(t, ctx, served.DB, ref.SessionID)
 			logs := captureLogs(t)
-			cold := recoverServe(recoverColdOwner(t, ctx, served.DB, "second"))
+			cold := recoverServe(t, recoverColdOwner(t, ctx, served.DB, "second"))
 			if err := adoptLocalCompressions(ctx, cold); err != nil {
 				t.Fatal(err)
 			}
@@ -534,7 +534,7 @@ func servedAlphaOwner(t *testing.T, ctx context.Context, db *state.SessionDB, in
 	store.bindLocalAuthorityEpoch(key, epoch, true)
 	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, filepath.Dir(db.Path()), instanceID, db, epoch)
-	runner.registry = &recoverRegistry{names: map[*SessionAuthority]string{a: "alpha"}, all: []*SessionAuthority{a}}
+	runner.registry = servedRegistry(t, &SessionAuthority{Runner: runner, ProfileID: t.TempDir()}, a, "alpha")
 	return a
 }
 

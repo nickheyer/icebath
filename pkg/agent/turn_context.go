@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -58,6 +59,7 @@ type turnContextState struct {
 	persistUserMessagePlatformID                 *string
 	currentTaskID                                string
 	processOwnerTaskIDs                          map[string]bool
+	processOwnerMu                               sync.Mutex
 	invalidToolRetries, invalidJSONRetries       int
 	incompleteScratchpadRetries                  int
 	thinkingPrefillRetries                       int
@@ -445,10 +447,12 @@ func bindTurnIdentity(a *AIAgent, taskID string, streamCallback func(string), pe
 		effectiveTaskID = uuid.NewString()
 	}
 	a.currentTaskID = effectiveTaskID
+	a.processOwnerMu.Lock()
 	if a.processOwnerTaskIDs == nil {
 		a.processOwnerTaskIDs = map[string]bool{}
 	}
 	a.processOwnerTaskIDs[effectiveTaskID] = true
+	a.processOwnerMu.Unlock()
 	turnID := a.relayPendingTurnID
 	if turnID == "" {
 		session := a.sessionID

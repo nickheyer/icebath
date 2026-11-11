@@ -24,13 +24,8 @@ type backgroundReviewKwargs struct {
 	explicit         bool
 }
 
-// Automatic background review of the turn snapshot with hermes defaults for focus and explicit
-func (a *AIAgent) spawnBackgroundReview(messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool) {
-	a.spawnBackgroundReviewWith(context.Background(), messagesSnapshot, reviewMemory, reviewSkills, nil, false)
-}
-
 // Spawns or idle queues a background review, skipping automatic ones for subagents or when disabled
-func (a *AIAgent) spawnBackgroundReviewWith(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool) {
+func (a *AIAgent) spawnBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool) {
 	if !explicit && focus == nil && a.delegateDepth > 0 {
 		return
 	}
@@ -199,8 +194,10 @@ func (a *AIAgent) ReleaseClients(ctx context.Context) {
 }
 
 // Releases every resource the agent holds, each step isolated so one failure never blocks the rest
-func (a *AIAgent) Close() error {
-	ctx := context.Background()
+func (a *AIAgent) Close() error { return a.CloseContext(context.Background()) }
+
+// Releases every resource the agent holds under the caller's profile scope, each step isolated
+func (a *AIAgent) CloseContext(ctx context.Context) error {
 	sessionMessages := a.sessionMessages
 	var dicts []map[string]any
 	if sessionMessages != nil {
@@ -295,9 +292,14 @@ func (a *AIAgent) finalizeOwnedSessionRow() {
 	if a.endSessionOnClose && db != nil && sid != "" {
 		quietly(func() error { return db.EndSession(sid, "agent_close") })
 	}
+	if a.recallDB != nil {
+		recall := a.recallDB
+		a.recallDB = nil
+		quietly(recall.Close)
+	}
 	if a.ownsSessionDB && db != nil {
 		a.ownsSessionDB = false
-		state.ReleaseOrClose(db)
+		releaseOrCloseStore(db)
 	}
 }
 

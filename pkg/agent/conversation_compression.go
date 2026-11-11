@@ -21,28 +21,7 @@ var syntheticUserFlags = []string{
 
 // String content or the newline joined text of dict parts, empty for anything else
 func compressionMessageText(message map[string]any) string {
-	switch content := message["content"].(type) {
-	case string:
-		return content
-	case []any:
-		parts := make([]string, 0, len(content))
-		for _, raw := range content {
-			part, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			value := part["text"]
-			if !pyrepr.Truthy(value) {
-				value = part["content"]
-			}
-			if !pyrepr.Truthy(value) {
-				value = ""
-			}
-			parts = append(parts, pyrepr.Str(value))
-		}
-		return strings.Join(parts, "\n")
-	}
-	return ""
+	return state.CompressionMessageText(message)
 }
 
 // Human intent user row, false for runtime scaffolding, synthetic flags and compaction summaries

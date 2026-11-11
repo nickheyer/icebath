@@ -75,7 +75,7 @@ func TestDirectSessionDBFlushesShareMarkerClaim(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var mu sync.Mutex
 	calls, tokenFlushes := 0, 0
-	sessionDBAppendBatch = func(d *state.SessionDB, ctx context.Context, sid string, rows []map[string]any, g state.AppendGuards, chunk *int) (int, error) {
+	sessionDBAppendBatch = func(d SessionStore, ctx context.Context, sid string, rows []map[string]any, g state.AppendGuards, chunk *int) (int, error) {
 		mu.Lock()
 		calls++
 		first := calls == 1
@@ -90,7 +90,7 @@ func TestDirectSessionDBFlushesShareMarkerClaim(t *testing.T) {
 		}
 		return prevAppend(d, ctx, sid, rows, g, chunk)
 	}
-	sessionDBFlushTokenCounts = func(d *state.SessionDB, timeoutS float64) bool {
+	sessionDBFlushTokenCounts = func(d SessionStore, timeoutS float64) (bool, error) {
 		mu.Lock()
 		tokenFlushes++
 		mu.Unlock()

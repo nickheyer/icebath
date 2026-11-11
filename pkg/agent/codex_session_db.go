@@ -2,10 +2,9 @@ package agent
 
 import (
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
-type codexSessionStore struct{ db *state.DB }
+type codexSessionStore struct{ db SessionStore }
 
 func (s codexSessionStore) GetModelConfigValue(id, key string) (any, bool, error) {
 	return s.db.GetModelConfigValue(id, key)
@@ -21,7 +20,7 @@ func (s codexSessionStore) QueueTokenCounts(sessionID, source string, counts map
 }
 
 // Session store view the codex app server runtime writes through, nil without a session DB
-func codexSessionDBFor(db *state.DB) provider.CodexSessionDB {
+func codexSessionDBFor(db SessionStore) provider.CodexSessionDB {
 	if db == nil {
 		return nil
 	}

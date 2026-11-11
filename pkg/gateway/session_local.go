@@ -342,14 +342,14 @@ func allAuthorities(runner any) []*SessionAuthority {
 }
 
 // Authority of the active runtime scope, the single launch authority of a runner without a registry
-func activeAuthority(runner any) *SessionAuthority {
+func activeAuthority(ctx context.Context, runner any) (*SessionAuthority, error) {
 	if registry := registryOf(runner); registry != nil {
-		return registry.Active()
+		return registry.Active(ctx)
 	}
 	if bare, ok := runner.(launchAuthorityRunner); ok {
-		return bare.SessionAuthority()
+		return bare.SessionAuthority(), nil
 	}
-	return nil
+	return nil, nil
 }
 
 // Frozen policy of a local source its adapter admits, nil for other routes, refused when none is held

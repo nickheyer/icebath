@@ -52,7 +52,10 @@ func eventText(event map[string]any, key string) string {
 
 // Admission carrying a completion's identity on its route's owner, pending or settled, nil when none does
 func completionAdmission(ctx context.Context, runner AuthorityRunner, event map[string]any) (*pyjson.Object, error) {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
 	if a == nil {
 		return nil, nil
 	}
@@ -160,7 +163,10 @@ func replacedTickClaimed(ctx context.Context, runner AuthorityRunner, prepared m
 	if !pyrepr.Truthy(replaced) {
 		return false, nil
 	}
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return false, err
+	}
 	if a == nil {
 		return false, nil
 	}
@@ -357,7 +363,10 @@ func automationIdentityList(value any) []string {
 
 // Liveness tick to admit replacing a queued tick of its process, nil once its completion is in
 func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[string]any) (map[string]any, error) {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
 	if a == nil {
 		return event, nil
 	}
@@ -431,7 +440,10 @@ func withdrawProcessTicks(ctx context.Context, runner AuthorityRunner, event map
 
 // Withdrawal body of a finished process's queued ticks
 func withdrawTicks(ctx context.Context, runner AuthorityRunner, event map[string]any) error {
-	a := activeAuthority(runner)
+	a, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return err
+	}
 	if a == nil {
 		return nil
 	}

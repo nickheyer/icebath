@@ -202,7 +202,7 @@ func TestBackgroundReviewReleasesClientsWithoutClosingSharedSession(t *testing.T
 	brRecordReleases(t, func(*AIAgent) { events = append(events, "release_clients") })
 	brImmediateWorkers(t)
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	if strings.Join(events, ",") != "init,run_conversation,release_clients" {
 		t.Fatalf("events %v", events)
 	}
@@ -220,7 +220,7 @@ func TestBackgroundReviewForkOptsOutOfSessionFinalization(t *testing.T) {
 	})
 	brImmediateWorkers(t)
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	if len(rec.forks) != 1 || rec.forks[0].endSessionOnClose {
 		t.Fatal("fork still owns the parent's session row")
 	}
@@ -235,7 +235,7 @@ func TestBackgroundReviewSkippedInDelegationSubagent(t *testing.T) {
 	brImmediateWorkers(t)
 	agent := brLiveAgent(t)
 	agent.delegateDepth = 1
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, true, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, true, nil, false)
 	if len(rec.opts) != 0 {
 		t.Fatal("no review fork should be spawned inside a subagent")
 	}
@@ -250,12 +250,12 @@ func TestBackgroundReviewDisabledSkipsAutomaticSpawn(t *testing.T) {
 	t.Cleanup(func() { loadBackgroundReviewSettings = prev })
 	agent := brLiveAgent(t)
 	agent.delegateDepth = 0
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	if len(rec.opts) != 0 {
 		t.Fatal("automatic review must not spawn when disabled")
 	}
 	focus := "save the deploy workflow"
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, &focus, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, &focus, false)
 	if len(rec.opts) != 1 {
 		t.Fatalf("/refine must still run when enabled=false, forks %d", len(rec.opts))
 	}
@@ -268,7 +268,7 @@ func TestBackgroundReviewExplicitFocusRunsEvenInSubagent(t *testing.T) {
 	agent := brLiveAgent(t)
 	agent.delegateDepth = 2
 	focus := "save the deploy workflow as a skill"
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), false, true, &focus, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), false, true, &focus, false)
 	if len(rec.opts) != 1 {
 		t.Fatalf("explicit focus review must run even in a subagent, forks %d", len(rec.opts))
 	}
@@ -287,7 +287,7 @@ func TestBackgroundReviewRegistersBeforeStartRunsAndCleansUp(t *testing.T) {
 		return nil
 	})
 	targets := brCaptureWorkers(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	run := currentBackgroundReviewRun(agent)
 	if run == nil || len(*targets) != 1 || run.requestDone.IsSet() {
 		t.Fatalf("run %v targets %d", run, len(*targets))
@@ -319,7 +319,7 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 	})
 	targets := brCaptureWorkers(t)
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	run := currentBackgroundReviewRun(agent)
 	if run == nil {
 		t.Fatal("no review run")
@@ -385,7 +385,7 @@ func TestLiveTurnCancelsReviewDuringStartupBeforeProvider(t *testing.T) {
 	})
 	targets := brCaptureWorkers(t)
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	run := currentBackgroundReviewRun(agent)
 	if run == nil {
 		t.Fatal("no review run")
@@ -432,7 +432,7 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 	backgroundReviewCancelTimeoutSeconds = 0.01
 	t.Cleanup(func() { backgroundReviewCancelTimeoutSeconds = prevTimeout })
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), brSnapshot(), true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	run := currentBackgroundReviewRun(agent)
 	if run == nil {
 		t.Fatal("no review run")
@@ -516,14 +516,14 @@ func TestStaleReviewCleanupCannotClearOrSignalNewerReview(t *testing.T) {
 	})
 	targets := brCaptureWorkers(t)
 	agent := brLiveAgent(t)
-	agent.spawnBackgroundReviewWith(context.Background(), []map[string]any{{"role": "user", "content": "first"}}, true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), []map[string]any{{"role": "user", "content": "first"}}, true, false, nil, false)
 	firstRun := currentBackgroundReviewRun(agent)
 	firstDone := make(chan struct{})
 	go func() { defer close(firstDone); (*targets)[0]() }()
 	if !firstCleanupEntered.Wait(2.0) || !firstRun.requestDone.IsSet() {
 		t.Fatal("first review did not publish its request exit before cleanup")
 	}
-	agent.spawnBackgroundReviewWith(context.Background(), []map[string]any{{"role": "user", "content": "second"}}, true, false, nil, false)
+	agent.spawnBackgroundReview(context.Background(), []map[string]any{{"role": "user", "content": "second"}}, true, false, nil, false)
 	secondRun := currentBackgroundReviewRun(agent)
 	if len(*targets) != 2 || secondRun == nil || secondRun == firstRun || secondRun.requestDone.IsSet() {
 		t.Fatalf("second run %v targets %d", secondRun, len(*targets))

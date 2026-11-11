@@ -10,23 +10,28 @@ import (
 )
 
 // Whether a turn a slash command produced goes to the authority FIFO instead of staying in process
-func (r *GatewayRunner) commandTurnAdmitted(ctx context.Context, event *gateway.MessageEvent, sessionKey string) bool {
-	if gateway.ActiveAuthority(r) == nil || gateway.ExecutingAdmission(ctx) || event.Internal {
-		return false
+func (r *GatewayRunner) commandTurnAdmitted(ctx context.Context, event *gateway.MessageEvent, sessionKey string) (bool, error) {
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return false, err
+	}
+	if authority == nil || gateway.ExecutingAdmission(ctx) || event.Internal {
+		return false, nil
 	}
 	if _, isCommand := event.GetCommand(); isCommand {
-		return false
+		return false, nil
 	}
 	state := r.peekSessionState(sessionKey)
-	return !(state != nil && len(state.conversation.oneTurnRestore) > 0)
+	return !(state != nil && len(state.conversation.oneTurnRestore) > 0), nil
 }
 
 // How many messaging stop and new commands fenced the route, the authority's per route epoch
-func (r *GatewayRunner) routeStopEpoch(sessionKey string) int {
-	if authority := gateway.ActiveAuthority(r); authority != nil {
-		return authority.RouteEpoch(sessionKey)
+func (r *GatewayRunner) routeStopEpoch(ctx context.Context, sessionKey string) (int, error) {
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil || authority == nil {
+		return 0, err
 	}
-	return 0
+	return authority.RouteEpoch(sessionKey), nil
 }
 
 // Marks a command produced event as a plain text FIFO only turn admitted under the stop epoch
@@ -40,7 +45,11 @@ func asFIFOTurn(event *gateway.MessageEvent, stopEpoch int) *gateway.MessageEven
 
 // Inline admission of a command produced turn, false with no reply to stay in process
 func (r *GatewayRunner) admitCommandTurn(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, sessionKey string, stopEpoch int) (bool, any, error) {
-	if !r.commandTurnAdmitted(ctx, event, sessionKey) {
+	admitted, err := r.commandTurnAdmitted(ctx, event, sessionKey)
+	if err != nil {
+		return false, nil, err
+	}
+	if !admitted {
 		return false, nil, nil
 	}
 	return r.hmAuthorityAdmission(ctx, asFIFOTurn(event, stopEpoch), source, sessionKey, false)
@@ -48,12 +57,19 @@ func (r *GatewayRunner) admitCommandTurn(ctx context.Context, event *gateway.Mes
 
 // Queues a command produced turn after the current run, true when committed in the background with its ack after commit
 func (r *GatewayRunner) queueCommandTurn(ctx context.Context, sessionKey string, command, event *gateway.MessageEvent, adapter gateway.PlatformAdapter, ack string, stopEpoch *int) (bool, error) {
-	if !r.commandTurnAdmitted(ctx, event, sessionKey) {
+	admitted, err := r.commandTurnAdmitted(ctx, event, sessionKey)
+	if err != nil {
+		return false, err
+	}
+	if !admitted {
 		r.enqueueFIFO(sessionKey, event, adapter)
 		return false, nil
 	}
 	gateway.CarryCallback(ctx, command, event)
-	epoch := r.routeStopEpoch(sessionKey)
+	epoch, err := r.routeStopEpoch(ctx, sessionKey)
+	if err != nil {
+		return false, err
+	}
 	if stopEpoch != nil {
 		epoch = *stopEpoch
 	}
@@ -81,7 +97,14 @@ func (r *GatewayRunner) sendAfterCommit(ctx context.Context, adapter gateway.Pla
 // Mid run skill or bundle command under a session authority rewritten and queued as a turn, false leaves it to the busy path
 func (r *GatewayRunner) busySkillTurn(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, sessionKey string, adapter gateway.PlatformAdapter) (bool, any, error) {
 	command, _ := event.GetCommand()
-	if command == "" || event.Internal || gateway.ActiveAuthority(r) == nil || gateway.ExecutingAdmission(ctx) {
+	if command == "" || event.Internal {
+		return false, nil, nil
+	}
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return false, nil, err
+	}
+	if authority == nil || gateway.ExecutingAdmission(ctx) {
 		return false, nil, nil
 	}
 	if _, quick := r.hmQuickCommands()[command]; quick || IsGatewayKnownCommand(command) {
@@ -91,7 +114,10 @@ func (r *GatewayRunner) busySkillTurn(ctx context.Context, event *gateway.Messag
 	if err != nil {
 		return false, nil, err
 	}
-	epoch := r.routeStopEpoch(epochKey)
+	epoch, err := r.routeStopEpoch(ctx, epochKey)
+	if err != nil {
+		return false, nil, err
+	}
 	type rewritten struct {
 		skill bool
 		reply *string
@@ -116,7 +142,11 @@ func (r *GatewayRunner) busySkillTurn(ctx context.Context, event *gateway.Messag
 	if adapter == nil {
 		return r.admitCommandTurn(ctx, event, source, sessionKey, epoch)
 	}
-	if !r.commandTurnAdmitted(ctx, event, sessionKey) {
+	admitted, err := r.commandTurnAdmitted(ctx, event, sessionKey)
+	if err != nil {
+		return false, nil, err
+	}
+	if !admitted {
 		return false, nil, nil
 	}
 	if _, err := r.queueCommandTurn(ctx, sessionKey, event, event, adapter, "", &epoch); err != nil {

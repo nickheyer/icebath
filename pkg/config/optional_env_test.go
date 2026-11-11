@@ -39,7 +39,8 @@ func TestOptionalEnvDeclarationMatchesTheUpstreamTable(t *testing.T) {
 	}
 	for i, row := range rows {
 		want := EnvVar{Description: row.Description, Prompt: row.Prompt, URL: text(row.URL), Help: text(row.Help),
-			Password: row.Password != nil && *row.Password, Category: row.Category, Tools: row.Tools, Advanced: row.Advanced}
+			Password: row.Password != nil && *row.Password, Category: row.Category, Tools: row.Tools, Advanced: row.Advanced,
+			PasswordOmitted: row.Password == nil}
 		if got := optionalEnvDecl[i]; got.Name != row.Name || !reflect.DeepEqual(got.Entry, want) {
 			t.Fatalf("row %d\n got %s %+v\nwant %s %+v", i, got.Name, got.Entry, row.Name, want)
 		}

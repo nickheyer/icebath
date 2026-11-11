@@ -108,6 +108,8 @@ type MessageEvent struct {
 	InheritChannelPin   bool
 	EditRevision        *string
 	MediaFilenames      []string
+	// Replay of an inbound message the startup restore queued, never queued again
+	StartupRestoreReplay bool
 
 	gatewayAccepted        bool
 	producerDelivery       bool
@@ -125,6 +127,7 @@ type MessageEvent struct {
 	activeTurnToken        any
 	activeTurnSessionKey   *string
 	turnRefusal            *string
+	streamedFinalResponse  *string
 	markerReleased         *InterruptEvent
 	heartbeatSessionID     *string
 	heartbeatResolvedID    *string
@@ -134,6 +137,7 @@ type MessageEvent struct {
 	botLoopAdmitted        bool
 	fifoOnly               bool
 	stopEpoch              int
+	slashCommandCounted    bool
 
 	lastChunkLen int
 }

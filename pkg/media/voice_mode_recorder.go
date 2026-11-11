@@ -57,7 +57,7 @@ type VoiceRecorder interface {
 	CurrentRMS() int
 	SupportsSilenceAutostop() bool
 	SetOnLivePartial(fn func(string))
-	SetSilenceThreshold(threshold int)
+	SetSilenceThreshold(threshold float64)
 	SetSilenceDuration(seconds float64)
 	SetMaxRecordingSeconds(seconds float64)
 }
@@ -120,7 +120,7 @@ type recorderBase struct {
 	currentRMS          int
 	onLivePartial       func(string)
 	live                liveSTTSession
-	silenceThreshold    int
+	silenceThreshold    float64
 	silenceDuration     float64
 	maxRecordingSeconds float64
 }
@@ -181,7 +181,7 @@ func (r *recorderBase) SetOnLivePartial(fn func(string)) {
 	r.mu.Unlock()
 }
 
-func (r *recorderBase) SetSilenceThreshold(threshold int) {
+func (r *recorderBase) SetSilenceThreshold(threshold float64) {
 	r.mu.Lock()
 	r.silenceThreshold = threshold
 	r.mu.Unlock()
@@ -346,7 +346,7 @@ func (r *AudioRecorder) maxDurationReached(elapsed float64) bool {
 // Confirms speech after sustained level, tolerating short dips, and resets the silence clock on resumed speech
 func (r *AudioRecorder) trackSpeech(rms int, now float64) {
 	switch {
-	case rms > r.silenceThreshold:
+	case float64(rms) > r.silenceThreshold:
 		r.dipStart = 0
 		if r.speechStart == 0 {
 			r.speechStart = now
@@ -388,7 +388,7 @@ func (r *AudioRecorder) trackSpeech(rms int, now float64) {
 // Whether silence after speech, no speech within the wait, or the length cap ends the recording
 func (r *AudioRecorder) shouldAutoStop(rms int, now float64) bool {
 	elapsed := now - r.startTime
-	if r.hasSpoken && rms <= r.silenceThreshold {
+	if r.hasSpoken && float64(rms) <= r.silenceThreshold {
 		if r.silenceStart == 0 {
 			r.silenceStart = now
 		} else if now-r.silenceStart >= r.silenceDuration {
@@ -608,8 +608,8 @@ func (r *AudioRecorder) stopCapture() (string, error) {
 		voiceLog().Debug(fmt.Sprintf("Recording too short (%d samples), discarding", len(audio)))
 		return "", nil
 	}
-	if r.peakRMS < r.silenceThreshold {
-		voiceLog().Info(fmt.Sprintf("Recording too quiet (peak RMS=%d < %d), discarding", r.peakRMS, r.silenceThreshold))
+	if float64(r.peakRMS) < r.silenceThreshold {
+		voiceLog().Info(fmt.Sprintf("Recording too quiet (peak RMS=%d < %d), discarding", r.peakRMS, int(r.silenceThreshold)))
 		return "", nil
 	}
 	return voiceWriteWAV(audio, r.sampleRate)

@@ -20,12 +20,12 @@ func TestParseConfigSecretEnvResolvesFromProfileScopeUnderMultiplex(t *testing.T
 	}
 	raw := map[string]any{"hooks": map[string]any{"outbound": []any{map[string]any{"url": "https://example.com", "events": []any{"on_session_end"}, "secret_env": "MY_HOOK_SECRET"}}}}
 	install(bound)
-	targets, err := plugins.IterConfiguredOutboundWebhooks(raw)
+	targets, err := plugins.IterConfiguredOutboundWebhooks(context.Background(), raw)
 	if err != nil || len(targets) != 1 || targets[0].Secret != "from-secondary-scope" {
 		t.Fatalf("targets %v %v", targets, err)
 	}
 	install(provider.WithSecretScope(context.Background(), map[string]string{}, ""))
-	targets, err = plugins.IterConfiguredOutboundWebhooks(raw)
+	targets, err = plugins.IterConfiguredOutboundWebhooks(context.Background(), raw)
 	if err != nil || len(targets) != 1 || targets[0].Secret != "" {
 		t.Fatalf("targets %v %v", targets, err)
 	}

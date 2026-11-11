@@ -104,7 +104,7 @@ func (f *fakePreparedCompressor) ShallowCopy() PreparedCompactionCompressor {
 	return c
 }
 
-func (f *fakePreparedCompressor) SetSessionDB(db *state.DB)                { f.sessionDBCleared = db == nil }
+func (f *fakePreparedCompressor) SetSessionDB(db SessionStore)             { f.sessionDBCleared = db == nil }
 func (f *fakePreparedCompressor) SetCompressionCancelledCheck(func() bool) {}
 
 func (f *fakePreparedCompressor) BeginCompressionTelemetry(currentTokens *int) {

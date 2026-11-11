@@ -16,11 +16,12 @@ type serviceTierPeekedState interface {
 }
 
 // Launch secret owner of the active authority, a nil owner when the runner has none
-func activeOwner(runner any) launchSecretOwner {
-	if authority := activeAuthority(runner); authority != nil {
-		return authority
+func activeOwner(ctx context.Context, runner any) (launchSecretOwner, error) {
+	authority, err := activeAuthority(ctx, runner)
+	if err != nil || authority == nil {
+		return nil, err
 	}
-	return nil
+	return authority, nil
 }
 
 // Peeked state of a route, nil when the runner holds none or cannot peek
@@ -42,7 +43,11 @@ func (p *LocalSessionPolicy) CurrentReasoningConfig(ctx context.Context, runner 
 	if !p.FollowsProfile() {
 		return p.ReasoningConfig(), nil
 	}
-	cfg, model, err := p.effective(ctx, activeOwner(runner), false)
+	owner, err := activeOwner(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
+	cfg, model, err := p.effective(ctx, owner, false)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +65,11 @@ func (p *LocalSessionPolicy) CurrentServiceTier(ctx context.Context, runner any,
 			return tier, nil
 		}
 	}
-	cfg, err := p.config(ctx, activeOwner(runner), false)
+	owner, err := activeOwner(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := p.config(ctx, owner, false)
 	if err != nil {
 		return nil, err
 	}

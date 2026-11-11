@@ -21,6 +21,9 @@ func sudoCacheScope(ctx context.Context, env *Env, sessionKey string) string {
 	if sessionKey != "" {
 		return "session:" + sessionKey
 	}
+	if scope := sudoCallbackScope(ctx); scope != "" {
+		return scope
+	}
 	if env == nil || env.Ask == nil {
 		return threadSudoScope(WorkerOf(ctx))
 	}
@@ -34,7 +37,9 @@ func threadSudoScope(id WorkerID) string { return "thread:" + strconv.FormatInt(
 func ForgetThreadSudoPassword(id WorkerID) { setCachedSudoPassword(threadSudoScope(id), "") }
 
 // Sudo password cached under the executing worker's thread scope, empty when none
-func ThreadSudoPassword(ctx context.Context) string { return cachedSudoPassword(threadSudoScope(WorkerOf(ctx))) }
+func ThreadSudoPassword(ctx context.Context) string {
+	return cachedSudoPassword(threadSudoScope(WorkerOf(ctx)))
+}
 
 // Caches a sudo password under the executing worker's thread scope
 func SetThreadSudoPassword(ctx context.Context, password string) {
@@ -127,6 +132,9 @@ func invalidateCachedSudoOnAuthFailure(env *Env, scope, command, output string) 
 // Asks the user for a sudo password through the host form or the terminal, empty on skip, timeout or error
 func promptForSudoPassword(ctx context.Context, env *Env, command string, timeout time.Duration) string {
 	human := humanInputRequest(env, "sudo", command, "")
+	if cb := GetSudoPasswordCallback(ctx); cb != nil {
+		return callSudoPasswordCallback(ctx, env, cb, command, human)
+	}
 	if env == nil || env.Ask == nil {
 		password, done := readHiddenPasswordFromTTY(timeout)
 		switch {
@@ -441,7 +449,7 @@ func transformSudoCommand(ctx context.Context, env *Env, sessionKey, command str
 	if !hasConfigured {
 		password = cachedSudoPassword(scope)
 	}
-	shouldPrompt := (sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE") || env.Ask != nil) && !noSudoUser(ctx, env)
+	shouldPrompt := (sessionFlag(env, "interactive", "ICEBATH_INTERACTIVE") || env.Ask != nil || GetSudoPasswordCallback(ctx) != nil) && !noSudoUser(ctx, env)
 	if !hasConfigured && password == "" && shouldPrompt {
 		if nopasswd != nil && nopasswd() {
 			return command, nil

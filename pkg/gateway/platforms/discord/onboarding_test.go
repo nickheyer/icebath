@@ -111,7 +111,9 @@ func offlineCheck(t *testing.T) {
 	t.Helper()
 	saved := checkBotTokenFn
 	t.Cleanup(func() { checkBotTokenFn = saved })
-	checkBotTokenFn = func(context.Context, string) (*DiscordBotCheck, error) { return nil, &tools.DiscordOSError{Text: "offline"} }
+	checkBotTokenFn = func(context.Context, string) (*DiscordBotCheck, error) {
+		return nil, &tools.DiscordOSError{Text: "offline"}
+	}
 }
 
 func TestDiscordHomeChannelClearBlankRemovesExistingHomeChannel(t *testing.T) {

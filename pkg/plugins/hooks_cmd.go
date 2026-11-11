@@ -51,7 +51,7 @@ func hooksList(ctx context.Context, _ HooksArgs, w io.Writer) error {
 		return err
 	}
 	specs := IterConfiguredShellHooks(cfg)
-	outbound, err := IterConfiguredOutboundWebhooks(cfg)
+	outbound, err := IterConfiguredOutboundWebhooks(ctx, cfg)
 	if err != nil {
 		return err
 	}

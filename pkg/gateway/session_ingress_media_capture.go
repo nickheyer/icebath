@@ -75,6 +75,12 @@ func captureLease(ctx context.Context, a *SessionAuthority) (context.Context, *c
 	return context.WithValue(ctx, captureScopeKey{}, scope), scope, func() { dropCaptureLease(nil, nil, scope) }
 }
 
+// Context leasing every path captured under it with no admitting authority until the returned func runs
+func CaptureLease(ctx context.Context) (context.Context, func()) {
+	leased, _, release := captureLease(ctx, nil)
+	return leased, release
+}
+
 // Ends a scope's lease early on the named paths, all of them when none is named
 func dropCaptureLease(ctx context.Context, paths map[string]bool, scope *captureScope) {
 	held := scope

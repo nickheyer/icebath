@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -51,7 +52,7 @@ var (
 	doctorDeletedSidecarHolders             = state.IterDeletedSQLiteSidecarHolders
 	doctorCronProbeReport                   = cron.ProbeReport
 	doctorCronFreeBytes                     = cron.FreeBytes
-	doctorDuplicateCredentialFindings       = duplicateCredentialFindings
+	doctorDuplicateCredentialFindings       = gatewayrun.DuplicateCredentialFindings
 	doctorListProfiles                      = func(ctx context.Context) ([]manage.ProfileInfo, error) { return manage.ListProfiles(ctx, false) }
 	doctorLoadMemoryProvider                = memory.LoadMemoryProvider
 	doctorCheckpointFootprintNotice         = tools.CheckpointFootprintNotice

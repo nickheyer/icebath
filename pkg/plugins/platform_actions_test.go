@@ -33,7 +33,7 @@ func (a *paAdapter) RenameDMTopic(_ context.Context, chat string, thread *big.In
 	a.renamed = append(a.renamed, chat+"/"+thread.String()+"/"+title)
 	return nil
 }
-func (a *paAdapter) RenameThread(_ context.Context, thread, title string) (bool, error) {
+func (a *paAdapter) RenameThread(_ context.Context, thread, title string, _ ThreadRenameOptions) (bool, error) {
 	a.renamed = append(a.renamed, thread+"/"+title)
 	return a.renameOK, nil
 }

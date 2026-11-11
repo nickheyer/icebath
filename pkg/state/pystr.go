@@ -156,6 +156,8 @@ type pyConvError struct{ Class, Msg string }
 
 func (e *pyConvError) Error() string { return e.Class + ": " + e.Msg }
 
+func (e *pyConvError) PyTypeName() string { return e.Class }
+
 // Decimal value of a Unicode digit, runs of ten starting at zero per the Unicode guarantee
 func pyDigitValue(r rune) (int, bool) {
 	if r >= '0' && r <= '9' {

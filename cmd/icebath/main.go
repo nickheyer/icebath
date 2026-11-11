@@ -15,8 +15,7 @@ import (
 
 // Mirrors the import time sequence of hermes_cli/main.py and then its main()
 func main() {
-	dispatchChildEntries(context.Background())
-	installProcessWiring()
+	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
 	if restoreInterruptedPull() {
 		relaunchAfterRestore()

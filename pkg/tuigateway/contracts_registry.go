@@ -9,100 +9,51 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // One problem a wire model found in a value, the fields of a pydantic error entry
-type ValidationIssue struct {
-	Type  string
-	Loc   []any
-	Msg   string
-	Input any
-}
-
-// Dotted location of the issue, the word params for a problem with the whole value
-func (i ValidationIssue) locText() string {
-	parts := make([]string, len(i.Loc))
-	for k, p := range i.Loc {
-		parts[k] = pyrepr.Str(p)
-	}
-	return strings.Join(parts, ".")
-}
+type ValidationIssue = pydantic.ErrorDetails
 
 // Every problem one validation found, titled with the model that rejected the value
-type ValidationError struct {
-	Title  string
-	Issues []ValidationIssue
-}
-
-// The problems in validation order
-func (e *ValidationError) Errors() []ValidationIssue { return e.Issues }
-
-// Repr of an input the way pydantic prints it, the middle elided past fifty characters
-func truncatedInputRepr(v any) string {
-	runes := []rune(pyrepr.Repr(v))
-	if len(runes) <= 50 {
-		return string(runes)
-	}
-	return string(runes[:25]) + "..." + string(runes[len(runes)-24:])
-}
-
-// Text pydantic 2.13 renders for the error, one block per problem
-func (e *ValidationError) Error() string {
-	plural := "s"
-	if len(e.Issues) == 1 {
-		plural = ""
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d validation error%s for %s", len(e.Issues), plural, e.Title)
-	for _, issue := range e.Issues {
-		fmt.Fprintf(&b, "\n%s\n  %s [type=%s, input_value=%s, input_type=%s]\n    For further information visit https://errors.pydantic.dev/2.13/v/%s",
-			issue.locText(), issue.Msg, issue.Type, truncatedInputRepr(issue.Input), pyrepr.TypeName(issue.Input), issue.Type)
-	}
-	return b.String()
-}
-
-// Wire model that checks one decoded JSON object and reports every problem it finds
-type Model interface {
-	ModelValidate(value any) *ValidationError
-}
+type ValidationError = pydantic.ValidationError
 
 // Contract with a params model and a result model, a client method or a server request
 type paramsContract interface {
 	contractName() string
-	paramsModel() Model
-	resultModel() Model
+	paramsModel() *pydantic.Model
+	resultModel() *pydantic.Model
 }
 
 // Client to server method with its params and result models
 type MethodContract struct {
 	Name   string
-	Params Model
-	Result Model
+	Params *pydantic.Model
+	Result *pydantic.Model
 	Doc    string
 }
 
-func (c *MethodContract) contractName() string { return c.Name }
-func (c *MethodContract) paramsModel() Model   { return c.Params }
-func (c *MethodContract) resultModel() Model   { return c.Result }
+func (c *MethodContract) contractName() string         { return c.Name }
+func (c *MethodContract) paramsModel() *pydantic.Model { return c.Params }
+func (c *MethodContract) resultModel() *pydantic.Model { return c.Result }
 
 // Question the backend asks the client with its params and result models
 type ServerRequestContract struct {
 	Name   string
-	Params Model
-	Result Model
+	Params *pydantic.Model
+	Result *pydantic.Model
 	Doc    string
 }
 
-func (c *ServerRequestContract) contractName() string { return c.Name }
-func (c *ServerRequestContract) paramsModel() Model   { return c.Params }
-func (c *ServerRequestContract) resultModel() Model   { return c.Result }
+func (c *ServerRequestContract) contractName() string         { return c.Name }
+func (c *ServerRequestContract) paramsModel() *pydantic.Model { return c.Params }
+func (c *ServerRequestContract) resultModel() *pydantic.Model { return c.Result }
 
 // Notification with its payload model, nil when the frame carries no payload
 type EventContract struct {
 	Name    string
-	Payload Model
+	Payload *pydantic.Model
 	Doc     string
 }
 
@@ -137,28 +88,28 @@ func declare[T any](table map[string]*T, name string, entry *T) {
 }
 
 // Declares a client method contract
-func Method(name string, params, result Model, doc string) *MethodContract {
+func Method(name string, params, result *pydantic.Model, doc string) *MethodContract {
 	entry := &MethodContract{name, params, result, doc}
 	declare(Methods, name, entry)
 	return entry
 }
 
 // Declares a method only the canonical session authority route serves
-func CanonicalMethod(name string, params, result Model, doc string) *MethodContract {
+func CanonicalMethod(name string, params, result *pydantic.Model, doc string) *MethodContract {
 	entry := &MethodContract{name, params, result, doc}
 	declare(CanonicalMethods, name, entry)
 	return entry
 }
 
 // Declares a server to client request contract
-func ServerRequestOf(name string, params, result Model, doc string) *ServerRequestContract {
+func ServerRequestOf(name string, params, result *pydantic.Model, doc string) *ServerRequestContract {
 	entry := &ServerRequestContract{name, params, result, doc}
 	declare(ServerRequests, name, entry)
 	return entry
 }
 
 // Declares an event contract, a nil payload model for a frame that carries none
-func Event(name string, payload Model, doc string) *EventContract {
+func Event(name string, payload *pydantic.Model, doc string) *EventContract {
 	entry := &EventContract{name, payload, doc}
 	declare(Events, name, entry)
 	return entry
@@ -182,7 +133,7 @@ func ValidateParams(contract paramsContract, params any) (any, string) {
 	if exc := contract.paramsModel().ModelValidate(params); exc != nil {
 		for _, issue := range exc.Errors() {
 			if issue.Type == "extra_forbidden" {
-				loc := issue.locText()
+				loc := issue.LocText()
 				if loc == "" {
 					loc = "params"
 				}
@@ -210,7 +161,7 @@ func CanonicalParamProblems(contract *MethodContract, params any) []string {
 			refused = issue.Type != "missing"
 		}
 		if refused {
-			loc := issue.locText()
+			loc := issue.LocText()
 			if loc == "" {
 				loc = "params"
 			}
@@ -309,43 +260,12 @@ func mapNames[T any](table map[string]*T) []string {
 	return names
 }
 
-// Model with no fields that rejects every key it is given
-type emptyPayloadModel struct{}
-
-func (emptyPayloadModel) ModelValidate(value any) *ValidationError {
-	issues := []ValidationIssue{}
-	add := func(key string, v any) {
-		issues = append(issues, ValidationIssue{Type: "extra_forbidden", Loc: []any{key}, Msg: "Extra inputs are not permitted", Input: v})
-	}
-	switch m := value.(type) {
-	case map[string]any:
-		keys := mapKeysSorted(m)
-		for _, k := range keys {
-			add(k, m[k])
-		}
-	case *pyjson.Object:
-		for _, k := range m.Keys {
-			add(k, m.Vals[k])
-		}
-	}
-	if len(issues) == 0 {
-		return nil
-	}
-	return &ValidationError{Title: "_Empty", Issues: issues}
-}
-
-func mapKeysSorted(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
+// Payload model with no fields, every key of a payload it is given an extra key
+var emptyPayload = pydantic.NewModel("_Empty", ClosedConfig)
 
 // The extra key error a payload earns on an event declared to carry none
 func noPayloadError(payload map[string]any) *ValidationError {
-	exc := emptyPayloadModel{}.ModelValidate(payload)
+	exc := emptyPayload.ModelValidate(payload)
 	if exc == nil {
 		panic("unreachable")
 	}

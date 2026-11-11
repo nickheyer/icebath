@@ -27,7 +27,11 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 		return webhookValidateDestination(ctx, hook.DeliveryInfo(chatID))
 	}
 	candidates := servingAuthorities(runner)
-	if scoped := activeAuthority(runner); scoped != nil {
+	scoped, err := activeAuthority(ctx, runner)
+	if err != nil {
+		return nil, err
+	}
+	if scoped != nil {
 		candidates = []*SessionAuthority{scoped}
 	}
 	var rows []*pyjson.Object

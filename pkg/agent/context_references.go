@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -262,7 +261,6 @@ const (
 
 var (
 	referenceOpeners          = map[byte]byte{')': '(', ']': '[', '}': '{'}
-	referenceNeedsQuoting     = regexp.MustCompile("[\\s()\\[\\]{}<>\"'`]")
 	sensitiveIcebathDirs      = []string{filepath.Join("skills", ".hub")}
 	sensitiveHomeFiles        = []string{".ssh/authorized_keys", ".ssh/id_rsa", ".ssh/id_ed25519", ".ssh/config", ".bashrc", ".zshrc", ".profile", ".bash_profile", ".zprofile", ".netrc", ".pgpass", ".npmrc", ".pypirc"}
 	referenceTextExtensions   = []string{".py", ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".js", ".ts"}
@@ -327,15 +325,7 @@ type referenceExpansion struct {
 
 // FormatReferenceValue quotes a value so ReferencePattern reads it back whole
 func FormatReferenceValue(value string) string {
-	if !referenceNeedsQuoting.MatchString(value) {
-		return value
-	}
-	for _, quote := range []string{"`", "\"", "'"} {
-		if !strings.Contains(value, quote) {
-			return quote + value + quote
-		}
-	}
-	return value
+	return state.FormatReferenceValue(value)
 }
 
 // ParseContextReferences reads the built in references and, with plugins, the registered plugin prefixes

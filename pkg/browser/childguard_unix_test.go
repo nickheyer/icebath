@@ -50,6 +50,22 @@ func openRootPipe() func() {
 	return func() { os.RemoveAll(dir) }
 }
 
+// Runs this binary as the requested child mode and exits, else opens the root fifo the children watch
+func startChildGuard() func() {
+	if mode := os.Getenv(childModeEnv); mode != "" {
+		os.Unsetenv(childModeEnv)
+		if err := exitWithRoot(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if run, ok := extraChildModes[mode]; ok {
+			os.Exit(run())
+		}
+		os.Exit(runChildMode(mode))
+	}
+	return openRootPipe()
+}
+
 // Notes this child in its test ledger and exits it once the root fifo loses its last writer
 func exitWithRoot() error {
 	path := os.Getenv(rootPipeEnv)

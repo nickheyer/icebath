@@ -1106,7 +1106,7 @@ func hasAnyKey(m map[string]any, keys ...string) bool {
 // Updates a job by id, refreshing derived schedule fields, and returns its read safe form
 func (s *Store) updateJob(ctx context.Context, jobID string, updates map[string]any) (*Job, error) {
 	if _, bad := updates["id"]; bad {
-		return nil, errors.New("Cron job field(s) cannot be updated: id")
+		return nil, &ValueError{Msg: "Cron job field(s) cannot be updated: id"}
 	}
 	out, _, err := withJob(home.WithOverride(ctx, s.home), s, jobID, func(tx *jobsTx, jobs []*Job, i int, job *Job) (*Job, error) {
 		if err := s.rederiveRepeatForScheduleChange(job, updates); err != nil {

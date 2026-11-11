@@ -191,7 +191,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	}
 	turnCtx = provider.WithPortalConversationContext(turnCtx, a.conversationRootID())
 	turnCtx = provider.WithPortalAffinityScope(turnCtx, provider.DeclaredConversationScopeSafe(a.cacheScopeAgent()))
-	turnCtx = provider.SetAccountingContext(turnCtx, provider.AuxUsageRecorderFor(a.sessionDB), a.sessionID)
+	turnCtx = provider.SetAccountingContext(turnCtx, auxUsageRecorderFor(a.sessionDB), a.sessionID)
 	result, err = func() (map[string]any, error) {
 		loopCtx := bindSubagentParent(turnCtx, a)
 		loopCtx, _ = provider.ScopedRuntimeMain(loopCtx, map[string]any{})

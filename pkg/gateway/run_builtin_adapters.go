@@ -11,7 +11,7 @@ import (
 // Adapter class a platform module exports, its constructor and the class attributes it declares
 type AdapterClass struct {
 	Name   string
-	New    func(config *PlatformConfig) (PlatformAdapter, error)
+	New    func(ctx context.Context, config *PlatformConfig) (PlatformAdapter, error)
 	Traits AdapterTraits
 }
 
@@ -37,7 +37,7 @@ var BuiltinAdapters = map[Platform]BuiltinAdapterSpec{
 var builtinPlatformModules = map[string]map[string]any{
 	"webhook": {
 		"WebhookAdapter": &AdapterClass{Name: "WebhookAdapter", Traits: webhookAdapterTraits(),
-			New: func(config *PlatformConfig) (PlatformAdapter, error) {
+			New: func(_ context.Context, config *PlatformConfig) (PlatformAdapter, error) {
 				adapter, err := NewWebhookAdapter(config)
 				if err != nil {
 					return nil, err
@@ -48,7 +48,7 @@ var builtinPlatformModules = map[string]map[string]any{
 	},
 	"msgraph_webhook": {
 		"MSGraphWebhookAdapter": &AdapterClass{Name: "MSGraphWebhookAdapter", Traits: msgraphWebhookAdapterTraits(),
-			New: func(config *PlatformConfig) (PlatformAdapter, error) {
+			New: func(_ context.Context, config *PlatformConfig) (PlatformAdapter, error) {
 				adapter, err := NewMSGraphWebhookAdapter(config)
 				if err != nil {
 					return nil, err
@@ -97,5 +97,5 @@ func InstantiateBuiltinAdapter(ctx context.Context, platform Platform, config *P
 		slog.Default().With("logger", "gateway.run").WarnContext(ctx, spec.Warning)
 		return nil, nil
 	}
-	return cls.New(config)
+	return cls.New(ctx, config)
 }

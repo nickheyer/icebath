@@ -153,7 +153,7 @@ func NormalizeProjectSlug(slug string) (string, error) {
 		return "", nil
 	}
 	if !projectSlugRe.MatchString(s) {
-		return "", fmt.Errorf("invalid project slug %s: must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'", pyRepr(slug))
+		return "", projectValueErrorf("invalid project slug %s: must be 1-64 chars, lowercase alphanumerics / hyphens / underscores, not starting with '-' or '_'", pyRepr(slug))
 	}
 	return s, nil
 }
@@ -395,7 +395,7 @@ type CreateProjectOptions struct {
 func (p *ProjectsDB) CreateProject(name string, opts CreateProjectOptions) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "", fmt.Errorf("project name must not be empty")
+		return "", projectValueErrorf("project name must not be empty")
 	}
 	slugCandidate := projectSlugify(name)
 	if opts.Slug != "" {
@@ -437,7 +437,7 @@ func (p *ProjectsDB) CreateProject(name string, opts CreateProjectOptions) (stri
 			return "", err
 		}
 		if existing != nil {
-			return "", fmt.Errorf("folder already belongs to project '%s' (%s); switch to it instead of creating a duplicate", existing.Slug, existing.ID)
+			return "", projectValueErrorf("folder already belongs to project '%s' (%s); switch to it instead of creating a duplicate", existing.Slug, existing.ID)
 		}
 	}
 	var boardSlug *string
@@ -551,7 +551,7 @@ func (p *ProjectsDB) UpdateProject(projectID string, f UpdateProjectFields) (boo
 	if f.Name != nil {
 		name := strings.TrimSpace(*f.Name)
 		if name == "" {
-			return false, fmt.Errorf("project name must not be empty")
+			return false, projectValueErrorf("project name must not be empty")
 		}
 		sets, params = append(sets, "name = ?"), append(params, name)
 	}
@@ -609,14 +609,14 @@ func (p *ProjectsDB) execRowcount(query string, params ...any) (int64, error) {
 func (p *ProjectsDB) AddFolder(projectID, path string, label *string, isPrimary bool) (string, error) {
 	norm := projectNormalizePath(path)
 	if norm == "" {
-		return "", fmt.Errorf("folder path must not be empty")
+		return "", projectValueErrorf("folder path must not be empty")
 	}
 	proj, err := p.GetProject(projectID)
 	if err != nil {
 		return "", err
 	}
 	if proj == nil {
-		return "", fmt.Errorf("no such project: %s", projectID)
+		return "", projectValueErrorf("no such project: %s", projectID)
 	}
 	err = p.writeTxn(func(x sqlExecutor) error {
 		ctx := context.Background()

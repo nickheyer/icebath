@@ -114,7 +114,7 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 		logInfo("ICEBATH_SAFE_MODE=1 — outbound webhook registration skipped")
 		return nil, nil
 	}
-	targets, err := IterConfiguredOutboundWebhooks(cfg)
+	targets, err := IterConfiguredOutboundWebhooks(ctx, cfg)
 	if err != nil || len(targets) == 0 {
 		return nil, err
 	}
@@ -151,7 +151,7 @@ func RegisterOutboundWebhooksFromConfig(ctx context.Context, cfg any) ([]*Outbou
 }
 
 // IterConfiguredOutboundWebhooks parses hooks.outbound without registering anything, the error an unscoped secret read
-func IterConfiguredOutboundWebhooks(cfg any) ([]*OutboundWebhookTarget, error) {
+func IterConfiguredOutboundWebhooks(ctx context.Context, cfg any) ([]*OutboundWebhookTarget, error) {
 	m, ok := cfg.(map[string]any)
 	if !ok {
 		return nil, nil
@@ -170,7 +170,7 @@ func IterConfiguredOutboundWebhooks(cfg any) ([]*OutboundWebhookTarget, error) {
 	}
 	var out []*OutboundWebhookTarget
 	for i, entry := range list {
-		t, err := parseOutboundWebhookTarget(i, entry)
+		t, err := parseOutboundWebhookTarget(ctx, i, entry)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +232,7 @@ func outboundTaskDone() {
 }
 
 // One hooks.outbound[index] entry validated field by field, nil with a warning for a malformed one
-func parseOutboundWebhookTarget(index int, raw any) (*OutboundWebhookTarget, error) {
+func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*OutboundWebhookTarget, error) {
 	warn := func(format string, args ...any) {
 		logWarn(fmt.Sprintf("hooks.outbound[%d]"+format, append([]any{index}, args...)...))
 	}
@@ -312,7 +312,7 @@ func parseOutboundWebhookTarget(index int, raw any) (*OutboundWebhookTarget, err
 	secret := ""
 	if secretEnv, ok := entry["secret_env"].(string); ok && strings.TrimSpace(secretEnv) != "" {
 		secretEnv = strings.TrimSpace(secretEnv)
-		value, err := outboundSecret(secretEnv)
+		value, err := outboundSecret(ctx, secretEnv)
 		if err != nil {
 			return nil, err
 		}
@@ -327,12 +327,12 @@ func parseOutboundWebhookTarget(index int, raw any) (*OutboundWebhookTarget, err
 }
 
 // get_secret of the bound profile scope through the installed secret service, empty when unset
-func outboundSecret(name string) (string, error) {
+func outboundSecret(ctx context.Context, name string) (string, error) {
 	get, err := needService("GetSecret", func(s *Services) func(context.Context, string) (string, bool, error) { return s.GetSecret })
 	if err != nil {
 		return "", err
 	}
-	value, _, err := get(context.Background(), name)
+	value, _, err := get(ctx, name)
 	return value, err
 }
 

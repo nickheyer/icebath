@@ -346,7 +346,7 @@ func agentOwnHome(ctx context.Context, a *AIAgent) string {
 		return o
 	}
 	if a.sessionDB != nil {
-		if p := a.sessionDB.Path(); p != "" {
+		if p := sessionStorePath(a.sessionDB); p != "" {
 			return filepath.Dir(p)
 		}
 	}
@@ -485,7 +485,7 @@ func autoLoadParts(ctx context.Context, a *AIAgent) []string {
 func botModeParts(ctx context.Context, a *AIAgent) []string {
 	title := pystr.Strip(a.sessionTitleHint)
 	if title == "" && a.sessionDB != nil && a.sessionID != "" {
-		t, _, err := a.sessionDB.Title(a.sessionID)
+		t, _, err := a.sessionDB.GetSessionTitle(ctx, a.sessionID)
 		if err != nil {
 			return nil
 		}

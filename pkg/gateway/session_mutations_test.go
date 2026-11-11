@@ -10,13 +10,18 @@ import (
 
 // test_delete_secondary_profile_multiplex.py test_runtime_owns_authority_requires_runner_membership
 func TestRuntimeOwnsAuthorityRequiresRunnerMembership(t *testing.T) {
-	launch, secondary := &SessionAuthority{}, &SessionAuthority{}
-	runner := &recoverTestRunner{registry: &recoverRegistry{all: []*SessionAuthority{launch, secondary}}, launch: launch}
+	launch, secondary := &SessionAuthority{ProfileID: t.TempDir()}, &SessionAuthority{ProfileID: t.TempDir()}
+	runner := &recoverTestRunner{registry: servedRegistry(t, launch, secondary, "secondary"), launch: launch}
 	launch.Runner, secondary.Runner = runner, runner
 	if !runtimeOwnsAuthority(launch) || !runtimeOwnsAuthority(secondary) {
 		t.Fatal("a served authority is owned by its runner")
 	}
-	foreign := &SessionAuthority{Runner: &recoverTestRunner{registry: &recoverRegistry{all: []*SessionAuthority{{}}}, launch: &SessionAuthority{}}}
+	other := &SessionAuthority{ProfileID: t.TempDir()}
+	foreignRegistry := NewSessionAuthorities(other.ProfileID, false)
+	if err := foreignRegistry.Add(other.ProfileID, other, nil); err != nil {
+		t.Fatal(err)
+	}
+	foreign := &SessionAuthority{Runner: &recoverTestRunner{registry: foreignRegistry, launch: &SessionAuthority{}}}
 	if runtimeOwnsAuthority(foreign) {
 		t.Fatal("an authority the runner does not hold keeps the coordination refusal")
 	}

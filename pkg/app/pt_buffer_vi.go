@@ -85,7 +85,7 @@ func (b *ptBuffer) undoRaising() {
 }
 
 // Up a line, else back in history, going to the line start when the history entry changed and asked
-func (b *ptBuffer) autoUp(count int, goToStartOfLineIfHistoryChanges bool) {
+func (b *ptBuffer) lineOrHistoryUp(count int, goToStartOfLineIfHistoryChanges bool) {
 	switch {
 	case b.completeState != nil:
 		b.completePrevious(count)
@@ -100,7 +100,7 @@ func (b *ptBuffer) autoUp(count int, goToStartOfLineIfHistoryChanges bool) {
 }
 
 // Down a line, else forward in history, going to the line start when the history entry changed and asked
-func (b *ptBuffer) autoDown(count int, goToStartOfLineIfHistoryChanges bool) {
+func (b *ptBuffer) lineOrHistoryDown(count int, goToStartOfLineIfHistoryChanges bool) {
 	doc := b.document()
 	switch {
 	case b.completeState != nil:

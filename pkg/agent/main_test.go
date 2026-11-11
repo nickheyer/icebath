@@ -20,6 +20,7 @@ var testSecretEnvSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CR
 // Dispatches the child modes, installs the secret env doubles, then runs the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	dispatchLoopbackOwnerChild()
 	home.DispatchScratchPruneEntry(context.Background())
 	dispatchTrajectoryChild()
 	dispatchLifecycleChild()
@@ -65,6 +66,7 @@ func TestMain(m *testing.M) {
 	agentSetupLogging = func(context.Context, string) error { return nil }
 	dispatchDelegationRecoveryChild()
 	dispatchAsyncOwnerDeathChild()
+	DispatchManagedWorkerEntry(os.Exit)
 	os.Exit(m.Run())
 }
 

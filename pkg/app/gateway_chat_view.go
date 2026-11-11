@@ -519,12 +519,16 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 		}
 	}
 	raw, err := v.rpcRaw(ctx, "prompt.receipt", map[string]any{"session_id": sid, "admission_id": admission, "include_result": true}, 0)
-	if err != nil && ctx.Err() != nil {
-		return ctx.Err()
-	}
-	receipt, mapErr := gatewayAnswerMap(raw)
-	if err != nil || mapErr != nil || receipt == nil {
+	var receipt map[string]any
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		raw, receipt = pyjson.ObjectOf("status", "terminal"), map[string]any{"status": "terminal"}
+	} else if receipt, err = gatewayAnswerMap(raw); err != nil {
+		return err
+	} else if receipt == nil {
+		return fmt.Errorf("AttributeError: 'NoneType' object has no attribute 'get'")
 	}
 	var verdict *bool
 	no := false
@@ -977,7 +981,7 @@ func (v *GatewayChatView) confirmModelSwitch(ctx context.Context, refusal map[st
 	return false, nil
 }
 
-// Says on stderr why a one shot cannot go on, exit 3, closing the stream json protocol with a failed result
+// Says why a one shot cannot go on and exits 3, closing stream json with a failed result
 func (v *GatewayChatView) detach(message string) int {
 	v.println(v.errOut, message)
 	if v.emitter != nil {
@@ -1128,13 +1132,10 @@ func (v *GatewayChatView) Run(ctx context.Context, query string, oneshot bool) (
 
 // Waits for the one shot admission to settle and reports it under the in process exit contracts
 func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any) (int, error) {
-	if receipt == nil {
-		return 0, &gateway.GatewayClientError{Msg: "One-shot requires a query"}
+	admission, err := gatewayOneshotAdmission(receipt)
+	if err != nil {
+		return 0, err
 	}
-	if receipt["voice_stopped"] == true {
-		return 0, nil
-	}
-	admission := requireKey(receipt, "admission_id")
 	if admission == nil {
 		return 0, nil
 	}
@@ -1253,6 +1254,17 @@ func (v *GatewayChatView) runInteractive(ctx context.Context) (int, error) {
 		}
 	}
 	return 0, v.failure
+}
+
+// The one shot admission id, nil when a bare stop phrase ended the voice chat and nothing was admitted
+func gatewayOneshotAdmission(receipt map[string]any) (any, error) {
+	if receipt == nil {
+		return nil, &gateway.GatewayClientError{Msg: "One-shot requires a query"}
+	}
+	if receipt["voice_stopped"] == true {
+		return nil, nil
+	}
+	return requireKey(receipt, "admission_id"), nil
 }
 
 // The classic single query exit block naming how to continue this session, the profile flag when not default

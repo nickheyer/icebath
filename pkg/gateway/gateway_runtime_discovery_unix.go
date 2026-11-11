@@ -110,9 +110,12 @@ func openModeError(path string, mode, expected uint32) *DiscoveryError {
 		fmt.Sprintf("chmod %o %s", expected, pyshlex.Quote(path)))
 }
 
+// Socket path resolution of the private clients, replaced by tests the way hermes tests monkeypatch _socket_path
+var discoverySocketPath = controlSocketPath
+
 // Connected control socket of home whose listener runs as this user
 func connectPrivate(home string, timeout time.Duration) (net.Conn, error) {
-	path, err := controlSocketPath(home)
+	path, err := discoverySocketPath(home)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +181,7 @@ func controlSocketPath(home string) (string, error) {
 		return "", err
 	}
 	parent := filepath.Dir(target)
-	if filepath.Base(target) != "control.sock" || filepath.Base(parent) != "hermes-gw-"+hash {
+	if filepath.Base(target) != "control.sock" || filepath.Base(parent) != "icebath-gw-"+hash {
 		return "", newDiscoveryError("invalid_control_pointer", "", "")
 	}
 	if _, err := privateNode(parent, "directory", false); err != nil {

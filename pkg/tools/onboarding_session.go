@@ -11,7 +11,7 @@ type OnboardingAgent interface {
 	ValidToolNames() map[string]bool
 	EnabledToolsets() []string
 	SessionID() string
-	SessionDB() *state.DB
+	OnboardingStore() OnboardingStore
 }
 
 // Agent whose pending gateway turn notes the onboarding note rides on
@@ -108,7 +108,7 @@ func OnboardingPrelude(agent OnboardingAgent, history []map[string]any) []Onboar
 	if !BuildsOnboarding(agent) {
 		return nil
 	}
-	record := LoadOnboardingRecord(agent.SessionDB(), agent.SessionID())
+	record := LoadOnboardingRecord(agent.OnboardingStore(), agent.SessionID())
 	if record == nil || !OnboardingActive(record) {
 		return nil
 	}
@@ -138,7 +138,7 @@ func OnboardingSessionTurnNote(agent OnboardingAgent, historyEmpty, cardWaiting 
 	if historyEmpty || cardWaiting || !BuildsOnboarding(agent) {
 		return ""
 	}
-	record := LoadOnboardingRecord(agent.SessionDB(), agent.SessionID())
+	record := LoadOnboardingRecord(agent.OnboardingStore(), agent.SessionID())
 	if record == nil || !OnboardingActive(record) {
 		return ""
 	}

@@ -789,7 +789,7 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 
 // HostGatewayChildEnv is the env of the host gateway with the default profile's secrets
 func HostGatewayChildEnv(ctx context.Context, env *Env, base map[string]string) (map[string]string, error) {
-	return ServedProfileChildEnv(ctx, env, base, home.AccountDefault(WithEnvHome(ctx, env)), true)
+	return ServedProfileChildEnv(ctx, env, base, home.Root(), true)
 }
 
 // Reports whether targetHome is not the launch home of this process

@@ -333,6 +333,14 @@ func consoleCleanSummary(text string) string {
 	return summary
 }
 
+// Help a parent lists for a subcommand, empty when the subcommand is hidden
+func consoleChoiceHelp(child *cobra.Command) string {
+	if child.Hidden {
+		return ""
+	}
+	return child.Short
+}
+
 // Subcommand path to help over a family subtree, the choice help winning over the child description
 func consoleSummariesFromTree(root *cobra.Command, family string) map[string]string {
 	summaries := map[string]string{}
@@ -343,11 +351,7 @@ func consoleSummariesFromTree(root *cobra.Command, family string) map[string]str
 				continue
 			}
 			childPath := append(append([]string{}, path...), child.Name())
-			choice := ""
-			if !child.Hidden {
-				choice = child.Short
-			}
-			summary := consoleCleanSummary(choice)
+			summary := consoleCleanSummary(consoleChoiceHelp(child))
 			if summary == "" {
 				summary = consoleCleanSummary(child.Long)
 			}
@@ -599,7 +603,7 @@ func consoleApplyConfirmedDefaults(cli *commands.CLI, cmd *cobra.Command, args [
 	return nil
 }
 
-// ConsoleREPLOptions are the streams of a console REPL and whether it prompts, nil meaning the process streams and a tty probe
+// ConsoleREPLOptions are the streams of a console REPL and whether it prompts, unset ones read from the process
 type ConsoleREPLOptions struct {
 	Stdin       io.Reader
 	Stdout      io.Writer

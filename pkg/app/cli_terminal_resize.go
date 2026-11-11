@@ -540,7 +540,7 @@ func (c *CLI) outputWaitsForResize(app tuiScreenApp) bool {
 func (c *CLI) tryAttachClipboardImage() bool {
 	c.imageCounter++
 	path := filepath.Join(home.Dir(c.ctx), "images", fmt.Sprintf("clip_%s_%d.png", time.Now().Format("20060102_150405"), c.imageCounter))
-	if saveClipboardImage(path) {
+	if clipSaveImage(path) {
 		c.attachedImages = append(c.attachedImages, path)
 		return true
 	}

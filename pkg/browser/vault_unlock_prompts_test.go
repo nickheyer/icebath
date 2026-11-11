@@ -14,7 +14,9 @@ func TestVaultPromptCallbacksLiveInThePerThreadSlot(t *testing.T) {
 	}
 	SetUnlockPromptCallback(ctx, func(backend, display string) string { return "pw:" + backend + ":" + display })
 	SetCodePromptCallback(ctx, func(site, hint string) string { return "code:" + site + ":" + hint })
-	SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string { return map[string]string{"identifier": origin, "password": site} })
+	SetSaveLoginPromptCallback(ctx, func(origin, site string) map[string]string {
+		return map[string]string{"identifier": origin, "password": site}
+	})
 	if GetUnlockPromptCallback(ctx)("op", "1Password") != "pw:op:1Password" || GetCodePromptCallback(ctx)("github", "sms") != "code:github:sms" {
 		t.Fatal("the installed prompts must answer")
 	}

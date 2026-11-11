@@ -82,7 +82,7 @@ type PreparedCompactionCompressor interface {
 	ScanWindowHandoffs(messages []map[string]any, start, end int, turns []map[string]any) HandoffScan
 	DeriveAutoFocusTopic(messages []map[string]any) *string
 	ShallowCopy() PreparedCompactionCompressor
-	SetSessionDB(db *state.DB)
+	SetSessionDB(db SessionStore)
 	SetCompressionCancelledCheck(check func() bool)
 	BeginCompressionTelemetry(currentTokens *int)
 	GenerateSummary(ctx context.Context, turns []map[string]any, focusTopic *string) (*string, error)

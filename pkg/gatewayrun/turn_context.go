@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Unbounded thread safe FIFO whose put never blocks, the queue.Queue of hermes
@@ -46,6 +47,7 @@ func (q *turnQueue) empty() bool {
 
 // Per turn context shared between the agent run and its TurnRunner, the message the one rebindable field
 type TurnContext struct {
+	holderMu                        sync.Mutex
 	source                          *gateway.SessionSource
 	replyExpected                   *bool
 	scheduledHeartbeat              bool
@@ -69,16 +71,16 @@ type TurnContext struct {
 	cleanupProgress                 bool
 	cleanupMsgIDs                   []string
 	progressMetadata                map[string]any
-	progressReplyTo                 any
-	message                         *string
-	history                         []any
-	contextPrompt                   *string
+	progressReplyTo                 *string
+	message                         string
+	history                         []map[string]any
+	contextPrompt                   string
 	channelPrompt                   *string
-	sessionID                       *string
-	sessionKey                      *string
+	sessionID                       string
+	sessionKey                      string
 	runGeneration                   *int
 	processTaskID                   string
-	processBaseline                 map[string]struct{}
+	processBaseline                 map[string]bool
 	interruptDepth                  int
 	eventMessageID                  *string
 	inboundMessageID                *string
@@ -96,19 +98,18 @@ type TurnContext struct {
 	logModeEnabled                  bool
 	interimAssistantMessagesEnabled bool
 	needsProgressQueue              bool
-	aiAgent                         any
 	resolveDisplaySetting           func(ctx context.Context, userConfig map[string]any, platformKey, setting string, fallback any) any
 	resultHolder                    map[string]any
-	toolsHolder                     any
-	streamConsumerHolder            any
-	streamingTTSConsumerHolder      any
+	toolsHolder                     []map[string]any
+	streamConsumerHolder            *gateway.GatewayStreamConsumer
+	streamingTTSConsumerHolder      *gateway.StreamingTTSConsumer
 	voiceAckFired                   bool
 	voiceAckGuild                   *int
 	voiceAckLoop                    gateway.EventLoop
 	loopForStep                     gateway.EventLoop
 	hooksRef                        *ProfileHookRegistries
 	statusAdapter                   gateway.PlatformAdapter
-	statusChatID                    *string
+	statusChatID                    string
 	statusThreadMetadata            map[string]any
 	progressCallback                any
 	voiceAckCallback                any
@@ -118,10 +119,68 @@ type TurnContext struct {
 	nativeSlackTaskCards            bool
 	nativeToolStartCallback         any
 	nativeToolCompleteCallback      any
+	// Session scoped tool environment the agent runs its tools in, nil for the process environment
+	sessionEnv *tools.Env
 }
 
 // Context carrying the dataclass defaults of every field
 func newTurnContext() *TurnContext {
 	return &TurnContext{liveStatusMode: "off", progressMode: "off", progressGrouping: "grouped",
-		awakeIdle: state.NewAwakeIdleMeter(), longToolThresholdS: 30.0, processBaseline: map[string]struct{}{}}
+		awakeIdle: state.NewAwakeIdleMeter(), longToolThresholdS: 30.0, processBaseline: map[string]bool{}}
+}
+
+// Agent the turn runs, nil before the turn wired one
+func (c *TurnContext) currentAgent() *agent.AIAgent {
+	c.holderMu.Lock()
+	defer c.holderMu.Unlock()
+	return c.agentHolder
+}
+
+// Publishes the agent the turn runs for interrupt support
+func (c *TurnContext) setAgent(a *agent.AIAgent) {
+	c.holderMu.Lock()
+	c.agentHolder = a
+	c.holderMu.Unlock()
+}
+
+// Stream consumer the turn created, nil before run_sync made one
+func (c *TurnContext) streamConsumer() *gateway.GatewayStreamConsumer {
+	c.holderMu.Lock()
+	defer c.holderMu.Unlock()
+	return c.streamConsumerHolder
+}
+
+// Publishes the stream consumer the turn created
+func (c *TurnContext) setStreamConsumer(sc *gateway.GatewayStreamConsumer) {
+	c.holderMu.Lock()
+	c.streamConsumerHolder = sc
+	c.holderMu.Unlock()
+}
+
+// Result run_sync left for the outer turn, nil before it returned
+func (c *TurnContext) result() map[string]any {
+	c.holderMu.Lock()
+	defer c.holderMu.Unlock()
+	return c.resultHolder
+}
+
+// Publishes the run_sync result for the outer turn
+func (c *TurnContext) setResult(result map[string]any) {
+	c.holderMu.Lock()
+	c.resultHolder = result
+	c.holderMu.Unlock()
+}
+
+// Streaming TTS consumer the outer turn created, nil when voice streaming is off
+func (c *TurnContext) streamingTTSConsumer() *gateway.StreamingTTSConsumer {
+	c.holderMu.Lock()
+	defer c.holderMu.Unlock()
+	return c.streamingTTSConsumerHolder
+}
+
+// Publishes the streaming TTS consumer of the turn
+func (c *TurnContext) setStreamingTTSConsumer(sc *gateway.StreamingTTSConsumer) {
+	c.holderMu.Lock()
+	c.streamingTTSConsumerHolder = sc
+	c.holderMu.Unlock()
 }

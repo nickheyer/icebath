@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -63,7 +65,10 @@ func (a *AIAgent) getSessionDBForRecall(ctx context.Context) *state.DB {
 		return nil
 	}
 	if a.sessionDB != nil {
-		return a.sessionDB
+		if db := canonicalSessionDB(a.sessionDB); db != nil {
+			return db
+		}
+		return a.workerRecallDB(ctx)
 	}
 	db, err := state.Acquire(ctx, "")
 	if err != nil {
@@ -72,7 +77,7 @@ func (a *AIAgent) getSessionDBForRecall(ctx context.Context) *state.DB {
 	}
 	a.sessionDB = db
 	a.ownsSessionDB = true
-	return a.sessionDB
+	return db
 }
 
 // Safe LM Studio context budget from explicit intent and the verified runtime load, zero for None
@@ -545,4 +550,18 @@ func (a *AIAgent) shouldTreatStopAsTruncated(finishReason string, assistantMessa
 		return false
 	}
 	return !hasNaturalResponseEnding(visible)
+}
+
+// Read only handle on the profile's state DB a worker's recall reads, its store answering no FTS reads
+func (a *AIAgent) workerRecallDB(ctx context.Context) *state.DB {
+	if a.recallDB != nil {
+		return a.recallDB
+	}
+	db, err := state.NewSessionDB(ctx, filepath.Join(home.Dir(a.homeContext()), "state.db"), true)
+	if err != nil {
+		runAgentLog().Debug("SessionDB unavailable for session_search", "err", err)
+		return nil
+	}
+	a.recallDB = db
+	return db
 }

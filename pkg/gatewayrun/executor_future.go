@@ -142,14 +142,16 @@ func (f *concurrentFuture) await(ctx context.Context) (any, error) {
 
 // Thread of an executor pool, a goroutine with a name, an interrupt identity and a join
 type executorThread struct {
-	name  string
-	ident tools.WorkerID
-	done  chan struct{}
+	name   string
+	ident  tools.WorkerID
+	done   chan struct{}
+	locals context.Context
 }
 
 // Thread named name with a fresh interrupt identity, alive until its goroutine closes done
 func newExecutorThread(name string) *executorThread {
-	return &executorThread{name: name, ident: tools.NewWorkerID(), done: make(chan struct{})}
+	return &executorThread{name: name, ident: tools.NewWorkerID(), done: make(chan struct{}),
+		locals: tools.WithThreadLocals(context.Background())}
 }
 
 // Waits up to timeout seconds for the thread to exit, a negative timeout waiting forever
@@ -180,7 +182,7 @@ type executorThreadKey struct{}
 
 // Context of an item running on thread t, the fresh empty context a new thread starts with
 func executorThreadContext(t *executorThread) context.Context {
-	return context.WithValue(tools.WithWorker(context.Background(), t.ident), executorThreadKey{}, t)
+	return context.WithValue(tools.WithThreadLocalsOf(tools.WithWorker(context.Background(), t.ident), t.locals), executorThreadKey{}, t)
 }
 
 // Executor thread running the goroutine that owns ctx, nil outside any pool
@@ -193,7 +195,7 @@ func currentExecutorThread(ctx context.Context) *executorThread {
 func onExecutorThread(callerCtx, workerCtx context.Context) context.Context {
 	ctx := context.WithoutCancel(callerCtx)
 	if t := currentExecutorThread(workerCtx); t != nil {
-		ctx = context.WithValue(tools.WithWorker(ctx, t.ident), executorThreadKey{}, t)
+		ctx = context.WithValue(tools.WithThreadLocalsOf(tools.WithWorker(ctx, t.ident), t.locals), executorThreadKey{}, t)
 	}
 	return ctx
 }

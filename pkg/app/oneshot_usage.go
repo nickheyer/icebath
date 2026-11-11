@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -21,8 +22,7 @@ var oneshotUsageKeys = []string{"estimated_cost_usd", "cost_status", "cost_sourc
 	"model", "provider", "session_id", "completed", "partial", "interrupted", "turn_exit_reason"}
 
 // Counters summed per auxiliary task into the auxiliary block of the report
-var oneshotAuxCounters = []string{"api_calls", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
-	"reasoning_tokens", "estimated_cost_usd"}
+var oneshotAuxCounters = agent.OneshotAuxCounters
 
 // Exit code of a finished one shot turn, 130 interrupted, 2 failed or partial, 1 without text, else 0
 func oneshotExitCode(response string, result map[string]any) int {

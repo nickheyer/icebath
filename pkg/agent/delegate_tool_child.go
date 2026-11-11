@@ -18,14 +18,18 @@ import (
 )
 
 // Dedicated session db handle on the parent's db file, nil when the parent has none or it cannot open
-func openChildSessionDB(ctx context.Context, parent *AIAgent) (*state.DB, error) {
-	if tools.IsWorkerProcess != nil && tools.IsWorkerProcess() {
-		return nil, tools.NewWorkerPersistenceError("worker_child_registration_required")
+func openChildSessionDB(ctx context.Context, parent *AIAgent) (SessionStore, error) {
+	workerStore, isWorkerStore := parent.sessionDB.(*RuntimeSessionStore)
+	if IsWorkerProcess() || isWorkerStore {
+		if !isWorkerStore {
+			return nil, tools.NewWorkerPersistenceError("worker_child_registration_required")
+		}
+		return ReserveChildStore(ctx, workerStore)
 	}
 	if parent.sessionDB == nil {
 		return nil, nil
 	}
-	db, err := state.Acquire(ctx, parent.sessionDB.Path())
+	db, err := state.Acquire(ctx, sessionStorePath(parent.sessionDB))
 	if err != nil {
 		delegateLog().Debug("subagent: failed to open dedicated SessionDB; child persistence disabled", "error", err)
 		return nil, nil
@@ -157,14 +161,14 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 		defer func() {
 			if r := recover(); r != nil {
 				if childDB != nil {
-					delegateQuiet("", func() { state.ReleaseOrClose(childDB) })
+					delegateQuiet("", func() { releaseOrCloseStore(childDB) })
 				}
 				panic(r)
 			}
 		}()
 		child, err = newChildAIAgentFn(tools.WithDelegatedChildContext(buildCtx, true), o)
 		if err != nil && childDB != nil {
-			delegateQuiet("", func() { state.ReleaseOrClose(childDB) })
+			delegateQuiet("", func() { releaseOrCloseStore(childDB) })
 		}
 		return child, err
 	}()

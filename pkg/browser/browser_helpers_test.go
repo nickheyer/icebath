@@ -2,9 +2,9 @@ package browser
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
@@ -17,18 +17,7 @@ var extraChildModes = map[string]func() int{}
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry(context.Background())
-	if mode := os.Getenv(childModeEnv); mode != "" {
-		os.Unsetenv(childModeEnv)
-		if err := exitWithRoot(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(2)
-		}
-		if run, ok := extraChildModes[mode]; ok {
-			os.Exit(run())
-		}
-		os.Exit(runChildMode(mode))
-	}
-	removeRoot := openRootPipe()
+	removeRoot := startChildGuard()
 	claimPrivateDir = func(string) bool { return false }
 	if tools.ConfigEnvTableKeys == nil {
 		tools.ConfigEnvTableKeys = func() []string { return nil }
@@ -60,4 +49,15 @@ func testEnv(t *testing.T) *tools.Env {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
 	return &tools.Env{Home: dir}
+}
+
+func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

@@ -31,7 +31,7 @@ var summaryMissingCredentialMarkers = []string{"no api key was found", "no api k
 var hygienePreagentOnlyCooldownMarkers = []string{"session hygiene compression timed out", "hygiene compression deferred: turn-hold budget expired"}
 
 const (
-	modelOnlyDisplayMetadataKey        = "model_only"
+	modelOnlyDisplayMetadataKey        = state.ModelOnlyDisplayMetadataKey
 	dbPersistedMarker                  = "_db_persisted"
 	compactionTailMarker               = "_compaction_tail"
 	ProactivePruneRearmModelConfigKey  = "_proactive_prune_rearm_tokens"

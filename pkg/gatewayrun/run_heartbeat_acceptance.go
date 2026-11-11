@@ -82,7 +82,10 @@ func admissionIsHeartbeat(row *pyjson.Object) bool {
 
 // Commits a due heartbeat behind the canonical FIFO of its route, coalescing overdue ticks
 func admitHeartbeat(ctx context.Context, r *GatewayRunner, adapter gateway.PlatformAdapter, source *gateway.SessionSource, sessionID, route string) error {
-	authority := gateway.ActiveAuthority(r)
+	authority, err := gateway.ActiveAuthority(ctx, r)
+	if err != nil {
+		return err
+	}
 	if authority == nil {
 		return nil
 	}

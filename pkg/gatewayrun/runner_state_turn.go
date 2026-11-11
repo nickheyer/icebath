@@ -21,6 +21,8 @@ type runnerTurnState struct {
 	// One shot per session notes prepended to the next user message, set by the model and skills reload commands
 	pendingModelNotes        map[string]string
 	pendingSkillsReloadNotes map[string]string
+	// Guards the consecutive transcript lag streaks of the cached history guard
+	transcriptLagMu sync.Mutex
 	// Executor workers that outlived their gateway turn, exposed to drain and interrupt until they exit
 	deferredAgentWorkersMu sync.Mutex
 	deferredAgentWorkers   map[*gatewayFuture]*agent.AIAgent
@@ -29,4 +31,9 @@ type runnerTurnState struct {
 	// One shot provider switch notice the last runtime resolution left for the next agent, empty when none
 	preAgentFallbackNoticeMu sync.Mutex
 	preAgentFallbackNotice   string
+	// Guards the completion batch queues and the warned no transport owners
+	completionBatchMu           sync.Mutex
+	completionNoTransportWarned map[noTransportKey]struct{}
+	// Runner wide lock over a model command's read, resolve and commit
+	modelSwitchLockObj sync.Mutex
 }

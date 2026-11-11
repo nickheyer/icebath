@@ -23,7 +23,7 @@ type recoverTestRunner struct {
 	store    *SessionStore
 	adapters *pydict.Dict[Platform, PlatformAdapter]
 	profiles *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
-	registry authorityRegistry
+	registry *SessionAuthorities
 	launch   *SessionAuthority
 	draining bool
 	evicted  []string
@@ -35,7 +35,7 @@ func (r *recoverTestRunner) Draining() bool                                    {
 func (r *recoverTestRunner) Running() bool                                     { return true }
 func (r *recoverTestRunner) SessionStore() *SessionStore                       { return r.store }
 func (r *recoverTestRunner) MultiplexProfiles() bool                           { return false }
-func (r *recoverTestRunner) SessionAuthorities() authorityRegistry             { return r.registry }
+func (r *recoverTestRunner) SessionAuthorities() *SessionAuthorities           { return r.registry }
 func (r *recoverTestRunner) SessionAuthority() *SessionAuthority               { return r.launch }
 func (r *recoverTestRunner) EvictCachedAgent(route string)                     { r.evicted = append(r.evicted, route) }
 func (r *recoverTestRunner) Adapters() *pydict.Dict[Platform, PlatformAdapter] { return r.adapters }
