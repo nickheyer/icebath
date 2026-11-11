@@ -24,17 +24,17 @@ func registerSessionResumeHandlers() {
 
 // Per call session.resume state, ownsDB marking a dedicated profile handle that is still ours to close
 type resumeCtx struct {
-	ctx                                                 context.Context
-	rid                                                 any
-	params                                              map[string]any
-	target                                              string
-	db                                                  *state.DB
-	ownsDB                                              bool
-	found                                               *pyjson.Object
-	profileResumeCwd                                    string
-	cols                                                int
-	profile                                             string
-	profileHome                                         string
+	ctx                                                  context.Context
+	rid                                                  any
+	params                                               map[string]any
+	target                                               string
+	db                                                   *state.DB
+	ownsDB                                               bool
+	found                                                *pyjson.Object
+	profileResumeCwd                                     string
+	cols                                                 int
+	profile                                              string
+	profileHome                                          string
 	lazy, deferHistory, omitMessages, eagerBuild, inline bool
 }
 
