@@ -293,9 +293,36 @@ func (t *adapterTask) finished() bool {
 
 // One adapter owned goroutine with cancellation and completion, the asyncio task of hermes
 type adapterTask struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-	err    error
+	cancel    context.CancelFunc
+	done      chan struct{}
+	err       error
+	mu        sync.Mutex
+	callbacks []func()
+	settled   bool
+}
+
+// Runs fn when the task finishes and before any waiter resumes, at once for a finished task
+func (t *adapterTask) addDoneCallback(fn func()) {
+	t.mu.Lock()
+	if t.settled {
+		t.mu.Unlock()
+		fn()
+		return
+	}
+	t.callbacks = append(t.callbacks, fn)
+	t.mu.Unlock()
+}
+
+// Marks the task finished, runs its done callbacks in order and wakes its waiters
+func (t *adapterTask) settle() {
+	t.mu.Lock()
+	callbacks := t.callbacks
+	t.callbacks, t.settled = nil, true
+	t.mu.Unlock()
+	for _, fn := range callbacks {
+		fn()
+	}
+	close(t.done)
 }
 
 // Adapter owned goroutine handle the platform adapters hold and cancel

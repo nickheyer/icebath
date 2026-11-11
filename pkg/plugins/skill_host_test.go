@@ -205,7 +205,7 @@ func TestRegisteredHostListsAndGuardsPluginSkills(t *testing.T) {
 }
 
 // test_setup_beat_plugin_skills.py test_a_skill_saved_under_the_hashed_portable_name_still_loads with real discovery
-func TestSkillSavedUnderHashedPortableNameLoadsThroughHost(t *testing.T) {
+func TestASkillSavedUnderTheHashedPortableNameStillLoads(t *testing.T) {
 	h, m := skillHostHome(t, "{\"plugins\": {\"enabled\": [\"blender\"]}}\n")
 	plugin := filepath.Join(h, "plugins", "blender")
 	memWrite(t, filepath.Join(plugin, "plugin.json"), "{\"$schema\": \""+PluginSchemaV1+"\", \"name\": \"blender\"}")

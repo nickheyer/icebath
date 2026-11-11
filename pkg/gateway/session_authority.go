@@ -44,9 +44,13 @@ type LiveSession struct {
 	ReviewRun     reviewRun
 	mutationLock  sync.Mutex
 	PauseNotified bool
-	controls      *PendingControls
-	controlsOnce  sync.Once
-	claimGate     sync.Mutex
+	ReaskPick     bool
+	// Principal and level of a reasoning command that arrived while a turn ran
+	PendingReasoning *pendingReasoning
+	CompressionCount int
+	controls         *PendingControls
+	controlsOnce     sync.Once
+	claimGate        sync.Mutex
 }
 
 // Live session on a route with a fresh event stream
@@ -77,7 +81,7 @@ type SessionAuthority struct {
 	retiredLocal           map[string]bool
 	launchSources          map[string]any
 	executing              map[string]int64
-	pendingCloses          map[string]any
+	pendingCloses          map[string]*pendingClose
 	orphanCloses           map[string]*time.Timer
 	nativeLegacyTransports map[string]Principal
 	apiAdmissions          sync.Mutex
@@ -87,6 +91,7 @@ type SessionAuthority struct {
 	producerTurns          map[string]*producerBracket
 	steerTransfers         map[string]*steerTransfer
 	adopted                map[string]adoptedAgent
+	onboardingDiscards     *onboardingDiscardSet
 	botMailboxLock         asyncLock
 	botReceiptIndex        map[string]botReceiptOwner
 	botReceiptTasks        map[*adapterTask]bool
@@ -97,7 +102,11 @@ type SessionAuthority struct {
 	pendingStops           map[string]int64
 	pendingStopCauses      map[string]stopCause
 	pendingSteers          map[string]latchedSteers
-	pendingDeliveries      map[string]any
+	pendingDeliveries      map[string]*settledDelivery
+	waiterReplyRegistry    map[string]*settledDelivery
+	unsettledDeliveries    map[string]*settledDelivery
+	postDeliveryTaken      map[string]*postDeliveryTake
+	heldTurnMarkers        map[string]*MessageEvent
 	deliveredStops         map[string]int64
 	deferredResets         map[string]func(ctx context.Context) error
 	markerAdopters         map[string]*MessageEvent
@@ -106,6 +115,7 @@ type SessionAuthority struct {
 	routeEpochs            map[string]int
 	Events                 map[string]tuigateway.Transport
 	HostedRoomService      HostedAdmissionChecker
+	editorMCP              editorMCPState
 }
 
 // Authority over a profile store at its runtime epoch

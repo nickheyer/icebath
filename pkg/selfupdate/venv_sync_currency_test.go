@@ -16,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// A fake core locked by real uv with the running tree pointed at it and a home that enables no plugin
+// Fake core locked by real uv with the running tree on it and a home enabling no plugin
 func vsAdmissionEnv(t *testing.T) (string, string) {
 	t.Helper()
 	tmp := t.TempDir()

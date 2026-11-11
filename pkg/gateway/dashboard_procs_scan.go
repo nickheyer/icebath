@@ -28,11 +28,19 @@ var wrapperHeadCommands = map[string]bool{
 	"screen": true, "tmux": true, "sudo": true,
 }
 
-// Pid and command line of every process from wmic on Windows or ps, an error when the ps scan cannot run
+// Rows plus one for a pid text that parses as an integer, unchanged otherwise
+func appendRow(rows []pidCommand, pidText, command string) []pidCommand {
+	if pid, ok := pyIntText(pidText); ok {
+		return append(rows, pidCommand{pid, command})
+	}
+	return rows
+}
+
+// Pid and command line of every process from wmic or ps, an error when ps cannot run
 func iterDashboardProcessTable(ctx context.Context) ([]pidCommand, error) {
 	rows := []pidCommand{}
 	if dashboardGOOS == "windows" {
-		result, err := dashboardRunProbe(ctx, []string{"wmic", "process", "get", "ProcessId,CommandLine", "/FORMAT:LIST"}, 10*time.Second)
+		result, err := dashboardRunHidden(ctx, []string{"wmic", "process", "get", "ProcessId,CommandLine", "/FORMAT:LIST"}, 10*time.Second)
 		if err != nil || result == nil || result.Returncode != 0 {
 			return rows, nil
 		}
@@ -42,9 +50,7 @@ func iterDashboardProcessTable(ctx context.Context) ([]pidCommand, error) {
 			if strings.HasPrefix(line, "CommandLine=") {
 				current = line[len("CommandLine="):]
 			} else if strings.HasPrefix(line, "ProcessId=") {
-				if pid, ok := pyIntText(line[len("ProcessId="):]); ok {
-					rows = append(rows, pidCommand{pid, current})
-				}
+				rows = appendRow(rows, line[len("ProcessId="):], current)
 			}
 		}
 		return rows, nil
@@ -57,9 +63,7 @@ func iterDashboardProcessTable(ctx context.Context) ([]pidCommand, error) {
 		for _, line := range strings.Split(pystr.DecodeUTF8Replace(result.Stdout), "\n") {
 			parts := pystr.SplitWhitespace(pystr.Strip(line), 1)
 			if len(parts) == 2 && !strings.Contains(line, "grep") {
-				if pid, ok := pyIntText(parts[0]); ok {
-					rows = append(rows, pidCommand{pid, parts[1]})
-				}
+				rows = appendRow(rows, parts[0], parts[1])
 			}
 		}
 	}

@@ -24,12 +24,6 @@ type SubmitOptions struct {
 	KanbanCard           any
 }
 
-// Transcript rewrite a retry re-send commits in its admission's own write
-type RetryRewrite struct {
-	Applied  bool
-	OnCommit func()
-}
-
 // Runner that keeps one resident agent per running key
 type residentAgentRunner interface {
 	ResidentAgentFor(key string) any
@@ -354,7 +348,7 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 		requestID += ":edit:" + pyrepr.Str(revision)
 	}
 	committed := ref
-	rewrite := takeRetryRewrite(event, a.DB)
+	rewrite := takeRetryRewrite(ctx, event, a.DB)
 	if scope := leaseScope(ctx); scope != nil {
 		scope.startWrite()
 	}

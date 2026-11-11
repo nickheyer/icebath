@@ -11,13 +11,14 @@ import (
 // Runner double of the authority tests, never draining and resolving no adapter unless one is set
 type authorityRunnerDouble struct {
 	draining bool
+	stopped  bool
 	store    *SessionStore
 	adapter  PlatformAdapter
 }
 
 func (r *authorityRunnerDouble) SessionRuntimeDescriptor() map[string]any { return map[string]any{} }
 func (r *authorityRunnerDouble) Draining() bool                           { return r.draining }
-func (r *authorityRunnerDouble) Running() bool                            { return true }
+func (r *authorityRunnerDouble) Running() bool                            { return !r.stopped }
 func (r *authorityRunnerDouble) SessionStore() *SessionStore              { return r.store }
 func (r *authorityRunnerDouble) MultiplexProfiles() bool                  { return false }
 func (r *authorityRunnerDouble) AdapterForSource(context.Context, *SessionSource) PlatformAdapter {

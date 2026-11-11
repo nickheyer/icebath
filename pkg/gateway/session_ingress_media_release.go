@@ -23,8 +23,13 @@ var (
 	mediaLastSweep = map[string]float64{}
 )
 
+// Collection of a terminal admission's media, replaced by tests that fail the cleanup write
+var releaseAdmissionMedia func(ctx context.Context, db *state.SessionDB, admissionID string) error
+
+func init() { releaseAdmissionMedia = collectAdmissionMedia }
+
 // Deletes the terminal admission's native bytes no other retained input holds
-func releaseAdmissionMedia(ctx context.Context, db *state.SessionDB, admissionID string) error {
+func collectAdmissionMedia(ctx context.Context, db *state.SessionDB, admissionID string) error {
 	_, err := releaseAdmissionMediaCount(ctx, db, admissionID)
 	return err
 }

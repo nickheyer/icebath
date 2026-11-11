@@ -15,3 +15,24 @@ func ResumeCommand(ctx context.Context, h string, args []string, w io.Writer) (i
 	}
 	return 0, nil
 }
+
+// PauseCommand engages the emergency stop with an optional reason, hermes_cli/subcommands/pause.py cmd_pause
+func PauseCommand(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
+	reason, _ := ns["reason"].(string)
+	already := IsEngaged(ctx)
+	path := Engage(ctx, reason)
+	verb := "Icebath paused"
+	if already {
+		verb = "Still paused"
+	}
+	detail := ""
+	if state := GetState(ctx); state != nil && state.Reason != "" {
+		detail = " — reason: " + state.Reason
+	}
+	fmt.Fprintf(w, "⏸️  %s%s\n", verb, detail)
+	fmt.Fprintf(w, "    sentinel: %s\n", path)
+	fmt.Fprintln(w, "    Cron dispatch, kanban dispatch, and new gateway turns (messaging and interactive\n"+
+		"    CLI, TUI and Desktop turns alike) are on hold. In-flight work keeps running.\n"+
+		"    Run `icebath resume` to lift the pause.")
+	return 0, nil
+}

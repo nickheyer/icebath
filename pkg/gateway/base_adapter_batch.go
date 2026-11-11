@@ -25,7 +25,7 @@ func spawnAdapterTask(ctx context.Context, fn func(ctx context.Context) error) *
 	t := &adapterTask{cancel: cancel, done: make(chan struct{})}
 	tctx = context.WithValue(tctx, adapterTaskKey{}, t)
 	go func() {
-		defer close(t.done)
+		defer t.settle()
 		defer cancel()
 		t.err = fn(tctx)
 	}()

@@ -42,8 +42,8 @@ var (
 		updaterecord.ExternalState:       "  ◆ %[1]s (pid %[2]s) @ %[3]s — separate checkout, not updated by this run",
 		updaterecord.RestartPendingState: "  ↻ %[1]s (pid %[2]s) @ %[3]s — restart pending (deferred until this process exits; the update runs inside this gateway)",
 	}
-	fleetRowUnknown         = "  ? %[1]s (pid %[2]s) — version unknown (gateway predates version stamping; restart to enable)"
-	fleetRowIdentityPending = "  ? %[1]s (pid %[2]s) — new pid since the update, code identity not published yet — re-check with `icebath gateway status`"
+	fleetRowUnknown             = "  ? %[1]s (pid %[2]s) — version unknown (gateway predates version stamping; restart to enable)"
+	fleetRowIdentityPendingLine = "  ? %[1]s (pid %[2]s) — new pid since the update, code identity not published yet — re-check with `icebath gateway status`"
 )
 
 type profileHome struct{ profile, home string }
@@ -303,7 +303,7 @@ func PrintFleetVersionMatrix(fleet []*pyjson.Object) bool {
 		}
 		line := fleetRowUnknown
 		if truthyValue(entry.Vals["identity_pending"]) {
-			line = fleetRowIdentityPending
+			line = fleetRowIdentityPendingLine
 		}
 		if state, ok := entry.Vals["state"].(string); ok {
 			if known, ok := fleetRowLines[state]; ok {

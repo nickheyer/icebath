@@ -85,7 +85,7 @@ func TestResolvePreToolBlockRunsApprovalGateFailClosed(t *testing.T) {
 	}
 }
 
-func TestPreToolCallTimeoutFailsClosedThroughResolve(t *testing.T) {
+func TestPreToolCallTimeoutFailClosed(t *testing.T) {
 	ctx, m := directiveProfile(t, "plugins:\n  hook_callback_timeout: 0.1\n")
 	hold := make(chan struct{})
 	defer close(hold)

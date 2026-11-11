@@ -182,14 +182,6 @@ func argStr(v any) string {
 	return config.PyStr(v)
 }
 
-func argStrPtr(v any) *string {
-	if v == nil {
-		return nil
-	}
-	s := config.PyStr(v)
-	return &s
-}
-
 func argMap(v any) map[string]any {
 	switch m := v.(type) {
 	case map[string]any:
@@ -359,8 +351,8 @@ func init() {
 		}),
 		"register_auxiliary_task": hostMethod("register_auxiliary_task", []pyParam{req("key"), kwReq("display_name"), kwReq("description"), kwo("defaults", nil), kwo("inherit_from", nil)},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-				return c.RegisterAuxiliaryTask(argStr(a["key"]), AuxTaskOptions{DisplayName: argStr(a["display_name"]), Description: argStr(a["description"]),
-					Defaults: argMap(a["defaults"]), InheritFrom: argStrPtr(a["inherit_from"])})
+				return c.RegisterAuxiliaryTask(a["key"], AuxTaskOptions{DisplayName: a["display_name"], Description: a["description"],
+					Defaults: a["defaults"], InheritFrom: a["inherit_from"]})
 			}),
 		"register_redaction_patterns": hostMethod("register_redaction_patterns", []pyParam{req("patterns")}, func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return int64(c.RegisterRedactionPatterns(a["patterns"])), nil

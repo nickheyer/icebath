@@ -17,6 +17,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -383,5 +384,36 @@ func TestConfigAndStateFollowContextLocalProfileScope(t *testing.T) {
 		if v, _ := c.State(homeCtx(h)).Get("profile_value", nil); v != i {
 			t.Fatal(v)
 		}
+	}
+}
+
+func TestFixturePluginRoundTripsBridgeDuringRealDiscovery(t *testing.T) {
+	installLiveServices(t)
+	h, m := liveHome(t, liveInterpreters(t)["system"], nil)
+	dir := filepath.Join(h, "plugins", "bridge-fixture")
+	writePluginDir(t, dir, "name: bridge-fixture\nversion: 1.0.0\n")
+	writeFile(t, filepath.Join(dir, "__init__.py"), "def register(ctx):\n"+
+		"    old = ctx.get_config('loads', default=0)\n"+
+		"    ctx.set_config('loads', old + 1)\n"+
+		"    ctx.state.set('registered', {'profile': ctx.profile_name})\n")
+	writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  isolation: host\n  enabled:\n    - bridge-fixture\n")
+	config.ResetCache()
+	ctx := homeCtx(h)
+	m.DiscoverAndLoad(ctx, true)
+	m.mu.RLock()
+	loaded := m.plugins["bridge-fixture"]
+	m.mu.RUnlock()
+	if loaded == nil || !loaded.Enabled {
+		t.Fatalf("bridge-fixture did not load (error %q)", loadedError(m, "bridge-fixture"))
+	}
+	c := bridgeContext("bridge-fixture", "", "")
+	config.ResetCache()
+	if loads, err := c.GetConfig(ctx, "loads", nil); err != nil || config.PyRepr(loads) != "1" {
+		t.Fatalf("loads = %#v %v", loads, err)
+	}
+	registered, err := c.State(ctx).Get("registered", nil)
+	row, _ := registered.(map[string]any)
+	if err != nil || (row["profile"] != "custom" && row["profile"] != "default") {
+		t.Fatalf("registered = %#v %v", registered, err)
 	}
 }

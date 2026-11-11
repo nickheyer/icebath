@@ -53,6 +53,16 @@ func TestSessionsParserMatchesArgparse(t *testing.T) {
 		ns["public"] != false || ns["no_redact"] != false || ns["redact"] != false || ns["delete_after_verified"] != false || ns["force"] != false {
 		t.Fatalf("export %v %v", ns, err)
 	}
+	if _, ok := ns["output"]; !ok {
+		t.Fatalf("export without OUTPUT has no output dest %v", ns)
+	}
+	ns, err = bNamespace(t, "sessions export", []string{"sessions", "export", "out.jsonl", "--format", "md", "--session-id", "abc", "--only", "user-prompts"})
+	if _, raw := ns["OUTPUT"]; err != nil || raw || ns["output"] != "out.jsonl" || ns["format"] != "md" || ns["session_id"] != "abc" || ns["only"] != "user-prompts" {
+		t.Fatalf("export positional %v %v", ns, err)
+	}
+	if u := NewCLI().find("sessions export").Use; u != "export [OUTPUT]" {
+		t.Fatalf("export usage %q", u)
+	}
 	ns, err = bNamespace(t, "sessions rename", []string{"sessions", "rename", "abc", "My", "new", "title"})
 	if title, _ := ns["title"].([]string); err != nil || ns["session_id"] != "abc" || !slices.Equal(title, []string{"My", "new", "title"}) {
 		t.Fatalf("rename %v %v", ns, err)

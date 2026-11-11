@@ -51,6 +51,7 @@ func installProcessWiring() {
 		return tools.CheckPaused(context.Background(), component, log)
 	})
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
+	selfupdate.RunCLIHook = run
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	state.SecretEnvName = codeexec.IsSecretEnvName
 	state.SecretEnvSubstrings = codeexec.SecretSubstrings
@@ -76,6 +77,8 @@ func installProcessWiring() {
 	state.ProfileLabelForHome = gateway.ProfileLabelForHome
 	state.ReadGatewayLockRecord = gateway.ReadGatewayLockRecord
 	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
+	gateway.ReleaseVaultUnlocks = browser.ReleaseVaultSession
+	gateway.ErrorSurfaceFromResult = agent.BuildErrorSurfaceFromResult
 	gateway.LoadPrefillMessages = app.LoadPrefillMessages
 	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
@@ -122,6 +125,7 @@ func installProcessWiring() {
 	}
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
+	app.SetPrintVersionInfo(printVersionInfo)
 }
 
 // Raw config of the bound home as a tree, empty on a read failure
@@ -236,10 +240,10 @@ func pluginServices() *plugins.Services {
 		PluginOAuthKey:            provider.PluginOAuthKey,
 		ForgetPluginGrants:        provider.ForgetPluginGrants,
 		ReloadGatewayPlugins: func(ctx context.Context, target, profileHome string) (map[string]any, error) {
-			return gateway.ReloadGatewayPluginsForService(ctx, target, profileHome, 30*time.Second)
+			return gateway.ReloadGatewayPluginsAnswer(target, profileHome, 30*time.Second), nil
 		},
 		HostRendezvous:              gateway.HostRendezvousService(),
-		GatewayRunningPid:           gateway.GatewayRunningPID,
+		GatewayRunningPid:           gateway.GetRunningPid,
 		InstalledGatewayServiceKind: gateway.InstalledGatewayServiceKind,
 		RefreshPluginSessions:       gateway.RefreshPluginSessions,
 		MCP:                         mcp.PluginConnector(),

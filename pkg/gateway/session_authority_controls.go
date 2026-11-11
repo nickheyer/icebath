@@ -229,13 +229,10 @@ func (a *SessionAuthority) Detach(ctx context.Context, actor Principal, subscrip
 	if !last {
 		return nil
 	}
-	err := releaseEditorMCP(context.WithoutCancel(ctx), a, []string{sessionID})
+	releaseEditorMCP(context.WithoutCancel(ctx), a, []string{sessionID})
 	a.mu.Lock()
 	live.Detaching--
 	a.mu.Unlock()
-	if err != nil {
-		return err
-	}
 	if endReason != "" {
 		return closeViewerSession(ctx, a, sessionID, endReason)
 	}
@@ -460,8 +457,11 @@ func (a *SessionAuthority) SteerAgent(ctx context.Context, ref SessionRef, gener
 			}
 		}
 	}
-	if agent != nil || text == nil || !adoptsOwnerAgent(ctx, a, ref) {
+	if agent != nil || text == nil {
 		return agent, false, nil
+	}
+	if adopts, err := adoptsOwnerAgent(ctx, a, ref); err != nil || !adopts {
+		return agent, false, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

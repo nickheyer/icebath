@@ -329,19 +329,18 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 			loaded.Module, loaded.ModuleFile = predeclared.name, predeclared.file
 		}
 		if inHost {
-			directory := mf.Source == "user" || mf.Source == "project" || mf.Source == "bundled"
-			if directory && mf.Path != "" && !isFile(filepath.Join(mf.Path, "__init__.py")) {
-				return false, &FileNotFoundError{Msg: "No __init__.py in " + mf.Path}
+			var file string
+			var err error
+			if mf.Source == "user" || mf.Source == "project" || mf.Source == "bundled" {
+				file, err = m.loadDirectoryModule(ctx, mf, pctx, moduleName, hasPredeclared)
+			} else {
+				file, err = m.loadEntrypointModule(ctx, mf, pctx, moduleName)
 			}
-			host, err := m.pluginHost()
 			if err != nil {
 				return false, err
 			}
-			file, err := host.Load(ctx, mf, pctx, moduleName, !directory, hasPredeclared)
-			if err == nil {
-				loaded.ModuleFile = file
-			}
-			return true, inProcessLoadFailure(ctx, err)
+			loaded.ModuleFile = file
+			return true, nil
 		}
 		plugin, ok := bundledPlugin(key)
 		if !ok {
@@ -605,8 +604,63 @@ func (m *Manager) directoryModuleName(mf *Manifest) string {
 	return bare + "__home_" + hex.EncodeToString(digest[:])[:12]
 }
 
-// Module prefix whose callbacks inherit the plugin policy
-func (m *Manager) policyModuleName(mf *Manifest) string { return m.directoryModuleName(mf) }
+// Module prefix whose callbacks inherit the plugin policy, the entry point module for a pip installed plugin
+func (m *Manager) policyModuleName(mf *Manifest) string {
+	if mf.Source == "entrypoint" && mf.Path != "" {
+		module, _, _ := strings.Cut(mf.Path, ":")
+		if module = pyStrip(module); module != "" {
+			return module
+		}
+	}
+	return m.directoryModuleName(mf)
+}
+
+// Imports a directory plugin in the plugin host under its namespaced module and replays its register onto pctx
+func (m *Manager) loadDirectoryModule(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, predeclared bool) (string, error) {
+	if mf.Path != "" && !pathExists(filepath.Join(mf.Path, "__init__.py")) {
+		return "", &FileNotFoundError{Msg: "No __init__.py in " + mf.Path}
+	}
+	if moduleName == "" {
+		moduleName = m.directoryModuleName(mf)
+	}
+	host, err := m.pluginHost()
+	if err != nil {
+		return "", err
+	}
+	file, err := host.Load(ctx, mf, pctx, moduleName, false, predeclared)
+	return file, inProcessLoadFailure(ctx, err)
+}
+
+// Loads a pip installed plugin in the plugin host through its entry point, a missing one failing the load
+func (m *Manager) loadEntrypointModule(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) (string, error) {
+	host, err := m.pluginHost()
+	if err != nil {
+		return "", err
+	}
+	file, err := host.Load(ctx, mf, pctx, moduleName, true, false)
+	return file, inProcessLoadFailure(ctx, err)
+}
+
+// Drops a plugin module and every submodule of it from the interpreter a manager plugin host runs
+func evictModules(m *Manager, moduleName string) error {
+	pluginHostMu.Lock()
+	host := m.pluginHostInstance
+	pluginHostMu.Unlock()
+	if host == nil {
+		return nil
+	}
+	return host.evictModules(moduleName)
+}
+
+// Runs a registrar body inside the replacement coordinator so snapshot, write and lease attach are one transaction
+func serializedReplacement(method func()) {
+	replacementCoordinator.Transaction(method)
+}
+
+// Context bound to a manager home so discovery and loading resolve every path under it
+func pluginHomeScope(ctx context.Context, h string) context.Context {
+	return home.WithOverride(ctx, h)
+}
 
 // Policy module of a context, assigned by the loader or derived from its manifest
 func (c *Context) policyModule() string {
@@ -680,7 +734,7 @@ func (m *Manager) RearmFailedPlatform(ctx context.Context, platformName string) 
 func (m *Manager) leaseDeferredPlatform(mf *Manifest, key string) bool {
 	name := platformNameFromManifest(mf)
 	var ok bool
-	replacementCoordinator.Transaction(func() {
+	serializedReplacement(func() {
 		err := callGuarded(func() error {
 			registry, err := needService("Platforms", func(s *Services) PlatformRegistry { return s.Platforms })
 			if err != nil {

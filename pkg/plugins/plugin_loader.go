@@ -28,6 +28,9 @@ func UserPluginsDir(ctx context.Context) (string, bool) {
 // Stat behind the plugin directory probes, a seam tests use to deny one child even as root
 var pluginDirStat = os.Stat
 
+// Directory listing behind the plugin scan, a seam tests use to deny a plugins root even as root
+var pluginDirRead = os.ReadDir
+
 // pathlib is_dir or exists of a path, the errors pathlib swallows answering false and the rest raised
 func pathlibProbe(p string, wantDir bool) (bool, error) {
 	st, err := pluginDirStat(p)

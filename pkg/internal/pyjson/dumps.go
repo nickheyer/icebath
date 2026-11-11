@@ -217,6 +217,9 @@ func (e *encoder) encode(v any) error {
 			return e.list(len(x), func(i int) any { return x[i] })
 		})
 	case interface{ PyStr() string }:
+		if _, typed := v.(pyrepr.TypeNamer); typed {
+			return e.unencodable(v, reflect.ValueOf(v))
+		}
 		e.str(x.PyStr())
 	default:
 		return e.reflected(v)
@@ -265,7 +268,15 @@ func (e *encoder) reflected(v any) error {
 	case reflect.Float32, reflect.Float64:
 		return e.float(rv.Float())
 	}
+	return e.unencodable(v, rv)
+}
+
+// Hands a value json cannot encode to default, TypeError naming its Python type when none is set
+func (e *encoder) unencodable(v any, rv reflect.Value) error {
 	if e.def == nil {
+		if named, ok := v.(pyrepr.TypeNamer); ok {
+			return &TypeError{fmt.Sprintf("Object of type %s is not JSON serializable", named.PyTypeName())}
+		}
 		return &TypeError{fmt.Sprintf("Object of type %T is not JSON serializable", v)}
 	}
 	id := uintptr(0)

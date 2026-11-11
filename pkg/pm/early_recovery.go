@@ -346,7 +346,7 @@ func ShouldSkipExternalSecretSources() bool {
 	if split != nil {
 		argv = split(argv)
 	}
-	return len(argv) > 0 && argv[0] == "update"
+	return len(argv) > 0 && (argv[0] == "update" || argv[0] == ImportHealthEntry)
 }
 
 // File an interrupted checkout fast forward leaves in the git dir until its move is repaired

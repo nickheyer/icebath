@@ -2,7 +2,12 @@ package selfupdate
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/nickheyer/icebath/pkg/home"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -72,4 +77,52 @@ func PublishStage(message string) {
 		return
 	}
 	_ = os.Rename(tmp, path)
+}
+
+// Environment variable marking that an update progress panel was spawned for this update chain
+const UpdateUIActiveEnv = "ICEBATH_UPDATE_UI_ACTIVE"
+
+// True when the last forty handoff log lines show a browser window or status panel started
+func uiPresentInLog(logText string) bool {
+	lines := pystr.Splitlines(logText, false)
+	if len(lines) > 40 {
+		lines = lines[len(lines)-40:]
+	}
+	tail := strings.Join(lines, "\n")
+	return strings.Contains(tail, "app window") || strings.Contains(tail, "status panel pid=")
+}
+
+// Starts the macOS status panel of the new tree when a shim watches with no renderer up, never failing
+func ensurePanel(updateRoot string) {
+	if os.Getenv(UpdateUIActiveEnv) != "" || runtime.GOOS != "darwin" {
+		return
+	}
+	if UpdateStatusFile() == "" {
+		return
+	}
+	panel := filepath.Join(updateRoot, "scripts", "desktop-update", "update-panel.js")
+	if !isRegular(panel) {
+		return
+	}
+	logPath := filepath.Join(home.Root(), "logs", "desktop-update-handoff.log")
+	if isRegular(logPath) {
+		raw, err := os.ReadFile(logPath)
+		if err != nil {
+			return
+		}
+		text := []rune(pystr.DecodeUTF8SigReplace(raw))
+		if len(text) > 8000 {
+			text = text[len(text)-8000:]
+		}
+		if uiPresentInLog(string(text)) {
+			return
+		}
+	}
+	child := exec.Command("/usr/bin/osascript", "-l", "JavaScript", panel, UpdateStatusFile())
+	child.SysProcAttr = posixPauseDetachedAttr()
+	if err := child.Start(); err != nil {
+		return
+	}
+	go func() { _ = child.Wait() }()
+	os.Setenv(UpdateUIActiveEnv, "1")
 }

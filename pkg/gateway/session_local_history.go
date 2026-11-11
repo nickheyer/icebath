@@ -149,10 +149,7 @@ func omittedHistoryState(ctx context.Context, db *state.SessionDB, target string
 	if row == nil {
 		return nil, 0, runtimeRefusal("not_found")
 	}
-	plan, err := todoStateFromDB(ctx, db, target)
-	if err != nil {
-		return nil, 0, err
-	}
+	plan := todoStateFromDB(ctx, db, target)
 	count := 0
 	if raw, _ := row.Get("message_count"); pyTruthy(raw) {
 		n, err := pyint.Of(raw)

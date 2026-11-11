@@ -67,7 +67,7 @@ func (c *Context) RegisterProvider(kind string, provider any) (*Registration, er
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerProviderRow(row, provider) })
+	serializedReplacement(func() { handle, err = c.registerProviderRow(row, provider) })
 	return handle, err
 }
 

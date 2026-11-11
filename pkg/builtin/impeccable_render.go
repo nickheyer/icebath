@@ -237,7 +237,7 @@ func yamlNeedsQuoting(v string) bool {
 func formatYamlScalar(v any) string {
 	s, ok := v.(string)
 	if !ok {
-		return fmt.Sprint(v)
+		return jsString(v)
 	}
 	if yamlNeedsQuoting(s) {
 		return `"` + strings.ReplaceAll(strings.ReplaceAll(s, `\`, `\\`), `"`, `\"`) + `"`

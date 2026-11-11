@@ -21,6 +21,7 @@ type closedStamp struct {
 // Run token of a cold refine review held on its live session
 type reviewRun interface {
 	RequestDone() bool
+	CancelForLiveTurn(message, toolReason string)
 }
 
 type drainTaskKey struct{}

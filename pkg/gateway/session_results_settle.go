@@ -106,9 +106,13 @@ func rowGeneration(row *pyjson.Object) int64 {
 }
 
 // Outcome a result's own flags imply and the compact redacted copy settlement stores
-func prepareResult(row *pyjson.Object, response, outcome string, captured *pyjson.Object) (*state.CapturedResult, error) {
+func prepareResult(row *pyjson.Object, response any, outcome string, captured *pyjson.Object) (*state.CapturedResult, error) {
 	if captured == nil {
-		captured = pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", response, "messages", []any{}), "usage", pyjson.NewObject())
+		final := response
+		if !pyTruthy(final) {
+			final = ""
+		}
+		captured = pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", final, "messages", []any{}), "usage", pyjson.NewObject())
 	}
 	raw, ok := captured.Get("result")
 	if !ok {
@@ -140,8 +144,8 @@ func prepareResult(row *pyjson.Object, response, outcome string, captured *pyjso
 }
 
 // Commits a claim's outcome with its result, a row already terminal answering with what it committed
-func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *pyjson.Object, response, outcome string, result *pyjson.Object,
-	prepared *state.CapturedResult, transfers map[string]bool) (*pyjson.Object, string, error) {
+func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *pyjson.Object, response any, outcome string, result *pyjson.Object,
+	prepared *state.CapturedResult, transfers map[string]bool) (*pyjson.Object, any, error) {
 	admissionID := rowString(row, "admission_id")
 	var committed *pyjson.Object
 	var saved string
@@ -172,22 +176,22 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 		return nil
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if committed != nil {
 		loaded, err := state.LoadTerminalResult(saved)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 		stored, _ := loaded.(*pyjson.Object)
 		if stored == nil {
-			return nil, "", runtimeRefusal("storage_unavailable")
+			return nil, nil, runtimeRefusal("storage_unavailable")
 		}
 		return committed, capturedResponse(stored), nil
 	}
 	if prepared == nil {
 		if prepared, err = prepareResult(row, response, outcome, result); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 	}
 	notice := ownerStopNotice(result, prepared.Outcome, row)
@@ -208,13 +212,18 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 	settled, err := db.SettleSessionInput(ctx, state.SettleInput{Epoch: epoch, AdmissionID: admissionID, Generation: rowGeneration(row),
 		Outcome: prepared.Outcome, Result: prepared.Stored, Transfers: transfers, TerminalWrite: terminalWrite})
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	return settled, response, nil
 }
 
+// Closer of a discarded turn's transcript tail, replaced by tests that fail the closure after it wrote
+var closeDiscardedTurn func(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error)
+
+func init() { closeDiscardedTurn = closeDiscardedTail }
+
 // Closes a discarded turn's open transcript tail with a Hermes authored boundary on the resolution's own transaction
-func closeDiscardedTurn(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error) {
+func closeDiscardedTail(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error) {
 	physical, err := state.LocalPhysicalTarget(ctx, conn, rowString(row, "target_session_id"))
 	if err != nil {
 		return false, err

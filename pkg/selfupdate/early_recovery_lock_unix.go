@@ -29,7 +29,7 @@ func lockClaimFile(f *os.File, lock bool) bool {
 	return true
 }
 
-// Lock attempt of the ZIP swap owner lock, held true for another live owner and the error for a lock that cannot be taken
+// Tries the ZIP swap owner lock, held for another live owner, the error when it cannot be taken
 func tryZipSwapLock(f *os.File) (held bool, err error) {
 	lockErr := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 	if lockErr == nil {

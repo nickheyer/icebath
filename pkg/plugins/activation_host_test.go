@@ -12,9 +12,15 @@ import (
 // Depprobe plugin in the selected generation home loaded by a fresh manager under host isolation
 func depprobeHome(t *testing.T, manifest, initPy, pyproject string) (string, *Manager) {
 	t.Helper()
+	return depprobeHomeSelecting(t, true, manifest, initPy, pyproject)
+}
+
+// Depprobe plugin loaded under host isolation in a home whose selected generation holds the fixture when withDist
+func depprobeHomeSelecting(t *testing.T, withDist bool, manifest, initPy, pyproject string) (string, *Manager) {
+	t.Helper()
 	python := liveInterpreters(t)["system"]
 	installHostEnvHooks()
-	selectGeneration(t, true, "1.0")
+	selectGeneration(t, withDist, "1.0")
 	t.Setenv("PYTHONPATH", "")
 	h := os.Getenv("ICEBATH_HOME")
 	dir := filepath.Join(h, "plugins", "depprobe")
@@ -38,6 +44,52 @@ func depprobeHome(t *testing.T, manifest, initPy, pyproject string) (string, *Ma
 	})
 	m.DiscoverAndLoad(homeCtx(h), true)
 	return h, m
+}
+
+const declaresFixture = "name: depprobe\nversion: '1.0'\npython_dependencies:\n  - '"
+
+// Warning log lines of one discovery that name the depprobe plugin
+func depprobeWarnings(logs string) []string {
+	var out []string
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "level=WARN") && strings.Contains(line, "depprobe") {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func TestDiscoverySaysRestartWhenTheSelectedGenerationHasTheDependency(t *testing.T) {
+	logs := captureLogs(t)
+	h, m := depprobeHomeSelecting(t, true, declaresFixture+depReq+"'\n", "def register(ctx):\n    pass\n", "")
+	messages := depprobeWarnings(logs.String())
+	restart := false
+	for _, line := range messages {
+		restart = restart || (strings.Contains(line, "installed after this process started") && strings.Contains(line, "restart"))
+		if strings.Contains(line, "pm repair") {
+			t.Fatalf("discovery offered the repair remedy: %v", messages)
+		}
+	}
+	if !restart {
+		t.Fatalf("discovery did not ask for a restart: %v", messages)
+	}
+	summary := pluginActivationSummary(homeCtx(h), m, "depprobe")
+	if !reflect.DeepEqual(summary["missing_dependencies"], []any{depReq}) {
+		t.Fatalf("summary = %#v", summary)
+	}
+}
+
+func TestDiscoveryKeepsTheRepairRemedyWhenNothingInstalledIt(t *testing.T) {
+	logs := captureLogs(t)
+	depprobeHomeSelecting(t, false, declaresFixture+depReq+"'\n", "def register(ctx):\n    pass\n", "")
+	messages := depprobeWarnings(logs.String())
+	repair := false
+	for _, line := range messages {
+		repair = repair || (strings.Contains(line, "not installed") && strings.Contains(line, "pm repair"))
+	}
+	if !repair {
+		t.Fatalf("discovery did not keep the repair remedy: %v", messages)
+	}
 }
 
 const importsFixture = "import icebath_depprobe_fixture\n\ndef register(ctx):\n    pass\n"
@@ -70,7 +122,7 @@ func TestRestartFollowsWhatPMInstallsForThePlugin(t *testing.T) {
 }
 
 // Port of test_a_plugin_importing_its_new_dependency_at_load_still_asks_for_a_restart
-func TestPluginImportingItsNewDependencyAtLoadStillAsksForARestart(t *testing.T) {
+func TestAPluginImportingItsNewDependencyAtLoadStillAsksForARestart(t *testing.T) {
 	h, m := depprobeHome(t, "name: depprobe\nversion: '1.0'\npython_dependencies:\n  - '"+depReq+"'\n", importsFixture, "")
 	ctx := homeCtx(h)
 	m.mu.RLock()
@@ -115,7 +167,7 @@ func probeHooked(m *Manager) bool {
 }
 
 // Port of test_the_gateways_forced_rediscovery_drops_a_disabled_plugins_hook
-func TestForcedRediscoveryDropsADisabledPluginsHook(t *testing.T) {
+func TestTheGatewaysForcedRediscoveryDropsADisabledPluginsHook(t *testing.T) {
 	h, m := liveHome(t, liveInterpreters(t)["system"], map[string]string{"probe": "def _probe_hook(**kwargs):\n    return None\n\n" +
 		"def register(ctx):\n    ctx.register_hook('on_session_start', _probe_hook)\n"})
 	m.DiscoverAndLoad(homeCtx(h), true)

@@ -47,8 +47,18 @@ func classifyEntrypointValueKind(path []string, value string) string {
 	if module == "" {
 		return "standalone"
 	}
-	if kind := detectKindFromSource(pyimport.ReadSource(pyimport.FindOrigin(path, module), 8192)); kind != "" {
+	if kind := detectKindFromSource(resolveModuleSource(path, module, 8192)); kind != "" {
 		return kind
 	}
 	return "standalone"
+}
+
+// First limit characters of a module source found on path without importing it, empty when unresolvable
+func resolveModuleSource(path []string, module string, limit int) string {
+	return pyimport.ReadSource(pyimport.FindOrigin(path, module), limit)
+}
+
+// Manifests of the installed plugin entry points, read without importing plugin code
+func (m *Manager) scanEntryPoints(ctx context.Context) []*Manifest {
+	return discoverEntrypointManifests(ctx)
 }

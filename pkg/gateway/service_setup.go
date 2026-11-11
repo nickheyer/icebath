@@ -446,15 +446,21 @@ func installedServiceKindFor(ctx context.Context, windows func() (bool, error)) 
 	return "windows", nil
 }
 
-// Whether a gateway service is installed for this home
-func isServiceInstalled(ctx context.Context) (bool, error) {
+// Installed service kind of this home, stricter than the service backend since the unit, plist or task must exist
+func InstalledGatewayServiceKind(ctx context.Context) (string, bool, error) {
 	kind, err := installedServiceKindFor(ctx, func() (bool, error) {
 		if !IsWindows() {
 			return false, nil
 		}
 		return WindowsIsInstalled(ctx)
 	})
-	return kind != "", err
+	return kind, kind != "", err
+}
+
+// Whether a gateway service is installed for this home
+func isServiceInstalled(ctx context.Context) (bool, error) {
+	_, installed, err := InstalledGatewayServiceKind(ctx)
+	return installed, err
 }
 
 // Whether user and system gateway units are both installed

@@ -71,10 +71,18 @@ func TestHookTimeoutDoesNotBlockCaller(t *testing.T) {
 	}
 }
 
-func TestHookExceptionAndPanicIsolatedUnderTimeoutPath(t *testing.T) {
+func TestHookExceptionStillIsolatedUnderTimeoutPath(t *testing.T) {
+	m := timeoutManager(t, "1.0")
+	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) { return nil, &runtimeError{"plugin blew up"} })
+	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) { return "survived", nil })
+	if got := m.InvokeHook(context.Background(), "post_tool_call", nil); !reflect.DeepEqual(got, []any{"survived"}) {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestSystemExitIsReportedUnderTimeoutPath(t *testing.T) {
 	m := timeoutManager(t, "1.0")
 	logs := captureLogs(t)
-	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) { return nil, &runtimeError{"plugin blew up"} })
 	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) {
 		panic("bounded plugin requested process exit")
 	})
@@ -87,7 +95,7 @@ func TestHookExceptionAndPanicIsolatedUnderTimeoutPath(t *testing.T) {
 	}
 }
 
-func TestPreToolCallCallbackErrorFailsClosed(t *testing.T) {
+func TestPreToolCallCallbackExceptionFailsClosed(t *testing.T) {
 	for _, timeout := range []string{"0.0", "1.0"} {
 		m := timeoutManager(t, timeout)
 		addHook(m, "pre_tool_call", boomPolicy)
@@ -112,7 +120,7 @@ func TestHookCallbackTimeoutReadsConfig(t *testing.T) {
 	}
 }
 
-func TestSubagentStopStaysOnCallerGoroutine(t *testing.T) {
+func TestSubagentStopStaysOnCallerThread(t *testing.T) {
 	m := timeoutManager(t, "1.0")
 	var stack string
 	addHook(m, "subagent_stop", func(context.Context, map[string]any) (any, error) {
@@ -122,12 +130,12 @@ func TestSubagentStopStaysOnCallerGoroutine(t *testing.T) {
 	if got := m.InvokeHook(context.Background(), "subagent_stop", map[string]any{"parent_session_id": "p1"}); !reflect.DeepEqual(got, []any{"ok"}) {
 		t.Fatalf("got %v", got)
 	}
-	if !strings.Contains(stack, "TestSubagentStopStaysOnCallerGoroutine") {
+	if !strings.Contains(stack, "TestSubagentStopStaysOnCallerThread") {
 		t.Fatalf("callback ran off the caller goroutine:\n%s", stack)
 	}
 }
 
-func TestPanicFromCallerThreadHookIsIsolated(t *testing.T) {
+func TestSystemExitFromCallerThreadHookIsIsolated(t *testing.T) {
 	m := timeoutManager(t, "1.0")
 	logs := captureLogs(t)
 	addHook(m, "subagent_stop", func(context.Context, map[string]any) (any, error) { panic("plugin requested process exit") })
@@ -261,7 +269,7 @@ func TestHungWorkerDoesNotFailClosedForever(t *testing.T) {
 	}
 }
 
-func TestWorkerFinishingAtTimeoutLeavesNoPhantomAbandonedEntry(t *testing.T) {
+func TestWorkerFinishingAtTimeoutDoesNotLeavePhantomAbandonedEntry(t *testing.T) {
 	saved := waitHookWorker
 	waitHookWorker = func(_ context.Context, finished <-chan struct{}, _ time.Duration) bool {
 		<-finished
@@ -270,12 +278,58 @@ func TestWorkerFinishingAtTimeoutLeavesNoPhantomAbandonedEntry(t *testing.T) {
 	t.Cleanup(func() { waitHookWorker = saved })
 	m := timeoutManager(t, "0.1")
 	m.hookTimeoutSuppression = 0
-	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) { return "done", nil })
+	var starts atomic.Int32
+	addHook(m, "post_tool_call", func(context.Context, map[string]any) (any, error) { starts.Add(1); return "done", nil })
 	if got := m.InvokeHook(context.Background(), "post_tool_call", map[string]any{"tool_name": "read_file", "tool_call_id": "call-a"}); len(got) != 0 {
 		t.Fatalf("got %v", got)
 	}
 	if len(m.hookAbandoned) != 0 {
 		t.Fatalf("phantom abandoned %v", m.hookAbandoned)
+	}
+	m.InvokeHook(context.Background(), "post_tool_call", map[string]any{"tool_name": "read_file", "tool_call_id": "call-b"})
+	if starts.Load() != 2 {
+		t.Fatalf("callback started %d times", starts.Load())
+	}
+}
+
+func TestPreToolCallWorkerStartFailureFailsClosedWithoutSticking(t *testing.T) {
+	saved := startHookWorker
+	attempts := 0
+	startHookWorker = func(run func()) error {
+		attempts++
+		if attempts == 1 {
+			return &runtimeError{"can't start new thread"}
+		}
+		return saved(run)
+	}
+	t.Cleanup(func() { startHookWorker = saved })
+	m := timeoutManager(t, "1.0")
+	var calls atomic.Int32
+	addHook(m, "pre_tool_call", func(context.Context, map[string]any) (any, error) { calls.Add(1); return nil, nil })
+	first := m.InvokeHook(context.Background(), "pre_tool_call", nil)
+	if !reflect.DeepEqual(first, []any{map[string]any{"action": "block", "message": preToolCallTimeoutBlockMessage}}) {
+		t.Fatalf("first %v", first)
+	}
+	if second := m.InvokeHook(context.Background(), "pre_tool_call", nil); len(second) != 0 {
+		t.Fatalf("second %v", second)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("policy ran %d times", calls.Load())
+	}
+}
+
+func TestSystemExitFromMiddlewareIsIsolated(t *testing.T) {
+	m := timeoutManager(t, "")
+	logs := captureLogs(t)
+	m.middleware["tool_call"] = []*middlewareEntry{
+		{fn: func(map[string]any) (any, error) { panic("middleware requested process exit") }, name: "exits"},
+		{fn: func(map[string]any) (any, error) { return "survived", nil }, name: "survivor"},
+	}
+	if got := m.InvokeMiddleware("tool_call", "", map[string]any{}); !reflect.DeepEqual(got, []any{"survived"}) {
+		t.Fatalf("got %v", got)
+	}
+	if !strings.Contains(logs.String(), "middleware requested process exit") {
+		t.Fatalf("panic not reported: %s", logs.String())
 	}
 }
 

@@ -118,7 +118,7 @@ func capturedResultOf(captured *pyjson.Object) *pyjson.Object {
 }
 
 // Completion frame payload of a settled turn with its outcome, status and the fields a viewer redraws from
-func completionPayload(row, settled *pyjson.Object, response string, captured *pyjson.Object) *pyjson.Object {
+func completionPayload(row, settled *pyjson.Object, response any, captured *pyjson.Object) *pyjson.Object {
 	outcome := rowString(settled, "outcome")
 	published := outcome
 	if outcome == "interrupted" {
@@ -159,7 +159,7 @@ func completionPayload(row, settled *pyjson.Object, response string, captured *p
 	if descriptor, ok := surface.(*pyjson.Object); ok && descriptor != nil {
 		complete.Set("error_surface", descriptor)
 	}
-	if response != "" && truthy("response_reused") {
+	if pyTruthy(response) && truthy("response_reused") {
 		complete.Set("response_reused", true)
 	}
 	if truthy("local_viewer") {
@@ -168,7 +168,7 @@ func completionPayload(row, settled *pyjson.Object, response string, captured *p
 		}
 		if truthy("response_transformed") {
 			complete.Set("response_transformed", true)
-			if final, _ := result.Get("final_response"); response == "" && pyTruthy(final) {
+			if final, _ := result.Get("final_response"); !pyTruthy(response) && pyTruthy(final) {
 				complete.Set("text", final)
 				complete.Set("content", final)
 			}
@@ -207,7 +207,7 @@ func completionPayload(row, settled *pyjson.Object, response string, captured *p
 }
 
 // Publishes a settled turn's completion frame under the stream lock the caller holds, no storage write
-func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row, settled *pyjson.Object, response string, captured *pyjson.Object) error {
+func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row, settled *pyjson.Object, response any, captured *pyjson.Object) error {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -265,7 +265,7 @@ func releaseSettledMedia(ctx context.Context, a *SessionAuthority, row *pyjson.O
 }
 
 // Commits a turn's result off the stream lock and publishes its completion, the claim reading started until then
-func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
+func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
 	prepared, err := prepareResult(row, response, outcome, captured)
 	if err != nil {
 		return err
@@ -306,7 +306,7 @@ func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Commits the captured result, retrying a transient storage failure a bounded number of times
-func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
+func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
 	for attempt := 0; ; attempt++ {
 		task := trackMutation(a, func(taskCtx context.Context) (any, error) {
 			return nil, commitAndPublish(taskCtx, a, live, ref, row, response, outcome, captured, settlement)
@@ -331,7 +331,7 @@ func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession
 }
 
 // Publishes a committed outcome once, then releases its media and publishes the idle state
-func publishTerminal(ctx context.Context, a *SessionAuthority, ref SessionRef, row, settled *pyjson.Object, response string, captured *pyjson.Object) error {
+func publishTerminal(ctx context.Context, a *SessionAuthority, ref SessionRef, row, settled *pyjson.Object, response any, captured *pyjson.Object) error {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
 		return &pyKeyError{ref.SessionID}

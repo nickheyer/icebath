@@ -98,7 +98,7 @@ type classicTurnRunner interface {
 // Outcome of one settlement attempt, the committed row and the reply it carries once it landed
 type turnSettlement struct {
 	Settled  *pyjson.Object
-	Response string
+	Response any
 }
 
 // Result of one claim attempt with the queued head its checks validated
@@ -562,9 +562,9 @@ func (a *SessionAuthority) clearClaim(live *LiveSession, sessionID string) {
 }
 
 // Runs the claimed admission, its reply and outcome, a lost managed worker settling or pausing the FIFO
-func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) (string, string, error) {
+func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) (any, string, error) {
 	if live.ReviewRun != nil && !live.ReviewRun.RequestDone() {
-		cancelLiveReviewForTurn(ctx, live)
+		cancelLiveReviewForTurn(live)
 	}
 	response, err := executeFiniteAdmission(ctx, a, ref, row)
 	live.EventStream.Lock.Lock()
@@ -580,18 +580,18 @@ func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, l
 		a.clearClaim(live, ref.SessionID)
 		settled, settleErr := settleUnattendedUnknown(ctx, a, ref)
 		if settleErr != nil {
-			return "", "", settleErr
+			return nil, "", settleErr
 		}
 		if settled {
-			return "", "settled_unknown", nil
+			return nil, "settled_unknown", nil
 		}
 		if pauseErr := a.pause(ctx, ref, "unknown_execution"); pauseErr != nil {
-			return "", "", pauseErr
+			return nil, "", pauseErr
 		}
-		return "", "", err
+		return nil, "", err
 	}
 	if errors.Is(err, context.Canceled) {
-		return "", "", err
+		return nil, "", err
 	}
 	slog.Error(fmt.Sprintf("Admitted turn %s failed", rowString(row, "admission_id")), "error", err)
 	return "The admitted turn failed.", "failed", nil
@@ -607,7 +607,7 @@ const (
 )
 
 // Settles a finished turn and publishes its completion, recovering a settlement that failed after its commit
-func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object, response *string, outcome string, settled **pyjson.Object) (settleNext, error) {
+func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object, response *any, outcome string, settled **pyjson.Object) (settleNext, error) {
 	admissionID := rowString(row, "admission_id")
 	err := func() error {
 		a.mu.Lock()
@@ -687,7 +687,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	if result, ok := rowGet(captured, "result"); ok {
 		if obj, isObj := result.(*pyjson.Object); isObj {
 			if text, _ := obj.Get("final_response"); pyTruthy(text) {
-				*response, _ = text.(string)
+				*response = text
 			}
 		}
 	}
@@ -774,7 +774,9 @@ func drainSessionFIFO(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 				return err
 			}
 		}
+		a.mu.Lock()
 		delete(waiterReplies(a), admissionID)
+		a.mu.Unlock()
 		reset := a.takeDeferredReset(live.Route)
 		if settleErr != nil {
 			return settleErr
@@ -825,7 +827,7 @@ func runDeferredReset(ctx context.Context, route string, reset func(ctx context.
 }
 
 // Hands the settled reply to its waiter and waits a bounded time for its adapter to release the crash marker
-func (a *SessionAuthority) resolveSettledWaiter(ctx context.Context, admissionID, response string) error {
+func (a *SessionAuthority) resolveSettledWaiter(ctx context.Context, admissionID string, response any) error {
 	a.mu.Lock()
 	adopter := a.markerAdopters[admissionID]
 	a.mu.Unlock()

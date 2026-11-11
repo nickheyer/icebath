@@ -370,6 +370,9 @@ func (r *recoverRegistry) ProfileName(a *SessionAuthority) (string, bool) {
 }
 func (r *recoverRegistry) Authorities() []*SessionAuthority { return r.all }
 func (r *recoverRegistry) Active() *SessionAuthority        { return r.all[0] }
+func (r *recoverRegistry) Serving() []*SessionAuthority     { return r.all }
+func (r *recoverRegistry) LaunchKey() string                { return "" }
+func (r *recoverRegistry) ForHome(string) *SessionAuthority { return nil }
 
 // Marks the authority as the served secondary profile of its runner, as a multiplex gateway builds one
 func recoverServe(a *SessionAuthority) *SessionAuthority {

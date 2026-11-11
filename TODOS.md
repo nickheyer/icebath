@@ -752,13 +752,13 @@
 - [x] toolset_distributions.py
 - [x] toolsets.py
 
-### 7. pkg/pm: 98% (60 of 61 files completed)
+### 7. pkg/pm: 100% (61 of 61 files completed)
 #### Tool package manager, downloads, store, lockfile, uv runtimes, plugin dependencies, CLI
 - [x] hermes_cli/_scan_venv_blockers.py
 - [x] hermes_cli/managed_uv.py
 - [x] hermes_cli/npm_engine.py
 - [x] hermes_cli/runtime_state.py
-- [ ] hermes_cli/venv_sync.py
+- [x] hermes_cli/venv_sync.py
 - [x] pm/__init__.py
 - [x] pm/_marker_eval.py
 - [x] pm/_uv.py
@@ -995,7 +995,7 @@
 - [x] tools/cronjob_prompt_scan.py
 - [ ] tools/cronjob_tools.py
 
-### 13. pkg/plugins: 81% (91 of 111 files completed)
+### 13. pkg/plugins: 89% (99 of 111 files completed)
 #### Plugin manifests, discovery, hooks, middleware, host wire, install, catalog, guard
 - [x] agent/plugin_live_notes.py
 - [x] agent/plugin_llm.py
@@ -1056,12 +1056,12 @@
 - [x] hermes_cli/plugins_cmd_update.py
 - [x] hermes_cli/plugins_cmd_update_all.py
 - [x] hermes_cli/plugins_content.py
-- [ ] hermes_cli/plugins_discovery.py
+- [x] hermes_cli/plugins_discovery.py
 - [x] hermes_cli/plugins_dispatch.py
 - [x] hermes_cli/plugins_injection.py
 - [x] hermes_cli/plugins_ledger.py
-- [ ] hermes_cli/plugins_loader.py
-- [ ] hermes_cli/plugins_manifest.py
+- [x] hermes_cli/plugins_loader.py
+- [x] hermes_cli/plugins_manifest.py
 - [x] hermes_cli/plugins_provenance.py
 - [x] hermes_cli/plugins_registrars.py
 - [x] hermes_cli/plugins_settings.py
@@ -1097,13 +1097,13 @@
 - [x] plugins/plugin_utils.py
 - [x] plugins/security-guidance/__init__.py
 - [x] plugins/security-guidance/patterns.py
-- [ ] plugins/teams_pipeline/__init__.py
+- [x] plugins/teams_pipeline/__init__.py
 - [x] plugins/teams_pipeline/cli.py
-- [ ] plugins/teams_pipeline/meetings.py
+- [x] plugins/teams_pipeline/meetings.py
 - [x] plugins/teams_pipeline/models.py
-- [ ] plugins/teams_pipeline/pipeline.py
-- [ ] plugins/teams_pipeline/runtime.py
-- [ ] plugins/teams_pipeline/store.py
+- [x] plugins/teams_pipeline/pipeline.py
+- [x] plugins/teams_pipeline/runtime.py
+- [x] plugins/teams_pipeline/store.py
 - [x] plugins/teams_pipeline/subscriptions.py
 - [x] tools/lazy_deps.py
 - [x] tools/plugin_guard.py
@@ -1405,7 +1405,7 @@
 - [ ] agent/turn_usage.py
 - [ ] agent/vision_message_prep.py
 
-### 18. pkg/builtin: 84% (340 of 401 files completed)
+### 18. pkg/builtin: 100% (401 of 401 files completed)
 #### EGM, hallmark and impeccable embedded as in process plugins
 - [x] elephant-goldfish-model/.codex-plugin/plugin.json
 - [x] elephant-goldfish-model/AGENTS.md
@@ -1685,69 +1685,69 @@
 - [x] hallmark/skills/hallmark/scripts/theme.test.mjs
 - [x] impeccable/plugin/.claude-plugin/plugin.json
 - [x] impeccable/plugin/.grok-plugin/plugin.json
-- [ ] impeccable/plugin/agents/impeccable-asset-producer.md
-- [ ] impeccable/plugin/agents/impeccable-documenter.md
-- [ ] impeccable/plugin/agents/impeccable-finish-reviewer.md
-- [ ] impeccable/plugin/agents/impeccable-manual-edit-applier.md
+- [x] impeccable/plugin/agents/impeccable-asset-producer.md
+- [x] impeccable/plugin/agents/impeccable-documenter.md
+- [x] impeccable/plugin/agents/impeccable-finish-reviewer.md
+- [x] impeccable/plugin/agents/impeccable-manual-edit-applier.md
 - [x] impeccable/plugin/hooks/hooks.json
-- [ ] impeccable/plugin/skills/impeccable/SKILL.md
-- [ ] impeccable/plugin/skills/impeccable/reference/adapt.md
-- [ ] impeccable/plugin/skills/impeccable/reference/adapt.native.md
-- [ ] impeccable/plugin/skills/impeccable/reference/android.md
-- [ ] impeccable/plugin/skills/impeccable/reference/animate.md
-- [ ] impeccable/plugin/skills/impeccable/reference/audit.md
-- [ ] impeccable/plugin/skills/impeccable/reference/audit.native.md
-- [ ] impeccable/plugin/skills/impeccable/reference/bolder.md
-- [ ] impeccable/plugin/skills/impeccable/reference/clarify.md
-- [ ] impeccable/plugin/skills/impeccable/reference/colorize.md
-- [ ] impeccable/plugin/skills/impeccable/reference/component-review.md
-- [ ] impeccable/plugin/skills/impeccable/reference/craft-floor.md
-- [ ] impeccable/plugin/skills/impeccable/reference/craft.md
-- [ ] impeccable/plugin/skills/impeccable/reference/critique.md
-- [ ] impeccable/plugin/skills/impeccable/reference/degraded/asset-producer.md
-- [ ] impeccable/plugin/skills/impeccable/reference/degraded/documenter.md
-- [ ] impeccable/plugin/skills/impeccable/reference/degraded/finish-reviewer.md
-- [ ] impeccable/plugin/skills/impeccable/reference/degraded/manual-edit-applier.md
-- [ ] impeccable/plugin/skills/impeccable/reference/delight.md
-- [ ] impeccable/plugin/skills/impeccable/reference/distill.md
-- [ ] impeccable/plugin/skills/impeccable/reference/doctor.md
-- [ ] impeccable/plugin/skills/impeccable/reference/document.md
-- [ ] impeccable/plugin/skills/impeccable/reference/extract.md
-- [ ] impeccable/plugin/skills/impeccable/reference/generate.md
-- [ ] impeccable/plugin/skills/impeccable/reference/harden.md
-- [ ] impeccable/plugin/skills/impeccable/reference/hooks.md
-- [ ] impeccable/plugin/skills/impeccable/reference/init.md
-- [ ] impeccable/plugin/skills/impeccable/reference/ios.md
-- [ ] impeccable/plugin/skills/impeccable/reference/layout.md
-- [ ] impeccable/plugin/skills/impeccable/reference/live-setup.md
-- [ ] impeccable/plugin/skills/impeccable/reference/live.md
-- [ ] impeccable/plugin/skills/impeccable/reference/mode-operate.md
-- [ ] impeccable/plugin/skills/impeccable/reference/mode-persuade.md
-- [ ] impeccable/plugin/skills/impeccable/reference/mode-read.md
-- [ ] impeccable/plugin/skills/impeccable/reference/new-work.md
-- [ ] impeccable/plugin/skills/impeccable/reference/onboard.md
-- [ ] impeccable/plugin/skills/impeccable/reference/operate.md
-- [ ] impeccable/plugin/skills/impeccable/reference/optimize.md
-- [ ] impeccable/plugin/skills/impeccable/reference/overdrive.md
-- [ ] impeccable/plugin/skills/impeccable/reference/polish.md
-- [ ] impeccable/plugin/skills/impeccable/reference/quieter.md
-- [ ] impeccable/plugin/skills/impeccable/reference/region-map.md
-- [ ] impeccable/plugin/skills/impeccable/reference/routing.md
-- [ ] impeccable/plugin/skills/impeccable/reference/shape.md
-- [ ] impeccable/plugin/skills/impeccable/reference/typeset.md
-- [ ] impeccable/plugin/skills/impeccable/reference/visualize.md
-- [ ] impeccable/plugin/skills/impeccable/scripts/VERSION
-- [ ] impeccable/plugin/skills/impeccable/scripts/command-metadata.json
-- [ ] impeccable/plugin/skills/impeccable/scripts/data/font-index-failures.json
-- [ ] impeccable/plugin/skills/impeccable/scripts/data/font-index.json
-- [ ] impeccable/plugin/skills/impeccable/scripts/engine-checksums.txt
-- [ ] impeccable/plugin/skills/impeccable/scripts/impeccable
+- [x] impeccable/plugin/skills/impeccable/SKILL.md
+- [x] impeccable/plugin/skills/impeccable/reference/adapt.md
+- [x] impeccable/plugin/skills/impeccable/reference/adapt.native.md
+- [x] impeccable/plugin/skills/impeccable/reference/android.md
+- [x] impeccable/plugin/skills/impeccable/reference/animate.md
+- [x] impeccable/plugin/skills/impeccable/reference/audit.md
+- [x] impeccable/plugin/skills/impeccable/reference/audit.native.md
+- [x] impeccable/plugin/skills/impeccable/reference/bolder.md
+- [x] impeccable/plugin/skills/impeccable/reference/clarify.md
+- [x] impeccable/plugin/skills/impeccable/reference/colorize.md
+- [x] impeccable/plugin/skills/impeccable/reference/component-review.md
+- [x] impeccable/plugin/skills/impeccable/reference/craft-floor.md
+- [x] impeccable/plugin/skills/impeccable/reference/craft.md
+- [x] impeccable/plugin/skills/impeccable/reference/critique.md
+- [x] impeccable/plugin/skills/impeccable/reference/degraded/asset-producer.md
+- [x] impeccable/plugin/skills/impeccable/reference/degraded/documenter.md
+- [x] impeccable/plugin/skills/impeccable/reference/degraded/finish-reviewer.md
+- [x] impeccable/plugin/skills/impeccable/reference/degraded/manual-edit-applier.md
+- [x] impeccable/plugin/skills/impeccable/reference/delight.md
+- [x] impeccable/plugin/skills/impeccable/reference/distill.md
+- [x] impeccable/plugin/skills/impeccable/reference/doctor.md
+- [x] impeccable/plugin/skills/impeccable/reference/document.md
+- [x] impeccable/plugin/skills/impeccable/reference/extract.md
+- [x] impeccable/plugin/skills/impeccable/reference/generate.md
+- [x] impeccable/plugin/skills/impeccable/reference/harden.md
+- [x] impeccable/plugin/skills/impeccable/reference/hooks.md
+- [x] impeccable/plugin/skills/impeccable/reference/init.md
+- [x] impeccable/plugin/skills/impeccable/reference/ios.md
+- [x] impeccable/plugin/skills/impeccable/reference/layout.md
+- [x] impeccable/plugin/skills/impeccable/reference/live-setup.md
+- [x] impeccable/plugin/skills/impeccable/reference/live.md
+- [x] impeccable/plugin/skills/impeccable/reference/mode-operate.md
+- [x] impeccable/plugin/skills/impeccable/reference/mode-persuade.md
+- [x] impeccable/plugin/skills/impeccable/reference/mode-read.md
+- [x] impeccable/plugin/skills/impeccable/reference/new-work.md
+- [x] impeccable/plugin/skills/impeccable/reference/onboard.md
+- [x] impeccable/plugin/skills/impeccable/reference/operate.md
+- [x] impeccable/plugin/skills/impeccable/reference/optimize.md
+- [x] impeccable/plugin/skills/impeccable/reference/overdrive.md
+- [x] impeccable/plugin/skills/impeccable/reference/polish.md
+- [x] impeccable/plugin/skills/impeccable/reference/quieter.md
+- [x] impeccable/plugin/skills/impeccable/reference/region-map.md
+- [x] impeccable/plugin/skills/impeccable/reference/routing.md
+- [x] impeccable/plugin/skills/impeccable/reference/shape.md
+- [x] impeccable/plugin/skills/impeccable/reference/typeset.md
+- [x] impeccable/plugin/skills/impeccable/reference/visualize.md
+- [x] impeccable/plugin/skills/impeccable/scripts/VERSION
+- [x] impeccable/plugin/skills/impeccable/scripts/command-metadata.json
+- [x] impeccable/plugin/skills/impeccable/scripts/data/font-index-failures.json
+- [x] impeccable/plugin/skills/impeccable/scripts/data/font-index.json
+- [x] impeccable/plugin/skills/impeccable/scripts/engine-checksums.txt
+- [x] impeccable/plugin/skills/impeccable/scripts/impeccable
 - [x] impeccable/plugin/skills/impeccable/scripts/impeccable.cmd
-- [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-dom.js
-- [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-ignores.js
-- [ ] impeccable/plugin/skills/impeccable/scripts/live-browser-session.js
-- [ ] impeccable/plugin/skills/impeccable/scripts/live-browser.js
-- [ ] impeccable/plugin/skills/impeccable/scripts/modern-screenshot.umd.js
+- [x] impeccable/plugin/skills/impeccable/scripts/live-browser-dom.js
+- [x] impeccable/plugin/skills/impeccable/scripts/live-browser-ignores.js
+- [x] impeccable/plugin/skills/impeccable/scripts/live-browser-session.js
+- [x] impeccable/plugin/skills/impeccable/scripts/live-browser.js
+- [x] impeccable/plugin/skills/impeccable/scripts/modern-screenshot.umd.js
 - [x] impeccable/skill/SKILL.src.md
 - [x] impeccable/skill/agents/impeccable-asset-producer.md
 - [x] impeccable/skill/agents/impeccable-documenter.md
@@ -1898,7 +1898,7 @@
 - [ ] tools/computer_use/tool.py
 - [ ] tools/computer_use_tool.py
 
-### 21. pkg/app: 28% (20 of 71 files completed)
+### 21. pkg/app: 32% (23 of 71 files completed)
 #### Interactive TUI session driver, docks, streaming, modals, desktop app
 - [x] hermes_cli/banner.py
 - [ ] hermes_cli/bundled_app.py
@@ -1962,9 +1962,9 @@
 - [ ] hermes_cli/oneshot.py
 - [x] hermes_cli/pt_input_extras.py
 - [ ] hermes_cli/quiet_single_query.py
-- [ ] hermes_cli/session_export.py
-- [ ] hermes_cli/session_export_html.py
-- [ ] hermes_cli/session_export_md.py
+- [x] hermes_cli/session_export.py
+- [x] hermes_cli/session_export_html.py
+- [x] hermes_cli/session_export_md.py
 - [ ] hermes_cli/session_recap.py
 - [ ] hermes_cli/suggestions_cmd.py
 - [ ] hermes_cli/terminal_breadcrumbs.py
@@ -1972,7 +1972,7 @@
 - [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 22% (37 of 161 files completed)
+### 22. cmd/icebath: 38% (62 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -2028,22 +2028,22 @@
 - [ ] hermes_cli/projects_cmd.py
 - [x] hermes_cli/prune_advisor.py
 - [ ] hermes_cli/psutil_android.py
-- [ ] hermes_cli/relaunch.py
+- [x] hermes_cli/relaunch.py
 - [ ] hermes_cli/runtime_readiness.py
 - [x] hermes_cli/security_advisories.py
-- [ ] hermes_cli/security_audit.py
+- [x] hermes_cli/security_audit.py
 - [ ] hermes_cli/security_audit_startup.py
-- [ ] hermes_cli/session_filters.py
+- [x] hermes_cli/session_filters.py
 - [ ] hermes_cli/session_listing.py
 - [ ] hermes_cli/session_lost_and_found.py
 - [ ] hermes_cli/session_recovery.py
 - [x] hermes_cli/session_reset_retirement.py
 - [ ] hermes_cli/sessions_adopt.py
-- [ ] hermes_cli/sessions_cmd.py
-- [ ] hermes_cli/sessions_cmd_browse.py
-- [ ] hermes_cli/sessions_cmd_journal_mode.py
-- [ ] hermes_cli/sessions_cmd_repair_profiles.py
-- [ ] hermes_cli/sessions_discard.py
+- [x] hermes_cli/sessions_cmd.py
+- [x] hermes_cli/sessions_cmd_browse.py
+- [x] hermes_cli/sessions_cmd_journal_mode.py
+- [x] hermes_cli/sessions_cmd_repair_profiles.py
+- [x] hermes_cli/sessions_discard.py
 - [ ] hermes_cli/sessions_owner.py
 - [ ] hermes_cli/sessions_repair_profiles.py
 - [x] hermes_cli/setup.py
@@ -2076,37 +2076,37 @@
 - [ ] hermes_cli/subcommands/mcp.py
 - [ ] hermes_cli/subcommands/pause.py
 - [ ] hermes_cli/subcommands/prompt_size.py
-- [ ] hermes_cli/subcommands/sessions.py
+- [x] hermes_cli/subcommands/sessions.py
 - [ ] hermes_cli/subcommands/setup.py
 - [ ] hermes_cli/subcommands/skin.py
 - [ ] hermes_cli/subcommands/status.py
 - [ ] hermes_cli/subcommands/uninstall.py
-- [ ] hermes_cli/subcommands/update.py
+- [x] hermes_cli/subcommands/update.py
 - [x] hermes_cli/timefmt.py
 - [ ] hermes_cli/uninstall.py
 - [ ] hermes_cli/update_abort_recovery.py
 - [ ] hermes_cli/update_channel.py
 - [ ] hermes_cli/update_cmd.py
-- [ ] hermes_cli/update_cmd_check.py
+- [x] hermes_cli/update_cmd_check.py
 - [ ] hermes_cli/update_cmd_commit.py
-- [ ] hermes_cli/update_cmd_common.py
-- [ ] hermes_cli/update_cmd_config.py
+- [x] hermes_cli/update_cmd_common.py
+- [x] hermes_cli/update_cmd_config.py
 - [x] hermes_cli/update_cmd_drain_report.py
 - [ ] hermes_cli/update_cmd_fleet.py
 - [x] hermes_cli/update_cmd_fleet_checkout.py
 - [x] hermes_cli/update_cmd_fleet_gatewayless.py
-- [ ] hermes_cli/update_cmd_fleet_unit_budget.py
-- [ ] hermes_cli/update_cmd_fleet_verify.py
-- [ ] hermes_cli/update_cmd_git.py
-- [ ] hermes_cli/update_cmd_maint.py
-- [ ] hermes_cli/update_cmd_pause_gate.py
-- [ ] hermes_cli/update_cmd_posix_pause.py
-- [ ] hermes_cli/update_cmd_stale_survivors.py
-- [ ] hermes_cli/update_cmd_stash.py
-- [ ] hermes_cli/update_cmd_validation.py
+- [x] hermes_cli/update_cmd_fleet_unit_budget.py
+- [x] hermes_cli/update_cmd_fleet_verify.py
+- [x] hermes_cli/update_cmd_git.py
+- [x] hermes_cli/update_cmd_maint.py
+- [x] hermes_cli/update_cmd_pause_gate.py
+- [x] hermes_cli/update_cmd_posix_pause.py
+- [x] hermes_cli/update_cmd_stale_survivors.py
+- [x] hermes_cli/update_cmd_stash.py
+- [x] hermes_cli/update_cmd_validation.py
 - [ ] hermes_cli/update_cmd_windows.py
-- [ ] hermes_cli/update_cmd_zip.py
-- [ ] hermes_cli/update_contract.py
+- [x] hermes_cli/update_cmd_zip.py
+- [x] hermes_cli/update_contract.py
 - [ ] hermes_cli/update_custody.py
 - [ ] hermes_cli/update_downgrade_guard.py
 - [ ] hermes_cli/update_finish.py
@@ -2115,7 +2115,7 @@
 - [ ] hermes_cli/update_host_obligation.py
 - [ ] hermes_cli/update_inventory.py
 - [ ] hermes_cli/update_lock.py
-- [ ] hermes_cli/update_owning_install.py
+- [x] hermes_cli/update_owning_install.py
 - [ ] hermes_cli/update_pause_record.py
 - [x] hermes_cli/update_proxy_env.py
 - [x] hermes_cli/update_receipt.py
@@ -2136,7 +2136,7 @@
 - [ ] trajectory_compressor.py
 - [ ] utils.py
 
-### 23. arena: 1% (2 of 115 files completed)
+### 23. arena: 2% (3 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
 - [ ] tui_gateway/_env.py
 - [ ] tui_gateway/_stdin_recovery.py
@@ -2239,7 +2239,7 @@
 - [ ] tui_gateway/session_notifications.py
 - [ ] tui_gateway/session_reaper.py
 - [ ] tui_gateway/session_registry.py
-- [ ] tui_gateway/session_transports.py
+- [x] tui_gateway/session_transports.py
 - [ ] tui_gateway/session_workdir.py
 - [ ] tui_gateway/slash_fuzzy.py
 - [ ] tui_gateway/slash_worker.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 21% (166 of 760 files completed)
+### 24. gateway: 22% (173 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2458,7 +2458,7 @@
 - [ ] gateway/session_authority.py
 - [ ] gateway/session_automation.py
 - [ ] gateway/session_bot.py
-- [ ] gateway/session_bot_mailbox.py
+- [x] gateway/session_bot_mailbox.py
 - [ ] gateway/session_busy_controls.py
 - [ ] gateway/session_clarify_batch.py
 - [ ] gateway/session_clarify_lock.py
@@ -2523,22 +2523,22 @@
 - [ ] gateway/session_mutations.py
 - [ ] gateway/session_onboarding.py
 - [ ] gateway/session_operator.py
-- [ ] gateway/session_pending_controls.py
+- [x] gateway/session_pending_controls.py
 - [ ] gateway/session_persistence.py
 - [ ] gateway/session_policy.py
 - [ ] gateway/session_policy_credentials.py
 - [ ] gateway/session_policy_refresh.py
-- [ ] gateway/session_producer_lifecycle.py
+- [x] gateway/session_producer_lifecycle.py
 - [ ] gateway/session_prompt_pin.py
 - [ ] gateway/session_prune.py
-- [ ] gateway/session_queued_controls.py
+- [x] gateway/session_queued_controls.py
 - [ ] gateway/session_reactions.py
 - [ ] gateway/session_readiness.py
 - [ ] gateway/session_recovery.py
 - [ ] gateway/session_refine.py
 - [ ] gateway/session_results.py
 - [x] gateway/session_retirement.py
-- [ ] gateway/session_retry_admission.py
+- [x] gateway/session_retry_admission.py
 - [x] gateway/session_route_identity.py
 - [x] gateway/session_route_recovery.py
 - [ ] gateway/session_runtime_workers.py
@@ -2630,7 +2630,7 @@
 - [ ] hermes_cli/dashboard_auth/token_auth.py
 - [ ] hermes_cli/dashboard_auth/ws_tickets.py
 - [ ] hermes_cli/dashboard_procs.py
-- [ ] hermes_cli/dashboard_register.py
+- [x] hermes_cli/dashboard_register.py
 - [ ] hermes_cli/dingtalk_auth.py
 - [ ] hermes_cli/foreign_sessions.py
 - [ ] hermes_cli/foreign_sessions_browser.py
@@ -2826,7 +2826,7 @@
 - [ ] hermes_cli/webapp_previews.py
 - [ ] hermes_cli/webapp_sign_in.py
 - [x] hermes_cli/webhook.py
-- [ ] hermes_cli/windows_ssh_runtime.py
+- [x] hermes_cli/windows_ssh_runtime.py
 - [ ] plugins/dashboard_auth/_shared.py
 - [ ] plugins/dashboard_auth/basic/__init__.py
 - [ ] plugins/dashboard_auth/drain/__init__.py

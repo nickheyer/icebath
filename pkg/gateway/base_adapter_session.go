@@ -336,12 +336,11 @@ func (b *BasePlatformAdapter) trackBackgroundTask(task *adapterTask) {
 	b.mu.Lock()
 	lazyAttr(&b.backgroundTasks)[task] = struct{}{}
 	b.mu.Unlock()
-	go func() {
-		<-task.done
+	task.addDoneCallback(func() {
 		b.mu.Lock()
 		delete(b.backgroundTasks, task)
 		b.mu.Unlock()
-	}()
+	})
 }
 
 // Cancels in flight processing of one session within five seconds, keeping the guard or pending input on request

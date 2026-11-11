@@ -50,7 +50,7 @@ func runTransformCall(d *Dispatcher, env *Env, tool string, args map[string]any)
 }
 
 // The first string a transform hook returns replaces the result and every hook still runs
-func TestFirstValidTransformStringReplacesResult(t *testing.T) {
+func TestFirstValidStringReturnReplacesResult(t *testing.T) {
 	var ran []int
 	var mu sync.Mutex
 	hook := func(i int, out string, ok bool) TransformToolResultHook {
@@ -71,7 +71,7 @@ func TestFirstValidTransformStringReplacesResult(t *testing.T) {
 }
 
 // The transform hook receives the tool name, args, raw result and every correlation id
-func TestTransformHookReceivesExpectedFields(t *testing.T) {
+func TestHookReceivesExpectedKwargs(t *testing.T) {
 	var got PostToolCallEvent
 	d, env := transformDispatcher(t, "my_tool", `{"ok": true}`, nil, func(_ context.Context, _ *Env, ev PostToolCallEvent) (string, bool) {
 		got = ev

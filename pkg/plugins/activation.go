@@ -592,8 +592,8 @@ func gatewayPresent(ctx context.Context) (bool, error) {
 			return true, nil
 		}
 	}
-	_, installed := s.InstalledGatewayServiceKind(ctx)
-	return installed, nil
+	_, installed, err := s.InstalledGatewayServiceKind(ctx)
+	return installed, err
 }
 
 // Restart or repair advice for each process that reported it cannot import the plugin dependencies

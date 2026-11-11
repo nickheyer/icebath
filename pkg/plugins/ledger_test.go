@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -45,6 +46,29 @@ func TestOnUnloadErrorDoesNotBlockOtherTeardown(t *testing.T) {
 	m.Unload(nil)
 	if !ran || len(m.registrationOrder) != 0 || len(m.ownershipLedger) != 0 {
 		t.Fatal("teardown stopped at a failing release")
+	}
+}
+
+func TestOnUnloadExceptionDoesNotBlockOtherTeardown(t *testing.T) {
+	m := NewManager(t.TempDir())
+	c := newContext(&Manifest{Name: "boom_probe", Version: "0.1", Description: "", Source: "user"}, m)
+	var order []string
+	for _, step := range []struct {
+		name string
+		err  error
+	}{{"first", nil}, {"boom", &runtimeError{"cleanup failed"}}, {"last", nil}} {
+		if _, err := c.OnUnload(func() error { order = append(order, step.name); return step.err }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !m.Unload("boom_probe") {
+		t.Fatal("unload found nothing of the plugin to dispose")
+	}
+	if !slices.Equal(order, []string{"last", "boom", "first"}) {
+		t.Fatalf("teardown order %v", order)
+	}
+	if _, kept := m.ownershipLedger["boom_probe"]; kept {
+		t.Fatal("the ownership ledger kept the unloaded plugin")
 	}
 }
 

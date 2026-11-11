@@ -235,6 +235,12 @@ func ReloadGatewayPlugins(home, profileHome string, timeout time.Duration) *pyjs
 	return QueryGatewayControl(home, "reload-plugins", controlParams("home", profileHome), timeout)
 }
 
+// Reload answer as a plain map for the plugin services, nil when no gateway answered
+func ReloadGatewayPluginsAnswer(home, profileHome string, timeout time.Duration) map[string]any {
+	answer, _ := pyjson.Plain(ReloadGatewayPlugins(home, profileHome, timeout)).(map[string]any)
+	return answer
+}
+
 // Ordered params object from alternating keys and values
 func controlParams(kv ...string) *pyjson.Object {
 	o := pyjson.NewObject()

@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -99,6 +100,7 @@ func GetPluginManager(ctx context.Context) *Manager {
 func ResetPluginManagersForTests() {
 	pluginManagersMu.Lock()
 	for _, m := range knownPluginManagersLocked() {
+		clearPluginSubmodules(m)
 		m.Unload(nil)
 	}
 	clear(pluginManagersByHome)
@@ -112,6 +114,31 @@ func ResetPluginManagersForTests() {
 	publishedTUIMu.Unlock()
 	if s := installedServices(); s != nil && s.ClearDashboardAuthProviders != nil {
 		s.ClearDashboardAuthProviders()
+	}
+}
+
+// Purges the hosted modules of a manager directory plugins and frees the bare module names its home claimed
+func clearPluginSubmodules(m *Manager) {
+	if m == nil {
+		return
+	}
+	m.mu.RLock()
+	var names []string
+	for _, loaded := range m.plugins {
+		if strings.HasPrefix(loaded.Module, nsParent+".") {
+			names = append(names, loaded.Module)
+		}
+	}
+	m.mu.RUnlock()
+	for _, name := range names {
+		if err := evictModules(m, name); err != nil {
+			logDebug(fmt.Sprintf("plugin host of %s left before evicting %s: %s", m.home, name, err))
+		}
+		moduleNamespaceMu.Lock()
+		if bareModuleScope[name] == m.home {
+			delete(bareModuleScope, name)
+		}
+		moduleNamespaceMu.Unlock()
 	}
 }
 
@@ -302,6 +329,14 @@ func HeldStreamTransforms(ctx context.Context) []*hookEntry {
 
 // Fires the observer only pre_command hook, logging and ignoring any directive a callback returns
 func FirePreCommandHook(ctx context.Context, surface, command, aliasUsed, argsRaw string, sessionKey, platform *string) {
+	defer func() {
+		if r := recover(); r != nil {
+			if escaped, ok := interruptFromPanic(r); ok {
+				panic(escaped)
+			}
+			logDebug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %v", r))
+		}
+	}()
 	m := GetPluginManager(ctx)
 	if !m.HasHook("pre_command") {
 		return

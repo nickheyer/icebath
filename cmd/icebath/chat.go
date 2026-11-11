@@ -273,7 +273,11 @@ func importForeignResume(a *chatArgs) {
 		return
 	}
 	ctx := context.Background()
-	picked := app.PickForeignSession(ctx, strings.TrimPrefix(lowered, "@"))
+	picked, err := app.PickForeignSession(ctx, strings.TrimPrefix(lowered, "@"), os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		exit(1)
+	}
 	if picked == nil {
 		exit(1)
 	}

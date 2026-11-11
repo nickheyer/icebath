@@ -59,6 +59,10 @@ func (r recursionRow) source(n int) string {
 		chain = "a" + strings.Repeat("()", n)
 	case "P":
 		chain = strings.Repeat("[", n) + "b" + strings.Repeat("]", n)
+	case "G":
+		chain = "(b for b in c)" + strings.Repeat(" + a", n)
+	case "T":
+		chain = "tuple(b for b in c)" + strings.Repeat(" + a", n)
 	default:
 		panic("unknown chain " + r.Chain)
 	}

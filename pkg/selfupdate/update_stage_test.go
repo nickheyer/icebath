@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,4 +86,22 @@ func TestNoUISourcesIsInert(t *testing.T) {
 func TestPublishNeverRaisesOnUnwritableTarget(t *testing.T) {
 	t.Setenv(UpdateStatusFileEnv, filepath.Join(t.TempDir(), "no", "such", "dir", "f"))
 	PublishStage("boom")
+}
+
+func TestEnsurePanelSkippedOffMacos(t *testing.T) {
+	tmp := t.TempDir()
+	status := usStatusFile(t, tmp)
+	t.Setenv(UpdateStatusFileEnv, status)
+	t.Setenv(UpdateUIActiveEnv, "")
+	os.Unsetenv(UpdateUIActiveEnv)
+	ensurePanel(tmp)
+	if _, set := os.LookupEnv(UpdateUIActiveEnv); set {
+		t.Fatal("the panel guard spawned off macOS")
+	}
+}
+
+func TestUIPresentInLogReadsTheLastFortyLines(t *testing.T) {
+	if !uiPresentInLog("shim: status panel pid=4\n") || uiPresentInLog("shim: app window\n"+strings.Repeat("x\n", 40)) {
+		t.Fatal("the handoff log tail was misread")
+	}
 }

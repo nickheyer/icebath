@@ -167,7 +167,7 @@ func doctorCheckGuarded(w io.Writer, onError, detail string, body func(f *Findin
 	return f, nil
 }
 
-// Prints ok when path exists, creates it with fix counting one fixed, else warns it will be created on first use
+// Prints ok when path exists, creates it under fix, else warns it will be created on first use
 func doctorEnsureDir(w io.Writer, f *Finding, shouldFix bool, path, existsMsg, createdMsg, missingMsg string) error {
 	if _, err := os.Stat(path); err == nil {
 		doctorCheckOK(w, existsMsg, "")

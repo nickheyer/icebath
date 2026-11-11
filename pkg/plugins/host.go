@@ -776,6 +776,21 @@ func (h *PluginHost) unload(key string) error {
 	return nil
 }
 
+// Drops a module and its submodules from the interpreter of a running child, failing when it does not answer in time
+func (h *PluginHost) evictModules(moduleName string) error {
+	h.mu.Lock()
+	ch := h.channel
+	h.mu.Unlock()
+	if ch == nil {
+		return nil
+	}
+	if _, closed := ch.ClosedReason(); closed {
+		return nil
+	}
+	_, err := ch.Call(h.baseCtx, "evict_modules", map[string]any{"module_name": moduleName}, hostShutdownGrace)
+	return err
+}
+
 func (h *PluginHost) unavailableAsExit(err error) error {
 	var un *PluginHostUnavailable
 	if errors.As(err, &un) {

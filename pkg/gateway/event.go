@@ -122,6 +122,7 @@ type MessageEvent struct {
 	markerReleased         *InterruptEvent
 	heartbeatSessionID     *string
 	busyArrival            *observability.Arrival
+	claimedOwner           *claimedTurnOwner
 
 	lastChunkLen int
 }

@@ -144,12 +144,27 @@ func (c *CLI) addPM(root *cobra.Command) {
 	takeover := c.newCmd(root, "update-takeover", "finish an update a historical updater handed off", "")
 	takeover.Hidden = true
 	c.pos(takeover, p("context"), p("result"))
+	serveResume := c.newCmd(root, "update-serve-resume", "relaunch the manual backends a historical updater paused", "")
+	serveResume.Hidden = true
+	c.pos(serveResume, p("context"), p("result"))
+	finish := c.newCmd(root, "update-finish", "finish an update in the selected checkout", "")
+	finish.Hidden = true
+	c.pos(finish, p("context"), p("result"))
+	restartRecovery := c.newCmd(root, "update-restart-recovery", "restart supervised gateways and serve units in a fresh process", "")
+	restartRecovery.Hidden, restartRecovery.DisableFlagParsing = true, true
+	c.pos(restartRecovery, pRem("args"))
+	updateCompletion := c.newCmd(root, "update-completion", "run a source update's post commit completion", "")
+	updateCompletion.Hidden, updateCompletion.DisableFlagParsing = true, true
+	c.pos(updateCompletion, pRem("args"))
 	venvSync := c.newCmd(root, "venv-sync", "report or sync a checkout's Python dependencies", "")
 	venvSync.Hidden, venvSync.DisableFlagParsing = true, true
 	c.pos(venvSync, pRem("args"))
 	completion := c.newCmd(root, "source-completion", "finish a source update's launchers, products and maintenance", "")
 	completion.Hidden, completion.DisableFlagParsing = true, true
 	c.pos(completion, pRem("args"))
+	importHealth := c.newCmd(root, "import-health", "answer an update's import health probe", "")
+	importHealth.Hidden, importHealth.DisableFlagParsing = true, true
+	c.pos(importHealth, pRem("args"))
 }
 
 // Runs one pm command through pm Main, a nonzero status becoming an ExitError

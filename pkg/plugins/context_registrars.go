@@ -269,7 +269,7 @@ func (c *Context) RegisterTool(ctx context.Context, spec ToolSpec) (*Registratio
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerTool(ctx, spec) })
+	serializedReplacement(func() { handle, err = c.registerTool(ctx, spec) })
 	return handle, err
 }
 
@@ -618,7 +618,7 @@ func (c *Context) RegisterCLICommand(name, help string, setup func(parser any), 
 	}
 	entry := &CLICommand{Name: name, Help: help, Description: description, Setup: setup, Handler: handler, Plugin: c.manifest.Name, PluginKey: c.PluginID()}
 	var handle *Registration
-	replacementCoordinator.Transaction(func() {
+	serializedReplacement(func() {
 		handle = registerEntry(c, "cli_command", name, c.manager.cliCommands, entry, nil,
 			fmt.Sprintf("Plugin %s registered CLI command: %s", c.manifest.Name, name))
 	})
@@ -631,7 +631,7 @@ func (c *Context) RegisterCommand(name string, handler PluginCommandHandler, des
 		return nil
 	}
 	var handle *Registration
-	replacementCoordinator.Transaction(func() { handle = c.registerCommand(name, handler, description, argsHint, argumentMode) })
+	serializedReplacement(func() { handle = c.registerCommand(name, handler, description, argsHint, argumentMode) })
 	return handle
 }
 
@@ -713,7 +713,7 @@ func (c *Context) RegisterContextEngine(engine any) (*Registration, error) {
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerContextEngine(engine) })
+	serializedReplacement(func() { handle, err = c.registerContextEngine(engine) })
 	return handle, err
 }
 
@@ -810,7 +810,7 @@ func (c *Context) RegisterDashboardAuthProvider(provider any) (*Registration, er
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerDashboardAuthProvider(provider) })
+	serializedReplacement(func() { handle, err = c.registerDashboardAuthProvider(provider) })
 	return handle, err
 }
 
@@ -865,7 +865,7 @@ func (c *Context) RegisterPlatform(spec PlatformSpec) (*Registration, error) {
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerPlatform(spec) })
+	serializedReplacement(func() { handle, err = c.registerPlatform(spec) })
 	return handle, err
 }
 
@@ -986,22 +986,29 @@ func (c *Context) RegisterTelegramHandler(factory any) error {
 	return c.RegisterPlatformHandler("telegram", factory)
 }
 
-// Options of one plugin auxiliary task registration
+// Options of one plugin auxiliary task registration, each holding the value the plugin passed
 type AuxTaskOptions struct {
-	DisplayName string
-	Description string
-	Defaults    map[string]any
-	InheritFrom *string
+	DisplayName any
+	Description any
+	Defaults    any
+	InheritFrom any
 }
 
-// Registers an auxiliary LLM task with its own auxiliary config block
-func (c *Context) RegisterAuxiliaryTask(key string, opts AuxTaskOptions) (*Registration, error) {
+// Registers an auxiliary LLM task with its own auxiliary config block, the key a str a plugin passed
+func (c *Context) RegisterAuxiliaryTask(rawKey any, opts AuxTaskOptions) (*Registration, error) {
 	if c.ignoredAfterAbandonedLoad("register_auxiliary_task") {
 		return nil, nil
 	}
+	key, _ := rawKey.(string)
+	switch rawKey.(type) {
+	case []any:
+		return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'list'"}
+	case map[string]any, Record:
+		return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'dict'"}
+	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() {
+	serializedReplacement(func() {
 		m := c.manager
 		m.mu.RLock()
 		existing := m.auxTasks[key]
@@ -1011,12 +1018,12 @@ func (c *Context) RegisterAuxiliaryTask(key string, opts AuxTaskOptions) (*Regis
 		}
 		m.mu.RUnlock()
 		var entry *auxTask
-		entry, err = buildAuxiliaryTaskEntry(c.manifest.Name, c.PluginID(), key, opts, registered)
+		entry, err = buildAuxiliaryTaskEntry(c.manifest.Name, c.PluginID(), rawKey, opts, registered)
 		if err != nil {
 			return
 		}
 		handle = registerEntry(c, "auxiliary_task", key, m.auxTasks, entry, &existing,
-			fmt.Sprintf("Plugin %s registered auxiliary task: %s (%s)", c.manifest.Name, key, opts.DisplayName))
+			fmt.Sprintf("Plugin %s registered auxiliary task: %s (%s)", c.manifest.Name, key, config.PyStr(opts.DisplayName)))
 	})
 	return handle, err
 }
@@ -1024,10 +1031,11 @@ func (c *Context) RegisterAuxiliaryTask(key string, opts AuxTaskOptions) (*Regis
 // Registry entry of one plugin auxiliary task
 type auxTask struct{ fields map[string]any }
 
-// Validated auxiliary task entry, an error for a bad, built-in or foreign key
-func buildAuxiliaryTaskEntry(me, ownerID, key string, opts AuxTaskOptions, registered map[string]*auxTask) (*auxTask, error) {
-	if key == "" {
-		return nil, fmt.Errorf("Plugin '%s' tried to register auxiliary task with invalid key %s", me, config.PyRepr(key))
+// Validated auxiliary task entry, an error for a bad, built-in or foreign key and no inheritance from a bad base
+func buildAuxiliaryTaskEntry(me, ownerID string, rawKey any, opts AuxTaskOptions, registered map[string]*auxTask) (*auxTask, error) {
+	key, isStr := rawKey.(string)
+	if !isStr || key == "" {
+		return nil, fmt.Errorf("Plugin '%s' tried to register auxiliary task with invalid key %s", me, config.PyRepr(rawKey))
 	}
 	for _, r := range key {
 		if !(unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_') {
@@ -1047,27 +1055,76 @@ func buildAuxiliaryTaskEntry(me, ownerID, key string, opts AuxTaskOptions, regis
 	}
 	inherit := opts.InheritFrom
 	if inherit != nil {
-		_, known := registered[*inherit]
-		if *inherit == key || (!builtin[*inherit] && !known) {
-			logWarn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, config.PyRepr(key), config.PyRepr(*inherit)))
+		base, isStr := inherit.(string)
+		_, known := registered[base]
+		if !isStr || base == key || (!builtin[base] && !known) {
+			logWarn(fmt.Sprintf("Plugin '%s' auxiliary task %s: ignoring inherit_from=%s — not a built-in auxiliary task or one already registered by a plugin", me, config.PyRepr(key), config.PyRepr(inherit)))
 			inherit = nil
 		}
 	}
+	inheriting := inherit != nil && inherit != ""
+	overrides, err := auxTaskOverrides(opts.Defaults, inheriting)
+	if err != nil {
+		return nil, err
+	}
 	defaults := map[string]any{}
-	if inherit == nil {
+	if !inheriting {
 		defaults = map[string]any{"provider": "auto", "model": "", "base_url": "", "api_key": "", "timeout": 60, "extra_body": map[string]any{}}
 	}
-	for k, v := range opts.Defaults {
+	for k, v := range overrides {
 		defaults[k] = v
-	}
-	var inheritVal any
-	if inherit != nil {
-		inheritVal = *inherit
 	}
 	return &auxTask{fields: map[string]any{
 		"key": key, "display_name": opts.DisplayName, "description": opts.Description, "defaults": defaults,
-		"inherit_from": inheritVal, "plugin": ownerID, "plugin_key": ownerID,
+		"inherit_from": inherit, "plugin": ownerID, "plugin_key": ownerID,
 	}}, nil
+}
+
+// Plugin overrides of an auxiliary task, dict(defaults or {}) when inheriting and a mapping unpack otherwise
+func auxTaskOverrides(raw any, inheriting bool) (map[string]any, error) {
+	switch m := raw.(type) {
+	case map[string]any:
+		return m, nil
+	case Record:
+		return map[string]any(m), nil
+	}
+	if !config.PyTruthy(raw) {
+		return map[string]any{}, nil
+	}
+	if !inheriting {
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not a mapping", pyTypeName(raw))}
+	}
+	items, isList := raw.([]any)
+	if _, isStr := raw.(string); isStr {
+		return nil, &HostBuiltinError{Type: "ValueError", Message: "dictionary update sequence element #0 has length 1; 2 is required"}
+	} else if !isList {
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(raw))}
+	}
+	out := map[string]any{}
+	for i, item := range items {
+		var pair []any
+		switch t := item.(type) {
+		case []any:
+			pair = t
+		case string:
+			for _, r := range t {
+				pair = append(pair, string(r))
+			}
+		default:
+			return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("cannot convert dictionary update sequence element #%d to a sequence", i)}
+		}
+		if len(pair) != 2 {
+			return nil, &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))}
+		}
+		switch pair[0].(type) {
+		case []any:
+			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'list'"}
+		case map[string]any, Record:
+			return nil, &HostBuiltinError{Type: "TypeError", Message: "unhashable type: 'dict'"}
+		}
+		out[config.PyStr(pair[0])] = pair[1]
+	}
+	return out, nil
 }
 
 // Additively registers secret token regexes with the redactor, returning how many were accepted
@@ -1167,7 +1224,7 @@ func (c *Context) RegisterSkill(name, path, description string, frontmatter map[
 	}
 	var handle *Registration
 	var err error
-	replacementCoordinator.Transaction(func() { handle, err = c.registerSkill(name, path, description, frontmatter) })
+	serializedReplacement(func() { handle, err = c.registerSkill(name, path, description, frontmatter) })
 	return handle, err
 }
 

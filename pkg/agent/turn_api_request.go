@@ -98,7 +98,7 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 			payload, trace = apiKwargs, []any{}
 		}
 	}()
-	res := plugins.GetPluginManager(ctx).ApplyLLMRequestMiddleware(apiKwargs, map[string]any{
+	res := plugins.ApplyLLMRequestMiddleware(ctx, apiKwargs, map[string]any{
 		"task_id": s.EffectiveTaskID, "turn_id": s.TurnID, "api_request_id": s.APIRequestID, "session_id": a.sessionID,
 		"platform": a.platform, "model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_mode": a.apiMode,
 		"api_call_count": s.APICallCount,

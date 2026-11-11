@@ -318,9 +318,7 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 	var value any
 	var callErr error
 	finished := make(chan struct{})
-	go func() {
-		defer close(finished)
-		value, callErr = invokeHookCallback(ctx, cb, kwargs)
+	releaseToken := func() {
 		m.hookTimeoutMu.Lock()
 		if m.hookRunningCallbacks[gateKey] == token {
 			delete(m.hookRunningCallbacks, gateKey)
@@ -332,7 +330,16 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 			}
 		}
 		m.hookTimeoutMu.Unlock()
-	}()
+	}
+	if err := startHookWorker(func() {
+		defer close(finished)
+		value, callErr = invokeHookCallback(ctx, cb, kwargs)
+		releaseToken()
+	}); err != nil {
+		releaseToken()
+		logWarn(fmt.Sprintf("Hook '%s' callback %s worker failed to start: %s — skipping", hookName, cb.name, err))
+		return nil, true, nil
+	}
 	if waitHookWorker(ctx, finished, time.Duration(timeout*float64(time.Second))) {
 		return value, false, callErr
 	}
@@ -350,6 +357,12 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 	m.hookTimeoutMu.Unlock()
 	logWarn(fmt.Sprintf("Hook '%s' callback %s timed out after %ss — skipping", hookName, cb.name, pyG(timeout)))
 	return nil, true, nil
+}
+
+// Starts a hook callback worker, an error meaning the worker never ran and its gate token must be released
+var startHookWorker = func(run func()) error {
+	go run()
+	return nil
 }
 
 // Waits for a hook worker to finish within the timeout, false when the caller abandons it

@@ -309,3 +309,23 @@ func (m *Manager) InvokeMiddleware(kind, payloadKey string, kwargs map[string]an
 	}
 	return results
 }
+
+// Runs LLM request middleware of the active profile after lazy discovery, so a cold surface still rewrites requests
+func ApplyLLMRequestMiddleware(ctx context.Context, request map[string]any, extra map[string]any) RequestMiddlewareResult {
+	return deliveryManager(ctx).ApplyLLMRequestMiddleware(request, extra)
+}
+
+// Runs tool request middleware of the active profile after lazy discovery, so a cold surface still rewrites tool arguments
+func ApplyToolRequestMiddleware(ctx context.Context, toolName string, args, originalArgs map[string]any, extra map[string]any) (RequestMiddlewareResult, error) {
+	return deliveryManager(ctx).ApplyToolRequestMiddleware(ctx, toolName, args, originalArgs, extra)
+}
+
+// Runs LLM execution through the middleware of the active profile after lazy discovery, so a cold surface keeps its gates
+func RunLLMExecutionMiddleware(ctx context.Context, request map[string]any, next NextCall, extra map[string]any) (any, error) {
+	return deliveryManager(ctx).RunLLMExecutionMiddleware(request, next, extra)
+}
+
+// Runs tool execution through the middleware of the active profile after lazy discovery, so a cold surface keeps its gates
+func RunToolExecutionMiddleware(ctx context.Context, toolName string, args map[string]any, next NextCall, extra map[string]any) (any, error) {
+	return deliveryManager(ctx).RunToolExecutionMiddleware(toolName, args, next, extra)
+}

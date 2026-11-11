@@ -147,7 +147,7 @@ func wrapGraphError(exc *messagetools.MicrosoftGraphAPIError, missingMessage str
 }
 
 // Graph call error with a Graph API failure translated into a meeting error
-func graphErr(err error, missingMessage string) error {
+func graph(err error, missingMessage string) error {
 	var api *messagetools.MicrosoftGraphAPIError
 	if errors.As(err, &api) {
 		return wrapGraphError(api, missingMessage)
@@ -289,7 +289,7 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 		missing := "Teams meeting not found: " + meetingID
 		got, err := client.GetJSON(ctx, collection+"/"+pyurl.Quote(meetingID, ""), nil, nil)
 		if err != nil {
-			return nil, graphErr(err, missing)
+			return nil, graph(err, missing)
 		}
 		o, ok := got.(*pyjson.Object)
 		if !ok || !pyrepr.Truthy(get(o, "id")) {
@@ -301,7 +301,7 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 		params := map[string]any{"$filter": "JoinWebUrl eq '" + strings.ReplaceAll(joinWebURL, "'", "''") + "'"}
 		listing, err := client.GetJSON(ctx, collection, params, nil)
 		if err != nil {
-			return nil, graphErr(err, missing)
+			return nil, graph(err, missing)
 		}
 		var candidates []any
 		if o, ok := listing.(*pyjson.Object); ok {
@@ -326,7 +326,7 @@ func listArtifacts(ctx context.Context, client graphClient, ref *TeamsMeetingRef
 	collection := kind + "s"
 	payloads, err := client.CollectPaginated(ctx, meetingPath(ref)+"/"+collection, nil, nil)
 	if err != nil {
-		return nil, graphErr(err, fmt.Sprintf("No %s found for Teams meeting %s", collection, ref.MeetingID))
+		return nil, graph(err, fmt.Sprintf("No %s found for Teams meeting %s", collection, ref.MeetingID))
 	}
 	out := []*MeetingArtifact{}
 	for _, p := range payloads {
@@ -359,7 +359,7 @@ func downloadArtifact(ctx context.Context, client graphClient, ref *TeamsMeeting
 	}
 	res, err := client.DownloadToFile(ctx, path, destination, headers)
 	if err != nil {
-		return nil, graphErr(err, fmt.Sprintf("%s %s not found for meeting %s", pystr.Capitalize(kind), a.ArtifactID, ref.MeetingID))
+		return nil, graph(err, fmt.Sprintf("%s %s not found for meeting %s", pystr.Capitalize(kind), a.ArtifactID, ref.MeetingID))
 	}
 	return res, nil
 }

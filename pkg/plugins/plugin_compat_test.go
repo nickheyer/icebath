@@ -33,7 +33,7 @@ def register(ctx):
 `
 
 // test_legacy_plugin_loads_and_ignores_additive_hook_and_manifest_fields through a hosted child
-func TestLegacyPluginIgnoresAdditiveHookAndManifestFields(t *testing.T) {
+func TestLegacyPluginLoadsAndIgnoresAdditiveHookAndManifestFields(t *testing.T) {
 	installLiveServices(t)
 	installHostEnvHooks()
 	python := liveInterpreters(t)["system"]

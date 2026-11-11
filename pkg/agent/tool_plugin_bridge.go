@@ -104,7 +104,7 @@ func pluginTransformToolResult(ctx context.Context, _ *tools.Env, ev tools.PostT
 func pluginToolRequestMiddleware(ctx context.Context, _ *tools.Env, name string, args, originalArgs map[string]any, ids tools.ToolHookIDs) tools.RequestMiddlewareDirective {
 	kwargs := toolHookIDKwargs(ids)
 	kwargs["skip_relay"] = true
-	result, err := plugins.GetPluginManager(ctx).ApplyToolRequestMiddleware(ctx, name, args, originalArgs, kwargs)
+	result, err := plugins.ApplyToolRequestMiddleware(ctx, name, args, originalArgs, kwargs)
 	if err != nil {
 		slog.Default().Debug("tool_request middleware error: " + err.Error())
 		return tools.RequestMiddlewareDirective{}
@@ -136,7 +136,7 @@ func pluginToolExecutionMiddleware(ctx context.Context, _ *tools.Env, name strin
 	if originalArgs != nil {
 		kwargs["original_args"] = originalArgs
 	}
-	result, err := plugins.GetPluginManager(ctx).RunToolExecutionMiddleware(name, args, func(payload any) (any, error) {
+	result, err := plugins.RunToolExecutionMiddleware(ctx, name, args, func(payload any) (any, error) {
 		nextArgs, _ := payload.(map[string]any)
 		return next(nextArgs)
 	}, kwargs)

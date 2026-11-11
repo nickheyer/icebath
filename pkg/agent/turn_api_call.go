@@ -169,7 +169,7 @@ func (a *AIAgent) performAPICall(ctx context.Context, r APICallRequest) (APICall
 			}
 		}()
 		trace := append([]any{}, r.LLMMiddlewareTrace...)
-		return plugins.GetPluginManager(ctx).RunLLMExecutionMiddleware(r.APIKwargs, call, map[string]any{
+		return plugins.RunLLMExecutionMiddleware(ctx, r.APIKwargs, call, map[string]any{
 			"original_request": r.OriginalAPIKwargs, "task_id": r.EffectiveTaskID, "turn_id": r.TurnID,
 			"api_request_id": r.APIRequestID, "session_id": a.sessionID, "platform": a.platform, "model": a.model,
 			"provider": a.provider, "base_url": a.baseURL, "api_mode": a.apiMode, "api_call_count": r.APICallCount,

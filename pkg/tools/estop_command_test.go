@@ -35,3 +35,39 @@ func TestCliResumeWithoutAPauseNamesTheSentinel(t *testing.T) {
 		t.Fatalf("output %q", out.String())
 	}
 }
+
+func TestCliPauseEngagesWithReason(t *testing.T) {
+	ctx := context.Background()
+	estopHome(t)
+	var out bytes.Buffer
+	code, err := PauseCommand(ctx, map[string]any{"reason": "ops incident"}, &out)
+	if err != nil || code != 0 {
+		t.Fatalf("code %d err %v", code, err)
+	}
+	if !IsEngaged(ctx) {
+		t.Fatal("not engaged after pause")
+	}
+	if state := GetState(ctx); state == nil || state.Reason != "ops incident" {
+		t.Fatalf("state %+v", state)
+	}
+	if text := out.String(); !strings.Contains(strings.ToLower(text), "paused") || !strings.Contains(text, "⏸️  Icebath paused — reason: ops incident\n    sentinel: "+SentinelPath(ctx)+"\n") {
+		t.Fatalf("output %q", text)
+	}
+}
+
+func TestCliPauseIdempotent(t *testing.T) {
+	ctx := context.Background()
+	estopHome(t)
+	var out bytes.Buffer
+	for range 2 {
+		if code, err := PauseCommand(ctx, map[string]any{"reason": nil}, &out); err != nil || code != 0 {
+			t.Fatalf("code %d err %v", code, err)
+		}
+	}
+	if !IsEngaged(ctx) {
+		t.Fatal("not engaged after two pauses")
+	}
+	if !strings.Contains(out.String(), "⏸️  Still paused\n") {
+		t.Fatalf("output %q", out.String())
+	}
+}

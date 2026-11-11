@@ -89,7 +89,7 @@ func pluginDiscoverySuppressed(ctx context.Context) bool {
 
 // Context bound to this manager home holding its discovery lock, locking unless already held
 func (m *Manager) lockDiscovery(ctx context.Context) (context.Context, func()) {
-	ctx = home.WithOverride(ctx, m.home)
+	ctx = pluginHomeScope(ctx, m.home)
 	if ctx.Value(discoveryHeldKey{m}) != nil {
 		return ctx, func() {}
 	}
@@ -254,7 +254,7 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 		directoryKeys[mf.ID()] = true
 	}
 	var epManifests []*Manifest
-	for _, mf := range discoverEntrypointManifests(ctx) {
+	for _, mf := range m.scanEntryPoints(ctx) {
 		if !directoryKeys[mf.ID()] {
 			epManifests = append(epManifests, mf)
 		}

@@ -1173,6 +1173,9 @@ func isValidNamespace(candidate string) bool {
 	return candidate != "" && namespaceRe.MatchString(candidate)
 }
 
+// Reports whether a plugin namespace is well formed, the check a plugin data namespace has to pass
+func IsValidNamespace(candidate string) bool { return isValidNamespace(candidate) }
+
 // Reads a text file with a BOM stripped and invalid bytes replaced
 func readSkillText(path string) (string, error) {
 	data, err := os.ReadFile(path)

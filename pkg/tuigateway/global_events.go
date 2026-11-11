@@ -1,6 +1,7 @@
 package tuigateway
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -36,7 +37,7 @@ func UnregisterLiveTransport(transport Transport) {
 	liveTransportsMu.Lock()
 	liveTransports = slices.DeleteFunc(liveTransports, func(t Transport) bool { return t == transport })
 	liveTransportsMu.Unlock()
-	forgetServerRequests(transport)
+	Forget(transport)
 }
 
 // Marks real stdout as the JSON RPC client channel, true only in the stdio TUI process
@@ -47,7 +48,7 @@ func StdioIsRPCChannel() bool { return stdioIsRPCChannel.Load() }
 
 // JSON RPC event notification of one event for a session, the payload key present only with a payload
 func EventFrame(event, sid string, payload map[string]any) *pyjson.Object {
-	checkEventPayload(event, payload)
+	CheckPayload(event, payload)
 	params := pyjson.ObjectOf("type", event, "session_id", sid)
 	if payload != nil {
 		params.Set("payload", payload)
@@ -62,7 +63,7 @@ func BroadcastGlobalEvent(event string, payload map[string]any, skip ...Transpor
 	liveTransportsMu.Unlock()
 	if len(targets) == 0 && len(skip) == 0 {
 		if stdioIsRPCChannel.Load() {
-			emitEvent(event, "", payload)
+			Emit(context.Background(), event, "", payload)
 			return
 		}
 		serverLog().Debug(fmt.Sprintf("global-event broadcast dropped (no connected client) type=%s", event))

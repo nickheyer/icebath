@@ -28,7 +28,7 @@ func lockClaimFile(f *os.File, lock bool) bool {
 	return true
 }
 
-// Lock attempt of the ZIP swap owner lock, held true for another live owner and the error for a lock that cannot be taken
+// Tries the ZIP swap owner lock, held for another live owner, the error when it cannot be taken
 func tryZipSwapLock(f *os.File) (held bool, err error) {
 	overlapped := windows.Overlapped{}
 	lockErr := windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &overlapped)

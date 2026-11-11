@@ -253,5 +253,5 @@ func cuNoServeHooks(t *testing.T) {
 		},
 		RetainReceiptManualServes: func(context.Context, map[string]any) []any { return []any{} },
 	})
-	t.Cleanup(func() { updaterecord.SetServeObligationHooks(updaterecord.ServeObligationHooks{}) })
+	t.Cleanup(installServeObligationHooks)
 }

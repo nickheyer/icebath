@@ -255,7 +255,7 @@ func activateHint(t *testing.T) (map[string]any, string) {
 }
 
 // Port of test_enable_reports_restart_when_the_running_gateway_cannot_import_the_dependency
-func TestEnableReportsRestartWhenTheRunningGatewayCannotImport(t *testing.T) {
+func TestEnableReportsRestartWhenTheRunningGatewayCannotImportTheDependency(t *testing.T) {
 	selectGeneration(t, true, "1.0")
 	depGatewayAnswers(t, []any{depEntry(depReq)}, nil)
 	result, hint := activateHint(t)
@@ -392,7 +392,7 @@ func TestEnableHintPrintsOnlyTheOutcomeThatApplies(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	installActivationServices(t, &Services{
 		GatewayRunningPid:           func(string, bool) (int, bool, error) { return 4242, true, nil },
-		InstalledGatewayServiceKind: func(context.Context) (string, bool) { return "", false },
+		InstalledGatewayServiceKind: func(context.Context) (string, bool, error) { return "", false, nil },
 	})
 	for _, reloaded := range []bool{true, false} {
 		var activation any
@@ -410,7 +410,7 @@ func TestEnableHintPrintsOnlyTheOutcomeThatApplies(t *testing.T) {
 	}
 	installActivationServices(t, &Services{
 		GatewayRunningPid:           func(string, bool) (int, bool, error) { return 0, false, nil },
-		InstalledGatewayServiceKind: func(context.Context) (string, bool) { return "", false },
+		InstalledGatewayServiceKind: func(context.Context) (string, bool, error) { return "", false, nil },
 	})
 	if out, err := activationHint(context.Background(), map[string]any{"gateway_reloaded": false}); out != "" || err != nil {
 		t.Fatalf("first time setup still printed %q, %v", out, err)

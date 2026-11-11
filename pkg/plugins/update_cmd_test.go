@@ -57,7 +57,7 @@ func catWorld(t *testing.T) *catWorldT {
 	next.OAuthAdmissionProblems = func(map[string]any, string) []string { return nil }
 	next.OAuthAdmissionWarnings = func(map[string]any, string) []string { return nil }
 	next.GatewayRunningPid = func(string, bool) (int, bool, error) { return 0, false, nil }
-	next.InstalledGatewayServiceKind = func(context.Context) (string, bool) { return "", false }
+	next.InstalledGatewayServiceKind = func(context.Context) (string, bool, error) { return "", false, nil }
 	next.RefreshPluginSessions = func(context.Context, string, string, string) error { return nil }
 	InstallServices(&next)
 	return w

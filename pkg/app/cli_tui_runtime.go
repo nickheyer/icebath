@@ -233,7 +233,11 @@ func (c *CLI) tuiAfterTurn() {
 		c.recoverTerminalAfterInterrupt()
 	}
 	c.drainInterruptQueueToPendingInput()
-	for what, hook := range map[string]func(){"goal continuation": c.maybeContinueGoalAfterTurn, "loop completion": c.maybeCompleteLoopTickAfterTurn} {
+	for _, step := range []struct {
+		hook func()
+		what string
+	}{{c.maybeContinueGoalAfterTurn, "goal continuation"}, {c.maybeCompleteLoopTickAfterTurn, "loop completion"}} {
+		hook, what := step.hook, step.what
 		func() {
 			defer func() {
 				if r := recover(); r != nil {

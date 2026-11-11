@@ -32,6 +32,10 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == scChildEntry {
 		os.Exit(scChild(os.Args[2], os.Args[3:]))
 	}
+	// The doctor's dashboard load check re-executes this binary as the dashboard status report
+	if len(os.Args) > 2 && os.Args[1] == "dashboard" && os.Args[2] == "--status" {
+		os.Exit(0)
+	}
 	LoadCronJobsHook = testCronJobs
 	tools.GitlockRunGit = GitlockRunGit
 	os.Exit(m.Run())

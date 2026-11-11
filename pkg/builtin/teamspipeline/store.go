@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -71,17 +71,23 @@ func emptyBuckets() map[string]*pyjson.Object {
 func (s *TeamsPipelineStore) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b, err := os.ReadFile(s.Path)
-	if os.IsNotExist(err) {
+	if strings.ContainsRune(s.Path, 0) {
 		return nil
 	}
+	if _, err := os.Stat(s.Path); err != nil {
+		if pypath.PathlibIgnoredError(err) {
+			return nil
+		}
+		return err
+	}
+	b, err := os.ReadFile(s.Path)
 	if err != nil {
 		return err
 	}
-	if !utf8.Valid(b) {
-		return fmt.Errorf("'utf-8' codec can't decode %s", s.Path)
+	text, err := pycodecs.Decode(b, "utf-8-sig")
+	if err != nil {
+		return err
 	}
-	text := strings.TrimPrefix(string(b), "\xef\xbb\xbf")
 	if text == "" {
 		text = "{}"
 	}
@@ -183,11 +189,12 @@ func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *pyjson
 		}
 		existing = e
 	}
+	if payload == nil {
+		return nil, pyError("TypeError", "'NoneType' object is not a mapping")
+	}
 	merged := existing.Copy()
-	if payload != nil {
-		for _, k := range payload.Keys {
-			merged.Set(k, deepCopy(payload.Vals[k]))
-		}
+	for _, k := range payload.Keys {
+		merged.Set(k, deepCopy(payload.Vals[k]))
 	}
 	merged.Set(idField, key)
 	if _, ok := merged.Get("created_at"); !ok {

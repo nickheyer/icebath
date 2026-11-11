@@ -482,6 +482,7 @@ type CLI struct {
 	connectionState                 any
 	tui                             tuiRunState
 	subagentMonitor                 *subagentMonitor
+	cliCommandState
 }
 
 // petKittyEntry is one cached kitty payload of a pet state with the image id it was encoded for

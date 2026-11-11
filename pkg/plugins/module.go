@@ -62,7 +62,7 @@ type Services struct {
 	ReloadGatewayPlugins              func(ctx context.Context, target, profileHome string) (map[string]any, error)
 	HostRendezvous                    HostRendezvous
 	GatewayRunningPid                 func(pidPath string, cleanupStale bool) (int, bool, error)
-	InstalledGatewayServiceKind       func(ctx context.Context) (string, bool)
+	InstalledGatewayServiceKind       func(ctx context.Context) (string, bool, error)
 	RefreshPluginSessions             func(ctx context.Context, home, pluginKey, note string) error
 	MCP                               MCPConnector
 	BroadcastGlobalEvent              func(name string, payload map[string]any)

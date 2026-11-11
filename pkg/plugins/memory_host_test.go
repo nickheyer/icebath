@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
 
 const memoryProbeProvider = `
@@ -96,7 +97,7 @@ func TestHostedMemoryProviderStaysLiveAcrossAHostCrash(t *testing.T) {
 	if pid, _ := os.ReadFile(marker); string(pid) != strconv.Itoa(host.PID()) {
 		t.Fatalf("schema ran in %q, host %d", pid, host.PID())
 	}
-	_ = syscall.Kill(int(first.(int64)), syscall.SIGKILL)
+	_ = proc.KillPID(int(first.(int64)))
 	deadline := time.Now().Add(10 * time.Second)
 	for host.Alive() && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)
@@ -172,7 +173,7 @@ func TestMemoryCollectorRoutesHostedRegistrations(t *testing.T) {
 		}
 	}
 	host, _ := m.pluginHost()
-	_ = syscall.Kill(host.PID(), syscall.SIGKILL)
+	_ = proc.KillPID(host.PID())
 	deadline := time.Now().Add(10 * time.Second)
 	for host.Alive() && time.Now().Before(deadline) {
 		time.Sleep(100 * time.Millisecond)

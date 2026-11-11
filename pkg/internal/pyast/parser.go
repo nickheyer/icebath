@@ -492,8 +492,7 @@ func (p *parser) exprOrAssign() *Node {
 	}
 	switch {
 	case p.isOp(":"):
-		if first.Is("Tuple") && !(first.ColOffset == t.c && p.tokAt(first).kind == tOp) {
-			elts := first.Children("elts")
+		if elts := first.Children("elts"); first.Is("Tuple") && len(elts) > 0 && !(first.ColOffset == t.c && p.tokAt(first).kind == tOp) {
 			p.raiseNode(elts[0], "only single target (not tuple) can be annotated")
 		}
 		if !first.Is("Name", "Attribute", "Subscript") {
@@ -1636,11 +1635,7 @@ func (p *parser) literalExpr() *Node {
 		return left
 	}
 	if t.kind == tString || t.kind == tFStart || t.kind == tTStart {
-		s := p.strings()
-		if s.Is("JoinedStr", "TemplateStr") {
-			p.raiseNode(s, "patterns may only match literals and attribute lookups")
-		}
-		return s
+		return p.strings()
 	}
 	if t.kind == tName {
 		switch t.val {

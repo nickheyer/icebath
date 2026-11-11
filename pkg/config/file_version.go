@@ -101,6 +101,11 @@ func fileCacheVersionOf(path string, fi os.FileInfo, alwaysDigest bool) []any {
 	return []any{sig[0], sig[1], sig[2], sig[3], digest}
 }
 
+// Cache version of a file from a stat result the caller took, with the racy digest
+func FileCacheVersionOf(path string, fi os.FileInfo) []any {
+	return fileCacheVersionOf(path, fi, false)
+}
+
 // Parsed YAML root of bytes under the shared safe_load policy, nil for an empty document, mappings string keyed
 func FastSafeLoad(data []byte) (any, error) {
 	return loadYAMLDocument(data)

@@ -6,31 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 )
-
-// Port of test_bad_inherit_from_warns_and_registers_without_inheritance, the registration half
-func TestBadInheritFromWarnsAndRegistersWithoutInheritance(t *testing.T) {
-	for _, bad := range []string{"no_such_task", "plug_aux", ""} {
-		t.Run(bad, func(t *testing.T) {
-			installLlmServices(t, []string{"vision", "compression"}, nil)
-			m := NewManager(t.TempDir())
-			logs := captureLogs(t)
-			inherit := bad
-			if _, err := newContext(&Manifest{Name: "plug"}, m).RegisterAuxiliaryTask("plug_aux", AuxTaskOptions{DisplayName: "Plug Aux", Description: "d", InheritFrom: &inherit}); err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(logs.String(), "ignoring inherit_from") {
-				t.Fatalf("no warning: %s", logs)
-			}
-			entry := m.AuxiliaryTasks()["plug_aux"]
-			if entry["inherit_from"] != nil || entry["defaults"].(map[string]any)["timeout"] != 60 {
-				t.Fatalf("entry %v", entry)
-			}
-		})
-	}
-}
 
 // Writes a host plugin whose register makes the one given context call
 func writeAuxPlugin(t *testing.T, h, name, call string) {

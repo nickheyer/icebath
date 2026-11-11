@@ -305,7 +305,8 @@ func followHandOff(ctx context.Context, a *SessionAuthority, source *SessionSour
 	_, live := a.Sessions[owner]
 	a.mu.Unlock()
 	if held != nil || live {
-		return publishRoute(ctx, a, source, owner, route)
+		_, err := a.publishRoute(ctx, source, owner, route)
+		return err
 	}
 	return nil
 }

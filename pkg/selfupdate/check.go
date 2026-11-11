@@ -89,7 +89,7 @@ func SelectApplyTarget(ctx context.Context, w io.Writer, pinnedVersion, transien
 		return ReleaseTarget{RequestedChannel: *pinnedVersion, Channel: *pinnedVersion, Repository: OfficialRepository, Release: rel, Version: strings.TrimPrefix(rel.Tag, "v")}, nil
 	}
 	root := rootOrRepo("")
-	selected, err := updateRunChannel(ctx, transientChannel)
+	selected, err := releaseRunChannel(ctx, transientChannel)
 	if err != nil {
 		return ReleaseTarget{}, err
 	}
@@ -161,7 +161,7 @@ func HoldChannelReleaseBehindRuntime(ctx context.Context, w io.Writer, projectRo
 }
 
 // Channel of this run, recording the channel_unresolved stop when the configured channel is invalid
-func updateRunChannel(ctx context.Context, transientChannel *string) (string, error) {
+func releaseRunChannel(ctx context.Context, transientChannel *string) (string, error) {
 	channel, err := SourceUpdateChannel(ctx, false, transientChannel, "")
 	if err != nil && IsValueError(err) {
 		recordStop(ctx, "channel_unresolved")

@@ -213,7 +213,7 @@ func TestManifestV2PythonDependenciesSeam(t *testing.T) {
 	})
 }
 
-func TestCtxHasPluginProbe(t *testing.T) {
+func TestCtxHasPluginHasPluginProbe(t *testing.T) {
 	probe := filepath.Join(t.TempDir(), "probe.txt")
 	mv2Discover(t, nil, []mv2Plugin{mv2Dir("probe-target", "", "pass"),
 		mv2Dir("prober", "manifest_version: 2\nrequires_plugins:\n- id: probe-target\n", mv2Probe(probe, "(ctx.has_plugin('probe-target'), ctx.has_plugin('nope'))"))},
@@ -242,7 +242,7 @@ func TestRequiresIcebathGate(t *testing.T) {
 			}
 		}
 	})
-	t.Run("unsatisfied_requires_icebath_skips_without_importing", func(t *testing.T) {
+	t.Run("unsatisfied_requires_hermes_skips_without_importing", func(t *testing.T) {
 		saved := RunningVersion
 		RunningVersion = "1.2.3"
 		t.Cleanup(func() { RunningVersion = saved })

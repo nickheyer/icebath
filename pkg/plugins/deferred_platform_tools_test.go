@@ -135,7 +135,7 @@ func resolveProbe(h string) []string {
 }
 
 // test_tools_module_registers_without_importing_the_adapter
-func TestDeferredPlatformToolsModuleRegistersWithoutImportingTheAdapter(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationToolsModuleRegistersWithoutImportingTheAdapter(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	if err := m.registerDeferredPlatform(homeCtx(h), p.mf); err != nil {
@@ -151,7 +151,7 @@ func TestDeferredPlatformToolsModuleRegistersWithoutImportingTheAdapter(t *testi
 }
 
 // test_plugin_without_tools_module_stays_fully_deferred
-func TestDeferredPlatformWithoutToolsModuleStaysFullyDeferred(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationPluginWithoutToolsModuleStaysFullyDeferred(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "barefoot", false, false)
 	if err := m.registerDeferredPlatform(homeCtx(h), p.mf); err != nil {
@@ -164,7 +164,7 @@ func TestDeferredPlatformWithoutToolsModuleStaysFullyDeferred(t *testing.T) {
 }
 
 // test_tools_module_alone_does_not_opt_a_platform_in
-func TestDeferredPlatformToolsModuleAloneDoesNotOptAPlatformIn(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationToolsModuleAloneDoesNotOptAPlatformIn(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "quietplat", true, false)
 	if err := m.registerDeferredPlatform(homeCtx(h), p.mf); err != nil {
@@ -177,7 +177,7 @@ func TestDeferredPlatformToolsModuleAloneDoesNotOptAPlatformIn(t *testing.T) {
 }
 
 // test_package_body_runs_once_across_discovery_and_materialization
-func TestDeferredPlatformPackageBodyRunsOnceAcrossDiscoveryAndMaterialization(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationPackageBodyRunsOnceAcrossDiscoveryAndMaterialization(t *testing.T) {
 	h, m, platforms := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	if err := m.registerDeferredPlatform(homeCtx(h), p.mf); err != nil {
@@ -194,7 +194,7 @@ func TestDeferredPlatformPackageBodyRunsOnceAcrossDiscoveryAndMaterialization(t 
 }
 
 // test_tools_stay_attributed_after_materialization
-func TestDeferredPlatformToolsStayAttributedAfterMaterialization(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationToolsStayAttributedAfterMaterialization(t *testing.T) {
 	h, m, platforms := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	if err := m.registerDeferredPlatform(homeCtx(h), p.mf); err != nil {
@@ -212,7 +212,7 @@ func TestDeferredPlatformToolsStayAttributedAfterMaterialization(t *testing.T) {
 }
 
 // test_broken_tools_module_does_not_break_discovery
-func TestDeferredPlatformBrokenToolsModuleDoesNotBreakDiscovery(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationBrokenToolsModuleDoesNotBreakDiscovery(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	writeFile(t, filepath.Join(p.dir, "tools.py"), "raise RuntimeError('boom')\n")
@@ -238,7 +238,7 @@ func breakAfterFirstTool(t *testing.T, p *deferredProbe) {
 }
 
 // test_partially_registered_tools_are_still_attributed
-func TestDeferredPlatformPartiallyRegisteredToolsAreStillAttributed(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationPartiallyRegisteredToolsAreStillAttributed(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	breakAfterFirstTool(t, p)
@@ -259,7 +259,7 @@ func TestDeferredPlatformPartiallyRegisteredToolsAreStillAttributed(t *testing.T
 }
 
 // test_failed_materialization_tears_down_pre_registered_tools
-func TestDeferredPlatformFailedMaterializationTearsDownPreRegisteredTools(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationFailedMaterializationTearsDownPreRegisteredTools(t *testing.T) {
 	h, m, platforms := deferredWorld(t)
 	p := writeDeferredPlatform(t, "probeplat", true, true)
 	breakAfterFirstTool(t, p)
@@ -282,7 +282,7 @@ func TestDeferredPlatformFailedMaterializationTearsDownPreRegisteredTools(t *tes
 }
 
 // test_failed_load_is_rearmed_and_heals_on_next_lookup, the platform adapter registering from a compiled-in plugin as every Icebath adapter does
-func TestDeferredPlatformFailedLoadIsRearmedAndHealsOnNextLookup(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationFailedLoadIsRearmedAndHealsOnNextLookup(t *testing.T) {
 	h, m, platforms := deferredWorld(t)
 	var registers atomic.Int64
 	ledgerSwapBundled(t, ledgerBundled{m: Manifest{Name: "probeplat-platform", Kind: "platform"}, register: func(ctx *Context) error {
@@ -342,7 +342,7 @@ func TestDeferredPlatformFailedLoadIsRearmedAndHealsOnNextLookup(t *testing.T) {
 }
 
 // test_declared_tools_with_no_tools_module_warns
-func TestDeferredPlatformDeclaredToolsWithNoToolsModuleWarns(t *testing.T) {
+func TestDeferredPlatformToolPreregistrationDeclaredToolsWithNoToolsModuleWarns(t *testing.T) {
 	h, m, _ := deferredWorld(t)
 	p := writeDeferredPlatform(t, "promiseplat", false, true)
 	logs := captureLogs(t)

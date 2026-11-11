@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -64,7 +65,7 @@ func selectGeneration(t *testing.T, withDist bool, version string) string {
 	return site
 }
 
-func TestImportableDependencyIsNotReported(t *testing.T) {
+func TestAnImportableDependencyIsNotReported(t *testing.T) {
 	site := selectGeneration(t, true, "1.0")
 	t.Setenv("PYTHONPATH", site)
 	if got := missingPythonDependencies(context.Background(), &Manifest{Name: "depprobe", PythonDeps: []string{depReq}}); len(got) != 0 {
@@ -72,14 +73,14 @@ func TestImportableDependencyIsNotReported(t *testing.T) {
 	}
 }
 
-func TestSelectedGenerationProbeIsFalseWithoutSelection(t *testing.T) {
+func TestSelectedGenerationProbeIsFalseWithoutASelection(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if installedInSelectedEnvironment(context.Background(), []string{depReq}) {
 		t.Fatal("selected generation reported the dependency without a selection")
 	}
 }
 
-func TestInstalledVersionTheRequirementRejectsIsMissing(t *testing.T) {
+func TestAnInstalledVersionTheRequirementRejectsIsMissing(t *testing.T) {
 	selectGeneration(t, true, "1.7")
 	running := filepath.Join(t.TempDir(), "running-site")
 	writeDistInfo(t, running, "1.0")
@@ -94,6 +95,43 @@ func TestInstalledVersionTheRequirementRejectsIsMissing(t *testing.T) {
 	}
 	if installedInSelectedEnvironment(ctx, []string{depDist + ">=1.8"}) {
 		t.Fatal("selected generation 1.7 should not satisfy >=1.8")
+	}
+}
+
+// Home whose selected generation runs the system Python and whose resident PM runtime imports its packaging
+func markerRuntimeWorld(t *testing.T) {
+	t.Helper()
+	python, err := filepath.EvalSymlinks(liveInterpreters(t)["system"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(python, "-c", "import packaging, os; print(os.path.dirname(os.path.dirname(packaging.__file__)))").Output()
+	if err != nil {
+		t.Fatalf("judging a requirement marker needs the packaging distribution in python3: %v", err)
+	}
+	tmp := t.TempDir()
+	t.Cleanup(pm.OverrideCoreRepo(mustMkdir(t, filepath.Join(tmp, "core"))))
+	selectGeneration(t, false, "1.0")
+	venv := filepath.Join(pm.InstallStateDir(context.Background(), pm.RepoRoot()), "environments", "gen1", "venv")
+	writeFile(t, filepath.Join(venv, "pyvenv.cfg"), "home = "+filepath.Dir(python)+"\nversion = 3.12.4\n")
+	mustMkdir(t, filepath.Dir(pm.VenvPython(venv)))
+	if err := os.Symlink(python, pm.VenvPython(venv)); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDir := mustMkdir(t, filepath.Join(tmp, "pm-runtime"))
+	record, _ := json.Marshal(map[string]any{"python": python, "sitePackages": strings.TrimSpace(string(out))})
+	writeFile(t, filepath.Join(runtimeDir, "pm-runtime.json"), string(record))
+	stamp, _ := json.Marshal(map[string]any{"distribution": "nix", "pmRuntime": runtimeDir})
+	writeFile(t, pm.InstallStampPath(pm.RepoRoot()), string(stamp))
+}
+
+func TestADependencyExcludedByItsMarkerIsNeverMissing(t *testing.T) {
+	markerRuntimeWorld(t)
+	t.Setenv("PYTHONPATH", "")
+	excluded := depDist + ">=1.0,<2; python_version < '3.0'"
+	got := missingPythonDependencies(context.Background(), &Manifest{Name: "depprobe", PythonDeps: []string{excluded, depReq}})
+	if len(got) != 1 || got[0] != depReq {
+		t.Fatalf("missing = %v", got)
 	}
 }
 

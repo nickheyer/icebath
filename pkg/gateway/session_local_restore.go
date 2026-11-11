@@ -21,6 +21,9 @@ type authorityRegistry interface {
 	ProfileName(a *SessionAuthority) (string, bool)
 	Authorities() []*SessionAuthority
 	Active() *SessionAuthority
+	Serving() []*SessionAuthority
+	LaunchKey() string
+	ForHome(profileHome string) *SessionAuthority
 }
 
 // Runner that keeps a registry of served profile authorities

@@ -35,7 +35,7 @@ type ZipSwapLock struct {
 	Reason string
 }
 
-// Takes the ZIP swap owner lock of root, waiting at most wait for a live owner, the release func nil when not owned
+// Takes the ZIP swap owner lock of root within wait, the release func nil when not owned
 func zipSwapOwnerLock(root string, wait time.Duration) (ZipSwapLock, func()) {
 	lockPath := filepath.Join(root, ZipSwapJournal+".lock")
 	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o644)

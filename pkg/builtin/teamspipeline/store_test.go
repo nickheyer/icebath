@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestStorePersistsSubscriptionEventAndJobState(t *testing.T) {
@@ -274,4 +275,36 @@ func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
 func sha256Hex(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+func TestStoreLoadTreatsUnreachablePathAsAbsentAndRejectsInvalidUTF8(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "plain")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewTeamsPipelineStore(filepath.Join(file, "store.json"))
+	if err != nil || s.ListJobs().Len() != 0 {
+		t.Fatalf("store under a file %v err %v", s, err)
+	}
+	bad := filepath.Join(dir, "bad-utf8.json")
+	if err := os.WriteFile(bad, []byte("{\"jobs\": \"\xff\"}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTeamsPipelineStore(bad); err == nil || !strings.Contains(err.Error(), "'utf-8' codec can't decode byte 0xff in position 10: invalid start byte") {
+		t.Fatalf("invalid utf-8 error %v", err)
+	}
+}
+
+func TestStoreUpsertRejectsNonePayload(t *testing.T) {
+	s, err := NewTeamsPipelineStore(filepath.Join(t.TempDir(), "s.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "'NoneType' object is not a mapping" {
+		t.Fatalf("err %v", err)
+	}
+	if s.GetSinkRecord("notion:m") != nil {
+		t.Fatal("record stored")
+	}
 }

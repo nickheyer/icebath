@@ -32,13 +32,14 @@ var (
 	dashboardSelfExecutable     = os.Executable
 	dashboardSpawnDetached      = spawnDetachedDashboard
 	dashboardSleep              = time.Sleep
+	dashboardIsListening        = dashboardListening
 )
 
 // Pids of running dashboard and serve backends the caller may stop, kept to one home when scoped
 func findStaleDashboardPIDs(ctx context.Context, excludePIDs map[int]bool, scopeHome string) []int {
 	ancestors := callerAncestorPIDs()
 	pids := []int{}
-	for _, row := range scanDashboardProcesses(ctx, excludePIDs) {
+	for _, row := range dashboardScan(ctx, excludePIDs) {
 		if !isCallerWrapperShell(row.pid, ancestors) {
 			pids = append(pids, row.pid)
 		}
@@ -287,7 +288,7 @@ func reportDashboardStatus(ctx context.Context, w io.Writer) int {
 		command, mode string
 	}
 	var live []liveRow
-	for _, row := range scanDashboardProcesses(ctx, nil) {
+	for _, row := range dashboardScan(ctx, nil) {
 		mode, host, port, ok := parseDashboardRuntime(row.command)
 		if !ok {
 			continue
@@ -298,7 +299,7 @@ func reportDashboardStatus(ctx context.Context, w io.Writer) int {
 				host = bind.host
 			}
 		}
-		if port <= 0 || !dashboardPidExists(row.pid) || !dashboardListening(host, port) {
+		if port <= 0 || !dashboardPidExists(row.pid) || !dashboardIsListening(host, port) {
 			continue
 		}
 		live = append(live, liveRow{row.pid, row.command, mode})

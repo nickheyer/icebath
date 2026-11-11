@@ -173,7 +173,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	pairing := c.newCmd(root, "pairing", "Manage DM pairing codes for user authorization", "Approve or revoke user access via pairing codes")
 	c.newCmd(pairing, "list", "Show pending + approved users", "")
 	prApprove := c.newCmd(pairing, "approve", "Approve a pairing request", "")
-	c.pos(prApprove, p("platform"), p("request-id|code"))
+	c.pos(prApprove, p("platform"), p("code").withMetavar("request-id|code"))
 	prRevoke := c.newCmd(pairing, "revoke", "Revoke user access", "")
 	c.pos(prRevoke, p("platform"), p("user_id"))
 	c.newCmd(pairing, "clear-pending", "Clear all pending codes", "")

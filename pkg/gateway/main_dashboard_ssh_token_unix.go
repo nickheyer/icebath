@@ -33,8 +33,6 @@ func posixPathParts(p string) []string {
 	return parts
 }
 
-func sshTokenExit(msg string) error { return &DashboardExit{Code: 1, Msg: msg} }
-
 // Reads and unlinks a Desktop SSH token through its private runtime directory under the account home
 func readSSHSessionTokenFile(path string) (token string, err error) {
 	if !filepath.IsAbs(path) {

@@ -1,7 +1,10 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -237,7 +240,7 @@ func TestRecursionCapTerminates(t *testing.T) {
 	}
 }
 
-func TestSystemPromptSectionRegistrationValidates(t *testing.T) {
+func TestRegistrationValidatesStableIdPositionBudgetAndDuplicates(t *testing.T) {
 	m := NewManager(t.TempDir())
 	c := newContext(&Manifest{Name: "example-plugin"}, m)
 	for _, bad := range []string{"", "UPPER.case", "has space", "line\nbreak", strings.Repeat("x", 129)} {
@@ -263,14 +266,15 @@ func TestSystemPromptSectionRegistrationValidates(t *testing.T) {
 	}
 }
 
-func TestRenderIsDeterministicBoundedAndSessionInfoIsPrivate(t *testing.T) {
+func TestRenderIsDeterministicBoundedAndSessionInfoIsReadOnly(t *testing.T) {
 	m := NewManager(t.TempDir())
 	c := newContext(&Manifest{Name: "example-plugin"}, m)
 	logs := captureLogs(t)
 	info := map[string]any{"session_id": "session-1"}
 	var observed map[string]any
+	var observedSession any
 	c.RegisterSystemPromptSection("example.z", func(i map[string]any) (any, error) {
-		observed = i
+		observed, observedSession = i, i["session_id"]
 		i["session_id"] = "changed"
 		return "B", nil
 	}, WithSectionMaxChars(4))
@@ -281,8 +285,8 @@ func TestRenderIsDeterministicBoundedAndSessionInfoIsPrivate(t *testing.T) {
 	for _, r := range rendered {
 		got = append(got, [2]string{r.ID, r.Content})
 	}
-	if !reflect.DeepEqual(got, [][2]string{{"example.a", "A"}, {"example.z", "B"}}) || info["session_id"] != "session-1" || observed == nil {
-		t.Fatalf("got %v info %v", got, info)
+	if !reflect.DeepEqual(got, [][2]string{{"example.a", "A"}, {"example.z", "B"}}) || info["session_id"] != "session-1" || observed == nil || observedSession != "session-1" {
+		t.Fatalf("got %v info %v observed session %v", got, info, observedSession)
 	}
 	if !strings.Contains(logs.String(), "exceeded max_chars") {
 		t.Fatal("no max_chars warning")
@@ -338,5 +342,195 @@ func TestAbandonedLoadIgnoresLateRegistrations(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "after its load timed out; ignored") {
 		t.Fatal("no warning")
+	}
+}
+
+// Manager with discovery marked done and contexts plugin_a keyed a and plugin_b keyed b
+func busPair(t *testing.T) (*Manager, *Context, *Context) {
+	t.Helper()
+	m := NewManager(t.TempDir())
+	m.discovered = true
+	return m, newContext(&Manifest{Name: "plugin_a", Key: "a"}, m), newContext(&Manifest{Name: "plugin_b", Key: "b"}, m)
+}
+
+// Subscriber appending each payload it receives to a shared list
+type busRecorder struct {
+	mu       sync.Mutex
+	payloads []map[string]any
+	names    []string
+}
+
+func (r *busRecorder) payload() EventFunc {
+	return func(_ context.Context, p map[string]any) (any, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.payloads = append(r.payloads, p)
+		return nil, nil
+	}
+}
+
+func (r *busRecorder) named(name string) EventFunc {
+	return func(context.Context, map[string]any) (any, error) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.names = append(r.names, name)
+		return nil, nil
+	}
+}
+
+func TestEmitNonePayloadDeliversEmptyKwargs(t *testing.T) {
+	m, a, b := busPair(t)
+	seen := &busRecorder{}
+	if err := a.Subscribe("b:ping", seen.payload()); err != nil {
+		t.Fatal(err)
+	}
+	count, err := b.Emit(context.Background(), "ping", nil)
+	drain(t, m)
+	if err != nil || count != 1 || !reflect.DeepEqual(seen.payloads, []map[string]any{{}}) {
+		t.Fatalf("count %d err %v seen %v", count, err, seen.payloads)
+	}
+}
+
+func TestNamespaceForcedToEmitterKey(t *testing.T) {
+	m, a, b := busPair(t)
+	delivered := &busRecorder{}
+	for _, name := range []string{"b:ping", "a:ping"} {
+		if err := a.Subscribe(name, delivered.named(name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := b.Emit(context.Background(), "ping", nil); err != nil {
+		t.Fatal(err)
+	}
+	drain(t, m)
+	if !reflect.DeepEqual(delivered.names, []string{"b:ping"}) {
+		t.Fatalf("delivered %v", delivered.names)
+	}
+}
+
+func TestNamespaceFallsBackToNameWhenKeyEmpty(t *testing.T) {
+	m := NewManager(t.TempDir())
+	m.discovered = true
+	c := newContext(&Manifest{Name: "plugin_named", Key: ""}, m)
+	got := &busRecorder{}
+	if err := c.Subscribe("plugin_named:evt", got.payload()); err != nil {
+		t.Fatal(err)
+	}
+	count, err := c.Emit(context.Background(), "evt", map[string]any{"v": 1})
+	drain(t, m)
+	if err != nil || count != 1 || !reflect.DeepEqual(got.payloads, []map[string]any{{"v": 1}}) {
+		t.Fatalf("count %d err %v got %v", count, err, got.payloads)
+	}
+}
+
+func TestEmitRejectsNamespacedNames(t *testing.T) {
+	for _, bad := range []string{"hermes:x", "a:x", "b:x", "other:evt", ":x", "x:"} {
+		t.Run(bad, func(t *testing.T) {
+			m, _, b := busPair(t)
+			fired := &busRecorder{}
+			for _, name := range []string{bad, "b:" + bad, "hermes:x", "a:x", "b:x"} {
+				if err := b.Subscribe(name, fired.named(name)); err != nil {
+					t.Fatalf("subscribe %q: %v", name, err)
+				}
+			}
+			if _, err := b.Emit(context.Background(), bad, nil); err == nil {
+				t.Fatalf("emit accepted %q", bad)
+			}
+			drain(t, m)
+			if len(fired.names) != 0 {
+				t.Fatalf("rejected emit delivered to %v", fired.names)
+			}
+		})
+	}
+}
+
+func TestEmitRejectsEmptyEvent(t *testing.T) {
+	_, _, b := busPair(t)
+	if _, err := b.Emit(context.Background(), "", nil); err == nil {
+		t.Fatal("emit accepted an empty event name")
+	}
+}
+
+func TestPerCallbackIsolation(t *testing.T) {
+	m, a, b := busPair(t)
+	received := &busRecorder{}
+	logs := captureLogs(t)
+	if err := a.Subscribe("b:ping", func(context.Context, map[string]any) (any, error) {
+		return nil, &runtimeError{"subscriber exploded"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Subscribe("b:ping", received.payload()); err != nil {
+		t.Fatal(err)
+	}
+	count, err := b.Emit(context.Background(), "ping", map[string]any{"ok": true})
+	drain(t, m)
+	if err != nil || count != 2 || !reflect.DeepEqual(received.payloads, []map[string]any{{"ok": true}}) {
+		t.Fatalf("count %d err %v received %v", count, err, received.payloads)
+	}
+	if !warnedWith(logs.String(), "subscriber exploded") && !warnedWith(logs.String(), "raised") {
+		t.Fatalf("no warning names the failing subscriber: %s", logs.String())
+	}
+}
+
+func TestAsyncSubscriberIsAwaited(t *testing.T) {
+	m, a, b := busPair(t)
+	var mu sync.Mutex
+	var observed []any
+	if err := a.Subscribe("b:ping", func(_ context.Context, payload map[string]any) (any, error) {
+		return AwaitFunc(func(context.Context) (any, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			observed = append(observed, payload["value"])
+			return nil, nil
+		}), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := b.Emit(context.Background(), "ping", map[string]any{"value": 7}); err != nil || count != 1 {
+		t.Fatalf("count %d err %v", count, err)
+	}
+	drain(t, m)
+	mu.Lock()
+	defer mu.Unlock()
+	if !reflect.DeepEqual(observed, []any{7}) {
+		t.Fatalf("observed %v", observed)
+	}
+}
+
+func TestManifestParseReadsEmitsListens(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myplug")
+	writePluginDir(t, dir, "emits:\n- ping\nlistens:\n- other:evt\nname: myplug\n")
+	manifest := ParseManifestFile(filepath.Join(dir, "plugin.yaml"), dir, "user", "")
+	if manifest == nil {
+		t.Fatal("the manifest did not parse")
+	}
+	if !reflect.DeepEqual(manifest.Emits, []string{"ping"}) || !reflect.DeepEqual(manifest.Listens, []string{"other:evt"}) {
+		t.Fatalf("emits %v listens %v", manifest.Emits, manifest.Listens)
+	}
+}
+
+func TestPluginsShowIncludesEmitsListens(t *testing.T) {
+	ctx, h := listWorld(t)
+	writePluginDir(t, filepath.Join(h, "plugins", "showplug"),
+		"description: a demo plugin\nemits:\n- ping\n- pong\nlistens:\n- other:ready\nname: showplug\nversion: 1.2.3\n")
+	var out bytes.Buffer
+	if err := CmdShow(ctx, "showplug", &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"showplug", "ping", "pong", "other:ready"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("show output lacks %q: %s", want, out.String())
+		}
+	}
+}
+
+func TestPluginsShowNotFoundExits(t *testing.T) {
+	ctx, _ := listWorld(t)
+	var out bytes.Buffer
+	err := CmdShow(ctx, "nope", &out)
+	var exit *CommandExit
+	if !errors.As(err, &exit) || exit.Code == 0 {
+		t.Fatalf("show of an unknown plugin returned %v", err)
 	}
 }

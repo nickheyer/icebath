@@ -313,18 +313,113 @@ func manifestInt(raw any, key, warn string) (int, bool) {
 	return 0, false
 }
 
-// List valued manifest field, warning and yielding nothing when present with another type
-func manifestFieldList(data map[string]any, key, field, what string) []any {
+// Value of a manifest field when absent or accepted by the type check, warning and yielding nil otherwise
+func manifestFieldOfType(data map[string]any, key, field string, isType func(any) bool, what string) any {
 	raw := data[field]
-	if raw == nil {
-		return nil
-	}
-	items, ok := raw.([]any)
-	if !ok {
+	if raw != nil && !isType(raw) {
 		logWarn(fmt.Sprintf("Plugin %s: %s must be %s; ignoring", key, field, what))
 		return nil
 	}
+	return raw
+}
+
+// List valued manifest field, warning and yielding nothing when present with another type
+func manifestFieldList(data map[string]any, key, field, what string) []any {
+	items, _ := manifestFieldOfType(data, key, field, func(v any) bool { _, ok := v.([]any); return ok }, what).([]any)
 	return items
+}
+
+// Dependency id and version range of a requires_plugins item, a bare id string accepted, false when malformed
+func dependencyEntry(item any) (PluginDependency, bool) {
+	if id, ok := item.(string); ok {
+		return PluginDependency{ID: id}, true
+	}
+	dm := asMap(item)
+	id, _ := dm["id"].(string)
+	if dm == nil || id == "" {
+		return PluginDependency{}, false
+	}
+	versionRange := ""
+	if dm["version_range"] != nil {
+		versionRange = config.PyStr(dm["version_range"])
+	}
+	return PluginDependency{ID: id, VersionRange: versionRange}, true
+}
+
+// Normalized manifest v2 values, every malformed field warned and dropped so a load never fails on them
+type manifestV2Fields struct {
+	manifestVersion int
+	apiVersion      *int
+	requiresPlugins []PluginDependency
+	pythonDeps      []string
+	configSchema    map[string]map[string]any
+	license         string
+	homepage        string
+	tags            []string
+	configKeys      []string
+}
+
+// Validates the manifest v2 fields of a manifest mapping, warning for each malformed or unknown one
+func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
+	out := manifestV2Fields{manifestVersion: 1, tags: []string{}}
+	mvRaw, ok := data["manifest_version"]
+	if !ok {
+		mvRaw = 1
+	}
+	if n, ok := manifestInt(mvRaw, key, "Plugin %s: manifest_version %s is not an integer; treating as 1"); ok {
+		out.manifestVersion = n
+	}
+	if out.manifestVersion > SupportedManifestVersion {
+		logWarn(fmt.Sprintf("Plugin %s: manifest_version %d is newer than this icebath supports (%d); loading anyway and ignoring unknown fields",
+			key, out.manifestVersion, SupportedManifestVersion))
+	}
+	if av := data["api_version"]; av != nil {
+		if n, ok := manifestInt(av, key, "Plugin %s: api_version %s is not an integer; ignoring"); ok {
+			out.apiVersion = &n
+		}
+	}
+	for _, item := range manifestFieldList(data, key, "requires_plugins", "a list") {
+		dep, ok := dependencyEntry(item)
+		if !ok {
+			logWarn(fmt.Sprintf("Plugin %s: requires_plugins entry %s must be a plugin id string or a {id, version_range} mapping; skipping", key, config.PyRepr(item)))
+			continue
+		}
+		out.requiresPlugins = append(out.requiresPlugins, dep)
+	}
+	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
+		s, ok := item.(string)
+		if !ok || pyStrip(s) == "" {
+			logWarn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, config.PyRepr(item)))
+			continue
+		}
+		out.pythonDeps = append(out.pythonDeps, pyStrip(s))
+	}
+	out.configSchema = configSchemaEntries(key, manifestFieldOfType(data, key, "config_schema", func(v any) bool { return asMap(v) != nil }, "a mapping"))
+	for _, t := range manifestFieldList(data, key, "tags", "a list") {
+		out.tags = append(out.tags, config.PyStr(t))
+	}
+	out.configKeys = manifestConfigKeys(data, key)
+	var unknown []string
+	for k := range data {
+		if !knownManifestFields[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	sort.Strings(unknown)
+	if len(unknown) > 0 {
+		if out.manifestVersion >= 2 {
+			logWarn(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
+		} else {
+			Logger.Debug(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
+		}
+	}
+	if config.PyTruthy(data["license"]) {
+		out.license = config.PyStr(data["license"])
+	}
+	if config.PyTruthy(data["homepage"]) {
+		out.homepage = config.PyStr(data["homepage"])
+	}
+	return out
 }
 
 // Validated config_keys of a manifest mapping
@@ -574,72 +669,15 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 	}
 	m.ProvidesMiddlewar = stringList(data["provides_middleware"])
 	m.Kind = manifestKind(data, key, dir)
+	m.ProvidesLocales, m.LocaleMetadata = parseProvidesLocales(data["provides_locales"], key)
 	m.RequiresIcebath = manifestRequires(data)
 	m.Capabilities = ParseDeclaredCapabilities(data["capabilities"], name)
-	mvRaw, ok := data["manifest_version"]
-	if !ok {
-		mvRaw = 1
-	}
-	if n, ok := manifestInt(mvRaw, key, "Plugin %s: manifest_version %s is not an integer; treating as 1"); ok {
-		m.ManifestVersion = n
-	}
-	if m.ManifestVersion > SupportedManifestVersion {
-		logWarn(fmt.Sprintf("Plugin %s: manifest_version %d is newer than this icebath supports (%d); loading anyway and ignoring unknown fields",
-			key, m.ManifestVersion, SupportedManifestVersion))
-	}
-	if av := data["api_version"]; av != nil {
-		if n, ok := manifestInt(av, key, "Plugin %s: api_version %s is not an integer; ignoring"); ok {
-			m.APIVersion = &n
-		}
-	}
-	for _, item := range manifestFieldList(data, key, "requires_plugins", "a list") {
-		switch d := item.(type) {
-		case string:
-			m.RequiresPlugins = append(m.RequiresPlugins, PluginDependency{ID: d})
-		default:
-			dm := asMap(item)
-			id, _ := dm["id"].(string)
-			if dm == nil || id == "" {
-				logWarn(fmt.Sprintf("Plugin %s: requires_plugins entry %s must be a plugin id string or a {id, version_range} mapping; skipping", key, config.PyRepr(item)))
-				continue
-			}
-			vr := ""
-			if dm["version_range"] != nil {
-				vr = config.PyStr(dm["version_range"])
-			}
-			m.RequiresPlugins = append(m.RequiresPlugins, PluginDependency{ID: id, VersionRange: vr})
-		}
-	}
-	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
-		s, ok := item.(string)
-		if !ok || strings.TrimSpace(s) == "" {
-			logWarn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, config.PyRepr(item)))
-			continue
-		}
-		m.PythonDeps = append(m.PythonDeps, strings.TrimSpace(s))
-	}
+	v2 := parseManifestV2Fields(data, key)
+	m.ManifestVersion, m.APIVersion, m.RequiresPlugins, m.PythonDeps = v2.manifestVersion, v2.apiVersion, v2.requiresPlugins, v2.pythonDeps
+	m.ConfigSchema, m.License, m.Homepage, m.Tags, m.ConfigKeys = v2.configSchema, v2.license, v2.homepage, v2.tags, v2.configKeys
 	m.PythonRuntime = strings.ToLower(strings.TrimSpace(scalarString(data["python_runtime"])))
-	schemaRaw := data["config_schema"]
-	if schemaRaw != nil && asMap(schemaRaw) == nil {
-		logWarn(fmt.Sprintf("Plugin %s: config_schema must be a mapping; ignoring", key))
-		schemaRaw = nil
-	}
-	m.ConfigSchema = configSchemaEntries(key, schemaRaw)
-	m.License, m.Homepage = "", ""
-	if config.PyTruthy(data["license"]) {
-		m.License = config.PyStr(data["license"])
-	}
-	if config.PyTruthy(data["homepage"]) {
-		m.Homepage = config.PyStr(data["homepage"])
-	}
-	m.Tags = []string{}
-	for _, t := range manifestFieldList(data, key, "tags", "a list") {
-		m.Tags = append(m.Tags, config.PyStr(t))
-	}
 	m.Emits = stringList(data["emits"])
 	m.Listens = stringList(data["listens"])
-	m.ProvidesLocales, m.LocaleMetadata = parseProvidesLocales(data["provides_locales"], key)
-	m.ConfigKeys = manifestConfigKeys(data, key)
 	m.UpdateURL = strings.TrimSpace(scalarString(data["update_url"]))
 	for _, p := range stringList(data["requires_auth"]) {
 		if strings.TrimSpace(p) != "" {
@@ -655,20 +693,6 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 	m.SkillDirs = parseSkillDirs(data["skills"], dir)
 	m.Commands = parseCommands(data["commands"], key)
 	m.MCPServers = parseMCPServers(data["mcp_servers"])
-	var unknown []string
-	for k := range data {
-		if !knownManifestFields[k] {
-			unknown = append(unknown, k)
-		}
-	}
-	sort.Strings(unknown)
-	if len(unknown) > 0 {
-		if m.ManifestVersion >= 2 {
-			logWarn(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
-		} else {
-			Logger.Debug(fmt.Sprintf(unknownFieldsWarning, key, strings.Join(unknown, ", ")))
-		}
-	}
 	return m
 }
 

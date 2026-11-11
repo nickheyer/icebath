@@ -136,8 +136,14 @@ func (d Date) PyRepr() string {
 	return s + ")"
 }
 
+// Python class a plist date is read as
+func (Date) PyTypeName() string { return "datetime" }
+
 // UID is a keyed archiver reference from a binary plist
 type UID uint64
+
+// Python class of a keyed archiver reference
+func (UID) PyTypeName() string { return "UID" }
 
 func (u UID) PyRepr() string { return fmt.Sprintf("UID(%d)", uint64(u)) }
 func (u UID) PyStr() string  { return u.PyRepr() }

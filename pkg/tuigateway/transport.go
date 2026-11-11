@@ -21,7 +21,7 @@ type abortingTransport interface {
 
 // Transport sending a whole batch and awaiting the real send while its generation stays current
 type batchTransport interface {
-	WriteManyIfCurrent(frames []*pyjson.Object, current func() bool) bool
+	WriteManyIfCurrentAsync(frames []*pyjson.Object, isCurrent func() bool) bool
 }
 
 // JSON text of a frame, an internal error frame carrying the original id when it cannot be serialized
@@ -61,7 +61,8 @@ type FanoutTransport struct {
 	peers []*fanoutPeer
 }
 
-const (
+// Bounds of one peer mailbox, the frame count and the serialized bytes it may hold unsent
+var (
 	fanoutMaxPendingFrames = 16384
 	fanoutMaxPendingBytes  = 4 * 1024 * 1024
 )
@@ -219,7 +220,7 @@ func (f *FanoutTransport) writeBatch(peer *fanoutPeer, generation int, batch []p
 		for i, item := range batch {
 			frames[i] = item.frame
 		}
-		return writer.WriteManyIfCurrent(frames, func() bool { return f.isCurrent(peer, generation) })
+		return writer.WriteManyIfCurrentAsync(frames, func() bool { return f.isCurrent(peer, generation) })
 	}
 	for _, item := range batch {
 		if f.isCurrent(peer, generation) && !peer.transport.Write(item.frame) {

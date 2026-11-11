@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -71,47 +72,60 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 	if err != nil || !st.IsDir() {
 		return out
 	}
-	entries, err := os.ReadDir(path)
+	entries, err := pluginDirRead(path)
 	if err != nil {
 		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
 		return out
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
+		child := filepath.Join(path, e.Name())
 		if isSkippedPluginDir(e.Name()) {
+			logDebug(fmt.Sprintf("Skipping %s (dunder or foreign-harness manifest dir)", child))
 			continue
 		}
-		child := filepath.Join(path, e.Name())
-		cst, err := os.Stat(child)
+		manifestFile, portableFile, hasPortable := "", filepath.Join(child, "plugin.json"), false
+		isDir, err := pathlibProbe(child, true)
+		if err == nil && (!isDir || (depth == 0 && skipNames[e.Name()])) {
+			continue
+		}
+		for _, n := range []string{"plugin.yaml", "plugin.yml"} {
+			if err != nil || manifestFile != "" {
+				break
+			}
+			var exists bool
+			if exists, err = pathlibProbe(filepath.Join(child, n), false); exists {
+				manifestFile = filepath.Join(child, n)
+			}
+		}
+		if err == nil {
+			hasPortable, err = pathlibProbe(portableFile, false)
+		}
+		if err == nil && !hasPortable {
+			if lst, lerr := os.Lstat(portableFile); lerr == nil {
+				hasPortable = lst.Mode()&os.ModeSymlink != 0
+			} else if !pypath.PathlibIgnoredError(lerr) {
+				err = lerr
+			}
+		}
 		if err != nil {
 			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
 			continue
 		}
-		if !cst.IsDir() || (depth == 0 && skipNames[e.Name()]) {
-			continue
-		}
-		manifestFile := ""
-		for _, n := range []string{"plugin.yaml", "plugin.yml"} {
-			if _, err := os.Stat(filepath.Join(child, n)); err == nil {
-				manifestFile = filepath.Join(child, n)
-				break
-			}
-		}
-		_, portableErr := os.Lstat(filepath.Join(child, "plugin.json"))
 		switch {
 		case manifestFile != "":
 			if m := ParseManifestFile(manifestFile, child, source, prefix); m != nil {
 				out = append(out, m)
 			}
-		case portableErr == nil:
+		case hasPortable:
 			m, err := portablePluginManifest(child, source, prefix)
 			if err != nil {
-				logWarn("failed to parse portable plugin manifest", "path", child, "err", err)
+				logWarn(fmt.Sprintf("Failed to parse %s: %s", portableFile, err))
 				continue
 			}
 			out = append(out, m)
 		case depth >= 1:
-			logDebug("skipping plugin directory without manifest at depth cap", "path", child)
+			logDebug(fmt.Sprintf("Skipping %s (no plugin.yaml, depth cap reached)", child))
 		default:
 			sub := e.Name()
 			if prefix != "" {

@@ -717,7 +717,7 @@ func (p *parser) braceAtom() *Node {
 	}
 	save := p.pos
 	first := p.namedExpression()
-	if p.isOp(":") && !first.Is("NamedExpr") {
+	if p.isOp(":") && (!first.Is("NamedExpr") || p.parens[first]) {
 		p.next()
 		if p.isOp("*") {
 			st := p.cur()

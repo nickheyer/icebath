@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/spf13/cobra"
 )
@@ -34,61 +33,66 @@ type groupHandler func(ctx context.Context, cli *commands.CLI, cmd *cobra.Comman
 // Binds every host owned command path to the handler of its top level group
 func bindHostCommands(cli *commands.CLI) {
 	groups := map[string]groupHandler{
-		"acp":               acpGroup,
-		"approvals":         approvalsGroup,
-		"auth":              authGroup,
-		"backup":            backupGroup,
-		"browser":           browserGroup,
-		"checkpoints":       checkpointsGroup,
-		"codex-runtime":     codexRuntimeGroup,
-		"completion":        completionGroup,
-		"connectors":        connectorsGroup,
-		"console":           consoleGroup,
-		"curator":           curatorGroup,
-		"dashboard":         dashboardGroup,
-		"debug":             debugGroup,
-		"desktop":           desktopGroup,
-		"doctor":            doctorGroup,
-		"dump":              dumpGroup,
-		"egress":            egressGroup,
-		"fallback":          fallbackGroup,
-		"gateway":           gatewayGroup,
-		"import":            importGroup,
-		"journey":           journeyGroup,
-		"kanban":            kanbanGroup,
-		"logs":              logsGroup,
-		"migrate":           migrateGroup,
-		"model":             modelGroup,
-		"monitoring":        monitoringGroup,
-		"pairing":           pairingGroup,
-		"pause":             pauseGroup,
-		"peer":              peerGroup,
-		"pets":              petsGroup,
-		"portal":            portalGroup,
-		"project":           projectGroup,
-		"prompt-size":       promptSizeGroup,
-		"proxy":             proxyGroup,
-		"secrets":           secretsGroup,
-		"security":          securityGroup,
-		"send":              sendGroup,
-		"serve":             dashboardGroup,
-		"sessions":          sessionsGroup,
-		"setup":             setupGroup,
-		"slack":             slackGroup,
-		"status":            statusGroup,
-		"tools":             toolsGroup,
-		"uninstall":         uninstallGroup,
-		"update":            updateGroup,
-		"update-takeover":   updateTakeoverGroup,
-		"venv-sync":         venvSyncGroup,
-		"source-completion": sourceCompletionGroup,
-		"usage":             usageGroup,
-		"vault":             vaultGroup,
-		"verify":            verifyGroup,
-		"webapp":            webappGroup,
-		"whatsapp":          whatsappGroup,
-		"whatsapp-cloud":    whatsappCloudGroup,
-		"worktree":          worktreeGroup,
+		"acp":                     acpGroup,
+		"approvals":               approvalsGroup,
+		"auth":                    authGroup,
+		"backup":                  backupGroup,
+		"browser":                 browserGroup,
+		"checkpoints":             checkpointsGroup,
+		"codex-runtime":           codexRuntimeGroup,
+		"completion":              completionGroup,
+		"connectors":              connectorsGroup,
+		"console":                 consoleGroup,
+		"curator":                 curatorGroup,
+		"dashboard":               dashboardGroup,
+		"debug":                   debugGroup,
+		"desktop":                 desktopGroup,
+		"doctor":                  doctorGroup,
+		"dump":                    dumpGroup,
+		"egress":                  egressGroup,
+		"fallback":                fallbackGroup,
+		"gateway":                 gatewayGroup,
+		"import":                  importGroup,
+		"journey":                 journeyGroup,
+		"kanban":                  kanbanGroup,
+		"logs":                    logsGroup,
+		"migrate":                 migrateGroup,
+		"model":                   modelGroup,
+		"monitoring":              monitoringGroup,
+		"pairing":                 pairingGroup,
+		"pause":                   pauseGroup,
+		"peer":                    peerGroup,
+		"pets":                    petsGroup,
+		"portal":                  portalGroup,
+		"project":                 projectGroup,
+		"prompt-size":             promptSizeGroup,
+		"proxy":                   proxyGroup,
+		"secrets":                 secretsGroup,
+		"security":                securityGroup,
+		"send":                    sendGroup,
+		"serve":                   dashboardGroup,
+		"sessions":                sessionsGroup,
+		"setup":                   setupGroup,
+		"slack":                   slackGroup,
+		"status":                  statusGroup,
+		"tools":                   toolsGroup,
+		"uninstall":               uninstallGroup,
+		"update":                  updateGroup,
+		"update-takeover":         updateTakeoverGroup,
+		"update-serve-resume":     updateServeResumeGroup,
+		"update-finish":           updateFinishGroup,
+		"update-restart-recovery": updateRestartRecoveryGroup,
+		"update-completion":       updateCompletionGroup,
+		"venv-sync":               venvSyncGroup,
+		"source-completion":       sourceCompletionGroup,
+		"import-health":           importHealthGroup,
+		"usage":                   usageGroup,
+		"vault":                   vaultGroup,
+		"verify":                  verifyGroup,
+		"webapp":                  webappGroup,
+		"whatsapp":                whatsappGroup,
+		"whatsapp-cloud":          whatsappCloudGroup,
+		"worktree":                worktreeGroup,
 	}
 	for _, path := range cli.Unbound() {
 		group := firstWord(path)
@@ -217,20 +221,23 @@ func cmdDashboard(cli *commands.CLI, cmd *cobra.Command, args []string) (int, er
 		return gateway.CmdDashboardRegister(ctx, ns, cmd.OutOrStdout())
 	}
 	return gateway.CmdDashboard(ctx, gateway.DashboardLaunch{Namespace: ns, HeadlessBackend: cmd.Name() == "serve", Stdout: cmd.OutOrStdout(), Stderr: cmd.ErrOrStderr(),
-		ExplicitProfile: explicitCLIProfile, PrepareRuntime: dashboardPrepareRuntime})
+		PrepareRuntime: dashboardPrepareRuntime})
 }
 
-// Deps check, skills seed, terminal env bridge, plugins and MCP discovery before the server binds
-func dashboardPrepareRuntime(ctx context.Context, headlessBackend bool) bool {
+// Skills seed, terminal env bridge, web dist step, plugins and MCP discovery before the server binds
+func dashboardPrepareRuntime(ctx context.Context, headlessBackend bool, resolveWebDist func() error) (bool, error) {
 	setupLoggingMode("gui")
 	syncBundledSkillsQuietly()
 	if err := config.ApplyTerminalConfigToEnv(ctx, home.Dir(ctx), config.TerminalEnvOptions{}); err != nil {
 		slogDebug("terminal config → env bridge failed for dashboard/serve: " + err.Error())
 	}
+	if err := resolveWebDist(); err != nil {
+		return false, err
+	}
 	plugins.DiscoverPlugins(ctx, false)
 	desktop := tools.IsDesktopOwnedBackend(nil)
 	if headlessBackend && desktop {
-		return true
+		return true, nil
 	}
 	env := processToolsEnv(ctx)
 	if desktop {
@@ -238,7 +245,7 @@ func dashboardPrepareRuntime(ctx context.Context, headlessBackend bool) bool {
 	} else {
 		mcp.DeferBackgroundDiscovery(ctx, env, nil, "dashboard-mcp-discovery", nil)
 	}
-	return false
+	return false, nil
 }
 
 func debugGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -307,7 +314,7 @@ func logsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 	if name == "list" {
 		return 0, app.ListLogs(ctx, cmd.OutOrStdout())
 	}
-	return 0, app.TailLog(ctx, cmd.OutOrStdout(), app.TailLogOptions{Name: name, Lines: nsInt(ns, "lines"), Follow: nsBool(ns, "follow"),
+	return app.TailLog(ctx, cmd.OutOrStdout(), app.TailLogOptions{Name: name, Lines: nsInt(ns, "lines"), Follow: nsBool(ns, "follow"),
 		Level: nsString(ns, "level"), Session: nsString(ns, "session"), Since: nsString(ns, "since"), Component: nsString(ns, "component")})
 }
 
@@ -331,11 +338,13 @@ func monitoringGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command,
 }
 
 func pairingGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.PairingCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["pairing_action"] = nilWhenEmpty(secondWord(path))
+	return gateway.PairingCommand(ctx, ns, cmd.OutOrStdout())
 }
 
 func pauseGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.EstopCommand(ctx, home.Dir(ctx), path == "pause", namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return tools.PauseCommand(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
 // Runs icebath peer with the subcommand name or alias typed under its argparse dest
@@ -352,11 +361,15 @@ func peerGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 }
 
 func petsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return app.PetsCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["pets_command"] = nilWhenEmpty(secondWord(path))
+	return app.PetsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
 }
 
 func portalGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.PortalCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["portal_command"] = nilWhenEmpty(secondWord(path))
+	return provider.PortalCommand(ctx, provider.HomePoolEnv(home.Dir(ctx)), ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func projectGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -417,7 +430,7 @@ func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 	for parser.Parent() != nil && parser.Parent() != cli.Root {
 		parser = parser.Parent()
 	}
-	return state.SessionsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), parser.Help)
+	return app.CmdSessions(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), parser.Help)
 }
 
 func setupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -494,6 +507,28 @@ func updateTakeoverGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Comm
 	return selfupdate.CmdUpdateTakeover(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
+// Relaunches the manual backends a historical updater paused from a request file
+func updateServeResumeGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	ns := namespace(cli, cmd, path, args)
+	return selfupdate.UpdateServeResumeMain(ctx, nsString(ns, "context"), nsString(ns, "result"), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Finishes an update in the selected checkout from a request file
+func updateFinishGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	ns := namespace(cli, cmd, path, args)
+	return selfupdate.UpdateFinishMain(ctx, nsString(ns, "context"), nsString(ns, "result"), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Restarts supervised gateways and serve units from the payload on stdin over the entry's raw arguments
+func updateRestartRecoveryGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.UpdateRestartRecoveryMain(ctx, args, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Runs the post commit completion of a source update over the entry's raw arguments
+func updateCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.UpdateCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
 // Reports or syncs a checkout's dependencies over the entry's raw arguments
 func venvSyncGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return selfupdate.VenvSyncMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
@@ -502,6 +537,11 @@ func venvSyncGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, p
 // Runs the completion tail a source update launch starts in its custody
 func sourceCompletionGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
 	return selfupdate.SourceCompletionMain(ctx, args, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil
+}
+
+// Answers the import health probe an update runs against this install's binary
+func importHealthGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
+	return selfupdate.ImportHealthMain(args, cmd.OutOrStdout()), nil
 }
 
 func usageGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

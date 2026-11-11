@@ -41,7 +41,7 @@ func buildSkillsLine(t *testing.T, h string) string {
 }
 
 // test_setup_beat_plugin_skills.py test_the_build_beat_names_an_installed_plugin_skill_by_its_registered_name
-func TestBuildBeatNamesInstalledPluginSkillByRegisteredName(t *testing.T) {
+func TestTheBuildBeatNamesAnInstalledPluginSkillByItsRegisteredName(t *testing.T) {
 	h, m := skillHostHome(t, "{\"plugins\": {\"enabled\": [\"blender\"]}}\n")
 	plugin := filepath.Join(h, "plugins", "blender")
 	memWrite(t, filepath.Join(plugin, "plugin.json"), "{\"$schema\": \""+PluginSchemaV1+"\", \"name\": \"blender\"}")
@@ -62,7 +62,7 @@ func TestBuildBeatNamesInstalledPluginSkillByRegisteredName(t *testing.T) {
 }
 
 // test_setup_beat_plugin_skills.py test_a_plugin_skill_that_is_not_installed_is_dropped
-func TestPluginSkillNotInstalledIsDropped(t *testing.T) {
+func TestAPluginSkillThatIsNotInstalledIsDropped(t *testing.T) {
 	h, m := skillHostHome(t, "{\"plugins\": {\"enabled\": [\"blender\"]}}\n")
 	m.DiscoverAndLoad(homeCtx(h), true)
 	if line := buildSkillsLine(t, h); strings.Contains(line, "blender") {

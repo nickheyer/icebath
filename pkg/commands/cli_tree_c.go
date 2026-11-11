@@ -407,7 +407,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		yesFlag(cmd, "Skip confirmation")
 	}
 	export := c.newCmd(sessions, "export", "Export sessions to JSONL, Markdown, or QMD", "")
-	c.pos(export, pOpt("OUTPUT"))
+	c.pos(export, pOpt("output").withMetavar("OUTPUT").withHelp("Where to write. jsonl/html/trace: a file path, or a directory (existing, or ending in /) to write a default-named file into; - for stdout (jsonl/trace only; jsonl requires OUTPUT). md/qmd: a directory, one file per session (default: <icebath home>/session-exports)"))
 	sf(export, "format", "", "jsonl", "Export format (default: jsonl). 'trace' emits Claude Code JSONL for the Hugging Face Agent Trace Viewer")
 	c.choice(export, "format", "jsonl", "md", "qmd", "html", "trace")
 	bf(export, "upload", "", "trace only: upload to your Hugging Face traces dataset instead of writing a local file (needs HF_TOKEN)")
@@ -423,7 +423,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	bf(export, "delete-after-verified", "", "md/qmd only: after verified single-session export, delete that session (needs --yes)")
 	bf(export, "force", "", "md/qmd only: overwrite an existing export file")
 	del := c.newCmd(sessions, "delete", "Delete a specific session", "")
-	c.pos(del, p("session_id"))
+	c.pos(del, p("session_id").withHelp("Session ID to delete"))
 	yesFlag(del, "Skip confirmation")
 	prune := c.newCmd(sessions, "prune", "Delete old sessions (filterable by time window, source, title, ...)", "")
 	filterArgs(prune, "Delete sessions older than AGE — days if bare number, or a duration like '5h'/'2d'/'1w', or an ISO timestamp (bare prune with no filters defaults to 90 days; any filter matches all ages)")
@@ -451,7 +451,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	bf(repair, "no-backup", "", "Skip the timestamped backup copy (not recommended)")
 	journal := c.newCmd(sessions, "set-journal-mode", "Convert state.db between journal_mode=WAL and DELETE offline (every holder stopped)",
 		"Switch the on-disk journal mode of the session store. Icebath never live-downgrades a WAL database at startup (other processes may hold uncheckpointed commits), so `database.journal_mode: delete` cannot self-apply to an existing WAL store. Run this with the gateway, dashboard and every CLI stopped: it refuses while any process holds the file, switches the mode, and verifies the file header.")
-	c.pos(journal, pChoice("mode", "delete", "wal"))
+	c.pos(journal, pChoice("mode", "delete", "wal").withHelp("Target journal mode"))
 	sf(journal, "db", "", "", "Convert another Icebath SQLite store (e.g. kanban.db) instead of the profile's state.db")
 	bf(journal, "force", "", "Proceed when the holder scan itself fails (cannot prove the store is quiet) after stopping every Icebath process yourself; a process the scan does find is still refused")
 	routing := c.newCmd(sessions, "repair-routing", "Re-stamp gateway sessions that lost their routing identity",
@@ -470,7 +470,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		"Repair session rows degraded by the pre-#122822 gateway hygiene/compress bug. Automatic repair requires positive tools[] evidence; rows without a readable pin are reported as unverifiable and never changed by a scan. Clearing a prompt makes the next turn rebuild and persist healthy bytes. Reports without touching anything unless --apply is given; a session_id is an explicit destructive override and can clear even a healthy prompt.")
 	bf(prompts, "apply", "", "Clear the verified prompts (default: report only)")
 	bf(prompts, "json", "", "Machine-readable output; with --apply, apply without an interactive confirmation")
-	c.pos(prompts, pOpt("session_id"))
+	c.pos(prompts, pOpt("session_id").withHelp("Destructive override: clear this session even when its stored prompt is healthy"))
 	refresh := c.newCmd(sessions, "refresh-prompts", "Make continuing sessions rebuild their system prompt on their next turn",
 		"After updating SOUL.md, skills or context files in this profile, ask every continuing session (or one with --session) to rebuild its stored system prompt once, on its next turn, from the current sources. Conversation history and session ids are kept; each refreshed session pays one prompt-cache miss. Works while the gateway runs and across restarts. Use -p/--profile to target another profile.")
 	sf(refresh, "session", "", "", "Refresh only this session (id or unique prefix)")
@@ -487,7 +487,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	sf(recover, "report", "", "", "JSON report path (defaults to <output>.recovery.json)")
 	c.newCmd(sessions, "stats", "Show session store statistics", "")
 	rename := c.newCmd(sessions, "rename", "Set or change a session's title", "")
-	c.pos(rename, p("session_id"), pMany("title"))
+	c.pos(rename, p("session_id").withHelp("Session ID to rename"), pMany("title").withHelp("New title for the session"))
 	discard := c.newCmd(sessions, "discard", "Acknowledge turns lost in a gateway crash (unknown admissions) so the session runs again",
 		"After a gateway crash mid-turn, the lost turn is fenced 'unknown' and blocks the session: `icebath chat --resume <id> -q` exits 3 until it is acknowledged. This is the non-interactive form of `/discard <admission>`. The lost input is not replayed.")
 	c.pos(discard, p("session"))
@@ -498,9 +498,9 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	bf(adopt, "dry-run", "", "Only count what would be adopted")
 	pin := c.newCmd(sessions, "pin", "Pin session(s) — durable keep flag, exempt from auto-archive",
 		"Set the durable 'keep' flag on one or more sessions. Pinned sessions are exempt from the sessions.auto_archive stale sweep and always appear in listings. The same flag drives the Desktop sidebar's Pinned section — pin from either surface, both see it.")
-	c.pos(pin, pMany("session_ids"))
+	c.pos(pin, pMany("session_ids").withHelp("Session ID(s) or unique prefix(es) to pin"))
 	unpin := c.newCmd(sessions, "unpin", "Remove the pin (durable keep flag) from session(s)", "")
-	c.pos(unpin, pMany("session_ids"))
+	c.pos(unpin, pMany("session_ids").withHelp("Session ID(s) or unique prefix(es) to unpin"))
 	pinned := c.newCmd(sessions, "pinned", "List pinned sessions", "")
 	jsonFlag(pinned, "Emit machine-readable JSON (for backup/restore scripting)")
 	retitle := c.newCmd(sessions, "retitle-skills", "Re-title sessions whose auto-title came from a /skill's own text",
@@ -515,7 +515,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	sf(imp, "from", "", "", "Which tool to import from (default: pick across both)")
 	c.choice(imp, "from", "claude", "codex")
 	dest(imp, "from", "from_source")
-	c.pos(imp, pOpt("path"))
+	c.pos(imp, pOpt("path").withHelp("Path to a specific session JSONL file (skips the picker)"))
 }
 
 func (c *CLI) addProfile(root *cobra.Command) {

@@ -96,6 +96,9 @@ func SchemaDriftReason(ctx context.Context, path string) (string, bool, error) {
 // Snapshot copier the reconcile uses, a seam for tests that alter the staged copy
 var reconcileCopySnapshot = copyDatabaseSnapshot
 
+// Declared schema applier the reconcile uses, a seam for tests that refuse or drop the upgrade
+var reconcileApplyDeclaredSchema = ApplyDeclaredSchema
+
 // Reconciles a scratch snapshot additively and promotes it only once complete and healthy
 func reconcileSnapshot(ctx context.Context, path string, guard SQLiteConn) error {
 	scratch := path + ".reconcile-scratch"
@@ -122,7 +125,7 @@ func reconcileSnapshot(ctx context.Context, path string, guard SQLiteConn) error
 		if err := requireHistoryTables(ctx, conn); err != nil {
 			return err
 		}
-		if err := ApplyDeclaredSchema(ctx, conn); err != nil {
+		if err := reconcileApplyDeclaredSchema(ctx, conn); err != nil {
 			return err
 		}
 		return endTransaction(ctx, conn, "COMMIT")
@@ -197,7 +200,7 @@ func reconcileLocked(ctx context.Context, path string, backup bool, report *Decl
 		return runtimeError(reason)
 	}
 	if backup {
-		backupPath, refusal := backupDBFile(path)
+		backupPath, refusal := repairBackupFn(path)
 		if backupPath == "" {
 			return runtimeError("pre-repair backup refused: " + refusal)
 		}
@@ -365,7 +368,7 @@ func applyAdditiveSchema(ctx context.Context, path string, budget *browseBudget)
 		return err
 	}
 	err = func() error {
-		if err := ApplyDeclaredSchema(ctx, conn); err != nil {
+		if err := reconcileApplyDeclaredSchema(ctx, conn); err != nil {
 			return err
 		}
 		statements, err := SchemaReadProbeStatements(ctx)

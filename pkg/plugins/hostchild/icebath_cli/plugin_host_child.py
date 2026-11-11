@@ -779,9 +779,11 @@ class HostRuntime:
                 self.owners.pop(ref, None)
         module_name = self.modules.pop(plugin_key, "")
         if module_name:
-            for name in [m for m in sys.modules if m == module_name or m.startswith(module_name + ".")]:
-                sys.modules.pop(name, None)
+            _evict_modules(module_name)
         return {"errors": errors}
+
+    def op_evict_modules(self, params: dict[str, Any]) -> None:
+        _evict_modules(str(params["module_name"]))
 
     def op_shutdown(self, _params: dict[str, Any]) -> None:
         for plugin_key in list(self.unload_callbacks):
@@ -801,6 +803,7 @@ _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "invoke": HostRuntime.op_invoke,
     "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr, "obj_next": HostRuntime.op_obj_next,
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
+    "evict_modules": HostRuntime.op_evict_modules,
     "release": HostRuntime.op_release, "event": HostRuntime.op_event, "config_schema": HostRuntime.op_config_schema,
     "load_memory_entry_point": HostRuntime.op_load_memory_entry_point, "warm_import": HostRuntime.op_warm_import,
     "describe_memory_cli": HostRuntime.op_describe_memory_cli,
@@ -1003,6 +1006,19 @@ async def _on_behalf_of(awaitable: Any, origin: Optional[int]) -> Any:
     return await awaitable
 
 
+def _evict_modules(module_name: str) -> None:
+    """Drop ``module_name`` and every ``module_name.*`` submodule from ``sys.modules``.
+
+    Any concurrent import mutates ``sys.modules`` while this runs, so the ``list()`` snapshot is
+    load-bearing: iterating the live mapping raises ``RuntimeError: dictionary changed size during
+    iteration``. ``pop`` keeps the snapshot-to-delete window tolerant of a key another evictor removed.
+    """
+    prefix = f"{module_name}."
+    for name in list(sys.modules):  # snapshot first, never iterate the live mapping
+        if name == module_name or name.startswith(prefix):
+            sys.modules.pop(name, None)
+
+
 def _import_plugin(params: dict[str, Any]) -> Any:
     """Import a directory plugin under the module name Icebath assigned, or resolve an entry point."""
     if params.get("entrypoint"):
@@ -1023,6 +1039,8 @@ def _import_plugin(params: dict[str, Any]) -> Any:
             ns_pkg.__path__ = []  # type: ignore[attr-defined]
             ns_pkg.__package__ = parent
             sys.modules[parent] = ns_pkg
+    # A stale submodule cached as "module_name.sub" would keep serving the previous load's code and state
+    _evict_modules(module_name)
     spec = importlib.util.spec_from_file_location(module_name, init_file,
                                                   submodule_search_locations=[str(plugin_dir)])
     if spec is None or spec.loader is None:
@@ -1034,8 +1052,7 @@ def _import_plugin(params: dict[str, Any]) -> Any:
     try:
         spec.loader.exec_module(module)
     except BaseException:
-        for name in [m for m in sys.modules if m == module_name or m.startswith(module_name + ".")]:
-            sys.modules.pop(name, None)
+        _evict_modules(module_name)
         raise
     return module
 
