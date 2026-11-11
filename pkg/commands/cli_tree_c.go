@@ -402,6 +402,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		ff(cmd, "max-cost", "", 0, "Only match sessions costing <= N USD (actual or estimated)")
 		inf(cmd, "min-tool-calls", "", 0, "Only match sessions with >= N tool calls")
 		inf(cmd, "max-tool-calls", "", 0, "Only match sessions with <= N tool calls")
+		noneDefault(cmd, "min-messages", "max-messages", "min-tokens", "max-tokens", "min-cost", "max-cost", "min-tool-calls", "max-tool-calls")
 		bf(cmd, "dry-run", "", "List matching sessions without changing anything")
 		yesFlag(cmd, "Skip confirmation")
 	}
@@ -457,6 +458,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		"Find gateway conversations stranded in session rows whose routing identity (session_key/chat_id/origin) was never written — the damage a corrupt state.db write path leaves behind (#82616). Such a row is invisible to restart recovery, so the chat resumes an older session instead. Re-stamps each orphan from the keyed predecessor it continues, and only when that predecessor is unambiguous. Reports without touching the database unless --apply is given.")
 	bf(routing, "apply", "", "Perform the adoptions (default: report only)")
 	ff(routing, "max-gap-seconds", "", 0, "Window between a keyed predecessor's last activity and an orphan's start for them to count as the same conversation (default: 900)")
+	noneDefault(routing, "max-gap-seconds")
 	profiles := c.newCmd(sessions, "repair-profiles", "Settle session/routing state that landed under the wrong profile",
 		"Scan every profile's state.db (and the gateway's voice-mode / sessions.json files) for durable state crossed between profiles: rows whose profile_name disagrees with their session key, rows sitting in another profile's store, parent links crossing namespaces, routing rows outside the default store or for a profile that no longer exists, and Telegram topic / voice-mode entries missing their bot's profile. Reports without touching anything unless --apply is given; --apply refuses while a gateway is running, snapshots every store first, and is safe to re-run.")
 	bf(profiles, "apply", "", "Perform the repairs (default: report only)")
@@ -481,7 +483,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 	bf(recover, "inspect-only", "", "Only report canonical table readability; do not create an output database")
 	sf(recover, "work-dir", "", "", "Existing directory for the disposable source copy (defaults beside the output)")
 	inf(recover, "chunk-size", "", 1000, "Rows committed per recovery batch (default: 1000)")
-	bf(recover, "allow-partial", "", "Salvage across damaged row ranges; the output remains separate and every skipped range is recorded")
+	bf(recover, "allow-partial", "", "Best-effort salvage across damaged row ranges; the output remains separate and every skipped range is recorded")
 	sf(recover, "report", "", "", "JSON report path (defaults to <output>.recovery.json)")
 	c.newCmd(sessions, "stats", "Show session store statistics", "")
 	rename := c.newCmd(sessions, "rename", "Set or change a session's title", "")
@@ -512,6 +514,7 @@ func (c *CLI) addSessions(root *cobra.Command) {
 		"Pull a conversation started in Claude Code (~/.claude/projects) or Codex CLI (~/.codex/sessions) into the Icebath session store so it can be resumed with 'icebath --resume <id>'. The foreign files are only read, never modified.")
 	sf(imp, "from", "", "", "Which tool to import from (default: pick across both)")
 	c.choice(imp, "from", "claude", "codex")
+	dest(imp, "from", "from_source")
 	c.pos(imp, pOpt("path"))
 }
 

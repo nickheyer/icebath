@@ -166,32 +166,37 @@ func pyClampFloat(n, lo, hi float64) float64 {
 	return n
 }
 
+// Numeric config value through cast, the default on junk, clamped to lo..hi as Python min of max
+func wakeClamped[T any](cfg map[string]any, key string, cast func(any) (T, error), less func(a, b T) bool, lo, hi T) (T, error) {
+	n, err := cast(wakeGet(cfg, key))
+	if err != nil {
+		var zero T
+		if !pyCastFallback(err) {
+			return zero, err
+		}
+		if n, err = cast(wakeDefaults[key]); err != nil {
+			return zero, err
+		}
+	}
+	if less(n, lo) {
+		n = lo
+	}
+	if less(hi, n) {
+		n = hi
+	}
+	return n, nil
+}
+
 // Wake sensitivity as a float clamped to 0..1, the default on junk
 func wakeSensitivity(cfg map[string]any) (float64, error) {
-	n, err := pyint.Float(wakeGet(cfg, "sensitivity"))
-	if err != nil {
-		if !pyCastFallback(err) {
-			return 0, err
-		}
-		n = wakeDefaults["sensitivity"].(float64)
-	}
-	return pyClampFloat(n, 0, 1), nil
+	return wakeClamped(cfg, "sensitivity", pyint.Float, func(a, b float64) bool { return a < b }, 0, 1)
 }
 
 // Consecutive over threshold frames required to fire, clamped to 1..10 with the default on junk
 func wakeConfirmationFrames(cfg map[string]any) (int, error) {
-	n, err := pyint.Of(wakeGet(cfg, "confirmation_frames"))
+	n, err := wakeClamped(cfg, "confirmation_frames", pyint.Of, func(a, b *big.Int) bool { return a.Cmp(b) < 0 }, big.NewInt(1), big.NewInt(10))
 	if err != nil {
-		if !pyCastFallback(err) {
-			return 0, err
-		}
-		n = big.NewInt(wakeDefaultConfirmationFrames)
-	}
-	if n.Cmp(big.NewInt(1)) < 0 {
-		return 1, nil
-	}
-	if n.Cmp(big.NewInt(10)) > 0 {
-		return 10, nil
+		return 0, err
 	}
 	return int(n.Int64()), nil
 }
@@ -274,6 +279,9 @@ func ResolveCaptureMode(ctx context.Context, cfg map[string]any, preferClient, f
 	return "local"
 }
 
+// Input channel count of a PortAudio device record
+func inputChannels(info pysounddevice.Device) int { return info.MaxInputChannels }
+
 // True when PortAudio loads and at least one input device or a default input exists
 func localInputDeviceReady() bool {
 	sd, err := importAudio()
@@ -285,12 +293,12 @@ func localInputDeviceReady() bool {
 		return false
 	}
 	for _, d := range devices {
-		if d.MaxInputChannels > 0 {
+		if inputChannels(d) > 0 {
 			return true
 		}
 	}
 	dev, err := sd.QueryDevice(nil, "input")
-	return err == nil && dev.MaxInputChannels > 0
+	return err == nil && inputChannels(dev) > 0
 }
 
 // WakeSurfaceEnabled reports whether a cli, tui or gui surface may host the enabled listener

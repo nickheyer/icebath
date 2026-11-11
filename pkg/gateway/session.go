@@ -388,22 +388,38 @@ func BuildChannelContinuityNote(entry *SessionEntry, source *SessionSource) stri
 		"acting — do not assume an unrelated recent session is the right context.]", where, *entry.PrevSessionID, where)
 }
 
-// Insertion ordered routing entries, the order a Python dict keeps
+// Insertion ordered routing entries, the order a Python dict keeps, readable without the store lock
 type sessionEntries struct {
+	mu   sync.RWMutex
 	keys []string
 	m    map[string]*SessionEntry
 }
 
 func newSessionEntries() *sessionEntries { return &sessionEntries{m: map[string]*SessionEntry{}} }
 
-func (o *sessionEntries) get(key string) *SessionEntry { return o.m[key] }
+func (o *sessionEntries) get(key string) *SessionEntry {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.m[key]
+}
 
-func (o *sessionEntries) has(key string) bool { _, ok := o.m[key]; return ok }
+func (o *sessionEntries) has(key string) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	_, ok := o.m[key]
+	return ok
+}
 
-func (o *sessionEntries) len() int { return len(o.keys) }
+func (o *sessionEntries) len() int {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return len(o.keys)
+}
 
 // Stores the entry keeping the position of an existing key
 func (o *sessionEntries) set(key string, e *SessionEntry) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	if _, ok := o.m[key]; !ok {
 		o.keys = append(o.keys, key)
 	}
@@ -412,6 +428,8 @@ func (o *sessionEntries) set(key string, e *SessionEntry) {
 
 // Removes the key returning its entry, nil when absent
 func (o *sessionEntries) delete(key string) *SessionEntry {
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	e, ok := o.m[key]
 	if !ok {
 		return nil
@@ -421,14 +439,38 @@ func (o *sessionEntries) delete(key string) *SessionEntry {
 	return e
 }
 
-func (o *sessionEntries) keyList() []string { return slices.Clone(o.keys) }
+func (o *sessionEntries) keyList() []string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return slices.Clone(o.keys)
+}
 
 func (o *sessionEntries) values() []*SessionEntry {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	out := make([]*SessionEntry, 0, len(o.keys))
 	for _, k := range o.keys {
 		out = append(out, o.m[k])
 	}
 	return out
+}
+
+// Session id the key's entry names, read without the store lock
+func (o *sessionEntries) sessionIDOf(key string) (string, bool) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	e := o.m[key]
+	if e == nil {
+		return "", false
+	}
+	return e.SessionID, true
+}
+
+// Points a stored entry at another session id where a reader without the store lock sees it whole
+func (o *sessionEntries) retarget(e *SessionEntry, sessionID string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	e.SessionID = sessionID
 }
 
 // Single flight slot shared by overlapping lookups of one routing key

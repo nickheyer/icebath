@@ -1147,22 +1147,22 @@
 - [x] tools/mcp_tool_server_run.py
 - [x] tools/mcp_tool_transport.py
 
-### 15. pkg/browser: 18% (11 of 61 files completed)
+### 15. pkg/browser: 37% (23 of 61 files completed)
 #### Chromium launch, CDP sessions, page tools, supervisor, cloud providers, vault
 - [ ] agent/browser_page_backend.py
 - [ ] agent/browser_page_registry.py
 - [ ] agent/browser_provider.py
 - [ ] agent/browser_registry.py
-- [ ] agent/vault_backend_registry.py
-- [ ] agent/vault_backends/__init__.py
-- [ ] agent/vault_backends/base.py
-- [ ] agent/vault_backends/bitwarden.py
-- [ ] agent/vault_backends/local.py
-- [ ] agent/vault_backends/onepassword.py
-- [ ] agent/vault_backends/plugin.py
+- [x] agent/vault_backend_registry.py
+- [x] agent/vault_backends/__init__.py
+- [x] agent/vault_backends/base.py
+- [x] agent/vault_backends/bitwarden.py
+- [x] agent/vault_backends/local.py
+- [x] agent/vault_backends/onepassword.py
+- [x] agent/vault_backends/plugin.py
 - [ ] agent/vault_backends/unlock.py
 - [ ] agent/vault_keychain.py
-- [ ] agent/vault_login_classifier.py
+- [x] agent/vault_login_classifier.py
 - [ ] agent/vault_store.py
 - [ ] hermes_cli/browser_connect.py
 - [ ] hermes_cli/browser_credential.py
@@ -1179,7 +1179,7 @@
 - [ ] tools/bot_desktop/__init__.py
 - [ ] tools/bot_desktop/browser.py
 - [ ] tools/bot_desktop/idle_watch.py
-- [ ] tools/bot_desktop/install.py
+- [x] tools/bot_desktop/install.py
 - [ ] tools/bot_desktop/lease.py
 - [ ] tools/bot_desktop/placement.py
 - [ ] tools/bot_desktop/resources.py
@@ -1197,7 +1197,7 @@
 - [ ] tools/browser_session_cdp.py
 - [ ] tools/browser_session_cloud.py
 - [ ] tools/browser_session_lifecycle.py
-- [ ] tools/browser_session_real_profile.py
+- [x] tools/browser_session_real_profile.py
 - [ ] tools/browser_session_sandbox.py
 - [ ] tools/browser_supervisor.py
 - [x] tools/browser_supervisor_capture.py
@@ -1208,10 +1208,10 @@
 - [x] tools/browser_url_policy.py
 - [ ] tools/browser_use_cli.py
 - [x] tools/browser_use_shot.py
-- [ ] tools/browser_vault_context.py
-- [ ] tools/browser_vault_tool.py
+- [x] tools/browser_vault_context.py
+- [x] tools/browser_vault_tool.py
 
-### 16. pkg/media: 39% (24 of 61 files completed)
+### 16. pkg/media: 45% (28 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
 - [x] agent/image_gen_provider.py
 - [x] agent/image_gen_registry.py
@@ -1256,7 +1256,7 @@
 - [ ] tools/transcription_whisper_cpp.py
 - [x] tools/tts_command_provider.py
 - [x] tools/tts_elevenlabs_voices.py
-- [ ] tools/tts_streaming.py
+- [x] tools/tts_streaming.py
 - [x] tools/tts_text_normalize.py
 - [ ] tools/tts_tool.py
 - [ ] tools/tts_tool_delivery.py
@@ -1265,14 +1265,14 @@
 - [ ] tools/tts_tool_openai.py
 - [ ] tools/tts_tool_plugins.py
 - [ ] tools/tts_tool_providers.py
-- [ ] tools/tts_tool_speaker.py
+- [x] tools/tts_tool_speaker.py
 - [ ] tools/video_generation_tool.py
 - [x] tools/voice_client_config.py
 - [ ] tools/voice_live.py
 - [x] tools/voice_mode.py
 - [ ] tools/voice_mode_transcript.py
-- [ ] tools/wake_word.py
-- [ ] tools/wake_word_engines.py
+- [x] tools/wake_word.py
+- [x] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
 ### 17. pkg/agent: 38% (49 of 127 files completed)
@@ -1972,7 +1972,7 @@
 - [x] hermes_cli/tips.py
 - [ ] hermes_cli/turn_exit.py
 
-### 22. cmd/icebath: 16% (26 of 161 files completed)
+### 22. cmd/icebath: 22% (37 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py
 - [ ] hermes_cli/__init__.py
@@ -1993,14 +1993,14 @@
 - [ ] hermes_cli/debug.py
 - [x] hermes_cli/debug_redaction.py
 - [ ] hermes_cli/diagnostics_upload.py
-- [ ] hermes_cli/doctor.py
-- [ ] hermes_cli/doctor_config.py
-- [ ] hermes_cli/doctor_connectivity.py
-- [ ] hermes_cli/doctor_live.py
-- [ ] hermes_cli/doctor_platform.py
-- [ ] hermes_cli/doctor_report.py
-- [ ] hermes_cli/doctor_state.py
-- [ ] hermes_cli/doctor_tools.py
+- [x] hermes_cli/doctor.py
+- [x] hermes_cli/doctor_config.py
+- [x] hermes_cli/doctor_connectivity.py
+- [x] hermes_cli/doctor_live.py
+- [x] hermes_cli/doctor_platform.py
+- [x] hermes_cli/doctor_report.py
+- [x] hermes_cli/doctor_state.py
+- [x] hermes_cli/doctor_tools.py
 - [x] hermes_cli/git_commit_graph.py
 - [ ] hermes_cli/init_command.py
 - [ ] hermes_cli/install_identity.py
@@ -2030,14 +2030,14 @@
 - [ ] hermes_cli/psutil_android.py
 - [ ] hermes_cli/relaunch.py
 - [ ] hermes_cli/runtime_readiness.py
-- [ ] hermes_cli/security_advisories.py
+- [x] hermes_cli/security_advisories.py
 - [ ] hermes_cli/security_audit.py
 - [ ] hermes_cli/security_audit_startup.py
 - [ ] hermes_cli/session_filters.py
 - [ ] hermes_cli/session_listing.py
 - [ ] hermes_cli/session_lost_and_found.py
 - [ ] hermes_cli/session_recovery.py
-- [ ] hermes_cli/session_reset_retirement.py
+- [x] hermes_cli/session_reset_retirement.py
 - [ ] hermes_cli/sessions_adopt.py
 - [ ] hermes_cli/sessions_cmd.py
 - [ ] hermes_cli/sessions_cmd_browse.py
@@ -2063,7 +2063,7 @@
 - [x] hermes_cli/stdio.py
 - [ ] hermes_cli/subcommands/__init__.py
 - [ ] hermes_cli/subcommands/_shared.py
-- [ ] hermes_cli/subcommands/browser.py
+- [x] hermes_cli/subcommands/browser.py
 - [ ] hermes_cli/subcommands/codex_runtime.py
 - [ ] hermes_cli/subcommands/config.py
 - [ ] hermes_cli/subcommands/console.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 21% (163 of 760 files completed)
+### 24. gateway: 21% (166 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2485,7 +2485,7 @@
 - [ ] gateway/session_execution.py
 - [ ] gateway/session_finite.py
 - [ ] gateway/session_group_controls.py
-- [ ] gateway/session_history_mount.py
+- [x] gateway/session_history_mount.py
 - [ ] gateway/session_hosted_attachments.py
 - [ ] gateway/session_hosted_controls.py
 - [ ] gateway/session_hosted_members.py
@@ -2537,10 +2537,10 @@
 - [ ] gateway/session_recovery.py
 - [ ] gateway/session_refine.py
 - [ ] gateway/session_results.py
-- [ ] gateway/session_retirement.py
+- [x] gateway/session_retirement.py
 - [ ] gateway/session_retry_admission.py
 - [x] gateway/session_route_identity.py
-- [ ] gateway/session_route_recovery.py
+- [x] gateway/session_route_recovery.py
 - [ ] gateway/session_runtime_workers.py
 - [ ] gateway/session_secret_prompt.py
 - [ ] gateway/session_server_requests.py

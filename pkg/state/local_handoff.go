@@ -241,9 +241,11 @@ func (d *SessionDB) LocalReceipt(ctx context.Context, sessionID string) (*pyjson
 	if row == nil {
 		return nil, NewRuntimeStoreError("storage_unavailable", nil, nil)
 	}
-	receipt := localReceiptObject(row["value"])
-	if receipt == nil {
-		return nil, NewRuntimeStoreError("storage_unavailable", nil, nil)
+	receipt, cause := localReceiptDecoded(row["value"])
+	if cause != nil {
+		refusal := NewRuntimeStoreError("storage_unavailable", nil, nil)
+		refusal.Cause = cause
+		return nil, refusal
 	}
 	return receipt, nil
 }

@@ -62,10 +62,8 @@ func (d LoginBackendDefaults) Owns(handle string) bool {
 // Always unlocked unless overridden
 func (LoginBackendDefaults) IsUnlocked() bool { return true }
 
-// No profile exclusive section around a fill
-func (LoginBackendDefaults) FillContext() (func() error, error) {
-	return func() error { return nil }, nil
-}
+// No profile exclusive section around a fill, reported as a nil release
+func (LoginBackendDefaults) FillContext() (func() error, error) { return nil, nil }
 
 // No one time code, the user is asked
 func (LoginBackendDefaults) ResolveOTP(string) (string, bool, error) { return "", false, nil }
@@ -225,8 +223,11 @@ func IsLoginBackendEnabled(ctx context.Context, name string) (bool, error) {
 			return false, nil
 		}
 	}
-	return IsLoginBackendInstalled(ctx, name)
+	return isLoginBackendInstalledFn(ctx, name)
 }
+
+// Install probe of an external manager, the module attribute hermes tests patch
+var isLoginBackendInstalledFn = IsLoginBackendInstalled
 
 // Enablement reader of an external manager, the module attribute hermes tests patch
 var isLoginBackendEnabledFn = IsLoginBackendEnabled

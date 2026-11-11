@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Runner surface the session authority reads, the gateway runner's drain state, session store and adapters
@@ -30,13 +31,22 @@ type activeAgentsPersister interface {
 
 // One gateway owned live session with its route, event stream and drain state
 type LiveSession struct {
-	Source      *SessionSource
-	Route       string
-	EventStream *SessionEvents
-	drain       chan struct{}
-	Rescan      bool
-	Settling    map[string]*pyjson.Object
-	RetireTimer *time.Timer
+	Source        *SessionSource
+	Route         string
+	EventStream   *SessionEvents
+	drain         chan struct{}
+	Rescan        bool
+	Settling      map[string]*pyjson.Object
+	RetireTimer   *time.Timer
+	Subscribers   map[string]Principal
+	Detaching     int
+	ClosedStamp   *closedStamp
+	ReviewRun     reviewRun
+	mutationLock  sync.Mutex
+	PauseNotified bool
+	controls      *PendingControls
+	controlsOnce  sync.Once
+	claimGate     sync.Mutex
 }
 
 // Live session on a route with a fresh event stream
@@ -46,30 +56,62 @@ func NewLiveSession(source *SessionSource, route string) *LiveSession {
 
 // Gateway owned live sessions and canonical durable FIFO scheduling of one profile store
 type SessionAuthority struct {
-	mu                sync.Mutex
-	Runner            AuthorityRunner
-	ProfileID         string
-	InstanceID        string
-	DB                *state.SessionDB
-	Epoch             int64
-	Sessions          map[string]*LiveSession
-	waiters           map[string]chan error
-	nativeWaiters     map[string]bool
-	PendingResults    map[string]*pyjson.Object
-	cancelObligations map[string]bool
-	Retiring          bool
-	Retired           bool
-	retiredRoutes     map[string]string
-	rotatedOwners     map[string]string
-	cronCancellations map[string]*pythread.Event
-	orderedWrites     sync.Mutex
-	mutationTasks     map[*trackedTask]bool
+	mu                     sync.Mutex
+	Runner                 AuthorityRunner
+	ProfileID              string
+	InstanceID             string
+	DB                     *state.SessionDB
+	Epoch                  int64
+	Sessions               map[string]*LiveSession
+	waiters                map[string]*admissionWaiter
+	nativeWaiters          map[string]bool
+	PendingResults         map[string]*pyjson.Object
+	cancelObligations      map[string]bool
+	Retiring               bool
+	Retired                bool
+	retiredRoutes          map[string]string
+	rotatedOwners          map[string]string
+	cronCancellations      map[string]*pythread.Event
+	orderedWrites          sync.Mutex
+	mutationTasks          map[*trackedTask]bool
+	retiredLocal           map[string]bool
+	launchSources          map[string]any
+	executing              map[string]int64
+	pendingCloses          map[string]any
+	orphanCloses           map[string]*time.Timer
+	nativeLegacyTransports map[string]Principal
+	apiAdmissions          sync.Mutex
+	localAdoptions         map[string]*trackedTask
+	localAdoptionsMu       sync.Mutex
+	localPrefill           map[string]*prefillBox
+	producerTurns          map[string]*producerBracket
+	steerTransfers         map[string]*steerTransfer
+	adopted                map[string]adoptedAgent
+	botMailboxLock         asyncLock
+	botReceiptIndex        map[string]botReceiptOwner
+	botReceiptTasks        map[*adapterTask]bool
+	botReceiptRefreshes    map[string]*adapterTask
+	botReceiptDirty        map[string]bool
+	launchSlots            *launchSecretSlots
+	localOwnerKeyRequests  map[string]*pyjson.Object
+	pendingStops           map[string]int64
+	pendingStopCauses      map[string]stopCause
+	pendingSteers          map[string]latchedSteers
+	pendingDeliveries      map[string]any
+	deliveredStops         map[string]int64
+	deferredResets         map[string]func(ctx context.Context) error
+	markerAdopters         map[string]*MessageEvent
+	classicEvictAt         map[string]float64
+	routeTurns             map[string]*keyedTurnEntry
+	routeEpochs            map[string]int
+	Events                 map[string]tuigateway.Transport
+	HostedRoomService      HostedAdmissionChecker
 }
 
 // Authority over a profile store at its runtime epoch
 func NewSessionAuthority(runner AuthorityRunner, profileID, instanceID string, db *state.SessionDB, epoch int64) *SessionAuthority {
 	return &SessionAuthority{Runner: runner, ProfileID: profileID, InstanceID: instanceID, DB: db, Epoch: epoch,
-		Sessions: map[string]*LiveSession{}, waiters: map[string]chan error{}, nativeWaiters: map[string]bool{},
+		Sessions: map[string]*LiveSession{}, waiters: map[string]*admissionWaiter{}, Events: map[string]tuigateway.Transport{}, nativeWaiters: map[string]bool{},
 		PendingResults: map[string]*pyjson.Object{}, cancelObligations: map[string]bool{}, retiredRoutes: map[string]string{},
 		rotatedOwners: map[string]string{}, mutationTasks: map[*trackedTask]bool{}}
 }
@@ -277,10 +319,16 @@ func (a *SessionAuthority) receiptOf(row *pyjson.Object) AdmissionReceipt {
 }
 
 // Schedules the session's FIFO drain, starting one when none is alive
-var scheduleSession = func(ctx context.Context, a *SessionAuthority, ref SessionRef) {
-	restoreRetired(ctx, a, ref.SessionID)
+func startSessionDrain(ctx context.Context, a *SessionAuthority, ref SessionRef) error {
+	if err := restoreRetired(ctx, a, ref.SessionID); err != nil {
+		return err
+	}
 	a.mu.Lock()
 	live := a.Sessions[ref.SessionID]
+	if live == nil {
+		a.mu.Unlock()
+		return &pyKeyError{ref.SessionID}
+	}
 	live.Rescan = true
 	start := live.drain == nil
 	if !start {
@@ -297,16 +345,22 @@ var scheduleSession = func(ctx context.Context, a *SessionAuthority, ref Session
 	}
 	a.mu.Unlock()
 	if !start {
-		return
+		return nil
 	}
 	go func() {
 		defer close(done)
 		defer persistWorkCount(a)
-		if err := drainSessionFIFO(context.WithoutCancel(ctx), a, ref); err != nil {
+		if err := drainSessionFIFO(withDrainTask(context.WithoutCancel(ctx), live), a, ref); err != nil {
 			logDrainFailure(err)
 		}
 	}()
+	return nil
 }
+
+// Scheduler of a session's FIFO drain, replaced by tests that admit input without running its turns
+var scheduleSession func(ctx context.Context, a *SessionAuthority, ref SessionRef) error
+
+func init() { scheduleSession = startSessionDrain }
 
 // Logs a dead pump, the one failure the authority never swallows
 func logDrainFailure(err error) {
@@ -332,14 +386,19 @@ func (a *SessionAuthority) admitted(ctx context.Context, ref SessionRef, event *
 }
 
 // Drain scheduling an admission's tracked write runs in the admitting caller's own step
-func (a *SessionAuthority) scheduleAdmitted(ctx context.Context, ref SessionRef) {
-	scheduleSession(ctx, a, ref)
+func (a *SessionAuthority) scheduleAdmitted(ctx context.Context, ref SessionRef) error {
+	return scheduleSession(ctx, a, ref)
 }
 
 // Publishes the pending queue, handle state and revision of a session to its viewers
 func (a *SessionAuthority) publishPending(ctx context.Context, ref SessionRef) error {
-	restoreRetired(ctx, a, ref.SessionID)
-	live, _ := a.live(ref.SessionID)
+	if err := restoreRetired(ctx, a, ref.SessionID); err != nil {
+		return err
+	}
+	live, ok := a.live(ref.SessionID)
+	if !ok {
+		return &pyKeyError{ref.SessionID}
+	}
 	live.EventStream.Lock.Lock()
 	err := func() error {
 		defer live.EventStream.Lock.Unlock()
@@ -613,7 +672,10 @@ func (a *SessionAuthority) commitCancel(ctx context.Context, ref SessionRef, adm
 
 // Settles every observer of a queued row made terminal and schedules a fresh drain for its successors
 func (a *SessionAuthority) settleCancelled(ctx context.Context, ref SessionRef, admissionID, outcome string) error {
-	live, _ := a.live(ref.SessionID)
+	live, ok := a.live(ref.SessionID)
+	if !ok {
+		return &pyKeyError{ref.SessionID}
+	}
 	stream := live.EventStream
 	stream.Lock.Lock()
 	err := func() error {
@@ -634,17 +696,16 @@ func (a *SessionAuthority) settleCancelled(ctx context.Context, ref SessionRef, 
 	a.mu.Lock()
 	delete(a.cancelObligations, admissionID)
 	delete(a.nativeWaiters, admissionID)
-	waiter, hasWaiter := a.waiters[admissionID]
+	waiter := a.waiters[admissionID]
 	delete(a.waiters, admissionID)
 	a.mu.Unlock()
 	dropProducerTurn(a, admissionID)
-	if hasWaiter {
-		select {
-		case waiter <- nil:
-		default:
-		}
+	if waiter != nil {
+		waiter.setResult(nil)
 	}
-	scheduleSession(ctx, a, ref)
+	if err := scheduleSession(ctx, a, ref); err != nil {
+		return err
+	}
 	observability.BusyRowSettled(ctx, admissionID, outcome)
 	return nil
 }

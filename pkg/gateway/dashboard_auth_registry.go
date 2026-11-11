@@ -262,3 +262,12 @@ func (dashboardAuthRegistryService) UnregisterGlobal(name string, provider any) 
 func DashboardAuthRegistryService() plugins.DashboardAuthRegistry {
 	return dashboardAuthRegistryService{}
 }
+
+// Names of the providers backing interactive cookie sessions in the process home scope
+func dashboardSessionProviderNames() []string {
+	names := []string{}
+	for _, p := range ListSessionDashboardAuthProviders(context.Background()) {
+		names = append(names, p.Name())
+	}
+	return names
+}

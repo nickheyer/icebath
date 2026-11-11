@@ -14,9 +14,13 @@ type RuntimeStoreError struct {
 	Reason string
 	Field  *string
 	Detail *string
+	// The failed check this refusal was raised from, nil when it stands alone
+	Cause error
 }
 
 func (e *RuntimeStoreError) Error() string { return e.Reason }
+
+func (e *RuntimeStoreError) Unwrap() error { return e.Cause }
 
 // Refusal with its field and detail collapsed to one bounded printable line
 func NewRuntimeStoreError(reason string, field, detail *string) *RuntimeStoreError {

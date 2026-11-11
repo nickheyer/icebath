@@ -448,18 +448,20 @@ func restoredText(data map[string]any, name string) (*string, bool) {
 
 // Stored private policy restored and validated, refusing an incomplete one rather than rebuilding defaults
 func restorePolicy(raw any) (*LocalSessionPolicy, error) {
-	policy, ok := restoredPolicy(pyjson.Plain(raw))
-	if !ok {
-		return nil, state.NewRuntimeStoreError("storage_unavailable", nil, nil)
+	policy, cause := restoredPolicy(pyjson.Plain(raw))
+	if cause != nil {
+		refusal := state.NewRuntimeStoreError("storage_unavailable", nil, nil)
+		refusal.Cause = cause
+		return nil, refusal
 	}
 	return policy, nil
 }
 
-// Policy built from its stored fields and checked like the dataclass constructor and restore checks
-func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
+// Policy built from its stored fields, the error of the dataclass constructor or restore check that refused it otherwise
+func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 	data, ok := raw.(map[string]any)
 	if !ok {
-		return nil, false
+		return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy() argument after ** must be a mapping, not " + pyTypeName(raw)}
 	}
 	known := map[string]bool{}
 	for name := range (&LocalSessionPolicy{}).asDict() {
@@ -467,39 +469,39 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 	}
 	for name := range data {
 		if !known[name] {
-			return nil, false
+			return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy.__init__() got an unexpected keyword argument '" + name + "'"}
 		}
 	}
 	for _, name := range []string{"source", "platform", "cwd", "model", "toolsets", "config_json", "request_json", "terminal_json"} {
 		if _, present := data[name]; !present {
-			return nil, false
+			return nil, &PyError{Kind: "TypeError", Msg: "LocalSessionPolicy.__init__() missing 1 required positional argument: '" + name + "'"}
 		}
 	}
 	p := &LocalSessionPolicy{EditApprovalPolicy: "ask"}
 	var fine bool
 	if p.Source, fine = data["source"].(string); !fine {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	if p.Platform, fine = data["platform"].(string); !fine {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	if p.Cwd, fine = data["cwd"].(string); !fine || !filepath.IsAbs(p.Cwd) {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	model, fine := data["model"].(string)
 	if !fine || strings.TrimSpace(model) == "" {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Model = &model
 	toolsets, fine := data["toolsets"].([]any)
 	if !fine {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Toolsets = make([]string, 0, len(toolsets))
 	for _, name := range toolsets {
 		text, isStr := name.(string)
 		if !isStr {
-			return nil, false
+			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 		}
 		p.Toolsets = append(p.Toolsets, text)
 	}
@@ -509,7 +511,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 	}{{"config_json", &p.ConfigJSON}, {"request_json", &p.RequestJSON}, {"terminal_json", &p.TerminalJSON}} {
 		text, isStr := data[field.name].(string)
 		if !isStr {
-			return nil, false
+			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 		}
 		*field.dst = text
 	}
@@ -520,7 +522,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 		{"kanban_json", &p.KanbanJSON}, {"skills_prompt", &p.SkillsPrompt}, {"client_env_json", &p.ClientEnvJSON},
 		{"client_env_rules_json", &p.ClientEnvRulesJSON}} {
 		if *field.dst, fine = restoredText(data, field.name); !fine {
-			return nil, false
+			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 		}
 	}
 	for _, field := range []struct {
@@ -530,13 +532,13 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 		{"client_env_remote", &p.ClientEnvRemote}} {
 		if value, present := data[field.name]; present {
 			if *field.dst, fine = value.(bool); !fine {
-				return nil, false
+				return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 			}
 		}
 	}
 	if value, present := data["edit_approval_policy"]; present {
 		if p.EditApprovalPolicy, fine = value.(string); !fine {
-			return nil, false
+			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 		}
 	}
 	surfaces := map[string]string{"cron": "cron", "kanban": "cli", "bot_room": "bot_room"}
@@ -544,7 +546,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 		surfaces[label] = surface
 	}
 	if surface, known := surfaces[p.Source]; !isForwardPolicy(p) && (!known || p.Platform != surface) {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	approval := false
 	for _, name := range EditApprovalPolicies {
@@ -552,22 +554,22 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, bool) {
 	}
 	if !validClientEnv(optValue(p.ClientEnvJSON), false) || !validClientEnv(optValue(p.ClientEnvRulesJSON), true) || !approval ||
 		(p.EditApprovalPolicy != "ask" && p.Source != "acp") || (p.SafeMode && !p.IgnoreUserConfig) {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	for _, text := range []string{p.ConfigJSON, p.RequestJSON, p.TerminalJSON} {
 		parsed, err := pyjson.Loads(text)
 		if err != nil {
-			return nil, false
+			return nil, err
 		}
 		if _, isMap := pyjson.Plain(parsed).(map[string]any); !isMap {
-			return nil, false
+			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy object"}
 		}
 	}
 	terminal := policyObject(p.TerminalJSON)
 	if cwd, set := terminal["TERMINAL_CWD"]; terminalUsesHostCwd(terminal) && (!set || cwd != any(p.Cwd)) {
-		return nil, false
+		return nil, &PyError{Kind: "ValueError", Msg: "terminal policy mismatch"}
 	}
-	return p, true
+	return p, nil
 }
 
 // Owning profile's current config.yaml present sections, read fresh

@@ -426,6 +426,8 @@ func (c *CLI) addSend(root *cobra.Command) {
 	bf(send, "list", "l", "List available targets. Optional positional filter: `icebath send --list telegram`.")
 	bf(send, "quiet", "q", "Suppress stdout on success (exit code only).")
 	bf(send, "json", "", "Emit raw JSON result instead of human-readable output.")
+	dest(send, "mention", "mentions")
+	dest(send, "list", "list_targets")
 }
 
 func (c *CLI) addCron(root *cobra.Command) {

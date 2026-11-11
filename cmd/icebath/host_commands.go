@@ -163,7 +163,9 @@ func importGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 }
 
 func browserGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return browser.BrowserCommand(ctx, processToolsEnv(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["browser_action"] = nilWhenEmpty(secondWord(path))
+	return browser.BrowserCommand(ctx, processToolsEnv(ctx), ns, cmd.OutOrStdout())
 }
 
 func checkpointsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -409,7 +411,13 @@ func sendGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path 
 }
 
 func sessionsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return state.SessionsCommand(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["sessions_action"] = nilWhenEmpty(secondWord(path))
+	parser := cmd
+	for parser.Parent() != nil && parser.Parent() != cli.Root {
+		parser = parser.Parent()
+	}
+	return state.SessionsCommand(ctx, home.Dir(ctx), ns, cmd.OutOrStdout(), parser.Help)
 }
 
 func setupGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

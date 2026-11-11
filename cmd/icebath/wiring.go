@@ -75,6 +75,8 @@ func installProcessWiring() {
 	state.CanonicalHome = gateway.CanonicalHome
 	state.ProfileLabelForHome = gateway.ProfileLabelForHome
 	state.ReadGatewayLockRecord = gateway.ReadGatewayLockRecord
+	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
+	gateway.LoadPrefillMessages = app.LoadPrefillMessages
 	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
@@ -115,6 +117,9 @@ func installProcessWiring() {
 	tools.AllSkillNames = skills.AllSkillNames
 	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
 	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
+	app.SecurityAdvisoriesStartupBanner = func(ctx context.Context) string {
+		return plugins.AdvisoryStartupBanner(ctx, plugins.DetectCompromised(plugins.Advisories))
+	}
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
 }

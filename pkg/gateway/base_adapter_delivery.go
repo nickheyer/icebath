@@ -290,7 +290,12 @@ func (b *BasePlatformAdapter) sendImageBatch(ctx context.Context, event *Message
 func (b *BasePlatformAdapter) SendFinalLedgered(ctx context.Context, event *MessageEvent, sessionKey, textContent string, metadata map[string]any, replyTo *string, isEphemeral bool) (SendResult, PlatformAdapter, error) {
 	deliveryAdapter := b.finalDeliveryAdapter(event.Source)
 	slog.Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), pystr.Len(textContent), event.Source.ChatID))
-	obligationID := b.recordDeliveryObligation(ctx, event, sessionKey, textContent, deliveryAdapter, isEphemeral)
+	var obligationID *string
+	if recorder, overridden := b.Self().(deliveryObligationRecorder); overridden {
+		obligationID = recorder.RecordDeliveryObligation(ctx, event, sessionKey, textContent, deliveryAdapter, isEphemeral)
+	} else {
+		obligationID = b.recordDeliveryObligation(ctx, event, sessionKey, textContent, deliveryAdapter, isEphemeral)
+	}
 	if obligationID != nil {
 		if err := b.releaseTurnMarker(ctx, event); err != nil {
 			return SendResult{}, deliveryAdapter, err

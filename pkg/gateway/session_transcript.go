@@ -54,7 +54,7 @@ func (s *SessionStore) healCompressionTipLocked(entry *SessionEntry, originalSes
 		return false
 	}
 	slog.Info(fmt.Sprintf("SessionStore healed compressed session mapping: %s -> %s", entry.SessionID, canonicalSessionID))
-	entry.SessionID = canonicalSessionID
+	s.entries.retarget(entry, canonicalSessionID)
 	return true
 }
 
@@ -381,7 +381,7 @@ func (s *SessionStore) publishTranscriptReroute(ctx context.Context, sessionID, 
 	s.mu.Lock()
 	for _, entry := range s.entries.values() {
 		if entry.SessionID == sessionID {
-			entry.SessionID = childID
+			s.entries.retarget(entry, childID)
 		}
 	}
 	err := s.save(ctx)

@@ -110,6 +110,8 @@ type MessageEvent struct {
 	MediaFilenames      []string
 
 	gatewayAccepted        bool
+	producerDelivery       bool
+	ingressSHA256          string
 	OnCommit               func()
 	admittedBeforeDrain    bool
 	notificationReplyMuted *bool

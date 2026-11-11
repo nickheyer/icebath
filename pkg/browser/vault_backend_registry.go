@@ -56,13 +56,26 @@ func loginNamespaceError(name any) string {
 	return ""
 }
 
+// Identity of a backend read under a guard, not plain when reading it panics
+func staticLoginIdentity(backend LoginBackend) (name, prefix string, needsUnlock, plain bool) {
+	defer func() {
+		if recover() != nil {
+			plain = false
+		}
+	}()
+	return backend.Name(), backend.Prefix(), backend.NeedsUnlock(), true
+}
+
 // The backend's name judged before anything else reads it, a ValueError with a fixed message when refused
 func StaticLoginBackendName(provider any) (string, error) {
 	backend, ok := provider.(LoginBackend)
 	if !ok || providerregistry.IsNil(provider) {
 		return "", &providerregistry.ValueError{Message: "login backend must subclass LoginBackend"}
 	}
-	name, prefix := backend.Name(), backend.Prefix()
+	name, prefix, needsUnlock, plain := staticLoginIdentity(backend)
+	if !plain {
+		return "", &providerregistry.ValueError{Message: "login backend name and prefix must be plain string attributes"}
+	}
 	message := loginNamespaceError(name)
 	if message == "" && prefix != name+":" {
 		message = "login backend prefix must be '<name>:'"
@@ -70,7 +83,7 @@ func StaticLoginBackendName(provider any) (string, error) {
 	if message != "" {
 		return "", &providerregistry.ValueError{Message: message}
 	}
-	if backend.NeedsUnlock() {
+	if needsUnlock {
 		return "", &providerregistry.ValueError{Message: "plugin login backends cannot use the Icebath master-password prompt (needs_unlock)"}
 	}
 	return name, nil
@@ -85,7 +98,19 @@ func RegisterLoginBackendProvider(ctx context.Context, provider LoginBackend, sc
 	if loginBackendRegistry.Merged(ctx, scope).Has(name) {
 		return &providerregistry.ValueError{Message: fmt.Sprintf("login backend name %s is already registered", pyrepr.Repr(name))}
 	}
-	return loginBackendRegistry.Register(provider, scope)
+	if err := loginBackendRegistry.Register(provider, scope); err != nil {
+		return err
+	}
+	if loginBackendRegistry.SnapshotRegistration(name, scope) == provider {
+		return nil
+	}
+	merged := loginBackendRegistry.Merged(ctx, scope)
+	for _, key := range merged.Keys() {
+		if held, _ := merged.Get(key); held == provider {
+			loginBackendRegistry.RestoreRegistration(key, provider, nil, scope)
+		}
+	}
+	return &providerregistry.ValueError{Message: "login backend name and prefix must be plain string attributes"}
 }
 
 // Registered backends the profile turned on with vault.<name>.enabled true, wrapped for the vault tool
