@@ -9,6 +9,7 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/andybalholm/brotli v1.2.0
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/charmbracelet/harmonica v0.2.0
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
@@ -20,6 +21,7 @@ require (
 	github.com/gen2brain/avif v0.6.0
 	github.com/gen2brain/heic v0.7.2
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/klauspost/compress v1.20.3
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-runewidth v0.0.30
@@ -60,7 +62,6 @@ require (
 	github.com/aws/smithy-go v1.28.6 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
@@ -75,7 +76,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
-	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kisielk/og-rek v1.3.0 // indirect
