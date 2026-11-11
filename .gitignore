@@ -505,7 +505,8 @@ references/
 .icebath-bootstrap-complete
 /.install_method
 icebath_agent.egg-info/
-icebath_cli/web_dist/
+cmd/icebath/web_dist/
+cmd/icebath/tui_dist/*
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/dist-webapp/

@@ -25,8 +25,13 @@ type ContextEngineInfo struct {
 	Available   bool
 }
 
-// Bundled context engine plugins dir
-func contextEnginePluginsDir() string { return filepath.Join(GetBundledPluginsDir(), "context_engine") }
+// Bundled context engine plugins dir under the override tree, empty when the compiled tree serves since it ships no engine
+func contextEnginePluginsDir() string {
+	if dir := bundledOverrideDir(); dir != "" {
+		return filepath.Join(dir, "context_engine")
+	}
+	return ""
+}
 
 // Whether the first 8192 characters of __init__.py mention the context engine contract
 func isContextEngineDir(path string) bool {
@@ -43,9 +48,12 @@ func isContextEngineDir(path string) bool {
 
 // Bundled then user engine dirs by name, a bundled name winning a collision
 func iterEngineDirs(ctx context.Context) ([][2]string, error) {
-	bundled, err := IterPluginDirs(contextEnginePluginsDir())
-	if err != nil {
-		return nil, err
+	var bundled []string
+	if dir := contextEnginePluginsDir(); dir != "" {
+		var err error
+		if bundled, err = IterPluginDirs(dir); err != nil {
+			return nil, err
+		}
 	}
 	var dirs [][2]string
 	seen := map[string]bool{}
@@ -84,8 +92,10 @@ func DiscoverContextEngines(ctx context.Context) ([]ContextEngineInfo, error) {
 
 // Engine dir of a name, bundled first then a user plugin dir that holds a context engine
 func FindEngineDir(ctx context.Context, name string) (string, bool) {
-	if bundled := pypath.Join(contextEnginePluginsDir(), name); isDir(bundled) {
-		return bundled, true
+	if dir := contextEnginePluginsDir(); dir != "" {
+		if bundled := pypath.Join(dir, name); isDir(bundled) {
+			return bundled, true
+		}
 	}
 	if userDir, ok := UserPluginsDir(ctx); ok {
 		if user := pypath.Join(userDir, name); isDir(user) && isContextEngineDir(user) {

@@ -286,21 +286,68 @@ func (p *ptKeyProcessor) step(k ptKeyPress) {
 	}
 }
 
+// ptEditReadOnly is the EditReadOnlyBuffer a handler raises editing a read only buffer
+type ptEditReadOnly struct{}
+
 // Runs a handler with the pending repeat count, saving undo state first when the binding asks
 func (p *ptKeyProcessor) callHandler(b *ptBinding, seq []ptKeyPress) {
 	app := p.app
 	wasRecording := app.emacsMacroRecording != nil
+	wasRecordingVi := app.viState.recordingRegister != nil
+	wasTemporaryNavigationMode := app.viState.temporaryNavigationMode
 	arg := p.arg
 	p.arg = nil
 	e := &ptEvent{app: app, keySequence: seq, previousKeySequence: p.previousKeySequence, isRepeat: b == p.previousHandler, argText: arg}
 	if b.saveBefore == nil || b.saveBefore(e) {
 		app.buffer.saveToUndoStack(true)
 	}
-	b.handler(e)
+	p.runHandler(b, e)
+	if wasTemporaryNavigationMode {
+		p.leaveViTempNavigationMode()
+	}
 	p.previousKeySequence = seq
 	p.previousHandler = b
-	if b.recordInMacro && app.emacsMacroRecording != nil && wasRecording {
-		*app.emacsMacroRecording = append(*app.emacsMacroRecording, seq...)
+	if b.recordInMacro {
+		if app.emacsMacroRecording != nil && wasRecording {
+			*app.emacsMacroRecording = append(*app.emacsMacroRecording, seq...)
+		}
+		if app.viState.recordingRegister != nil && wasRecordingVi {
+			for _, k := range seq {
+				app.viState.currentRecording += k.Data
+			}
+		}
+	}
+}
+
+// Calls the handler and keeps a navigation mode cursor on the line, a read only edit ringing the bell instead
+func (p *ptKeyProcessor) runHandler(b *ptBinding, e *ptEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(ptEditReadOnly); !ok {
+				panic(r)
+			}
+			p.app.bell()
+		}
+	}()
+	b.handler(e)
+	p.fixViCursorPosition()
+}
+
+// Pulls the cursor off the end of a non empty line while in vi navigation mode
+func (p *ptKeyProcessor) fixViCursorPosition() {
+	buff := p.app.buffer
+	preferred := buff.preferredColumn
+	doc := buff.document()
+	if p.app.viNavigationMode() && doc.isCursorAtTheEndOfLine() && len([]rune(doc.currentLine())) > 0 {
+		buff.setCursorPosition(buff.cursor - 1)
+		buff.preferredColumn = preferred
+	}
+}
+
+// Returns from temporary navigation mode once no operator or repeat count is pending
+func (p *ptKeyProcessor) leaveViTempNavigationMode() {
+	if p.app.editingMode == ptEditingVi && p.app.viState.operatorFunc == nil && p.arg == nil {
+		p.app.viState.temporaryNavigationMode = false
 	}
 }
 
@@ -444,7 +491,7 @@ var ptNamedCommands = map[string]ptHandler{
 		b.delete(delAfter)
 	},
 	"yank": func(e *ptEvent) {
-		e.currentBuffer().pasteClipboardData(e.app.clipboard.text(), e.arg())
+		e.currentBuffer().pasteClipboardData(e.app.clipboard.getData(), ptPasteEmacs, e.arg())
 	},
 	"yank-nth-arg": func(e *ptEvent) {
 		e.currentBuffer().yankNthArg(ptArgOrNil(e), false)
@@ -491,10 +538,16 @@ func ptArgOrNil(e *ptEvent) *int {
 	return &n
 }
 
-// Accepts the buffer the way a prompt without an accept handler does, history then reset
+// Runs the accept handler, records the text in history and resets unless the handler keeps the text
 func ptValidateAndHandle(b *ptBuffer) {
+	keepText := false
+	if b.acceptHandler != nil {
+		keepText = b.acceptHandler(b)
+	}
 	b.appendToHistory()
-	b.reset(false)
+	if !keepText {
+		b.reset(false)
+	}
 }
 
 var ptTitleWordRe = regexp.MustCompile(`[A-Za-z]+`)
@@ -582,7 +635,7 @@ func ptYankPop(e *ptEvent) {
 	if before := b.documentBeforePaste; before != nil {
 		_ = b.setDocument(before.text(), before.cursor, false)
 		e.app.clipboard.rotate()
-		b.pasteClipboardData(e.app.clipboard.text(), 1)
+		b.pasteClipboardData(e.app.clipboard.getData(), ptPasteEmacs, 1)
 	}
 }
 
@@ -598,7 +651,8 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 	buf := func() *ptBuffer { return app.buffer }
 	hasSelection := func() bool { return buf().selection != nil }
 	noSelection := func() bool { return buf().selection == nil }
-	insertMode := func() bool { return buf().selection == nil && !buf().isReadOnly() }
+	emacsInsertMode := app.emacsInsertMode
+	insertMode := func() bool { return app.viInsertMode() || app.emacsInsertMode() }
 	shiftSelection := func() bool { return buf().selection != nil && buf().selection.shiftMode }
 	hasArg := func() bool { return app.processor.arg != nil }
 	named := func(name string) ptHandler { return ptNamedCommands[name] }
@@ -634,7 +688,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 	kb.add(func(e *ptEvent) { e.app.processor.feed(ptKeyPress{Key: ptKeyEnter, Data: "\r"}, true) }, ptBind{}, "c-j")
 	kb.add(func(e *ptEvent) { e.currentBuffer().autoMoveUp(e.arg()) }, ptBind{}, "up")
 	kb.add(func(e *ptEvent) { e.currentBuffer().autoMoveDown(e.arg()) }, ptBind{}, "down")
-	kb.add(func(e *ptEvent) { e.app.clipboard.setText(e.currentBuffer().cutSelection()) }, ptBind{filter: hasSelection}, "delete")
+	kb.add(func(e *ptEvent) { e.app.clipboard.setData(e.currentBuffer().cutSelection()) }, ptBind{filter: hasSelection}, "delete")
 	kb.add(func(e *ptEvent) { e.currentBuffer().insertText(e.data(), false, true, true) }, ptBind{}, "c-z")
 	kb.add(func(e *ptEvent) {
 		data := strings.ReplaceAll(strings.ReplaceAll(e.data(), "\r\n", "\n"), "\r", "\n")
@@ -645,35 +699,36 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 		e.app.quotedInsert = false
 	}, ptBind{filter: func() bool { return app.quotedInsert }, eager: true}, ptKeyAny)
 
+	emacsStart := len(kb.bindings)
 	kb.add(ignore, ptBind{}, "escape")
 	kb.add(named("beginning-of-line"), ptBind{}, "c-a")
 	kb.add(named("backward-char"), ptBind{}, "c-b")
-	kb.add(named("kill-word"), ptBind{filter: insertMode}, "c-delete")
+	kb.add(named("kill-word"), ptBind{filter: emacsInsertMode}, "c-delete")
 	kb.add(named("end-of-line"), ptBind{}, "c-e")
 	kb.add(named("forward-char"), ptBind{}, "c-f")
 	kb.add(named("backward-word"), ptBind{}, "c-left")
 	kb.add(named("forward-word"), ptBind{}, "c-right")
-	kb.add(named("yank"), ptBind{filter: insertMode}, "c-x", "r", "y")
-	kb.add(named("yank"), ptBind{filter: insertMode}, "c-y")
+	kb.add(named("yank"), ptBind{filter: emacsInsertMode}, "c-x", "r", "y")
+	kb.add(named("yank"), ptBind{filter: emacsInsertMode}, "c-y")
 	kb.add(named("backward-word"), ptBind{}, "escape", "b")
-	kb.add(named("capitalize-word"), ptBind{filter: insertMode}, "escape", "c")
-	kb.add(named("kill-word"), ptBind{filter: insertMode}, "escape", "d")
+	kb.add(named("capitalize-word"), ptBind{filter: emacsInsertMode}, "escape", "c")
+	kb.add(named("kill-word"), ptBind{filter: emacsInsertMode}, "escape", "d")
 	kb.add(named("forward-word"), ptBind{}, "escape", "f")
-	kb.add(named("downcase-word"), ptBind{filter: insertMode}, "escape", "l")
-	kb.add(named("uppercase-word"), ptBind{filter: insertMode}, "escape", "u")
-	kb.add(named("yank-pop"), ptBind{filter: insertMode}, "escape", "y")
-	kb.add(named("backward-kill-word"), ptBind{filter: insertMode}, "escape", "backspace")
-	kb.add(named("delete-horizontal-space"), ptBind{filter: insertMode}, "escape", "\\")
+	kb.add(named("downcase-word"), ptBind{filter: emacsInsertMode}, "escape", "l")
+	kb.add(named("uppercase-word"), ptBind{filter: emacsInsertMode}, "escape", "u")
+	kb.add(named("yank-pop"), ptBind{filter: emacsInsertMode}, "escape", "y")
+	kb.add(named("backward-kill-word"), ptBind{filter: emacsInsertMode}, "escape", "backspace")
+	kb.add(named("delete-horizontal-space"), ptBind{filter: emacsInsertMode}, "escape", "\\")
 	kb.add(named("beginning-of-buffer"), ptBind{}, "c-home")
 	kb.add(named("end-of-buffer"), ptBind{}, "c-end")
-	kb.add(named("undo"), ptBind{filter: insertMode, saveBefore: ptNoSave}, "c-_")
-	kb.add(named("undo"), ptBind{filter: insertMode, saveBefore: ptNoSave}, "c-x", "c-u")
+	kb.add(named("undo"), ptBind{filter: emacsInsertMode, saveBefore: ptNoSave}, "c-_")
+	kb.add(named("undo"), ptBind{filter: emacsInsertMode, saveBefore: ptNoSave}, "c-x", "c-u")
 	kb.add(named("beginning-of-history"), ptBind{filter: noSelection}, "escape", "<")
 	kb.add(named("end-of-history"), ptBind{filter: noSelection}, "escape", ">")
-	kb.add(named("yank-last-arg"), ptBind{filter: insertMode}, "escape", ".")
-	kb.add(named("yank-last-arg"), ptBind{filter: insertMode}, "escape", "_")
-	kb.add(named("yank-nth-arg"), ptBind{filter: insertMode}, "escape", "c-y")
-	kb.add(named("insert-comment"), ptBind{filter: insertMode}, "escape", "#")
+	kb.add(named("yank-last-arg"), ptBind{filter: emacsInsertMode}, "escape", ".")
+	kb.add(named("yank-last-arg"), ptBind{filter: emacsInsertMode}, "escape", "_")
+	kb.add(named("yank-nth-arg"), ptBind{filter: emacsInsertMode}, "escape", "c-y")
+	kb.add(named("insert-comment"), ptBind{filter: emacsInsertMode}, "escape", "#")
 	kb.add(named("operate-and-get-next"), ptBind{}, "c-o")
 	kb.add(named("quoted-insert"), ptBind{filter: noSelection}, "c-q")
 	kb.add(named("start-kbd-macro"), ptBind{}, "c-x", "(")
@@ -706,7 +761,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 	kb.add(func(e *ptEvent) { search(e, -e.arg()) }, ptBind{}, "escape", "c-]", ptKeyAny)
 	kb.add(ignore, ptBind{}, "escape", "a")
 	kb.add(ignore, ptBind{}, "escape", "e")
-	kb.add(ignore, ptBind{filter: insertMode}, "escape", "t")
+	kb.add(ignore, ptBind{filter: emacsInsertMode}, "escape", "t")
 	kb.add(func(e *ptEvent) {
 		b := e.currentBuffer()
 		if b.completer == nil {
@@ -717,7 +772,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 			texts = append(texts, c.Text)
 		}
 		b.insertText(strings.Join(texts, " "), false, true, true)
-	}, ptBind{filter: insertMode}, "escape", "*")
+	}, ptBind{filter: emacsInsertMode}, "escape", "*")
 	kb.add(func(e *ptEvent) {
 		b := e.currentBuffer()
 		doc := b.document()
@@ -729,7 +784,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 	}, ptBind{}, "c-x", "c-x")
 	kb.add(func(e *ptEvent) {
 		if b := e.currentBuffer(); b.text() != "" {
-			b.startSelection()
+			b.startSelection(ptSelectCharacters)
 		}
 	}, ptBind{}, "c-@")
 	kb.add(func(e *ptEvent) {
@@ -737,10 +792,10 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 		e.currentBuffer().changed()
 	}, ptBind{filter: noSelection}, "c-g")
 	kb.add(func(e *ptEvent) { e.currentBuffer().exitSelection() }, ptBind{filter: hasSelection}, "c-g")
-	cut := func(e *ptEvent) { e.app.clipboard.setText(e.currentBuffer().cutSelection()) }
+	cut := func(e *ptEvent) { e.app.clipboard.setData(e.currentBuffer().cutSelection()) }
 	kb.add(cut, ptBind{filter: hasSelection}, "c-x", "r", "k")
 	kb.add(cut, ptBind{filter: hasSelection}, "c-w")
-	kb.add(func(e *ptEvent) { e.app.clipboard.setText(e.currentBuffer().copySelection(false)) }, ptBind{filter: hasSelection}, "escape", "w")
+	kb.add(func(e *ptEvent) { e.app.clipboard.setData(e.currentBuffer().copySelection(false)) }, ptBind{filter: hasSelection}, "escape", "w")
 	kb.add(func(e *ptEvent) {
 		b := e.currentBuffer()
 		pos, _ := b.document().findPreviousWordBeginning(e.arg())
@@ -761,7 +816,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 		} else {
 			b.startCompletion(true, false, false)
 		}
-	}, ptBind{filter: insertMode}, "escape", "/")
+	}, ptBind{filter: emacsInsertMode}, "escape", "/")
 	kb.add(func(e *ptEvent) { ptIndentSelection(e, true) }, ptBind{filter: hasSelection}, "c-c", ">")
 	kb.add(func(e *ptEvent) { ptIndentSelection(e, false) }, ptBind{filter: hasSelection}, "c-c", "<")
 
@@ -787,7 +842,7 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 			if b.text() == "" {
 				return
 			}
-			b.startSelection()
+			b.startSelection(ptSelectCharacters)
 			b.selection.shiftMode = true
 			original := b.cursor
 			unshiftMove(e)
@@ -826,7 +881,20 @@ func ptLoadDefaultBindings(app *ptApplication) *ptKeyBindings {
 			e.app.processor.feed(e.keySequence[0], true)
 		}, ptBind{filter: shiftSelection}, key)
 	}
+	ptConditional(kb.bindings[emacsStart:], app.emacsMode)
 	return kb
+}
+
+// Makes each binding active only while cond also holds, a ConditionalKeyBindings over them
+func ptConditional(bindings []*ptBinding, cond func() bool) {
+	for _, b := range bindings {
+		filter := b.filter
+		if filter == nil {
+			b.filter = cond
+			continue
+		}
+		b.filter = func() bool { return cond() && filter() }
+	}
 }
 
 // Indents or unindents the selected lines by four spaces per repeat count, the cursor keeping its place in the text

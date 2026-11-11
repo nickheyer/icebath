@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
@@ -24,10 +25,11 @@ func (l *fakeLease) Release() error { l.released.Store(true); return nil }
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	home.DispatchScratchPruneEntry(context.Background())
-	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error) {
-		return &fakeLease{}, "", nil
+	DispatchUninstallModuleEntry(context.Background())
+	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {
+		return &fakeLease{}, nil, nil
 	}
-	FormatRefusalStderr = func(message string) string { return message }
+	FormatRefusalStderr = activesessions.FormatRefusalStderr
 	EmergencyCleanupAllBrowserSessions = func() {}
 	SecurityAdvisoriesStartupBanner = func(ctx context.Context) string { return "" }
 	installAgentWiring()
@@ -104,7 +106,7 @@ func TestMainQuietSingleQueryAnswersThroughRunConversation(t *testing.T) {
 	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": srv.URL + "/v1"},
 		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
 	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
-		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: 5})
+		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: ptr(5)})
 	if code != 0 {
 		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
@@ -131,7 +133,7 @@ func TestMainQuietSingleQueryFailedTurnExitsOne(t *testing.T) {
 	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": srv.URL + "/v1"},
 		"agent": map[string]any{"max_turns": 2}, "display": map[string]any{}})
 	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
-		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: 2})
+		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: ptr(2)})
 	if code != 1 {
 		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}

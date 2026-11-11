@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -56,31 +55,12 @@ func SessionOwnerDetails(sessionID string, entry *pyjson.Object) string {
 }
 
 // Registry file and lock file under the runtime directory of the registry home, the active home when empty
-func leasePaths(registryHome string) (string, string) {
+func leasePaths(ctx context.Context, registryHome string) (string, string) {
 	if registryHome == "" {
-		registryHome = home.Dir(context.Background())
+		registryHome = home.Dir(ctx)
 	}
 	runtime := filepath.Join(registryHome, "runtime")
 	return filepath.Join(runtime, "active_sessions.json"), filepath.Join(runtime, "active_sessions.lock")
-}
-
-// Holds the exclusive registry lock, the lock file created with its directory
-func lockRegistry(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		return nil, err
-	}
-	fh, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
-	if err != nil {
-		return nil, err
-	}
-	if err := pyfs.LockFile(fh); err != nil {
-		_ = fh.Close()
-		return nil, fmt.Errorf("file lock unavailable: %s: %w", path, err)
-	}
-	return func() {
-		_ = pyfs.UnlockFile(fh)
-		_ = fh.Close()
-	}, nil
 }
 
 // Registry entries, every malformed shape an error when strict and dropped otherwise
@@ -104,6 +84,7 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		if strict {
 			return nil, invalid("unreadable")
 		}
+		leaseLog.Warning(fmt.Sprintf("Ignoring corrupt active session registry at %s", path))
 		return nil, nil
 	}
 	entries := data
@@ -124,7 +105,7 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		}
 	}
 	if !strict {
-		return valid, nil
+		return withoutQueuedReleases(path, valid), nil
 	}
 	if len(valid) != len(list) {
 		return nil, invalid("contains invalid entries")
@@ -152,7 +133,7 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		}
 		seen[leaseID] = true
 	}
-	return valid, nil
+	return withoutQueuedReleases(path, valid), nil
 }
 
 // True for a string with a non whitespace character
@@ -286,7 +267,7 @@ func pyFloatText(s string) (float64, bool) {
 }
 
 // Writes the entries list as compact sorted JSON through an atomic replace
-func writeEntries(path string, entries []*pyjson.Object) error {
+var writeEntries = func(path string, entries []*pyjson.Object) error {
 	list := make([]any, len(entries))
 	for i, entry := range entries {
 		list[i] = entry
@@ -295,7 +276,7 @@ func writeEntries(path string, entries []*pyjson.Object) error {
 }
 
 // Creation time of a process in epoch seconds, false when it cannot be read
-func processStartTime(pid int) (float64, bool) {
+var processStartTime = func(pid int) (float64, bool) {
 	start, err := proc.Birth(pid)
 	if err != nil {
 		return 0, false
@@ -395,7 +376,7 @@ func pythonIntOrZero(v any) int {
 var pidExists = func(pid int) (bool, error) { return proc.Exists(pid), nil }
 
 // Entries whose owner is alive, tracked or strict entries required to be provably alive
-func pruneDead(entries []*pyjson.Object, strict bool, targetSessionID *string, targetPid *int) ([]*pyjson.Object, error) {
+var pruneDead = func(entries []*pyjson.Object, strict bool, targetSessionID *string, targetPid *int) ([]*pyjson.Object, error) {
 	targeted := targetSessionID != nil || targetPid != nil
 	var live []*pyjson.Object
 	for _, entry := range entries {
@@ -417,9 +398,9 @@ func pruneDead(entries []*pyjson.Object, strict bool, targetSessionID *string, t
 }
 
 // Live leases of the registry, dead ones written out under a second lock, strict requiring provable owners
-func RegistrySnapshot(registryHome string, strict bool) ([]*pyjson.Object, error) {
-	statePath, lockPath := leasePaths(registryHome)
-	unlock, err := lockRegistry(lockPath)
+func RegistrySnapshot(ctx context.Context, registryHome string, strict bool) ([]*pyjson.Object, error) {
+	statePath, lockPath := leasePaths(ctx, registryHome)
+	unlock, err := enterFileLock(lockPath)
 	if err != nil {
 		return nil, err
 	}
@@ -445,7 +426,7 @@ func RegistrySnapshot(registryHome string, strict bool) ([]*pyjson.Object, error
 			dead[id] = true
 		}
 	}
-	unlock, err = lockRegistry(lockPath)
+	unlock, err = enterFileLock(lockPath)
 	if err != nil {
 		return nil, err
 	}

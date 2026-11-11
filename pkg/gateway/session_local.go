@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -283,7 +284,8 @@ func forgetLiveSession(ctx context.Context, a *SessionAuthority, sessionID strin
 	if err != nil {
 		return err
 	}
-	if local, ok := adapters[PlatformLocal].(*LocalSessionAdapter); ok && local != nil {
+	held, _ := adapters.Get(PlatformLocal)
+	if local, ok := held.(*LocalSessionAdapter); ok && local != nil {
 		local.forget(live.Source, live.Route)
 	}
 	return nil
@@ -291,7 +293,7 @@ func forgetLiveSession(ctx context.Context, a *SessionAuthority, sessionID strin
 
 // Runner resolving the adapter map of the profile a source names
 type profileAdaptersRunner interface {
-	AdaptersForProfile(profile *string) map[Platform]PlatformAdapter
+	AdaptersForProfile(profile *string) *pydict.Dict[Platform, PlatformAdapter]
 }
 
 // Authorization of a local source, nil for legacy and nonlocal routes while registered local adapters fail closed
@@ -305,7 +307,8 @@ func authorizeLocalSource(runner any, source *SessionSource) (*bool, error) {
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: "runner has no attribute '_adapters_for_profile'"}
 	}
-	adapter, isLocal := profiled.AdaptersForProfile(source.Profile)[PlatformLocal].(*LocalSessionAdapter)
+	held, _ := profiled.AdaptersForProfile(source.Profile).Get(PlatformLocal)
+	adapter, isLocal := held.(*LocalSessionAdapter)
 	if !isLocal || adapter == nil {
 		if len(owners) > 0 {
 			return verdict(false)
@@ -354,7 +357,11 @@ func policyForSource(ctx context.Context, runner AuthorityRunner, source *Sessio
 	if source == nil || source.Platform != PlatformLocal {
 		return nil, nil
 	}
-	local, ok := runner.AdapterForSource(ctx, source).(*LocalSessionAdapter)
+	adapter, err := runner.AdapterForSource(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	local, ok := adapter.(*LocalSessionAdapter)
 	if !ok || local == nil || !local.authorizeSource(source) {
 		return nil, nil
 	}

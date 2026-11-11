@@ -12,6 +12,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -100,6 +101,9 @@ func adapterFor(adapters any, platform Platform) any {
 		return m[string(platform)]
 	case map[Platform]any:
 		return m[platform]
+	case *pydict.Dict[Platform, PlatformAdapter]:
+		adapter, _ := m.Get(platform)
+		return adapter
 	}
 	return nil
 }

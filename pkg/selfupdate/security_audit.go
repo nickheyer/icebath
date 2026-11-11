@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/internal/pytoml"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -63,7 +64,7 @@ func (e *auditHTTPError) Error() string { return e.err.Error() }
 var (
 	auditHTTPJSON              = osvHTTPJSON
 	auditVenvPins              = venvDistributionPins
-	auditStderr      io.Writer = os.Stderr
+	auditStderr      io.Writer = pysys.Stderr
 	auditVersionInfo           = updaterecord.GetVersionInfo
 )
 

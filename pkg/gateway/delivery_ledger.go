@@ -165,6 +165,11 @@ func ledgerConnect(ctx context.Context) (state.SQLiteConn, error) {
 		state.WithInitialize(initializeLedgerSchema))
 }
 
+// Creates the delivery obligations table on a connection the session recovery copies into
+func InitializeLedgerSchema(ctx context.Context, conn state.SQLiteConn) error {
+	return initializeLedgerSchema(ctx, conn)
+}
+
 // Creates the obligations table and adds adapter_profile to a ledger written before it existed
 func initializeLedgerSchema(ctx context.Context, conn state.SQLiteConn) error {
 	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS delivery_obligations (

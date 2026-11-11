@@ -120,7 +120,7 @@ func anonFailureCopy(code string, retryAfter time.Duration, hasRetryAfter bool) 
 
 // Read only config for the free tier readers, an error when config.yaml exists but cannot be read
 func anonConfigReadonly(env PoolEnv) (map[string]any, error) {
-	if FrozenRuntimeConfig() == nil {
+	if FrozenRuntimeConfig(env.ctx()) == nil {
 		path := home.ConfigPath(envHome(env))
 		if _, err := os.Stat(path); err == nil {
 			if _, err := config.ReadUser(envHome(env)); err != nil {
@@ -132,7 +132,7 @@ func anonConfigReadonly(env PoolEnv) (map[string]any, error) {
 	}
 	cfg := env.config()
 	if cfg == nil {
-		cfg = LoadConfigSafe(envHome(env))
+		cfg = LoadConfigSafe(env.ctx(), envHome(env))
 	}
 	return cfg, nil
 }

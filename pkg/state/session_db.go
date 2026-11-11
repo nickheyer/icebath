@@ -153,7 +153,8 @@ type SessionDB struct {
 
 // Async door onto a SessionDB running every call on its own goroutine
 type AsyncSessionDB struct {
-	db *SessionDB
+	db       *SessionDB
+	borrowed bool
 }
 
 // One state_meta row of a prefix listing, Value nil for a NULL value

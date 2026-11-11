@@ -14,3 +14,11 @@ func (a *AIAgent) SeedContextCompressionCount(count int) {
 		a.contextCompressor.Base().CompressionCount = count
 	}
 }
+
+// Prompt tokens the provider billed on the latest turn as the context engine measured them, zero without an engine
+func (a *AIAgent) ContextLastPromptTokens() int {
+	if a == nil || a.contextCompressor == nil {
+		return 0
+	}
+	return a.contextCompressor.Base().LastPromptTokens
+}

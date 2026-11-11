@@ -235,7 +235,8 @@ func forgetRetired(ctx context.Context, a *SessionAuthority, sessionID string) e
 	if err != nil {
 		return err
 	}
-	local, ok := adapters[PlatformLocal].(*LocalSessionAdapter)
+	retiring, _ := adapters.Get(PlatformLocal)
+	local, ok := retiring.(*LocalSessionAdapter)
 	if !ok || local == nil {
 		return nil
 	}

@@ -465,6 +465,9 @@ func defaultOn(h, dir, source, key string) (bool, error) {
 				return kind == "model-provider" || bundledDefaultOnKinds[kind], nil
 			}
 		}
+		if manifest, ok := compiledBundledManifest(key); ok {
+			return bundledManifestDefaultOn(manifest), nil
+		}
 		return false, nil
 	}
 	if st, err := os.Stat(dir); dir == "" || err != nil || !st.IsDir() {
@@ -565,7 +568,12 @@ func getPluginToolsetKey(ctx context.Context, h, name string) string {
 		if err != nil {
 			return ""
 		}
-		for _, base := range []string{GetBundledPluginsDir(), user} {
+		if names, ok := compiledProvidesTools(name); ok {
+			if toolset := firstToolset(names); toolset != "" {
+				return toolset
+			}
+		}
+		for _, base := range []string{bundledOverrideDir(), user} {
 			dir := filepath.Join(base, name)
 			if st, err := os.Stat(dir); base == "" || err != nil || !st.IsDir() {
 				continue

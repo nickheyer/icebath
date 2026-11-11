@@ -99,7 +99,7 @@ func oneShotCalls(t *testing.T, query string) []map[string]any {
 		return true
 	}
 	Main(context.Background(), MainOptions{Query: query, Oneshot: true, Model: "test/model", Provider: "openai",
-		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: 5})
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(5)})
 	return calls
 }
 

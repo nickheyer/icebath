@@ -38,19 +38,9 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 	if experience != "assistant" && experience != "agent" && experience != "none" {
 		return nil, errors.New("ValueError: messaging_experience must be one of: assistant, agent, none")
 	}
-	h := home.Dir(ctx)
-	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
+	slashes, err := slashCommandEntries(ctx)
 	if err != nil {
 		return nil, err
-	}
-	raw, _ := commands.SlackAppManifest(commands.Default, cfg, "")["features"].(map[string]any)["slash_commands"].([]map[string]any)
-	slashes := make([]any, 0, len(raw))
-	for _, e := range raw {
-		entry := pyjson.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])
-		if hint, ok := e["usage_hint"]; ok {
-			entry.Set("usage_hint", hint)
-		}
-		slashes = append(slashes, entry)
 	}
 	features := pyjson.ObjectOf(
 		"app_home", pyjson.ObjectOf("home_tab_enabled", false, "messages_tab_enabled", true, "messages_tab_read_only_enabled", false),
@@ -92,6 +82,25 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 			"org_deploy_enabled", false,
 			"socket_mode_enabled", true,
 			"token_rotation_enabled", false)), nil
+}
+
+// Slash command entries of the manifest in key order, one per gateway command of the registry
+func slashCommandEntries(ctx context.Context) ([]any, error) {
+	h := home.Dir(ctx)
+	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := commands.SlackAppManifest(commands.Default, cfg, "")["features"].(map[string]any)["slash_commands"].([]map[string]any)
+	slashes := make([]any, 0, len(raw))
+	for _, e := range raw {
+		entry := pyjson.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])
+		if hint, ok := e["usage_hint"]; ok {
+			entry.Set("usage_hint", hint)
+		}
+		slashes = append(slashes, entry)
+	}
+	return slashes, nil
 }
 
 func toAny(items []string) []any {

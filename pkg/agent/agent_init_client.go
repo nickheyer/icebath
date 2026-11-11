@@ -272,7 +272,7 @@ func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]
 		}
 	}
 	a.applyUserDefaultHeaders(ctx)
-	cfg := provider.LoadConfigSafe(home.Dir(ctx))
+	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
 	entries := provider.CompatibleCustomProviders(cfg)
 	cpBaseURL, _ := kwargs["base_url"].(string)
 	if cpBaseURL == "" {

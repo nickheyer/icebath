@@ -153,7 +153,7 @@ func NewDispatcher(r *Registry) *Dispatcher {
 	if r == nil {
 		r = Default
 	}
-	return &Dispatcher{Registry: r}
+	return &Dispatcher{Registry: r, EditApproval: MaybeRequireEditApproval}
 }
 
 func (d *Dispatcher) safeWorker() bool {

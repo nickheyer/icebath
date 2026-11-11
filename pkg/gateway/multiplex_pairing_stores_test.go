@@ -95,3 +95,32 @@ func TestAllowlistScopedMissConfiguresNothing(t *testing.T) {
 		t.Fatalf("process env = %q", got)
 	}
 }
+
+func TestPairingAllowlistRead(t *testing.T) {
+	multiplexed := func(t *testing.T, envValue string) context.Context {
+		t.Helper()
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+		t.Setenv("TELEGRAM_ALLOWED_USERS", envValue)
+		wasActive := provider.MultiplexProcess()
+		provider.SetMultiplexActive(true)
+		t.Cleanup(func() { provider.SetMultiplexActive(wasActive) })
+		return context.Background()
+	}
+	t.Run("test_scoped_value_wins", func(t *testing.T) {
+		ctx := provider.WithSecretScope(multiplexed(t, "111"), map[string]string{"TELEGRAM_ALLOWED_USERS": "222"}, "")
+		if value, err := readAllowlistEnv(ctx, "TELEGRAM_ALLOWED_USERS"); err != nil || value != "222" {
+			t.Fatalf("scoped read = %q %v", value, err)
+		}
+	})
+	t.Run("test_scoped_miss_no_borrow", func(t *testing.T) {
+		ctx := provider.WithSecretScope(multiplexed(t, "other-profile"), map[string]string{"UNRELATED": "x"}, "")
+		if value, err := readAllowlistEnv(ctx, "TELEGRAM_ALLOWED_USERS"); err != nil || value != "" {
+			t.Fatalf("scoped miss = %q %v", value, err)
+		}
+	})
+	t.Run("test_unscoped_multiplex_falls_back_to_env", func(t *testing.T) {
+		if value, err := readAllowlistEnv(multiplexed(t, "own-env"), "TELEGRAM_ALLOWED_USERS"); err != nil || value != "own-env" {
+			t.Fatalf("unscoped read = %q %v", value, err)
+		}
+	})
+}

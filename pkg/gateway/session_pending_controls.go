@@ -20,12 +20,12 @@ type PendingControls struct {
 	events           *SessionEvents
 	pending          map[string]pendingPrompt
 	order            []string
-	RemoteResponders map[string]func(kind, promptID, value string)
+	RemoteResponders map[string]func(kind, promptID, value string) error
 }
 
 // Controls publishing on a session's event stream
 func NewPendingControls(events *SessionEvents) *PendingControls {
-	return &PendingControls{events: events, pending: map[string]pendingPrompt{}, RemoteResponders: map[string]func(kind, promptID, value string){}}
+	return &PendingControls{events: events, pending: map[string]pendingPrompt{}, RemoteResponders: map[string]func(kind, promptID, value string) error{}}
 }
 
 // Controls of a live session, created with its stream on first use
@@ -212,7 +212,9 @@ func (c *PendingControls) respond(sessionID string, generation int64, promptID s
 		if !ok || pystr.Len(value) > 16384 || (kind == "approval" && !offered(value)) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		responder(kind, promptID, value)
+		if err := responder(kind, promptID, value); err != nil {
+			return nil, err
+		}
 		c.drop(promptID)
 		c.events.Publish(sessionID, pyjson.ObjectOf("prompt_id", promptID, "execution_generation", generation), kind+".settled", nil)
 		return status(true), nil

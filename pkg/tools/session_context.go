@@ -30,13 +30,16 @@ var sessionVarMap = setOf(SessionContextEnvVars...)
 // Whether any session has been bound through SetSessionVars in this process
 func SessionContextEngaged() bool { return sessionContextLatch.Load() }
 
-// Applies edit to a fresh copy of the bound session variables and stores it back
+// Applies edit to a fresh copy of the bound session variables, giving an env without a value store one first
 func updateSessionVars(env *Env, edit func(vars map[string]string)) {
-	if env == nil || env.Values == nil {
+	if env == nil {
 		return
 	}
 	sessionVarsMu.Lock()
 	defer sessionVarsMu.Unlock()
+	if env.Values == nil {
+		env.Values = &sync.Map{}
+	}
 	vars, _ := sessionContextState(env)
 	next := make(map[string]string, len(vars)+1)
 	for k, v := range vars {

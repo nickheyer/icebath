@@ -82,6 +82,11 @@ type ptApplication struct {
 	emacsMacro          []ptKeyPress
 	emacsMacroRecording *[]ptKeyPress
 
+	editingMode     string
+	viState         *ptViState
+	pasteMode       bool
+	inputRenderInfo *ptRenderInfo
+
 	prompt      func() []styledFragment
 	emptyHint   func() string
 	password    func() bool
@@ -153,7 +158,7 @@ type ptApplication struct {
 func newPTApplication(in io.Reader, out io.Writer) *ptApplication {
 	installPromptKeyAliases()
 	a := &ptApplication{in: in, out: out, clipboard: &ptClipboard{}, keyBindings: &ptKeyBindings{}, timeoutLen: time.Second,
-		outboxSignal: make(chan struct{}, 1)}
+		outboxSignal: make(chan struct{}, 1), editingMode: ptEditingEmacs, viState: newPTViState()}
 	a.cprNotSupportedCallback = func() {
 		a.RunInTerminal(func() {
 			_, _ = io.WriteString(a.out, "WARNING: your terminal doesn't support cursor position requests (CPR).\r\n")
@@ -171,6 +176,7 @@ func newPTApplication(in io.Reader, out io.Writer) *ptApplication {
 func (a *ptApplication) setBuffer(b *ptBuffer) {
 	a.buffer = b
 	b.onChange = a.publishSnapshot
+	b.editingVi = func() bool { return a.editingMode == ptEditingVi }
 	b.spawn = func(work func() func()) {
 		if !a.running.Load() {
 			if apply := work(); apply != nil {
@@ -483,6 +489,7 @@ func (a *ptApplication) run() error {
 	opts = append(opts, tea.WithFilter(a.filterMessage))
 	p := tea.NewProgram(&ptModel{app: a}, opts...)
 	a.program = p
+	a.viState.reset()
 	stop := make(chan struct{})
 	pumped := make(chan struct{})
 	a.done.Store(false)
@@ -955,34 +962,65 @@ func (a *ptApplication) inputContent() ptInputContent {
 	doc := b.document()
 	base := "class:text-area " + a.inputStyle
 	masked := a.password != nil && a.password()
-	selFrom, selTo := doc.selectionRange()
 	content := ptInputContent{cursorRow: doc.cursorRow()}
 	index := 0
 	docLines := doc.lines()
+	multiple := a.viInsertMultipleMode()
 	for i, line := range docLines {
+		lineRunes := []rune(line)
+		styles := make([]string, len(lineRunes))
+		texts := make([]string, len(lineRunes))
+		for j, r := range lineRunes {
+			styles[j], texts[j] = base, string(r)
+		}
+		if from, to, ok := doc.selectionRangeAtLine(i); ok {
+			if from == 0 && to == 0 && len(lineRunes) == 0 {
+				styles, texts = []string{base + " class:selected "}, []string{" "}
+			} else {
+				for k := from; k < to; k++ {
+					if k < len(styles) {
+						styles[k] += " class:selected "
+					} else if k == len(styles) {
+						styles, texts = append(styles, base+" class:selected "), append(texts, " ")
+					}
+				}
+			}
+		}
+		if multiple {
+			start := doc.translateRowColToIndex(i, 0)
+			for _, p := range b.multipleCursors {
+				if start <= p && p <= start+len(lineRunes) {
+					if column := p - start; column < len(styles) {
+						styles[column] += " class:multiple-cursors"
+					} else {
+						styles, texts = append(styles, base+" class:multiple-cursors"), append(texts, " ")
+					}
+				}
+			}
+		}
 		var cells []ptSeg
 		if i == 0 && a.prompt != nil {
 			for _, f := range a.prompt() {
 				cells = append(cells, ptCells(base+" class:text-area.prompt "+f.Style, f.Text)...)
 			}
 		}
-		for _, r := range line {
+		extra := len(styles) - len(lineRunes)
+		for j := range lineRunes {
 			if index == doc.cursor {
 				content.cursorCol = len(cells)
 			}
-			style := base
-			if doc.selection != nil && index >= selFrom && index < selTo {
-				style += " class:selected"
-			}
-			text := string(r)
+			text := texts[j]
 			if masked {
 				text = "*"
 			}
-			cells = append(cells, ptCells(style, text)...)
+			cells = append(cells, ptCells(styles[j], text)...)
 			index++
 		}
 		if index == doc.cursor {
 			content.cursorCol = len(cells)
+		}
+		for j := len(lineRunes); j < len(lineRunes)+extra; j++ {
+			cells = append(cells, ptCells(styles[j], texts[j])...)
 		}
 		index++
 		if i == 0 && len(doc.runes) == 0 && a.emptyHint != nil {
@@ -992,6 +1030,10 @@ func (a *ptApplication) inputContent() ptInputContent {
 		}
 		if i == len(docLines)-1 && b.suggestion != nil && doc.atEnd() {
 			cells = append(cells, ptCells(base+" class:auto-suggestion", *b.suggestion)...)
+		}
+		if extra > 0 {
+			content.lines = append(content.lines, cells)
+			continue
 		}
 		content.lines = append(content.lines, append(cells, ptSeg{base, " "}))
 	}
@@ -1055,6 +1097,15 @@ func (a *ptApplication) inputRows(width, height int) (rows [][]ptSeg, cx, cy int
 	a.scrollInput(content, width, height)
 	cx, cy = -1, -1
 	y := -a.inputScroll2
+	info := &ptRenderInfo{windowHeight: height, windowWidth: width}
+	for i := range content.lines {
+		info.lineHeights = append(info.lineHeights, len(ptWrapCells(content.lines[i], width)))
+	}
+	defer func() {
+		if len(info.displayedLines) > 0 {
+			a.inputRenderInfo = info
+		}
+	}()
 	for i := a.inputScroll; i < len(content.lines); i++ {
 		wrapped := ptWrapCells(content.lines[i], width)
 		if i == content.cursorRow {
@@ -1070,6 +1121,7 @@ func (a *ptApplication) inputRows(width, height int) (rows [][]ptSeg, cx, cy int
 		for _, row := range wrapped {
 			if y >= 0 && y < height {
 				rows = append(rows, row)
+				info.displayedLines = append(info.displayedLines, i)
 			}
 			y++
 		}

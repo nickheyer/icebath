@@ -41,7 +41,7 @@ func nousKeepaliveTimeout(value time.Duration) time.Duration {
 func nousKeepaliveConfig(env PoolEnv) map[string]any {
 	cfg := env.config()
 	if cfg == nil && env.Store != nil {
-		cfg = LoadConfigSafe(env.Store.Home())
+		cfg = LoadConfigSafe(env.ctx(), env.Store.Home())
 	}
 	section, _ := cfg["nous"].(map[string]any)
 	if section == nil {

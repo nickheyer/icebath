@@ -39,12 +39,15 @@ func dispatchChildEntries(ctx context.Context) {
 	googlemeet.DispatchMeetBotEntry(ctx)
 	botdesktop.DispatchIdleWatchEntry()
 	gateway.DispatchStderrTimestampEntry()
+	gateway.DispatchGatewayRestartWatcherEntry(ctx)
+	gateway.DispatchDetachedRestartWatcherEntry(ctx)
 	gateway.DispatchSystemdStopMarkEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
 	cron.DispatchExternalWorkerEntry()
+	app.DispatchUninstallModuleEntry(ctx)
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal

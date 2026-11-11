@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Where connector tool results save the files they return, under each profile home
@@ -126,7 +127,7 @@ func SudoInvokerDefaultHome() string {
 
 var (
 	profileFallbackWarned atomic.Bool
-	fallbackWarnOut       io.Writer = os.Stderr
+	fallbackWarnOut       io.Writer = pysys.Stderr
 )
 
 // Routes the profile fallback warning to w with its once latch rearmed, returning the function that restores both

@@ -1231,8 +1231,8 @@ func (s *Store) resumeJob(ctx context.Context, ref string) (*Job, error) {
 		if runAt == "" {
 			runAt = "unknown"
 		}
-		return nil, fmt.Errorf("Cannot resume: one-shot time %s is in the past (grace window: %ds) and will never fire.",
-			runAt, oneshotGraceSeconds)
+		return nil, &ValueError{fmt.Sprintf("Cannot resume: one-shot time %s is in the past (grace window: %ds) and will never fire.",
+			runAt, oneshotGraceSeconds)}
 	}
 	return s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"enabled": true, "state": "scheduled",
 		"paused_at": nil, "paused_reason": nil, "next_run_at": skillAny(next)})
@@ -1246,8 +1246,8 @@ func (s *Store) triggerJob(ctx context.Context, ref string, extraPrompt string) 
 	}
 	if isTerminalJob(job) {
 		name := job.Name
-		return nil, fmt.Errorf("Cannot run: job '%s' is %s (terminal). Create a new occurrence with "+
-			"'icebath cron resume %s --run-now' or '--at <ISO-8601>'.", name, job.State, name)
+		return nil, &ValueError{fmt.Sprintf("Cannot run: job '%s' is %s (terminal). Create a new occurrence with "+
+			"'icebath cron resume %s --run-now' or '--at <ISO-8601>'.", name, job.State, name)}
 	}
 	manual := s.clk.nowISO()
 	var prompt any

@@ -95,3 +95,14 @@ func (a *AIAgent) FlushHistoryToSessionDB(messages, conversationHistory []map[st
 
 // Points the agent at a new session id, the continuation a compression rotated to
 func (a *AIAgent) SetSessionID(sessionID string) { a.sessionID = sessionID }
+
+// Sets the session start time the agent reports
+func (a *AIAgent) SetSessionStart(start time.Time) { a.sessionStart = start }
+
+// The built in memory store of the agent, nil when memory is off
+func (a *AIAgent) MemoryStore() *memory.Store { return a.memoryStore }
+
+// Forks the memory and skill review on demand with optional focus text, the explicit /refine run
+func (a *AIAgent) SpawnExplicitBackgroundReview(ctx context.Context, snapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string) {
+	a.spawnBackgroundReviewWith(ctx, snapshot, reviewMemory, reviewSkills, focus, true)
+}

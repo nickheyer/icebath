@@ -24,7 +24,11 @@ func bundledMemoryProviderDir(pluginDir string) bool {
 	if err != nil {
 		dir = pluginDir
 	}
-	root := filepath.Join(GetBundledPluginsDir(), "memory")
+	override := bundledOverrideDir()
+	if override == "" {
+		return false
+	}
+	root := filepath.Join(override, "memory")
 	if resolved, err := pypath.Realpath(root, pypath.Lax); err == nil {
 		root = resolved
 	}
@@ -45,7 +49,10 @@ func (h *PluginHost) ProviderModuleCall(ctx context.Context, pluginDir, moduleNa
 	if _, err := h.ensureStarted(ctx); err != nil {
 		return nil, false, err
 	}
-	params := providerModuleParams(pluginDir, moduleName, submodule)
+	params, err := providerModuleParams(pluginDir, moduleName, submodule)
+	if err != nil {
+		return nil, false, err
+	}
 	params["function"], params["args"], params["kwargs"] = function, h.encodeArgs(nonNilArgs(args)), h.encodeArgs(nonNilKwargs(kwargs))
 	raw, err := h.call(ctx, "provider_module_call", params, nil, 0, nil)
 	if err != nil {
@@ -59,13 +66,17 @@ func (h *PluginHost) ProviderModuleCall(ctx context.Context, pluginDir, moduleNa
 }
 
 // Load parameters of a provider package under its loader module name, user packages beneath the synthetic namespace
-func providerModuleParams(pluginDir, moduleName, submodule string) map[string]any {
+func providerModuleParams(pluginDir, moduleName, submodule string) (map[string]any, error) {
 	var namespace any
 	if !bundledMemoryProviderDir(pluginDir) {
 		namespace = UserMemoryNamespace
 	}
+	root, err := hostPluginsRoot()
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{"path": pluginDir, "module_name": moduleName, "parents": providerModuleParents,
-		"plugins_root": GetBundledPluginsDir(), "synthetic_namespace": namespace, "submodule": submodule}
+		"plugins_root": root, "synthetic_namespace": namespace, "submodule": submodule}, nil
 }
 
 // Imports a provider package or one submodule in the plugin host of the context home as a live module
@@ -79,7 +90,10 @@ func ImportProviderModule(ctx context.Context, name, pluginDir, moduleName, subm
 
 // Live module of a provider package or submodule in this child, an ImportError when the package fails to import
 func (h *PluginHost) ImportProviderModule(ctx context.Context, name, pluginDir, moduleName, submodule string) (*HostedObject, error) {
-	params := providerModuleParams(pluginDir, moduleName, submodule)
+	params, err := providerModuleParams(pluginDir, moduleName, submodule)
+	if err != nil {
+		return nil, err
+	}
 	load := func(ctx context.Context) (map[string]any, error) {
 		if _, err := h.ensureStarted(ctx); err != nil {
 			return nil, err

@@ -191,11 +191,12 @@ func loadYAMLDocument(data []byte) (any, error) {
 	if err := yaml11TimestampError(node); err != nil {
 		return nil, err
 	}
+	markYAMLBigInts(node)
 	var doc any
 	if err := node.Decode(&doc); err != nil {
 		return nil, &YAMLError{err}
 	}
-	doc = normalizeMaps(doc)
+	doc = restoreYAMLBigInts(normalizeMaps(doc))
 	recordNodeOrder(node, doc)
 	return doc, nil
 }

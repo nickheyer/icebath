@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -36,7 +37,7 @@ func recoverColdOwner(t *testing.T, ctx context.Context, db *state.SessionDB, in
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: map[Platform]PlatformAdapter{}, profiles: map[string]map[Platform]PlatformAdapter{}}
+	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "fixture", instanceID, db, epoch)
 	runner.launch = a
 	return a
@@ -531,7 +532,7 @@ func servedAlphaOwner(t *testing.T, ctx context.Context, db *state.SessionDB, in
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: map[Platform]PlatformAdapter{}, profiles: map[string]map[Platform]PlatformAdapter{}}
+	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, filepath.Dir(db.Path()), instanceID, db, epoch)
 	runner.registry = &recoverRegistry{names: map[*SessionAuthority]string{a: "alpha"}, all: []*SessionAuthority{a}}
 	return a

@@ -264,7 +264,30 @@ func TestNotConfiguredErrorNamesDefaultRootGatewayAndSecretSources(t *testing.T)
 	}
 }
 
-type fakePhotonAdapter struct{ calls [][]any }
+type fakePhotonAdapter struct {
+	*gateway.BasePlatformAdapter
+	calls [][]any
+}
+
+var errPhotonDoubleTransport = errors.New("the photon double carries reactions only")
+
+func (a *fakePhotonAdapter) Connect(context.Context, bool) (bool, error) {
+	return false, errPhotonDoubleTransport
+}
+func (a *fakePhotonAdapter) Disconnect(context.Context) error { return errPhotonDoubleTransport }
+func (a *fakePhotonAdapter) Send(context.Context, string, string, string, map[string]any) (gateway.SendResult, error) {
+	return gateway.SendResult{}, errPhotonDoubleTransport
+}
+func (a *fakePhotonAdapter) GetChatInfo(context.Context, string) (map[string]any, error) {
+	return nil, errPhotonDoubleTransport
+}
+
+// Photon double registered as a live adapter of the runner's default profile map
+func newFakePhotonAdapter() *fakePhotonAdapter {
+	a := &fakePhotonAdapter{}
+	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(gateway.NewPlatformConfig(), gateway.Platform("photon"), a)
+	return a
+}
 
 func (a *fakePhotonAdapter) AddReaction(_ context.Context, chatID, messageID, emoji string) (any, error) {
 	a.calls = append(a.calls, []any{"add", chatID, emoji, messageID})
@@ -285,8 +308,8 @@ func TestReactDispatchesToAddReaction(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	patchDiscovery(t, nil)
 	registerPhoton(t)
-	a := &fakePhotonAdapter{}
-	gateway.SetGatewayRunnerRef(&mapRunner{adapters: map[string]any{"photon": a}})
+	a := newFakePhotonAdapter()
+	gateway.SetGatewayRunnerRef(newMapRunner(gateway.Platform("photon"), a))
 	t.Cleanup(func() { gateway.SetGatewayRunnerRef(nil) })
 	res := runTool(t, map[string]any{"action": "react", "target": "photon:+15551234567", "emoji": "❤️"})
 	if res["success"] != true {

@@ -931,7 +931,7 @@ var extraGateEnvPrefixes = []string{"GATEWAY", "QQ"}
 // RegisteredPlatformNames lists plugin platforms loaded at runtime, installed by the gateway package
 var RegisteredPlatformNames func() []string
 
-// BundledPlatformNames lists bundled platform plugin directory names and aliases, installed by pkg/plugins
+// BundledPlatformNames lists bundled platform plugin directory names and aliases, installed by pkg/gateway
 var BundledPlatformNames func() []string
 
 // Upper cased env prefix of a platform name

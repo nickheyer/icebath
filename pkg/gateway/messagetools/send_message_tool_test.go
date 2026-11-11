@@ -3,6 +3,7 @@ package messagetools
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -373,16 +374,27 @@ func (a *documentAdapter) SendDocument(_ context.Context, chatID, path, _, _, _ 
 }
 
 // Runner double exposing only the default profile adapter map
-type mapRunner struct{ adapters map[string]any }
+type mapRunner struct {
+	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+}
 
-func (r *mapRunner) Adapters() map[string]any { return r.adapters }
+func (r *mapRunner) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+	return r.adapters
+}
+
+// Runner double whose default profile map holds one adapter under platform
+func newMapRunner(platform gateway.Platform, adapter gateway.PlatformAdapter) *mapRunner {
+	adapters := pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	adapters.Set(platform, adapter)
+	return &mapRunner{adapters: adapters}
+}
 
 func TestMatrixMediaLiveAdapterReuseLiveAdapterSkipsConnectDisconnect(t *testing.T) {
 	img := writeTemp(t, "photo.png", []byte("\x89PNG\r\n"))
 	live := &imageAdapter{}
 	live.id = "$text"
 	live.BasePlatformAdapter = gateway.NewBasePlatformAdapter(gateway.NewPlatformConfig(), gateway.PlatformMatrix, live)
-	gateway.SetGatewayRunnerRef(&mapRunner{adapters: map[string]any{"matrix": live}})
+	gateway.SetGatewayRunnerRef(newMapRunner(gateway.Platform("matrix"), live))
 	t.Cleanup(func() { gateway.SetGatewayRunnerRef(nil) })
 	res, err := sendMatrixViaAdapter(context.Background(), &gateway.PlatformConfig{Enabled: true, Token: "tok", Extra: map[string]any{}},
 		"!room:example.com", "here is an image", []gateway.MediaRef{{Path: img}}, nil)
@@ -509,7 +521,7 @@ func TestSendViaAdapterStandaloneFallbackLiveNtfyAdapterReceivesExplicitPublishT
 	a := &ntfyAdapter{}
 	a.id = "ntfy-id"
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(gateway.NewPlatformConfig(), gateway.Platform("ntfy"), a)
-	gateway.SetGatewayRunnerRef(&mapRunner{adapters: map[string]any{"ntfy": a}})
+	gateway.SetGatewayRunnerRef(newMapRunner(gateway.Platform("ntfy"), a))
 	t.Cleanup(func() { gateway.SetGatewayRunnerRef(nil) })
 	res, err := sendViaAdapter(context.Background(), gateway.Platform("ntfy"), &gateway.PlatformConfig{Extra: map[string]any{"publish_topic": "configured-topic"}},
 		"alerts-channel", "done", nil, nil, false)

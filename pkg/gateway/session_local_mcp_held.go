@@ -537,6 +537,9 @@ func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 		return body()
 	}
 	scope := pyrepr.Str(data["scope"])
+	if a == nil {
+		return runtimeRefusal("launch_credentials_unavailable")
+	}
 	servers, ok := borrowedEditorMCP(a, scope)
 	if !ok {
 		return runtimeRefusal("launch_credentials_unavailable")
@@ -572,7 +575,7 @@ func childSecretRef(ctx context.Context, a *SessionAuthority, child string, pare
 	return &out, nil
 }
 
-// Prepared branch fields and servers of a fork of an editor session under the child's own scope, nil when none are involved
+// Prepared branch fields and servers of an editor session fork under the child's own scope, nil without editor servers
 func prepareBranchEditor(ctx context.Context, a *SessionAuthority, ref SessionRef, servers any, gate func() (*pyjson.Object, error)) (*pyjson.Object, any, error) {
 	saved, err := a.DB.LocalReceipt(ctx, ref.SessionID)
 	if err != nil {

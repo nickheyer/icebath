@@ -141,7 +141,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 func CollectDirectoryManifests(h string) []*Manifest {
 	var out []*Manifest
 	out = append(out, bundledManifests()...)
-	if dir := GetBundledPluginsDir(); dir != "" {
+	if dir := bundledOverrideDir(); dir != "" {
 		out = append(out, ScanDirectory(dir, "bundled", bundledSkipNames)...)
 	}
 	out = append(out, ScanDirectory(home.PluginsDir(h), "user", nil)...)

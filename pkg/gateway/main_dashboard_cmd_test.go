@@ -275,9 +275,9 @@ func pinWebDistLaunch(t *testing.T, projectRoot string, build func(webDir string
 	swapSeam(t, &dashboardRequiresAuth, func(context.Context, string) (bool, error) { return false, nil })
 	swapSeam(t, &dashboardProjectRoot, func() string { return projectRoot })
 	builds := &[][2]any{}
-	swapSeam(t, &dashboardBuildWebUI, func(_ context.Context, _ io.Writer, webDir string, fatal bool) bool {
+	swapSeam(t, &dashboardBuildWebUI, func(_ context.Context, _ io.Writer, webDir string, fatal bool) (bool, error) {
 		*builds = append(*builds, [2]any{webDir, fatal})
-		return build == nil || build(webDir, fatal)
+		return build == nil || build(webDir, fatal), nil
 	})
 	return builds
 }

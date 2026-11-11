@@ -207,7 +207,10 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	defer func() {
 		closing := context.WithoutCancel(ctx)
 		if !native {
-			takePostDelivery(closing, a, admissionID, event.Source, route)
+			if err := takePostDelivery(closing, a, admissionID, event.Source, route); err != nil {
+				reply, retErr = nil, err
+				return
+			}
 		}
 		if !handed {
 			if err := releaseAdmissionTurnMarker(closing, a, event); err != nil {
@@ -272,7 +275,11 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		a.PendingResults[admissionID] = pending
 		a.mu.Unlock()
 		if !isAPI && pyTruthy(response) {
-			if adapter := a.Runner.AdapterForSource(scope, event.Source); adapter != nil {
+			adapter, err := a.Runner.AdapterForSource(scope, event.Source)
+			if err != nil {
+				return err
+			}
+			if adapter != nil {
 				a.mu.Lock()
 				delivery := &settledDelivery{adapter: adapter, event: event, route: live.Route, response: response, home: home}
 				if native {

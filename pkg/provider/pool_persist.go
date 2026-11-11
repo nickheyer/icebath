@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,30 +13,36 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-var (
-	frozenRuntimeConfigMu sync.RWMutex
-	frozenRuntimeConfig   map[string]any
-)
+type frozenRuntimeConfigKey struct{}
 
-// SetFrozenRuntimeConfig pins the session's config so a key rotated in config.yaml never seeds a frozen pool
-func SetFrozenRuntimeConfig(cfg map[string]any) {
-	frozenRuntimeConfigMu.Lock()
-	defer frozenRuntimeConfigMu.Unlock()
-	frozenRuntimeConfig = cfg
+// WithFrozenRuntimeConfig scopes resolution under the returned context to a session's frozen config over the defaults
+func WithFrozenRuntimeConfig(ctx context.Context, cfg map[string]any) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	merged := config.DeepMerge(map[string]any(config.Defaults()), cfg)
+	return context.WithValue(ctx, frozenRuntimeConfigKey{}, merged)
 }
 
-// FrozenRuntimeConfig is the pinned session config, nil when none is frozen
-func FrozenRuntimeConfig() map[string]any {
-	frozenRuntimeConfigMu.RLock()
-	defer frozenRuntimeConfigMu.RUnlock()
-	return frozenRuntimeConfig
+// FrozenRuntimeConfig is the frozen session config scoped on the context, nil outside a frozen scope
+func FrozenRuntimeConfig(ctx context.Context) map[string]any {
+	if ctx == nil {
+		return nil
+	}
+	cfg, _ := ctx.Value(frozenRuntimeConfigKey{}).(map[string]any)
+	return cfg
 }
 
-// LoadConfigSafe is the frozen runtime config else the home's read only config, nil on any error
-func LoadConfigSafe(h string) map[string]any {
-	if frozen := FrozenRuntimeConfig(); frozen != nil {
+// LoadConfigSafe is the context's frozen runtime config else the home's read only config, nil on any error
+func LoadConfigSafe(ctx context.Context, h string) map[string]any {
+	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
 		return frozen
 	}
+	return loadLiveConfigSafe(h)
+}
+
+// Read only config of the home or the process home, nil on any error
+func loadLiveConfigSafe(h string) map[string]any {
 	if h == "" {
 		h = home.Process()
 	}
@@ -46,9 +53,9 @@ func LoadConfigSafe(h string) map[string]any {
 	return map[string]any(tree)
 }
 
-// ConfigLoader binds LoadConfigSafe to one home for a PoolEnv
+// ConfigLoader binds the home's read only config to a PoolEnv, whose context applies a frozen scope first
 func ConfigLoader(h string) func() map[string]any {
-	return func() map[string]any { return LoadConfigSafe(h) }
+	return func() map[string]any { return loadLiveConfigSafe(h) }
 }
 
 // ---- custom endpoint pool keys ----
@@ -196,8 +203,8 @@ func CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL string, cfg
 }
 
 // CredentialPoolMatchesProvider is CredentialPoolMatchesProviderIn under the process config
-func CredentialPoolMatchesProvider(poolProvider, provider, baseURL string) bool {
-	return CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL, LoadConfigSafe(""))
+func CredentialPoolMatchesProvider(ctx context.Context, poolProvider, provider, baseURL string) bool {
+	return CredentialPoolMatchesProviderIn(poolProvider, provider, baseURL, LoadConfigSafe(ctx, ""))
 }
 
 // ResolveRuntimePoolKey is the pool key for a runtime provider identity, the normalized identity when no scoped key fits

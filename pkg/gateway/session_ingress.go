@@ -146,8 +146,11 @@ func replaceMessageEvent(event *MessageEvent) *MessageEvent {
 	gatewayAcceptedMu.Unlock()
 	copied.gatewayAccepted, copied.OnCommit, copied.admittedBeforeDrain = false, nil, false
 	copied.notificationReplyMuted, copied.pendingSTTText, copied.pendingSTTTranscripts = nil, nil, nil
+	copied.pendingSTTClips, copied.pendingSTTEchoed = nil, 0
 	copied.turnMarkerHandoff, copied.activeTurnToken, copied.markerReleased = false, nil, nil
+	copied.activeTurnSessionKey, copied.turnRefusal = nil, nil
 	copied.heartbeatSessionID, copied.lastChunkLen, copied.busyArrival = nil, 0, nil
+	copied.botLoopAdmitted, copied.fifoOnly, copied.stopEpoch = false, false, 0
 	if event.Source != nil {
 		source := *event.Source
 		source.identity, source.transportAdapterRef = nil, nil
@@ -161,6 +164,10 @@ func replaceMessageEvent(event *MessageEvent) *MessageEvent {
 func moveMarker(source, target *MessageEvent) {
 	eventTurnStateMu.Lock()
 	defer eventTurnStateMu.Unlock()
+	if source.activeTurnSessionKey != nil {
+		target.activeTurnSessionKey = source.activeTurnSessionKey
+		source.activeTurnSessionKey = nil
+	}
 	if source.activeTurnToken != nil {
 		target.activeTurnToken = source.activeTurnToken
 		source.activeTurnToken = nil

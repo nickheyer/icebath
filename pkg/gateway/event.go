@@ -112,17 +112,28 @@ type MessageEvent struct {
 	gatewayAccepted        bool
 	producerDelivery       bool
 	ingressSHA256          string
+	consumerReply          *string
+	webhookDuplicate       bool
 	OnCommit               func()
 	admittedBeforeDrain    bool
 	notificationReplyMuted *bool
 	pendingSTTText         *string
 	pendingSTTTranscripts  []string
+	pendingSTTClips        map[string]STTClip
+	pendingSTTEchoed       int
 	turnMarkerHandoff      bool
 	activeTurnToken        any
+	activeTurnSessionKey   *string
+	turnRefusal            *string
 	markerReleased         *InterruptEvent
 	heartbeatSessionID     *string
+	heartbeatResolvedID    *string
+	heartbeatStarted       bool
 	busyArrival            *observability.Arrival
 	claimedOwner           *claimedTurnOwner
+	botLoopAdmitted        bool
+	fifoOnly               bool
+	stopEpoch              int
 
 	lastChunkLen int
 }

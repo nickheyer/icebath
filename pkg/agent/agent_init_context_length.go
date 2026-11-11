@@ -23,7 +23,7 @@ var (
 	resolveAuthProvider = func(ctx context.Context, name string) (string, error) {
 		return provider.ResolveAuthProvider(agentPoolEnv(ctx), name)
 	}
-	contextLengthConfigLoader = func(ctx context.Context) map[string]any { return provider.LoadConfigSafe(home.Dir(ctx)) }
+	contextLengthConfigLoader = func(ctx context.Context) map[string]any { return provider.LoadConfigSafe(ctx, home.Dir(ctx)) }
 )
 
 // Python str of a config value with None as the empty string

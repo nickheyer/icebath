@@ -65,7 +65,7 @@ func subagentRunGit(args []string, cwd string, env map[string]string) (gitRunRes
 
 // Reports a local terminal backend where host worktrees are visible to tools
 func subagentLocalBackendActive(ctx context.Context) bool {
-	terminal, _ := provider.LoadConfigSafe(home.Dir(ctx))["terminal"].(map[string]any)
+	terminal, _ := provider.LoadConfigSafe(ctx, home.Dir(ctx))["terminal"].(map[string]any)
 	backend := "local"
 	if b := terminal["backend"]; pyTruthy(b) {
 		backend = fmt.Sprint(b)

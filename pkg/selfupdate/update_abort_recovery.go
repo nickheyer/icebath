@@ -27,6 +27,7 @@ var (
 	abortLedgerEntries    = func() []map[string]any { return tools.LedgerEntries(tools.LedgerOptions{}) }
 	abortRunFreshRecovery = runFreshRecoveryProcess
 	abortServeRecovery    = serveUnitRecoveryAvailable
+	abortRecoveryCapture  = recoveryCapture
 )
 
 // True when a fresh process can restart serve and dashboard units on this host
@@ -188,7 +189,7 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 	child.Env = env
 	child.SysProcAttr = recoveryDetachedAttr()
 	child.Stdin = strings.NewReader(payload)
-	result, err := recoveryCapture(child, timeout)
+	result, err := abortRecoveryCapture(child, timeout)
 	if err != nil {
 		slog.Warn(fmt.Sprintf("Fresh gateway restart recovery failed: %s", launchErrorText(err)))
 		return nil

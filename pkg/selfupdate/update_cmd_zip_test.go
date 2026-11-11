@@ -56,21 +56,21 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 		"apps/desktop/release/win-unpacked/Hermes.exe": "MZbuilt",
 		"apps/desktop/node_modules/electron/index.js":  "electron",
 		"apps/desktop/dist/index.html":                 "live renderer",
-		"icebath_cli/web_dist/index.html":              "<dashboard>",
+		"cmd/icebath/web_dist/index.html":              "<dashboard>",
 	}
 	for rel, data := range outputs {
 		ugWrite(t, filepath.Join(root, filepath.FromSlash(rel)), data)
 	}
-	if err := os.Mkdir(filepath.Join(root, "icebath_cli", "__pycache__"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "cmd", "icebath", "__pycache__"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ugWrite(t, filepath.Join(root, "icebath_cli", "x.py"), "old")
+	ugWrite(t, filepath.Join(root, "cmd", "icebath", "x.py"), "old")
 
 	extracted := filepath.Join(tmp, "extracted")
 	ugWrite(t, filepath.Join(extracted, "apps", "desktop", "dist", "index.html"), "shipped renderer")
-	ugWrite(t, filepath.Join(extracted, "icebath_cli", "x.py"), "new")
+	ugWrite(t, filepath.Join(extracted, "cmd", "icebath", "x.py"), "new")
 
-	staged, err := stageEntries(&bytes.Buffer{}, extracted, []string{"apps", "icebath_cli"}, root, nil)
+	staged, err := stageEntries(&bytes.Buffer{}, extracted, []string{"apps", "cmd"}, root, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := ugRead(t, filepath.Join(root, "icebath_cli", "x.py")); got != "new" {
+	if got := ugRead(t, filepath.Join(root, "cmd", "icebath", "x.py")); got != "new" {
 		t.Fatalf("x.py = %q", got)
 	}
 	for rel, data := range outputs {
@@ -92,19 +92,19 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 	if got := ugRead(t, filepath.Join(root, "apps", "desktop", "dist", "index.html")); got != "shipped renderer" {
 		t.Fatalf("dist/index.html = %q", got)
 	}
-	if statExists(filepath.Join(root, "icebath_cli", "__pycache__")) {
+	if statExists(filepath.Join(root, "cmd", "icebath", "__pycache__")) {
 		t.Fatal("__pycache__ survived the swap")
 	}
 
 	for _, line := range []string{"!! apps/desktop/release/", "!! apps/desktop/dist/", "!! apps/desktop/node_modules/",
-		"!! apps/desktop/build/", "!! icebath_cli/web_dist/", "!! icebath_cli/__pycache__/",
+		"!! apps/desktop/build/", "!! cmd/icebath/web_dist/", "!! cmd/icebath/__pycache__/",
 		"!! __pycache__/", "!! ui-tui/dist/", "!! ui-tui/packages/hermes-ink/dist/",
 		"!! scripts/whatsapp-bridge/node_modules/", "!! web/node_modules/", "!! tests-js/node_modules/"} {
 		if !isZipPreservedEntryStatusLine(line, nil) {
 			t.Fatalf("not admitted: %s", line)
 		}
 	}
-	for _, line := range []string{"!! apps/desktop/notes.local", "?? apps/desktop/release/", "!! icebath_cli/web_dist_backup/",
+	for _, line := range []string{"!! apps/desktop/notes.local", "?? apps/desktop/release/", "!! cmd/icebath/web_dist_backup/",
 		"R  src/x -> apps/desktop/release/x"} {
 		if isZipPreservedEntryStatusLine(line, nil) {
 			t.Fatalf("admitted: %s", line)
@@ -126,17 +126,17 @@ func TestGuardAdmitsARealInstallsIgnoredSetAndBlocksOnlyWhatTheSwapDestroys(t *t
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), ignore, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, tracked := range []string{"apps/desktop/package.json", "icebath_cli/main.py", "scripts/whatsapp-bridge/index.js",
+	for _, tracked := range []string{"apps/desktop/package.json", "cmd/icebath/main.py", "scripts/whatsapp-bridge/index.js",
 		"ui-tui/package.json", "web/package.json", "tests-js/a.test.ts", "run_agent.py"} {
 		ugWrite(t, filepath.Join(root, filepath.FromSlash(tracked)), "src")
 	}
 	ugGit(t, root, "add", "-A")
 	ugGit(t, root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
 	for _, ignored := range []string{".bytecode-fingerprint", ".icebath-bootstrap-complete", ".install_method",
-		"icebath_agent.egg-info/PKG-INFO", "icebath_cli/__pycache__/main.pyc", "__pycache__/x.pyc",
+		"icebath_agent.egg-info/PKG-INFO", "cmd/icebath/__pycache__/main.pyc", "__pycache__/x.pyc",
 		"apps/desktop/release/win-unpacked/Hermes.exe", "apps/desktop/dist/index.html",
 		"apps/desktop/build/icon.ico", "apps/desktop/node_modules/electron/index.js",
-		"icebath_cli/web_dist/index.html", "ui-tui/dist/entry.js", "ui-tui/node_modules/x/index.js",
+		"cmd/icebath/web_dist/index.html", "ui-tui/dist/entry.js", "ui-tui/node_modules/x/index.js",
 		"ui-tui/packages/hermes-ink/dist/index.js", "web/node_modules/x/index.js",
 		"tests-js/node_modules/x/index.js", "scripts/whatsapp-bridge/node_modules/x/index.js",
 		"venv/lib.py", "node_modules/x/index.js", ".env"} {
@@ -150,7 +150,7 @@ func TestGuardAdmitsARealInstallsIgnoredSetAndBlocksOnlyWhatTheSwapDestroys(t *t
 	if uzBlocked(t, root, nil) {
 		t.Fatal("the guard refused an install that only carries ignored artifacts")
 	}
-	shipped := []string{"apps", "icebath_cli", "scripts", "ui-tui", "web", "tests-js", "run_agent.py"}
+	shipped := []string{"apps", "cmd", "scripts", "ui-tui", "web", "tests-js", "run_agent.py"}
 	if uzBlocked(t, root, uzSet(shipped...)) {
 		t.Fatal("the guard refused with the real shipped set")
 	}

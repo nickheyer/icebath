@@ -758,6 +758,24 @@ class HostRuntime:
         spec.loader.exec_module(module)
         return encode(getattr(module, "CONFIG_SCHEMA", None))
 
+    def op_load_hook(self, params: dict[str, Any]) -> Any:
+        """A gateway event hook's ``handler.py`` imported as ``icebath_hook_<name>``, replying its ``handle``."""
+        module_name = f"icebath_hook_{params['hook_name']}"
+        spec = importlib.util.spec_from_file_location(module_name, Path(str(params["path"])))
+        if spec is None or spec.loader is None:
+            return {"skip": "could not load handler.py"}
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        handle_fn = getattr(module, "handle", None)
+        if handle_fn is None:
+            return {"skip": "no 'handle' function found"}
+        return encode({"handle": handle_fn}, lambda obj: self.ref_for(module_name, obj, allow_objects=False))
+
     def op_obj_setattr(self, params: dict[str, Any]) -> None:
         obj = self.refs.get(int(params["ref"]))
         name = str(params["name"])
@@ -805,6 +823,7 @@ _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
     "evict_modules": HostRuntime.op_evict_modules,
     "release": HostRuntime.op_release, "event": HostRuntime.op_event, "config_schema": HostRuntime.op_config_schema,
+    "load_hook": HostRuntime.op_load_hook,
     "load_memory_entry_point": HostRuntime.op_load_memory_entry_point, "warm_import": HostRuntime.op_warm_import,
     "describe_memory_cli": HostRuntime.op_describe_memory_cli,
     "shutdown": HostRuntime.op_shutdown,

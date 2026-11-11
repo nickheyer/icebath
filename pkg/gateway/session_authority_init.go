@@ -12,7 +12,7 @@ import (
 
 // Runner that holds the session database of the profile it launched with
 type sessionDBRunner interface {
-	SessionDB() *state.SessionDB
+	SessionDB(ctx context.Context) *state.SessionDB
 }
 
 // Runner that takes the authority a launch reaches as its own
@@ -57,7 +57,7 @@ func InitializeSessionAuthority(ctx context.Context, runner AuthorityRunner, pro
 		if !ok {
 			return nil, fmt.Errorf("'%T' object has no attribute '_session_db'", runner)
 		}
-		db = holder.SessionDB()
+		db = holder.SessionDB(ctx)
 	}
 	dbKey, err := pypath.Resolve(db.Path())
 	if err != nil {

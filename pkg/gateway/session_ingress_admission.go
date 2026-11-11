@@ -242,16 +242,19 @@ func deliverResolved(ctx context.Context, a *SessionAuthority, admissionID strin
 }
 
 // Moves the turn's post delivery slot off its adapter onto the admission, a native waiter keeping its own
-func takePostDelivery(ctx context.Context, a *SessionAuthority, admissionID string, source *SessionSource, route string) {
+func takePostDelivery(ctx context.Context, a *SessionAuthority, admissionID string, source *SessionSource, route string) error {
 	a.mu.Lock()
 	native := a.nativeWaiters[admissionID]
 	a.mu.Unlock()
 	if source == nil || native {
-		return
+		return nil
 	}
-	adapter := a.Runner.AdapterForSource(ctx, source)
+	adapter, err := a.Runner.AdapterForSource(ctx, source)
+	if err != nil {
+		return err
+	}
 	if adapter == nil || adapter.Base() == nil {
-		return
+		return nil
 	}
 	base := adapter.Base()
 	base.mu.Lock()
@@ -259,11 +262,12 @@ func takePostDelivery(ctx context.Context, a *SessionAuthority, admissionID stri
 	delete(base.postDeliveryCallbacks, route)
 	base.mu.Unlock()
 	if !held {
-		return
+		return nil
 	}
 	a.mu.Lock()
 	lazyAttr(&a.postDeliveryTaken)[admissionID] = &postDeliveryTake{base: base, route: route, entry: entry}
 	a.mu.Unlock()
+	return nil
 }
 
 // Takes the post delivery slot an admission holds, nil when it holds none

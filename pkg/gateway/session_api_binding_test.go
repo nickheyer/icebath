@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -20,7 +21,7 @@ func newAPIOwner(t *testing.T) (context.Context, *SessionAuthority, *recoverTest
 	}
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	runner := &recoverTestRunner{store: store, adapters: map[Platform]PlatformAdapter{}, profiles: map[string]map[Platform]PlatformAdapter{}}
+	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "default", "first", db, epoch)
 	runner.launch = a
 	return ctx, a, runner

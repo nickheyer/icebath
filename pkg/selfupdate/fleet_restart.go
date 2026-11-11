@@ -44,15 +44,13 @@ var (
 	fleetFindProfileProcesses = func(ctx context.Context, exclude map[int]bool) ([]gatewaycli.ProfileGatewayProcess, error) {
 		return gatewaycli.FindProfileGatewayProcesses(ctx, exclude, false)
 	}
-	fleetPrepareProfileRestart = func(ctx context.Context, profile string, pid int) (string, bool) {
-		return prepareProfileGatewayUpdateRestart(ctx, profile, pid)
-	}
-	fleetWaitForGatewayExit = gateway.WaitForGatewayExit
-	fleetTerminatePid       = gateway.TerminatePid
-	fleetProcessStartTime   = gateway.GetProcessStartTime
-	fleetIsPidAncestor      = gateway.IsPidAncestorOfCurrentProcess
-	fleetRequestSelfRestart = gateway.RequestGatewaySelfRestart
-	fleetProbeLoopLiveness  = func(ctx context.Context, pid int) string {
+	fleetPrepareProfileRestart = gateway.PrepareProfileGatewayUpdateRestart
+	fleetWaitForGatewayExit    = gateway.WaitForGatewayExit
+	fleetTerminatePid          = gateway.TerminatePid
+	fleetProcessStartTime      = gateway.GetProcessStartTime
+	fleetIsPidAncestor         = gateway.IsPidAncestorOfCurrentProcess
+	fleetRequestSelfRestart    = gateway.RequestGatewaySelfRestart
+	fleetProbeLoopLiveness     = func(ctx context.Context, pid int) string {
 		return gateway.ProbeGatewayLoopLiveness(ctx, pid, gateway.LoopLivenessOptions{})
 	}
 	fleetEscalateWedged        = gateway.EscalateWedgedGateway
@@ -430,7 +428,10 @@ func restartManualGateways(ctx context.Context, w io.Writer, out *gatewayRestart
 	unrestartable := map[int]bool{}
 	for _, pid := range profileOrder {
 		proc := profileProcesses[pid]
-		restartMode, armed := fleetPrepareProfileRestart(ctx, proc.Profile, pid)
+		restartMode, armed, err := fleetPrepareProfileRestart(ctx, proc.Profile, pid)
+		if err != nil {
+			return err
+		}
 		if !armed {
 			fmt.Fprintf(w, "  ⚠ %s: could not arm an automatic gateway restart for PID %d — stopping it instead so it cannot keep running pre-update code\n", proc.Profile, pid)
 			unrestartable[pid] = true

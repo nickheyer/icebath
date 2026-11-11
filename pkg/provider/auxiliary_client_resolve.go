@@ -272,7 +272,7 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 // Vertex Gemini over the OpenAI compatible endpoint with a minted bearer, nil without GCP credentials
 func auxBuildVertexClient(ctx context.Context, provider, model string) (AuxClient, string) {
 	h := home.Dir(ctx)
-	env := vertexEnv{cfg: LoadConfigSafe(h), secrets: config.NewSecrets(h)}
+	env := vertexEnv{cfg: LoadConfigSafe(ctx, h), secrets: config.NewSecrets(h)}
 	if !hasVertexCredentials(ctx, env) {
 		slog.Debug("resolve_provider_client: vertex requested but no GCP credentials found")
 		return nil, ""

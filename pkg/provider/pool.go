@@ -77,6 +77,9 @@ func (env PoolEnv) ctx() context.Context {
 }
 
 func (env PoolEnv) config() map[string]any {
+	if frozen := FrozenRuntimeConfig(env.ctx()); frozen != nil {
+		return frozen
+	}
 	if env.Config == nil {
 		return nil
 	}

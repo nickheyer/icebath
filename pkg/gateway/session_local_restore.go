@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -38,8 +39,8 @@ type launchAuthorityRunner interface {
 
 // Runner holding the launch adapters and the live adapter map of each served secondary profile
 type adapterMapRunner interface {
-	Adapters() map[Platform]PlatformAdapter
-	ProfileAdapterMap(name string) map[Platform]PlatformAdapter
+	Adapters() *pydict.Dict[Platform, PlatformAdapter]
+	ProfileAdapterMap(name string) *pydict.Dict[Platform, PlatformAdapter]
 }
 
 var localAdapterMu sync.Mutex
@@ -61,7 +62,7 @@ func servedProfile(a *SessionAuthority) (string, bool) {
 }
 
 // Adapter map local sessions of the authority live in, the launch adapters or its served profile's own map
-func localAdapterMap(ctx context.Context, a *SessionAuthority) (map[Platform]PlatformAdapter, error) {
+func localAdapterMap(ctx context.Context, a *SessionAuthority) (*pydict.Dict[Platform, PlatformAdapter], error) {
 	runner, ok := a.Runner.(adapterMapRunner)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute 'adapters'", a.Runner)}
@@ -80,10 +81,10 @@ func localAdapter(ctx context.Context, a *SessionAuthority) (PlatformAdapter, er
 	}
 	localAdapterMu.Lock()
 	defer localAdapterMu.Unlock()
-	adapter, ok := adapters[PlatformLocal]
+	adapter, ok := adapters.Get(PlatformLocal)
 	if !ok || adapter == nil {
 		adapter = NewLocalSessionAdapter(a)
-		adapters[PlatformLocal] = adapter
+		adapters.Set(PlatformLocal, adapter)
 	}
 	return adapter, nil
 }

@@ -14,7 +14,7 @@ func runtimeRefusal(reason string) error { return NewRuntimeStoreError(reason, n
 
 // Canonical runtime JSON of a dict, sorted compact and non ASCII kept, invalid_params for anything else
 func runtimeJSON(value any) (string, error) {
-	if _, ok := value.(*pyjson.Object); !ok {
+	if obj, ok := value.(*pyjson.Object); !ok || obj == nil {
 		return "", runtimeRefusal("invalid_params")
 	}
 	text, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))

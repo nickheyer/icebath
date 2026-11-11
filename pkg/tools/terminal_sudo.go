@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,15 +16,29 @@ var sudoPasswordCache = struct {
 	byScope map[string]string
 }{byScope: map[string]string{}}
 
-// Cache scope of an interactive sudo password, the session key else the task else the process
-func sudoCacheScope(env *Env, sessionKey string) string {
+// Cache scope of an interactive sudo password, the session key else the executing worker else the asker
+func sudoCacheScope(ctx context.Context, env *Env, sessionKey string) string {
 	if sessionKey != "" {
 		return "session:" + sessionKey
 	}
-	if env != nil && env.Ask != nil {
-		return "asker:" + envIdentity(env)
+	if env == nil || env.Ask == nil {
+		return threadSudoScope(WorkerOf(ctx))
 	}
-	return "process"
+	return "asker:" + envIdentity(env)
+}
+
+// Sudo cache scope of one worker with no password callback, the thread scope of hermes
+func threadSudoScope(id WorkerID) string { return "thread:" + strconv.FormatInt(int64(id), 10) }
+
+// Drops the sudo password a reused worker cached under its thread scope
+func ForgetThreadSudoPassword(id WorkerID) { setCachedSudoPassword(threadSudoScope(id), "") }
+
+// Sudo password cached under the executing worker's thread scope, empty when none
+func ThreadSudoPassword(ctx context.Context) string { return cachedSudoPassword(threadSudoScope(WorkerOf(ctx))) }
+
+// Caches a sudo password under the executing worker's thread scope
+func SetThreadSudoPassword(ctx context.Context, password string) {
+	setCachedSudoPassword(threadSudoScope(WorkerOf(ctx)), password)
 }
 
 // Cached sudo password for the scope
@@ -421,7 +436,7 @@ func transformSudoCommand(ctx context.Context, env *Env, sessionKey, command str
 		return command, nil
 	}
 	configured, hasConfigured := env.Secrets.Get("SUDO_PASSWORD")
-	scope := sudoCacheScope(env, sessionKey)
+	scope := sudoCacheScope(ctx, env, sessionKey)
 	password := configured
 	if !hasConfigured {
 		password = cachedSudoPassword(scope)

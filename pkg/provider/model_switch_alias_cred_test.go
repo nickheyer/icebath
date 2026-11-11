@@ -293,5 +293,5 @@ func TestExplicitProviderAliasOwnership(t *testing.T) {
 
 func readConfigYAMLMap(t *testing.T, h string) map[string]any {
 	t.Helper()
-	return LoadConfigSafe(h)
+	return loadLiveConfigSafe(h)
 }

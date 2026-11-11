@@ -20,6 +20,8 @@ type cliCommandState struct {
 	// Heartbeat manager of the current session and whether its idle watchdog runs
 	heartbeatManager         *agent.HeartbeatManager
 	heartbeatWatchdogStarted bool
+	// Marks the next process command call as an internal re entry the user's metrics already counted
+	slashRedispatch bool
 	// Model switch staging of the current confirm and apply sequence
 	confirmedSwitchWarning  string
 	oneTurnSelectionContext *provider.SelectionContext
@@ -97,7 +99,7 @@ func (c *CLI) maybeResumeParkedGoal() {
 	}
 }
 
-// Fires a due loop wakeup while idle with nothing queued and no active unparked goal, rechecked at most every two seconds
+// Fires a due loop wakeup while idle with nothing queued and no unparked goal, checked every two seconds
 func (c *CLI) maybeFireLoopTick() {
 	mgr := c.getLoopManager()
 	if mgr == nil || !mgr.IsDue() {

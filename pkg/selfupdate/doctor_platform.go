@@ -568,9 +568,6 @@ var doctorMacosDesktopDR = func(ctx context.Context, app string) (string, bool) 
 // Reports the interpreter TCC anchor and installs it with fix, silent off macOS and for unmanaged interpreters
 func doctorCheckMacosTCCAnchor(ctx context.Context, d *Doctor, shouldFix bool) error {
 	return doctorWarnOnError(d.W, "macOS TCC anchor check failed", "", nil, func() error {
-		if doctorSysPlatform != "darwin" {
-			return nil
-		}
 		status, detail, err := macosTCCAnchorState(ctx, d.ProjectRoot)
 		if err != nil {
 			return err

@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // ToolsCommandHooks are the provider, setup wizard and MCP entry points the tools command reaches, each installed by its package
@@ -66,7 +67,7 @@ var (
 		cancel := def
 		return s.Con.CursesRadiolist(s.ctx(), question, items, def, cliui.RadiolistOptions{CancelReturns: &cancel})
 	}
-	toolsCommandStderr io.Writer = os.Stderr
+	toolsCommandStderr io.Writer = pysys.Stderr
 )
 
 // Single select menu with arrow keys, cancel keeping the default

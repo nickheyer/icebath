@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -20,8 +21,8 @@ const recoverSummary = state.SummaryPrefix + "\nearlier turns summarized"
 // Stand in runner with a real session store, a live adapter map and no cached agent
 type recoverTestRunner struct {
 	store    *SessionStore
-	adapters map[Platform]PlatformAdapter
-	profiles map[string]map[Platform]PlatformAdapter
+	adapters *pydict.Dict[Platform, PlatformAdapter]
+	profiles *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
 	registry authorityRegistry
 	launch   *SessionAuthority
 	draining bool
@@ -29,29 +30,33 @@ type recoverTestRunner struct {
 	restored func(entry *SessionEntry) *SessionSource
 }
 
-func (r *recoverTestRunner) SessionRuntimeDescriptor() map[string]any { return nil }
-func (r *recoverTestRunner) Draining() bool                           { return r.draining }
-func (r *recoverTestRunner) Running() bool                            { return true }
-func (r *recoverTestRunner) SessionStore() *SessionStore              { return r.store }
-func (r *recoverTestRunner) MultiplexProfiles() bool                  { return false }
-func (r *recoverTestRunner) SessionAuthorities() authorityRegistry    { return r.registry }
-func (r *recoverTestRunner) SessionAuthority() *SessionAuthority      { return r.launch }
-func (r *recoverTestRunner) EvictCachedAgent(route string)            { r.evicted = append(r.evicted, route) }
-func (r *recoverTestRunner) Adapters() map[Platform]PlatformAdapter   { return r.adapters }
-func (r *recoverTestRunner) AdapterForSource(ctx context.Context, source *SessionSource) PlatformAdapter {
-	return r.adapters[source.Platform]
+func (r *recoverTestRunner) SessionRuntimeDescriptor() map[string]any          { return nil }
+func (r *recoverTestRunner) Draining() bool                                    { return r.draining }
+func (r *recoverTestRunner) Running() bool                                     { return true }
+func (r *recoverTestRunner) SessionStore() *SessionStore                       { return r.store }
+func (r *recoverTestRunner) MultiplexProfiles() bool                           { return false }
+func (r *recoverTestRunner) SessionAuthorities() authorityRegistry             { return r.registry }
+func (r *recoverTestRunner) SessionAuthority() *SessionAuthority               { return r.launch }
+func (r *recoverTestRunner) EvictCachedAgent(route string)                     { r.evicted = append(r.evicted, route) }
+func (r *recoverTestRunner) Adapters() *pydict.Dict[Platform, PlatformAdapter] { return r.adapters }
+func (r *recoverTestRunner) AdapterForSource(ctx context.Context, source *SessionSource) (PlatformAdapter, error) {
+	adapter, _ := r.adapters.Get(source.Platform)
+	return adapter, nil
 }
-func (r *recoverTestRunner) AdaptersForProfile(profile *string) map[Platform]PlatformAdapter {
+func (r *recoverTestRunner) AdaptersForProfile(profile *string) *pydict.Dict[Platform, PlatformAdapter] {
 	if profile == nil {
 		return r.adapters
 	}
-	return r.profiles[*profile]
+	adapters, _ := r.profiles.Get(*profile)
+	return adapters
 }
-func (r *recoverTestRunner) ProfileAdapterMap(name string) map[Platform]PlatformAdapter {
-	if r.profiles[name] == nil {
-		r.profiles[name] = map[Platform]PlatformAdapter{}
+func (r *recoverTestRunner) ProfileAdapterMap(name string) *pydict.Dict[Platform, PlatformAdapter] {
+	if adapters, _ := r.profiles.Get(name); adapters != nil {
+		return adapters
 	}
-	return r.profiles[name]
+	adapters := pydict.New[Platform, PlatformAdapter]()
+	r.profiles.Set(name, adapters)
+	return adapters
 }
 func (r *recoverTestRunner) RestoredSource(ctx context.Context, entry *SessionEntry) *SessionSource {
 	if r.restored != nil {
@@ -75,7 +80,7 @@ func newRecoverAuthority(t *testing.T) (context.Context, *SessionAuthority, *rec
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: map[Platform]PlatformAdapter{}, profiles: map[string]map[Platform]PlatformAdapter{}}
+	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "fixture", "first", db, epoch)
 	runner.launch = a
 	return ctx, a, runner

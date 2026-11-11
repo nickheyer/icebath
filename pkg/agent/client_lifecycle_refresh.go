@@ -184,7 +184,7 @@ func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged boo
 	}
 	delete(a.clientKwargs, "ssl_verify")
 	delete(a.clientKwargs, "ssl_ca_cert")
-	cfg := provider.LoadConfigSafe(home.Dir(ctx))
+	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
 	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.CompatibleCustomProviders(cfg), cfg)
 	return a.applyClientHeadersForBaseURL(ctx, a.baseURL, !routeChanged)
 }
@@ -219,7 +219,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 		a.applyUserDefaultHeaders(ctx)
 	}
 	if a.apiMode != "anthropic_messages" && a.apiMode != "bedrock_converse" {
-		cfg := provider.LoadConfigSafe(home.Dir(ctx))
+		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
 		if extra := provider.CustomProviderExtraHeaders(baseURL, provider.CompatibleCustomProviders(cfg), cfg); len(extra) > 0 {
 			merged := stringHeaders(a.clientKwargs["default_headers"])
 			if merged == nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -455,7 +456,7 @@ type authorizationAdapterRunner interface {
 
 // Default profile adapter registry of a bare runner
 type adapterMapRunner interface {
-	Adapters() map[string]any
+	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
 }
 
 // Runner and the active profile's adapter of the in process gateway, nil adapter when none or the lookup fails
@@ -478,7 +479,11 @@ func liveAdapter(ctx context.Context, platform gateway.Platform, lookupFailedWar
 		if !ok {
 			panic(fmt.Sprintf("'%T' object has no attribute 'adapters'", runner))
 		}
-		return runner, registry.Adapters()[string(platform)]
+		live, _ := registry.Adapters().Get(platform)
+		if live == nil {
+			return runner, nil
+		}
+		return runner, live
 	}
 	return runner, resolve.AuthorizationAdapter(string(platform), profiles.GetActiveProfileName(ctx))
 }

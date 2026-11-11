@@ -84,7 +84,7 @@ var (
 	dashboardOpenBrowser           = provider.OpenBrowserURL
 	dashboardTypedArgv             = func() []string { return os.Args[1:] }
 	dashboardReexec                = reexecDashboard
-	dashboardBuildWebUI            = buildWebUI
+	dashboardBuildWebUI            = BuildWebUI
 	dashboardStartServer           = startDashboardServer
 	dashboardRequiresAuth          = shouldRequireDashboardAuth
 	dashboardKillStale             = KillStaleDashboardProcesses
@@ -430,7 +430,11 @@ func resolveDashboardWebDist(ctx context.Context, l DashboardLaunch, headless bo
 	case headless:
 		os.Setenv("ICEBATH_SERVE_HEADLESS", "1")
 	case !envSet && !skipBuild:
-		if !dashboardBuildWebUI(ctx, w, webDir, true) {
+		built, err := dashboardBuildWebUI(ctx, w, webDir, true)
+		if err != nil {
+			return err
+		}
+		if !built {
 			return &DashboardExit{Code: 1}
 		}
 	case skipBuild:
@@ -443,7 +447,9 @@ func resolveDashboardWebDist(ctx context.Context, l DashboardLaunch, headless bo
 			if recoverable {
 				fmt.Fprintf(w, "⚠ --skip-build was passed but no web dist found at: %s\n", distRoot)
 				fmt.Fprintln(w, "  Attempting one recovery build of the web UI...")
-				dashboardBuildWebUI(ctx, w, webDir, true)
+				if _, err := dashboardBuildWebUI(ctx, w, webDir, true); err != nil {
+					return err
+				}
 			}
 			if !hasIndex(distRoot) {
 				fmt.Fprintf(w, "✗ --skip-build was passed but no web dist found at: %s\n", distRoot)

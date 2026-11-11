@@ -144,12 +144,9 @@ func shebangEscapesRunningEnv(shebang string) bool {
 		}
 		interp = rest[0]
 	}
-	running, err := os.Executable()
-	if err != nil {
+	running := lde.executable()
+	if running == "" {
 		return true
-	}
-	if abs, err := filepath.Abs(running); err == nil {
-		running = abs
 	}
 	return strings.ToLower(pypath.PathParent(interp)) != strings.ToLower(filepath.Dir(running))
 }

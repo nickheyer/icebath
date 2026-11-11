@@ -402,7 +402,7 @@ func publishLocalPolicy(ctx context.Context, a *SessionAuthority, sessionID stri
 	if err != nil {
 		return err
 	}
-	adapter, held := adapters[PlatformLocal]
+	adapter, held := adapters.Get(PlatformLocal)
 	if !held {
 		return &pyKeyError{key: string(PlatformLocal)}
 	}

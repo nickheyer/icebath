@@ -222,7 +222,7 @@ func (c *authCLI) pluginArgs() []string {
 }
 
 func (c *authCLI) loadConfig() map[string]any {
-	cfg := LoadConfigSafe(envHome(c.env))
+	cfg := LoadConfigSafe(c.env.ctx(), envHome(c.env))
 	if cfg == nil {
 		return map[string]any{}
 	}

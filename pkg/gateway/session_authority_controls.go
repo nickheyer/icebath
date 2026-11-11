@@ -49,6 +49,11 @@ type interruptMessageOnly interface {
 	Interrupt(message string)
 }
 
+// Legacy interrupt taking no message, a managed worker's cooperative stop
+type interruptNoArgs interface {
+	Interrupt() error
+}
+
 // Hard stop of any agent value, falling back to the legacy interrupt and false when neither exists
 func requestHardInterrupt(agent any) bool {
 	if agent == nil {
@@ -66,6 +71,8 @@ func requestHardInterrupt(agent any) bool {
 		target.Interrupt("", "")
 	case interruptMessageOnly:
 		target.Interrupt("")
+	case interruptNoArgs:
+		_ = target.Interrupt()
 	default:
 		return false
 	}
@@ -540,7 +547,10 @@ func (a *SessionAuthority) PublishExecution(sessionID string, generation int64, 
 		return false, nil
 	}
 	delivered := live.EventStream.Publish(sessionID, payload, eventType, nil)
-	observed := publishAPIEvent(a, sessionID, eventType, payload)
+	observed, err := publishAPIEvent(a, sessionID, eventType, payload)
+	if err != nil {
+		return false, err
+	}
 	return delivered || observed, nil
 }
 

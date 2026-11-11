@@ -332,7 +332,7 @@ func CacheTTLMeansDisabled(ttl any) bool {
 
 // Raw prompt_caching cache_ttl of the bound home config, the default when the config cannot be read
 func rawCacheTTLFromConfig(ctx context.Context, def any) any {
-	cfg := LoadConfigSafe(home.Dir(ctx))
+	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
 	if cfg == nil {
 		return def
 	}
@@ -409,7 +409,7 @@ func directNativeAnthropicToolCacheCapability(agent *CachePolicyAgent, dest Cach
 
 // Cache policy of the MoA preset aggregator slot, false false when it cannot be resolved
 func moaAggregatorCachePolicy(ctx context.Context, agent *CachePolicyAgent, effModel string) (bool, bool) {
-	cfg := LoadConfigSafe(home.Dir(ctx))
+	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
 	if cfg == nil {
 		return false, false
 	}
@@ -509,7 +509,7 @@ func anthropicPromptCachePolicy(ctx context.Context, agent *CachePolicyAgent, de
 	if supportsCacheMarkers && (isAnthropicWire || litellmOpenAIWire || routeMayBeCustom(ctx, agent, effProvider, providerLower, effBaseURL)) {
 		var cfg map[string]any
 		if agent.CustomProviders == nil {
-			cfg = LoadConfigSafe(home.Dir(ctx))
+			cfg = LoadConfigSafe(ctx, home.Dir(ctx))
 		}
 		if cfg != nil || agent.CustomProviders != nil {
 			if value, known := cachePolicyCapabilityLookup(effModel, effBaseURL, "prompt_caching", agent.CustomProviders, cfg); known {

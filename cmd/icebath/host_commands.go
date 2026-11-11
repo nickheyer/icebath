@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
@@ -200,7 +201,7 @@ func connectorsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command,
 }
 
 func consoleGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return app.RunConsoleREPL(ctx), nil
+	return app.RunConsoleREPL(ctx, app.ConsoleREPLOptions{})
 }
 
 func curatorGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -461,7 +462,9 @@ func cmdResume(ctx context.Context, cmd *cobra.Command, args []string) (int, err
 }
 
 func slackGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdSlack(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	ns := namespace(cli, cmd, path, args)
+	ns["slack_command"] = nilWhenEmpty(secondWord(path))
+	return slack.CmdSlack(ctx, ns, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func statusGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -475,27 +478,7 @@ func toolsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 }
 
 func uninstallGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	ns := namespace(cli, cmd, path, args)
-	if nsBool(ns, "gui_summary") {
-		return app.PrintGUIInstallSummary(ctx, cmd.OutOrStdout())
-	}
-	prompting := !nsBool(ns, "yes") && !nsBool(ns, "dry_run")
-	switch {
-	case nsBool(ns, "data"):
-		if prompting {
-			requireTTY("uninstall --data")
-		}
-		return selfupdate.RunDataUninstall(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
-	case nsBool(ns, "gui"):
-		if prompting {
-			requireTTY("uninstall --gui")
-		}
-		return app.RunGUIUninstall(ctx, ns, cmd.OutOrStdout())
-	}
-	if prompting {
-		requireTTY("uninstall")
-	}
-	return selfupdate.RunUninstall(ctx, home.Dir(ctx), ns, cmd.OutOrStdout())
+	return app.CmdUninstall(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout(), requireTTY)
 }
 
 func updateGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
@@ -568,7 +551,7 @@ func verifyGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, pat
 }
 
 func webappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdWebapp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return gateway.CmdWebapp(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), explicitCLIProfile, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func whatsappGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

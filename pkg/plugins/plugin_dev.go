@@ -387,9 +387,10 @@ func ResolvePluginPath(ctx context.Context, target string) (string, error) {
 	var candidates []string
 	if isDoctorPluginID(raw) {
 		candidates = append(candidates, filepath.Join(home.Dir(ctx), "plugins", raw))
-		bundled := GetBundledPluginsDir()
-		candidates = append(candidates, filepath.Join(bundled, raw), filepath.Join(bundled, "platforms", raw),
-			filepath.Join(bundled, "model-providers", raw))
+		if bundled := bundledOverrideDir(); bundled != "" {
+			candidates = append(candidates, filepath.Join(bundled, raw), filepath.Join(bundled, "platforms", raw),
+				filepath.Join(bundled, "model-providers", raw))
+		}
 		if cwd, err := os.Getwd(); err == nil {
 			candidates = append(candidates, filepath.Join(cwd, ".icebath", "plugins", raw))
 		}

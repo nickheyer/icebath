@@ -72,7 +72,15 @@ func (r paRunner) ParsePlatform(v string) (string, error) {
 	}
 	return "", fmt.Errorf("%q is not a valid Platform", v)
 }
-func (r paRunner) Adapters() map[string]any { return r.adapters }
+
+// Default profile registry lookup of the fake runner, the runner.adapters.get the case reads
+func paAdapterByValue(runner any, value string) (any, bool) {
+	r, ok := runner.(paRunner)
+	if !ok {
+		return nil, false
+	}
+	return r.adapters[value], true
+}
 
 // Runner with the fail closed profile ladder, the default profile reading the default adapters
 type paMultiplexRunner struct {
@@ -97,9 +105,10 @@ func paSetup(t *testing.T, cfg string, runner PlatformActionRunner) context.Cont
 	t.Setenv("HOME", root)
 	h := filepath.Join(root, ".icebath")
 	memWrite(t, filepath.Join(h, "config.yaml"), cfg)
-	previous := installedServices()
+	previous, previousLookup := installedServices(), RunnerAdapterByValue
 	InstallServices(&Services{GatewayRunnerRef: func() PlatformActionRunner { return runner }})
-	t.Cleanup(func() { InstallServices(previous) })
+	RunnerAdapterByValue = paAdapterByValue
+	t.Cleanup(func() { InstallServices(previous); RunnerAdapterByValue = previousLookup })
 	return home.WithOverride(context.Background(), h)
 }
 

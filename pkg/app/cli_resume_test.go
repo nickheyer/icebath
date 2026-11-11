@@ -34,7 +34,7 @@ func resumeTestDB(t *testing.T, rows ...state.NewSession) *state.SessionDB {
 }
 
 // CLI the way resume paths see it, on the ambient openrouter route
-func restoreStub() *CLI {
+func restoreStandIn() *CLI {
 	c := bareCLI()
 	c.model, c.provider, c.requestedProvider = "ambient-model", "openrouter", "openrouter"
 	c.baseURL, c.apiKey = "https://openrouter.ai/api/v1", "ambient-key"
@@ -55,7 +55,7 @@ func restoreRow(model any, modelConfig map[string]any) map[string]any {
 func TestRestoreSessionModelRestoresModelAndProvider(t *testing.T) {
 	resumeTestDB(t)
 	recordPrints(t)
-	c := restoreStub()
+	c := restoreStandIn()
 	c.restoreSessionModel(restoreRow("glm-4.7", map[string]any{"gateway_runtime": map[string]any{"provider": "custom:feather", "base_url": "https://f/v1"}}), false)
 	if c.model != "glm-4.7" || c.provider != "custom:feather" || c.requestedProvider != "custom:feather" || c.baseURL != "https://f/v1" {
 		t.Fatalf("route %q %q %q %q", c.model, c.provider, c.requestedProvider, c.baseURL)
@@ -66,7 +66,7 @@ func TestRestoreSessionModelRestoresModelAndProvider(t *testing.T) {
 }
 
 func TestRestoreSessionModelExplicitCliFlagWins(t *testing.T) {
-	c := restoreStub()
+	c := restoreStandIn()
 	c.model, c.explicitModelOverride = "cli-flag-model", true
 	c.restoreSessionModel(restoreRow("glm-4.7", nil), false)
 	if c.model != "cli-flag-model" || c.provider != "openrouter" {
@@ -75,7 +75,7 @@ func TestRestoreSessionModelExplicitCliFlagWins(t *testing.T) {
 }
 
 func TestRestoreSessionModelNoStoredModelIsNoop(t *testing.T) {
-	c := restoreStub()
+	c := restoreStandIn()
 	c.restoreSessionModel(restoreRow(nil, nil), false)
 	if c.model != "ambient-model" {
 		t.Fatalf("model %q", c.model)
@@ -84,7 +84,7 @@ func TestRestoreSessionModelNoStoredModelIsNoop(t *testing.T) {
 
 func TestRestoreSessionModelMatchingStateIsSilentNoop(t *testing.T) {
 	rec := recordPrints(t)
-	c := restoreStub()
+	c := restoreStandIn()
 	c.model, c.provider, c.requestedProvider = "glm-4.7", "custom:feather", "custom:feather"
 	c.restoreSessionModel(restoreRow("glm-4.7", map[string]any{"gateway_runtime": map[string]any{"provider": "custom:feather"}}), false)
 	if out := strings.Join(rec.plain(), "\n"); out != "" {
@@ -109,7 +109,7 @@ func storedModelConfig(t *testing.T, db *state.SessionDB, sessionID string) (*py
 
 func TestPersistModelSwitchWritesModelAndBothRouteShapes(t *testing.T) {
 	db := resumeTestDB(t, state.NewSession{ID: "s1", Model: "m0"})
-	c := restoreStub()
+	c := restoreStandIn()
 	c.sessionDB, c.sessionID = db, "s1"
 	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
 	meta, cfg := storedModelConfig(t, db, "s1")
@@ -137,7 +137,7 @@ func TestPersistModelSwitchWritesModelAndBothRouteShapes(t *testing.T) {
 
 func TestPersistModelSwitchClearsStaleRouteKeys(t *testing.T) {
 	db := resumeTestDB(t, state.NewSession{ID: "stale1", Model: "m0"})
-	c := restoreStub()
+	c := restoreStandIn()
 	c.sessionDB, c.sessionID = db, "stale1"
 	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "claude-x", TargetProvider: "custom:feather", BaseURL: "https://feather/v1", APIMode: "anthropic_messages"})
 	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "gpt-5.4", TargetProvider: "openrouter", BaseURL: "https://openrouter.ai/api/v1"})

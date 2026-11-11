@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -59,7 +60,7 @@ var (
 	shellHookProcessAccept    atomic.Bool
 	shellHookSkipLogged                 = map[[3]string]bool{}
 	shellHookStdinIsTTY                 = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
-	shellHookStdout           io.Writer = os.Stdout
+	shellHookStdout           io.Writer = pysys.Stdout
 	shellHookStdinReader      *bufio.Reader
 	shellHookAtomicWrite      = config.AtomicJSONWriteMode
 	shellHookReadLine         = func() (string, error) {

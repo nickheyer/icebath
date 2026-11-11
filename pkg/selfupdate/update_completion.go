@@ -35,17 +35,27 @@ const completionInstallBeforeLock = "--install-before-lock"
 
 // Steps of the completion process, the host behaviour unless a hermes test replaces them
 var (
-	completionBinary       = pm.ResolveInstallBinary
-	completionStdoutTTY    = func() bool { return fileIsTTY(os.Stdout) }
-	completionCompleteTail = CompleteSourceCheckout
-	completionSweep        = sweepBytecodeAfterUpdate
-	completionSkipReason   = fleetRestartSkipReason
-	completionPendingFleet = func(ctx context.Context) (bool, error) { return pendingFleetRestartNeeded(ctx, nil, nil, false) }
-	completionRestartFleet = restartGatewayFleetAfterUpdate
-	completionMergeResume  = resumeWindowsGatewaysAndMergeOutcome
-	completionVerifyFleet  = verifyFleetAfterUpdate
-	completionResume       = resumeWindowsGatewaysAfterUpdate
-	completionSyncVenv     = pm.SyncVenv
+	completionBinary          = pm.ResolveInstallBinary
+	completionStdoutTTY       = func() bool { return fileIsTTY(os.Stdout) }
+	completionCompleteTail    = CompleteSourceCheckout
+	completionSweep           = sweepBytecodeAfterUpdate
+	completionSkipReason      = fleetRestartSkipReason
+	completionPendingFleet    = func(ctx context.Context) (bool, error) { return pendingFleetRestartNeeded(ctx, nil, nil, false) }
+	completionRestartFleet    = restartGatewayFleetAfterUpdate
+	completionMergeResume     = resumeWindowsGatewaysAndMergeOutcome
+	completionVerifyFleet     = verifyFleetAfterUpdate
+	completionResume          = resumeWindowsGatewaysAfterUpdate
+	completionSyncVenv        = pm.SyncVenv
+	completionPlatform        = runtime.GOOS
+	completionJoinCheckout    = updaterecord.AcquireCheckout
+	completionArm             = ArmCompletion
+	completionEnsureTools     = pm.EnsureToolsForSync
+	completionCollect         = pm.CollectSupersededGenerations
+	completionWorkerScope     = pm.WorkerContext
+	completionLastReceipt     = pm.LastForUpdate
+	completionActivation      = pm.ActivationEnvironment
+	completionRunPrepared     = func(child *exec.Cmd) error { return child.Run() }
+	completionTerminalReceipt = readTerminalReceipt
 )
 
 // Writes JSON through a sibling with a tmp suffix and replaces the target
@@ -441,7 +451,7 @@ func reportDesktopBuildOwed(w io.Writer, request map[string]any, record *pyjson.
 // Settles a committed run whose completion never answered as owed work, the result the caller adopts
 func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]any, reason string) (map[string]any, error) {
 	fmt.Fprintf(w, "  ⚠ Source update completion did not finish: %s\n", reason)
-	receipt, err := readTerminalReceipt(ctx, request)
+	receipt, err := completionTerminalReceipt(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +480,7 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 			code = 1
 		}
 		updaterecord.FinalizePendingUpdateReceipt(ctx, &code, "completion owed after the code was updated")
-		if receipt, err = readTerminalReceipt(ctx, request); err != nil {
+		if receipt, err = completionTerminalReceipt(ctx, request); err != nil {
 			return nil, err
 		}
 	}
@@ -501,13 +511,13 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 	if !present {
 		return 0, errors.New(pyKeyErrorText("source"))
 	}
-	if _, err := ArmCompletion(ctx, pyrepr.Str(source)); err != nil {
+	if _, err := completionArm(ctx, pyrepr.Str(source)); err != nil {
 		if !pypath.IsOSError(err) {
 			return 0, err
 		}
 		fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
 	}
-	receipt, err := readTerminalReceipt(ctx, request)
+	receipt, err := completionTerminalReceipt(ctx, request)
 	if err != nil {
 		return 0, err
 	}
@@ -539,7 +549,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 		}
 		zero := 0
 		updaterecord.FinalizePendingUpdateReceipt(ctx, &zero, step+" owed after the code was updated")
-		if receipt, err = readTerminalReceipt(ctx, request); err != nil {
+		if receipt, err = completionTerminalReceipt(ctx, request); err != nil {
 			return 0, err
 		}
 	}
@@ -568,8 +578,8 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 	if err != nil {
 		return 0, err
 	}
-	if runtime.GOOS == "windows" {
-		refused, err := updaterecord.AcquireCheckout(root)
+	if completionPlatform == "windows" {
+		refused, err := completionJoinCheckout(root)
 		if err != nil {
 			return 0, err
 		}
@@ -581,16 +591,16 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 			return 0, runtimeErr("could not join the update's checkout lock (" + why + ")")
 		}
 	}
-	if _, err := ArmCompletion(ctx, root); err != nil {
+	if _, err := completionArm(ctx, root); err != nil {
 		return 0, err
 	}
 	tools.ConvertTreelessCheckoutFirst(ctx, root)
 	err = func() error {
-		leave := pm.WorkerContext(ctx, &updateID)
+		leave := completionWorkerScope(ctx, &updateID)
 		defer leave()
 		defer func() {
 			var last any
-			if receipt := pm.LastForUpdate(ctx, updateID, false); receipt != nil {
+			if receipt := completionLastReceipt(ctx, updateID, false); receipt != nil {
 				last = receipt
 			}
 			request["pm_receipt"] = last
@@ -598,13 +608,13 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 				err = werr
 			}
 		}()
-		if err := pm.EnsureToolsForSync(ctx); err != nil {
+		if err := completionEnsureTools(ctx); err != nil {
 			return err
 		}
 		if err := completionSyncVenv(ctx, pm.SyncVenvOptions{Explicit: true, ProjectRoot: root, EvictIncompatiblePlugins: true}); err != nil {
 			return err
 		}
-		return pm.CollectSupersededGenerations(ctx, root)
+		return completionCollect(ctx, root)
 	}()
 	if err != nil {
 		return 0, err
@@ -613,14 +623,14 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 	if binary == "" {
 		return 0, &exec.Error{Name: filepath.Join(root, "icebath"), Err: os.ErrNotExist}
 	}
-	env, err := pm.ActivationEnvironment(ctx, root)
+	env, err := completionActivation(ctx, root)
 	if err != nil {
 		return 0, err
 	}
 	child := exec.Command(binary, UpdateCompletionEntry, requestPath, resultPath, "--prepared")
 	child.Dir, child.Env = root, env
 	child.Stdin, child.Stdout, child.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if runtime.GOOS != "windows" {
+	if completionPlatform != "windows" {
 		files, err := updaterecord.CheckoutLockFiles(root)
 		if err != nil {
 			return 0, err
@@ -628,7 +638,7 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 		child.ExtraFiles = files
 	}
 	code := 0
-	if err := child.Run(); err != nil {
+	if err := completionRunPrepared(child); err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) {
 			return 0, err
@@ -834,7 +844,7 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 		}
 	}
 	updaterecord.FinalizePendingUpdateReceipt(ctx, &code, reason)
-	terminal, err := readTerminalReceipt(ctx, request)
+	terminal, err := completionTerminalReceipt(ctx, request)
 	if err != nil {
 		return 0, err
 	}
@@ -871,7 +881,7 @@ func bootstrapCompletion(ctx context.Context, w io.Writer, request map[string]an
 		}
 		updaterecord.ResumeReceipt(ctx, receipt)
 		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "KeyboardInterrupt: interrupted while installing dependencies", 130)
-		terminal, err := readTerminalReceipt(ctx, request)
+		terminal, err := completionTerminalReceipt(ctx, request)
 		if err != nil {
 			return 0, err
 		}

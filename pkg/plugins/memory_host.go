@@ -168,12 +168,16 @@ func WarmMemoryProviderImport(ctx context.Context, name, providerDir, moduleName
 	if err == nil {
 		_, err = host.ensureStarted(ctx)
 	}
+	var root string
+	if err == nil {
+		root, err = hostPluginsRoot()
+	}
 	if err != nil {
 		logDebug(fmt.Sprintf("memory provider '%s' warm-up import failed: %v", name, err))
 		return false
 	}
 	params := map[string]any{"name": name, "path": providerDir, "module_name": moduleName, "parents": providerModuleParents,
-		"plugins_root": GetBundledPluginsDir(), "synthetic_namespace": nil, "native_warm": anyList(nativeWarm)}
+		"plugins_root": root, "synthetic_namespace": nil, "native_warm": anyList(nativeWarm)}
 	if providerDir != "" && !bundledMemoryProviderDir(providerDir) {
 		params["synthetic_namespace"] = UserMemoryNamespace
 	}

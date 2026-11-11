@@ -16,11 +16,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Streams the facade prompts read from and its plain output is printed to
 var (
-	FacadeStdout io.Writer = os.Stdout
+	FacadeStdout io.Writer = pysys.Stdout
 	FacadeStdin  io.Reader = os.Stdin
 )
 

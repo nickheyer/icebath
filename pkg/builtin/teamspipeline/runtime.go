@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/teams"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -25,7 +26,7 @@ type PipelineRuntime interface {
 // Gateway runner surface the binding reads and writes, its config, live adapters and bound runtime slot
 type GatewayRuntimeHost interface {
 	RunnerConfig() *gateway.GatewayConfig
-	Adapters() map[gateway.Platform]gateway.PlatformAdapter
+	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
 	TeamsPipelineRuntime() any
 	SetTeamsPipelineRuntime(runtime any)
 	SetTeamsPipelineRuntimeError(message *string)
@@ -60,11 +61,24 @@ var (
 		return func(platformConfig *gateway.PlatformConfig) SummarySink {
 			writer := teams.NewTeamsSummaryWriter(platformConfig, nil, nil)
 			return SinkFn(func(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
-				return writer.WriteSummary(ctx, payload, config, existingRecord)
+				return writer.WriteSummary(ctx, teamsSummaryContent(payload), config, existingRecord)
 			})
 		}, nil
 	}
 )
+
+// Fields of a summary payload the Teams writer renders, a nil payload or meeting reference reading as absent
+func teamsSummaryContent(payload *TeamsMeetingSummaryPayload) teams.SummaryPayload {
+	if payload == nil {
+		return teams.SummaryPayload{}
+	}
+	content := teams.SummaryPayload{Title: payload.Title, Summary: payload.Summary, KeyDecisions: payload.KeyDecisions,
+		ActionItems: payload.ActionItems, Risks: payload.Risks}
+	if payload.MeetingRef != nil {
+		content.MeetingID = payload.MeetingRef.MeetingID
+	}
+	return content
+}
 
 // Whether the delivery mode has its target, a webhook URL or a chat or team channel pair
 func teamsDeliveryIsConfigured(teamsExtra map[string]any, teamsDelivery *pyjson.Object) bool {
@@ -166,7 +180,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 
 // Attaches the pipeline to the msgraph webhook adapter, true when bound and false without an adapter or runtime
 func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, error) {
-	adapter := host.Adapters()[gateway.PlatformMSGraphWebhook]
+	adapter, _ := host.Adapters().Get(gateway.PlatformMSGraphWebhook)
 	if adapter == nil {
 		return false, nil
 	}

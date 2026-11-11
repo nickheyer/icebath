@@ -24,6 +24,7 @@ func init() {
 	provider.GatewayHooks.ServesHome = providerServesHome
 	tools.RegisteredAdapterSecretEnv = registeredAdapterSecretEnv
 	tools.RegisteredPlatformNames = registeredPlatformNames
+	tools.BundledPlatformNames = bundledPlatformNamesAndAliases
 }
 
 // Whether a live gateway serves home by the uncached ladder scoped to it, false on any error

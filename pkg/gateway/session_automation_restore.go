@@ -52,7 +52,12 @@ func checkAutomationRoute(ctx context.Context, runner AuthorityRunner, payload *
 	if err != nil {
 		return nil, "", err
 	}
-	if key != entry.SessionKey || adapter == nil || runner.AdapterForSource(ctx, event.Source) != adapter {
+	if key != entry.SessionKey || adapter == nil {
+		return nil, "", runtimeRefusal("admission_conflict")
+	}
+	if owner, err := runner.AdapterForSource(ctx, event.Source); err != nil {
+		return nil, "", err
+	} else if owner != adapter {
 		return nil, "", runtimeRefusal("admission_conflict")
 	}
 	return event.Source, entry.SessionKey, nil

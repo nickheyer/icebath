@@ -11,9 +11,12 @@ import (
 	"unicode"
 )
 
+// Characters Python str.isspace and the re module whitespace class accept
+const ptPyWhitespace = `\t\n\v\f\r\x{1c}-\x{1f}\x{85}\p{Z}`
+
 var (
-	ptFindWordRe    = regexp.MustCompile(`([a-zA-Z0-9_]+|[^a-zA-Z0-9_\s]+)`)
-	ptFindBigWordRe = regexp.MustCompile(`([^\s]+)`)
+	ptFindWordRe    = regexp.MustCompile(`([a-zA-Z0-9_]+|[^a-zA-Z0-9_` + ptPyWhitespace + `]+)`)
+	ptFindBigWordRe = regexp.MustCompile(`([^` + ptPyWhitespace + `]+)`)
 	ptQuotedWordsRe = regexp.MustCompile(`(\s+|".*?"|'.*?')`)
 )
 
@@ -25,11 +28,13 @@ type ptDocument struct {
 	runes     []rune
 	cursor    int
 	selection *ptSelection
+	vi        bool
 }
 
 // ptSelection marks where a selection started and whether shift movement drives it
 type ptSelection struct {
 	original  int
+	typ       ptSelectionType
 	shiftMode bool
 }
 
@@ -438,24 +443,30 @@ func (h *ptFileHistory) appendString(s string) {
 
 // ptClipboard is the kill ring shared by the editing commands
 type ptClipboard struct {
-	ring []string
+	ring []ptClipboardData
 }
 
-// Pushes text as the newest kill, the ring capped at sixty entries
-func (c *ptClipboard) setText(text string) {
-	c.ring = append([]string{text}, c.ring...)
+// Pushes an entry as the newest kill, the ring capped at sixty entries
+func (c *ptClipboard) setData(data ptClipboardData) {
+	c.ring = append([]ptClipboardData{data}, c.ring...)
 	if len(c.ring) > 60 {
 		c.ring = c.ring[:60]
 	}
 }
 
-// Newest kill, empty when the ring is empty
-func (c *ptClipboard) text() string {
+// Pushes text as the newest character kill
+func (c *ptClipboard) setText(text string) { c.setData(ptClipboardData{text: text}) }
+
+// Newest kill, an empty character entry when the ring is empty
+func (c *ptClipboard) getData() ptClipboardData {
 	if len(c.ring) == 0 {
-		return ""
+		return ptClipboardData{}
 	}
 	return c.ring[0]
 }
+
+// Text of the newest kill
+func (c *ptClipboard) text() string { return c.getData().text }
 
 // Moves the newest kill to the back of the ring
 func (c *ptClipboard) rotate() {
@@ -499,6 +510,10 @@ type ptBuffer struct {
 	onChange            func()
 	spawn               func(work func() func())
 	tempfileSuffix      string
+	editingVi           func() bool
+	multipleCursors     []int
+	acceptHandler       func(b *ptBuffer) bool
+	multiline           bool
 	completeGen         int
 	suggestGen          int
 }
@@ -508,7 +523,7 @@ func newPTBuffer(history ptHistory) *ptBuffer {
 	if history == nil {
 		history = &ptInMemoryHistory{}
 	}
-	b := &ptBuffer{history: history}
+	b := &ptBuffer{history: history, multiline: true}
 	b.reset(false)
 	return b
 }
@@ -520,6 +535,7 @@ func (b *ptBuffer) text() string { return b.workingLines[b.workingIndex] }
 func (b *ptBuffer) document() ptDocument {
 	d := newPTDocument(b.text(), b.cursor)
 	d.selection = b.selection
+	d.vi = b.editingVi != nil && b.editingVi()
 	return d
 }
 
@@ -533,7 +549,7 @@ func (b *ptBuffer) reset(appendToHistory bool) {
 	}
 	b.cursor = 0
 	b.selection, b.preferredColumn, b.completeState, b.yankNthArgState = nil, nil, nil, nil
-	b.documentBeforePaste, b.suggestion = nil, nil
+	b.documentBeforePaste, b.suggestion, b.multipleCursors = nil, nil, nil
 	b.undoStack, b.redoStack = nil, nil
 	b.workingLines = append(b.history.strings(), "")
 	b.workingIndex = len(b.workingLines) - 1
@@ -1074,37 +1090,38 @@ func (b *ptBuffer) newline(copyMargin bool) {
 	b.insertText("\n", false, true, true)
 }
 
-// Starts a character selection at the cursor
-func (b *ptBuffer) startSelection() { b.selection = &ptSelection{original: b.cursor}; b.changed() }
+// Starts a selection of the given kind at the cursor
+func (b *ptBuffer) startSelection(typ ptSelectionType) {
+	b.selection = &ptSelection{original: b.cursor, typ: typ}
+	b.changed()
+}
 
 // Ends the selection keeping the text
 func (b *ptBuffer) exitSelection() { b.selection = nil; b.changed() }
 
-// Copies the selected text, removing it when cut is set
-func (b *ptBuffer) copySelection(cut bool) string {
-	if b.selection == nil {
-		return ""
-	}
-	from, to := b.document().selectionRange()
-	r := []rune(b.text())
-	data := string(r[from:to])
+// Clipboard entry of the selection, the selection removed from the text when cut is set
+func (b *ptBuffer) copySelection(cut bool) ptClipboardData {
+	newDocument, data := b.document().cutSelection()
 	if cut {
-		_ = b.setDocument(string(r[:from])+string(r[to:]), from, false)
+		if err := b.setDocument(newDocument.text(), newDocument.cursor, false); err != nil {
+			panic(ptEditReadOnly{})
+		}
 	}
 	b.selection = nil
 	b.changed()
 	return data
 }
 
-// Removes the selected text and returns it
-func (b *ptBuffer) cutSelection() string { return b.copySelection(true) }
+// Removes the selection and returns it as a clipboard entry
+func (b *ptBuffer) cutSelection() ptClipboardData { return b.copySelection(true) }
 
-// Inserts clipboard text count times at the cursor, remembering the document for a yank pop
-func (b *ptBuffer) pasteClipboardData(data string, count int) {
+// Pastes a clipboard entry count times in the given mode, remembering the document for a yank pop
+func (b *ptBuffer) pasteClipboardData(data ptClipboardData, mode ptPasteMode, count int) {
 	original := b.document()
-	repeated := strings.Repeat(data, max(count, 0))
-	text := original.textBeforeCursor() + repeated + original.textAfterCursor()
-	_ = b.setDocument(text, original.cursor+len([]rune(repeated)), false)
+	pasted := original.pasteClipboardData(data, mode, count)
+	if err := b.setDocument(pasted.text(), pasted.cursor, false); err != nil {
+		panic(ptEditReadOnly{})
+	}
 	b.documentBeforePaste = &original
 }
 

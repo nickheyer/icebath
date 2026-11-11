@@ -5,76 +5,87 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Every model block key bound to one endpoint, dropped together when the route changes
+// Every model key that belongs to one endpoint, all dropped together on a route change
 var RouteBoundKeys = []string{"provider", "base_url", "api_mode", "context_length",
 	"api_key", "api", "api_key_from", "key_env", "api_key_env"}
 
-// Configured providers or custom_providers entry a name selects, without reading its credentials
-func routeNamedEntry(ctx context.Context, name string, cfg map[string]any) map[string]any {
-	return provider.NamedCustomProviderEntry(ctx, name, cfg)
+// Text of a config value as str(value or "") spells it
+func routeStr(value any) string {
+	if !pyrepr.Truthy(value) {
+		return ""
+	}
+	return pyrepr.Str(value)
 }
 
-// Canonical registry provider of a name, its normalized spelling when no registry provider matches
+// Configured named endpoint entry a provider name selects in config without credentials, nil when none matches
+func routeNamedEntry(ctx context.Context, name string, config map[string]any) map[string]any {
+	return provider.NamedCustomProviderEntry(ctx, name, config)
+}
+
+// Canonical provider identity of a name, its normalized spelling when no registry provider answers it
 func routeCanonical(ctx context.Context, name string) (string, error) {
 	canonical := provider.NormalizeProvider(name)
-	h := home.Dir(ctx)
-	env := provider.PoolEnv{Store: provider.NewStore(h), Secrets: config.NewSecrets(h), Config: provider.ConfigLoader(h), Ctx: ctx}
+	env := provider.HomePoolEnv(home.Dir(ctx))
+	env.Ctx = ctx
 	resolved, err := provider.ResolveAuthProvider(env, canonical)
 	var authErr *provider.AuthError
 	if errors.As(err, &authErr) {
 		return canonical, nil
 	}
-	return resolved, err
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
-// Bare config key of the configured entry behind a custom identity, empty for any other identity
-func ConfiguredEntryKey(ctx context.Context, identity string, cfg map[string]any) string {
-	identity = strings.ToLower(strings.TrimSpace(identity))
-	if !strings.HasPrefix(identity, "custom:") || len(routeNamedEntry(ctx, identity, cfg)) == 0 {
+// Bare config key of the configured entry behind a custom identity, empty for anything else
+func ConfiguredEntryKey(ctx context.Context, identity string, config map[string]any) string {
+	identity = pystr.Lower(pystr.Strip(identity))
+	if !strings.HasPrefix(identity, "custom:") || len(routeNamedEntry(ctx, identity, config)) == 0 {
 		return ""
 	}
-	return strings.TrimSpace(strings.SplitN(identity, ":", 2)[1])
+	_, key, _ := strings.Cut(identity, ":")
+	return pystr.Strip(key)
 }
 
-// Identity the profile model block resolves to, custom for a bare endpoint with no named provider
-func ProfileRouteIdentity(ctx context.Context, cfg map[string]any) (string, error) {
+// Identity the profile's own model block resolves to, custom for an endpoint naming no provider
+func ProfileRouteIdentity(ctx context.Context, config map[string]any) (string, error) {
 	held := map[string]any{}
-	if block, ok := cfg["model"].(map[string]any); ok {
-		for k, v := range block {
-			held[k] = v
+	if model, ok := config["model"].(map[string]any); ok {
+		for key, value := range model {
+			held[key] = value
 		}
 	}
-	name := strings.ToLower(strings.TrimSpace(routeStr(held["provider"])))
-	if (name == "" || name == "auto") && strings.TrimSpace(routeStr(held["base_url"])) != "" {
+	if name := pystr.Lower(pystr.Strip(routeStr(held["provider"]))); (name == "" || name == "auto") && pystr.Strip(routeStr(held["base_url"])) != "" {
 		held["provider"] = "custom"
 	}
-	identity, _, err := ResolvedRoute(ctx, held, cfg)
+	identity, _, err := ResolvedRoute(ctx, held, config)
 	return identity, err
 }
 
-// Provider identity and effective base url the runtime resolves a model block to
-func ResolvedRoute(ctx context.Context, modelCfg, cfg any) (string, string, error) {
-	block, _ := modelCfg.(map[string]any)
-	tree, _ := cfg.(map[string]any)
-	if tree == nil {
-		tree = map[string]any{}
+// Provider identity and effective base URL the runtime resolves a model block to
+func ResolvedRoute(ctx context.Context, block any, config any) (string, string, error) {
+	model, _ := block.(map[string]any)
+	cfg, _ := config.(map[string]any)
+	if cfg == nil {
+		cfg = map[string]any{}
 	}
-	name := strings.ToLower(strings.TrimSpace(routeStr(block["provider"])))
+	name := pystr.Lower(pystr.Strip(routeStr(model["provider"])))
 	if name == "" || name == "auto" {
 		return "auto", "", nil
 	}
-	baseURL := strings.TrimSpace(routeStr(block["base_url"]))
+	baseURL := pystr.Strip(routeStr(model["base_url"]))
 	var identity string
-	if entry := routeNamedEntry(ctx, name, tree); len(entry) > 0 {
+	if entry := routeNamedEntry(ctx, name, cfg); len(entry) > 0 {
 		identity = provider.CustomProviderSlug(routeStr(entry["name"]), routeStr(entry["provider_key"]))
 		if baseURL == "" {
-			baseURL = strings.TrimSpace(routeStr(entry["base_url"]))
+			baseURL = pystr.Strip(routeStr(entry["base_url"]))
 		}
 	} else {
 		var err error
@@ -86,12 +97,12 @@ func ResolvedRoute(ctx context.Context, modelCfg, cfg any) (string, string, erro
 }
 
 // Whether both model blocks resolve to one endpoint, auto on either side keeping the route
-func SameRoute(ctx context.Context, a, b, cfg any) (bool, error) {
-	aID, aURL, err := ResolvedRoute(ctx, a, cfg)
+func SameRoute(ctx context.Context, a, b any, config any) (bool, error) {
+	aID, aURL, err := ResolvedRoute(ctx, a, config)
 	if err != nil {
 		return false, err
 	}
-	bID, bURL, err := ResolvedRoute(ctx, b, cfg)
+	bID, bURL, err := ResolvedRoute(ctx, b, config)
 	if err != nil {
 		return false, err
 	}
@@ -102,12 +113,4 @@ func SameRoute(ctx context.Context, a, b, cfg any) (bool, error) {
 		return provider.NormalizeRouteBaseURL(aURL) == provider.NormalizeRouteBaseURL(bURL), nil
 	}
 	return aID == bID, nil
-}
-
-// Python str of a config value or the empty string for a falsy one
-func routeStr(value any) string {
-	if !pyrepr.Truthy(value) {
-		return ""
-	}
-	return pyrepr.Str(value)
 }

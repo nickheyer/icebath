@@ -19,7 +19,8 @@ func forgetDetached(ctx context.Context, a *SessionAuthority, key string) error 
 	if err != nil {
 		return err
 	}
-	if local, ok := adapters[PlatformLocal].(*LocalSessionAdapter); ok && local != nil {
+	held, _ := adapters.Get(PlatformLocal)
+	if local, ok := held.(*LocalSessionAdapter); ok && local != nil {
 		local.mu.Lock()
 		delete(local.sources, key)
 		local.mu.Unlock()

@@ -24,13 +24,7 @@ import (
 )
 
 // Known log files by the name icebath logs takes
-var logFiles = map[string]string{
-	"agent": "agent.log", "errors": "errors.log", "gateway": "gateway.log", "gui": "gui.log", "desktop": "desktop.log",
-	"update": "update.log", "handoff": "desktop-update-handoff.log", "mcp": "mcp-stderr.log",
-}
-
-// Logs the root home holds whatever profile is active
-var rootHomeLogs = map[string]bool{"update": true, "handoff": true}
+var logFiles = logging.LogFiles
 
 var (
 	logTSRE         = pyre.MustCompile(`(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})`)
@@ -49,15 +43,7 @@ type TailLogOptions struct {
 
 // Where a named log lives without checking it exists, false for an unknown name
 func logFilePath(ctx context.Context, name string) (string, bool) {
-	filename, ok := logFiles[name]
-	if !ok {
-		return "", false
-	}
-	h := home.Dir(ctx)
-	if rootHomeLogs[name] {
-		h = home.Root()
-	}
-	return filepath.Join(h, "logs", filename), true
+	return logging.LogFilePath(ctx, name)
 }
 
 // Groups of the first match of a Python pattern, nil without one

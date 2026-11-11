@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -58,14 +59,14 @@ type relayTransportAdapter interface {
 
 // Runner surface native callback provenance binds against
 type provenanceRunner interface {
-	Adapters() map[Platform]PlatformAdapter
+	Adapters() *pydict.Dict[Platform, PlatformAdapter]
 	RunnerConfig() *GatewayConfig
 	AdapterCredentialFingerprint(adapter PlatformAdapter) *string
 }
 
 // Runner holding the adapter maps of its served secondary profiles
 type servedProfileAdaptersRunner interface {
-	ProfileAdapters() map[string]map[Platform]PlatformAdapter
+	ProfileAdapters() *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
 }
 
 // Adapter that rechecks a role grant against its platform
@@ -322,11 +323,11 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	}
 	type registry struct {
 		owner   *string
-		mapping map[Platform]PlatformAdapter
+		mapping *pydict.Dict[Platform, PlatformAdapter]
 	}
 	registries := []registry{{nil, bound.Adapters()}}
 	if secondary, ok := runner.(servedProfileAdaptersRunner); ok {
-		for name, mapping := range secondary.ProfileAdapters() {
+		for name, mapping := range secondary.ProfileAdapters().All() {
 			owner := name
 			registries = append(registries, registry{&owner, mapping})
 		}
@@ -339,7 +340,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	var adapter PlatformAdapter
 	for _, item := range registries {
 		if (item.owner == nil) == (profile == nil) && (item.owner == nil || *item.owner == *profile) {
-			adapter = item.mapping[platform]
+			adapter, _ = item.mapping.Get(platform)
 			break
 		}
 	}
@@ -348,7 +349,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	}
 	same := 0
 	for _, item := range registries {
-		if item.mapping[platform] == adapter {
+		if held, _ := item.mapping.Get(platform); held == adapter {
 			same++
 		}
 	}
@@ -555,7 +556,10 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	if _, err := restoreProvenance(ctx, runner, source, provenance); err != nil {
 		return false, err
 	}
-	adapter := runner.AdapterForSource(ctx, source)
+	adapter, err := runner.AdapterForSource(ctx, source)
+	if err != nil {
+		return false, err
+	}
 	authz, ok := runner.(nativeAuthorizationRunner)
 	if !ok {
 		return false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_is_user_authorized_for_source'", runner)}
@@ -586,7 +590,9 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	if _, err := restoreProvenance(ctx, runner, source, provenance); err != nil {
 		return false, err
 	}
-	if runner.AdapterForSource(ctx, source) != adapter {
+	if current, err := runner.AdapterForSource(ctx, source); err != nil {
+		return false, err
+	} else if current != adapter {
 		return false, runtimeRefusal("not_found")
 	}
 	if allowed != true {

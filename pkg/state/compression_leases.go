@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"time"
 )
 
 const turnLeaseSweepGraceS = 86400.0
@@ -181,60 +180,11 @@ func NewTurnLeaseWait() TurnLeaseWait {
 
 // Polls for the conversation turn lease until acquired, aborted or out of time, notifying waiters on the way
 func (d *SessionDB) AcquireSessionTurnLease(sessionID, holder string, o TurnLeaseWait) (bool, error) {
-	deadline := monotonicSeconds() + math.Max(0, o.WaitSeconds)
-	patience := o.AcquirePatienceS
-	var waitStarted, lastNotice *float64
-	noticeEvery := math.Max(0, o.WaitNoticeIntervalSeconds)
-	for {
-		if o.ShouldAbort != nil {
-			abort, err := o.ShouldAbort()
-			if err != nil {
-				slog.Debug("session turn lease should_abort callback failed", "error", err)
-			} else if abort {
-				return false, nil
-			}
-		}
-		p := patience
-		try := d.TryAcquireSessionTurnLease
-		if d.leaseSeams.tryAcquire != nil {
-			try = d.leaseSeams.tryAcquire
-		}
-		ok, err := try(sessionID, holder, o.TTLSeconds, &p)
-		if err != nil {
-			if ClassifyPersistenceError(err) != "locked" {
-				return false, err
-			}
-			if o.OnContended != nil {
-				if cerr := o.OnContended(); cerr != nil {
-					slog.Debug("session turn lease on_contended callback failed", "error", cerr)
-				}
-			}
-			patience = math.Min(o.AcquirePatienceS+math.Max(0, o.PollIntervalSeconds), math.Max(o.AcquirePatienceS, deadline-monotonicSeconds()))
-			if !d.sleepBeforeWriteRetry(deadline, 0) {
-				return false, nil
-			}
-			continue
-		}
-		if ok {
-			return true, nil
-		}
-		patience = o.AcquirePatienceS
-		t := monotonicSeconds()
-		remaining := deadline - t
-		if remaining <= 0 {
-			return false, nil
-		}
-		if waitStarted == nil {
-			waitStarted = &t
-		}
-		if o.OnWait != nil && (lastNotice == nil || noticeEvery == 0 || t-*lastNotice >= noticeEvery) {
-			if werr := o.OnWait(math.Max(0, t-*waitStarted)); werr != nil {
-				slog.Debug("session turn lease on_wait callback failed", "error", werr)
-			}
-			lastNotice = &t
-		}
-		time.Sleep(time.Duration(math.Min(math.Max(0.01, o.PollIntervalSeconds), remaining) * float64(time.Second)))
+	try := d.TryAcquireSessionTurnLease
+	if d.leaseSeams.tryAcquire != nil {
+		try = d.leaseSeams.tryAcquire
 	}
+	return AcquireTurnLeasePolling("SessionDB", try, d.sleepBeforeWriteRetry, sessionID, holder, o)
 }
 
 // Expiry of the turn lease holder owns on the conversation, nil when it holds none

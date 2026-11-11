@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/goals"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -457,6 +458,7 @@ type CLI struct {
 	voiceBargeCapture               *syncEvent
 	voiceLastTTSText                string
 	voiceBargePhase                 string
+	voiceExtra                      cliVoiceExtra
 	statusBarVisible                bool
 	batteryVisible                  bool
 	vimMode                         bool
@@ -534,8 +536,8 @@ var (
 	activeTUIAppMu                           sync.Mutex
 	osExit                                   = os.Exit
 	EmergencyCleanupAllBrowserSessions       func()
-	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, string, error)
-	FormatRefusalStderr                      func(message string) string
+	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error)
+	FormatRefusalStderr                      func(message *activesessions.Refusal) string
 	SecurityAdvisoriesStartupBanner          func(ctx context.Context) string
 	oneshotPendingCompletionsPollIntervalSec = 1.0
 )

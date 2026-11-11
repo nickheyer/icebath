@@ -278,7 +278,7 @@ func init() { namedCustomProviderConfiguredFn = namedCustomProviderConfigured }
 
 // True when config defines a providers or custom_providers entry matching the request
 func namedCustomProviderConfigured(ctx context.Context, name, h string) bool {
-	cfg := LoadConfigSafe(h)
+	cfg := LoadConfigSafe(ctx, h)
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
@@ -779,7 +779,7 @@ func importPluginDir(ctx context.Context, layer *homeLayer, pluginDir, source, h
 	if done {
 		return
 	}
-	hosted := isolationMode(LoadConfigSafe(home.Dir(ctx))) == pluginIsolationHost
+	hosted := isolationMode(LoadConfigSafe(ctx, home.Dir(ctx))) == pluginIsolationHost
 	profiles, err := loadExternalProviderPluginFn(ctx, pluginDir, source, homeKey)
 	for _, p := range profiles {
 		registerIntoLayer(layer, p)
@@ -883,7 +883,7 @@ func pluginsConfigSet(cfg map[string]any, key string) map[string]bool {
 
 // Loads enabled pip entry point provider plugins, logging and skipping each one that fails
 func discoverEntryPointProviders(ctx context.Context) {
-	cfg := LoadConfigSafe(home.Dir(ctx))
+	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
 	enabled := pluginsConfigSet(cfg, "enabled")
 	disabled := pluginsConfigSet(cfg, "disabled")
 	if len(enabled) == 0 {

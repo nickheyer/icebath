@@ -709,8 +709,8 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	env["ICEBATH_TUI_CLIENT_ENV"] = clientEnvJSON
 	skillsValue := strings.Join(splitCommaItems(l.Skills), ",")
 	maxTurns := ""
-	if l.MaxTurns != 0 {
-		maxTurns = strconv.Itoa(l.MaxTurns)
+	if l.MaxTurns != nil {
+		maxTurns = strconv.Itoa(*l.MaxTurns)
 	}
 	toolProgress := ""
 	if l.Verbose {

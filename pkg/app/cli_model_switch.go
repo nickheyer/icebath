@@ -197,7 +197,7 @@ func (c *CLI) snapshotModelRuntime() map[string]any {
 	return snapshot
 }
 
-// Restores a runtime captured before a one turn override, staying on the override when the previous route does not come back
+// Restores the runtime captured before a one turn override, keeping the override when that route fails
 func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 	if len(snapshot) == 0 {
 		return

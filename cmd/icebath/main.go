@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +59,7 @@ func run(argv []string) int {
 	advertiseAgentEnv()
 	installTruststore()
 	cleanupQuarantinedExes()
+	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
 	recoverUpdateDebtsOnStartup()
 	if firstPositional(argv) != "update" {
 		maybeRunBootBootstrap(pm.InstallRoot())

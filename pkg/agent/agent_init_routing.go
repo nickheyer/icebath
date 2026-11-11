@@ -26,7 +26,7 @@ func (a *AIAgent) finalizeRouting(ctx context.Context, apiMode string) {
 	if pool := a.credentialPool; pool != nil {
 		matches := false
 		finalizeRoutingPanics(func() {
-			matches = provider.CredentialPoolMatchesProvider(pool.Provider(), a.provider, a.baseURL)
+			matches = provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), a.provider, a.baseURL)
 		})
 		if !matches {
 			a.credentialPool = nil

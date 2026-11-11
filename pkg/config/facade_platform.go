@@ -36,9 +36,10 @@ type platformManifestPath struct {
 	requireKind bool
 	info        os.FileInfo
 	err         error
+	fsys        fs.FS
 }
 
-// Bundled platform plugin root under the ICEBATH_BUNDLED_PLUGINS tree, empty when no bundled tree is set
+// Bundled platform plugin root under the ICEBATH_BUNDLED_PLUGINS tree, empty when the compiled tree serves instead
 func bundledPlatformRoot() string {
 	dir := strings.TrimSpace(os.Getenv("ICEBATH_BUNDLED_PLUGINS"))
 	if dir == "" {
@@ -54,16 +55,18 @@ func platformManifestPaths(h, source string) []platformManifestPath {
 		requireKind bool
 	}
 	var roots []root
+	var out []platformManifestPath
 	if source == PlatformSourceAll || source == PlatformSourceBundled {
 		if dir := bundledPlatformRoot(); dir != "" {
 			roots = append(roots, root{dir, false})
+		} else {
+			out = compiledPlatformManifestPaths()
 		}
 	}
 	if source == PlatformSourceAll || source == PlatformSourceUser {
 		userPlugins := home.PluginsDir(h)
 		roots = append(roots, root{filepath.Join(userPlugins, "platforms"), false}, root{userPlugins, true})
 	}
-	var out []platformManifestPath
 	for _, r := range roots {
 		entries, err := os.ReadDir(r.dir)
 		if err != nil {
@@ -135,7 +138,7 @@ func platformPluginManifests(h, source string, strict bool, skipped *[]string) (
 			}
 			continue
 		}
-		raw, err := os.ReadFile(p.path)
+		raw, err := p.read()
 		if err != nil {
 			if strict && !p.requireKind {
 				return out, err

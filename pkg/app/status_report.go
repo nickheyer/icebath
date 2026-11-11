@@ -106,7 +106,7 @@ func buildStatusFields(in statusFieldsInput) map[string]any {
 	}
 }
 
-// Label value lines for the keys in order, an empty title skipped and an unresolved route shown as placeholders
+// Label value lines for the keys in order, an empty title skipped and an unresolved route shown as unknown
 func statusLines(fields map[string]any, keys ...string) []string {
 	var lines []string
 	for _, key := range keys {

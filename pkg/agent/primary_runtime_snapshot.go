@@ -36,7 +36,7 @@ func (a *AIAgent) SetPrimaryRuntime(rt map[string]any) { a.primaryRuntime = rt }
 
 // Owning custom entry of the route resolved against the config the route runs on, nil for none
 func runtimeEntryOwner(ctx context.Context, a *AIAgent) any {
-	if owner := provider.RuntimeEntryOwner(a.provider, a.requestedProvider, a.baseURL, provider.LoadConfigSafe(home.Dir(ctx))); owner != nil {
+	if owner := provider.RuntimeEntryOwner(a.provider, a.requestedProvider, a.baseURL, provider.LoadConfigSafe(ctx, home.Dir(ctx))); owner != nil {
 		return owner
 	}
 	return nil

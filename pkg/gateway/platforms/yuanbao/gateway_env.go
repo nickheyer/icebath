@@ -17,7 +17,7 @@ var envOverrides = []gateway.EnvStep{
 }
 
 var authz = map[string]any{"allowed_users_env": "YUANBAO_ALLOWED_USERS", "allow_all_env": "YUANBAO_ALLOW_ALL_USERS",
-	"own_policy_env": []string{"YUANBAO_DM_POLICY", "YUANBAO_GROUP_POLICY"}, "allowlist_suppresses_pairing": true}
+	"own_policy_env": []string{"YUANBAO_DM_POLICY", "YUANBAO_GROUP_POLICY"}}
 
 // Registers the env declarations of the bundled yuanbao directory with the gateway config bridge
 func init() {

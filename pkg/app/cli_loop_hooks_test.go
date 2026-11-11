@@ -90,7 +90,7 @@ func TestIdleHookIsANoOpForAnUnparkedOrInactiveGoal(t *testing.T) {
 	}
 }
 
-// CLI stub with an active five turn goal wired in
+// Stand in CLI with an active five turn goal wired in
 func makeCLIWithGoal(t *testing.T, sessionID, goalText string) (*CLI, *goals.GoalManager) {
 	t.Helper()
 	mgr := goals.NewGoalManager(context.Background(), sessionID, 5)

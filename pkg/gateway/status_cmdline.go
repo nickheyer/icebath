@@ -116,7 +116,7 @@ func gatewayCommandSubcommand(command string) (string, bool) {
 		tokens = lowerAll(argv)
 		basenames = tokenBasenames(tokens)
 	}
-	if basenames[0] == "osascript" {
+	if basenames[0] == "osascript" || restartWatcherEntryIndex(tokens) >= 0 {
 		return "", false
 	}
 	for _, t := range tokens {
@@ -171,11 +171,13 @@ func GatewaySpawnIntentSubcommand(command string) (string, bool) {
 		return direct, ok
 	}
 	raw := gatewayRawTokens(command)
-	flagIndex, ok := InlineSourceFlagIndex(casedTokens(raw))
-	if !ok {
+	start := restartWatcherEntryIndex(lowerAll(casedTokens(raw))) + 1
+	if flagIndex, ok := InlineSourceFlagIndex(casedTokens(raw)); ok {
+		start = flagIndex + 2
+	} else if start == 0 {
 		return "", false
 	}
-	for i := flagIndex + 2; i < len(raw); i++ {
+	for i := start; i < len(raw); i++ {
 		if nested, ok := gatewayCommandSubcommand(strings.Join(raw[i:], " ")); ok {
 			return nested, true
 		}

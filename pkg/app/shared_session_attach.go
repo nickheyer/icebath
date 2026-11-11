@@ -224,7 +224,7 @@ func discoverAttachURL(sessionID, registryHome string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	entries, err := activesessions.RegistrySnapshot(profileHome, true)
+	entries, err := activesessions.RegistrySnapshot(context.Background(), profileHome, true)
 	if err != nil {
 		return "", false, err
 	}

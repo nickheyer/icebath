@@ -37,7 +37,7 @@ func desktopDistExists(desktopDir string) bool {
 }
 
 // Unpacked Electron executable of this platform under the release dir, false when none exists
-func desktopPackagedExecutable(desktopDir string) (string, bool) {
+var desktopPackagedExecutable = func(desktopDir string) (string, bool) {
 	return desktopPackagedExecutableIn(filepath.Join(desktopDir, "release"))
 }
 

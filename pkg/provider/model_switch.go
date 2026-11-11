@@ -310,7 +310,7 @@ var (
 func loadDirectAliases(ctx context.Context, cfg map[string]any) *DirectAliasTable {
 	merged := NewDirectAliasTable(builtinDirectAliases...)
 	if cfg == nil {
-		cfg = LoadConfigSafe(home.Dir(ctx))
+		cfg = LoadConfigSafe(ctx, home.Dir(ctx))
 	}
 	if userAliases, ok := cfg["model_aliases"].(map[string]any); ok {
 		for _, name := range sortedKeys(userAliases) {

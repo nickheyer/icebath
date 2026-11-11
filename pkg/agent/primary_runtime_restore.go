@@ -30,16 +30,16 @@ type primaryRestoreRoute struct {
 }
 
 // Whether the pool belongs to the primary, a nil pool matching like an unscoped adapter
-func (p primaryRestoreRoute) matchesPool(pool *provider.Pool) bool {
+func (p primaryRestoreRoute) matchesPool(ctx context.Context, pool *provider.Pool) bool {
 	if pool == nil {
 		return true
 	}
-	return provider.CredentialPoolMatchesProvider(pool.Provider(), p.provider, p.baseURL)
+	return provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), p.provider, p.baseURL)
 }
 
 // Whether the pool entry belongs to the primary provider and endpoint
-func (p primaryRestoreRoute) matchesEntry(entry provider.PooledCredential) bool {
-	return provider.CredentialPoolMatchesProvider(entry.Provider, p.provider, p.baseURL)
+func (p primaryRestoreRoute) matchesEntry(ctx context.Context, entry provider.PooledCredential) bool {
+	return provider.CredentialPoolMatchesProvider(ctx, entry.Provider, p.provider, p.baseURL)
 }
 
 // Primary pool entry scoped for a custom entry, nil when absent or keyed to another provider
@@ -49,7 +49,7 @@ func (p primaryRestoreRoute) loadPool(ctx context.Context) *provider.Pool {
 		requested = pyrepr.Str(v)
 	}
 	loaded := provider.LoadRuntimePoolWith(agentPoolEnv(ctx), agentLoadPool, p.provider, p.baseURL, requested, p.rt)
-	if loaded != nil && p.matchesPool(loaded) {
+	if loaded != nil && p.matchesPool(ctx, loaded) {
 		return loaded
 	}
 	return nil
@@ -121,7 +121,7 @@ func reinstallPrimaryRuntime(ctx context.Context, a *AIAgent, route primaryResto
 // Reloads the primary pool over a cross provider one and reselects its best entry with a usable key
 func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primaryRestoreRoute, prefetchedPool *provider.Pool, prefetched bool) error {
 	log := agentRuntimeHelpersLog()
-	if pool := a.credentialPool; pool != nil && pystr.Lower(pystr.Strip(pool.Provider())) != "" && !route.matchesPool(pool) {
+	if pool := a.credentialPool; pool != nil && pystr.Lower(pystr.Strip(pool.Provider())) != "" && !route.matchesPool(ctx, pool) {
 		a.credentialPool, a.credentialPoolEntryID = nil, ""
 		if prefetched {
 			a.credentialPool = prefetchedPool
@@ -138,7 +138,7 @@ func (a *AIAgent) rebindPrimaryCredentialPool(ctx context.Context, route primary
 	if !ok || (entry.RuntimeAPIKey() == "" && entry.AccessToken == "") {
 		return nil
 	}
-	if !route.matchesEntry(entry) {
+	if !route.matchesEntry(ctx, entry) {
 		log.Info(fmt.Sprintf("Restore skipped pool entry %s (%s): provider %s does not match primary provider %s",
 			entry.ID, entry.Label, pyStrOr(pystr.Lower(pystr.Strip(entry.Provider)), "?"), pyStrOr(route.provider, "?")))
 		return nil
@@ -193,7 +193,7 @@ func (a *AIAgent) primaryQuotaReopenedEarly(ctx context.Context, route primaryRe
 	a.codexReopenChecked, a.codexReopenCheckedAt = true, now
 	if err := guardPhase(func() error {
 		pool := a.credentialPool
-		if pool == nil || !route.matchesPool(pool) {
+		if pool == nil || !route.matchesPool(ctx, pool) {
 			pool = route.loadPool(ctx)
 		}
 		if pool == nil {
@@ -216,7 +216,7 @@ func (a *AIAgent) primaryQuotaReopenedEarly(ctx context.Context, route primaryRe
 func (a *AIAgent) primaryResetGateBlocks(ctx context.Context, route primaryRestoreRoute) (blocked bool, prefetchedPool *provider.Pool, prefetched bool) {
 	if err := guardPhase(func() error {
 		pool := a.credentialPool
-		if !route.matchesPool(pool) {
+		if !route.matchesPool(ctx, pool) {
 			pool = route.loadPool(ctx)
 			prefetchedPool, prefetched = pool, true
 		}

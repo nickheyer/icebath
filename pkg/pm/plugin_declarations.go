@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"gopkg.in/yaml.v3"
 )
 
 // PluginManifestHost is the plugin manifest surface pkg/plugins installs at init, a package pm cannot import
@@ -101,18 +100,7 @@ func ReadNativeManifest(path string) (map[string]any, error) {
 		}
 		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", path, message)}
 	}
-	var data any
-	if err := yaml.Unmarshal([]byte(text), &data); err != nil {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("Could not read plugin manifest %s: %s", path, err)}
-	}
-	if data == nil {
-		return map[string]any{}, nil
-	}
-	manifest, ok := yamlNormalize(data).(map[string]any)
-	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: "Plugin manifest must be a mapping: " + path}
-	}
-	return manifest, nil
+	return decodeNativeManifest(path, text)
 }
 
 // Python int() of a manifest scalar, ok false where int() raises TypeError or ValueError

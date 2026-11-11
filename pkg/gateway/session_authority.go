@@ -20,7 +20,7 @@ import (
 type AuthorityRunner interface {
 	DrainRunner
 	SessionStore() *SessionStore
-	AdapterForSource(ctx context.Context, source *SessionSource) PlatformAdapter
+	AdapterForSource(ctx context.Context, source *SessionSource) (PlatformAdapter, error)
 	MultiplexProfiles() bool
 }
 
@@ -48,6 +48,8 @@ type LiveSession struct {
 	// Principal and level of a reasoning command that arrived while a turn ran
 	PendingReasoning *pendingReasoning
 	CompressionCount int
+	// Tool progress mode a viewer set for this session, empty when none was set
+	ToolProgressMode string
 	controls         *PendingControls
 	controlsOnce     sync.Once
 	claimGate        sync.Mutex
@@ -78,6 +80,9 @@ type SessionAuthority struct {
 	cronCancellations      map[string]*pythread.Event
 	orderedWrites          sync.Mutex
 	mutationTasks          map[*trackedTask]bool
+	managedWorkers         map[string]managedWorkerHandle
+	managedSpawning        map[string]any
+	sideAgents             map[any]sideAgentHolder
 	retiredLocal           map[string]bool
 	launchSources          map[string]any
 	executing              map[string]int64
@@ -116,6 +121,9 @@ type SessionAuthority struct {
 	Events                 map[string]tuigateway.Transport
 	HostedRoomService      HostedAdmissionChecker
 	editorMCP              editorMCPState
+	apiObservers           map[string][]*APIObserver
+	titledCreateLock       asyncLock
+	botReplyWatchers       map[string]*botReplyWatch
 }
 
 // Authority over a profile store at its runtime epoch

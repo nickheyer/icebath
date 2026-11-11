@@ -423,7 +423,12 @@ func snapshotAutomation(ctx context.Context, a *SessionAuthority, adapter Platfo
 	if err != nil {
 		return nil, nil, err
 	}
-	if restoredKey != entry.SessionKey || runner.AdapterForSource(ctx, restored.Source) != adapter {
+	if restoredKey != entry.SessionKey {
+		return nil, nil, runtimeRefusal("admission_conflict")
+	}
+	if owner, err := runner.AdapterForSource(ctx, restored.Source); err != nil {
+		return nil, nil, err
+	} else if owner != adapter {
 		return nil, nil, runtimeRefusal("admission_conflict")
 	}
 	provenanceValue, _ := envelope.Get("provenance")
@@ -463,8 +468,12 @@ func localAutomationOwner(ctx context.Context, a *SessionAuthority, adapter Plat
 		if found && live.Source == event.Source && !canAuthorize {
 			return SessionRef{}, nil, fmt.Errorf("'%s' object has no attribute 'authorize_source'", pyrepr.TypeName(adapter))
 		}
-		if !found || live.Source != event.Source || !authorizer.authorizeSource(event.Source) ||
-			a.Runner.AdapterForSource(ctx, live.Source) != adapter {
+		if !found || live.Source != event.Source || !authorizer.authorizeSource(event.Source) {
+			return SessionRef{}, nil, runtimeRefusal("permission_denied")
+		}
+		if owner, err := a.Runner.AdapterForSource(ctx, live.Source); err != nil {
+			return SessionRef{}, nil, err
+		} else if owner != adapter {
 			return SessionRef{}, nil, runtimeRefusal("permission_denied")
 		}
 		return ref, live, nil
@@ -477,8 +486,12 @@ func localAutomationOwner(ctx context.Context, a *SessionAuthority, adapter Plat
 	if live != nil && live.Source == event.Source && !canAuthorize {
 		return SessionRef{}, nil, fmt.Errorf("'%s' object has no attribute 'authorize_source'", pyrepr.TypeName(adapter))
 	}
-	if live == nil || live.Source != event.Source || !authorizer.authorizeSource(event.Source) ||
-		a.Runner.AdapterForSource(ctx, live.Source) != adapter {
+	if live == nil || live.Source != event.Source || !authorizer.authorizeSource(event.Source) {
+		return SessionRef{}, nil, runtimeRefusal("permission_denied")
+	}
+	if owner, err := a.Runner.AdapterForSource(ctx, live.Source); err != nil {
+		return SessionRef{}, nil, err
+	} else if owner != adapter {
 		return SessionRef{}, nil, runtimeRefusal("permission_denied")
 	}
 	return ref, live, nil

@@ -7,10 +7,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -19,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -38,6 +41,24 @@ import (
 func installProcessWiring() {
 	registerCommandArgv()
 	commands.BannerVersionLabel = app.FormatBannerVersionLabel
+	gatewayrun.ResolveEphemeralSystemPromptFromConfig = commands.ResolveEphemeralSystemPrompt
+	gatewayrun.ParseServiceTierConfig = app.ParseServiceTierConfig
+	gatewayrun.BindTeamsPipelineRuntime = func(ctx context.Context, r *gatewayrun.GatewayRunner) (bool, error) {
+		return teamspipeline.BindGatewayRuntime(ctx, r)
+	}
+	gatewayrun.ResolveCommand = func(name string) (string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, true
+		}
+		return "", false
+	}
+	gatewayrun.SlashConfirmPending = func(sessionKey string) bool {
+		_, ok := commands.Confirms.Pending(sessionKey)
+		return ok
+	}
+	gatewayrun.SlashConfirmClear = commands.Confirms.Clear
+	gatewayrun.IsGatewayKnownCommand = func(name string) bool { return commands.IsGatewayKnownCommand(commands.Default, name) }
+	gatewayrun.GatewayKnownCommand = func(name string) bool { return commands.GatewayKnownCommands()[name] }
 	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
 	gateway.S6IsRunning = func(name string) (bool, error) {
 		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).IsRunning(name)
@@ -51,6 +72,20 @@ func installProcessWiring() {
 		return tools.CheckPaused(context.Background(), component, log)
 	})
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
+	gateway.WebUISourceBuild.ProductCurrent = selfupdate.SourceProductCurrent
+	gateway.WebUISourceBuild.Env = func(ctx context.Context) (map[string]string, error) {
+		return selfupdate.SourceBuildEnv(ctx, nil, false, true)
+	}
+	gateway.WebUISourceBuild.PrepareLaunch = selfupdate.PrepareLaunchDependencies
+	gateway.WebUISourceBuild.BuildWeb = func(ctx context.Context, projectRoot string, env map[string]string) error {
+		return selfupdate.BuildSourceWeb(ctx, projectRoot, env, "")
+	}
+	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
+	gateway.WebappRendererBuild.Prepare = func(ctx context.Context, projectRoot string, force, skipBuild, explicit bool) (string, error) {
+		return selfupdate.PrepareWebappRenderer(ctx, projectRoot, force, skipBuild, explicit)
+	}
+	gateway.WebappRendererBuild.PackagedDist = selfupdate.PackagedWebappDist
+	gateway.WebappRendererBuild.ExceptionName = selfupdate.ExceptionName
 	selfupdate.RunCLIHook = run
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	state.SecretEnvName = codeexec.IsSecretEnvName
@@ -79,7 +114,10 @@ func installProcessWiring() {
 	gateway.ResolvePrefillMessagesFile = app.ResolvePrefillMessagesFile
 	gateway.ReleaseVaultUnlocks = browser.ReleaseVaultSession
 	gateway.ErrorSurfaceFromResult = agent.BuildErrorSurfaceFromResult
+	gateway.SessionCompress = agent.SessionCompressAgent{}
+	gateway.ExpandContextReferences = agent.ExpandGatewayContextReferences
 	gateway.LoadPrefillMessages = app.LoadPrefillMessages
+	gateway.WebhookExecuteJobForEvent = cron.ExecuteJobForEvent
 	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
@@ -123,9 +161,12 @@ func installProcessWiring() {
 	app.SecurityAdvisoriesStartupBanner = func(ctx context.Context) string {
 		return plugins.AdvisoryStartupBanner(ctx, plugins.DetectCompromised(plugins.Advisories))
 	}
+	app.TryAcquireActiveSession = app.AcquireActiveSessionLease
+	app.FormatRefusalStderr = activesessions.FormatRefusalStderr
 	provider.InstallPluginManagerHooks(pluginManagerHooks())
 	plugins.InstallServices(pluginServices())
 	app.SetPrintVersionInfo(printVersionInfo)
+	app.ConsoleCommandTree = newCLI
 }
 
 // Raw config of the bound home as a tree, empty on a read failure
@@ -326,6 +367,7 @@ func runAtExit() {
 	run(func() { provider.ShutdownLocalRuntime() })
 	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
 	run(func() { observability.ShutdownRuntimes(context.Background()) })
+	run(gatewayrun.BootstrapAtExit)
 	run(gateway.HostRendezvousAtExit)
 	run(logging.Shutdown)
 	for _, s := range []*os.File{os.Stdout, os.Stderr} {

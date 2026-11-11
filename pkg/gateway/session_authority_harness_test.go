@@ -21,8 +21,8 @@ func (r *authorityRunnerDouble) Draining() bool                           { retu
 func (r *authorityRunnerDouble) Running() bool                            { return !r.stopped }
 func (r *authorityRunnerDouble) SessionStore() *SessionStore              { return r.store }
 func (r *authorityRunnerDouble) MultiplexProfiles() bool                  { return false }
-func (r *authorityRunnerDouble) AdapterForSource(context.Context, *SessionSource) PlatformAdapter {
-	return r.adapter
+func (r *authorityRunnerDouble) AdapterForSource(context.Context, *SessionSource) (PlatformAdapter, error) {
+	return r.adapter, nil
 }
 
 var (

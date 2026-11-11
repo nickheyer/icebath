@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"log/slog"
 	"strings"
 
@@ -94,11 +95,6 @@ type RelayRouteUnknown struct{ Msg string }
 
 func (e *RelayRouteUnknown) Error() string { return e.Msg }
 
-// Runner exposing its live adapters keyed by platform value
-type egressAdapterRunner interface {
-	Adapters() map[string]any
-}
-
 // Relay adapter answering whether it fronts a logical platform
 type relayFronter interface {
 	FrontsPlatform(p Platform) bool
@@ -110,7 +106,7 @@ func liveRelayFronted() (fronted map[string]bool, ok bool, err error) {
 	if runner == nil {
 		return nil, false, nil
 	}
-	reg, isReg := runner.(egressAdapterRunner)
+	reg, isReg := runner.(primaryAdaptersRunner)
 	if !isReg {
 		return nil, false, nil
 	}
@@ -121,10 +117,10 @@ func liveRelayFronted() (fronted map[string]bool, ok bool, err error) {
 		}
 	}()
 	registry := reg.Adapters()
-	if len(registry) == 0 {
+	if registry == nil || registry.Len() == 0 {
 		return nil, false, nil
 	}
-	relay := registry[string(PlatformRelay)]
+	relay, _ := registry.Get(PlatformRelay)
 	if relay == nil {
 		return nil, false, nil
 	}
@@ -186,23 +182,27 @@ func hasLiveNativeAdapter(ctx context.Context, platformName string) (live bool, 
 	if runner == nil {
 		return false, nil
 	}
-	var adapters map[string]any
-	if reg, ok := runner.(egressAdapterRunner); ok {
+	var adapters *pydict.Dict[Platform, PlatformAdapter]
+	if reg, ok := runner.(primaryAdaptersRunner); ok {
 		adapters = reg.Adapters()
 	}
 	platform, perr := ParsePlatform(ctx, platformName)
 	if perr != nil {
 		return false, nil
 	}
-	if adapters[string(platform)] == nil {
+	var native PlatformAdapter
+	if adapters != nil {
+		native, _ = adapters.Get(platform)
+	}
+	if native == nil {
 		return false, nil
 	}
 	cfg, cerr := LoadGatewayConfig(ctx)
 	if cerr != nil {
 		return false, &RelayRouteUnknown{fmt.Sprintf("native-adapter config lookup failed for %s: %v", platformName, cerr)}
 	}
-	native := cfg.Platforms[platform]
-	return native == nil || native.Enabled, nil
+	platformCfg := cfg.Platforms[platform]
+	return platformCfg == nil || platformCfg.Enabled, nil
 }
 
 // Whether a send to the platform would egress over the relay connector

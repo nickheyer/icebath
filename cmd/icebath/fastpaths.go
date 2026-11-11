@@ -25,7 +25,7 @@ type chatArgs struct {
 	Oneshot, UsageFile, APIKey, BaseURL string
 	OutputFormat                        string
 	Skills                              []string
-	MaxTurns                            int
+	MaxTurns                            *int
 	RunBudget                           float64
 	Version, OneshotExit, Verbose       bool
 	Quiet, Worktree, Checkpoints        bool
@@ -90,9 +90,9 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 				a.Skills = v
 			}
 		}
-		if flags.Flags().Lookup("max-turns") != nil {
-			if v, err := flags.Flags().GetInt("max-turns"); err == nil && v != 0 {
-				a.MaxTurns = v
+		if flags.Flags().Lookup("max-turns") != nil && flags.Flags().Changed("max-turns") {
+			if v, err := flags.Flags().GetInt("max-turns"); err == nil {
+				a.MaxTurns = &v
 			}
 		}
 		if flags.Flags().Lookup("run-budget") != nil {

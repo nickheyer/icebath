@@ -127,9 +127,13 @@ func admitLocalDelivery(ctx context.Context, a *SessionAuthority, chatID, text s
 		if err != nil {
 			return false, err
 		}
-		adapter = adapters[PlatformLocal]
+		adapter, _ = adapters.Get(PlatformLocal)
 	} else {
-		adapter = a.Runner.AdapterForSource(ctx, source)
+		owner, err := a.Runner.AdapterForSource(ctx, source)
+		if err != nil {
+			return false, err
+		}
+		adapter = owner
 	}
 	return admitRouteWake(ctx, a.Runner, adapter, source, text, "cron", metadata)
 }
@@ -514,7 +518,8 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	if err != nil {
 		return nil, err
 	}
-	policy := adapters[PlatformLocal].(*LocalSessionAdapter).Policies[sid]
+	held, _ := adapters.Get(PlatformLocal)
+	policy := held.(*LocalSessionAdapter).Policies[sid]
 	frozenValue, err := pyjson.Loads(policy.RequestJSON)
 	if err != nil {
 		return nil, err

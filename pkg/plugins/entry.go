@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/plugintree"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -136,8 +137,10 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 			seen.put(PluginEntry{Name: m.Name, Version: m.Version, Description: m.Description, Source: "bundled", Key: m.Key})
 		}
 	}
-	if dir := GetBundledPluginsDir(); dir != "" {
+	if dir := bundledOverrideDir(); dir != "" {
 		scanLevel(dir, "bundled", listingBundledSkip, "", 0, seen)
+	} else {
+		scanCompiledLevel(plugintree.Compiled(), ".", listingBundledSkip, "", 0, seen)
 	}
 	user, err := pluginsDir(h)
 	if err != nil {

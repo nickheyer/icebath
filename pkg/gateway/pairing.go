@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -205,7 +206,7 @@ func syncAllowlistAdd(ctx context.Context, platform, userID string) error {
 
 // Runner exposing the adapters of its primary profile
 type primaryAdaptersRunner interface {
-	Adapters() map[Platform]PlatformAdapter
+	Adapters() *pydict.Dict[Platform, PlatformAdapter]
 }
 
 // Adapters of the in process gateway runner across every served profile, none without a runner
@@ -220,15 +221,15 @@ func iterLiveGatewayAdapters() (adapters []PlatformAdapter) {
 		return nil
 	}
 	if primary, ok := runner.(primaryAdaptersRunner); ok {
-		for _, adapter := range primary.Adapters() {
+		for _, adapter := range primary.Adapters().All() {
 			if adapter != nil {
 				adapters = append(adapters, adapter)
 			}
 		}
 	}
 	if secondary, ok := runner.(servedProfileAdaptersRunner); ok {
-		for _, mapping := range secondary.ProfileAdapters() {
-			for _, adapter := range mapping {
+		for _, mapping := range secondary.ProfileAdapters().All() {
+			for _, adapter := range mapping.All() {
 				if adapter != nil {
 					adapters = append(adapters, adapter)
 				}

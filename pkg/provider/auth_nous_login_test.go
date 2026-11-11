@@ -35,7 +35,7 @@ func patchLoginInternals(t *testing.T, promptReturns string) {
 
 func modelSection(t *testing.T, h string) map[string]any {
 	t.Helper()
-	section, _ := LoadConfigSafe(h)["model"].(map[string]any)
+	section, _ := loadLiveConfigSafe(h)["model"].(map[string]any)
 	return section
 }
 

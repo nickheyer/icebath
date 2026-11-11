@@ -143,7 +143,7 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 	}
 	currentProvider := pystr.Lower(pystr.Strip(a.provider))
 	poolProvider := pystr.Lower(pystr.Strip(pool.Provider()))
-	if poolProvider != "" && !provider.CredentialPoolMatchesProvider(pool.Provider(), currentProvider, a.baseURL) {
+	if poolProvider != "" && !provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), currentProvider, a.baseURL) {
 		runAgentLog().Warn(fmt.Sprintf("Credential pool provider mismatch: pool=%s, agent=%s — skipping pool mutation to avoid cross-provider contamination", poolProvider, currentProvider))
 		return false, hasRetried429, nil
 	}

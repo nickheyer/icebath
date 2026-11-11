@@ -6,20 +6,16 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
@@ -208,29 +204,6 @@ func guiRemovePath(w io.Writer, path string) bool {
 
 var errNothingRemoved = errors.New("nothing removed")
 
-// Exit status success of a silenced command, false when it could not run
-func guiRunQuiet(argv []string) bool {
-	done, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Timeout: 60 * time.Second})
-	return err == nil && done.Returncode == 0
-}
-
-// Reindexes the menu caches with each tool that exists
-func refreshDesktopDatabases(applicationsDir string) []string {
-	var ran []string
-	if updateDB, err := exec.LookPath("update-desktop-database"); err == nil && guiRunQuiet([]string{updateDB, applicationsDir}) {
-		ran = append(ran, "update-desktop-database")
-	}
-	for _, tool := range []string{"kbuildsycoca6", "kbuildsycoca5"} {
-		if resolved, err := exec.LookPath(tool); err == nil {
-			if guiRunQuiet([]string{resolved, "--noincremental"}) {
-				ran = append(ran, tool)
-			}
-			break
-		}
-	}
-	return ran
-}
-
 // Removes the desktop GUI artifacts, app copies and optionally its data, leaving the agent and user data
 func uninstallGUI(w io.Writer, h string, removeUserdata bool) []string {
 	var removed []string
@@ -305,10 +278,7 @@ func guiConfirmYes(w io.Writer, text string) bool {
 
 // Removes the Chat GUI only, leaving the agent and data, after a confirmation unless yes or dry run
 func RunGUIUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
-	if steward := selfupdate.SealedSteward(config.GetProjectRoot()); steward != nil {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, selfupdate.StewardUninstallMessage(*steward, nil))
-		fmt.Fprintln(w)
+	if refuseIfStewardOwned(w) {
 		return 1, nil
 	}
 	h := home.Dir(ctx)

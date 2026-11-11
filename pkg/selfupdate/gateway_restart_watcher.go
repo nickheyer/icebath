@@ -1,4 +1,6 @@
 package selfupdate
 
+import "github.com/nickheyer/icebath/pkg/gateway"
+
 // Seconds the detached restart watcher waits for the old gateway pid to exit before giving up
-const gatewayRestartWatcherTimeoutS = 120.0
+const gatewayRestartWatcherTimeoutS = gateway.GatewayRestartWatcherTimeoutS

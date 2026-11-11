@@ -273,7 +273,7 @@ func conversationHead(ctx context.Context, runner any, sessionID string) (*Sessi
 	if authority != nil {
 		db = authority.DB
 	} else if held, ok := runner.(sessionDBRunner); ok {
-		db = held.SessionDB()
+		db = held.SessionDB(ctx)
 	} else {
 		return nil, nil, "", &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_session_db'", runner)}
 	}

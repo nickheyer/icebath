@@ -513,7 +513,7 @@ func waylandSave(dest string) bool {
 	return false
 }
 
-// Converts an image file to PNG in place through the image decoders, then ImageMagick, leaving it as is when neither works
+// Converts an image to PNG in place through the decoders then ImageMagick, untouched when neither works
 func convertToPNG(path string) bool {
 	if err := decodeToPNG(path); err == nil {
 		return true

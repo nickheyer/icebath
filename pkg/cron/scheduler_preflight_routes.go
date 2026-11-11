@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -118,6 +119,20 @@ func hasCredentialPlatform(adapters any, owned any) bool {
 	if m, ok := adapters.(map[string]any); ok {
 		for platform := range m {
 			if platform != "local" {
+				return true
+			}
+		}
+	}
+	if m, ok := adapters.(*pydict.Dict[gateway.Platform, gateway.PlatformAdapter]); ok {
+		for _, platform := range m.Keys() {
+			if platform != gateway.PlatformLocal {
+				return true
+			}
+		}
+	}
+	if m, ok := adapters.(map[gateway.Platform]gateway.PlatformAdapter); ok {
+		for platform := range m {
+			if platform != gateway.PlatformLocal {
 				return true
 			}
 		}

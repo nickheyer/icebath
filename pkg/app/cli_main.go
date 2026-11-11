@@ -23,7 +23,7 @@ type MainOptions struct {
 	Oneshot, IgnoreRules, IgnoreUserConfig, Compact, Verbose, Quiet, Worktree, Checkpoints, PassSessionID bool
 	RunBudget                                                                                             float64
 	Skills                                                                                                []string
-	MaxTurns                                                                                              int
+	MaxTurns                                                                                              *int
 }
 
 // ErrSetupCancelled reports a provider picker the user left with Ctrl+C, EOF or an exit
@@ -85,11 +85,7 @@ func Main(ctx context.Context, o MainOptions) (code int) {
 			code = exit.code
 		}
 	}()
-	var maxTurns *int
-	if o.MaxTurns > 0 {
-		v := o.MaxTurns
-		maxTurns = &v
-	}
+	maxTurns := o.MaxTurns
 	var runBudget *float64
 	if o.RunBudget > 0 {
 		v := o.RunBudget
@@ -281,11 +277,11 @@ func (c *CLI) claimActiveSession(surface string, stderr bool) bool {
 		cliLogger.Warn(fmt.Sprintf("Failed to claim active session slot: %v", err))
 		return true
 	}
-	if message != "" {
+	if message != nil && message.Message != "" {
 		if stderr {
 			fmt.Fprintln(stderrWriter(), FormatRefusalStderr(message))
 		} else {
-			c.consolePrint(fmt.Sprintf("[bold red]%s[/]", message))
+			c.consolePrint(fmt.Sprintf("[bold red]%s[/]", message.Message))
 		}
 		return false
 	}

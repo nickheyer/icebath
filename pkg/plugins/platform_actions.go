@@ -26,10 +26,8 @@ type authorizationAdapterRunner interface {
 	AuthorizationAdapter(platform, profile string) any
 }
 
-// Default profile adapter registry of a runner predating the profile aware lookup
-type adapterMapRunner interface {
-	Adapters() map[string]any
-}
+// Live adapter a gateway runner's default profile registry holds for a platform value, installed by pkg/gateway
+var RunnerAdapterByValue func(runner any, value string) (adapter any, hasRegistry bool)
 
 // Live adapter surface every verb needs, its platform value and connection state
 type PlatformActionAdapter interface {
@@ -184,8 +182,8 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 	var adapter any
 	if resolver, ok := runner.(authorizationAdapterRunner); ok {
 		adapter = resolver.AuthorizationAdapter(value, profileName(home.Dir(ctx)))
-	} else if registry, ok := runner.(adapterMapRunner); ok {
-		adapter = registry.Adapters()[value]
+	} else if RunnerAdapterByValue != nil {
+		adapter, _ = RunnerAdapterByValue(runner, value)
 	}
 	if adapter == nil {
 		return nil, messageErr("adapter_not_registered", fmt.Sprintf("no %s adapter is registered", value))

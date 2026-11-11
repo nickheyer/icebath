@@ -19,8 +19,8 @@ func (ownerTestRunner) SessionRuntimeDescriptor() map[string]any { return nil }
 func (ownerTestRunner) Draining() bool                           { return false }
 func (ownerTestRunner) Running() bool                            { return true }
 func (ownerTestRunner) SessionStore() *gateway.SessionStore      { return nil }
-func (ownerTestRunner) AdapterForSource(context.Context, *gateway.SessionSource) gateway.PlatformAdapter {
-	return nil
+func (ownerTestRunner) AdapterForSource(context.Context, *gateway.SessionSource) (gateway.PlatformAdapter, error) {
+	return nil, nil
 }
 func (ownerTestRunner) MultiplexProfiles() bool { return false }
 

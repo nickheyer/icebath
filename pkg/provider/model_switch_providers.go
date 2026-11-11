@@ -1370,7 +1370,7 @@ func lapBareCustomRow(b *pickerBuild, customProviders []any) {
 	if b.currentProviderNorm() == "custom" && b.currentBaseURL != "" {
 		baseURL, defaultModel = b.currentBaseURL, b.currentModel
 	} else {
-		cfgModel, ok := LoadConfigSafe(home.Dir(b.ctx))["model"].(map[string]any)
+		cfgModel, ok := LoadConfigSafe(b.ctx, home.Dir(b.ctx))["model"].(map[string]any)
 		if !ok {
 			return
 		}

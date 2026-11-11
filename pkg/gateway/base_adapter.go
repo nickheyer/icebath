@@ -242,6 +242,7 @@ type BasePlatformAdapter struct {
 	busySessionHandler        BusySessionHandler
 	ownerProfile              string
 	sharedListenerProfile     string
+	sharedIngress             *SharedIngress
 	authorizationCheck        AuthorizationCheck
 	autoTTSDefault            bool
 	autoTTSEnabledChats       map[string]struct{}

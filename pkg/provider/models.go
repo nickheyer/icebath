@@ -209,7 +209,10 @@ func knownProviderNames() map[string]bool {
 
 // Config loaded for the bound home, nil when unreadable
 func modelsConfig(ctx context.Context) map[string]any {
-	return LoadConfigSafe(home.Dir(ctx))
+	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
+		return config.Clone(frozen).(map[string]any)
+	}
+	return loadLiveConfigSafe(home.Dir(ctx))
 }
 
 // Routable custom provider ids configured by the user
@@ -812,8 +815,10 @@ func ctxForHome(ctx context.Context, h string) context.Context {
 func strictHomeResolver(ctx context.Context, h string) (*resolver, map[string]any, error) {
 	ctx = ctxForHome(ctx, h)
 	hd := home.Dir(ctx)
-	cfg := FrozenRuntimeConfig()
-	if cfg == nil {
+	var cfg map[string]any
+	if frozen := FrozenRuntimeConfig(ctx); frozen != nil {
+		cfg = config.Clone(frozen).(map[string]any)
+	} else {
 		tree, err := config.Load(hd, config.NewSecrets(hd).Lookup())
 		if err != nil {
 			return nil, nil, err

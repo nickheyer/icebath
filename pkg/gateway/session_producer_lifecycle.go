@@ -152,7 +152,10 @@ func openProducerTurn(ctx context.Context, a *SessionAuthority, row *pyjson.Obje
 	if !marked {
 		return nil, nil
 	}
-	adapter := a.Runner.AdapterForSource(ctx, event.Source)
+	adapter, err := a.Runner.AdapterForSource(ctx, event.Source)
+	if err != nil {
+		return nil, err
+	}
 	typing := adapter != nil && adapterOverrides(adapter, "SendTyping")
 	hooks := followupProcessingHooksApply(adapter, event)
 	if !(typing || hooks) {

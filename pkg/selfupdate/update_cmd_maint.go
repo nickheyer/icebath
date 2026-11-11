@@ -897,7 +897,7 @@ func refreshCuaDriverAfterUpdate(ctx context.Context, w io.Writer) error {
 	if pystr.Strip(os.Getenv("ICEBATH_CUA_DRIVER_CMD")) != "" {
 		return nil
 	}
-	installed, err := pm.Installed(ctx, "cua-driver", true)
+	installed, err := cuaRefreshInstalled(ctx, "cua-driver", true)
 	if err != nil || installed == nil {
 		return err
 	}
@@ -908,11 +908,10 @@ func refreshCuaDriverAfterUpdate(ctx context.Context, w io.Writer) error {
 	}
 	fmt.Fprintln(w, "\n→ Preparing pinned cua-driver (Computer Use)...")
 	if sysPlatform() == "darwin" {
-		_, err = installCuaDriver(ctx, w, false, false)
+		_, err = installCuaDriver(ctx, w, false)
 		return err
 	}
-	_, err = pm.Ensure(ctx, "cua-driver", pm.EnsureOptions{Explicit: true})
-	return err
+	return pmEnsureFn(ctx, "cua-driver")
 }
 
 // Installs the optional default tools this install lacks, a failed download warning without failing

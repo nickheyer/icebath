@@ -232,9 +232,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 	}
 	platform := source.Platform
 	if platform == PlatformLocal {
-		if err := applyPendingReasoning(ctx, a, ref, live); err != nil {
-			return claimAttempt{}, err
-		}
+		applyPendingReasoning(ctx, a, ref, live)
 		if err := applyDeferredPick(ctx, a, ref, live); err != nil {
 			return claimAttempt{}, err
 		}
@@ -271,9 +269,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 		} else if err := checkLocalInput(a, ref, first, nil); err != nil {
 			return claimAttempt{}, err
 		}
-		if err := refreezeEditorMCP(ctx, a, ref, live); err != nil {
-			return claimAttempt{}, err
-		}
+		refreezeEditorMCP(ctx, a, ref, live)
 		if !notedCompletion(first) {
 			if _, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 				return nil, reopenLocalSession(taskCtx, a, ref)
@@ -288,7 +284,11 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 			if err != nil {
 				return claimAttempt{}, err
 			}
-			if _, _, err := checkNativeRoute(ctx, a.Runner, rowPayload(first), target, source, a.Runner.AdapterForSource(ctx, source)); err != nil {
+			adapter, err := a.Runner.AdapterForSource(ctx, source)
+			if err != nil {
+				return claimAttempt{}, err
+			}
+			if _, _, err := checkNativeRoute(ctx, a.Runner, rowPayload(first), target, source, adapter); err != nil {
 				return claimAttempt{}, err
 			}
 			moved, err := a.headMoved(ctx, rowString(first, "admission_id"))
@@ -301,7 +301,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 		}
 	}
 	if first != nil && platform == PlatformAPIServer {
-		if err := checkAPITurn(ctx, a, ref, rowPayload(first)); err != nil {
+		if _, err := checkAPITurn(ctx, a, ref, rowPayload(first)); err != nil {
 			return claimAttempt{}, err
 		}
 		if _, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {

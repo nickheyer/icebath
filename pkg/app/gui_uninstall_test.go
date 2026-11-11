@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -205,6 +206,16 @@ func TestGuiDryRunNeverConfirmsOrRemovesInstalledState(t *testing.T) {
 			text := out.String()
 			if !strings.Contains(text, "Dry run") || !strings.Contains(text, record) || strings.Contains(text, "Uninstalled!") {
 				t.Fatalf("output %q", text)
+			}
+		}
+		if _, err := CmdUninstall(t.Context(), map[string]any{"dry_run": true}, io.Discard, func(string) { t.Fatal("agent dry run asked for a terminal") }); err != nil {
+			t.Fatal(err)
+		}
+		for _, set := range []map[string]string{protected, guiFiles} {
+			for path, data := range set {
+				if b, err := os.ReadFile(path); err != nil || string(b) != data {
+					t.Fatalf("%s changed by the agent dry run", path)
+				}
 			}
 		}
 	}

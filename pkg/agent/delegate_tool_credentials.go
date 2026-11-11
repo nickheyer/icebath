@@ -88,8 +88,8 @@ func loadedPool(ctx context.Context, key string) *provider.Pool {
 }
 
 // Provider identity plus at least one entry serving the child's endpoint
-func poolServesEndpoint(pool *provider.Pool, providerName, baseURL string) bool {
-	if !provider.CredentialPoolMatchesProvider(pool.Provider(), providerName, baseURL) {
+func poolServesEndpoint(ctx context.Context, pool *provider.Pool, providerName, baseURL string) bool {
+	if !provider.CredentialPoolMatchesProvider(ctx, pool.Provider(), providerName, baseURL) {
 		return false
 	}
 	for _, entry := range pool.Entries() {
@@ -124,7 +124,7 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		}
 	}()
 	if effectiveProvider == "custom" {
-		cfg := provider.LoadConfigSafe(home.Dir(ctx))
+		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
 		childKey := provider.GetCustomProviderPoolKey(effectiveBaseURL, effectiveRequestedProvider, cfg)
 		if childKey == "" {
 			return nil
@@ -143,13 +143,13 @@ func resolveChildCredentialPool(ctx context.Context, effectiveProvider string, p
 		if parentPool == nil {
 			return nil
 		}
-		if effectiveBaseURL == "" || poolServesEndpoint(parentPool, effectiveProvider, effectiveBaseURL) {
+		if effectiveBaseURL == "" || poolServesEndpoint(ctx, parentPool, effectiveProvider, effectiveBaseURL) {
 			return parentPool
 		}
 		delegateLog().Debug(fmt.Sprintf("Parent %s pool has no entry for child endpoint %s; not sharing it", effectiveProvider, effectiveBaseURL))
 	}
 	loaded := loadedPoolFn(ctx, effectiveProvider)
-	if loaded != nil && effectiveBaseURL != "" && !poolServesEndpoint(loaded, effectiveProvider, effectiveBaseURL) {
+	if loaded != nil && effectiveBaseURL != "" && !poolServesEndpoint(ctx, loaded, effectiveProvider, effectiveBaseURL) {
 		return nil
 	}
 	return loaded

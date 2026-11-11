@@ -1007,12 +1007,9 @@ func redactAssignments(text string, maskNonreusable bool) string {
 	}
 	if strings.Contains(text, "=") {
 		envSub := func(re *regexp.Regexp, boundary func(loc []int) bool) {
-			locs := scanMatches(re, text, func(loc []int) bool {
-				if boundary != nil && !boundary(loc) {
-					return false
-				}
-				_, value, _ := greedyQuotedValue(text, loc, 2, 3)
-				return shouldRedactAssignment(group(text, loc, 1), value, true)
+			locs := scanSubMatches(re, text, false, boundary, func(loc []int) (bool, int) {
+				_, value, end := greedyQuotedValue(text, loc, 2, 3)
+				return shouldRedactAssignment(group(text, loc, 1), value, true), end
 			})
 			if len(locs) == 0 {
 				return
@@ -1036,29 +1033,26 @@ func redactAssignments(text string, maskNonreusable bool) string {
 			})
 		}
 		if !strings.Contains(text, "://") && cfgSecretWordRe.MatchString(text) {
-			cfgSub := func(re *regexp.Regexp, boundary func(loc []int) bool) {
-				locs := scanMatches(re, text, func(loc []int) bool {
-					if boundary != nil && !boundary(loc) {
-						return false
-					}
+			cfgSub := func(re *regexp.Regexp, lineAnchored bool, boundary func(loc []int) bool) {
+				locs := scanSubMatches(re, text, lineAnchored, boundary, func(loc []int) (bool, int) {
 					_, value := lazyQuotedValue(text, loc, 2, 3)
-					return shouldRedactAssignment(group(text, loc, 1), value, true)
+					return shouldRedactAssignment(group(text, loc, 1), value, true), loc[1]
 				})
 				text = replaceSpans(text, locs, func(loc []int) string {
 					quote, value := lazyQuotedValue(text, loc, 2, 3)
 					return group(text, loc, 1) + "=" + quote + mask(value) + quote
 				})
 			}
-			cfgSub(cfgDottedRe, func(loc []int) bool {
+			cfgSub(cfgDottedRe, false, func(loc []int) bool {
 				r, ok := prevRune(text, loc[0])
 				return !ok || !isCfgKeyRune(r)
 			})
-			cfgSub(cfgAnchoredRe, nil)
+			cfgSub(cfgAnchoredRe, true, nil)
 		}
 	}
 	if strings.Contains(text, ":") && strings.Contains(text, `"`) {
-		locs := scanMatches(jsonFieldRe, text, func(loc []int) bool {
-			return shouldRedactAssignment(group(text, loc, 1), group(text, loc, 2), false)
+		locs := scanSubMatches(jsonFieldRe, text, false, nil, func(loc []int) (bool, int) {
+			return shouldRedactAssignment(group(text, loc, 1), group(text, loc, 2), false), loc[1]
 		})
 		text = replaceSpans(text, locs, func(loc []int) string {
 			return group(text, loc, 1) + `: "` + mask(group(text, loc, 2)) + `"`
@@ -1071,12 +1065,12 @@ func redactAssignments(text string, maskNonreusable bool) string {
 		text = redactPythonReprFields(text)
 	}
 	if strings.Contains(text, ":") && !strings.Contains(text, "://") {
-		locs := scanMatches(yamlAssignRe, text, func(loc []int) bool {
+		locs := scanSubMatches(yamlAssignRe, text, true, nil, func(loc []int) (bool, int) {
 			value := group(text, loc, 3)
 			if strings.HasPrefix(value, "'") || strings.HasPrefix(value, `"`) {
-				return false
+				return false, loc[1]
 			}
-			return shouldRedactAssignment(group(text, loc, 1), value, true)
+			return shouldRedactAssignment(group(text, loc, 1), value, true), loc[1]
 		})
 		text = replaceSpans(text, locs, func(loc []int) string {
 			return group(text, loc, 1) + group(text, loc, 2) + mask(group(text, loc, 3))

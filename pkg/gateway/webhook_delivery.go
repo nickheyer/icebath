@@ -30,8 +30,8 @@ type webhookDeliveryAdapter interface {
 	ReloadDynamicRoutes(ctx context.Context)
 	WebhookRoute(name string) (any, bool)
 	DeliveryInfo(chatID string) any
-	WebhookProfileScope(ctx context.Context, profile *string) context.Context
-	WebhookDeliveryConfig(ctx context.Context, profile *string) *GatewayConfig
+	WebhookProfileScope(ctx context.Context, profile *string) (context.Context, error)
+	WebhookDeliveryConfig(ctx context.Context, profile *string) (*GatewayConfig, error)
 }
 
 // Webhook delivery surface of an adapter, the AttributeError a Python call on any other adapter raises
@@ -262,8 +262,15 @@ func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, ch
 		text := raw.(string)
 		profile = &text
 	}
-	scoped := hook.WebhookProfileScope(ctx, profile)
-	home := hook.WebhookDeliveryConfig(scoped, profile).GetHomeChannel(Platform(target))
+	scoped, err := hook.WebhookProfileScope(ctx, profile)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := hook.WebhookDeliveryConfig(scoped, profile)
+	if err != nil {
+		return nil, err
+	}
+	home := cfg.GetHomeChannel(Platform(target))
 	if home == nil {
 		return nil, runtimeRefusal("not_found")
 	}

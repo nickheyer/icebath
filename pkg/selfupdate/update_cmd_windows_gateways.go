@@ -47,29 +47,30 @@ var (
 	winFindProfileProcesses = func(ctx context.Context) ([]gatewaycli.ProfileGatewayProcess, error) {
 		return gatewaycli.FindProfileGatewayProcesses(ctx, nil, true)
 	}
-	winFindServices         = gatewaycli.FindWindowsGatewayServicesFor
-	winStopGateways         = stopWindowsGateways
-	winRecordAttested       = recordAttestedColdStartProfiles
-	winWriteAttestation     = gateway.WriteStartAttestation
-	winRecordRestart        = updaterecord.RecordGatewayRestart
-	winUnregisterExitHook   = unregisterUpdateExitHook
-	winStopService          = stopWindowsGatewayService
-	winStartService         = startWindowsGatewayService
-	winRestoreService       = restoreWindowsGatewayService
-	winServiceGatewayReady  = serviceGatewayReady
-	winOwnedGatewayPids     = ownedGatewayPids
-	winDesktopOwnsLifecycle = desktopOwnsGatewayLifecycle
-	winColdStartGateway     = coldStartWindowsGatewayAfterUpdate
-	winRefreshLaunchers     = refreshWindowsGatewayLaunchers
-	winResumeAfterUpdate    = resumeWindowsGatewaysAfterUpdate
-	winLiveGatewayPids      = liveGatewayPids
-	winWaitForGatewayReady  = waitForGatewayReady
-	winGatewayPidHome       = gateway.GatewayPidHome
-	winProcessStartTime     = gateway.GetProcessStartTime
-	winLooksLikeGateway     = gateway.LooksLikeGatewayProcess
-	winNow                  = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-	bootstrapUnsafeRef      = regexp.MustCompile(`[^A-Za-z0-9._-]`)
-	bootstrapCommitRef      = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
+	winFindServices          = gatewaycli.FindWindowsGatewayServicesFor
+	winStopGateways          = stopWindowsGateways
+	winRecordAttested        = recordAttestedColdStartProfiles
+	winWriteAttestation      = gateway.WriteStartAttestation
+	winRecordRestart         = updaterecord.RecordGatewayRestart
+	winUnregisterExitHook    = unregisterUpdateExitHook
+	winStopService           = stopWindowsGatewayService
+	winStartService          = startWindowsGatewayService
+	winRestoreService        = restoreWindowsGatewayService
+	winServiceGatewayReady   = serviceGatewayReady
+	winOwnedGatewayPids      = ownedGatewayPids
+	winDesktopOwnsLifecycle  = desktopOwnsGatewayLifecycle
+	winColdStartGateway      = coldStartWindowsGatewayAfterUpdate
+	winRefreshLaunchers      = refreshWindowsGatewayLaunchers
+	winLaunchDetachedRestart = gateway.LaunchDetachedProfileGatewayRestart
+	winResumeAfterUpdate     = resumeWindowsGatewaysAfterUpdate
+	winLiveGatewayPids       = liveGatewayPids
+	winWaitForGatewayReady   = waitForGatewayReady
+	winGatewayPidHome        = gateway.GatewayPidHome
+	winProcessStartTime      = gateway.GetProcessStartTime
+	winLooksLikeGateway      = gateway.LooksLikeGatewayProcess
+	winNow                   = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+	bootstrapUnsafeRef       = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+	bootstrapCommitRef       = regexp.MustCompile(`^[0-9a-fA-F]{7,40}$`)
 )
 
 func init() {
@@ -1148,7 +1149,7 @@ func relaunchPausedGateways(ctx context.Context, paused map[string]any, unmapped
 			updateLog.DebugContext(ctx, fmt.Sprintf("Could not restart Windows gateway profile %s after update: %s", profile, "invalid pid"))
 			continue
 		}
-		if tryCall(ctx, func() (bool, error) { return launchDetachedProfileGatewayRestart(ctx, profile, int(oldPid)) }, false,
+		if tryCall(ctx, func() (bool, error) { return winLaunchDetachedRestart(ctx, profile, int(oldPid)) }, false,
 			"Could not restart Windows gateway profile %s after update: %s", profile) {
 			launched[profile] = int(oldPid)
 		}
@@ -1163,7 +1164,9 @@ func relaunchPausedGateways(ctx context.Context, paused map[string]any, unmapped
 		if served, ok := entry["home"].(string); ok {
 			servedHome = &served
 		}
-		if tryCall(ctx, func() (bool, error) { return launchDetachedGatewayRestartByCmdline(ctx, oldPid, argv, servedHome) }, false,
+		if tryCall(ctx, func() (bool, error) {
+			return gateway.LaunchDetachedGatewayRestartByCmdline(ctx, oldPid, argv, servedHome)
+		}, false,
 			"Could not restart unmapped Windows gateway (pid %s) after update: %s", strconv.Itoa(oldPid)) {
 			launchedUnmapped = append(launchedUnmapped, entry)
 		}

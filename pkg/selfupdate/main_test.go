@@ -1,11 +1,15 @@
 package selfupdate
 
 import (
+	"context"
+
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Hidden first argument that routes a re-executed test binary to one of its child stand-ins
@@ -17,6 +21,11 @@ func TestMain(m *testing.M) {
 		custodySubreaper = func() bool { return false }
 	}
 	DispatchCustodyLauncher()
+	gateway.DispatchGatewayRestartWatcherEntry(context.Background())
+	if len(os.Args) > 1 && os.Args[1] == servedGatewayStandInEntry {
+		time.Sleep(10 * time.Minute)
+		os.Exit(0)
+	}
 	// Race instrumented children exit at once instead of sleeping a second, so their timing matches the build stand-ins
 	os.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 	if os.Getenv("ICEBATH_SELFUPDATE_TEST_HOST") == "1" {
@@ -25,6 +34,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv("VS_BOOT_PROBE") != "" || len(os.Args) > 2 && os.Args[1] == "pm" && os.Args[2] == "worker" ||
 		len(os.Args) > 1 && (os.Args[1] == vsChildEntry || os.Args[1] == RelaunchedFlag || os.Args[1] == SourceCompletionEntry) {
 		os.Exit(vsChild(os.Args))
+	}
+	if os.Getenv(rrE2ELedgerEnv) != "" && len(os.Args) > 1 && os.Args[1] == UpdateRestartRecoveryEntry {
+		os.Exit(rrE2EChild(os.Args[2:]))
 	}
 	if len(os.Args) > 2 && os.Args[1] == cuChildEntry {
 		os.Exit(cuChild(os.Args[2], os.Args[3:]))

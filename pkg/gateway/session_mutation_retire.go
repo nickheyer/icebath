@@ -35,7 +35,8 @@ func secretRefs(ctx context.Context, a *SessionAuthority, retired map[string]boo
 	if err != nil {
 		return nil, err
 	}
-	local, _ := adapters[PlatformLocal].(*LocalSessionAdapter)
+	held, _ := adapters.Get(PlatformLocal)
+	local, _ := held.(*LocalSessionAdapter)
 	if local == nil {
 		return refs, nil
 	}

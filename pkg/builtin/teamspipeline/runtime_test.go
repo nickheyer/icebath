@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -57,8 +58,12 @@ type fakeGatewayHost struct {
 }
 
 func (h *fakeGatewayHost) RunnerConfig() *gateway.GatewayConfig { return h.config }
-func (h *fakeGatewayHost) Adapters() map[gateway.Platform]gateway.PlatformAdapter {
-	return h.adapters
+func (h *fakeGatewayHost) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+	adapters := pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	for platform, adapter := range h.adapters {
+		adapters.Set(platform, adapter)
+	}
+	return adapters
 }
 func (h *fakeGatewayHost) TeamsPipelineRuntime() any                    { return h.runtime }
 func (h *fakeGatewayHost) SetTeamsPipelineRuntime(runtime any)          { h.runtime = runtime }

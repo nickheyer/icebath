@@ -149,7 +149,10 @@ func resolveLastSession(source string) string {
 		ctx := context.Background()
 		if key := resolveWorkspaceKey(); key != "" {
 			rows, err := db.SearchSessions(ctx, gatewaycli.SearchSessionsOptions{Sources: sources, Limit: 1, WorkspaceKey: key, SkipLaunchStubs: true})
-			if err == nil && len(rows) > 0 {
+			if err != nil {
+				return
+			}
+			if len(rows) > 0 {
 				found = pyStr(rowValue(rows[0], "id"))
 				return
 			}

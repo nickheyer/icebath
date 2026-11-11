@@ -524,11 +524,11 @@ func (c *Chain) TryActivateFallback(ctx context.Context, reason FailoverReason, 
 	}
 }
 
-func (c *Chain) matchesPrimary(pool PoolProbe) bool {
+func (c *Chain) matchesPrimary(ctx context.Context, pool PoolProbe) bool {
 	if pool == nil {
 		return false
 	}
-	return CredentialPoolMatchesProvider(pool.Provider(), strings.ToLower(strings.TrimSpace(c.primary.Provider)), c.primary.BaseURL)
+	return CredentialPoolMatchesProvider(ctx, pool.Provider(), strings.ToLower(strings.TrimSpace(c.primary.Provider)), c.primary.BaseURL)
 }
 
 func (c *Chain) loadPrimaryPool(ctx context.Context) PoolProbe {
@@ -538,7 +538,7 @@ func (c *Chain) loadPrimaryPool(ctx context.Context) PoolProbe {
 	} else if c.opts.LoadPool != nil {
 		loaded = c.opts.LoadPool(ctx, strings.ToLower(strings.TrimSpace(c.primary.Provider)))
 	}
-	if loaded != nil && c.matchesPrimary(loaded) {
+	if loaded != nil && c.matchesPrimary(ctx, loaded) {
 		return loaded
 	}
 	return nil
@@ -556,7 +556,7 @@ func (c *Chain) primaryQuotaReopenedEarly(ctx context.Context, primaryProvider, 
 	c.codexReopenChecked = true
 	c.codexReopenCheckedAt = now
 	pool := c.pool
-	if pool == nil || !c.matchesPrimary(pool) {
+	if pool == nil || !c.matchesPrimary(ctx, pool) {
 		pool = c.loadPrimaryPool(ctx)
 	}
 	if pool == nil {
@@ -574,7 +574,7 @@ func (c *Chain) primaryResetGateBlocks(ctx context.Context, primaryProvider, pri
 	var prefetchedPool PoolProbe
 	prefetched := false
 	pool := c.pool
-	if !c.matchesPrimary(pool) {
+	if !c.matchesPrimary(ctx, pool) {
 		pool = c.loadPrimaryPool(ctx)
 		prefetchedPool = pool
 		prefetched = true
@@ -601,7 +601,7 @@ func (c *Chain) primaryResetGateBlocks(ctx context.Context, primaryProvider, pri
 // rebindPrimaryPool reloads the primary's pool after a cross provider fallback attached another
 func (c *Chain) rebindPrimaryPool(ctx context.Context, prefetchedPool PoolProbe, prefetched bool) {
 	pool := c.pool
-	if pool != nil && strings.TrimSpace(pool.Provider()) != "" && !c.matchesPrimary(pool) {
+	if pool != nil && strings.TrimSpace(pool.Provider()) != "" && !c.matchesPrimary(ctx, pool) {
 		c.pool = nil
 		if prefetched {
 			c.pool = prefetchedPool

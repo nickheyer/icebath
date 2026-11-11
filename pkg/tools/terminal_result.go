@@ -110,7 +110,7 @@ func interpretExitCode(command string, exitCode int) string {
 func sudoAnnotations(ctx context.Context, env *Env, command, output, envType, sessionKey string) (string, bool, bool) {
 	output = handleSudoFailure(ctx, env, output, envType)
 	authFailed := sudoWrongPasswordFailure(output)
-	cacheCleared := invalidateCachedSudoOnAuthFailure(env, sudoCacheScope(env, sessionKey), command, output)
+	cacheCleared := invalidateCachedSudoOnAuthFailure(env, sudoCacheScope(ctx, env, sessionKey), command, output)
 	canReprompt := cacheCleared && ((env != nil && env.Ask != nil) || truthyEnvValue(os.Getenv("ICEBATH_INTERACTIVE"))) && !noSudoUser(ctx, env)
 	if canReprompt {
 		output += "\n\n\u26a0\ufe0f Sudo authentication failed \u2014 cached password " +

@@ -178,7 +178,7 @@ func ensureCodexSession(agent CodexRuntimeAgent, messages []map[string]any) erro
 		}
 		cwd = resolved
 	}
-	codexBin := GetConfiguredCodexBinary(LoadConfigSafe(codexAgentHome(agent)))
+	codexBin := GetConfiguredCodexBinary(loadLiveConfigSafe(codexAgentHome(agent)))
 	providerID := ""
 	if modelProvider != nil {
 		providerID = *modelProvider

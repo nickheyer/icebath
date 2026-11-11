@@ -215,7 +215,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	manifest := c.newCmd(slack, "manifest", "Print or write a Slack app manifest with every gateway command registered as a native slash (/btw, /stop, /model, ...)",
 		"Generate a Slack app manifest that registers every gateway command in the command registry as a first-class Slack slash command (matching Discord and Telegram parity). Paste the output into Slack app config → Features → App Manifest → Edit, then Save. Reinstall the app if Slack prompts for it.")
 	sf(manifest, "write", "", "", "Write manifest to a file instead of stdout. With no PATH writes to $ICEBATH_HOME/slack-manifest.json.")
-	noOpt(manifest, "write", FlagPresent)
+	constTrue(manifest, "write")
 	sf(manifest, "name", "", "", `Bot display name (default: "Icebath")`)
 	sf(manifest, "description", "", "", "Bot description shown in Slack's app directory.")
 	sf(manifest, "long-description", "", "", "Set Slack's long app description (175-4,000 characters).")

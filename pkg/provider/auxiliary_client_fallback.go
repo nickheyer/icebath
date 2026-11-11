@@ -566,7 +566,7 @@ func TryConfiguredFallbackForUnavailableClient(ctx context.Context, task, failed
 // Inline or env backed key of a fallback entry through the secret scope aware resolver
 func auxFallbackEntryAPIKey(ctx context.Context, entry map[string]any) string {
 	h := home.Dir(ctx)
-	return newResolver(ctx, config.Tree(LoadConfigSafe(h)), config.NewSecrets(h), h, nil).ResolveEntryAPIKey(entry)
+	return newResolver(ctx, config.Tree(LoadConfigSafe(ctx, h)), config.NewSecrets(h), h, nil).ResolveEntryAPIKey(entry)
 }
 
 // Inline or env backed key of a fallback entry through the secret scope aware resolver

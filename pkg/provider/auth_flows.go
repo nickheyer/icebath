@@ -627,9 +627,6 @@ func (e *ConfigWriteRefusedError) Unwrap() error { return e.Err }
 
 // Refuses to replace an existing config.yaml that cannot be read or parsed, returning the raw mapping
 func requireReadableConfigBeforeWrite(h string) (map[string]any, error) {
-	if frozen := FrozenRuntimeConfig(); frozen != nil && workerConfigSnapshotActive() {
-		return config.Clone(frozen).(map[string]any), nil
-	}
 	path := home.ConfigPath(h)
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {

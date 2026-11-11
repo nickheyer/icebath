@@ -314,11 +314,18 @@ func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			return nil, err
 		}
 	}
-	adapter := runner.AdapterForSource(ctx, source)
+	adapter, err := runner.AdapterForSource(ctx, source)
+	if err != nil {
+		return nil, err
+	}
 	if adapter == nil {
 		return nil, refuseNative(event, "not_found", "adapter")
 	}
-	if runner.AdapterForSource(ctx, restored) != adapter {
+	restoredAdapter, err := runner.AdapterForSource(ctx, restored)
+	if err != nil {
+		return nil, err
+	}
+	if restoredAdapter != adapter {
 		return nil, refuseNative(event, "not_found", "adapter_mismatch")
 	}
 	return encoded, nil
@@ -443,7 +450,10 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 		"allow_gateway_control", event.AllowGatewayControl)
 	envelope := pyjson.ObjectOf("source", encodedSource, "route", route, "event", fields, "timestamp", eventISOFormat(event.Timestamp))
 	if event.Source.Platform == PlatformWebhook {
-		adapter := runner.AdapterForSource(ctx, event.Source)
+		adapter, err := runner.AdapterForSource(ctx, event.Source)
+		if err != nil {
+			return nil, err
+		}
 		if provenance == nil {
 			return nil, runtimeRefusal("permission_denied")
 		}
@@ -824,7 +834,12 @@ func checkNativeRoute(ctx context.Context, runner AuthorityRunner, payload *pyjs
 	if entry := store.LookupBySessionKey(ctx, route); entry == nil || entry.SessionID != sessionID {
 		return nil, "", runtimeRefusal("admission_conflict")
 	}
-	if adapter == nil || runner.AdapterForSource(ctx, event.Source) != adapter {
+	if adapter == nil {
+		return nil, "", runtimeRefusal("not_found")
+	}
+	if owner, err := runner.AdapterForSource(ctx, event.Source); err != nil {
+		return nil, "", err
+	} else if owner != adapter {
 		return nil, "", runtimeRefusal("not_found")
 	}
 	if event.Source.Platform == PlatformWebhook {
