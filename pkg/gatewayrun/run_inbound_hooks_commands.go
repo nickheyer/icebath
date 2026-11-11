@@ -81,7 +81,7 @@ func hookPyStr(hookResult map[string]any, key string) string {
 
 // Drain gate, operator quick commands and plugin slash commands, an alias quick command rewriting the command
 func (r *GatewayRunner) hmDispatchQuickAndPluginCommands(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, command string) (bool, *string, string, error) {
-	if r.draining && !event.AdmittedBeforeDrain() {
+	if r.draining.Load() && !event.AdmittedBeforeDrain() {
 		reply := i18n.T(ctx, "gateway.busy.drain_rejected_new_work", "", map[string]any{"action": r.statusActionGerund(ctx)})
 		return true, &reply, command, nil
 	}

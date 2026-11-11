@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -999,4 +1001,17 @@ func TestSummaryAccessOrQuotaClassifier(t *testing.T) {
 			t.Fatal("unscoped")
 		}
 	})
+}
+
+// Infinite max_tokens raises the OverflowError int() raises in Python rather than reading as no reservation
+func TestCoerceMaxTokensInfinityRaisesOverflowError(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	defer func() {
+		failure := recover()
+		var pyErr *pyint.Error
+		if err, isError := failure.(error); !isError || !errors.As(err, &pyErr) || pyErr.Kind != "OverflowError" {
+			t.Fatalf("recovered %v", failure)
+		}
+	}()
+	coerceMaxTokens(math.Inf(1))
 }

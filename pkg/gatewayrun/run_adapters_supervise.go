@@ -120,7 +120,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 			return
 		}
 		runLog().Error(fmt.Sprintf("Supervised task %s died: %s", name, pyrepr.ExceptionRepr(err)), "exc_info", err)
-		if !(restart && r.running) {
+		if !(restart && r.running.Load()) {
 			return
 		}
 		effective := attempt
@@ -147,7 +147,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 			if err := sleepCtx(respawnCtx, backoff); err != nil {
 				return nil, err
 			}
-			if r.running {
+			if r.running.Load() {
 				r.spawnSupervised(factory, name, restart, effective+1, hooks)
 			}
 			return nil, nil

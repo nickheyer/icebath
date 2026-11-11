@@ -33,7 +33,7 @@ import (
 // Monotonic desktop and backend contract version the desktop compares against its required one
 const desktopBackendContract = 8
 
-// Placeholder terminal cwd values resolved to the home dir at runtime, never an explicit workspace
+// Stand in terminal cwd values resolved to the home dir at runtime, never an explicit workspace
 var cwdPlaceholders = map[string]bool{".": true, "auto": true, "cwd": true}
 
 // CLI banner facts the session info reports, assigned by the command wiring from the app package
@@ -151,7 +151,7 @@ func responseProfileName(ctx context.Context, profile string) string {
 	return name
 }
 
-// Absolute existing terminal cwd of a config mapping, empty for placeholders, missing or invalid paths
+// Absolute existing terminal cwd of a config mapping, empty for stand in, missing or invalid paths
 func configuredCwdFromCfg(cfg map[string]any) string {
 	terminalCfg, _ := cfg["terminal"].(map[string]any)
 	raw := ""
@@ -633,7 +633,7 @@ func dbUnavailableError(ctx context.Context, rid any, code int) map[string]any {
 		map[string]any{"code": failure.Code, "cause": failure.Cause, "details": state.StorageFailureDetails(cause, 200)})
 }
 
-// Model and provider a live session runs, a pending switch, the mirror, the agent, the composer pick, else the profile default
+// Model and provider a live session runs, from its pending switch, mirror, agent or composer pick, else the profile default
 func liveSessionIdentity(ctx context.Context, session *tuigateway.Session) (string, string) {
 	pending, _ := session.Get("pending_model_switch").(map[string]any)
 	mirror := metadataMirror(session)

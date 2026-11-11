@@ -318,11 +318,14 @@ func (c *CLI) tuiBuildLayout(kb *ptKeyBindings, app *ptApplication) ([]*ptWindow
 // The slash completer of the classic prompt over this session's skills, bundles and plugin commands
 func cliSlashCompleter(c *CLI) *commands.SlashCompleter {
 	return commands.NewCompleter(commands.CompleterSources{
-		Cfg:            func() config.Tree { return config.Tree(CLIConfig(c.ctx)) },
-		Skills:         func() map[string]commands.SkillInfo { return completerSkills(sessionSkillCommands(c)) },
-		Bundles:        func() map[string]commands.BundleInfo { return completerBundles(getSkillBundles(c.ctx)) },
-		PluginCommands: func() map[string]string { return pluginCommandNames(c) },
-		CommandAllowed: c.commandAvailable,
+		Cfg:                func() config.Tree { return config.Tree(CLIConfig(c.ctx)) },
+		Skills:             func() map[string]commands.SkillInfo { return completerSkills(sessionSkillCommands(c)) },
+		Bundles:            func() map[string]commands.BundleInfo { return completerBundles(getSkillBundles(c.ctx)) },
+		PluginCommands:     func() map[string]string { return pluginCommandNames(c) },
+		Skins:              func() []commands.NameMeta { return commands.LiveSkinRows(c.ctx) },
+		ToolsetRows:        func() []commands.ToolsetRow { return commands.LiveToolsetRows(c.ctx) },
+		ConnectedPlatforms: func() []commands.PlatformHome { return commands.LiveConnectedPlatforms(c.ctx) },
+		CommandAllowed:     c.commandAvailable,
 	})
 }
 

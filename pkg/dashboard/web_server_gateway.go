@@ -654,8 +654,11 @@ func startActionProcess(argv []string, cwd string, env map[string]string, logFil
 
 var actionPopen = startActionProcess
 
+// Background action spawner every route calls, the web server gateway attribute hermes tests replace
+var spawnHermesAction = spawnHermesActionProcess
+
 // Spawns the icebath subcommand detached with its output in the action log and records the handle
-func spawnHermesAction(ctx context.Context, subcommand []string, name string, envOverrides map[string]string) (actionProc, error) {
+func spawnHermesActionProcess(ctx context.Context, subcommand []string, name string, envOverrides map[string]string) (actionProc, error) {
 	logDir := actionLogDir()
 	if err := os.MkdirAll(logDir, 0o777); err != nil {
 		return nil, err

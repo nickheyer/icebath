@@ -1300,10 +1300,10 @@ func prepareValidationProbe(ctx context.Context, path string) (*validationProbe,
 }
 
 // Catalog entries merged with local install state for the dashboard, matched by catalog name first
-func InstalledCatalogState(ctx context.Context, installed map[string]map[string]any) map[string]any {
+func InstalledCatalogState(ctx context.Context, installed map[string]map[string]any, order []string) map[string]any {
 	h := home.Dir(ctx)
 	byCatalogName := map[string]map[string]any{}
-	for _, key := range sortedKeys(installed) {
+	for _, key := range order {
 		local := installed[key]
 		if sidecar := catalogInstallRecord(h, orEmpty(local["dir"])); sidecar != nil {
 			merged := map[string]any{}
@@ -1338,13 +1338,19 @@ func InstalledCatalogState(ctx context.Context, installed map[string]map[string]
 		if ok {
 			row["runtime_status"] = local["runtime_status"]
 		}
+		config.SetMappingKeys(row, append(config.MappingKeys(entry.ToDict()), "sha_short", "capability_summary", "installed",
+			"installed_sha", "update_available", "runtime_status"))
 		entries = append(entries, row)
 	}
 	removed := []any{}
 	for _, r := range ResolvedRemovedEntries(ctx) {
-		removed = append(removed, map[string]any{"name": r.Name, "repo": r.Repo, "reason": r.Reason, "date": r.Date})
+		gone := map[string]any{"name": r.Name, "repo": r.Repo, "reason": r.Reason, "date": r.Date}
+		config.SetMappingKeys(gone, []string{"name", "repo", "reason", "date"})
+		removed = append(removed, gone)
 	}
-	return map[string]any{"entries": entries, "removed": removed, "generated_at": utcISONow()}
+	out := map[string]any{"entries": entries, "removed": removed, "generated_at": utcISONow()}
+	config.SetMappingKeys(out, []string{"entries", "removed", "generated_at"})
+	return out
 }
 
 // Current UTC time as datetime isoformat with Z, microseconds only when nonzero

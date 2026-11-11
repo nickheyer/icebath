@@ -30,6 +30,9 @@ func IsWSL() bool {
 
 // IsContainer reports whether this process runs inside a container
 func IsContainer() bool {
+	if pinned := containerPin.Load(); pinned != nil {
+		return *pinned
+	}
 	containerOnce.Do(func() { containerSeen = detectContainer() })
 	return containerSeen
 }

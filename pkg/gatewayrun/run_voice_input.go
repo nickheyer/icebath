@@ -157,12 +157,7 @@ func voiceInputSource(ctx context.Context, adapter gateway.PlatformAdapter, guil
 		userName = displayNameText(cache.GuildMemberDisplayName(guildID, userID))
 		channel = cache.CachedChannel(textChannelID)
 	}
-	cachedUser := func() *string {
-		if cache == nil {
-			return nil
-		}
-		return displayNameText(cache.CachedUserDisplayName(userID))
-	}
+	cachedUser := func() *string { return cachedUserDisplayName(cache, userID) }
 	uid := fmt.Sprint(userID)
 	var source *gateway.SessionSource
 	stored, hasStored := map[string]any(nil), false
@@ -310,4 +305,12 @@ func (r *GatewayRunner) handleVoiceChannelInput(ctx context.Context, guildID, us
 	event.Source, event.MessageType, event.RawMessage = source, gateway.MessageTypeVoice, voiceInputRawMessage{guildID: guildID}
 	event.ChannelPrompt, event.AutoSkill = channelPrompt, autoSkill
 	return adapter.HandleMessage(ctx, event)
+}
+
+// Display name of a cached Discord user, nil without a client cache or a non empty name
+func cachedUserDisplayName(cache discordVoiceCache, userID int64) *string {
+	if cache == nil {
+		return nil
+	}
+	return displayNameText(cache.CachedUserDisplayName(userID))
 }

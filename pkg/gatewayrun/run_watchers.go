@@ -14,7 +14,7 @@ const sessionStorePruneInterval = 3600.0
 // Sleeps in one second steps so a watcher stops quickly once the runner stops
 func interruptibleSleep(ctx context.Context, r *GatewayRunner, seconds int) error {
 	for range seconds {
-		if !r.running {
+		if !r.running.Load() {
 			break
 		}
 		if err := sleepCtx(ctx, 1); err != nil {
@@ -29,7 +29,7 @@ func (r *GatewayRunner) sessionHousekeepingWatcher(ctx context.Context, interval
 	if err := sleepCtx(ctx, 60); err != nil {
 		return err
 	}
-	for r.running {
+	for r.running.Load() {
 		if err := r.sessionHousekeeping(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

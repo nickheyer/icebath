@@ -30,7 +30,7 @@ func kanbanConfigHome(t *testing.T, body string) string {
 // Bare running runner with an optional Telegram adapter and no dispatcher lock
 func makeGateRunner(withAdapter bool) *GatewayRunner {
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	if withAdapter {
 		r.adapters = adapterDict(gateway.PlatformTelegram, newKanbanRecordingAdapter())
 	} else {
@@ -67,7 +67,7 @@ func TestNotifierWatcherPollsWithoutDispatchOwnership(t *testing.T) {
 	asyncioSleep = func(_ context.Context, delay float64) error {
 		sleepCalls = append(sleepCalls, delay)
 		if len(sleepCalls) >= 2 {
-			r.running = false
+			r.running.Store(false)
 		}
 		return nil
 	}

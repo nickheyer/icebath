@@ -43,7 +43,7 @@ func (r *GatewayRunner) initGatewayRunner(ctx context.Context) error {
 	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
 	r.sessionDBInitError = nil
 	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
-	r.profileConfigs = map[string]*gateway.GatewayConfig{}
+	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
 	r.warnIfDockerMediaDeliveryIsRisky(ctx)
 	gateway.SetGatewayRunnerRef(r)
 	r.initRuntimeSettings(ctx)

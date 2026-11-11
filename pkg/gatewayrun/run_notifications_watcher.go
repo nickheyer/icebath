@@ -185,7 +185,7 @@ func formatProcessRunningMessage(ctx context.Context, fields tools.ProcessWatchF
 // Starts a watcher registered mid turn on the serving loop in an empty context, false while not serving
 func (r *GatewayRunner) armProcessWatcher(watcher map[string]any) bool {
 	loop := r.gatewayLoop
-	if !r.running || loop == nil {
+	if !r.running.Load() || loop == nil {
 		return false
 	}
 	err := loop.CallSoonThreadsafe(func() {

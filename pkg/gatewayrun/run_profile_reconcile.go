@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	profileRescanInterval  = 30 * time.Second
-	ownGatewayProbeTimeout = 5 * time.Second
+	profileRescanIntervalSecs = 30.0
+	ownGatewayProbeTimeout    = 5 * time.Second
 )
 
 // Files besides config.yaml whose change rebuilds a served profile's adapters

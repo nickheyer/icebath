@@ -40,7 +40,7 @@ func TestRegistersWhenURLConfigured(t *testing.T) {
 	}
 }
 
-// Home with an enabled telegram config and a profile dir whose env file holds the text, under an active multiplex scope
+// Enabled telegram home and a profile env file holding the text, under an active multiplex scope
 func relayMultiplexScope(t *testing.T, profileEnv string) context.Context {
 	t.Helper()
 	h := relayCleanRegistry(t)

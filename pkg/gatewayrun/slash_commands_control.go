@@ -218,7 +218,7 @@ func (r *GatewayRunner) handleRestartCommand(ctx context.Context, event *gateway
 			"already processed by a previous gateway instance.", platform, updateID))
 		return "", nil
 	}
-	if r.restartRequested || r.draining {
+	if r.restartRequested || r.draining.Load() {
 		if count := r.runningAgentCount(); count > 0 {
 			return i18n.T(ctx, "gateway.draining", "", map[string]any{"count": count}), nil
 		}
@@ -380,7 +380,7 @@ func (r *GatewayRunner) handleSetHomeCommand(ctx context.Context, event *gateway
 	if platformConfig == nil {
 		platformConfig = gateway.NewPlatformConfig()
 		platformConfig.Enabled = !viaRelay
-		r.config.Platforms[source.Platform] = platformConfig
+		r.config.SetPlatform(source.Platform, platformConfig)
 	}
 	platformConfig.HomeChannel = homeChannel
 	return i18n.T(ctx, "gateway.set_home.success", "", map[string]any{"name": chatName, "chat_id": chatID}), nil

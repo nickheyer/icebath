@@ -25,14 +25,14 @@ func RegisterRelayAdapterWith(ctx context.Context, force bool, url *string) (boo
 	identity := RelayPlatformIdentity()
 	platform, botID := identity[0], identity[1]
 	factory := func(fctx context.Context, config *PlatformConfig) (any, error) {
-		placeholder := NewCapabilityDescriptor(RelayContractVersion, platform, "Relay", 4096, false, true, false, "plain", "chars")
+		provisional := NewCapabilityDescriptor(RelayContractVersion, platform, "Relay", 4096, false, true, false, "plain", "chars")
 		var transport RelayTransportConn
 		if resolvedURL != "" {
 			gatewayID, upgradeSecret := RelayConnectionAuth(fctx)
 			transport = NewWebSocketRelayTransport(resolvedURL, platform, botID, RelayTransportOptions{
 				Identities: RelayPlatformIdentities(), GatewayID: gatewayID, UpgradeSecret: upgradeSecret, Reconnect: true})
 		}
-		return NewRelayAdapter(config, placeholder, transport), nil
+		return NewRelayAdapter(config, provisional, transport), nil
 	}
 	entry := &PlatformEntry{Name: "relay", Label: "Relay", AdapterFactory: factory, CheckFn: func() bool { return true },
 		Source: "builtin", Emoji: "\U0001f50c"}

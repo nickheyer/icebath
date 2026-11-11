@@ -88,7 +88,7 @@ func TestNotifyWakeFailureRetriesWithoutRepeatingPing(t *testing.T) {
 	if v := failCountValues(r); len(v) != 1 || v[0] != 1 {
 		t.Fatalf("counts %v", v)
 	}
-	r.running = true
+	r.running.Store(true)
 	runOneNotifierTick(t, r)
 	if len(adapter.sent) != 1 || len(adapter.handled) != 2 {
 		t.Fatalf("sent %d handled %d", len(adapter.sent), len(adapter.handled))

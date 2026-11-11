@@ -373,7 +373,7 @@ func removeProfileTree(profileDir string) error {
 	if !unowned {
 		return &RuntimeError{Msg: "a running gateway still owns this profile; retry the delete once it settles"}
 	}
-	return rmtreeWithRetry(profileDir, rmtreeMakeWritable)
+	return rmtreeForDelete(profileDir, rmtreeMakeWritable)
 }
 
 // Message of an error the way Python str() shows an exception, OSError text for filesystem failures

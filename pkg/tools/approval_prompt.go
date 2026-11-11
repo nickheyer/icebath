@@ -75,6 +75,19 @@ func askerReadsTerminalKeys(a Asker) bool {
 	return ok && t.TerminalMenu()
 }
 
+// ApprovalCallbackOptions are the keywords an approval callback receives beside the command and its description
+type ApprovalCallbackOptions struct {
+	AllowPermanent bool
+	AllowSession   bool
+	SmartDenied    bool
+	Title          string
+}
+
+// ApprovalCallbackAsker is an asker that is an approval callback, called with the redacted command and description and answering verbatim
+type ApprovalCallbackAsker interface {
+	ApprovalCallback(ctx context.Context, command, description string, o ApprovalCallbackOptions) (string, error)
+}
+
 func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	displayCommand := redactApprovalDisplay(env, o.command, false)
 	displayDescription := redactApprovalDisplay(env, o.description, false)
@@ -83,6 +96,15 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	if asker == nil {
 		envLog(env).Warn("Dangerous-command approval requested with no approval surface registered; failing closed", "command", displayCommand, "description", displayDescription)
 		return unanswered("no approval callback is registered on this thread while prompt_toolkit owns the terminal, so the prompt could not be shown")
+	}
+	if callback, ok := asker.(ApprovalCallbackAsker); ok {
+		answer, err := callback.ApprovalCallback(ctx, displayCommand, displayDescription, ApprovalCallbackOptions{
+			AllowPermanent: o.allowPermanent, AllowSession: o.allowSession, SmartDenied: o.smartDenied, Title: o.title})
+		if err != nil {
+			envLog(env).Error("Approval callback failed", "error", err)
+			return unanswered(fmt.Sprintf("the approval callback failed: %v", err))
+		}
+		return promptChoice{value: answer}
 	}
 	choices := []string{"once"}
 	if !onceOnly {
@@ -125,6 +147,9 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 			return promptChoice{value: "once"}
 		}
 		return promptChoice{value: "deny"}
+	}
+	if raw == "timeout" && !askerReadsTerminalKeys(asker) {
+		return promptChoice{value: "timeout"}
 	}
 	decision, ok := cliChoiceAliases[raw]
 	if !ok {

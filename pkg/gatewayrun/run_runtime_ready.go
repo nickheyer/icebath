@@ -33,14 +33,13 @@ func publishGatewayRuntimeReady(r *GatewayRunner) error {
 	if r.sessionAPI == nil {
 		return errNoSessionAPI
 	}
-	if sessionAPIDone(r) || !r.running || r.draining {
+	if sessionAPIDone(r) || !r.running.Load() || r.draining.Load() {
 		return errors.New("gateway stopped before session API readiness")
 	}
-	if r.sessionRuntimeDescriptor == nil {
-		r.sessionRuntimeDescriptor = map[string]any{}
-	}
-	r.sessionRuntimeDescriptor["state"] = "ready"
-	r.sessionRuntimeDescriptor["capabilities"] = []any{"session-authority-v1", "durable-admission-v1", "event-replay-v1"}
+	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
+		descriptor["state"] = "ready"
+		descriptor["capabilities"] = []any{"session-authority-v1", "durable-admission-v1", "event-replay-v1"}
+	})
 	return gateway.StartReadyHostedServices(r)
 }
 
@@ -57,12 +56,11 @@ func waitGatewayRuntime(ctx context.Context, r *GatewayRunner) error {
 	case err := <-shutdown:
 		return err
 	case <-r.sessionAPI.task:
-		if !r.draining {
-			if r.sessionRuntimeDescriptor == nil {
-				r.sessionRuntimeDescriptor = map[string]any{}
-			}
-			r.sessionRuntimeDescriptor["state"] = "failed"
-			r.sessionRuntimeDescriptor["capabilities"] = []any{}
+		if !r.draining.Load() {
+			r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
+				descriptor["state"] = "failed"
+				descriptor["capabilities"] = []any{}
+			})
 			return &causedError{msg: "gateway session API stopped unexpectedly", cause: r.sessionAPI.serveErr}
 		}
 		return <-shutdown

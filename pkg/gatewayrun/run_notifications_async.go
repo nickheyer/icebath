@@ -326,7 +326,7 @@ func (r *GatewayRunner) asyncDelegationWatcher(ctx context.Context, interval flo
 		}
 		return nil
 	}
-	for r.running {
+	for r.running.Load() {
 		if err := pass(); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

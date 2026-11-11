@@ -30,7 +30,7 @@ type pmiInjector struct {
 }
 
 // Records every kwargs map the host hands the injector and answers the configured result
-func (r *pmiInjector) inject(kwargs map[string]any) bool {
+func (r *pmiInjector) inject(_ context.Context, kwargs map[string]any) bool {
 	r.mu.Lock()
 	r.calls = append(r.calls, kwargs)
 	r.mu.Unlock()
@@ -296,14 +296,14 @@ func TestTuiInjectorSlotDoesNotReplaceTheGatewaySlot(t *testing.T) {
 	if !m.HasGatewayMessageInjector() || !m.HasTUIMessageInjector() {
 		t.Fatal("one slot replaced the other")
 	}
-	if !m.InjectGatewayMessage(map[string]any{"session_key": "agent:main:telegram:dm:1"}) || m.InjectTUIMessage(map[string]any{"session_key": "ses_tui"}) {
+	if !m.InjectGatewayMessage(context.Background(), map[string]any{"session_key": "agent:main:telegram:dm:1"}) || m.InjectTUIMessage(context.Background(), map[string]any{"session_key": "ses_tui"}) {
 		t.Fatal("slot results crossed")
 	}
 	if !reflect.DeepEqual(gateway.calls, []map[string]any{{"session_key": "agent:main:telegram:dm:1"}}) || !reflect.DeepEqual(tui.calls, []map[string]any{{"session_key": "ses_tui"}}) {
 		t.Fatalf("calls = %v %v", gateway.calls, tui.calls)
 	}
 	m.ClearTUIMessageInjector(tuiOwner)
-	if m.HasTUIMessageInjector() || !m.HasGatewayMessageInjector() || !m.InjectGatewayMessage(map[string]any{"session_key": "kept"}) {
+	if m.HasTUIMessageInjector() || !m.HasGatewayMessageInjector() || !m.InjectGatewayMessage(context.Background(), map[string]any{"session_key": "kept"}) {
 		t.Fatal("clearing the TUI slot touched the gateway slot")
 	}
 }

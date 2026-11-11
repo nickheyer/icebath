@@ -3,7 +3,6 @@ package app
 import (
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 
@@ -35,9 +34,6 @@ var busyModes = []string{"queue", "steer", "interrupt"}
 
 var branchCopyKeys = []string{"content", "tool_calls", "tool_call_id", "reasoning", "reasoning_content", "reasoning_details",
 	"codex_reasoning_items", "codex_message_items", "timestamp", "data_use"}
-
-var builtinPersonalityOrder = []string{"helpful", "concise", "technical", "creative", "teacher", "kawaii", "catgirl", "pirate",
-	"shakespeare", "surfer", "noir", "uwu", "philosopher", "hype"}
 
 // Indented accent line, the standard slash command headline shape
 func accentLine(text string) string { return "  " + accentText(text) }
@@ -213,32 +209,7 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 
 // Personality names as Python lists them, built ins first then user entries in config file order
 func (c *CLI) personalityNames() []string {
-	var names []string
-	seen := map[string]bool{}
-	for _, name := range builtinPersonalityOrder {
-		if _, ok := c.personalities[name]; ok {
-			names = append(names, name)
-			seen[name] = true
-		}
-	}
-	tree := config.Tree(c.config)
-	for _, path := range []string{"personalities", "agent.personalities"} {
-		for _, raw := range config.MappingKeys(tree.Map(path)) {
-			key := pystr.Lower(pystr.Strip(raw))
-			if _, ok := c.personalities[key]; ok && !seen[key] {
-				names = append(names, key)
-				seen[key] = true
-			}
-		}
-	}
-	var rest []string
-	for name := range c.personalities {
-		if !seen[name] {
-			rest = append(rest, name)
-		}
-	}
-	sort.Strings(rest)
-	return append(names, rest...)
+	return commands.PersonalityNames(c.personalities)
 }
 
 // Handles /personality, listing the personalities or setting one and retiring the agent

@@ -130,10 +130,19 @@ func TestMessagingAgentForwardsCheckpointConfig(t *testing.T) {
 
 // test_run_cleanup_progress.py test_cleanup_chains_with_existing_callback
 func TestCleanupChainsWithExistingCallback(t *testing.T) {
-	server, err := fakellm.New([]any{
+	script := []any{
 		fakellm.ToolCall{Name: "terminal", Args: map[string]any{"command": "pwd"}},
 		fakellm.ToolCall{Name: "terminal", Args: map[string]any{"command": "ls"}},
 		fakellm.Text{Text: "done"},
+	}
+	var calls atomic.Int32
+	server, err := fakellm.NewResponder(func(*fakellm.Request) any {
+		n := int(calls.Add(1)) - 1
+		if n > 0 {
+			// ProgressAgent sleeps 0.2s after each tool event, so the 0.3s progress poll sends a bubble before the turn ends
+			time.Sleep(200 * time.Millisecond)
+		}
+		return script[min(n, len(script)-1)]
 	}, fakellm.Options{})
 	if err != nil {
 		t.Fatal(err)

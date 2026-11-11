@@ -18,10 +18,10 @@ func resolveMemoryOAuthFlow(ctx context.Context, provider string) (memory.OAuthF
 		return nil, NewHTTPException(404, "unknown memory provider "+pyrepr.Repr(provider))
 	}
 	flow, err := memory.ProviderOAuthFlow(ctx, nil, provider)
-	if err != nil {
+	if memory.OAuthFlowUnsupported(err) {
 		return nil, NewHTTPException(404, provider+" does not support OAuth connect")
 	}
-	return flow, nil
+	return flow, err
 }
 
 // Context resolving config in the requested profile home, unchanged for none, empty or current
@@ -70,7 +70,7 @@ func runMemoryOAuth(ctx context.Context, c *Call, failure string, call func(cont
 		if errors.As(err, &he) {
 			return nil, err
 		}
-		return nil, NewHTTPException(500, fmt.Sprintf(failure, provider, err.Error()))
+		return nil, NewHTTPException(500, fmt.Sprintf(failure, provider, pyrepr.ExceptionMessage(err)))
 	}
 	return result, nil
 }

@@ -185,17 +185,33 @@ func PersistPersonality(ctx context.Context, value any) bool {
 // Built in personalities overlaid by root then agent level user definitions, later wins
 func AvailablePersonalities(cfg config.Tree) map[string]any {
 	merged := map[string]any{}
-	for k, v := range BuiltinPersonalities {
-		merged[k] = v
+	order := make([]string, 0, len(builtinPersonalityOrder))
+	for _, name := range builtinPersonalityOrder {
+		merged[name] = BuiltinPersonalities[name]
+		order = append(order, name)
 	}
 	for _, path := range []string{"personalities", "agent.personalities"} {
 		user := cfg.Map(path)
-		for name, def := range user {
+		for _, name := range config.MappingKeys(user) {
 			key := strings.ToLower(strings.TrimSpace(name))
-			if key != "" && !NeutralPersonalityNames[key] {
-				merged[key] = def
+			if key == "" || NeutralPersonalityNames[key] {
+				continue
 			}
+			if _, present := merged[key]; !present {
+				order = append(order, key)
+			}
+			merged[key] = user[name]
 		}
 	}
+	config.SetMappingKeys(merged, order)
 	return merged
 }
+
+// Names of a personalities mapping in the order the merge inserted them, builtins first then user entries
+func PersonalityNames(personalities map[string]any) []string {
+	return config.MappingKeys(personalities)
+}
+
+// Builtin personality names in their declaration order
+var builtinPersonalityOrder = []string{"helpful", "concise", "technical", "creative", "teacher", "kawaii", "catgirl", "pirate",
+	"shakespeare", "surfer", "noir", "uwu", "philosopher", "hype"}

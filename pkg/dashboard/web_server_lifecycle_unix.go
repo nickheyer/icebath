@@ -10,11 +10,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -69,17 +67,6 @@ func psStartMarker(pid, code int, out, errText string) (string, error) {
 	}
 	return "", fmt.Errorf("ps could not inspect PID %d: %s", pid, pystr.Strip(errText))
 }
-
-// Delivers the signal to this process so every registered handler runs
-func raiseSignal(sig syscall.Signal) {
-	_ = syscall.Kill(os.Getpid(), sig)
-}
-
-// Registers a channel for process signals
-func notifySignals(ch chan<- os.Signal, sigs ...os.Signal) { signal.Notify(ch, sigs...) }
-
-// Unregisters a channel from process signals
-func stopSignals(ch chan<- os.Signal) { signal.Stop(ch) }
 
 // Whether a reuse address bind of host and port fails with address in use, the uvicorn bind flags
 func probeBindConflict(network, host string, port int) bool {

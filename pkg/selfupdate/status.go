@@ -75,8 +75,8 @@ var (
 			return nil, err
 		}
 		out := &statusGatewayConfig{connected: cfg.GetConnectedPlatforms(ctx), homes: map[string]*gateway.HomeChannel{}}
-		for p, pc := range cfg.Platforms {
-			if pc != nil && pc.HomeChannel != nil {
+		for _, p := range cfg.PlatformKeys() {
+			if pc := cfg.Platforms[p]; pc != nil && pc.HomeChannel != nil {
 				out.homes[string(p)] = pc.HomeChannel
 			}
 		}

@@ -177,8 +177,8 @@ func (r *resumeCtx) displayPrefix() []any {
 	return anyRows(prefix)
 }
 
-// Untyped value of a todo snapshot, nil when there is none
-func todoValue(o *pyjson.Object) any {
+// Untyped value of a task plan snapshot, nil when there is none
+func planSnapshotValue(o *pyjson.Object) any {
 	if o == nil {
 		return nil
 	}
@@ -459,7 +459,7 @@ func resumeLazy(r *resumeCtx) map[string]any {
 		return rpcErr(r.rid, 5000, resumeFailedMessage(failure), nil)
 	}
 	record := r.record(source, cwd, anyRows(history), nil, false, deferredRecordOptions{lazy: true,
-		todoState: todoValue(tuigateway.TodoStateFromHistory(history))})
+		todoState: planSnapshotValue(tuigateway.TodoStateFromHistory(history))})
 	if reused := r.claim(sid, record); reused != nil {
 		return reused
 	}
@@ -482,7 +482,7 @@ func resumeLazy(r *resumeCtx) map[string]any {
 func resumeDeferred(r *resumeCtx) map[string]any {
 	sid, source, cwd := r.mint(true)
 	overrides := storedSessionRuntimeOverrides(profileBuildScope(r.ctx, r.profileHome), r.found)
-	record := r.record(source, cwd, []any{}, overrides, true, deferredRecordOptions{todoState: todoValue(todoStateFromDB(r.ctx, r.db, r.target))})
+	record := r.record(source, cwd, []any{}, overrides, true, deferredRecordOptions{todoState: planSnapshotValue(todoStateFromDB(r.ctx, r.db, r.target))})
 	count := 0
 	if value := r.foundValue("message_count"); truthy(value) {
 		n, err := pyint.Of(value)
@@ -512,7 +512,7 @@ func resumeCold(r *resumeCtx) map[string]any {
 	}
 	overrides := storedSessionRuntimeOverrides(profileBuildScope(r.ctx, r.profileHome), r.found)
 	record := r.record(source, cwd, history, overrides, true, deferredRecordOptions{displayHistoryPrefix: r.displayPrefix(),
-		todoState: todoValue(tuigateway.TodoStateFromHistory(historyDicts(history)))})
+		todoState: planSnapshotValue(tuigateway.TodoStateFromHistory(historyDicts(history)))})
 	if reused := r.claim(sid, record); reused != nil {
 		return reused
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -451,13 +450,9 @@ func checkSecondaryPortBinders(ctx context.Context, plan *MigrationPlan, configs
 		if cfg == nil {
 			continue
 		}
-		names := make([]string, 0, len(cfg.Platforms))
-		for p := range cfg.Platforms {
-			names = append(names, string(p))
-		}
-		sort.Strings(names)
-		for _, value := range names {
-			pc := cfg.Platforms[gateway.Platform(value)]
+		for _, platform := range cfg.PlatformKeys() {
+			value := string(platform)
+			pc := cfg.Platforms[platform]
 			if pc == nil || !pc.Enabled || !gateway.PlatformBindsPort(value, pc.Extra) {
 				continue
 			}

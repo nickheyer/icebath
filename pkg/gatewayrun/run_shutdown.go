@@ -279,7 +279,7 @@ func (r *GatewayRunner) scaleToZeroActiveMessagingPlatforms() (active []string) 
 		}
 	}
 	if r.config != nil {
-		for _, platform := range sortedPlatforms(r.config.Platforms) {
+		for _, platform := range r.config.PlatformKeys() {
 			if cfg := r.config.Platforms[platform]; cfg != nil && cfg.Enabled {
 				add(platform)
 			}
@@ -416,7 +416,7 @@ func (r *GatewayRunner) scaleToZeroWatcher(ctx context.Context, interval float64
 	if err := sleepCtx(ctx, math.Min(interval, 30.0)); err != nil {
 		return err
 	}
-	for r.running {
+	for r.running.Load() {
 		if err := r.scaleToZeroWatcherTick(ctx, interval); err != nil {
 			return err
 		}
@@ -435,7 +435,7 @@ func (r *GatewayRunner) scaleToZeroWatcherTick(ctx context.Context, interval flo
 	if err := sleepCtx(ctx, interval); err != nil {
 		return err
 	}
-	if !r.running {
+	if !r.running.Load() {
 		return nil
 	}
 	if wallClock() < r.scaleToZeroCooldownUntil || !r.scaleToZeroIsIdle(ctx) {
@@ -569,7 +569,7 @@ func (r *GatewayRunner) scaleToZeroAwaitFreezeGap(ctx context.Context) error {
 // Undoes a quiesce no suspend follows, releasing the hold, restoring status and setting a cooldown
 func (r *GatewayRunner) scaleToZeroAbandonSuspend(ctx context.Context) {
 	r.scaleToZeroHoldRedial(false)
-	if !r.draining && r.running {
+	if !r.draining.Load() && r.running.Load() {
 		r.scaleToZeroStatus(ctx, r.servingState(), "scale-to-zero: status restore failed")
 	}
 	r.scaleToZeroCooldownUntil = math.Max(r.scaleToZeroCooldownUntil, wallClock()+60.0)
@@ -612,7 +612,7 @@ func (r *GatewayRunner) exitExternalDrain(ctx context.Context) {
 		return
 	}
 	r.externalDrainActive = false
-	if r.draining || !r.running {
+	if r.draining.Load() || !r.running.Load() {
 		runLog().Info("External drain marker cleared during shutdown — not reverting " +
 			"to running (shutdown takes precedence).")
 		return
@@ -624,7 +624,7 @@ func (r *GatewayRunner) exitExternalDrain(ctx context.Context) {
 
 // Polls the drain marker every interval, entering drain while present and leaving it once absent
 func (r *GatewayRunner) drainControlWatcher(ctx context.Context, interval float64) error {
-	for r.running {
+	for r.running.Load() {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {

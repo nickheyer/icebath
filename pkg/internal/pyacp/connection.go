@@ -9,6 +9,7 @@ import (
 	"math"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 )
@@ -39,6 +40,110 @@ type Connection struct {
 	closed   bool
 	tasks    sync.WaitGroup
 	log      *logging.Logger
+	obsMu    sync.Mutex
+	observer []StreamObserver
+}
+
+// Direction of a raw JSON-RPC message seen by a stream observer
+type StreamDirection string
+
+const (
+	StreamIncoming StreamDirection = "incoming"
+	StreamOutgoing StreamDirection = "outgoing"
+)
+
+// One raw JSON-RPC message with its direction, a deep copy of the frame
+type StreamEvent struct {
+	Direction StreamDirection
+	Message   any
+}
+
+// Callback receiving every raw JSON-RPC message of a connection
+type StreamObserver func(event StreamEvent)
+
+// Registers a callback that receives every raw JSON-RPC message
+func (c *Connection) AddObserver(observer StreamObserver) {
+	c.obsMu.Lock()
+	defer c.obsMu.Unlock()
+	c.observer = append(c.observer, observer)
+}
+
+func (c *Connection) notifyObservers(direction StreamDirection, message any) {
+	c.obsMu.Lock()
+	observers := append([]StreamObserver(nil), c.observer...)
+	c.obsMu.Unlock()
+	if len(observers) == 0 {
+		return
+	}
+	event := StreamEvent{Direction: direction, Message: pycopy.DeepCopy(message)}
+	for _, observer := range observers {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					c.log.Error(fmt.Sprintf("Stream observer failed\n%v", r))
+				}
+			}()
+			observer(event)
+		}()
+	}
+}
+
+type afterResponseKey struct{}
+
+type afterResponse struct {
+	mu   sync.Mutex
+	sent bool
+	fns  []func()
+}
+
+// Runs fn on its own goroutine once the response of the request is written, at once outside one
+func AfterResponse(ctx context.Context, fn func()) {
+	if ar, ok := ctx.Value(afterResponseKey{}).(*afterResponse); ok {
+		ar.mu.Lock()
+		if !ar.sent {
+			ar.fns = append(ar.fns, fn)
+			ar.mu.Unlock()
+			return
+		}
+		ar.mu.Unlock()
+	}
+	go fn()
+}
+
+// Request scope of ctx whose after response callbacks run when the returned flush is called
+func WithResponseScope(ctx context.Context) (context.Context, func()) {
+	scope := &afterResponse{}
+	return context.WithValue(ctx, afterResponseKey{}, scope), scope.flush
+}
+
+func (ar *afterResponse) flush() {
+	ar.mu.Lock()
+	fns := ar.fns
+	ar.sent, ar.fns = true, nil
+	ar.mu.Unlock()
+	for _, fn := range fns {
+		go fn()
+	}
+}
+
+// Error of a handler that panicked, its text the panic value
+type handlerPanic struct{ value any }
+
+func (e *handlerPanic) Error() string {
+	if err, ok := e.value.(error); ok {
+		return err.Error()
+	}
+	return fmt.Sprint(e.value)
+}
+
+// Calls the handler, a panic becoming the error the Python handler would have raised
+func (c *Connection) callHandler(ctx context.Context, method string, params any, isNotification bool) (result any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result, err = nil, &handlerPanic{value: r}
+		}
+	}()
+	return c.handler(ctx, method, params, isNotification)
 }
 
 // Connection reading frames from reader and writing to writer, receiving in the background when listening
@@ -111,6 +216,7 @@ func (c *Connection) SendRequest(ctx context.Context, method string, params any)
 		c.mu.Unlock()
 		return nil, err
 	}
+	c.notifyObservers(StreamOutgoing, payload)
 	select {
 	case out := <-ch:
 		return out.result, out.err
@@ -128,7 +234,11 @@ func (c *Connection) SendNotification(ctx context.Context, method string, params
 	payload.Set("jsonrpc", "2.0")
 	payload.Set("method", method)
 	payload.Set("params", params)
-	return c.send(payload)
+	if err := c.send(payload); err != nil {
+		return err
+	}
+	c.notifyObservers(StreamOutgoing, payload)
+	return nil
 }
 
 // Writes one compact ASCII JSON frame followed by a newline
@@ -191,6 +301,7 @@ func (c *Connection) receiveLoop() error {
 			c.log.Error("Error parsing JSON-RPC message\n" + err.Error())
 			continue
 		}
+		c.notifyObservers(StreamIncoming, message)
 		if err := c.processMessage(message); err != nil {
 			return err
 		}
@@ -260,11 +371,15 @@ func (c *Connection) runRequest(message *pyjson.Object) {
 	payload.Set("jsonrpc", "2.0")
 	payload.Set("id", id)
 	name, _ := method.(string)
-	result, err := c.handler(c.ctx, name, params, false)
+	scoped, flush := WithResponseScope(c.ctx)
+	defer flush()
+	result, err := c.callHandler(scoped, name, params, false)
 	if err != nil {
 		payload.Set("error", errorFor(err).ToErrorObj())
-		_ = c.send(payload)
-		c.log.Error("Background task failed\n" + err.Error())
+		if c.send(payload) == nil {
+			c.notifyObservers(StreamOutgoing, payload)
+		}
+		c.log.Exception("Background task failed", err)
 		return
 	}
 	if IsNil(result) {
@@ -273,14 +388,16 @@ func (c *Connection) runRequest(message *pyjson.Object) {
 		result = Dump(result, ResultDump)
 	}
 	payload.Set("result", result)
-	_ = c.send(payload)
+	if c.send(payload) == nil {
+		c.notifyObservers(StreamOutgoing, payload)
+	}
 }
 
 func (c *Connection) runNotification(message *pyjson.Object) {
 	method, _ := message.Get("method")
 	params, _ := message.Get("params")
 	name, _ := method.(string)
-	_, _ = c.handler(c.ctx, name, params, true)
+	_, _ = c.callHandler(c.ctx, name, params, true)
 }
 
 func requestKey(id any) (int64, bool) {

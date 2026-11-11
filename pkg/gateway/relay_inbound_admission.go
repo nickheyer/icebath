@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Admits the event on the reader, or off it behind the chat's earlier admission when a producer hook may await the reader
+// Admits on the reader, or behind the chat's earlier admission when a producer hook may await the reader
 func admitRelayDelivery(ctx context.Context, a *RelayAdapter, runner any, event *MessageEvent) (RelayAdmission, error) {
 	if !(plugins.HasHook(ctx, "pre_gateway_dispatch") || plugins.HasHook(ctx, PostAdmissionHook)) {
 		return nil, relayAdmit(ctx, a, runner, event)

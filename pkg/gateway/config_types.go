@@ -664,6 +664,7 @@ var toplevelBoolDefaults = []struct {
 // Main gateway configuration, platform connections, session policies and delivery settings
 type GatewayConfig struct {
 	Platforms                    map[Platform]*PlatformConfig
+	platformOrder                []Platform
 	ResetTriggers                any
 	QuickCommands                map[string]any
 	SessionsDir                  string
@@ -712,12 +713,11 @@ func (c *GatewayConfig) PostInit() {
 // Enabled and configured platforms sorted by value so the prompt block stays byte stable
 func (c *GatewayConfig) GetConnectedPlatforms(ctx context.Context) []Platform {
 	var connected []Platform
-	for p, pc := range c.Platforms {
-		if pc.Enabled && c.isPlatformConnected(ctx, p, pc) {
+	for _, p := range c.PlatformKeys() {
+		if pc := c.Platforms[p]; pc.Enabled && c.isPlatformConnected(ctx, p, pc) {
 			connected = append(connected, p)
 		}
 	}
-	sort.Slice(connected, func(i, j int) bool { return connected[i] < connected[j] })
 	return connected
 }
 
@@ -760,9 +760,12 @@ func (c *GatewayConfig) GetHomeChannel(platform Platform) *HomeChannel {
 // Mapping form of the whole config
 func (c *GatewayConfig) ToDict() map[string]any {
 	platforms := make(map[string]any, len(c.Platforms))
-	for p, pc := range c.Platforms {
-		platforms[string(p)] = pc.ToDict()
+	platformNames := make([]string, 0, len(c.Platforms))
+	for _, p := range c.PlatformKeys() {
+		platforms[string(p)] = c.Platforms[p].ToDict()
+		platformNames = append(platformNames, string(p))
 	}
+	config.SetMappingKeys(platforms, platformNames)
 	routes := make([]any, 0, len(c.ProfileRoutes))
 	for _, r := range c.ProfileRoutes {
 		routes = append(routes, r.ToDict())
@@ -820,8 +823,11 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 	if !ok {
 		platformsRaw = map[string]any{}
 	}
+	platformBlocks := coerceDict(platformsRaw)
 	platforms := map[Platform]*PlatformConfig{}
-	for name, block := range coerceDict(platformsRaw) {
+	var platformOrder []Platform
+	for _, name := range config.MappingKeys(platformBlocks) {
+		block := platformBlocks[name]
 		if _, ok := block.(map[string]any); !ok {
 			continue
 		}
@@ -829,6 +835,9 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		if err == nil {
 			var pc *PlatformConfig
 			if pc, err = PlatformConfigFromDict(ctx, block); err == nil {
+				if _, seen := platforms[p]; !seen {
+					platformOrder = append(platformOrder, p)
+				}
 				platforms[p] = pc
 				continue
 			}
@@ -922,7 +931,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		return nil, err
 	}
 	cfg := &GatewayConfig{
-		Platforms: platforms, ResetTriggers: resetTriggers, QuickCommands: coerceDict(quickRaw), SessionsDir: sessionsDir,
+		Platforms: platforms, platformOrder: platformOrder, ResetTriggers: resetTriggers, QuickCommands: coerceDict(quickRaw), SessionsDir: sessionsDir,
 		STTEnabled:                   coerceBool(sttSetting("stt_enabled", "enabled"), true),
 		STTEchoTranscripts:           coerceBool(sttSetting("stt_echo_transcripts", "echo_transcripts"), true),
 		MultiplexProfiles:            multiplex,
@@ -1021,7 +1030,8 @@ func validateGatewayConfig(cfg *GatewayConfig) error {
 		token    string
 	}
 	var rows []tokenPlatform
-	for p, pc := range cfg.Platforms {
+	for _, p := range cfg.PlatformKeys() {
+		pc := cfg.Platforms[p]
 		env, ok := PlatformTokenEnvNames[p]
 		if !pc.Enabled || !ok || pc.Token == nil {
 			continue

@@ -168,7 +168,7 @@ func (r *GatewayRunner) hmHandleRunningSessionMessage(ctx context.Context, event
 		}
 		return nil, r.hmMergePendingForSource(ctx, source, quickKey, event, true)
 	}
-	if r.draining {
+	if r.draining.Load() {
 		queueDuringDrain := r.queueDuringDrainEnabled(mode)
 		if queueDuringDrain {
 			if err := r.queueOrReplacePendingEvent(ctx, quickKey, event); err != nil {

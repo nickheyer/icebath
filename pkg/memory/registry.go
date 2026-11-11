@@ -692,10 +692,37 @@ func ProviderOAuthFlow(ctx context.Context, env *tools.Env, name string) (OAuthF
 	if r == nil {
 		return nil, fmt.Errorf("memory provider %s is not installed: %w", pyRepr(name), errProviderNotInstalled)
 	}
-	if r.OAuth == nil {
+	if r.OAuth != nil {
+		return r.OAuth, nil
+	}
+	if r.Dir == "" {
 		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
 	}
-	return r.OAuth, nil
+	mod, err := ImportProviderModule(ctx, name, "oauth_flow")
+	var importErr *ProviderImportError
+	if errors.As(err, &importErr) || plugins.RemoteIsInstance(err, "ImportError") {
+		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return hostedOAuthFlow{mod: mod}, nil
+}
+
+// OAuth flow module of a user provider package living in the plugin host
+type hostedOAuthFlow struct{ mod *plugins.HostedObject }
+
+func (f hostedOAuthFlow) StartLoopbackFlowBackground(ctx context.Context) (any, error) {
+	return f.mod.Call(ctx, "start_loopback_flow_background", nil, nil)
+}
+
+func (f hostedOAuthFlow) FlowStatus(ctx context.Context) (any, error) {
+	return f.mod.Call(ctx, "get_flow_status", nil, nil)
+}
+
+// Whether an OAuth flow lookup failed because the provider is absent or ships no flow, the ImportError of hermes
+func OAuthFlowUnsupported(err error) bool {
+	return errors.Is(err, errProviderNotInstalled) || errors.Is(err, errNoOAuthFlow)
 }
 
 // Whether the configured or named provider resolves to compiled in code ready to construct without import work

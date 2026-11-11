@@ -26,7 +26,7 @@ func runPlannedStopWatcher(stop *pythread.Event, r *GatewayRunner, loop gateway.
 					fired = false
 				}
 			}()
-			if _, err := os.Stat(markerPath); err != nil || r.draining || !r.running {
+			if _, err := os.Stat(markerPath); err != nil || r.draining.Load() || !r.running.Load() {
 				return false
 			}
 			targetsSelf, err := gateway.PlannedStopMarkerTargetsSelf()

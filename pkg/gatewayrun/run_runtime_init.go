@@ -50,7 +50,9 @@ func (r *GatewayRunner) initSessionStore(ctx context.Context) {
 
 // Run, exit and restart flags, per session state and the completion delivery bookkeeping
 func (r *GatewayRunner) initLifecycleState() {
-	r.running, r.exitCleanly, r.exitWithFailure, r.draining = false, false, false, false
+	r.exitCleanly, r.exitWithFailure = false, false
+	r.running.Store(false)
+	r.draining.Store(false)
 	r.gatewayLoop = nil
 	r.shutdownEvent = &pythread.Event{}
 	r.exitReason, r.exitCode = nil, nil
@@ -63,7 +65,9 @@ func (r *GatewayRunner) initLifecycleState() {
 	r.restartCommandSource = nil
 	r.startupTime = wallClock()
 	r.bootedFromRestart = false
+	r.stopTaskMu.Lock()
 	r.stopTask, r.restartTask = nil, nil
+	r.stopTaskMu.Unlock()
 	r.executorLock = &sync.Mutex{}
 	r.executor = nil
 	r.housekeepingExecutor = nil

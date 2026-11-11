@@ -2,7 +2,6 @@ package gatewayrun
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -63,11 +62,7 @@ func (r *GatewayRunner) handlePersonalityCommand(ctx context.Context, event *gat
 		cfg = map[string]any{}
 	}
 	personalities := AvailablePersonalities(cfg)
-	names := make([]string, 0, len(personalities))
-	for name := range personalities {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := config.MappingKeys(personalities)
 	if args == "" {
 		current := ActivePersonalityName(cfg)
 		lines := []string{i18n.T(ctx, "gateway.personality.header", "", nil), i18n.T(ctx, "gateway.personality.none_option", "", nil)}

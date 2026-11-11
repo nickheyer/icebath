@@ -162,10 +162,10 @@ func TestPluginManagerScopedByHomeAndPublishedHosts(t *testing.T) {
 	}
 	owner := &struct{ n int }{}
 	var calls int
-	PublishGatewayMessageHost(owner, func(map[string]any) bool { calls++; return true })
-	PublishTUIMessageHost(owner, func(map[string]any) bool { return true })
+	PublishGatewayMessageHost(owner, func(context.Context, map[string]any) bool { calls++; return true })
+	PublishTUIMessageHost(owner, func(context.Context, map[string]any) bool { return true })
 	mc := GetPluginManager(homeCtx(t.TempDir()))
-	if !ma.HasGatewayMessageInjector() || !mc.HasGatewayMessageInjector() || !mc.HasTUIMessageInjector() || !mc.InjectGatewayMessage(nil) || calls != 1 {
+	if !ma.HasGatewayMessageInjector() || !mc.HasGatewayMessageInjector() || !mc.HasTUIMessageInjector() || !mc.InjectGatewayMessage(context.Background(), nil) || calls != 1 {
 		t.Fatal("published host not stamped")
 	}
 	ClearPublishedGatewayMessageHost(&struct{ n int }{})
@@ -174,7 +174,7 @@ func TestPluginManagerScopedByHomeAndPublishedHosts(t *testing.T) {
 	}
 	ClearPublishedGatewayMessageHost(owner)
 	ClearPublishedTUIMessageHost(owner)
-	if mb.HasGatewayMessageInjector() || mc.HasTUIMessageInjector() || mb.InjectTUIMessage(nil) {
+	if mb.HasGatewayMessageInjector() || mc.HasTUIMessageInjector() || mb.InjectTUIMessage(context.Background(), nil) {
 		t.Fatal("owner clear left a host")
 	}
 }

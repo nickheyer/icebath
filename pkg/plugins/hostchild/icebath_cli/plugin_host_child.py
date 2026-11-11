@@ -14,6 +14,7 @@ plugin lands in the host log instead of corrupting the wire.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import functools
 import importlib
 import importlib.machinery
@@ -27,7 +28,7 @@ import sys
 import threading
 import types
 import weakref
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any, Callable, Dict, List, Optional
 
 from icebath_cli.plugin_host_wire import (
@@ -640,6 +641,50 @@ class HostRuntime:
         target = importlib.import_module(f"{package.__name__}.{submodule}") if submodule else package
         return encode({"loaded": True, "module": self._describe_namespace(_PROVIDER_MODULE_OWNER + package.__name__, target)})
 
+    def op_provider_module_json_call(self, params: dict[str, Any]) -> Any:
+        """Call one function of a provider submodule with JSON text arguments. The answer is one JSON text
+        holding the arguments after the call, the result and the tracked argument parts as they are now,
+        with every group of key paths that hold one and the same container object and, per tracked dict,
+        the keys whose value is the result object itself."""
+        target = _provider_submodule(params)
+        if target is None:
+            return {"loaded": False}
+        for name in params.get("require") or []:
+            getattr(target, str(name))
+        function = getattr(target, str(params["function"]))
+        args, paths = _json_arguments(params)
+        tracked = [functools.reduce(lambda node, key: node[key], path, args) for path in params.get("track") or []]
+        result = self._run(function(*args))
+        is_path = isinstance(result, PurePath)
+        root = {"a": [None if index in paths else value for index, value in enumerate(args)],
+                "r": None if is_path else result, "t": tracked}
+        result_keys = [[key for key, value in part.items() if value is result] if isinstance(part, dict) else []
+                       for part in tracked]
+        return {"loaded": True, "root_json": _json_text(root), "shared": _shared_paths(root),
+                "result_keys": encode(result_keys),
+                "result_is_path": is_path, "result_path": str(result) if is_path else None}
+
+    def op_provider_module_hold(self, params: dict[str, Any]) -> Any:
+        """Enter context managers of a provider submodule on one thread that keeps them entered until released."""
+        target = _provider_submodule(params)
+        if target is None:
+            return {"loaded": False}
+        held = _HeldManagers(self, target, list(params.get("managers") or []), contextvars.copy_context())
+        held.start()
+        held.entered.wait()
+        if held.enter_error is not None:
+            raise held.enter_error
+        return {"loaded": True, "hold": self._remember(_PROVIDER_MODULE_OWNER + "hold", held)}
+
+    def op_provider_module_release(self, params: dict[str, Any]) -> Any:
+        """Leave the context managers of one hold in reverse order, raising the body failure inside them first."""
+        with self._lock:
+            held = self.refs.pop(int(params["hold"]), None)
+            self.owners.pop(int(params["hold"]), None)
+        if not isinstance(held, _HeldManagers):
+            raise LookupError(f"plugin host hold {params['hold']} was released")
+        return held.release(params.get("error"))
+
     def op_asgi(self, params: dict[str, Any]) -> Any:
         """Serve one dashboard API request with the plugin's FastAPI ``router`` (loaded once)."""
         api_path = Path(str(params["dashboard_dir"])) / str(params["api_file"])
@@ -706,6 +751,14 @@ class HostRuntime:
         if name.startswith("_") or not hasattr(obj, name):
             return {"__missing__": name}
         return self._encode_result(self.owners.get(int(params["ref"]), ""), getattr(obj, name))
+
+    def op_obj_overrides(self, params: dict[str, Any]) -> bool:
+        """Whether the class of a host object replaces one method of the provider base it was loaded under."""
+        obj = self.refs.get(int(params["ref"]))
+        if obj is None:
+            raise LookupError(f"plugin host object {params['ref']} was released")
+        name = str(params["method"])
+        return getattr(type(obj), name, None) is not getattr(_import_base(str(params["base"])), name, None)
 
     def op_obj_next(self, params: dict[str, Any]) -> Any:
         """One step of a for loop over a host object, StopIteration answering done and each item encoded as a result"""
@@ -818,8 +871,12 @@ _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "provider_entry_point_invoke": HostRuntime.op_provider_entry_point_invoke,
     "provider_module_call": HostRuntime.op_provider_module_call,
     "provider_module_import": HostRuntime.op_provider_module_import,
+    "provider_module_json_call": HostRuntime.op_provider_module_json_call,
+    "provider_module_hold": HostRuntime.op_provider_module_hold,
+    "provider_module_release": HostRuntime.op_provider_module_release,
     "invoke": HostRuntime.op_invoke,
     "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr, "obj_next": HostRuntime.op_obj_next,
+    "obj_overrides": HostRuntime.op_obj_overrides,
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
     "evict_modules": HostRuntime.op_evict_modules,
     "release": HostRuntime.op_release, "event": HostRuntime.op_event, "config_schema": HostRuntime.op_config_schema,
@@ -1074,6 +1131,115 @@ def _import_plugin(params: dict[str, Any]) -> Any:
         _evict_modules(module_name)
         raise
     return module
+
+
+def _provider_submodule(params: dict[str, Any]) -> Any:
+    """The provider package the memory loader names or one submodule of it, None when the package fails to import."""
+    package = _load_provider_package(str(params["module_name"]), Path(str(params["path"])),
+                                     [str(p) for p in params.get("parents") or []],
+                                     Path(str(params["plugins_root"])), params.get("synthetic_namespace"))
+    if package is None:
+        return None
+    submodule = str(params.get("submodule") or "")
+    return importlib.import_module(f"{package.__name__}.{submodule}") if submodule else package
+
+
+def _json_arguments(params: dict[str, Any]) -> tuple[list, set]:
+    """Positional arguments from JSON text, the listed positions rebuilt as paths."""
+    import json
+
+    args = json.loads(str(params.get("args_json") or "[]"))
+    paths = {int(index) for index in params.get("path_args") or []}
+    for index in paths:
+        args[index] = Path(args[index])
+    return args, paths
+
+
+def _json_text(value: Any) -> Optional[str]:
+    """JSON text of a value, None when it has no JSON form."""
+    import json
+
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+
+
+def _shared_paths(root: Any) -> list:
+    """Groups of key paths inside ``root`` that hold one and the same dict or list object."""
+    paths: dict[int, list] = {}
+    order: list[int] = []
+
+    def walk(node: Any, path: tuple) -> None:
+        if not isinstance(node, (dict, list)) or len(path) > 64:
+            return
+        seen = paths.get(id(node))
+        if seen is not None:
+            seen.append(list(path))
+            return
+        paths[id(node)] = [list(path)]
+        order.append(id(node))
+        for key, value in (node.items() if isinstance(node, dict) else enumerate(node)):
+            walk(value, path + (key,))
+
+    walk(root, ())
+    return [paths[key] for key in order if len(paths[key]) > 1]
+
+
+class _HeldManagers(threading.Thread):
+    """One thread that enters context managers in order and leaves them when the hold is released."""
+
+    def __init__(self, runtime: Any, target: Any, specs: list, context: Any):
+        super().__init__(name="plugin-host-hold", daemon=True)
+        self.runtime, self.target, self.specs, self.context = runtime, target, specs, context
+        self.entered, self.released, self.done = threading.Event(), threading.Event(), threading.Event()
+        self.enter_error: Optional[BaseException] = None
+        self.exit_error: Optional[BaseException] = None
+        self.injected: Optional[BaseException] = None
+        self.raised = False
+
+    def run(self) -> None:
+        self.context.run(self._hold)
+
+    def _hold(self) -> None:
+        import contextlib
+
+        try:
+            with contextlib.ExitStack() as stack:
+                for spec in self.specs:
+                    manager = getattr(self.target, str(spec["name"]))
+                    if spec.get("call"):
+                        args, _paths = _json_arguments(spec)
+                        manager = manager(*args)
+                    stack.enter_context(manager)
+                self.entered.set()
+                self.released.wait()
+                if self.injected is not None:
+                    raise self.injected
+        except BaseException as exc:
+            if not self.entered.is_set():
+                self.enter_error = exc
+            elif exc is self.injected:
+                self.raised = True
+            else:
+                self.exit_error = exc
+        finally:
+            self.entered.set()
+            self.done.set()
+
+    def release(self, error: Optional[dict]) -> dict:
+        import builtins
+
+        if error is not None:
+            kind = getattr(builtins, str(error.get("type") or ""), None)
+            if not (isinstance(kind, type) and issubclass(kind, Exception)):
+                kind = RuntimeError
+            self.injected = kind(str(error.get("message") or ""))
+        self.released.set()
+        self.done.wait()
+        if self.exit_error is not None:
+            raise self.exit_error
+        return {"suppressed": self.injected is not None and not self.raised}
 
 
 def _load_provider_package(module_name: str, plugin_dir: Path, parents: list, plugins_root: Path,

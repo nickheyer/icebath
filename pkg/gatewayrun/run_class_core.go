@@ -272,10 +272,10 @@ func (r *GatewayRunner) PeekSessionState(route string) gateway.PeekedSessionStat
 func (r *GatewayRunner) SessionStore() *gateway.SessionStore { return r.sessionStore }
 
 // Whether the runner is draining
-func (r *GatewayRunner) Draining() bool { return r.draining }
+func (r *GatewayRunner) Draining() bool { return r.draining.Load() }
 
 // Whether the runner is running
-func (r *GatewayRunner) Running() bool { return r.running }
+func (r *GatewayRunner) Running() bool { return r.running.Load() }
 
 // Whether the runner multiplexes every served profile
 func (r *GatewayRunner) MultiplexProfiles() bool { return r.multiplexing() }

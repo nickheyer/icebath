@@ -82,6 +82,31 @@ func hostedProviderCLI(ctx context.Context, env *tools.Env, r *ProviderRegistrat
 	return cli
 }
 
+// Wire value with every dataclass record as the dict Python reads it as, nested ones included
+func recordsAsDicts(v any) any {
+	switch t := v.(type) {
+	case plugins.Record:
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			out[k] = recordsAsDicts(item)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, item := range t {
+			out[k] = recordsAsDicts(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = recordsAsDicts(item)
+		}
+		return out
+	}
+	return v
+}
+
 // Loader of a provider config_schema.py run in the plugin host, nil when the file is absent or its schema empty
 func hostedConfigSchema(path string) func(ctx context.Context) (*ProviderConfigSchema, error) {
 	return func(ctx context.Context) (*ProviderConfigSchema, error) {
@@ -89,6 +114,7 @@ func hostedConfigSchema(path string) func(ctx context.Context) (*ProviderConfigS
 			return nil, nil
 		}
 		record, err := providerConfigSchema(ctx, path)
+		record = recordsAsDicts(record)
 		if err != nil || !pyrepr.Truthy(record) {
 			return nil, err
 		}

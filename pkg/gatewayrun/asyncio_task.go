@@ -3,7 +3,11 @@ package gatewayrun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
+	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 // Error a cancelled task or future settles with, the asyncio.CancelledError of hermes
@@ -99,13 +103,34 @@ func spawnGatewayTask(ctx context.Context, name string, fn func(ctx context.Cont
 	taskCtx = context.WithValue(taskCtx, gatewayTaskKey{}, task)
 	go func() {
 		defer cancel()
-		result, err := fn(taskCtx)
+		result, err := runTaskBody(taskCtx, name, fn)
 		if errors.Is(err, context.Canceled) {
 			err = errTaskCancelled
 		}
 		task.settle(result, err)
 	}()
 	return task
+}
+
+// Loop whose exception handler reports a task that crashed, the running gateway loop and nil outside a started gateway
+var taskExceptionLoop atomic.Pointer[gateway.CallbackLoop]
+
+// Runs a task body, a panic becoming the task exception and reported to the loop handler so the process keeps running
+func runTaskBody(ctx context.Context, name string, fn func(ctx context.Context) (any, error)) (result any, err error) {
+	defer func() {
+		crash := recover()
+		if crash == nil {
+			return
+		}
+		failure, isError := crash.(error)
+		if !isError {
+			failure = fmt.Errorf("%v", crash)
+		}
+		result, err = nil, failure
+		taskExceptionLoop.Load().CallExceptionHandler(gateway.LoopExceptionContext{
+			Message: "Task exception was never retrieved", Exception: failure, Task: name})
+	}()
+	return fn(ctx)
 }
 
 // Task running the goroutine that owns ctx, nil outside any task

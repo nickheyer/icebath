@@ -39,7 +39,8 @@ func idleExitRunner(t *testing.T) (*GatewayRunner, string, *state.SessionDB) {
 		t.Fatal(err)
 	}
 	r := allocGatewayRunner()
-	r.running, r.draining = true, false
+	r.running.Store(true)
+	r.draining.Store(false)
 	r.sessionAuthorities = registry
 	r.adapters = adapterDict(gateway.PlatformLocal, newRestartTestAdapter())
 	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
@@ -48,7 +49,7 @@ func idleExitRunner(t *testing.T) (*GatewayRunner, string, *state.SessionDB) {
 	r.config = gateway.DefaultGatewayConfig(context.Background())
 	r.config.Platforms = map[gateway.Platform]*gateway.PlatformConfig{}
 	r.sessionTicketStore = tickets
-	r.sessionRuntimeDescriptor = map[string]any{"state": "ready", "capabilities": []any{"x"}}
+	r.sessionRuntimeDescriptor.store(map[string]any{"state": "ready", "capabilities": []any{"x"}})
 	noteClientActivity(r)
 	r.idleExitLastActivity.Store(math.Float64bits(math.Float64frombits(r.idleExitLastActivity.Load()) - 10))
 	return r, h, db

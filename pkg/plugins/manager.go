@@ -31,6 +31,8 @@ type Manager struct {
 	home                          string
 	discovered                    bool
 	plugins                       map[string]*LoadedPlugin
+	pluginSeq                     map[string]uint64
+	pluginSeqNext                 uint64
 	hooks                         map[string][]*hookEntry
 	middleware                    map[string][]*middlewareEntry
 	pluginToolNames               map[string]bool

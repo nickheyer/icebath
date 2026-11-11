@@ -385,7 +385,7 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 
 func (m *Manager) storeLoaded(key string, loaded *LoadedPlugin) {
 	m.mu.Lock()
-	m.plugins[key] = loaded
+	m.putPluginLocked(key, loaded)
 	m.mu.Unlock()
 }
 

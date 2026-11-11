@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
@@ -283,6 +284,54 @@ func fallbackProfileDicts(ctx context.Context) []*pyjson.Object {
 		}))
 	}
 	return rows
+}
+
+// Writes the valid MCP create bodies into the profile config in one save and returns how many landed
+func writeProfileMCPServers(ctx context.Context, profileDir string, servers []any) (int, error) {
+	written := 0
+	hctx := home.WithOverride(ctx, profileDir)
+	cfg, err := webLoadConfig(hctx)
+	if err != nil {
+		return 0, err
+	}
+	rawMCP, present := cfg["mcp_servers"]
+	if !present {
+		rawMCP = map[string]any{}
+		cfg["mcp_servers"] = rawMCP
+	}
+	for _, raw := range servers {
+		server, _ := raw.(*pyjson.Object)
+		name, entry, bearerToken, err := normalizeMCPServerCreate(server)
+		if err != nil {
+			displayName := pystr.Strip(optText(server.GetOr("name", nil)))
+			if displayName == "" {
+				displayName = "<unnamed>"
+			}
+			webServerLog().Warn(fmt.Sprintf("Profile-create: skipping MCP server '%s': %s", displayName, err))
+			continue
+		}
+		if bearerToken != nil {
+			headers, err := mcp.SaveBearerAuthToken(hctx, name, *bearerToken)
+			if err != nil {
+				return written, err
+			}
+			entry["headers"] = headers
+		}
+		servers, ok := rawMCP.(map[string]any)
+		if !ok {
+			return written, &pyrepr.FormatError{Class: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(rawMCP))}
+		}
+		servers[name] = entry
+		written++
+	}
+	if written > 0 {
+		return written, webSaveConfig(hctx, cfg, config.SaveOptions{})
+	}
+	if !pyrepr.Truthy(rawMCP) {
+		delete(cfg, "mcp_servers")
+		return written, webSaveConfig(hctx, cfg, config.SaveOptions{})
+	}
+	return written, nil
 }
 
 // Counters an auxiliary usage row carries

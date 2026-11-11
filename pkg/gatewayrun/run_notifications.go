@@ -554,13 +554,12 @@ type servedHomeConfig struct {
 // Platform configs of every served profile, the launch profile first
 func (r *GatewayRunner) servedHomeChannelConfigs() []servedHomeConfig {
 	var out []servedHomeConfig
-	for _, platform := range sortedPlatforms(r.config.Platforms) {
+	for _, platform := range r.config.PlatformKeys() {
 		out = append(out, servedHomeConfig{platform: platform, cfg: r.config.Platforms[platform]})
 	}
-	for _, name := range sortedKeys(r.profileConfigs) {
+	for name, profileCfg := range r.profileConfigs.All() {
 		profile := name
-		profileCfg := r.profileConfigs[name]
-		for _, platform := range sortedPlatforms(profileCfg.Platforms) {
+		for _, platform := range profileCfg.PlatformKeys() {
 			out = append(out, servedHomeConfig{profile: &profile, platform: platform, cfg: profileCfg.Platforms[platform]})
 		}
 	}

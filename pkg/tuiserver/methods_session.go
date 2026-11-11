@@ -29,6 +29,10 @@ func init() {
 	registerSessionBranchHandlers()
 	registerSessionListHandlers()
 	registerSessionResumeHandlers()
+	registerSessionWorkspaceHandlers()
+	registerSessionMetaHandlers()
+	registerSessionUsageHandlers()
+	registerSessionRuntimeHandlers()
 	sessionRegistry.install()
 }
 

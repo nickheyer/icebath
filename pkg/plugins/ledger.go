@@ -389,7 +389,7 @@ func (m *Manager) unloadScoped(plugin any) bool {
 	} else {
 		m.mu.Lock()
 		for key := range targetKeys {
-			delete(m.plugins, key)
+			m.dropPluginLocked(key)
 		}
 		m.mu.Unlock()
 	}
@@ -449,6 +449,7 @@ func (m *Manager) resetAfterUnloadAll(registrations []*Registration) {
 	}
 	clear(m.ownershipLedger)
 	clear(m.plugins)
+	clear(m.pluginSeq)
 	clear(m.hooks)
 	clear(m.middleware)
 	clear(m.pluginToolNames)

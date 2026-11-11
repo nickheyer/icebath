@@ -40,7 +40,7 @@ func (r *GatewayRunner) runAgentCleanupTurnTasks(ctx context.Context, tc *TurnCo
 	if sessionKey != "" {
 		r.releaseRunningAgentState(ctx, sessionKey, tc.runGeneration)
 	}
-	if r.draining {
+	if r.draining.Load() {
 		draining := "draining"
 		r.updateRuntimeStatus(ctx, &draining, nil)
 	}

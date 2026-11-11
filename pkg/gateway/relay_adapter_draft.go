@@ -25,7 +25,7 @@ func (a *RelayAdapter) draftFrame(chatID string, draftID int, content string, fi
 // Streams one draft frame, a sealed stream's straggler swallowed and a declined frame retiring the open draft
 func (a *RelayAdapter) SendDraft(ctx context.Context, chatID string, draftID int, content string, metadata map[string]any) (SendResult, error) {
 	if !a.SupportsDraftStreaming("", nil, chatID) {
-		return SendResult{}, fmt.Errorf("NotImplementedError: connector does not advertise the 'draft' relay op")
+		return SendResult{}, &PyError{Kind: "NotImplementedError", Msg: "connector does not advertise the 'draft' relay op"}
 	}
 	if a.transport == nil {
 		return SendResult{Success: false, Error: "no transport"}, nil

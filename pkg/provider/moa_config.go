@@ -37,14 +37,18 @@ var (
 func defaultMoAReferenceSlots() []any {
 	out := make([]any, 0, len(defaultMoAReferenceModels))
 	for _, slot := range defaultMoAReferenceModels {
-		out = append(out, map[string]any{"provider": slot["provider"], "model": slot["model"], "enabled": true})
+		row := map[string]any{"provider": slot["provider"], "model": slot["model"], "enabled": true}
+		config.SetMappingKeys(row, []string{"provider", "model", "enabled"})
+		out = append(out, row)
 	}
 	return out
 }
 
 // Copy of the default aggregator slot
 func defaultMoAAggregatorSlot() map[string]any {
-	return map[string]any{"provider": defaultMoAAggregator["provider"], "model": defaultMoAAggregator["model"]}
+	slot := map[string]any{"provider": defaultMoAAggregator["provider"], "model": defaultMoAAggregator["model"]}
+	config.SetMappingKeys(slot, []string{"provider", "model"})
+	return slot
 }
 
 // Decimal value of a Unicode decimal digit rune, -1 for anything else
@@ -348,12 +352,16 @@ func cleanMoASlot(slot any, includeEnabled bool) map[string]any {
 	}
 	m := slot.(map[string]any)
 	clean := map[string]any{"provider": pyStripSpace(pyStr(m["provider"])), "model": pyStripSpace(pyStr(m["model"]))}
+	order := []string{"provider", "model"}
 	if effort := cleanMoAReasoningEffort(m["reasoning_effort"]); effort != "" {
 		clean["reasoning_effort"] = effort
+		order = append(order, "reasoning_effort")
 	}
 	if includeEnabled {
 		clean["enabled"] = coerceMoABool(m["enabled"], true)
+		order = append(order, "enabled")
 	}
+	config.SetMappingKeys(clean, order)
 	return clean
 }
 
@@ -546,7 +554,7 @@ func normalizeMoAPreset(raw any) map[string]any {
 	if policy != "loud" && policy != "silent" {
 		policy = "loud"
 	}
-	return map[string]any{
+	out := map[string]any{
 		"enabled":                   coerceMoABool(m["enabled"], true),
 		"reference_models":          refs,
 		"aggregator":                aggregator,
@@ -556,6 +564,9 @@ func normalizeMoAPreset(raw any) map[string]any {
 		"degraded_reference_policy": policy,
 		"fanout":                    coerceMoAFanout(m["fanout"]),
 	}
+	config.SetMappingKeys(out, []string{"enabled", "reference_models", "aggregator", "reference_temperature", "aggregator_temperature",
+		"reference_timeout", "degraded_reference_policy", "fanout"})
+	return out
 }
 
 // IsPresetFieldPath reports whether split config path parts name a preset field or an aggregator slot field
@@ -602,9 +613,10 @@ func normalizeMoAConfig(raw any) map[string]any {
 	out := map[string]any{"default_preset": defaultName, "active_preset": activeName, "presets": presets}
 	defaultPreset := presets[defaultName].(map[string]any)
 	for _, key := range moaFlatPresetKeys {
-		out[key] = deepCopyAny(defaultPreset[key])
+		out[key] = config.Clone(defaultPreset[key])
 	}
 	out["privacy_filter"] = CoercePrivacyFilter(m["privacy_filter"])
+	config.SetMappingKeys(out, append(append([]string{"default_preset", "active_preset", "presets"}, moaFlatPresetKeys...), "privacy_filter"))
 	return out
 }
 

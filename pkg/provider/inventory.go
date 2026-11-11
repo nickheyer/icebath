@@ -201,7 +201,9 @@ func buildModelsPayload(ctx context.Context, pc PickerConfigContext, opts Models
 		providers[i] = r
 	}
 	DropUnofferableModelIDs(providers)
-	return map[string]any{"providers": providers, "model": pc.CurrentModel, "provider": pc.CurrentProvider}, nil
+	payload := map[string]any{"providers": providers, "model": pc.CurrentModel, "provider": pc.CurrentProvider}
+	config.SetMappingKeys(payload, []string{"providers", "model", "provider"})
+	return payload, nil
 }
 
 // Decorated provider rows before the unofferable model filter

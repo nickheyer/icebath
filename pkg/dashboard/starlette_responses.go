@@ -229,7 +229,7 @@ type FileResponse struct {
 	Background  func(ctx context.Context) error
 	stat        fs.FileInfo
 	opener      func() (*os.File, error)
-	pinned      *os.File
+	pinned      io.ReadSeeker
 	chunkSize   int
 	maxRanges   int
 	disposition string

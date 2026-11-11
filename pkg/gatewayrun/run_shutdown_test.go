@@ -89,7 +89,7 @@ func TestWatcherReasksGateBeforeDormantSequence(t *testing.T) {
 		r.config = relayOnlyConfig()
 		r.adapters = adapterDict(gateway.PlatformRelay, relay)
 		r.profileAdapters = profileAdapterDict()
-		r.running = true
+		r.running.Store(true)
 		r.backgroundTasks = map[*gatewayTask]struct{}{}
 		r.lastInboundAt = wallClock() - 3600
 		return r, relay
@@ -188,7 +188,7 @@ func TestConcurrentClearsDoNotResurrectEachOthersCounter(t *testing.T) {
 func idleRunner(t *testing.T, lastInboundAt float64) *GatewayRunner {
 	t.Helper()
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	r.lastInboundAt = lastInboundAt
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	r.adapters = adapterDict()
@@ -348,7 +348,7 @@ func TestDirectPlatformStillDisarmsAlongsideAPIServer(t *testing.T) {
 
 func TestSupervisedWatchersDoNotBlockIdle(t *testing.T) {
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	forever := func(ctx context.Context) error {
 		<-ctx.Done()
@@ -370,7 +370,7 @@ func TestSupervisedWatchersDoNotBlockIdle(t *testing.T) {
 
 func TestTransientBackgroundTaskStillBlocksIdle(t *testing.T) {
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	task := spawnGatewayTask(context.Background(), "work", func(ctx context.Context) (any, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
@@ -384,7 +384,7 @@ func TestTransientBackgroundTaskStillBlocksIdle(t *testing.T) {
 
 func TestDoneSupervisedWatcherIsIgnoredEitherWay(t *testing.T) {
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	task := spawnGatewayTask(context.Background(), "quick", func(context.Context) (any, error) { return nil, nil })
 	_, _ = task.wait(context.Background())
 	r.backgroundTasks = map[*gatewayTask]struct{}{task: {}}
@@ -412,7 +412,7 @@ func workCountRunner(t *testing.T, apiRuns int, wedged bool) *GatewayRunner {
 	t.Helper()
 	t.Setenv(home.EnvHome, t.TempDir())
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	r.lastInboundAt = 0.0
 	r.adapters = adapterDict(gateway.PlatformAPIServer, &workCountAPIAdapter{dormancyRelayAdapter: newDormancyRelayAdapter(gateway.PlatformAPIServer), count: apiRuns, wedged: wedged})

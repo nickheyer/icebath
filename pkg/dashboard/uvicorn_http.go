@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -30,6 +31,17 @@ type httpConn struct {
 
 func newHTTPConn(srv *UvicornServer, c net.Conn) *httpConn {
 	return &httpConn{srv: srv, conn: c, br: bufio.NewReaderSize(c, 64*1024)}
+}
+
+// Tears the transport down once its protocol is done, a failed teardown going to the loop exception handler
+func (h *httpConn) callConnectionLost() {
+	err := closeTransport(h.conn)
+	if err == nil {
+		return
+	}
+	callback := transportClassName + "._call_connection_lost(None)"
+	h.srv.Loop.CallExceptionHandler(gateway.LoopExceptionContext{Message: "Exception in callback " + callback,
+		Exception: err, Handle: "<Handle " + callback + ">"})
 }
 
 // Closes an idle connection or lets the running request finish without keep alive
@@ -104,7 +116,7 @@ func headValue(hs []Header, name string) (string, bool) {
 
 // Serves requests in turn, handing a websocket upgrade to the websocket protocol
 func (h *httpConn) serve() {
-	defer h.conn.Close()
+	defer h.callConnectionLost()
 	for {
 		h.conn.SetReadDeadline(time.Now().Add(h.srv.cfg.TimeoutKeepAlive))
 		head, err := readRequestHead(h.br)
@@ -128,7 +140,7 @@ func (h *httpConn) serve() {
 		scope := &Scope{Type: "http", HTTPVersion: strings.TrimPrefix(head.proto, "HTTP/"), Method: head.method,
 			Scheme: "http", Path: pyurl.Unquote(rawPath), RawPath: rawPath, QueryString: query, Headers: head.headers,
 			Client: addrOf(h.conn.RemoteAddr()), Server: addrOf(h.conn.LocalAddr()),
-			Extensions: map[string]any{}, State: copyState(h.srv.lifespan.state)}
+			Extensions: map[string]any{}, State: copyState(h.srv.lifespanState())}
 		if isWebSocketUpgrade(head) {
 			scope.Type, scope.Scheme = "websocket", "ws"
 			scope.Method = ""

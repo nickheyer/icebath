@@ -18,7 +18,7 @@ var tuiInjectOwner = &struct{ name string }{"tui-inject"}
 var tuiInjectAtExit sync.Once
 
 // Queues content on the live session whose session key matches, draining an idle one so the prompt starts a turn
-func injectTUISessionMessage(kwargs map[string]any) bool {
+func injectTUISessionMessage(ctx context.Context, kwargs map[string]any) bool {
 	sessionKey, _ := kwargs["session_key"].(string)
 	if sessionKey == "" {
 		return false
@@ -46,7 +46,6 @@ func injectTUISessionMessage(kwargs map[string]any) bool {
 	if session.Get("history_lock") == nil {
 		return false
 	}
-	ctx := context.Background()
 	unlock := lockHistory(session)
 	var keepTransport any
 	if queued, isMap := session.Get("queued_prompt").(map[string]any); isMap {
@@ -60,7 +59,7 @@ func injectTUISessionMessage(kwargs map[string]any) bool {
 		return true
 	}
 	rid := "inject-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
-	go drainQueuedPrompt(ctx, rid, sid, session)
+	go drainQueuedPrompt(context.Background(), rid, sid, session)
 	return true
 }
 

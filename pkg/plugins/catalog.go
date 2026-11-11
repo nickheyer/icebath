@@ -95,18 +95,23 @@ func (e *PluginCatalogEntry) InstallIdentifier() string {
 // Ordered mapping of every field the dashboard and JSON output render
 func (e *PluginCatalogEntry) ToDict() map[string]any {
 	caps := e.Capabilities
-	return map[string]any{
+	capabilities := map[string]any{
+		"provides_tools": stringsAny(caps.ProvidesTools), "provides_hooks": stringsAny(caps.ProvidesHooks),
+		"provides_middleware": stringsAny(caps.ProvidesMiddleware), "requires_env": stringsAny(caps.RequiresEnv),
+	}
+	config.SetMappingKeys(capabilities, []string{"provides_tools", "provides_hooks", "provides_middleware", "requires_env"})
+	out := map[string]any{
 		"name": e.Name, "repo": e.Repo, "sha": e.Sha, "description": e.Description,
 		"maintainer": e.Maintainer, "tier": e.Tier, "category": e.Category,
 		"requires_icebath": e.RequiresIcebath, "subdir": e.Subdir, "docs_url": e.DocsURL, "version": e.Version,
 		"image": e.Image, "screenshots": stringsAny(e.Screenshots), "readme": e.Readme,
 		"platforms": stringsAny(e.Platforms), "title": e.Title, "onboarding": e.Onboarding,
-		"capabilities": map[string]any{
-			"provides_tools": stringsAny(caps.ProvidesTools), "provides_hooks": stringsAny(caps.ProvidesHooks),
-			"provides_middleware": stringsAny(caps.ProvidesMiddleware), "requires_env": stringsAny(caps.RequiresEnv),
-		},
+		"capabilities": capabilities,
 		"known_issues": stringsAny(e.KnownIssues),
 	}
+	config.SetMappingKeys(out, []string{"name", "repo", "sha", "description", "maintainer", "tier", "category", "requires_icebath",
+		"subdir", "docs_url", "version", "image", "screenshots", "readme", "platforms", "title", "onboarding", "capabilities", "known_issues"})
+	return out
 }
 
 // Copied string slice as a list value
@@ -280,6 +285,9 @@ func strictUTF8(data []byte) error {
 
 // Catalog files of a directory sorted by name, the embedded in-tree catalog when dir is empty
 func catalogFiles(dir string) ([]string, func(string) ([]byte, error), error) {
+	if dir == "" {
+		dir = catalogDirOverride
+	}
 	if dir == "" {
 		names, err := fs.Glob(inTreeCatalog, "catalog/*.yaml")
 		sort.Strings(names)

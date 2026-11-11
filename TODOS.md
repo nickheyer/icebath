@@ -2136,7 +2136,7 @@
 - [ ] trajectory_compressor.py
 - [ ] utils.py
 
-### 23. arena: 31% (36 of 115 files completed)
+### 23. arena: 32% (37 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
 - [x] tui_gateway/_env.py
 - [ ] tui_gateway/_stdin_recovery.py
@@ -2207,7 +2207,7 @@
 - [ ] tui_gateway/methods_projects.py
 - [ ] tui_gateway/methods_prompt.py
 - [ ] tui_gateway/methods_session.py
-- [ ] tui_gateway/methods_session_branch.py
+- [x] tui_gateway/methods_session_branch.py
 - [ ] tui_gateway/methods_session_control.py
 - [x] tui_gateway/methods_session_foreign.py
 - [ ] tui_gateway/methods_session_interrupt.py
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py
 - [ ] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 33% (254 of 760 files completed)
+### 24. gateway: 34% (262 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2383,7 +2383,7 @@
 - [ ] gateway/relay/egress.py
 - [x] gateway/relay/http_diagnostics.py
 - [ ] gateway/relay/inbound_admission.py
-- [ ] gateway/relay/media.py
+- [x] gateway/relay/media.py
 - [ ] gateway/relay/transport.py
 - [ ] gateway/relay/ws_transport.py
 - [x] gateway/response_filters.py
@@ -2426,7 +2426,7 @@
 - [ ] gateway/run_shutdown.py
 - [ ] gateway/run_shutdown_session_end.py
 - [ ] gateway/run_startup.py
-- [ ] gateway/run_topics.py
+- [x] gateway/run_topics.py
 - [ ] gateway/run_turn.py
 - [ ] gateway/run_turn_followup_ack.py
 - [x] gateway/run_turn_hygiene.py
@@ -2436,7 +2436,7 @@
 - [ ] gateway/run_turn_runner.py
 - [ ] gateway/run_turn_runner_approval_settle.py
 - [ ] gateway/run_turn_runner_clarify_delivery.py
-- [ ] gateway/run_voice.py
+- [x] gateway/run_voice.py
 - [ ] gateway/run_watchers.py
 - [ ] gateway/runtime_bootstrap.py
 - [ ] gateway/runtime_bootstrap_windows.py
@@ -2463,7 +2463,7 @@
 - [ ] gateway/session_clarify_batch.py
 - [ ] gateway/session_clarify_lock.py
 - [ ] gateway/session_cli_turn.py
-- [ ] gateway/session_cold_review.py
+- [x] gateway/session_cold_review.py
 - [ ] gateway/session_command_sink.py
 - [ ] gateway/session_commands.py
 - [x] gateway/session_complete_path.py
@@ -2755,11 +2755,11 @@
 - [ ] hermes_cli/web_host_terminal.py
 - [ ] hermes_cli/web_host_terminal_sessions.py
 - [ ] hermes_cli/web_models.py
-- [ ] hermes_cli/web_read_coalescing.py
+- [x] hermes_cli/web_read_coalescing.py
 - [ ] hermes_cli/web_routers/__init__.py
 - [ ] hermes_cli/web_routers/_common.py
-- [ ] hermes_cli/web_routers/actions.py
-- [ ] hermes_cli/web_routers/analytics.py
+- [x] hermes_cli/web_routers/actions.py
+- [x] hermes_cli/web_routers/analytics.py
 - [ ] hermes_cli/web_routers/audio.py
 - [ ] hermes_cli/web_routers/chat_workspaces.py
 - [ ] hermes_cli/web_routers/chat_ws.py
@@ -2778,7 +2778,7 @@
 - [ ] hermes_cli/web_routers/messaging.py
 - [ ] hermes_cli/web_routers/models.py
 - [ ] hermes_cli/web_routers/oauth.py
-- [ ] hermes_cli/web_routers/ops.py
+- [x] hermes_cli/web_routers/ops.py
 - [ ] hermes_cli/web_routers/profiles.py
 - [ ] hermes_cli/web_routers/sessions.py
 - [x] hermes_cli/web_routers/shared_metrics.py

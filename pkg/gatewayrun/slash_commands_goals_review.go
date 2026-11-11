@@ -46,7 +46,7 @@ func agentSnapshot(a *agent.AIAgent) []map[string]any {
 	return agent.SessionMessageDicts(a.SessionMessages())
 }
 
-// Runs the memory and skill review fork on demand against the session's conversation, the stored transcript when no agent holds it
+// Runs the memory and skill review fork on demand, over the stored transcript when no agent holds it
 func (r *GatewayRunner) handleRefineCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	args := pystr.Strip(event.GetCommandArgs())
 	quickKey, cached, errorText, err := r.idleCachedAgentOrError(ctx, event, "refine")

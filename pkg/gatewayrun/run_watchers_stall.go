@@ -244,7 +244,7 @@ func (r *GatewayRunner) modelCatalogRefreshWatcher(ctx context.Context) error {
 	if err := sleepCtx(ctx, 30); err != nil {
 		return err
 	}
-	for r.running {
+	for r.running.Load() {
 		if _, err := r.runInExecutorWithContext(ctx, func(c context.Context) (any, error) {
 			return provider.RefreshCatalogs(c, nil), nil
 		}); err != nil {
@@ -255,7 +255,7 @@ func (r *GatewayRunner) modelCatalogRefreshWatcher(ctx context.Context) error {
 		}
 		interval := provider.CatalogRefreshInterval(ctx).Seconds()
 		deadline := pythread.Monotonic() + interval
-		for r.running && pythread.Monotonic() < deadline {
+		for r.running.Load() && pythread.Monotonic() < deadline {
 			if err := sleepCtx(ctx, min(30.0, max(0.0, deadline-pythread.Monotonic()))); err != nil {
 				return err
 			}
@@ -269,7 +269,7 @@ func (r *GatewayRunner) sessionStallWatcher(ctx context.Context, interval float6
 	if err := sleepCtx(ctx, min(30.0, max(1.0, interval))); err != nil {
 		return err
 	}
-	for r.running {
+	for r.running.Load() {
 		if timeout := r.sessionStallTimeoutSeconds(); timeout > 0 {
 			if _, err := r.checkSessionStalls(ctx, timeout); err != nil {
 				if isCancellation(err) || ctx.Err() != nil {

@@ -260,8 +260,7 @@ func (r *GatewayRunner) publishLocalControl(ctx context.Context, source *gateway
 	if err != nil {
 		return err
 	}
-	controlPublishAsync(ctx, authority, source.ChatID, onlyIfPresent, false)
-	return nil
+	return gateway.PublishControlAsync(ctx, authority, source.ChatID, onlyIfPresent, false)
 }
 
 // Whether the owner recorded this turn's result as failed
@@ -491,7 +490,7 @@ func (r *GatewayRunner) loopWakeupWatcher(ctx context.Context, interval float64)
 		}
 		return nil
 	}
-	for r.running {
+	for r.running.Load() {
 		if err := tick(); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

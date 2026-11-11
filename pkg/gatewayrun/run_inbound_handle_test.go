@@ -89,7 +89,7 @@ func TestIdleQueueSendsPayloadAsNextTurn(t *testing.T) {
 			} else {
 				t.Cleanup(func() { r.cleanupAgentResources(context.Background(), a) })
 			}
-			if generation := r.sessionState(key).runGeneration; generation != 1 {
+			if generation := r.sessionState(key).persistent.runGeneration; generation != 1 {
 				t.Fatalf("run generation = %d", generation)
 			}
 			if r.runningAgents().Len() != 0 {

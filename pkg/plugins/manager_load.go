@@ -333,7 +333,7 @@ func (m *Manager) gateManifest(ctx context.Context, mf *Manifest, disabled, enab
 		err = m.registerDeferredPlatform(ctx, mf)
 	default:
 		m.mu.Lock()
-		m.plugins[mf.ID()] = &LoadedPlugin{Manifest: mf, Enabled: verdict.Enabled, Error: verdict.Error}
+		m.putPluginLocked(mf.ID(), &LoadedPlugin{Manifest: mf, Enabled: verdict.Enabled, Error: verdict.Error})
 		m.mu.Unlock()
 	}
 	logGate(verdict)

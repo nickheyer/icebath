@@ -33,6 +33,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -91,6 +92,10 @@ func installProcessWiring() {
 	}
 	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport
 	gatewayrun.GatewayDebugUploadReply = selfupdate.GatewayDebugUploadReply
+	gatewayrun.SweepExpiredPastes = selfupdate.SweepExpiredPastes
+	gatewayrun.RestoreUserProxyEnv = selfupdate.RestoreUserProxyEnv
+	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
+	gatewayrun.ConfigureWindowsStdio = app.ConfigureWindowsStdio
 	gatewayrun.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, requestedMode string) (string, error) {
 		result, err := commands.RunApprovalModeCommand(ctx, h, env, requestedMode)
 		return result.Message, err
@@ -109,6 +114,18 @@ func installProcessWiring() {
 		return gatewayrun.SlashCommandReply{Text: reply.Text, Data: reply.Data, Format: reply.Format}, err
 	}
 	acp.NewSurfaceLabelReader = func(db *state.SessionDB) acp.RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
+	acp.NewPreparedMutations = func() acp.PreparedMutations { return app.NewACPMutations() }
+	acp.SlashMutation, acp.ModelRefusalText, acp.ConfirmationTitle = app.ACPSlashMutation, app.ACPModelRefusalText, app.ACPConfirmationTitle
+	acp.CommandRefusal, acp.RewindTo = app.ACPCommandRefusal, app.ACPRewindTo
+	acp.ReplayGapOwedReply, acp.ReplayGapPendingStatus, acp.ReplayGapSettled = app.ACPReplayGapOwedReply, app.ACPReplayGapPendingStatus, app.ACPReplayGapSettled
+	acp.EnvLaunchFlags = gatewaycli.EnvLaunchFlags
+	acp.ResolveCommand = func(name string) (string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, true
+		}
+		return "", false
+	}
+	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
 	gatewaycli.InstallMigrateS6Hooks()
 	gateway.S6Running, gateway.S6Scandir = gatewaycli.S6Running, func() string { return gatewaycli.S6DynamicScandir }
 	gateway.S6IsRunning = func(name string) (bool, error) {
@@ -133,6 +150,16 @@ func installProcessWiring() {
 	dashboard.GatewayCLI.InstalledServices = gatewayrun.InstalledServiceCount
 	dashboard.TUILaunch.MakeArgv = app.MakeTUIArgv
 	dashboard.TUILaunch.ApplyPythonEnv = app.ApplyTUIPythonEnv
+	dashboard.UpdateCLI.IsCommitBuild = selfupdate.IsCommitBuild
+	dashboard.UpdateCLI.CommitBuildMessage = selfupdate.CommitBuildUpdateMessage
+	dashboard.UpdateCLI.UpdateAdmissionRefusal = selfupdate.UpdateAdmissionRefusal
+	dashboard.UpdateCLI.RecordUpdateRefusal = selfupdate.RecordUpdateRefusal
+	dashboard.UpdateCLI.CheckForUpdates = selfupdate.CheckForUpdatesForce
+	dashboard.UpdateCLI.BuildMigrationPlan = gatewayrun.MigrationPlanDict
+	dashboard.StatusCLI.ReadLogTail = app.ReadLogTail
+	dashboard.StatusCLI.BuildDebugShare = selfupdate.DebugShareForDashboard
+	dashboard.StatusCLI.RedactDebugSupportText = selfupdate.RedactDebugSupportText
+	dashboard.ConsoleCLI.NewEngine = app.NewDashboardConsole
 	gateway.WebUISourceBuild.ProductCurrent = selfupdate.SourceProductCurrent
 	gateway.WebUISourceBuild.Env = func(ctx context.Context) (map[string]string, error) {
 		return selfupdate.SourceBuildEnv(ctx, nil, false, true)
@@ -144,6 +171,7 @@ func installProcessWiring() {
 	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
+	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	tuiserver.PersistPersonality = commands.PersistPersonality
@@ -179,6 +207,19 @@ func installProcessWiring() {
 	tuiserver.ForeignSessions.Import = app.ImportBrowserSession
 	tuiserver.Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
+	tuiserver.CatalogRegistry = catalogRegistry
+	tuiserver.SaveConfigValue = app.SaveConfigValue
+	gateway.CommandCatalog, gateway.SlashCompletions = tuiserver.CommandCatalog, tuiserver.SlashCompletions
+	gateway.ResolveRegistryCommand = resolveRegistryCommand
+	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
+	gateway.SessionReadLines.Cron = cron.CronCommandLines
+	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
+	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
+	gateway.RosterProfileInfo = func(ctx context.Context, name, path string, isDefault bool) (gateway.RosterProfile, error) {
+		info, err := manage.ProfileInfoOf(ctx, name, path, isDefault)
+		return gateway.RosterProfile{IsDefault: info.IsDefault, Model: info.Model, Provider: info.Provider,
+			Description: info.Description, DisplayName: info.DisplayName, SkillCount: info.SkillCount}, err
+	}
 	tuiserver.ResolveCommand = func(name string) (tuiserver.ResolvedCommand, bool) {
 		d := commands.Resolve(name)
 		if d == nil {

@@ -75,7 +75,7 @@ func deniedSource(row *pyjson.Object) bool {
 	return slices.Contains(gateway.InternalListingSources, rowSource(row))
 }
 
-// Hidden source or an unknown source guard placeholder, never a target for auto resume
+// Hidden source or the unknown source of a guard row, never a target for auto resume
 func autoResumeDeniedSource(row *pyjson.Object) bool {
 	source := rowSource(row)
 	return slices.Contains(gateway.InternalListingSources, source) || source == "unknown"

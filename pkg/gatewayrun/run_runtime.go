@@ -111,7 +111,7 @@ func (r *GatewayRunner) storeOpenFailure(profileHome string) string {
 // Builds one profile's authority against its own state.db, an error when that store is unusable
 func (r *GatewayRunner) buildProfileAuthority(ctx context.Context, name, profileHome string, register bool) (*gateway.SessionAuthority, error) {
 	registry := r.sessionAuthorities
-	instanceID := pyrepr.Str(r.sessionRuntimeDescriptor["instance_id"])
+	instanceID := pyrepr.Str(r.sessionRuntimeDescriptor.load()["instance_id"])
 	db := r.openProfileStore(ctx, profileHome)
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
 	if db == nil {
@@ -147,9 +147,7 @@ func (r *GatewayRunner) parkReservedProfile(ctx context.Context, name, profileHo
 
 // Publishes name under parked_profiles in the descriptor and the runtime status
 func (r *GatewayRunner) parkProfile(ctx context.Context, name, reason string) {
-	parked := r.parkedProfileMap()
-	parked[name] = firstRunesText(reason, 500)
-	recordParkedProfiles(ctx, parked)
+	recordParkedProfiles(ctx, r.updateParkedProfiles(func(parked map[string]any) { parked[name] = firstRunesText(reason, 500) }))
 }
 
 // Leading n code points of s
@@ -163,20 +161,17 @@ func firstRunesText(s string, n int) string {
 
 // Drops name from parked_profiles when it was parked
 func (r *GatewayRunner) unparkProfile(ctx context.Context, name string) {
-	parked := r.parkedProfileMap()
-	if _, ok := parked[name]; ok {
-		delete(parked, name)
-		recordParkedProfiles(ctx, parked)
+	if _, ok := r.parkedProfiles()[name]; ok {
+		recordParkedProfiles(ctx, r.updateParkedProfiles(func(parked map[string]any) { delete(parked, name) }))
 	}
 }
 
 // Whether name is parked, unserved now but served again on a rescan
 func (r *GatewayRunner) profileParked(name string) bool {
-	if name == "" || r.sessionRuntimeDescriptor == nil {
+	if name == "" {
 		return false
 	}
-	parked, _ := r.sessionRuntimeDescriptor["parked_profiles"].(map[string]any)
-	_, ok := parked[name]
+	_, ok := r.parkedProfiles()[name]
 	return ok
 }
 
@@ -187,19 +182,6 @@ func (r *GatewayRunner) refuseParkedScope(ctx context.Context) error {
 		return gateway.NewParkedProfileRefusal(name)
 	}
 	return nil
-}
-
-// Live parked_profiles map of the descriptor, created on first use
-func (r *GatewayRunner) parkedProfileMap() map[string]any {
-	if r.sessionRuntimeDescriptor == nil {
-		r.sessionRuntimeDescriptor = map[string]any{}
-	}
-	parked, ok := r.sessionRuntimeDescriptor["parked_profiles"].(map[string]any)
-	if !ok {
-		parked = map[string]any{}
-		r.sessionRuntimeDescriptor["parked_profiles"] = parked
-	}
-	return parked
 }
 
 // Persists the parked set, swallowing a failed write
@@ -230,7 +212,7 @@ func (r *GatewayRunner) initializeGatewayRuntime(ctx context.Context) error {
 		"instance_id": instanceID, "runtime_protocol": 1, "state": "starting",
 		"capabilities": []any{}, "served_profiles": []any{},
 	}
-	r.sessionRuntimeDescriptor = descriptor
+	r.sessionRuntimeDescriptor.store(descriptor)
 	registry := gateway.NewSessionAuthorities(homes[0].Home, r.multiplexing())
 	r.sessionAuthorities = registry
 	r.prewarmProfileStores(ctx, homes[1:])
@@ -248,9 +230,11 @@ func (r *GatewayRunner) initializeGatewayRuntime(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	descriptor["authority_epoch"] = launch.Epoch
-	descriptor["served_profiles"] = registry.ServedProfiles()
-	recordParkedProfiles(ctx, r.parkedProfileMap())
+	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
+		descriptor["authority_epoch"] = launch.Epoch
+		descriptor["served_profiles"] = registry.ServedProfiles()
+	})
+	recordParkedProfiles(ctx, r.updateParkedProfiles(func(map[string]any) {}))
 	store, err := gateway.NewTicketStore(instanceID, registry.ProfileIDs())
 	if err != nil {
 		return err
@@ -261,7 +245,7 @@ func (r *GatewayRunner) initializeGatewayRuntime(ctx context.Context) error {
 
 // Republishes the served set to the descriptor and the ticket store
 func (r *GatewayRunner) publishServedSet() {
-	r.sessionRuntimeDescriptor["served_profiles"] = r.sessionAuthorities.ServedProfiles()
+	r.SetRuntimeDescriptorField("served_profiles", r.sessionAuthorities.ServedProfiles())
 	r.sessionTicketStore.SetProfileIDs(r.sessionAuthorities.ProfileIDs())
 }
 

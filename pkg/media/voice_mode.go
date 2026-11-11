@@ -804,60 +804,11 @@ func PlayAudioFile(filePath string) bool {
 
 // WAV frames and frame rate read the way the wave module reads a PCM file
 func readWAVFrames(path string) ([]byte, int, error) {
-	data, err := os.ReadFile(path)
+	w, err := ReadWave(path)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(data) < 8 {
-		return nil, 0, io.EOF
-	}
-	if string(data[:4]) != "RIFF" {
-		return nil, 0, errors.New("file does not start with RIFF id")
-	}
-	riffEnd := min(len(data), 8+int(binary.LittleEndian.Uint32(data[4:8])))
-	if riffEnd < 12 || string(data[8:12]) != "WAVE" {
-		return nil, 0, errors.New("not a WAVE file")
-	}
-	pos, framesize, rate, fmtRead := 12, 0, 0, false
-	for pos+8 <= riffEnd {
-		name, size := string(data[pos:pos+4]), int(binary.LittleEndian.Uint32(data[pos+4:pos+8]))
-		body := data[pos+8 : min(riffEnd, pos+8+size)]
-		switch name {
-		case "fmt ":
-			if len(body) < 16 {
-				return nil, 0, io.EOF
-			}
-			tag, channels := binary.LittleEndian.Uint16(body[0:2]), int(binary.LittleEndian.Uint16(body[2:4]))
-			if tag != 1 && tag != 0xFFFE {
-				return nil, 0, fmt.Errorf("unknown format: %d", tag)
-			}
-			sampwidth := (int(binary.LittleEndian.Uint16(body[14:16])) + 7) / 8
-			if tag == 0xFFFE {
-				if len(body) < 40 {
-					return nil, 0, io.EOF
-				}
-				pcm := []byte{1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71}
-				if string(body[24:40]) != string(pcm) {
-					return nil, 0, errors.New("unknown extended format")
-				}
-			}
-			if sampwidth == 0 {
-				return nil, 0, errors.New("bad sample width")
-			}
-			if channels == 0 {
-				return nil, 0, errors.New("bad # of channels")
-			}
-			rate, framesize, fmtRead = int(binary.LittleEndian.Uint32(body[4:8])), channels*sampwidth, true
-		case "data":
-			if !fmtRead {
-				return nil, 0, errors.New("data chunk before fmt chunk")
-			}
-			nframes := size / framesize
-			return body[:min(len(body), nframes*framesize)], rate, nil
-		}
-		pos += 8 + size + size%2
-	}
-	return nil, 0, errors.New("fmt chunk and/or data chunk missing")
+	return w.Frames, w.FrameRate, nil
 }
 
 // Plays a WAV through sounddevice, faded in with silence padding and 4096 frame blocks under WSL

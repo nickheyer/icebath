@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"strings"
 
@@ -208,6 +209,10 @@ func coerceMaxTokens(value any) *int {
 		return nil
 	}
 	n, err := pyint.Of(value)
+	var pyErr *pyint.Error
+	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
+		panic(err)
+	}
 	if err != nil || n.Sign() <= 0 || !n.IsInt64() {
 		return nil
 	}

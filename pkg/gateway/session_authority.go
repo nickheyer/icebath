@@ -111,6 +111,7 @@ type SessionAuthority struct {
 	steerTransfers         map[string]*steerTransfer
 	adopted                map[string]adoptedAgent
 	onboardingDiscards     *onboardingDiscardSet
+	onboardingStartLock    asyncLock
 	botMailboxLock         asyncLock
 	botReceiptIndex        map[string]botReceiptOwner
 	botReceiptTasks        map[*adapterTask]bool

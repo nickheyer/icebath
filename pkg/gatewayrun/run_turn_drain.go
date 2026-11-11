@@ -95,7 +95,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 			}
 		}
 	}
-	if r.draining && (pendingEvent == nil || !pendingEvent.AdmittedBeforeDrain()) {
+	if r.draining.Load() && (pendingEvent == nil || !pendingEvent.AdmittedBeforeDrain()) {
 		if pendingEvent != nil || pending != "" {
 			key := sessionKey
 			if key == "" {

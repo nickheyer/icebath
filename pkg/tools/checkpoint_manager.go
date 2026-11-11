@@ -120,14 +120,7 @@ func (m *CheckpointManager) NewTurn() {
 
 // Explains why host checkpoints are refused for a container backed task, empty otherwise
 func (m *CheckpointManager) UnsupportedBackendReason(taskID string) string {
-	if taskID == "" {
-		taskID = "default"
-	}
-	backend := containerBackendForTask(m.env, taskID)
-	if backend == "" {
-		return ""
-	}
-	return "Checkpoints are not taken for terminal.backend=" + backend + ": file paths belong to the container, not this host."
+	return m.UnsupportedBackendReasonIn(m.env, taskID)
 }
 
 // Records the content hash of a file icebath just wrote so safe restores can spot later hand edits

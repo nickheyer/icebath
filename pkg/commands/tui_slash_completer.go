@@ -2,14 +2,11 @@ package commands
 
 import (
 	"context"
-	"sort"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Slash completer the TUI gateway runs over a session's skill and bundle tables and the live sources of the ctx profile
@@ -23,55 +20,11 @@ func TUISlashCompleter(ctx context.Context, skillCommands, skillBundles skills.S
 			}
 			return cfg
 		},
-		Skills:  func() map[string]SkillInfo { return tuiSkillInfos(skillCommands) },
-		Bundles: func() map[string]BundleInfo { return tuiBundleInfos(skillBundles) },
-		Skins: func() []NameMeta {
-			var rows []NameMeta
-			for _, s := range config.ListSkins(ctx) {
-				meta := pyrepr.Str(s.Description)
-				if !pyrepr.Truthy(s.Description) {
-					meta = s.Source
-				}
-				rows = append(rows, NameMeta{pyrepr.Str(s.Name), meta})
-			}
-			return rows
-		},
-		ToolsetRows: func() []ToolsetRow {
-			cfg, err := readonlyCfg()
-			if err != nil {
-				return nil
-			}
-			enabled := tools.Default.PlatformTools(ctx, "", cfg, "cli", tools.PlatformToolsOptions{IncludeDefaultMCPServers: false})
-			var rows []ToolsetRow
-			for _, ts := range tools.ConfigurableToolsets {
-				rows = append(rows, ToolsetRow{Key: ts.Key, Label: ts.Label, Enabled: enabled[ts.Key]})
-			}
-			pluginKeys := tools.PluginToolsetKeys(ctx)
-			keys := make([]string, 0, len(pluginKeys))
-			for k := range pluginKeys {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				rows = append(rows, ToolsetRow{Key: k, Label: "plugin toolset", Enabled: enabled[k]})
-			}
-			return rows
-		},
-		ConnectedPlatforms: func() []PlatformHome {
-			gw, err := gateway.LoadGatewayConfig(ctx)
-			if err != nil || gw == nil {
-				return nil
-			}
-			var out []PlatformHome
-			for _, p := range gw.GetConnectedPlatforms(ctx) {
-				row := PlatformHome{Name: string(p)}
-				if h := gw.GetHomeChannel(p); h != nil && pyrepr.Truthy(h.Name) {
-					row.Home = pyrepr.Str(h.Name)
-				}
-				out = append(out, row)
-			}
-			return out
-		},
+		Skills:             func() map[string]SkillInfo { return tuiSkillInfos(skillCommands) },
+		Bundles:            func() map[string]BundleInfo { return tuiBundleInfos(skillBundles) },
+		Skins:              func() []NameMeta { return LiveSkinRows(ctx) },
+		ToolsetRows:        func() []ToolsetRow { return LiveToolsetRows(ctx) },
+		ConnectedPlatforms: func() []PlatformHome { return LiveConnectedPlatforms(ctx) },
 	})
 }
 

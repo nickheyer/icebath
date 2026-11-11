@@ -385,7 +385,8 @@ class Channel:
                 if not isinstance(exc, Exception):
                     logger.warning("%s: request %s raised %s", self._name, message.get("method"),
                                    type(exc).__name__)
-                error = {"type": type(exc).__name__, "message": str(exc)}
+                error = {"type": type(exc).__name__, "message": str(exc),
+                         "bases": [base.__name__ for base in type(exc).__mro__[1:] if base is not object]}
                 if isinstance(exc, SystemExit):
                     error["code"] = repr(exc.code)
                 return {"id": request_id, "error": error}

@@ -14,16 +14,16 @@ import (
 )
 
 // Interactive subclass of the session token provider with its own name and password flag
-type interactiveStubProvider struct {
+type interactiveTokenSubclass struct {
 	*dashboardauth.SessionTokenProvider
 	name, display string
 	password      bool
 }
 
-func (s interactiveStubProvider) Name() string           { return s.name }
-func (s interactiveStubProvider) DisplayName() string    { return s.display }
-func (s interactiveStubProvider) SupportsPassword() bool { return s.password }
-func (s interactiveStubProvider) InteractiveLogin() bool { return true }
+func (s interactiveTokenSubclass) Name() string           { return s.name }
+func (s interactiveTokenSubclass) DisplayName() string    { return s.display }
+func (s interactiveTokenSubclass) SupportsPassword() bool { return s.password }
+func (s interactiveTokenSubclass) InteractiveLogin() bool { return true }
 
 func surfaceToken(t *testing.T) *dashboardauth.SessionTokenProvider {
 	t.Helper()
@@ -63,7 +63,7 @@ func TestInteractiveSurfacesLoginPageShowsTokenModeNoticeNotAButton(t *testing.T
 
 // test_session_token_provider.py TestInteractiveSurfaces test_login_page_keeps_interactive_providers_clickable
 func TestInteractiveSurfacesLoginPageKeepsInteractiveProvidersClickable(t *testing.T) {
-	surfacesCase(t, surfaceToken(t), interactiveStubProvider{surfaceToken(t), "basic", "Username & Password", true})
+	surfacesCase(t, surfaceToken(t), interactiveTokenSubclass{surfaceToken(t), "basic", "Username & Password", true})
 	html, err := renderLoginHTML(context.Background(), "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestInteractiveSurfacesAPIAuthProvidersFiltersNonInteractive(t *testing.T) 
 	if names := providerNames(t, got); len(names) != 0 {
 		t.Fatal(names)
 	}
-	if err := gateway.RegisterGlobalDashboardAuthProvider(interactiveStubProvider{surfaceToken(t), "nous", "Nous Research", false}); err != nil {
+	if err := gateway.RegisterGlobalDashboardAuthProvider(interactiveTokenSubclass{surfaceToken(t), "nous", "Nous Research", false}); err != nil {
 		t.Fatal(err)
 	}
 	got, err = apiAuthProviders(context.Background())

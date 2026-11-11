@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"net/http"
 	"strings"
 	"unicode"
@@ -133,10 +134,10 @@ func resolveOAuthFlow(ctx context.Context, providerName string) (OAuthFlow, erro
 		return nil, &httpError{status: http.StatusNotFound, detail: fmt.Sprintf("unknown memory provider %s", pyRepr(providerName))}
 	}
 	flow, err := ProviderOAuthFlow(ctx, nil, providerName)
-	if err != nil {
+	if OAuthFlowUnsupported(err) {
 		return nil, &httpError{status: http.StatusNotFound, detail: providerName + " does not support OAuth connect"}
 	}
-	return flow, nil
+	return flow, err
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -179,7 +180,7 @@ func serveFlow(w http.ResponseWriter, r *http.Request, failure string, call func
 			writeJSON(w, he.status, map[string]any{"detail": he.detail})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": fmt.Sprintf(failure, providerName, err)})
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"detail": fmt.Sprintf(failure, providerName, pyrepr.ExceptionMessage(err))})
 		return
 	}
 	writeJSON(w, http.StatusOK, result)

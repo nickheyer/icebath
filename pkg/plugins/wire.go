@@ -10,6 +10,7 @@ import (
 	"math"
 	"math/big"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const ProtocolVersion = 1
@@ -29,6 +31,7 @@ type PluginHostError struct {
 	TypeName      string
 	RemoteMessage string
 	ExitCode      string
+	Bases         []string
 }
 
 func (e *PluginHostError) Error() string {
@@ -52,6 +55,7 @@ func (e *PluginHostUnsupported) Error() string { return e.Msg }
 type HostBuiltinError struct {
 	Type    string
 	Message string
+	Bases   []string
 }
 
 func (e *HostBuiltinError) Error() string { return e.Message }
@@ -67,10 +71,27 @@ func raiseRemote(e map[string]any) error {
 	if typeName == "PluginHostUnsupported" {
 		return &PluginHostUnsupported{Msg: message}
 	}
-	if remoteBuiltinErrors[typeName] {
-		return &HostBuiltinError{Type: typeName, Message: message}
+	var bases []string
+	for _, b := range listOrEmpty(e["bases"]) {
+		bases = append(bases, wireStr(b))
 	}
-	return &PluginHostError{TypeName: typeName, RemoteMessage: message, ExitCode: wireStr(e["code"])}
+	if remoteBuiltinErrors[typeName] {
+		return &HostBuiltinError{Type: typeName, Message: message, Bases: bases}
+	}
+	return &PluginHostError{TypeName: typeName, RemoteMessage: message, ExitCode: wireStr(e["code"]), Bases: bases}
+}
+
+// Whether a remote raise is an instance of the named Python exception class, by its own name or a base
+func RemoteIsInstance(err error, class string) bool {
+	var builtin *HostBuiltinError
+	if errors.As(err, &builtin) {
+		return builtin.Type == class || slices.Contains(builtin.Bases, class)
+	}
+	var remote *PluginHostError
+	if errors.As(err, &remote) {
+		return remote.TypeName == class || slices.Contains(remote.Bases, class)
+	}
+	return false
 }
 
 // Python str() of an optional wire field, empty for null or missing
@@ -157,6 +178,15 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 		out := map[string]any{}
 		for k, item := range v {
 			out[k] = wireEncodeDepth(item, refs, depth+1)
+		}
+		return out
+	case *pyjson.Object:
+		if v == nil {
+			return nil
+		}
+		out := pyjson.NewObject()
+		for _, k := range v.Keys {
+			out.Set(k, wireEncodeDepth(v.Vals[k], refs, depth+1))
 		}
 		return out
 	}
@@ -752,6 +782,19 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 			pyJSONString(b, k)
 			b.WriteByte(':')
 			if err := pyJSONWrite(b, x[k]); err != nil {
+				return err
+			}
+		}
+		b.WriteByte('}')
+	case *pyjson.Object:
+		b.WriteByte('{')
+		for i, k := range x.Keys {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			pyJSONString(b, k)
+			b.WriteByte(':')
+			if err := pyJSONWrite(b, x.Vals[k]); err != nil {
 				return err
 			}
 		}

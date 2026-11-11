@@ -27,3 +27,10 @@ func AuxTaskSlots(ctx context.Context) []string { return auxTaskSlots(ctx) }
 func CustomProviderEntryToProviderConfig(entry any, providerKey string) map[string]any {
 	return customProviderEntryToProviderConfig(entry, providerKey)
 }
+
+// Replaces the model switch pipeline of the assignment chain, the returned func putting the previous one back
+func SwapAssignmentSwitchModel(fn func(context.Context, SwitchModelOptions) (ModelSwitchResult, error)) func() {
+	prev := assignmentSwitchModel
+	assignmentSwitchModel = fn
+	return func() { assignmentSwitchModel = prev }
+}

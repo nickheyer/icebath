@@ -12,11 +12,7 @@ func telegramFallbackIPs(ctx context.Context, cfg *gateway.GatewayConfig) error 
 	if ips == "" {
 		return nil
 	}
-	pc, ok := cfg.Platforms[gateway.PlatformTelegram]
-	if !ok {
-		pc = gateway.NewPlatformConfig()
-		cfg.Platforms[gateway.PlatformTelegram] = pc
-	}
+	pc := cfg.PlatformSetDefault(gateway.PlatformTelegram)
 	pc.Extra["fallback_ips"] = gateway.CSVList(ips)
 	return nil
 }

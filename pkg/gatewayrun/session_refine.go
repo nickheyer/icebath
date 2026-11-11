@@ -182,7 +182,7 @@ func finishLiveReviewRun(live *gateway.LiveSession, run *agent.BackgroundReviewR
 	run.SetRequestDone()
 }
 
-// Refine reply of a local session reviewing its stored transcript on a side agent, nil when the source is no local session
+// Refine reply of a local session reviewing its stored transcript on a side agent, nil for other sources
 func (r *GatewayRunner) refineLocalSession(ctx context.Context, source *gateway.SessionSource, focus string) (*string, error) {
 	authority, live := localSession(r, source)
 	if live == nil {

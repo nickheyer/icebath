@@ -177,6 +177,8 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	bf(acp, "setup", "", "Run interactive Icebath provider/model setup for ACP terminal auth")
 	bf(acp, "setup-browser", "", "Install PM's pinned Chromium for browser_exec (idempotent).")
 	bf(acp, "yes", "y", "Accept all prompts (used by --setup-browser to skip the ~400 MB Chromium download confirmation).")
+	dest(acp, "version", "acp_version")
+	dest(acp, "yes", "assume_yes")
 
 	c.addProfile(root)
 

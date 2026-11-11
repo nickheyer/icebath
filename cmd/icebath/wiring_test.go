@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -49,7 +50,11 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"cron.SetupWorkerLogging":        cron.SetupWorkerLogging != nil, "cron.RegisterWorkerConfigHooks": cron.RegisterWorkerConfigHooks != nil,
 		"selfupdate.LoadCronJobsHook": selfupdate.LoadCronJobsHook != nil, "gateway.CommandBusyPolicy": gateway.CommandBusyPolicy != nil,
 		"gateway.DrainProgressReporterHook": gateway.DrainProgressReporterHook != nil,
-		"slack.SubcommandMap":               slack.SubcommandMap != nil, "telegram.InlineCommands": telegram.InlineCommands != nil,
+		"gateway.RosterProfileInfo":         gateway.RosterProfileInfo != nil,
+		"gatewayrun.RestoreUserProxyEnv":    gatewayrun.RestoreUserProxyEnv != nil,
+		"gatewayrun.CheckRuntime":           gatewayrun.CheckRuntime != nil, "gatewayrun.MaybeRunBootBootstrap": gatewayrun.MaybeRunBootBootstrap != nil,
+		"gatewayrun.ConfigureWindowsStdio": gatewayrun.ConfigureWindowsStdio != nil,
+		"slack.SubcommandMap":              slack.SubcommandMap != nil, "telegram.InlineCommands": telegram.InlineCommands != nil,
 		"codeexec.BotDesktopEnv": codeexec.BotDesktopEnv != nil, "codeexec.BotDesktopToolPlacement": codeexec.BotDesktopToolPlacement != nil,
 		"codeexec.BotDesktopPlacementWhere": codeexec.BotDesktopPlacementWhere != nil, "codeexec.BotDesktopPublishedEnv": codeexec.BotDesktopPublishedEnv != nil,
 		"codeexec.BotDesktopSandboxEnv": codeexec.BotDesktopSandboxEnv != nil, "codeexec.BotDesktopProfileName": codeexec.BotDesktopProfileName != nil,

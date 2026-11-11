@@ -136,8 +136,11 @@ func relayCoerceFlag(raw any, def bool) bool {
 	return relayTruthyFlags[pystr.Lower(pystr.Strip(pyrepr.Str(raw)))]
 }
 
+// Slack sub block of the relay extras, the whole extras when absent
+func (a *RelayAdapter) relaySlackExtra() map[string]any { return a.relayPlatformExtra("slack") }
+
 func (a *RelayAdapter) slackFlag(knob string, def bool) bool {
-	return relayCoerceFlag(a.relayPlatformExtra("slack")[knob], def)
+	return relayCoerceFlag(a.relaySlackExtra()[knob], def)
 }
 
 func (a *RelayAdapter) effectiveReplyInThread() bool { return a.slackFlag("reply_in_thread", true) }
@@ -151,7 +154,7 @@ func (a *RelayAdapter) slackUnfurlHints(platform string) map[string]bool {
 	if pystr.Lower(platform) != relaySlack {
 		return nil
 	}
-	extra := a.relayPlatformExtra("slack")
+	extra := a.relaySlackExtra()
 	hints := map[string]bool{}
 	for _, knob := range []string{"unfurl_links", "unfurl_media"} {
 		switch v := extra[knob].(type) {

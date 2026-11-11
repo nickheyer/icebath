@@ -185,7 +185,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 		return nil, err
 	}
 	if !ok {
-		return textParts(uri, "[Resource link only; Hermes cannot read non-file ACP resource URIs directly.]", name, title, "")
+		return textParts(uri, "[Resource link only; Icebath cannot read non-file ACP resource URIs directly.]", name, title, "")
 	}
 	imageMime := imageSuffixMime[strings.ToLower(pypath.Suffix(path))]
 	if isImageResource(mimeType) {

@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"sort"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -17,16 +16,6 @@ type homeChannelTarget struct {
 	cfg       *gateway.PlatformConfig
 	home      *gateway.HomeChannel
 	transport *gateway.DeliveryTransport
-}
-
-// Platforms of a config in a stable order
-func sortedPlatforms(platforms map[gateway.Platform]*gateway.PlatformConfig) []gateway.Platform {
-	keys := make([]gateway.Platform, 0, len(platforms))
-	for p := range platforms {
-		keys = append(keys, p)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	return keys
 }
 
 // Delivery transport of one target, nil and logged when resolving it fails
@@ -51,7 +40,7 @@ func safeDeliveryTransport(ctx context.Context, platform gateway.Platform, confi
 // Every home channel of the launch profile with a live transport
 func (r *GatewayRunner) homeChannelTransports(ctx context.Context) []homeChannelTarget {
 	var out []homeChannelTarget
-	for _, platform := range sortedPlatforms(r.config.Platforms) {
+	for _, platform := range r.config.PlatformKeys() {
 		cfg := r.config.Platforms[platform]
 		if cfg == nil || cfg.HomeChannel == nil || cfg.HomeChannel.ChatID == "" {
 			continue
@@ -68,18 +57,12 @@ func (r *GatewayRunner) homeChannelTransports(ctx context.Context) []homeChannel
 // Every home channel of every served profile with a live transport, the launch profile first
 func (r *GatewayRunner) servedHomeChannelTransports(ctx context.Context) []homeChannelTarget {
 	out := r.homeChannelTransports(ctx)
-	profiles := make([]string, 0, len(r.profileConfigs))
-	for name := range r.profileConfigs {
-		profiles = append(profiles, name)
-	}
-	sort.Strings(profiles)
-	for _, name := range profiles {
-		profileCfg := r.profileConfigs[name]
+	for name, profileCfg := range r.profileConfigs.All() {
 		adapters, _ := r.profileAdapters.Get(name)
 		if adapters == nil {
 			adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
 		}
-		for _, platform := range sortedPlatforms(profileCfg.Platforms) {
+		for _, platform := range profileCfg.PlatformKeys() {
 			cfg := profileCfg.Platforms[platform]
 			if cfg == nil || cfg.HomeChannel == nil || cfg.HomeChannel.ChatID == "" {
 				continue

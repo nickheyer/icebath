@@ -28,7 +28,7 @@ var captureLocalEditSnapshot = tools.CaptureLocalEditSnapshot
 
 var planStatus = map[string]string{"pending": "pending", "in_progress": "in_progress", "completed": "completed", "cancelled": "completed"}
 
-// Native ACP plan update of a todo tool result, nil when the result carries no todo list
+// Native ACP plan update of a task list tool result, nil when the result carries no task list
 func buildPlanUpdateFromTodoResult(result any) *pyacp.AgentPlanUpdate {
 	s, ok := result.(string)
 	if !ok || strip(s) == "" {
@@ -310,7 +310,7 @@ func MakeMessageCb(conn SessionUpdater, sessionID string, loop Loop, ids *Assist
 	return makeTextCb(conn, sessionID, loop, false, ids)
 }
 
-// Step callback closing the previous round's tool calls and mirroring todo results as a plan
+// Step callback closing the previous round's tool calls and mirroring task list results as a plan
 func MakeStepCb(conn SessionUpdater, sessionID string, loop Loop, calls *ToolCalls, turn *TurnState) func(apiCallCount int, prevTools []map[string]any) {
 	return func(apiCallCount int, prevTools []map[string]any) {
 		for _, info := range prevTools {

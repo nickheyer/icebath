@@ -303,7 +303,7 @@ func (a *RelayAdapter) resolveReplyToForSend(chatID string, replyTo *string, met
 	return nil
 }
 
-// Slack thread anchor of one egress frame, the mirror key stripped when dropped and promoted into the thread id when kept
+// Slack thread anchor of one frame, its mirror key stripped when dropped and promoted to thread id when kept
 func (a *RelayAdapter) applySlackThreadAnchor(chatID string, replyTo *string, metadata map[string]any, mirrorKey string) *string {
 	effective := a.resolveReplyToForSend(chatID, replyTo, metadata)
 	if effective == nil && replyTo != nil {

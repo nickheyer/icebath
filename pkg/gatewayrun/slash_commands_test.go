@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Source of a platform with optional thread and message ids
@@ -70,7 +71,8 @@ func TestSecondaryProfileSlashPolicyUsesItsOwnConfig(t *testing.T) {
 	betaDiscord.Enabled = true
 	betaDiscord.Extra = map[string]any{"allow_admin_from": []any{"admin"}, "user_allowed_commands": []any{"status"}}
 	beta.Platforms[gateway.PlatformDiscord] = betaDiscord
-	r.profileConfigs = map[string]*gateway.GatewayConfig{"beta": beta}
+	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
+	r.profileConfigs.Set("beta", beta)
 
 	user := slashAccessSource("user", kstr("beta"))
 	if denied := r.checkSlashAccess(ctx, user, "restart"); denied == "" || !strings.Contains(denied, "⛔") {

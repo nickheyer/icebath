@@ -143,7 +143,7 @@ func registerTaskCwd(ctx context.Context, taskID, cwd string) {
 func expandACPEnabledToolsets(toolsets []string, useDefault bool, mcpServerNames []string) []string {
 	names := toolsets
 	if useDefault {
-		names = []string{"hermes-acp"}
+		names = []string{"icebath-acp"}
 	}
 	var out []string
 	seen := map[string]bool{}

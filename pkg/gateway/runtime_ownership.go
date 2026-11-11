@@ -103,9 +103,15 @@ type ProfileOwnership struct {
 	writers []*ownershipWriter
 }
 
-type ownershipWriter struct{ done chan struct{} }
+type ownershipWriter struct {
+	done  chan struct{}
+	probe func() bool
+}
 
 func (w *ownershipWriter) alive() bool {
+	if w.probe != nil {
+		return w.probe()
+	}
 	select {
 	case <-w.done:
 		return false
@@ -252,6 +258,14 @@ func (o *ProfileOwnership) StartWriter(run func()) {
 		defer close(w.done)
 		run()
 	}()
+}
+
+// Registers a thread shaped writer by its liveness probe and then starts it, so a respawned writer still counts
+func (o *ProfileOwnership) StartWriterThread(alive func() bool, start func()) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.writers = append(o.writers, &ownershipWriter{probe: alive})
+	start()
 }
 
 // Releases every reservation unless a registered writer is still running

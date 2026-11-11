@@ -51,7 +51,7 @@ type runnerCoreState struct {
 	adapters           *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
 	sessionDBInitError *string
 	profileAdapters    *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]
-	profileConfigs     map[string]*gateway.GatewayConfig
+	profileConfigs     *pydict.Dict[string, *gateway.GatewayConfig]
 
 	prefillMessages              []any
 	reasoningConfig              map[string]any
@@ -74,14 +74,14 @@ type runnerCoreState struct {
 	providerRouting              map[string]any
 	fallbackModel                []map[string]any
 	fallbackModelByHome          map[string][]map[string]any
-	sessionRuntimeDescriptor     map[string]any
+	sessionRuntimeDescriptor     runtimeDescriptorState
 	sessionStore                 *gateway.SessionStore
 	asyncSessionStore            *gateway.AsyncSessionStore
 	deliveryRouter               *gateway.DeliveryRouter
-	running                      bool
+	running                      atomic.Bool
 	exitCleanly                  bool
 	exitWithFailure              bool
-	draining                     bool
+	draining                     atomic.Bool
 	gatewayLoop                  gateway.EventLoop
 	shutdownEvent                *pythread.Event
 	exitReason                   *string
@@ -100,6 +100,7 @@ type runnerCoreState struct {
 	startupTime                  float64
 	bootedFromRestart            bool
 	stopTask                     *gatewayTask
+	stopTaskMu                   sync.Mutex
 	restartTask                  *gatewayTask
 	executorLock                 *sync.Mutex
 	executor                     gatewayExecutor

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 )
@@ -131,7 +130,11 @@ func (l *CallbackLoop) Run(ctx context.Context) error {
 func (l *CallbackLoop) runCallback(fn func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			slog.Error(fmt.Sprintf("Exception in callback %T: %v", fn, r))
+			exc, ok := r.(error)
+			if !ok {
+				exc = fmt.Errorf("%v", r)
+			}
+			l.CallExceptionHandler(LoopExceptionContext{Message: fmt.Sprintf("Exception in callback %T", fn), Exception: exc})
 		}
 	}()
 	fn()

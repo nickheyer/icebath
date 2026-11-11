@@ -151,7 +151,7 @@ func kobj(kv ...any) *pyjson.Object {
 func makeKanbanRunner(t *testing.T, adapter gateway.PlatformAdapter) *GatewayRunner {
 	t.Helper()
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	r.adapters = adapterDict(gateway.PlatformTelegram, adapter)
 	r.kanbanSubFailCounts = map[kanbanSubKey]int{}
 	f, err := os.CreateTemp(t.TempDir(), "lock")
@@ -177,7 +177,7 @@ func runOneNotifierTick(t *testing.T, r *GatewayRunner) {
 		if seconds == 5 {
 			return nil
 		}
-		r.running = false
+		r.running.Store(false)
 		return nil
 	}
 	defer func() { asyncioSleep = prev }()

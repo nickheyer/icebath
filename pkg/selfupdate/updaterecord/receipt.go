@@ -1525,8 +1525,16 @@ func ReadLatestReceipt(ctx context.Context) map[string]any {
 
 // Newest receipt written by a dashboard action, latest.json first then the retained archive
 func ReadReceiptForAction(ctx context.Context, actionID string) map[string]any {
+	if receipt := ReceiptObjectForAction(ctx, actionID); receipt != nil {
+		return plainReceipt(receipt)
+	}
+	return nil
+}
+
+// Newest receipt of a dashboard action keeping the ordered object, nil when none matches
+func ReceiptObjectForAction(ctx context.Context, actionID string) *pyjson.Object {
 	if latest := readLatestReceipt(ctx); latest != nil && latest.Len() > 0 && pyrepr.Equal(latest.Vals["action_id"], actionID) {
-		return plainReceipt(latest)
+		return latest
 	}
 	var archives []string
 	for _, d := range receiptDirs(ctx) {
@@ -1545,7 +1553,7 @@ func ReadReceiptForAction(ctx context.Context, actionID string) map[string]any {
 			continue
 		}
 		if payload, ok := v.(*pyjson.Object); ok && pyrepr.Equal(payload.Vals["action_id"], actionID) {
-			return plainReceipt(payload)
+			return payload
 		}
 	}
 	return nil

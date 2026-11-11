@@ -49,7 +49,7 @@ func runnerForStall(t *testing.T) (*GatewayRunner, *stallAdapter) {
 	cfg.Enabled = true
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformTelegram, a)
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	r.adapters = adapterDict(gateway.PlatformTelegram, gateway.PlatformAdapter(a))
 	r.sessionStallNotified = map[string]bool{}
 	return r, a

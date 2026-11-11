@@ -159,12 +159,7 @@ func EnvReplyMode(ctx context.Context, cfg *GatewayConfig, platform Platform, en
 
 // Config of a platform, created with the defaults when absent
 func platformSetDefault(cfg *GatewayConfig, platform Platform) *PlatformConfig {
-	pc, ok := cfg.Platforms[platform]
-	if !ok {
-		pc = NewPlatformConfig()
-		cfg.Platforms[platform] = pc
-	}
-	return pc
+	return cfg.PlatformSetDefault(platform)
 }
 
 // Home channel step whose platform and env base stay readable to the profile channel scan

@@ -1,6 +1,10 @@
 package gatewayrun
 
-import "github.com/nickheyer/icebath/pkg/gateway"
+import (
+	"maps"
+
+	"github.com/nickheyer/icebath/pkg/gateway"
+)
 
 var _ gateway.SlashAccessRunner = (*GatewayRunner)(nil)
 
@@ -14,4 +18,6 @@ func (r *GatewayRunner) GatewayConfig() *gateway.GatewayConfig { return r.config
 func (r *GatewayRunner) PrimaryProfileName() string { return r.primaryProfileName }
 
 // Gateway config of every served profile as loaded once at startup
-func (r *GatewayRunner) ProfileConfigs() map[string]*gateway.GatewayConfig { return r.profileConfigs }
+func (r *GatewayRunner) ProfileConfigs() map[string]*gateway.GatewayConfig {
+	return maps.Collect(r.profileConfigs.All())
+}

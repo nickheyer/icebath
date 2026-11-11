@@ -169,7 +169,7 @@ func (r *GatewayRunner) handleActiveSessionBusyMessage(ctx context.Context, even
 	}
 	event.SetBotLoopAdmitted(true)
 	effectiveMode := r.effectiveBusyInputMode(ctx, event.Source)
-	if r.draining {
+	if r.draining.Load() {
 		return true, r.sendBusyDrainNotice(ctx, event, sessionKey, effectiveMode)
 	}
 	if r.routePlaintextApprovalWhileBusy(ctx, event, sessionKey) {

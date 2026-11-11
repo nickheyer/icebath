@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 )
 
 // Settings of the ASGI server, the uvicorn Config keyword arguments the dashboard passes
@@ -33,7 +34,11 @@ type UvicornConfig struct {
 	TimeoutGracefulShutdown time.Duration
 	TimeoutKeepAlive        time.Duration
 	Lifespan                LifespanMode
+	Backlog                 int
 }
+
+// Listen backlog of a config that names none
+const defaultUvicornBacklog = 2048
 
 // Signals the server turns into an exit request
 var captureSignalSet = []os.Signal{os.Interrupt, syscall.SIGTERM}
@@ -42,18 +47,20 @@ func uvicornLog() *slog.Logger { return slog.Default().With("logger", "uvicorn.e
 
 // ASGI server over a TCP listener, the uvicorn Server lifecycle
 type UvicornServer struct {
-	cfg         *UvicornConfig
-	app         ASGIApp
-	ln          net.Listener
-	ShouldExit  atomic.Bool
-	ForceExit   atomic.Bool
-	Started     bool
-	date        atomic.Value
-	mu          sync.Mutex
-	conns       map[*httpConn]bool
-	tasks       sync.WaitGroup
-	lifespan    *lifespanOn
-	captured    []os.Signal
+	cfg        *UvicornConfig
+	app        ASGIApp
+	ln         net.Listener
+	ShouldExit atomic.Bool
+	ForceExit  atomic.Bool
+	Started    bool
+	date       atomic.Value
+	mu         sync.Mutex
+	conns      map[*httpConn]bool
+	tasks      sync.WaitGroup
+	lifespan   *lifespanOn
+	captured   []os.Signal
+	// Loop the server reports failed connection callbacks to, the event loop it serves on
+	Loop        *gateway.CallbackLoop
 	serveCtx    context.Context
 	cancelServe context.CancelFunc
 }
@@ -62,6 +69,9 @@ type UvicornServer struct {
 func NewUvicornServer(cfg *UvicornConfig) *UvicornServer {
 	if cfg.TimeoutKeepAlive == 0 {
 		cfg.TimeoutKeepAlive = 5 * time.Second
+	}
+	if cfg.Backlog == 0 {
+		cfg.Backlog = defaultUvicornBacklog
 	}
 	app := cfg.App
 	if cfg.ProxyHeaders {
@@ -75,7 +85,7 @@ func NewUvicornServer(cfg *UvicornConfig) *UvicornServer {
 		}
 		app = proxyHeadersMiddleware(app, newTrustedHosts(allow))
 	}
-	s := &UvicornServer{cfg: cfg, app: app, conns: map[*httpConn]bool{}}
+	s := &UvicornServer{cfg: cfg, app: app, conns: map[*httpConn]bool{}, Loop: gateway.NewCallbackLoop()}
 	s.updateDate()
 	s.serveCtx, s.cancelServe = context.WithCancel(context.Background())
 	return s
@@ -99,15 +109,43 @@ func (s *UvicornServer) Addr() net.Addr {
 	return s.ln.Addr()
 }
 
+// State the lifespan handed to every request scope, empty with the lifespan off
+func (s *UvicornServer) lifespanState() map[string]any {
+	if s.lifespan == nil {
+		return map[string]any{}
+	}
+	return s.lifespan.state
+}
+
+// Runs the lifespan startup of the config, true when the app failed it and the server must exit
+func (s *UvicornServer) startLifespan(ctx context.Context) bool {
+	if s.cfg.Lifespan == LifespanOff {
+		return false
+	}
+	s.lifespan = newLifespanOn(s.cfg.App)
+	s.lifespan.startup(ctx)
+	if s.lifespan.shouldExit {
+		s.ShouldExit.Store(true)
+		return true
+	}
+	return false
+}
+
+// Runs the lifespan startup then serves a socket the caller bound, the uvicorn startup with explicit sockets
+func (s *UvicornServer) StartupSockets(ctx context.Context, ln net.Listener) error {
+	if s.startLifespan(ctx) {
+		return nil
+	}
+	s.ln = ln
+	s.Started = true
+	go s.acceptLoop()
+	return nil
+}
+
 // Runs the lifespan startup then binds, the uvicorn startup with its exit on a bind failure
 func (s *UvicornServer) Startup(ctx context.Context) error {
-	if s.cfg.Lifespan != LifespanOff {
-		s.lifespan = newLifespanOn(s.cfg.App)
-		s.lifespan.startup(ctx)
-		if s.lifespan.shouldExit {
-			s.ShouldExit.Store(true)
-			return nil
-		}
+	if s.startLifespan(ctx) {
+		return nil
 	}
 	ln, err := net.Listen("tcp", net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port)))
 	if err != nil {
@@ -226,38 +264,43 @@ func (s *UvicornServer) Shutdown(ctx context.Context) {
 	}
 }
 
-// Runs body with SIGINT and SIGTERM requesting an exit, a second SIGINT forcing it, and returns the signals caught
-func (s *UvicornServer) CaptureSignals(body func()) []os.Signal {
-	ch := make(chan os.Signal, 4)
-	notifySignals(ch, captureSignalSet...)
-	stop := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case sig := <-ch:
-				s.mu.Lock()
-				s.captured = append(s.captured, sig)
-				s.mu.Unlock()
-				if s.ShouldExit.Load() && sig == os.Interrupt {
-					s.ForceExit.Store(true)
-				} else {
-					s.ShouldExit.Store(true)
-				}
-			case <-stop:
-				return
-			}
-		}
-	}()
-	body()
-	stopSignals(ch)
-	close(stop)
-	wg.Wait()
+// Records a captured signal and requests the exit, a second SIGINT forcing it
+func (s *UvicornServer) handleExit(sig os.Signal) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]os.Signal(nil), s.captured...)
+	s.captured = append(s.captured, sig)
+	s.mu.Unlock()
+	if s.ShouldExit.Load() && sig == os.Interrupt {
+		s.ForceExit.Store(true)
+	} else {
+		s.ShouldExit.Store(true)
+	}
+	return nil
+}
+
+// Runs body with the exit handler in the signal slots, then raises each captured signal into the restored handlers
+func (s *UvicornServer) CaptureSignals(body func()) error {
+	handler := pysignal.Func(s.handleExit)
+	originals := make([]*pysignal.Handler, len(captureSignalSet))
+	for i, sig := range captureSignalSet {
+		originals[i] = pysignal.Signal(sig, handler)
+	}
+	func() {
+		defer func() {
+			for i, sig := range captureSignalSet {
+				pysignal.Signal(sig, originals[i])
+			}
+		}()
+		body()
+	}()
+	s.mu.Lock()
+	captured := append([]os.Signal(nil), s.captured...)
+	s.mu.Unlock()
+	for i := len(captured) - 1; i >= 0; i-- {
+		if err := pysignal.Raise(captured[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Lifespan protocol driver, startup and shutdown events to the app run in its own task

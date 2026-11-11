@@ -65,16 +65,12 @@ func credentialTruthy(v any) bool {
 	return true
 }
 
-// Platform and fingerprint of every enabled platform with a discoverable credential, in platform name order
+// Platform and fingerprint of every enabled platform with a discoverable credential, in config order
 func credentialClaims(cfg *gateway.GatewayConfig) [][2]string {
-	names := make([]string, 0, len(cfg.Platforms))
-	for p := range cfg.Platforms {
-		names = append(names, string(p))
-	}
-	sort.Strings(names)
 	claims := [][2]string{}
-	for _, name := range names {
-		pc := cfg.Platforms[gateway.Platform(name)]
+	for _, platform := range cfg.PlatformKeys() {
+		name := string(platform)
+		pc := cfg.Platforms[platform]
 		if pc == nil || !pc.Enabled {
 			continue
 		}

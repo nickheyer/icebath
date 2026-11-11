@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Model name and provider of the config model section, a plain string section naming the model alone
@@ -67,8 +69,10 @@ func getAuxiliaryModels(ctx context.Context, profile string) (map[string]any, er
 		if level := pyOrStr(slotCfg["reasoning_effort"]); level != "" {
 			effort = level
 		}
-		return map[string]any{"task": slot, "provider": provider, "model": pyOrStr(pyGetAny(slotCfg, "model", "")),
+		r := map[string]any{"task": slot, "provider": provider, "model": pyOrStr(pyGetAny(slotCfg, "model", "")),
 			"base_url": baseURL, "reasoning_effort": effort, "local_endpoint": IsLocalEndpoint(baseURL)}
+		config.SetMappingKeys(r, []string{"task", "provider", "model", "base_url", "reasoning_effort", "local_endpoint"})
+		return r
 	}
 	tasks := []any{}
 	for _, slot := range auxTaskSlotsBuiltin {
@@ -85,13 +89,22 @@ func getAuxiliaryModels(ctx context.Context, profile string) (map[string]any, er
 		if pyTruthy(entry["inherit_from"]) {
 			inherit = entry["inherit_from"]
 		}
-		r["label"], r["hint"], r["plugin"], r["inherit_from"] = label, pyOrStr(entry["description"]), pyOrStr(entry["plugin"]), inherit
+		assignKey(r, "label", label)
+		assignKey(r, "hint", pyOrStr(entry["description"]))
+		assignKey(r, "plugin", pyOrStr(entry["plugin"]))
+		assignKey(r, "inherit_from", inherit)
 		if resolved, held := effective[key]; held {
-			r["effective"] = map[string]any{"provider": pyOrStr(resolved["provider"]), "model": pyOrStr(resolved["model"]),
+			route := map[string]any{"provider": pyOrStr(resolved["provider"]), "model": pyOrStr(resolved["model"]),
 				"base_url": pyOrStr(resolved["base_url"])}
+			config.SetMappingKeys(route, []string{"provider", "model", "base_url"})
+			assignKey(r, "effective", route)
 		}
 		tasks = append(tasks, r)
 	}
 	model, provider := mainModelFields(pyGetAny(cfg, "model", map[string]any{}))
-	return map[string]any{"tasks": tasks, "main": map[string]any{"provider": pyOrStr(provider), "model": pyOrStr(model)}}, nil
+	main := map[string]any{"provider": pyOrStr(provider), "model": pyOrStr(model)}
+	config.SetMappingKeys(main, []string{"provider", "model"})
+	out := map[string]any{"tasks": tasks, "main": main}
+	config.SetMappingKeys(out, []string{"tasks", "main"})
+	return out, nil
 }

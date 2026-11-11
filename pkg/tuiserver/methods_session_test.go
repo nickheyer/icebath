@@ -13,6 +13,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
+// Points the launch store at db for the test, restoring the shared handle afterwards
+func useSharedDB(t *testing.T, db *state.DB) {
+	t.Helper()
+	dbMu.Lock()
+	savedDB, savedErr := sharedDB, dbError
+	sharedDB, dbError = db, ""
+	dbMu.Unlock()
+	t.Cleanup(func() {
+		dbMu.Lock()
+		sharedDB, dbError = savedDB, savedErr
+		dbMu.Unlock()
+	})
+}
+
 // Isolated home with synthetic agent builds and a fresh launch store, dropping every session the case created
 func sessionCaseScope(t *testing.T) string {
 	t.Helper()

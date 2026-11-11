@@ -314,7 +314,7 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 
 // Starts sd_notify heartbeats once a configured gateway is truly running
 func (r *GatewayRunner) startSystemdWatchdog(ctx context.Context) bool {
-	if !r.running || r.config.SystemdWatchdogSeconds <= 0 {
+	if !r.running.Load() || r.config.SystemdWatchdogSeconds <= 0 {
 		return false
 	}
 	if r.systemdWatchdog != nil {

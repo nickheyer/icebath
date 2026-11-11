@@ -268,13 +268,12 @@ func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *Platfo
 	}
 }
 
-// Platform names of a config, sorted for a stable evidence pass
+// Platform names of a config in its insertion order
 func configPlatformNames(cfg *GatewayConfig) []string {
 	names := make([]string, 0, len(cfg.Platforms))
-	for p := range cfg.Platforms {
+	for _, p := range cfg.PlatformKeys() {
 		names = append(names, string(p))
 	}
-	sort.Strings(names)
 	return names
 }
 
@@ -411,7 +410,7 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 		return
 	}
 	skip := map[Platform]bool{PlatformRelay: true, PlatformLocal: true, PlatformAPIServer: true, PlatformWebhook: true}
-	for _, platform := range slices.Sorted(maps.Keys(cfg.Platforms)) {
+	for _, platform := range cfg.PlatformKeys() {
 		pc := cfg.Platforms[platform]
 		if skip[platform] || !pc.Enabled {
 			continue
@@ -434,8 +433,8 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 
 // Drops the explicit enable markers once every env pass has read them
 func scrubExplicitMarkers(cfg *GatewayConfig) {
-	for _, pc := range cfg.Platforms {
-		delete(pc.Extra, "_enabled_explicit")
+	for _, p := range cfg.PlatformKeys() {
+		delete(cfg.Platforms[p].Extra, "_enabled_explicit")
 	}
 }
 

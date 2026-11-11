@@ -2,12 +2,17 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -17,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -126,7 +132,7 @@ func memoryProviderSetupInfo(ctx context.Context, name string) *pyjson.Object {
 }
 
 // Unscrubbed child environment with the common user tool bin dirs ahead of PATH
-func memoryProviderSetupEnv(ctx context.Context) ([]string, error) {
+func memoryProviderSetupEnv(ctx context.Context) (map[string]string, error) {
 	env, err := tools.BuildSubprocessEnv(ctx, memoryToolsEnv(ctx), tools.SubprocessEnvOptions{ScrubSecrets: false, InheritProfileHome: false})
 	if err != nil {
 		return nil, err
@@ -144,34 +150,192 @@ func memoryProviderSetupEnv(ctx context.Context) ([]string, error) {
 	if len(prefix) > 0 {
 		env["PATH"] = strings.Join(prefix, string(os.PathListSeparator)) + string(os.PathListSeparator) + env["PATH"]
 	}
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
-	}
-	slices.Sort(out)
-	return out, nil
+	return env, nil
 }
 
-// Exit code of a setup command run with the setup environment, an error when it cannot start or times out
-func runSetupCommand(ctx context.Context, argv []string, timeout time.Duration) (int, error) {
-	if len(argv) == 0 {
-		return 0, fmt.Errorf("empty command")
+// Captured outcome of a finished setup command, both streams decoded as lossy UTF-8 with universal newlines
+type setupCompleted struct {
+	Returncode int
+	Stdout     string
+	Stderr     string
+}
+
+// Python IndexError of an empty argument list
+type setupIndexError struct{}
+
+func (*setupIndexError) Error() string { return "list index out of range" }
+
+// Python exception class name the error stands for
+func (*setupIndexError) PyTypeName() string { return "IndexError" }
+
+// Python OSError of a program that cannot be executed, its str the errno text with the quoted name
+type setupExecError struct{ text string }
+
+func (e *setupExecError) Error() string { return e.text }
+
+// Path execvpe runs for a program name under the child environment PATH, the last access failure winning over not found
+func setupExecutablePath(file string, env map[string]string) (string, error) {
+	notFound := &setupExecError{text: "[Errno 2] No such file or directory: " + pyrepr.StrRepr(file)}
+	denied := &setupExecError{text: "[Errno 13] Permission denied: " + pyrepr.StrRepr(file)}
+	executable := func(path string) (bool, error) {
+		st, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, syscall.EACCES) {
+				return false, denied
+			}
+			return false, nil
+		}
+		if st.IsDir() || st.Mode().Perm()&0o111 == 0 {
+			return false, denied
+		}
+		return true, nil
 	}
+	if strings.Contains(file, "/") {
+		ok, err := executable(file)
+		if ok {
+			return file, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return "", notFound
+	}
+	pathList, hasPath := env["PATH"]
+	if !hasPath {
+		pathList = "/bin:/usr/bin"
+	}
+	var last error = notFound
+	for _, dir := range strings.Split(pathList, string(os.PathListSeparator)) {
+		ok, err := executable(filepath.Join(dir, file))
+		if ok {
+			return filepath.Join(dir, file), nil
+		}
+		if err != nil {
+			last = err
+		}
+	}
+	return "", last
+}
+
+// Setup command runner, the subprocess.run of the web server module hermes tests wrap
+var setupSubprocessRun = runSetupCommand
+
+// Runs a setup command under the setup environment with captured output, through bash for a shell command line
+func runSetupCommand(ctx context.Context, argv []string, shellCommand string, shell bool, timeoutSeconds int) (*setupCompleted, error) {
 	env, err := memoryProviderSetupEnv(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
-	cmd.Env = env
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && cctx.Err() == nil {
-			return exitErr.ExitCode(), nil
+	var cmd *exec.Cmd
+	if shell {
+		if cmd, err = pysubprocess.ShellCommand(shellCommand); err != nil {
+			return nil, err
 		}
-		return 0, err
+		cmd.Path, cmd.Args[0], cmd.Err = "/bin/bash", "/bin/bash", nil
+	} else {
+		if len(argv) == 0 {
+			return nil, &setupIndexError{}
+		}
+		cmd = exec.Command(argv[0], argv[1:]...)
+		if runtime.GOOS != "windows" {
+			path, err := setupExecutablePath(argv[0], env)
+			if err != nil {
+				return nil, err
+			}
+			cmd.Path, cmd.Err = path, nil
+		}
 	}
-	return 0, nil
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
+	slices.Sort(cmd.Env)
+	if cmd.Env == nil {
+		cmd.Env = []string{}
+	}
+	outPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	errPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, &setupExecError{text: pypath.OSErrorText(err)}
+	}
+	var stdout, stderr []byte
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go func() { defer readers.Done(); stdout, _ = io.ReadAll(outPipe) }()
+	go func() { defer readers.Done(); stderr, _ = io.ReadAll(errPipe) }()
+	drained := make(chan struct{})
+	go func() { readers.Wait(); close(drained) }()
+	exited := make(chan error, 1)
+	timer := time.NewTimer(time.Duration(timeoutSeconds) * time.Second)
+	defer timer.Stop()
+	abandon := func() {
+		_ = cmd.Process.Kill()
+		_ = outPipe.Close()
+		_ = errPipe.Close()
+		<-drained
+		_ = cmd.Wait()
+	}
+	select {
+	case <-drained:
+		go func() { exited <- cmd.Wait() }()
+	case <-timer.C:
+		abandon()
+		return nil, setupTimeout(argv, shellCommand, shell, timeoutSeconds)
+	case <-ctx.Done():
+		abandon()
+		return nil, ctx.Err()
+	}
+	var waitErr error
+	select {
+	case waitErr = <-exited:
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		<-exited
+		return nil, setupTimeout(argv, shellCommand, shell, timeoutSeconds)
+	case <-ctx.Done():
+		_ = cmd.Process.Kill()
+		<-exited
+		return nil, ctx.Err()
+	}
+	completed := &setupCompleted{Stdout: setupOutputText(stdout), Stderr: setupOutputText(stderr)}
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		completed.Returncode = pysubprocess.Returncode(exitErr)
+	} else if waitErr != nil {
+		return nil, waitErr
+	}
+	return completed, nil
+}
+
+// subprocess.TimeoutExpired of a setup command, the command printed as the argument list or the shell string
+type setupTimeoutExpired struct {
+	shown   string
+	seconds int
+}
+
+func (e *setupTimeoutExpired) Error() string {
+	return fmt.Sprintf("Command '%s' timed out after %d seconds", e.shown, e.seconds)
+}
+
+// Python exception class name the error stands for
+func (*setupTimeoutExpired) PyTypeName() string { return "TimeoutExpired" }
+
+// Timeout failure naming the command the way subprocess.run received it
+func setupTimeout(argv []string, shellCommand string, shell bool, seconds int) error {
+	if shell {
+		return &setupTimeoutExpired{shown: shellCommand, seconds: seconds}
+	}
+	return &setupTimeoutExpired{shown: pyrepr.Repr(stringsAny(argv)), seconds: seconds}
+}
+
+// Captured bytes as text, invalid UTF-8 replaced and carriage returns folded into newlines
+func setupOutputText(raw []byte) string {
+	return strings.ReplaceAll(strings.ReplaceAll(pystr.DecodeUTF8Replace(raw), "\r\n", "\n"), "\r", "\n")
 }
 
 // Whether every external dependency check passes, an install without a check counting as missing
@@ -190,13 +354,13 @@ func memoryProviderExternalDependenciesInstalled(ctx context.Context, setup *pyj
 			}
 			continue
 		}
-		argv, err := pyshlex.SplitPOSIX(check, true)
+		argv, err := pyshlex.SplitPOSIX(check, false)
 		if err != nil {
 			externalOK = false
 			continue
 		}
-		code, err := runSetupCommand(ctx, argv, 20*time.Second)
-		if err != nil || code != 0 {
+		completed, err := setupSubprocessRun(ctx, argv, check, false, 20)
+		if err != nil || completed.Returncode != 0 {
 			externalOK = false
 		}
 	}
@@ -377,7 +541,7 @@ func coerceBool(value any, def bool) (bool, error) {
 	case "0", "false", "no", "off":
 		return false, nil
 	}
-	return false, fmt.Errorf("Invalid boolean value: %s", pyrepr.Str(value))
+	return false, &pypath.ValueError{Msg: fmt.Sprintf("Invalid boolean value: %s", pyrepr.Str(value))}
 }
 
 // Default of a field, coerced to a boolean for boolean fields

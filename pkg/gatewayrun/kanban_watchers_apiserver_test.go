@@ -195,7 +195,7 @@ func TestApiserverWakeFailureRewindsThenRetriesDestination(t *testing.T) {
 	if len(unseenOn(t, tid, "api_server", "origin-session")) == 0 {
 		t.Fatal("failed wake must rewind")
 	}
-	r.running = true
+	r.running.Store(true)
 	runOneNotifierTick(t, r)
 	if got := server.sessions(); strings.Join(got, ",") != "origin-session,origin-session" {
 		t.Fatalf("attempted %v", got)

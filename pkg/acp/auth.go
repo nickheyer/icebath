@@ -34,13 +34,13 @@ func BuildAuthMethods(ctx context.Context) []pyacp.AuthMethod {
 	if p := DetectProvider(ctx); p != "" {
 		methods = append(methods, &pyacp.AuthMethodAgent{
 			ID: p, Name: p + " runtime credentials",
-			Description: pyacp.Ptr("Authenticate Hermes using the currently configured " + p + " runtime credentials."),
+			Description: pyacp.Ptr("Authenticate Icebath using the currently configured " + p + " runtime credentials."),
 		})
 	}
 	methods = append(methods, &pyacp.TerminalAuthMethod{
-		ID: TerminalSetupAuthMethodID, Name: "Configure Hermes provider", Args: []string{"--setup"},
-		Description: pyacp.Ptr("Open Hermes' interactive model/provider setup in a terminal. " +
-			"Use this when Hermes has not been configured on this machine yet."),
+		ID: TerminalSetupAuthMethodID, Name: "Configure Icebath provider", Args: []string{"--setup"},
+		Description: pyacp.Ptr("Open Icebath's interactive model/provider setup in a terminal. " +
+			"Use this when Icebath has not been configured on this machine yet."),
 	})
 	return methods
 }

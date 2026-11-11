@@ -34,12 +34,14 @@ func MergePlatformSections(ctx context.Context, yamlCfg map[string]any, gatewayC
 		if !ok {
 			return nil
 		}
-		for name, raw := range src {
+		for _, name := range config.MappingKeys(src) {
+			raw := src[name]
 			block, ok := raw.(map[string]any)
 			if !ok {
 				continue
 			}
-			existing, ok := platformsData[name].(map[string]any)
+			prior, had := platformsData[name]
+			existing, ok := prior.(map[string]any)
 			if !ok {
 				existing = map[string]any{}
 			}
@@ -76,6 +78,9 @@ func MergePlatformSections(ctx context.Context, yamlCfg map[string]any, gatewayC
 				merged["extra"] = mergedExtra
 			}
 			platformsData[name] = merged
+			if !had {
+				config.AppendMappingKey(platformsData, name)
+			}
 		}
 		return nil
 	}
@@ -87,11 +92,15 @@ func MergePlatformSections(ctx context.Context, yamlCfg map[string]any, gatewayC
 		return nil, err
 	}
 	shorthand := map[string]any{}
-	for k, v := range nested {
+	var shorthandOrder []string
+	for _, k := range config.MappingKeys(nested) {
+		v := nested[k]
 		if _, isMap := v.(map[string]any); k != "platforms" && isMap && (also[k] || isPlatformName(ctx, k)) {
 			shorthand[k] = v
+			shorthandOrder = append(shorthandOrder, k)
 		}
 	}
+	config.SetMappingKeys(shorthand, shorthandOrder)
 	return platformsData, merge(shorthand)
 }
 
@@ -479,10 +488,7 @@ func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 	}
 	plugins.DiscoverPlugins(ctx, false)
 	registry := Registry
-	names := make([]string, 0, len(platformsData))
-	for k := range platformsData {
-		names = append(names, k)
-	}
+	names := config.MappingKeys(platformsData)
 	entries := registry.ConfiguredEntries(ctx, ActivationPredicate(ctx, yamlCfg, names, h, registry))
 	pluginEntries := []*PlatformEntry{}
 	for _, e := range entries {

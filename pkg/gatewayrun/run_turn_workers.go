@@ -132,7 +132,7 @@ func (r *GatewayRunner) runAgentTrackAgent(ctx context.Context, tc *TurnContext)
 	}
 	turnState := &r.sessionState(tc.sessionKey).turn
 	turnState.agent, turnState.ctx = tc.currentAgent(), tc
-	if r.draining {
+	if r.draining.Load() {
 		draining := "draining"
 		r.updateRuntimeStatus(ctx, &draining, nil)
 	}

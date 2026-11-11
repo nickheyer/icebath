@@ -213,7 +213,7 @@ func appLifespan(app func() *FastAPI) (enter, exit func(ctx context.Context) err
 	return enter, exit
 }
 
-// Plugin API requests of an authenticated caller refused at request time when the plugin is disabled or forwarded to its host
+// Authenticated plugin API requests refused when the plugin is disabled, else forwarded to its hosting profile
 func pluginAPIRuntimeGate(ctx context.Context, req *Request, callNext CallNext) (ASGIResponse, error) {
 	path := req.URL().Path()
 	name := pluginAPIName(req.Scope)

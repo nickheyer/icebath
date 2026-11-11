@@ -7,30 +7,36 @@ import (
 // Running turn slot value claimed before the real agent is built
 var agentPendingSentinel = &agent.AIAgent{}
 
-// Per session state map, created on first use so bare runners work
+// Snapshot of the per session state map taken under its lock, safe to iterate while turns run
 func (r *GatewayRunner) sessionsMap() map[string]*SessionState {
+	r.sessionsMu.RLock()
+	defer r.sessionsMu.RUnlock()
+	out := make(map[string]*SessionState, len(r.sessions))
+	for key, state := range r.sessions {
+		out[key] = state
+	}
+	return out
+}
+
+// State of sessionKey, created under the map lock when absent so bare runners work
+func (r *GatewayRunner) sessionState(sessionKey string) *SessionState {
+	r.sessionsMu.Lock()
+	defer r.sessionsMu.Unlock()
 	if r.sessions == nil {
 		r.sessions = map[string]*SessionState{}
 	}
-	return r.sessions
-}
-
-// State of sessionKey, created when absent
-func (r *GatewayRunner) sessionState(sessionKey string) *SessionState {
-	sessions := r.sessionsMap()
-	state := sessions[sessionKey]
+	state := r.sessions[sessionKey]
 	if state == nil {
 		state = newSessionState()
-		sessions[sessionKey] = state
+		r.sessions[sessionKey] = state
 	}
 	return state
 }
 
 // State of sessionKey without creating one
 func (r *GatewayRunner) peekSessionState(sessionKey string) *SessionState {
-	if r.sessions == nil {
-		return nil
-	}
+	r.sessionsMu.RLock()
+	defer r.sessionsMu.RUnlock()
 	return r.sessions[sessionKey]
 }
 

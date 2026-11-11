@@ -1,4 +1,4 @@
-package tuiserver
+package tuiserver_test
 
 import (
 	"bytes"
@@ -14,27 +14,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
-
-// Points the launch store at db for the test, restoring the shared handle afterwards
-func useSharedDB(t *testing.T, db *state.DB) {
-	t.Helper()
-	dbMu.Lock()
-	savedDB, savedErr := sharedDB, dbError
-	sharedDB, dbError = db, ""
-	dbMu.Unlock()
-	t.Cleanup(func() {
-		dbMu.Lock()
-		sharedDB, dbError = savedDB, savedErr
-		dbMu.Unlock()
-	})
-}
 
 // test_session_foreign.py test_foreign_rpc_preview_import_and_profile_isolation
 func TestForeignRpcPreviewImportAndProfileIsolation(t *testing.T) {
-	saved := ForeignSessions
-	ForeignSessions.List, ForeignSessions.Preview, ForeignSessions.Import = app.ListForeignSessions, app.PreviewForeignSession, app.ImportBrowserSession
-	t.Cleanup(func() { ForeignSessions = saved })
+	saved := tuiserver.ForeignSessions
+	tuiserver.ForeignSessions.List, tuiserver.ForeignSessions.Preview, tuiserver.ForeignSessions.Import = app.ListForeignSessions, app.PreviewForeignSession, app.ImportBrowserSession
+	t.Cleanup(func() { tuiserver.ForeignSessions = saved })
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -62,10 +49,10 @@ func TestForeignRpcPreviewImportAndProfileIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	useSharedDB(t, db)
+	tuiserver.UseSharedDB(t, db)
 	rpc := func(method string, params map[string]any) map[string]any {
 		t.Helper()
-		resp := lookupMethod("session.foreign."+method)(ctx, 1, params)
+		resp := tuiserver.LookupMethod("session.foreign."+method)(ctx, 1, params)
 		if _, failed := resp["error"]; failed {
 			t.Fatalf("%s %v", method, resp)
 		}
@@ -140,7 +127,7 @@ func TestForeignRpcPreviewImportAndProfileIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	useSharedDB(t, other)
+	tuiserver.UseSharedDB(t, other)
 	if isolated := rpc("preview", map[string]any{"id": handle}); isolated["already_imported"] != nil {
 		t.Fatalf("other store preview %v", isolated["already_imported"])
 	}

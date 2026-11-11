@@ -700,7 +700,7 @@ func (s *PairingStore) ListApproved(platform string) ([]*pyjson.Object, error) {
 }
 
 // Adds a user to the approved list and mirrors the grant into the allowlist, the store lock held
-func (s *PairingStore) approveUser(ctx context.Context, platform, userID, userName string) error {
+func (s *PairingStore) approveUser(ctx context.Context, platform, userID string, userName any) error {
 	approved, err := s.loadJSON(s.approvedPath(platform))
 	if err != nil {
 		return err
@@ -753,6 +753,7 @@ func hashPairingCode(code string, salt []byte) string {
 // Approved identity of a settled pairing request
 type PairingApproval struct {
 	UserID, UserName string
+	Row              *pyjson.Object
 }
 
 // Removes a pending request and approves its user, the store lock held
@@ -768,8 +769,14 @@ func (s *PairingStore) finishApproval(ctx context.Context, platform string, pend
 	if !present {
 		return nil, &PyError{Kind: "KeyError", Msg: "'user_id'"}
 	}
-	result := &PairingApproval{UserID: pyrepr.Str(userID), UserName: pyrepr.Str(matched.GetOr("user_name", ""))}
-	return result, s.approveUser(ctx, platform, result.UserID, result.UserName)
+	userName := matched.GetOr("user_name", "")
+	result := &PairingApproval{UserID: pyrepr.Str(userID), UserName: pyrepr.Str(userName),
+		Row: pyjson.ObjectOf("user_id", userID, "user_name", userName)}
+	idText := ""
+	if pyrepr.Truthy(userID) {
+		idText = result.UserID
+	}
+	return result, s.approveUser(ctx, platform, idText, userName)
 }
 
 // Uniform random text over an alphabet whose length divides 256

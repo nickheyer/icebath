@@ -714,6 +714,18 @@ func lossReason(err error) string {
 	return pypath.OSErrorClass(err)
 }
 
+// Refuses a turn whose folder is gone before any worker exists, else runs it in a managed worker
+func admitManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, policy *LocalSessionPolicy) (any, error) {
+	if !workspaceReady(policy) {
+		result := workspaceUnavailableResult(ctx, policy)
+		a.mu.Lock()
+		a.PendingResults[rowString(row, "admission_id")] = pyjson.ObjectOf("result", result, "usage", pyjson.NewObject())
+		a.mu.Unlock()
+		return result.GetOr("final_response", nil), nil
+	}
+	return executeManaged(ctx, a, ref, row, policy)
+}
+
 // Runs an admitted turn in a reserved and supervised worker child, unknown when the worker is lost
 func executeManaged(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, policy *LocalSessionPolicy) (any, error) {
 	admissionID := rowString(row, "admission_id")

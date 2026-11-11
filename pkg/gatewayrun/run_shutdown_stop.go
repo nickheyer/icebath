@@ -98,9 +98,9 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 	runLog().Info(fmt.Sprintf("Stopping gateway%s...", suffix))
 	started := pythread.Monotonic()
 	sc.startedAt = &started
-	r.running = false
+	r.running.Store(false)
 	r.clearPluginMessageInjector()
-	r.draining = true
+	r.draining.Store(true)
 	r.drainGatewayRuntime(ctx)
 	r.markAPIRunsShutdownRequested()
 	func() {
@@ -278,7 +278,7 @@ func (r *GatewayRunner) stopReleaseRuntimeState(ctx context.Context, sc *stopCon
 	}
 	r.taskSetsMu.Unlock()
 	for _, task := range tasks {
-		if task == r.stopTask || task == r.restartTask {
+		if task == r.currentStopTask() || task == r.restartTask {
 			continue
 		}
 		task.Cancel()
@@ -432,7 +432,7 @@ func (r *GatewayRunner) stopPersistExitState(ctx context.Context, sc *stopContex
 			r.exitReason = optStr("Gateway restart requested")
 		}
 	}
-	r.draining = false
+	r.draining.Store(false)
 	if r.signalInitiatedShutdown && !r.restartRequested {
 		runLog().Info("Gateway stopped by an unexpected signal — persisting " +
 			"gateway_state=running so container_boot auto-starts on the next boot (issue #42675)")
@@ -472,7 +472,7 @@ func (r *GatewayRunner) shutdownWatchdogSnapshot(sc *stopContext) map[string]any
 		launchd = *r.launchdExitTimeoutS
 	}
 	return map[string]any{
-		"restart_requested": r.restartRequested, "draining": r.draining, "running": r.running,
+		"restart_requested": r.restartRequested, "draining": r.draining.Load(), "running": r.running.Load(),
 		"active_agents": r.runningAgentCount(), "active_cron_jobs": r.activeCronJobCount(),
 		"active_api_runs": r.activeAPIRunCount(), "active_deferred_agent_workers": sc.deferredCount(),
 		"restart_drain_timeout": r.restartDrainTimeout, "effective_drain_timeout": gateway.EffectiveStopDrainTimeout(r.stopTiming()),
@@ -534,15 +534,27 @@ func (r *GatewayRunner) Stop(ctx context.Context, restart, detachedRestart, serv
 		r.restartDetached = detachedRestart
 		r.restartViaService = serviceRestart
 	}
-	if r.stopTask != nil {
-		_, err := r.stopTask.wait(ctx)
-		return err
+	r.stopTaskMu.Lock()
+	task := r.stopTask
+	if task == nil {
+		assigned := make(chan struct{})
+		task = spawnGatewayTask(context.WithoutCancel(ctx), "gateway-stop", func(taskCtx context.Context) (any, error) {
+			<-assigned
+			return nil, r.stopImpl(taskCtx)
+		})
+		r.stopTask = task
+		close(assigned)
 	}
-	r.stopTask = spawnGatewayTask(context.WithoutCancel(ctx), "gateway-stop", func(taskCtx context.Context) (any, error) {
-		return nil, r.stopImpl(taskCtx)
-	})
-	_, err := r.stopTask.wait(ctx)
+	r.stopTaskMu.Unlock()
+	_, err := task.wait(ctx)
 	return err
+}
+
+// Stop task as it stands, nil before the first stop, read under the lock a concurrent stop assigns it with
+func (r *GatewayRunner) currentStopTask() *gatewayTask {
+	r.stopTaskMu.Lock()
+	defer r.stopTaskMu.Unlock()
+	return r.stopTask
 }
 
 // Blocks until the shutdown event is set
@@ -564,7 +576,7 @@ func (r *GatewayRunner) RequestRestart(detached, viaService bool) bool {
 	r.restartDetached = detached
 	r.restartViaService = viaService
 	r.restartTaskStarted = true
-	r.draining = true
+	r.draining.Store(true)
 	gateway.OpenRestartWait(r)
 	r.markAPIRunsShutdownRequested()
 	r.restartTask = spawnGatewayTask(context.Background(), "gateway-restart", func(ctx context.Context) (any, error) {

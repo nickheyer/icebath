@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 )
 
 func markerProbe(marker string) func(int) (string, error) {
@@ -145,8 +147,8 @@ func TestParentWatchdogDegradesToPidLivenessWhenMarkerProbeRaisesOserror(t *test
 // Catches SIGTERM raised inside the test process for the duration of the test
 func catchSIGTERM(t *testing.T) chan os.Signal {
 	ch := make(chan os.Signal, 4)
-	notifySignals(ch, syscall.SIGTERM)
-	t.Cleanup(func() { stopSignals(ch) })
+	prev := pysignal.Signal(syscall.SIGTERM, pysignal.Func(func(sig os.Signal) error { ch <- sig; return nil }))
+	t.Cleanup(func() { pysignal.Signal(syscall.SIGTERM, prev) })
 	return ch
 }
 

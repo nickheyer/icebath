@@ -145,7 +145,7 @@ func (c *SlashCompleter) skinCompletions(sub string) []Completion {
 func (c *SlashCompleter) personalityCompletions(sub string) []Completion {
 	rows := []NameMeta{{"none", "clear personality overlay"}}
 	personalities := AvailablePersonalities(c.cfg())
-	for _, name := range sortedKeys(personalities) {
+	for _, name := range PersonalityNames(personalities) {
 		rows = append(rows, NameMeta{name, DescribePersonality(personalities[name], 50)})
 	}
 	return prefixCompletions(rows, sub, true)

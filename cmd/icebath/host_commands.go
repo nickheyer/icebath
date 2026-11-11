@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/backup"
@@ -123,7 +124,7 @@ func namespace(cli *commands.CLI, cmd *cobra.Command, path string, args []string
 }
 
 func acpGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return gateway.CmdACP(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return acp.CmdACP(ctx, namespace(cli, cmd, path, args), cmd.OutOrStdout())
 }
 
 func approvalsGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

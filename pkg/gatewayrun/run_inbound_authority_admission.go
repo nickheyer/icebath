@@ -80,7 +80,7 @@ func (r *GatewayRunner) hmBusyPreempt(ctx context.Context, event *gateway.Messag
 	if err != nil {
 		return false, err
 	}
-	if r.draining || adapter == nil || runningAgent == nil || runningAgent == agentPendingSentinel ||
+	if r.draining.Load() || adapter == nil || runningAgent == nil || runningAgent == agentPendingSentinel ||
 		(event.MessageType == gateway.MessageTypeText && mode != "steer" && r.effectiveBusyTextMode(ctx, source) == "queue") {
 		return false, nil
 	}

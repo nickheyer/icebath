@@ -37,13 +37,18 @@ var ptyRegistry = tools.NewPtySessionRegistry(tools.PtySessionRegistryOptions{
 	TTL: 30 * time.Minute, MaxSessions: 16, BufferCap: 1 * 1024 * 1024, ReadTimeout: ptyReadChunkTimeout})
 
 // Subscriber sockets of each event channel the chat sidecar publishes to
-type eventChannels map[string]map[*WebSocket]struct{}
+type eventChannels map[string]map[eventSubscriber]struct{}
+
+// Socket of an event channel subscriber, anything a publisher frame can be sent to
+type eventSubscriber interface {
+	SendText(ctx context.Context, data string) error
+}
 
 // Empty channel table the lifespan binds to app state
 func newEventChannels() eventChannels { return eventChannels{} }
 
 // Closes only the terminal socket when its child stops accepting input
-func closeStalledPtyInput(ctx context.Context, ws *WebSocket, path string) {
+func closeStalledPtyInput(ctx context.Context, ws tools.PtyViewer, path string) {
 	webServerLog().Warn("pty input stalled path=" + path + "; recycling terminal session")
 	_ = ws.Close(context.WithoutCancel(ctx), 1013, "PTY input stalled")
 }

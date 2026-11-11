@@ -64,6 +64,9 @@ func loadRemovedList(dir string) []RemovedEntry {
 	var err error
 	label := "removed.yaml"
 	if dir == "" {
+		dir = catalogDirOverride
+	}
+	if dir == "" {
 		raw, err = inTreeCatalog.ReadFile("catalog/removed.yaml")
 	} else {
 		path := filepath.Join(dir, "removed.yaml")

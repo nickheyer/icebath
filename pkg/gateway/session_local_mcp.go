@@ -249,8 +249,7 @@ func editorMCPRoundTrip(servers any) (any, error) {
 
 // Store payload and owner held servers of an editor_mcp or server naming branch mutation
 func privateMutationPayload(operation string, payload any) (any, any, error) {
-	payload = pyjson.Plain(payload)
-	fields, isMap := payload.(map[string]any)
+	fields, isMap := pyjson.Plain(payload).(map[string]any)
 	if operation == "editor_mcp" {
 		if _, has := fields["mcp_servers"]; !isMap || len(fields) != 1 || !has {
 			return nil, nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
@@ -268,6 +267,11 @@ func privateMutationPayload(operation string, payload any) (any, any, error) {
 	digest, err := editorMCPFingerprint(servers)
 	if err != nil {
 		return nil, nil, err
+	}
+	if object, ok := payload.(*pyjson.Object); ok {
+		stored := object.Copy()
+		stored.Set("mcp_servers", pyjson.ObjectOf("fingerprint", digest))
+		return stored, servers, nil
 	}
 	stored := make(map[string]any, len(fields))
 	for k, v := range fields {

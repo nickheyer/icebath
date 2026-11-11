@@ -194,7 +194,7 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 
 // Whether a restart, drain or shutdown began while starting up
 func (r *GatewayRunner) startupShouldAbort() bool {
-	return r.restartRequested || r.draining || r.shutdownEvent.IsSet()
+	return r.restartRequested || r.draining.Load() || r.shutdownEvent.IsSet()
 }
 
 // Cancels an adapter's background tasks then disconnects it
@@ -216,7 +216,7 @@ func (r *GatewayRunner) abortStartupIfShutdownRequested(ctx context.Context, ada
 	if adapter != nil && platform != nil {
 		r.startupTeardownAdapter(ctx, adapter, *platform)
 	}
-	stopTask := r.stopTask
+	stopTask := r.currentStopTask()
 	if stopTask != nil && stopTask != currentGatewayTask(ctx) {
 		if _, err := stopTask.wait(ctx); err != nil {
 			return true, err

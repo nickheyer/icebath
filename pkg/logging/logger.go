@@ -44,6 +44,8 @@ type Record struct {
 	HermesHome string
 	Thread     uint64
 	PC         uintptr
+	// Error logged with the record, its text already below Msg
+	ExcInfo error
 }
 
 // Gate deciding whether a handler takes a record

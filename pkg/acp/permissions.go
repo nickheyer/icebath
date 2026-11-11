@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -177,4 +178,23 @@ func MakeApprovalCallback(requestPermission RequestPermissionFunc, loop Loop, se
 		}
 		return mapOutcomeToHermes(response.Outcome, allowed)
 	}
+}
+
+// Asker form of an approval callback, the surface the dangerous command gate asks through an ACP turn
+type ApprovalAsker struct{ Callback ApprovalCallback }
+
+// Answers the approval gate with the callback's own answer
+func (a ApprovalAsker) ApprovalCallback(ctx context.Context, command, description string, o tools.ApprovalCallbackOptions) (string, error) {
+	return a.Callback(ctx, command, description, o.AllowPermanent, o.AllowSession, o.SmartDenied), nil
+}
+
+// Answers each menu question through the callback, session and always offered when the menu lists them
+func (a ApprovalAsker) Ask(ctx context.Context, questions []tools.Question) (tools.FormResult, error) {
+	answers := make([]tools.Answer, 0, len(questions))
+	for _, q := range questions {
+		description := strings.TrimPrefix(q.Header, "⚠️  DANGEROUS COMMAND: ")
+		choice := a.Callback(ctx, q.Text, description, slices.Contains(q.Choices, "always"), slices.Contains(q.Choices, "session"), false)
+		answers = append(answers, tools.Answer{Status: "answered", Selected: []string{choice}})
+	}
+	return tools.FormResult{Outcome: "answered", Answers: answers}, nil
 }

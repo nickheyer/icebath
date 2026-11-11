@@ -53,7 +53,9 @@ func TestFollowUpWireActionCarriesNoCredential(t *testing.T) {
 
 func TestSealedTombstonesAreBounded(t *testing.T) {
 	a, c := relayCaptureAdapter(t, relayLiveCardsDesc)
-	c.result = func(map[string]any) (map[string]any, error) { return map[string]any{"success": true, "message_id": "ts.1"}, nil }
+	c.result = func(map[string]any) (map[string]any, error) {
+		return map[string]any{"success": true, "message_id": "ts.1"}, nil
+	}
 	ctx := context.Background()
 	for n := range relayDraftStateCap + 300 {
 		md := map[string]any{"message_id": fmt.Sprintf("evt.%d", n)}
@@ -74,7 +76,9 @@ func TestSealedTombstonesAreBounded(t *testing.T) {
 
 func TestOpenDraftsAreBounded(t *testing.T) {
 	a, c := relayCaptureAdapter(t, relayLiveCardsDesc)
-	c.result = func(map[string]any) (map[string]any, error) { return map[string]any{"success": true, "message_id": "ts.1"}, nil }
+	c.result = func(map[string]any) (map[string]any, error) {
+		return map[string]any{"success": true, "message_id": "ts.1"}, nil
+	}
 	for n := range relayDraftStateCap + 300 {
 		if _, err := a.SendDraft(context.Background(), "C1", 2000+n, "x", map[string]any{"message_id": fmt.Sprintf("evt.%d", n)}); err != nil {
 			t.Fatal(err)

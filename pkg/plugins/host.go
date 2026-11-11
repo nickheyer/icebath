@@ -1249,10 +1249,22 @@ func (o *HostedObject) HasMethod(name string) bool {
 // Async flag of a declared method
 func (o *HostedObject) MethodIsAsync(name string) bool { return o.methods[name].Async }
 
-// Whether the proxy class attribute differs from the base attribute, true for every method the child declares
-func (o *HostedObject) OverridesBase(_ context.Context, method string) (bool, error) {
-	_, declared := o.methods[method]
-	return declared, nil
+// Whether the provider class replaces a method of its base, every declared method under host isolation where hermes sees its proxy class
+func (o *HostedObject) OverridesBase(ctx context.Context, method string) (bool, error) {
+	if !strings.Contains(o.Base, ":") || IsolationMode(ctx, nil) == IsolationHost {
+		_, declared := o.methods[method]
+		return declared, nil
+	}
+	ref, generation, err := o.addr(ctx)
+	if err != nil {
+		return false, err
+	}
+	raw, err := o.host.call(ctx, "obj_overrides", map[string]any{"ref": ref, "base": o.Base, "method": method}, &generation, 0, nil)
+	if err != nil {
+		return false, err
+	}
+	overrides, _ := raw.(bool)
+	return overrides, nil
 }
 
 // Calls one method of the plugin object in the child, a dotted name reading its attribute path first as Python does

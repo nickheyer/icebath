@@ -11,7 +11,7 @@ import (
 )
 
 // Callback a live host uses to accept a plugin triggered turn
-type MessageInjector func(kwargs map[string]any) bool
+type MessageInjector func(ctx context.Context, kwargs map[string]any) bool
 
 // Injector together with the lifecycle owner that published it
 type ownedInjector struct {
@@ -166,11 +166,11 @@ func (m *Manager) ClearGatewayMessageInjector(owner any) {
 }
 
 // Submits a plugin triggered turn to the live gateway
-func (m *Manager) InjectGatewayMessage(kwargs map[string]any) bool {
+func (m *Manager) InjectGatewayMessage(ctx context.Context, kwargs map[string]any) bool {
 	m.injectorMu.Lock()
 	registered := m.gatewayInjector
 	m.injectorMu.Unlock()
-	return registered != nil && registered.injector(kwargs)
+	return registered != nil && registered.injector(ctx, kwargs)
 }
 
 // Reports whether a live TUI or desktop host can accept plugin triggered turns
@@ -197,11 +197,11 @@ func (m *Manager) ClearTUIMessageInjector(owner any) {
 }
 
 // Submits a plugin triggered turn to the live TUI or desktop host
-func (m *Manager) InjectTUIMessage(kwargs map[string]any) bool {
+func (m *Manager) InjectTUIMessage(ctx context.Context, kwargs map[string]any) bool {
 	m.injectorMu.Lock()
 	registered := m.tuiInjector
 	m.injectorMu.Unlock()
-	return registered != nil && registered.injector(kwargs)
+	return registered != nil && registered.injector(ctx, kwargs)
 }
 
 // Remembers the process gateway host and stamps every existing manager with it

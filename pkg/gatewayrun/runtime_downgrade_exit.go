@@ -60,7 +60,7 @@ type downgradeRunner interface {
 	keepDowngradeStop(task *gatewayTask)
 }
 
-func (r *GatewayRunner) downgradeRunning() bool { return r.running }
+func (r *GatewayRunner) downgradeRunning() bool { return r.running.Load() }
 
 func (r *GatewayRunner) downgradeExit(reason string, code int) {
 	r.exitReason, r.exitCode = &reason, &code

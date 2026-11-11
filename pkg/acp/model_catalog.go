@@ -195,7 +195,7 @@ func choiceProvider(ctx context.Context, modelID string) string {
 	return parts[0]
 }
 
-// Provider and model joined as provider:model so clients keep the provider, the bare model without one
+// Provider and model joined by a colon so clients keep the provider, the bare model without one
 func EncodeModelChoice(prov, model string) string {
 	rawModel := strings.TrimSpace(model)
 	if rawModel == "" {

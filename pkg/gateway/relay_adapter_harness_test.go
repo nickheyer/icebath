@@ -3,8 +3,10 @@ package gateway
 import (
 	"context"
 	"maps"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Descriptor of the Python make_desc defaults, telegram with utf16 lengths, with the overrides applied
@@ -43,6 +45,9 @@ type relayCapture struct {
 	identities  [][2]string
 	byPlatform  map[string]CapabilityDescriptor
 	handler     RelayInboundHandler
+	passthrough RelayPassthroughHandler
+	desc        *CapabilityDescriptor
+	hang        func(action map[string]any) bool
 	disconnects int
 }
 
@@ -56,17 +61,61 @@ func (c *relayCapture) Disconnect(context.Context, *float64) error {
 }
 
 func (c *relayCapture) Handshake(context.Context) (CapabilityDescriptor, error) {
+	if c.desc != nil {
+		return *c.desc, nil
+	}
 	return relayTestDesc(nil), nil
 }
 
 func (c *relayCapture) SetInboundHandler(h RelayInboundHandler) { c.handler = h }
 
-func (c *relayCapture) SendOutbound(_ context.Context, action map[string]any, platform string) (map[string]any, error) {
+func (c *relayCapture) SetPassthroughHandler(h RelayPassthroughHandler) { c.passthrough = h }
+
+// Hands a forward to the adapter's passthrough handler the way the reader does
+func (c *relayCapture) pushPassthrough(t *testing.T, fwd *PassthroughForward) {
+	t.Helper()
+	if err := c.passthrough(context.Background(), fwd, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Records every event the gateway handler receives
+func relayTapEvents(a *RelayAdapter) func() []*MessageEvent {
+	var mu sync.Mutex
+	var seen []*MessageEvent
+	a.SetMessageHandler(func(_ context.Context, e *MessageEvent) (any, error) {
+		mu.Lock()
+		seen = append(seen, e)
+		mu.Unlock()
+		return nil, nil
+	})
+	return func() []*MessageEvent {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(seen)
+	}
+}
+
+// Events the tap holds once n arrived and no further dispatch showed itself
+func relaySettledEvents(seen func() []*MessageEvent, n int) []*MessageEvent {
+	relayWaitUntil(func() bool { return len(seen()) >= n })
+	time.Sleep(100 * time.Millisecond)
+	return seen()
+}
+
+func (c *relayCapture) SendOutbound(ctx context.Context, action map[string]any, platform string) (map[string]any, error) {
 	c.mu.Lock()
 	c.sent = append(c.sent, action)
 	c.platforms = append(c.platforms, platform)
-	result := c.result
+	result, hang := c.result, c.hang
 	c.mu.Unlock()
+	if hang != nil && hang(action) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(30 * time.Second):
+		}
+	}
 	if result != nil {
 		return result(action)
 	}
@@ -135,6 +184,29 @@ func relayCaptureAdapter(t *testing.T, mod func(d *CapabilityDescriptor)) (*Rela
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := &relayCapture{byPlatform: map[string]CapabilityDescriptor{}}
 	return NewRelayAdapter(NewPlatformConfig(), relayTestDesc(mod), c), c
+}
+
+// Result the scripted connector answers each op with
+func relayConnectorResult(action map[string]any) (map[string]any, error) {
+	switch action["op"] {
+	case "send":
+		return map[string]any{"success": true, "message_id": "m1"}, nil
+	case "send_media":
+		return map[string]any{"success": true, "message_id": "md1"}, nil
+	case "prompt":
+		return map[string]any{"success": true, "message_id": "pm1"}, nil
+	}
+	return map[string]any{"success": true}, nil
+}
+
+// Adapter over a scripted connector fronting and handshaking the descriptor platform
+func relayConnectorAdapter(t *testing.T, mod func(d *CapabilityDescriptor)) (*RelayAdapter, *relayCapture) {
+	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	desc := relayTestDesc(mod)
+	c := &relayCapture{byPlatform: map[string]CapabilityDescriptor{}, desc: &desc, result: relayConnectorResult,
+		identities: [][2]string{{desc.Platform, ""}}}
+	return NewRelayAdapter(NewPlatformConfig(), desc, c), c
 }
 
 // Inbound text event of the platform and chat with the source fields set

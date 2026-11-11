@@ -115,7 +115,7 @@ func (r *GatewayRunner) scheduleFloodRedelivery(ctx context.Context, platform ga
 			delete(flood.wakes, key)
 			flood.mu.Unlock()
 		}()
-		for r.running {
+		for r.running.Load() {
 			wake.Clear()
 			waiting, err := gateway.PendingRetries(ctx, nil)
 			if err != nil {
@@ -138,7 +138,7 @@ func (r *GatewayRunner) scheduleFloodRedelivery(ctx context.Context, platform ga
 			if wake.Wait(delay) {
 				continue
 			}
-			if r.running {
+			if r.running.Load() {
 				r.redeliverFailedObligationsForPlatform(ctx, platform, profile)
 			}
 		}

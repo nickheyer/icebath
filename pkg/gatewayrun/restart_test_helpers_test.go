@@ -64,7 +64,7 @@ func makeRestartRunner(t *testing.T) (*GatewayRunner, *restartTestAdapter) {
 	cfg.Enabled = true
 	cfg.Token = "***"
 	r.config.Platforms[gateway.PlatformTelegram] = cfg
-	r.running = true
+	r.running.Store(true)
 	r.shutdownEvent = &pythread.Event{}
 	r.sessions = map[string]*SessionState{}
 	r.voiceMode = pydict.New[string, string]()

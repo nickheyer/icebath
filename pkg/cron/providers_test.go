@@ -275,24 +275,35 @@ class Plain(CronScheduler):
 
 `
 
-// Every hosted provider splits its fire, the host proxy class declaring each described method as the hermes proxy does
+// A provider that replaces only fire_due keeps its single phase fire, under host isolation the proxy class declares every method
 func TestHostedProviderSupportsSplitFireFollowsTheProxyClass(t *testing.T) {
-	s, _ := newTestStore(t)
-	register := func(class string) string {
-		return splitFireCronProviderSrc + "\n\ndef register(ctx):\n    ctx.register_cron_scheduler(" + class + "())\n"
-	}
-	writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{"legacy/__init__.py": register("Legacy"), "split/__init__.py": register("Split")})
-	writeBlueprintPlugin(t, s.home, "plain", register("Plain"))
-	for name, want := range map[string]bool{"legacy": true, "split": true, "plain": true} {
-		p, err := realLoadCronScheduler(s, name)
-		if err != nil || p == nil {
-			t.Fatalf("%s loaded %v %v", name, p, err)
-		}
-		if p.Name() != name {
-			t.Fatalf("loaded %q for %s", p.Name(), name)
-		}
-		if got := providerSupportsSplitFire(p); got != want {
-			t.Errorf("%s split fire %v, want %v", name, got, want)
-		}
+	for _, mode := range []struct {
+		isolation string
+		legacy    bool
+	}{{"in_process", false}, {"host", true}} {
+		t.Run(mode.isolation, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			register := func(class string) string {
+				return splitFireCronProviderSrc + "\n\ndef register(ctx):\n    ctx.register_cron_scheduler(" + class + "())\n"
+			}
+			writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{"legacy/__init__.py": register("Legacy"), "split/__init__.py": register("Split")})
+			writeBlueprintPlugin(t, s.home, "plain", register("Plain"))
+			cfg := `{"model": "test-model", "plugins": {"enabled": ["plain"], "isolation": "` + mode.isolation + `"}}`
+			if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte(cfg), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			for name, want := range map[string]bool{"legacy": mode.legacy, "split": true, "plain": true} {
+				p, err := realLoadCronScheduler(s, name)
+				if err != nil || p == nil {
+					t.Fatalf("%s loaded %v %v", name, p, err)
+				}
+				if p.Name() != name {
+					t.Fatalf("loaded %q for %s", p.Name(), name)
+				}
+				if got := providerSupportsSplitFire(p); got != want {
+					t.Errorf("%s split fire %v, want %v", name, got, want)
+				}
+			}
+		})
 	}
 }

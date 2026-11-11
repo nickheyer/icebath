@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -61,6 +62,7 @@ func plainJSON(v any) any {
 			val, _ := t.Get(k)
 			out[k] = plainJSON(val)
 		}
+		config.SetMappingKeys(out, t.Keys)
 		return out
 	case []any:
 		out := make([]any, len(t))
@@ -241,6 +243,7 @@ func setDefaultDict(container map[string]any, key string) map[string]any {
 	}
 	m := map[string]any{}
 	container[key] = m
+	config.AppendMappingKey(container, key)
 	return m
 }
 

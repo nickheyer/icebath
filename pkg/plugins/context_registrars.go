@@ -533,7 +533,7 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 	if sessionKey != "" && m.HasTUIMessageInjector() {
 		var accepted bool
 		if err := callGuarded(func() error {
-			accepted = m.InjectTUIMessage(map[string]any{"session_key": sessionKey, "content": msg, "plugin_id": c.PluginID()})
+			accepted = m.InjectTUIMessage(ctx, map[string]any{"session_key": sessionKey, "content": msg, "plugin_id": c.PluginID()})
 			return nil
 		}); err != nil {
 			logWarn(fmt.Sprintf("inject_message: TUI scheduling failed for plugin %s", c.PluginID()), "error", err)
@@ -566,7 +566,7 @@ func (c *Context) InjectMessage(ctx context.Context, content, role, sessionKey s
 	}
 	var accepted bool
 	if err := callGuarded(func() error {
-		accepted = m.InjectGatewayMessage(target)
+		accepted = m.InjectGatewayMessage(ctx, target)
 		return nil
 	}); err != nil {
 		logWarn(fmt.Sprintf("inject_message: gateway scheduling failed for plugin %s", c.PluginID()), "error", err)

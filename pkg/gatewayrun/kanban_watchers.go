@@ -66,7 +66,7 @@ func (r *GatewayRunner) releaseKanbanDispatcherLock() {
 func (r *GatewayRunner) sleepBetweenTicks(ctx context.Context, interval float64) error {
 	interval = max(interval, 1.0)
 	slept := 0.0
-	for slept < interval && r.running {
+	for slept < interval && r.running.Load() {
 		if err := asyncioSleep(ctx, min(1.0, interval-slept)); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 	}
 
 	gcNextAt := 0.0
-	for r.running {
+	for r.running.Load() {
 		err := catchPanic(func() error {
 			gcDue := pythread.Monotonic() >= gcNextAt
 			retention := int64(30)
@@ -355,7 +355,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 	dispatcher := newKanbanDispatcher(settings)
 
 	runLog().Info(fmt.Sprintf("kanban dispatcher: embedded in gateway (interval=%.1fs)", interval))
-	for r.running {
+	for r.running.Load() {
 		pids, err := toThreadProcessService(ctx, func(context.Context) ([]int, error) {
 			var pids []int
 			err := catchPanic(func() error {

@@ -19,6 +19,9 @@ type EncodeError struct{ Msg string }
 
 func (e *EncodeError) Error() string { return e.Msg }
 
+// File flush every atomic writer runs before the replace, the os.fsync hermes tests fail
+var Fsync = func(f *os.File) error { return f.Sync() }
+
 // Writes text through a temp file beside the published target, fsync, and an atomic rename
 func AtomicWriteText(ctx context.Context, path, content, prefix string) error {
 	return atomicWriteText(ctx, path, content, prefix, nil, false)
@@ -71,7 +74,7 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 	if _, err := tmp.WriteString(platformNewlines(content)); err != nil {
 		return fail(err)
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := Fsync(tmp); err != nil {
 		return fail(err)
 	}
 	if err := tmp.Close(); err != nil {

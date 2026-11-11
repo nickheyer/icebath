@@ -55,7 +55,7 @@ func (r *GatewayRunner) storedTranscript(ctx context.Context, sessionKey string)
 	return sessionID, []map[string]any{}, nil
 }
 
-// Runs body with a fresh agent on the session's next turn route inside its policy scope, releasing only its own clients
+// Runs body with a fresh agent on the session's next turn route in its policy scope, releasing its own clients
 func (r *GatewayRunner) coldReviewParent(ctx context.Context, source *gateway.SessionSource, sessionKey, sessionID string,
 	body func(ctx context.Context, parent *agent.AIAgent) error) error {
 	policy, err := gateway.LocalPolicyForSource(ctx, r, source)

@@ -108,12 +108,12 @@ type SessionFieldView[T any] struct {
 
 // Session states of the runner, empty when none were ever created
 func (v SessionFieldView[T]) sessions() map[string]*SessionState {
-	return v.runner.sessions
+	return v.runner.sessionsMap()
 }
 
 // Session state of key when its field is present
 func (v SessionFieldView[T]) presentState(key string) *SessionState {
-	state := v.sessions()[key]
+	state := v.runner.peekSessionState(key)
 	if state != nil && v.spec.present(v.spec.get(state)) {
 		return state
 	}
@@ -170,7 +170,7 @@ func (v SessionFieldView[T]) Len() int {
 func (v SessionFieldView[T]) Items() map[string]T {
 	items := map[string]T{}
 	for _, key := range v.Keys() {
-		items[key] = v.spec.get(v.sessions()[key])
+		items[key] = v.spec.get(v.runner.peekSessionState(key))
 	}
 	return items
 }
@@ -203,7 +203,7 @@ type TurnLeaseTokenView struct {
 
 // Turn state holding the token of key, nil when not held
 func (v TurnLeaseTokenView) held(key leaseTokenKey) *TurnState {
-	state := v.runner.sessions[key.sessionKey]
+	state := v.runner.peekSessionState(key.sessionKey)
 	if state == nil {
 		return nil
 	}
@@ -244,7 +244,7 @@ func (v TurnLeaseTokenView) Delete(key leaseTokenKey) bool {
 // Every held session key and generation pair
 func (v TurnLeaseTokenView) Keys() []leaseTokenKey {
 	var keys []leaseTokenKey
-	for sessionKey, state := range v.runner.sessions {
+	for sessionKey, state := range v.runner.sessionsMap() {
 		for generation := range state.turn.leaseTokens {
 			keys = append(keys, leaseTokenKey{sessionKey, generation})
 		}

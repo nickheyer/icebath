@@ -66,15 +66,14 @@ func envOptIn(value string) bool {
 	return false
 }
 
-// Enabled platforms of the config in a stable order
+// Enabled platforms of the config in its insertion order
 func enabledPlatforms(cfg *gateway.GatewayConfig) []gateway.Platform {
 	var out []gateway.Platform
-	for platform, pc := range cfg.Platforms {
-		if pc != nil && pc.Enabled {
+	for _, platform := range cfg.PlatformKeys() {
+		if pc := cfg.Platforms[platform]; pc != nil && pc.Enabled {
 			out = append(out, platform)
 		}
 	}
-	slices.Sort(out)
 	return out
 }
 

@@ -16,7 +16,7 @@ func slackHome(ctx context.Context, cfg *gateway.GatewayConfig) error {
 	if !ok {
 		pc = gateway.NewPlatformConfig()
 		pc.Enabled = false
-		cfg.Platforms[gateway.PlatformSlack] = pc
+		cfg.SetPlatform(gateway.PlatformSlack, pc)
 	}
 	existing := pc.HomeChannel
 	same := existing != nil && existing.ChatID == home

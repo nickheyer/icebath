@@ -37,7 +37,15 @@ func TestMain(m *testing.M) {
 		io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "gatewaycli-home-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("ICEBATH_HOME", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // Live child launched as icebath gateway run holding the home gateway lock, stopped at cleanup

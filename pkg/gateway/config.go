@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -127,8 +128,12 @@ func dictSlot(container map[string]any, key string) map[string]any {
 	if m, ok := container[key].(map[string]any); ok {
 		return m
 	}
+	_, had := container[key]
 	m := map[string]any{}
 	container[key] = m
+	if !had {
+		config.AppendMappingKey(container, key)
+	}
 	return m
 }
 

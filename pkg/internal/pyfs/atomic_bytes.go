@@ -50,7 +50,7 @@ func AtomicWriteBytes(ctx context.Context, path string, content []byte, prefix s
 	if _, err := tmp.Write(content); err != nil {
 		return fail(err)
 	}
-	if err := tmp.Sync(); err != nil {
+	if err := Fsync(tmp); err != nil {
 		return fail(err)
 	}
 	if err := tmp.Close(); err != nil {

@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -197,7 +198,7 @@ func currentProcessStartMarker(pid int) (string, error) { return processStartMar
 // Raises SIGTERM in this process with a hard exit backstop after the orphan ceiling
 func requestOrphanShutdown() *time.Timer {
 	ceiling := time.AfterFunc(orphanExitCeiling, func() { os.Exit(0) })
-	raiseSignal(syscall.SIGTERM)
+	_ = pysignal.Raise(syscall.SIGTERM)
 	return ceiling
 }
 

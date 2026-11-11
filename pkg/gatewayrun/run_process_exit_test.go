@@ -54,7 +54,7 @@ func writePlannedStopMarker(t *testing.T, dir string, targetPid int, startTime a
 // Running runner double holding only the flags the watcher reads
 func watcherRunner() *GatewayRunner {
 	r := allocGatewayRunner()
-	r.running = true
+	r.running.Store(true)
 	return r
 }
 

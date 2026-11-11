@@ -74,7 +74,7 @@ func TestPatchReplaceRejectionDoesNotMutate(t *testing.T) {
 
 func TestWorkspaceAutoApprovalAllowsWorkspaceAndTmpButNotSensitive(t *testing.T) {
 	tmp := t.TempDir()
-	tmpFile := filepath.Join(os.TempDir(), "hermes-acp-auto-approve-test.txt")
+	tmpFile := filepath.Join(os.TempDir(), "icebath-acp-auto-approve-test.txt")
 	if !tools.ShouldAutoApproveEdit(&tools.EditProposal{ToolName: "write_file", Path: filepath.Join(tmp, "src.py"), NewText: "x"}, "workspace_session", tmp) ||
 		!tools.ShouldAutoApproveEdit(&tools.EditProposal{ToolName: "write_file", Path: tmpFile, NewText: "x"}, "workspace_session", tmp) ||
 		tools.ShouldAutoApproveEdit(&tools.EditProposal{ToolName: "write_file", Path: filepath.Join(tmp, ".env"), NewText: "SECRET=x"}, "session", tmp) {
@@ -97,7 +97,7 @@ func TestMultifileV4aPatchChecksEveryRealPathNotTheJoinedDisplayString(t *testin
 		t.Fatal("hidden env approved")
 	}
 	userHome, _ := home.UserHome()
-	escape := filepath.Join(userHome, ".hermes-acp-escape-test.txt")
+	escape := filepath.Join(userHome, ".icebath-acp-escape-test.txt")
 	p = build("*** Update File: " + tmp + "/src/ok.py\n@@\n+ok\n*** Update File: " + escape + "\n@@\n+evil\n")
 	if tools.ShouldAutoApproveEdit(p, "workspace_session", tmp) {
 		t.Fatal("escape approved")

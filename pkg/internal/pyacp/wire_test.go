@@ -83,7 +83,9 @@ func (p *wirePeer) recv(t *testing.T) string {
 
 func TestWireSessionUpdateFrameEscapesNonASCII(t *testing.T) {
 	p := startWire(t, &wireAgent{}, true)
-	go func() { _ = p.conn.SessionUpdate(context.Background(), "s1", UpdateAgentMessageText("h\u00e9llo"), nil) }()
+	go func() {
+		_ = p.conn.SessionUpdate(context.Background(), "s1", UpdateAgentMessageText("h\u00e9llo"), nil)
+	}()
 	want := `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"content":{"text":"h\u00e9llo","type":"text"},"sessionUpdate":"agent_message_chunk"}}}` + "\n"
 	if got := p.recv(t); got != want {
 		t.Fatalf("got %q want %q", got, want)

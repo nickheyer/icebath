@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
 
 	"github.com/mattn/go-isatty"
@@ -20,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -61,6 +63,8 @@ func dispatchChildEntries(ctx context.Context) {
 	app.DispatchUninstallModuleEntry(ctx)
 	app.DispatchSlashWorkerEntry(ctx, exit)
 	tuiserver.DispatchComputeHostEntry(ctx)
+	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
+	acp.DispatchModuleEntry(ctx, exit)
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal

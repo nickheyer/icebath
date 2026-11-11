@@ -38,7 +38,7 @@ func (a *RelayAdapter) getMediaClient(ctx context.Context) *RelayMediaClient {
 	return client
 }
 
-// One media object through the send_media op, nil when the lane is unavailable and a not delivered reason for a dropped local file
+// Sends one media object, nil when the lane is unavailable and a reason when a local file was dropped
 func (a *RelayAdapter) sendMedia(ctx context.Context, chatID, mediaKind, source string, sourceIsPath bool, caption, filename string, replyTo *string, metadata map[string]any) (*SendResult, *relayMediaNotDelivered, error) {
 	if a.transport == nil || !a.Descriptor().SupportsOp("send_media") {
 		return nil, nil, nil

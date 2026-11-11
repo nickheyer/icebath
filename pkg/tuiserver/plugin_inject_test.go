@@ -49,7 +49,7 @@ type recordingInjector struct {
 	calls []map[string]any
 }
 
-func (r *recordingInjector) inject(kwargs map[string]any) bool {
+func (r *recordingInjector) inject(_ context.Context, kwargs map[string]any) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, kwargs)

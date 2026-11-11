@@ -207,8 +207,7 @@ func restoreLocalViewerEvents(a *agent.AIAgent, previous *localViewerPrevious) {
 func publishLocalControlIfChanged(t *TurnRunner) {
 	owner := t.approvalOwner
 	t.schedule(func(ctx context.Context) (any, error) {
-		controlPublishAsync(ctx, owner.authority, owner.sessionID, false, true)
-		return nil, nil
+		return nil, gateway.PublishControlAsync(ctx, owner.authority, owner.sessionID, false, true)
 	}, "session.control.update after a tool")
 }
 

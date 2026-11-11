@@ -113,8 +113,8 @@ func messagingBusy(r *GatewayRunner) string {
 		}
 	}
 	if r.config != nil {
-		for p, cfg := range r.config.Platforms {
-			if cfg != nil && cfg.Enabled {
+		for _, p := range r.config.PlatformKeys() {
+			if cfg := r.config.Platforms[p]; cfg != nil && cfg.Enabled {
 				add(p)
 			}
 		}
@@ -320,7 +320,7 @@ func busyReason(ctx context.Context, r *GatewayRunner, window float64, countClie
 	if !countClients && idleAttaching(r) {
 		return "client attaching"
 	}
-	if r.draining || !r.running {
+	if r.draining.Load() || !r.running.Load() {
 		return "already stopping"
 	}
 	if r.activeWorkCount() != 0 {
@@ -374,13 +374,12 @@ func probeOffLoop(ctx context.Context, fn func() string) (string, error) {
 
 // Withdraws admission at once after the last idle check, then stops the gateway
 func beginIdleExit(r *GatewayRunner, window float64, restart string) {
-	r.draining = true
-	if r.sessionRuntimeDescriptor == nil {
-		r.sessionRuntimeDescriptor = map[string]any{}
-	}
-	r.sessionRuntimeDescriptor["state"] = "draining"
-	r.sessionRuntimeDescriptor["capabilities"] = []any{}
-	r.sessionRuntimeDescriptor["drain_reason"] = IdleExitReason
+	r.draining.Store(true)
+	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
+		descriptor["state"] = "draining"
+		descriptor["capabilities"] = []any{}
+		descriptor["drain_reason"] = IdleExitReason
+	})
 	reason := fmt.Sprintf("%s for %.0fs (gateway.unmanaged_idle_exit_seconds)", IdleExitStopPrefix, window)
 	if restart != "" {
 		reason = fmt.Sprintf("%s; restarting to load %s", IdleExitStopPrefix, restart)
@@ -435,7 +434,7 @@ func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 	runLog().Info(fmt.Sprintf("Auto-started gateway: exits after %.0fs with no clients, adapters, cron/kanban work or admissions (gateway.unmanaged_idle_exit_seconds)", window))
 	interval := math.Min(30.0, math.Max(0.5, window/4))
 	idleSince := 0.0
-	for r.running && !r.draining {
+	for r.running.Load() && !r.draining.Load() {
 		if err := sleepUnlessRestartPending(ctx, interval); err != nil {
 			return err
 		}

@@ -72,7 +72,7 @@ func (r *GatewayRunner) shouldEmitLongRunningNotification(sessionKey string, a *
 	if a == nil || (executorTask != nil && executorTask.isDone()) {
 		return false
 	}
-	if r.draining || r.restartRequested {
+	if r.draining.Load() || r.restartRequested {
 		return false
 	}
 	if sessionKey != "" {

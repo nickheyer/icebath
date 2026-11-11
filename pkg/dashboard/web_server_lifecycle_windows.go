@@ -7,10 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
-	"os/signal"
 	"strconv"
-	"sync"
 	"syscall"
 
 	"golang.org/x/sys/windows"
@@ -39,51 +36,6 @@ func processStartMarker(pid int) (string, error) {
 	}
 	filetime := uint64(creation.HighDateTime)<<32 | uint64(creation.LowDateTime)
 	return fmt.Sprintf("win:%d", filetime+filetimeToDotnetTicks), nil
-}
-
-var (
-	signalSubsMu sync.Mutex
-	signalSubs   = map[chan<- os.Signal][]os.Signal{}
-)
-
-// Registers a channel for process signals and for signals this process raises itself
-func notifySignals(ch chan<- os.Signal, sigs ...os.Signal) {
-	signalSubsMu.Lock()
-	signalSubs[ch] = append(signalSubs[ch], sigs...)
-	signalSubsMu.Unlock()
-	signal.Notify(ch, sigs...)
-}
-
-// Unregisters a channel from process and raised signals
-func stopSignals(ch chan<- os.Signal) {
-	signalSubsMu.Lock()
-	delete(signalSubs, ch)
-	signalSubsMu.Unlock()
-	signal.Stop(ch)
-}
-
-// Runs the handlers registered for the signal in this process, the C runtime default exit when none is
-func raiseSignal(sig syscall.Signal) {
-	signalSubsMu.Lock()
-	var targets []chan<- os.Signal
-	for ch, sigs := range signalSubs {
-		for _, s := range sigs {
-			if s == sig {
-				targets = append(targets, ch)
-				break
-			}
-		}
-	}
-	signalSubsMu.Unlock()
-	if len(targets) == 0 {
-		os.Exit(3)
-	}
-	for _, ch := range targets {
-		select {
-		case ch <- sig:
-		default:
-		}
-	}
 }
 
 // Whether an exclusive address bind of host and port fails with address in use

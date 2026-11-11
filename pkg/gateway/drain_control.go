@@ -42,9 +42,19 @@ type DrainRunner interface {
 // Publishes the restart after turn wait as the drain reason unless a drain already named its own
 func OpenRestartWait(runner DrainRunner) {
 	descriptor := runner.SessionRuntimeDescriptor()
-	if descriptor != nil && !pyrepr.Truthy(descriptor["drain_reason"]) {
-		descriptor["drain_reason"] = RestartWaitReason
+	if descriptor == nil || pyrepr.Truthy(descriptor["drain_reason"]) {
+		return
 	}
+	if publisher, republishes := runner.(runtimeDescriptorPublisher); republishes {
+		publisher.SetRuntimeDescriptorField("drain_reason", RestartWaitReason)
+		return
+	}
+	descriptor["drain_reason"] = RestartWaitReason
+}
+
+// Runner that republishes its descriptor on a write instead of changing the map its readers hold
+type runtimeDescriptorPublisher interface {
+	SetRuntimeDescriptorField(key string, value any)
 }
 
 // True while the runner is draining, still running and in a restart after turn wait

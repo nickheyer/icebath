@@ -9,6 +9,7 @@ import (
 
 // Attributes only the inbound, busy session, notification, goal and API modules set
 type runnerInboundState struct {
+	sessionsMu                sync.RWMutex
 	unauthorizedOwnerNotifier *UnauthorizedOwnerNotifier
 	updateNotificationTask    *gatewayTask
 	plannedRestartNoticeLock  sync.Mutex

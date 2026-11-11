@@ -25,4 +25,6 @@ func FetchPickerLiveModels(ctx context.Context, apiKey any, apiURL, nativeProvid
 }
 
 // Configured custom provider ids of the active config
-func ConfiguredCustomProviderIDs(ctx context.Context) map[string]bool { return configuredCustomProviderIDs(ctx) }
+func ConfiguredCustomProviderIDs(ctx context.Context) map[string]bool {
+	return configuredCustomProviderIDs(ctx)
+}
