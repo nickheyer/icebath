@@ -96,8 +96,8 @@ type SessionState struct {
 	ExecutionGeneration any
 	Messages            []any
 	Usage               map[string]any
-	UsageListeners      []func(ctx context.Context, usage map[string]any)
-	RequestListeners    []func(ctx context.Context, payload map[string]any)
+	UsageListeners      []*SessionListener
+	RequestListeners    []*SessionListener
 	AdmittedTurn        map[string]any
 	Pending             []any
 	QueuedInputs        map[string]any
@@ -110,6 +110,20 @@ type SessionState struct {
 	Gaps                int
 	AttachedGaps        int
 	ServiceTierSent     *string
+}
+
+// Callback a session state hands one usage dict or one withdrawn request, registered and removed by its pointer
+type SessionListener func(ctx context.Context, payload map[string]any)
+
+// Listeners without the given one, every registration of it dropped
+func WithoutListener(listeners []*SessionListener, listener *SessionListener) []*SessionListener {
+	kept := make([]*SessionListener, 0, len(listeners))
+	for _, registered := range listeners {
+		if registered != listener {
+			kept = append(kept, registered)
+		}
+	}
+	return kept
 }
 
 func NewSessionState(sessionID string) *SessionState {
@@ -222,10 +236,10 @@ func (s *SessionState) ApplyEvent(ctx context.Context, kind any, payload any) {
 		}
 	case name == "request.cancel" && isDict:
 		s.Lock()
-		listeners := append([]func(context.Context, map[string]any){}, s.RequestListeners...)
+		listeners := append([]*SessionListener{}, s.RequestListeners...)
 		s.Unlock()
 		for _, listener := range listeners {
-			listener(ctx, dict)
+			(*listener)(ctx, dict)
 		}
 	case name == "session.replay_gap":
 		s.Lock()
@@ -251,10 +265,10 @@ func (s *SessionState) ApplyUsage(ctx context.Context, usage any) {
 	}
 	s.Lock()
 	s.Usage = dict
-	listeners := append([]func(context.Context, map[string]any){}, s.UsageListeners...)
+	listeners := append([]*SessionListener{}, s.UsageListeners...)
 	s.Unlock()
 	for _, listener := range listeners {
-		listener(ctx, dict)
+		(*listener)(ctx, dict)
 	}
 }
 

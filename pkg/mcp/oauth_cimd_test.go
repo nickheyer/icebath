@@ -14,7 +14,7 @@ import (
 // Published CIMD document of the upstream site
 func cimdDocument(t *testing.T) map[string]any {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(pkgDir, "..", "..", "references", "projects", "hermes-agent", "website", "static", "oauth", "client-metadata.json"))
+	data, err := os.ReadFile(filepath.Join(pkgDir, "testdata", "hermes", "website", "static", "oauth", "client-metadata.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

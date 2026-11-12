@@ -91,7 +91,7 @@ func (c *CLI) handleHeartbeatCommand(cmd string) {
 }
 
 // Sets the heartbeat from every 10m prompt or 10m prompt
-func (c *CLI) heartbeatSet(mgr *agent.HeartbeatManager, arg string) {
+func (c *CLI) heartbeatSet(mgr agent.HeartbeatAutomation, arg string) {
 	tokens := pystr.SplitWhitespace(arg, 2)
 	var interval int64
 	parsed := false
@@ -153,7 +153,7 @@ func (c *CLI) handleGoalCommand(cmd string) {
 	for i, m := range c.conversationHistory {
 		history[i] = m
 	}
-	result, err := goals.DispatchGoalCommand(mgr, commandArg(cmd, false), goals.GoalCommandOptions{
+	result, err := dispatchGoalCommand(mgr, commandArg(cmd, false), goals.GoalCommandOptions{
 		AuthorizeGate:   func() string { return "" },
 		Progress:        func(text string) { cp(dimLine(text)) },
 		LastUserMessage: goals.LastUserMessageContent(history)})
@@ -201,8 +201,13 @@ func (c *CLI) handleLoopCommand(cmd string) {
 	for _, line := range pystr.Splitlines(result.Output, false) {
 		cp("  " + line)
 	}
-	if result.Created && agent.GoalBlocksLoopTick(c.ctx, mgr.SessionID) {
-		cp(dimLine(c.commandsT("loop.goal_defers_note", nil)))
+	if result.Created {
+		func() {
+			defer func() { _ = recover() }()
+			if c.goalBlocksLoopTick(mgr) {
+				cp(dimLine(c.commandsT("loop.goal_defers_note", nil)))
+			}
+		}()
 	}
 }
 

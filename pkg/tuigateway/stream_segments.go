@@ -1,6 +1,9 @@
 package tuigateway
 
-import "unicode/utf16"
+import (
+	"sync"
+	"unicode/utf16"
+)
 
 // Session record key holding the segment cursor of the running prompt turn
 const SessionSegmentsKey = "_turn_segments"
@@ -12,6 +15,7 @@ func utf16Len(text string) int {
 
 // Segment cursor of one turn, created at message start and advanced by every delta and seal
 type TurnSegments struct {
+	mu      sync.Mutex
 	TurnID  string
 	Segment int
 	Offset  int
@@ -24,6 +28,8 @@ func (s *TurnSegments) Start() map[string]any { return map[string]any{"turn_id":
 
 // Identity fields of one delta, the offset then advanced past a text
 func (s *TurnSegments) Delta(text any) map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stamp := map[string]any{"turn_id": s.TurnID, "segment": s.Segment, "offset": s.Offset}
 	if str, ok := text.(string); ok {
 		s.Offset += utf16Len(str)
@@ -33,6 +39,8 @@ func (s *TurnSegments) Delta(text any) map[string]any {
 
 // Identity fields of the interim that seals the current segment, the cursor then moved to the next one
 func (s *TurnSegments) Seal() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	stamp := map[string]any{"turn_id": s.TurnID, "segment": s.Segment}
 	s.Segment++
 	s.Offset = 0

@@ -9,21 +9,27 @@ import (
 )
 
 func TestContextRouteMismatchNamedCustomProvider(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
-	for _, c := range []struct {
-		name                                   string
-		cfgURL, activeURL, cfgProv, activeProv string
-		want                                   bool
-	}{
-		{"same named custom provider keeps pin without configured url", "", "http://127.0.0.1:8080/v1", "custom-local-agentw", "custom-local-agentw", false},
-		{"different provider still clears pin", "", "http://127.0.0.1:8080/v1", "custom-local-agentw", "openrouter", true},
-		{"explicit base url mismatch still clears pin", "http://127.0.0.1:8080/v1", "http://10.0.0.2:8080/v1", "custom-local-agentw", "custom-local-agentw", true},
-		{"catalog provider rejects non default runtime url", "", "http://127.0.0.1:8080/v1", "openrouter", "openrouter", true},
-	} {
-		if got := contextRouteMismatch(ctx, c.cfgURL, c.activeURL, c.cfgProv, c.activeProv, false); got != c.want {
-			t.Errorf("%s: got %v", c.name, got)
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	check := func(t *testing.T, cfgURL, activeURL, cfgProv, activeProv string, want bool) {
+		t.Helper()
+		if got := contextRouteMismatch(ctx, cfgURL, activeURL, cfgProv, activeProv, false); got != want {
+			t.Fatalf("contextRouteMismatch(%q, %q, %q, %q) = %v", cfgURL, activeURL, cfgProv, activeProv, got)
 		}
 	}
+	t.Run("test_same_named_custom_provider_keeps_pin_without_configured_url", func(t *testing.T) {
+		check(t, "", "http://127.0.0.1:8080/v1", "custom-local-agentw", "custom-local-agentw", false)
+	})
+	t.Run("test_different_provider_still_clears_pin", func(t *testing.T) {
+		check(t, "", "http://127.0.0.1:8080/v1", "custom-local-agentw", "openrouter", true)
+	})
+	t.Run("test_explicit_base_url_mismatch_still_clears_pin", func(t *testing.T) {
+		check(t, "http://127.0.0.1:8080/v1", "http://10.0.0.2:8080/v1", "custom-local-agentw", "custom-local-agentw", true)
+	})
+	t.Run("test_catalog_provider_rejects_non_default_runtime_url", func(t *testing.T) {
+		check(t, "", "http://127.0.0.1:8080/v1", "openrouter", "openrouter", true)
+	})
 	if !providerDefaultRoutes(ctx, "openrouter")["https://openrouter.ai/api/v1"] {
 		t.Fatalf("openrouter default routes %v", providerDefaultRoutes(ctx, "openrouter"))
 	}
@@ -37,32 +43,72 @@ func extraBodyEntry(over map[string]any) map[string]any {
 	return e
 }
 
-func TestCustomProviderModelMatchesAndExtraBodyResolution(t *testing.T) {
-	e := extraBodyEntry(map[string]any{"model": "gpt-5.5", "models": map[string]any{"gpt-5.5": map[string]any{}}})
-	if !customProviderModelMatches("gpt-5.5", e) || customProviderModelMatches("gpt-4o", e) {
-		t.Fatal("catalog miss falls back to model field")
+func TestModelMatches(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	t.Run("test_catalog_miss_falls_back_to_model_field", func(t *testing.T) {
+		e := extraBodyEntry(map[string]any{"model": "gpt-5.5", "models": map[string]any{"gpt-5.5": map[string]any{}}})
+		if !customProviderModelMatches("gpt-5.5", e) || customProviderModelMatches("gpt-4o", e) {
+			t.Fatal("catalog miss falls back to model field")
+		}
+	})
+	t.Run("test_catalog_case_insensitive", func(t *testing.T) {
+		if !customProviderModelMatches("gpt-5.6-terra", extraBodyEntry(map[string]any{"models": map[string]any{"GPT-5.6-Terra": map[string]any{}}})) {
+			t.Fatal("catalog case insensitive")
+		}
+	})
+}
+
+func TestExtraBodyResolution(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	const base = "https://api.openai.com/v1"
+	t.Run("test_multi_model_provider_yields_extra_body", func(t *testing.T) {
+		multi := extraBodyEntry(map[string]any{"model": "gpt-5.5", "models": map[string]any{"gpt-5.5": map[string]any{}, "gpt-5.6-sol": map[string]any{}, "gpt-5.6-terra": map[string]any{}}})
+		if got := customProviderExtraBodyForAgent("custom", "gpt-5.6-terra", base, []map[string]any{multi}); !reflect.DeepEqual(got, map[string]any{"service_tier": "flex"}) {
+			t.Fatalf("multi model provider yields extra body %v", got)
+		}
+	})
+	t.Run("test_non_catalog_model_gets_no_override", func(t *testing.T) {
+		e := extraBodyEntry(map[string]any{"model": "gpt-5.5", "models": map[string]any{"gpt-5.5": map[string]any{}}})
+		if got := customProviderExtraBodyForAgent("custom", "gpt-4o", base, []map[string]any{e}); got != nil {
+			t.Fatalf("non catalog model gets no override %v", got)
+		}
+	})
+	t.Run("test_non_custom_provider_unaffected", func(t *testing.T) {
+		e := extraBodyEntry(map[string]any{"models": map[string]any{"gpt-5.6-terra": map[string]any{}}})
+		if got := customProviderExtraBodyForAgent("openrouter", "gpt-5.6-terra", base, []map[string]any{e}); got != nil {
+			t.Fatalf("non custom provider unaffected %v", got)
+		}
+	})
+}
+
+func TestCustomProviderExtraBodyPreservesCallerOverride(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	a := &AIAgent{provider: "custom", model: "google/gemma-4-31b-it", baseURL: "https://example.test/v1",
+		requestOverrides: map[string]any{"extra_body": map[string]any{"reasoning_effort": "low", "caller_only": true}}}
+	a.mergeCustomProviderExtraBody([]map[string]any{{
+		"name": "gemma", "base_url": "https://example.test/v1", "model": "google/gemma-4-31b-it",
+		"extra_body": map[string]any{"enable_thinking": true, "reasoning_effort": "high"},
+	}})
+	want := map[string]any{"enable_thinking": true, "reasoning_effort": "low", "caller_only": true}
+	if !reflect.DeepEqual(a.requestOverrides["extra_body"], want) {
+		t.Fatalf("extra_body = %v", a.requestOverrides["extra_body"])
 	}
-	if !customProviderModelMatches("gpt-5.6-terra", extraBodyEntry(map[string]any{"models": map[string]any{"GPT-5.6-Terra": map[string]any{}}})) {
-		t.Fatal("catalog case insensitive")
-	}
-	multi := extraBodyEntry(map[string]any{"model": "gpt-5.5", "models": map[string]any{"gpt-5.5": map[string]any{}, "gpt-5.6-sol": map[string]any{}, "gpt-5.6-terra": map[string]any{}}})
-	if got := customProviderExtraBodyForAgent("custom", "gpt-5.6-terra", "https://api.openai.com/v1", []map[string]any{multi}); !reflect.DeepEqual(got, map[string]any{"service_tier": "flex"}) {
-		t.Fatalf("multi model provider yields extra body %v", got)
-	}
-	if got := customProviderExtraBodyForAgent("custom", "gpt-4o", "https://api.openai.com/v1", []map[string]any{e}); got != nil {
-		t.Fatalf("non catalog model gets no override %v", got)
-	}
-	if got := customProviderExtraBodyForAgent("openrouter", "gpt-5.6-terra", "https://api.openai.com/v1", []map[string]any{extraBodyEntry(map[string]any{"models": map[string]any{"gpt-5.6-terra": map[string]any{}}})}); got != nil {
-		t.Fatalf("non custom provider unaffected %v", got)
-	}
-	a := &AIAgent{provider: "custom", model: "gpt-5.5", baseURL: "https://api.openai.com/v1/", requestOverrides: map[string]any{"extra_body": map[string]any{"service_tier": "priority"}}}
-	a.mergeCustomProviderExtraBody([]map[string]any{e})
-	if !reflect.DeepEqual(a.requestOverrides, map[string]any{"extra_body": map[string]any{"service_tier": "priority"}}) {
-		t.Fatalf("explicit extra_body wins %v", a.requestOverrides)
+}
+
+func TestNamedCustomProviderExtraBodyMatchesProviderKey(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	a := &AIAgent{provider: "custom:zai-coding-plan", model: "glm-5.2", baseURL: "https://api.z.ai/api/coding/paas/v4", requestOverrides: map[string]any{}}
+	a.mergeCustomProviderExtraBody([]map[string]any{
+		{"provider_key": "other-provider", "name": "Other Provider", "base_url": "https://api.z.ai/api/coding/paas/v4", "model": "glm-5.2", "extra_body": map[string]any{"enable_thinking": true}},
+		{"provider_key": "zai-coding-plan", "name": "Z.AI Coding Plan", "base_url": "https://api.z.ai/api/coding/paas/v4/", "model": "glm-5.2", "extra_body": map[string]any{"enable_thinking": false}},
+	})
+	if !reflect.DeepEqual(a.requestOverrides, map[string]any{"extra_body": map[string]any{"enable_thinking": false}}) {
+		t.Fatalf("request overrides = %v", a.requestOverrides)
 	}
 }
 
 func TestAgentInitScalarHelpers(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	five := 0.85
 	if got, notice := resolveCompressionThreshold(0.9, &five, "gpt-5", true); got != 0.9 || notice != nil {
 		t.Fatalf("autoraise never lowers %v %v", got, notice)
@@ -103,6 +149,7 @@ func TestAgentInitScalarHelpers(t *testing.T) {
 }
 
 func TestResolveAPIModeLadder(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	for _, c := range []struct {
 		prov, base, explicit, wantMode, wantProv string
@@ -130,6 +177,7 @@ func TestResolveAPIModeLadder(t *testing.T) {
 }
 
 func TestNormalizeRunBudgetSecondsParams(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	f := func(v float64) *float64 { return &v }
 	for _, c := range []struct {
 		raw  any
@@ -143,6 +191,7 @@ func TestNormalizeRunBudgetSecondsParams(t *testing.T) {
 }
 
 func TestResolveNoOverrideKeepsGlobal(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if effective, notice := resolveCompressionThreshold(0.50, nil, "", false); effective != 0.50 || notice != nil {
 		t.Fatalf("%v %v", effective, notice)
 	}

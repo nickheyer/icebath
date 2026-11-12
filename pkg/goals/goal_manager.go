@@ -53,6 +53,52 @@ func NewGoalManager(ctx context.Context, sessionID string, defaultMaxTurns int64
 	return &GoalManager{SessionID: sessionID, DefaultMaxTurns: defaultMaxTurns, ctx: ctx, state: LoadGoal(ctx, sessionID)}
 }
 
+// Manager whose reads run on a state held by another process, nothing loaded from the session store
+func MirrorGoalManager(ctx context.Context, sessionID string, state *GoalState) *GoalManager {
+	return &GoalManager{SessionID: sessionID, DefaultMaxTurns: DefaultGoalMaxTurns, ctx: ctx, state: state}
+}
+
+// Calls of a goal manager the goal command and the CLI make, answered in process or by the gateway
+type Manager interface {
+	Session() string
+	Context() context.Context
+	Refresh()
+	State() *GoalState
+	IsActive() bool
+	HasGoal() bool
+	HasContract() bool
+	StatusLine() string
+	RenderSubgoals() string
+	RenderGates() string
+	RenderContract() string
+	NextContinuationPrompt() *string
+	Set(goal string, maxTurns int64, contract *GoalContract) (*GoalState, error)
+	Pause(reason string) *GoalState
+	Resume(resetBudget bool) *GoalState
+	Clear()
+	MarkDone(reason string)
+	AddSubgoal(text string) (string, error)
+	RemoveSubgoal(index1Based int64) (string, error)
+	ClearSubgoals() (int, error)
+	AddGate(command string, timeoutSeconds, maxRetries int64) (GoalGate, error)
+	RemoveGate(index1Based int64) (string, error)
+	ClearGates() (int, error)
+	WaitOn(pid int64, reason string) (*GoalState, error)
+	WaitOnSession(sessionID, reason string) (*GoalState, error)
+	WaitForSeconds(seconds int64, reason string, onDelegations int64) (*GoalState, error)
+	StopWaiting() bool
+	IsWaiting() bool
+	EvaluateAfterTurn(lastResponse string, backgroundProcesses []map[string]any, activeDelegations int) (GoalDecision, error)
+}
+
+var _ Manager = (*GoalManager)(nil)
+
+// Session id the manager is bound to
+func (m *GoalManager) Session() string { return m.SessionID }
+
+// Context the manager reads the store and calls the judge under
+func (m *GoalManager) Context() context.Context { return m.ctx }
+
 // Reads the state again from the session store
 func (m *GoalManager) Refresh() { m.state = LoadGoal(m.ctx, m.SessionID) }
 

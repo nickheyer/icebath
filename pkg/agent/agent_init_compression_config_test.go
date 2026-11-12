@@ -17,6 +17,7 @@ func compressionConfigAgent() *AIAgent {
 }
 
 func TestThresholdTokensDefaultAndNullOptOut(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	defaults := map[string]any(config.Defaults())
 	shippedTokens, _ := config.CfgGet(defaults, "compression", "threshold_tokens")
 	shippedThreshold, _ := config.CfgGet(defaults, "compression", "threshold")
@@ -42,6 +43,7 @@ func TestThresholdTokensDefaultAndNullOptOut(t *testing.T) {
 }
 
 func TestConfigFlagReachesTheCompressorThroughTheLoader(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if v, _ := config.CfgGet(map[string]any(config.Defaults()), "compression", "prepare_ahead"); v != false {
 		t.Fatalf("shipped prepare_ahead %v", v)
 	}
@@ -69,6 +71,7 @@ func TestConfigFlagReachesTheCompressorThroughTheLoader(t *testing.T) {
 }
 
 func TestCompressionConfigDefaultsCoercionsAndGarbage(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cs, err := parseCompressionConfig(compressionConfigAgent(), map[string]any{"compression": map[string]any{
 		"max_attempts": 0, "protect_first_n": -2, "tail_mode": " LEGACY ", "min_tail_user_messages": 0, "model_thresholds": map[string]any{"gpt": 0.7, "flag": true, "n": 1},
 		"codex_app_server_auto": "Bogus", "codex_responses_native": "off", "codex_responses_compact_threshold": 2.5, "in_place": nil, "micro_compact_every_n_turns": "x",
@@ -91,6 +94,7 @@ func TestCompressionConfigDefaultsCoercionsAndGarbage(t *testing.T) {
 }
 
 func TestInvalidConfigIntPrintHonorsPolicyLogAlways(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, setting := range []any{nil, false, true} {
 		h := t.TempDir()
 		t.Setenv("ICEBATH_HOME", h)

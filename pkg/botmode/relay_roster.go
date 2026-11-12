@@ -62,7 +62,14 @@ func headRunes(text string, n int) string {
 func normalizeRosterRow(row any) (RemoteRosterRow, bool) {
 	obj, ok := row.(*pyjson.Object)
 	if !ok {
-		return RemoteRosterRow{}, false
+		fields, isMap := row.(map[string]any)
+		if !isMap {
+			return RemoteRosterRow{}, false
+		}
+		obj = pyjson.NewObject()
+		for key, value := range fields {
+			obj.Set(key, value)
+		}
 	}
 	get := func(key string) any {
 		v, _ := obj.Get(key)

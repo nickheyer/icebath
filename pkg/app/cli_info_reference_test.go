@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Reference output of the hermes commands rendered by dev/slices/cmdinfo_s24/info_ref.py
+// Reference output of the hermes commands as real hermes rendered them
 type infoReference struct {
 	Columns int                        `json:"columns"`
 	Cases   map[string]json.RawMessage `json:"cases"`

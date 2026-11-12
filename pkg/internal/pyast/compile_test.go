@@ -106,6 +106,7 @@ func TestCompileMatchesCPythonOnHermesTree(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var bad []string
+	disk := t.TempDir()
 	jobs := make(chan string)
 	for w := 0; w < 6; w++ {
 		wg.Add(1)
@@ -116,9 +117,15 @@ func TestCompileMatchesCPythonOnHermesTree(t *testing.T) {
 				rel, srcHash := parts[0], parts[1]
 				var want any
 				_ = json.Unmarshal([]byte(parts[2]), &want)
-				path := filepath.Join(hermesRoot, rel)
+				path := filepath.Join(disk, filepath.FromSlash(rel))
 				msg := ""
-				data, err := os.ReadFile(path)
+				data, err := hermesSource(rel)
+				// A source CPython rejected sits on disk so its error text is read from the file as CPython read it
+				if err == nil && want != "ok" {
+					if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+						err = os.WriteFile(path, data, 0o644)
+					}
+				}
 				if err != nil {
 					msg = err.Error()
 				} else if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != srcHash {

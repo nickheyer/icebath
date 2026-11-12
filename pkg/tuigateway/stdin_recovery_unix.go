@@ -4,6 +4,7 @@ package tuigateway
 
 import (
 	"fmt"
+	"os"
 
 	"golang.org/x/sys/unix"
 )
@@ -29,27 +30,31 @@ func stdinFlagParts() []string {
 	return []string{"O_NONBLOCK=0"}
 }
 
-// Integer read of SO_RCVTIMEO on a dup of fd 0, false when fd 0 is no socket
-func stdinRcvTimeo() (int, bool) {
+// Result of getter run on a dup of fd 0, false when the dup or the getter fails
+func stdinSockopt(getter func(fd int) (int, error)) (int, bool) {
 	fd, err := unix.Dup(0)
 	if err != nil {
 		return 0, false
 	}
 	defer unix.Close(fd)
-	v, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO)
+	v, err := getter(fd)
 	if err != nil {
 		return 0, false
 	}
 	return v, true
 }
 
-// Puts fd 0 back in blocking mode and clears its receive timeout
+// Integer read of SO_RCVTIMEO on a dup of fd 0, false when fd 0 is no socket
+func stdinRcvTimeo() (int, bool) {
+	return stdinSockopt(func(fd int) (int, error) { return unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO) })
+}
+
+// Puts fd 0 back in blocking mode, raising when that fails, and clears its receive timeout
 func restoreStdinBlocking() {
-	_ = unix.SetNonblock(0, false)
-	fd, err := unix.Dup(0)
-	if err != nil {
-		return
+	if err := unix.SetNonblock(0, false); err != nil {
+		panic(&os.SyscallError{Syscall: "fcntl", Err: err})
 	}
-	defer unix.Close(fd)
-	_ = unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{})
+	stdinSockopt(func(fd int) (int, error) {
+		return 0, unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{})
+	})
 }

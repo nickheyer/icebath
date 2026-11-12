@@ -21,6 +21,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Tool definitions of the default registry, the model_tools.get_tool_definitions the tool snapshot reads
+var loadToolDefinitions = func(ctx context.Context, env *tools.Env, o tools.DefinitionOptions) []map[string]any {
+	return tools.Default.ToolDefinitions(ctx, env, o)
+}
+
 // Session tool surface with the disabled toolsets pinned, kanban guidance and the startup tool banner
 func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 	provider.RecoverLeftCoreAtStartup(ctx, nil, false)
@@ -40,7 +45,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 	a.disabledToolsets = disabled
 	selection := tools.ToolSelectionKey(enabled, disabled)
 	a.toolSnapshotSelection = &selection
-	defs := a.toolSurface(ctx, tools.Default.ToolDefinitions(ctx, a.env, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: a.quietMode}))
+	defs := a.toolSurface(ctx, loadToolDefinitions(ctx, a.env, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: a.quietMode}))
 	a.tools = make([]any, 0, len(defs))
 	a.validToolNames = map[string]bool{}
 	for _, d := range defs {
@@ -272,7 +277,7 @@ func initMemory(ctx context.Context, a *AIAgent, agentCfg map[string]any, skipMe
 			surface = append(surface, m)
 		}
 	}
-	injected, valid, _ := memory.InjectMemoryProviderTools(ctx, a.env, a.memoryManager, surface, a.validToolNames)
+	injected, valid, _ := memory.InjectMemoryProviderTools(ctx, a.toolsetScopedEnv(), a.memoryManager, surface, a.validToolNames)
 	if injected != nil {
 		a.tools = make([]any, 0, len(injected))
 		for _, t := range injected {

@@ -45,7 +45,7 @@ func truthyEnvValue(v string) bool {
 	return false
 }
 
-// Session string read from the shared values first and the process environment second
+// Session string read from the shared values, then the bound session variable, then the process environment
 func sessionValue(env *Env, key, envVar string) string {
 	if env != nil && env.Values != nil {
 		if v, ok := env.Values.Load("session." + key); ok {
@@ -54,7 +54,7 @@ func sessionValue(env *Env, key, envVar string) string {
 			}
 		}
 	}
-	return os.Getenv(envVar)
+	return GetSessionEnv(env, envVar, "")
 }
 
 // Stable identity of an environment for cache scopes

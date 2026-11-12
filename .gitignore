@@ -432,9 +432,9 @@ FodyWeavers.xsd
 dist/
 .wrangler/
 !scripts/release/
-.claude/
-docs/
-references/
+/.claude/
+/docs/
+/references/
 # Flat install runtime state at the checkout root, never a code change, kept out of the update autostash
 *-snapshots/
 /*.db

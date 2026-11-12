@@ -126,7 +126,7 @@ func TestBuildSourceWebAppliesLimits(t *testing.T) {
 }
 
 func TestBuildScriptHasHeapAndThreadCaps(t *testing.T) {
-	raw, err := os.ReadFile("../../references/projects/hermes-agent/scripts/build/web.mjs")
+	raw, err := os.ReadFile("testdata/hermes/scripts/build/web.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}

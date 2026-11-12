@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-const dbrHermesRepository = "../../references/projects/hermes-agent"
+const dbrHermesRepository = "testdata/hermes"
 
 var dbrCopied = []string{
 	"scripts/build/freshness.mjs", "scripts/build/frontend-common.mjs", "scripts/build/desktop-reuse.mjs",

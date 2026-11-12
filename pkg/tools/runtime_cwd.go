@@ -13,9 +13,12 @@ func isWorkerProcess() bool {
 	return IsWorkerProcess != nil && IsWorkerProcess()
 }
 
+// PackageRoot is the running install tree the context discovery fallback guards, resolved once at startup
+var PackageRoot = RunningSourceRoot()
+
 // IsInstallTree reports whether a path is the running install tree or sits inside it
 func IsInstallTree(p string) bool {
-	root := RunningSourceRoot()
+	root := PackageRoot
 	if root == "" {
 		return false
 	}

@@ -176,7 +176,7 @@ func TestWithoutThePluginTheBackendErrorNamesTheInstallCommand(t *testing.T) {
 	home.ResetKeyCache()
 	t.Cleanup(home.ResetKeyCache)
 	prevHint := tools.TerminalBackendInstallHint
-	tools.TerminalBackendInstallHint = func(backend string) string { return TerminalBackendInstallHint(context.Background(), backend) }
+	tools.TerminalBackendInstallHint = TerminalBackendInstallHint
 	t.Cleanup(func() { tools.TerminalBackendInstallHint = prevHint })
 	t.Setenv("TERMINAL_ENV", "singularity")
 	env := &tools.Env{Home: h, Values: &sync.Map{}}

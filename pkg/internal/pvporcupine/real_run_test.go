@@ -3,18 +3,58 @@
 package pvporcupine
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 )
 
+// Directory holding every member of a wheel archive written with its recorded permissions
+func unpackWheel(t *testing.T, wheel string) string {
+	t.Helper()
+	r, err := zip.OpenReader(wheel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	dir := t.TempDir()
+	for _, f := range r.File {
+		target := filepath.Join(dir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		src, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(src)
+		src.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0o644
+		}
+		if err := os.WriteFile(target, data, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
 func TestRealLibraryMatchesPython(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	root := unpackWheel(t, filepath.Join("testdata", "pvporcupine", "pvporcupine-4.0.3-py3-none-any.whl"))
 	raw, err := os.ReadFile("testdata/real_run.json")
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +67,7 @@ func TestRealLibraryMatchesPython(t *testing.T) {
 	if err := json.Unmarshal(raw, &ref); err != nil {
 		t.Fatal(err)
 	}
-	m, err := Import(filepath.Join(root, "dev", "slices", "wakeword_s25", "ref", "pvp_whl", "unpacked", "pvporcupine"))
+	m, err := Import(filepath.Join(root, "pvporcupine"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -245,7 +245,7 @@ func (c *CLI) enterNewWorktree(wtInfo map[string]string) bool {
 		activeWorktree = active
 		activeWorktreeMu.Unlock()
 		return false
-	case gatewayConnectionFor(c) == nil:
+	case gatewayAutomationConnection(c) == nil:
 		printLines("  " + c.commandsT("worktree.enter_failed", map[string]any{"error": pypath.OSErrorText(err)}))
 		return false
 	default:

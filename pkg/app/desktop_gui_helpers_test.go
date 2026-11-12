@@ -13,7 +13,19 @@ import (
 func swapGUISteps(t *testing.T) {
 	t.Helper()
 	savedGUI, savedLDE := gui, lde
-	t.Cleanup(func() { gui, lde = savedGUI, savedLDE })
+	var locks []guiBuildLock
+	create := gui.newBuildLock
+	gui.newBuildLock = func(projectRoot string) guiBuildLock {
+		lock := create(projectRoot)
+		locks = append(locks, lock)
+		return lock
+	}
+	t.Cleanup(func() {
+		for _, lock := range locks {
+			lock.Release(context.Background())
+		}
+		gui, lde = savedGUI, savedLDE
+	})
 }
 
 // Writes a file with its parents created

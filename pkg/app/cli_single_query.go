@@ -186,7 +186,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 		defer bindQuietSessionKey(c.env, sessionKey)()
 		var err error
 		result, err = c.agent.RunConversation(c.turnCtx, effectiveQuery, agent.RunConversationOptions{ConversationHistory: c.conversationHistory, TurnAuthor: author})
-		if err != nil && c.turnCtx.Err() != nil {
+		if tools.IsKeyboardInterrupt(c.turnCtx, err) {
 			emitInterruptedSessionEnd(c, "keyboard_interrupt")
 			if emitter != nil {
 				exitSingleQuery(emitter.EmitResult(map[string]any{"failed": true, "error": "Interrupted"}, c.sessionID, 130))
@@ -205,6 +205,9 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 				history = c.conversationHistory
 			}
 			recovered, rerr := c.agent.RunConversation(c.turnCtx, nudge, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
+			if tools.IsKeyboardInterrupt(c.turnCtx, rerr) {
+				panic(keyboardInterrupt{})
+			}
 			if rerr == nil {
 				result = recovered
 			}
@@ -232,6 +235,9 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 			}
 			followUp := func(text string) map[string]any {
 				follow, ferr := c.agent.RunConversation(c.turnCtx, text, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
+				if tools.IsKeyboardInterrupt(c.turnCtx, ferr) {
+					panic(keyboardInterrupt{})
+				}
 				if ferr != nil {
 					follow = map[string]any{"failed": true, "error": ferr.Error()}
 				}

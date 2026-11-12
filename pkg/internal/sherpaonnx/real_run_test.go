@@ -3,17 +3,58 @@
 package sherpaonnx
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypinyin"
 )
+
+// Directory holding every member of a wheel archive written with its recorded permissions
+func unpackWheel(t *testing.T, wheel string) string {
+	t.Helper()
+	r, err := zip.OpenReader(wheel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	dir := t.TempDir()
+	for _, f := range r.File {
+		target := filepath.Join(dir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		src, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(src)
+		src.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0o644
+		}
+		if err := os.WriteFile(target, data, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
 
 // Samples of the data chunk of a 16 bit RIFF WAVE file scaled to the range -1 to 1
 func wavSamples(t *testing.T, path string, padding int) []float32 {
@@ -39,9 +80,9 @@ func wavSamples(t *testing.T, path string, padding int) []float32 {
 }
 
 func TestRealLibraryMatchesPython(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	src := filepath.Join(filepath.Dir(file), "..", "..", "..", "dev", "slices", "wakelibs_f", "src")
-	modelDir := filepath.Join(src, "model", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
+	core := unpackWheel(t, filepath.Join("testdata", "sherpa_onnx_core", "sherpa_onnx_core-1.13.8-py3-none-manylinux2014_x86_64.whl"))
+	pinyin := unpackWheel(t, filepath.Join("testdata", "pypinyin", "pypinyin-0.55.0-py2.py3-none-any.whl"))
+	modelDir := filepath.Join("testdata", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01")
 	raw, err := os.ReadFile("testdata/real_run.json")
 	if err != nil {
 		t.Fatal(err)
@@ -55,11 +96,11 @@ func TestRealLibraryMatchesPython(t *testing.T) {
 	if err := json.Unmarshal(raw, &ref); err != nil {
 		t.Fatal(err)
 	}
-	py, err := pypinyin.Import(filepath.Join(src, "pypinyin", "un", "pypinyin"))
+	py, err := pypinyin.Import(filepath.Join(pinyin, "pypinyin"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := Import(filepath.Join(src, "core", "sherpa_onnx"), Environment{Stdout: os.Stdout, ImportSentencepiece: func() error { return nil },
+	m, err := Import(filepath.Join(core, "sherpa_onnx"), Environment{Stdout: os.Stdout, ImportSentencepiece: func() error { return nil },
 		ImportPypinyin: func() (*pypinyin.Module, error) { return py, nil }})
 	if err != nil {
 		t.Fatal(err)

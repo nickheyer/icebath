@@ -756,23 +756,39 @@ func (c *CLI) cmdSteer(cmdOriginal string) {
 	}
 }
 
-// Heartbeat manager bound to the current session id, rebuilt after the id changes
-func (c *CLI) getHeartbeatManager() *agent.HeartbeatManager {
+// Heartbeat manager bound to the current session id, the gateway's on a gateway store and none before its session opens
+func (c *CLI) getHeartbeatManager() agent.HeartbeatAutomation {
+	gateway, connection := c.automationConnection()
+	if gateway && connection == nil {
+		return nil
+	}
 	c.uiMu.Lock()
 	sessionID, existing := c.sessionID, c.heartbeatManager
 	c.uiMu.Unlock()
 	if sessionID == "" {
 		return nil
 	}
-	if existing != nil && existing.SessionID == sessionID {
+	if existing != nil && existing.Session() == sessionID {
 		return existing
 	}
-	manager := agent.NewHeartbeatManager(c.ctx, sessionID)
+	var manager agent.HeartbeatAutomation
+	if gateway {
+		remote, err := NewGatewayHeartbeatManager(c.ctx, sessionID, connection)
+		if err != nil {
+			panic(err)
+		}
+		manager = remote
+	} else {
+		manager = agent.NewHeartbeatManager(c.ctx, sessionID)
+	}
 	c.uiMu.Lock()
 	c.heartbeatManager = manager
 	c.uiMu.Unlock()
 	return manager
 }
+
+// Wait between two heartbeat watchdog polls
+var heartbeatWatchdogSleep = time.Sleep
 
 // Starts the idle poll that queues a due heartbeat prompt as a normal turn, once per process run
 func (c *CLI) startHeartbeatWatchdog() {
@@ -790,7 +806,7 @@ func (c *CLI) startHeartbeatWatchdog() {
 			c.uiMu.Unlock()
 		}()
 		for !c.shouldExit {
-			time.Sleep(time.Duration(agent.HeartbeatPollSeconds * float64(time.Second)))
+			heartbeatWatchdogSleep(time.Duration(agent.HeartbeatPollSeconds * float64(time.Second)))
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -798,6 +814,9 @@ func (c *CLI) startHeartbeatWatchdog() {
 					}
 				}()
 				mgr := c.getHeartbeatManager()
+				if remote, isRemote := mgr.(*GatewayHeartbeatManager); isRemote {
+					remote.Refresh()
+				}
 				if mgr == nil || !mgr.IsActive() {
 					return
 				}

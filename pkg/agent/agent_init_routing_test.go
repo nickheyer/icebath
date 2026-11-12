@@ -14,6 +14,7 @@ func routingAgent(providerName, baseURL string) *AIAgent {
 }
 
 func TestResponsesUpgradeIsSkippedByACPSchemeNotVendorSlug(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	for _, tc := range [][2]string{{"copilot-acp", "acp://copilot"}, {"acme-acp", "acp://acme"}, {"acme-acp", "acp+tcp://127.0.0.1:9000"}} {
 		a := routingAgent(tc[0], tc[1])
@@ -34,6 +35,7 @@ func TestResponsesUpgradeIsSkippedByACPSchemeNotVendorSlug(t *testing.T) {
 }
 
 func TestResponsesUpgradeIsSkippedForExternalProcessProfileOnAnyBaseURL(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	t.Cleanup(provider.SnapshotProviderRegistryForTests())
 	provider.RegisterProvider(provider.Profile{Name: "routing-test-process-acp", AuthType: provider.AuthTypeExternalProcess})
@@ -50,6 +52,7 @@ func TestResponsesUpgradeIsSkippedForExternalProcessProfileOnAnyBaseURL(t *testi
 }
 
 func TestExplicitAPIModeIsNeverUpgraded(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := routingAgent("acme-http", "https://api.openai.com/v1")
 	a.finalizeRouting(context.Background(), "chat_completions")
 	if a.apiMode != "chat_completions" {
@@ -62,7 +65,9 @@ func TestKeepaliveThreadStartsWhenAnAgentRoutesToNous(t *testing.T) {
 	var started atomic.Int32
 	prev := nousKeepaliveStart
 	nousKeepaliveStart = func(provider.PoolEnv, provider.NousKeepaliveStartOptions) bool { started.Add(1); return true }
-	t.Cleanup(func() { nousKeepaliveStart = prev })
+	prevPrewarm := openrouterPrewarmFn
+	openrouterPrewarmFn = func(context.Context) {}
+	t.Cleanup(func() { nousKeepaliveStart, openrouterPrewarmFn = prev, prevPrewarm })
 	nous := &AIAgent{provider: "nous", baseURL: "https://inference-api.nousresearch.com/v1", model: "anthropic/claude-fable-5.1", apiMode: "chat_completions"}
 	nous.finalizeRouting(context.Background(), "")
 	if started.Load() != 1 {
@@ -76,6 +81,7 @@ func TestKeepaliveThreadStartsWhenAnAgentRoutesToNous(t *testing.T) {
 }
 
 func TestOpenRouterMetadataPrewarmRunsOncePerProcess(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	prevFn, prevDone := openrouterPrewarmFn, openrouterPrewarmDone.Load()
 	calls := make(chan struct{}, 4)
 	openrouterPrewarmFn = func(context.Context) { calls <- struct{}{} }

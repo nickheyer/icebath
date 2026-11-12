@@ -149,9 +149,14 @@ func teardownPoppedSession(ctx context.Context, session *tuigateway.Session, end
 		settleIsolatedTurnBeforeClose(ctx, session)
 	}
 	defer tuigateway.ForgetSession(strOr(session.Get("_sid")))
-	teardownSession(ctx, session, endReason)
+	teardownSessionFn(ctx, session, endReason)
 	return true
 }
+
+// Finalizer every popped session goes through, the real one swapped only where a hermes case replaces the finalize
+var teardownSessionFn func(ctx context.Context, session *tuigateway.Session, endReason string)
+
+func init() { teardownSessionFn = teardownSession }
 
 // Idempotent teardown funnel, the predicate revalidating the live record right before the claim
 func closeSessionByID(ctx context.Context, sid, endReason string, predicate func(*tuigateway.Session) bool) bool {

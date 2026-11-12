@@ -75,6 +75,7 @@ func startUsageTicker(ctx context.Context, sid string, a *agent.AIAgent, interva
 	suppress(func() { baseline = getUsage(ctx, a) })
 	halt, done := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer threadExceptHook("usage-ticker-" + sid)
 		defer close(done)
 		last := baseline
 		ticker := time.NewTicker(interval)
@@ -184,6 +185,7 @@ func scheduleMCPLateRefresh(ctx context.Context, sid string, a *agent.AIAgent) {
 		return
 	}
 	go func() {
+		defer threadExceptHook("tui-mcp-late-refresh-" + sid)
 		bound := 30 * time.Second
 		if !joinMCPDiscovery(ctx, &bound) {
 			return

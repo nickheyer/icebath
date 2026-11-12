@@ -352,9 +352,9 @@ func TestDefaultModelFromCatalogCache(t *testing.T) {
 }
 
 func TestShippedManifestLabelsTheSilentDefault(t *testing.T) {
-	raw, err := os.ReadFile("../../references/projects/hermes-agent/website/static/api/model-catalog.json")
+	raw, err := os.ReadFile("testdata/hermes/website/static/api/model-catalog.json")
 	if err != nil {
-		t.Skip("hermes checkout manifest unavailable")
+		t.Fatal(err)
 	}
 	data, err := decodeJSONBody(raw)
 	if err != nil || !ValidateCatalogManifest(data) {

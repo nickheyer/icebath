@@ -424,7 +424,7 @@ type CLI struct {
 	statusBarFieldSet               map[string]bool
 	statusBarFieldSetLoaded         bool
 	voiceRecordKeyDisplayCache      string
-	goalManager                     *goals.GoalManager
+	goalManager                     goals.Manager
 	automationStale                 bool
 	petKittyImageID                 int
 	petFrameIdx                     int

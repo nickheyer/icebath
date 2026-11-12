@@ -28,7 +28,7 @@ func hookManifest(t *testing.T, built *pyjson.Object) any {
 
 func repoJSON(t *testing.T, rel string) any {
 	t.Helper()
-	parsed, err := jsonParse(readTestFile(t, filepath.Join(impeccableRepoRoot, filepath.FromSlash(rel))))
+	parsed, err := jsonParse(readTestFile(t, impeccableRepoPath(rel)))
 	if err != nil {
 		t.Fatalf("%s: %v", rel, err)
 	}
@@ -362,7 +362,7 @@ func TestHookManifestBuildersEmitsTheHermesDesignHookPluginVerbatimUnderHermesPl
 		t.Fatalf("hermes emits hooks %q", hermes.EmitHooks)
 	}
 	distDir := t.TempDir()
-	if err := hermes.transform(readSourceSkills(t, impeccableRepoRoot), distDir, "", io.Discard); err != nil {
+	if err := hermes.transform(readSourceSkills(t, impeccablePayloadRoot), distDir, "", io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	pluginDir := filepath.Join(distDir, "hermes/.hermes/plugins/impeccable-design-hook")
@@ -370,7 +370,7 @@ func TestHookManifestBuildersEmitsTheHermesDesignHookPluginVerbatimUnderHermesPl
 		t.Fatalf("plugin files %v", names)
 	}
 	for _, name := range []string{"__init__.py", "plugin.yaml"} {
-		if readTestFile(t, filepath.Join(pluginDir, name)) != readTestFile(t, filepath.Join(impeccableRepoRoot, "skill", "hermes-plugin", name)) {
+		if readTestFile(t, filepath.Join(pluginDir, name)) != readTestFile(t, impeccableRepoPath("skill/hermes-plugin/"+name)) {
 			t.Errorf("%s differs from skill/hermes-plugin", name)
 		}
 	}
@@ -390,7 +390,7 @@ func requireSyncedProviderOutput(t *testing.T) {
 }
 
 func repoPath(rel string) string {
-	return filepath.Join(impeccableRepoRoot, filepath.FromSlash(rel))
+	return impeccableRepoPath(rel)
 }
 
 func TestGeneratedHookArtifactsInRepoExistsAndIsValidJSON(t *testing.T) {
@@ -467,7 +467,7 @@ func TestGeneratedHookArtifactsInRepoGitHubCopilotRepoHooksReferenceTheLauncherI
 func TestGeneratedHookArtifactsInRepoDoesNotGenerateProbeScriptsIntoProviderSkillPayloads(t *testing.T) {
 	requireSyncedProviderOutput(t)
 	for _, providerDir := range []string{".claude", ".cursor", ".agents", "plugin"} {
-		if pathExists(filepath.Join(impeccableRepoRoot, providerDir, "skills", "impeccable", "scripts", "hook-probe.mjs")) {
+		if pathExists(impeccableRepoPath(providerDir + "/skills/impeccable/scripts/hook-probe.mjs")) {
 			t.Errorf("%s still has hook-probe.mjs", providerDir)
 		}
 	}

@@ -17,7 +17,7 @@ import (
 )
 
 func TestImpeccableHermesRenderMatchesGolden(t *testing.T) {
-	golden := filepath.Join(refsRoot, "impeccable", ".hermes", "skills", "impeccable")
+	golden := filepath.Join(impeccableRepoRoot, ".hermes", "skills", "impeccable")
 	rendered, err := renderImpeccableSkill(".icebath/skills/impeccable/scripts")
 	if err != nil {
 		t.Fatal(err)

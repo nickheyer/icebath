@@ -8,9 +8,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 func maintWrite(t *testing.T, path, body string) {
@@ -187,23 +188,18 @@ func (e *pyPermissionError) Error() string { return e.msg }
 func (e *pyPermissionError) Is(target error) bool { return target == fs.ErrPermission }
 
 func TestUpdateCopiesBundledSkillBytesToDefaultActiveAndSibling(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	bundled := filepath.Join(filepath.Dir(file), "..", "..", "references", "projects", "hermes-agent", "skills")
-	witness := ""
-	_ = filepath.WalkDir(bundled, func(path string, entry fs.DirEntry, err error) error {
-		if err == nil && witness == "" && !entry.IsDir() && entry.Name() == "SKILL.md" {
-			witness = path
+	bundled := skills.BundledFS()
+	rel := ""
+	_ = fs.WalkDir(bundled, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err == nil && rel == "" && !entry.IsDir() && entry.Name() == "SKILL.md" {
+			rel = path
 		}
 		return nil
 	})
-	if witness == "" {
+	if rel == "" {
 		t.Fatal("premise: no bundled SKILL.md")
 	}
-	rel, err := filepath.Rel(bundled, witness)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := os.ReadFile(witness)
+	want, err := fs.ReadFile(bundled, rel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +219,7 @@ func TestUpdateCopiesBundledSkillBytesToDefaultActiveAndSibling(t *testing.T) {
 				maintWrite(t, filepath.Join(profile, "config.yaml"), "{}\n")
 			}
 			t.Setenv("HOME", tmp)
-			t.Setenv("ICEBATH_BUNDLED_SKILLS", bundled)
+			t.Setenv("ICEBATH_BUNDLED_SKILLS", "")
 			active := root
 			if named {
 				active = homes[1]
@@ -234,7 +230,7 @@ func TestUpdateCopiesBundledSkillBytesToDefaultActiveAndSibling(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, profile := range homes {
-				got, err := os.ReadFile(filepath.Join(profile, "skills", rel))
+				got, err := os.ReadFile(filepath.Join(profile, "skills", filepath.FromSlash(rel)))
 				if err != nil && errors.Is(err, fs.ErrNotExist) {
 					t.Fatalf("%s lacks the bundled skill, output %q", profile, out.String())
 				}

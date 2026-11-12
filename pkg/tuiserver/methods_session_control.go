@@ -104,6 +104,9 @@ func safeHeartbeatSnapshot(state *agent.HeartbeatState) map[string]any {
 		"created_at": state.CreatedAt, "last_fired_at": state.LastFiredAt, "fire_count": state.FireCount}
 }
 
+// Snapshot reader every control path calls, the real one swapped only where a hermes case stalls a read
+var snapshotControlFn = snapshotControl
+
 // Persisted session control state serialized once without wall clock churn
 func snapshotControl(ctx context.Context, sessionKey string) (map[string]any, error) {
 	goalState := goals.LoadGoal(ctx, sessionKey)
@@ -192,7 +195,7 @@ func publishSessionControlSnapshot(ctx context.Context, sid string, session *tui
 		lock := sessionPublishLock(session)
 		lock.Lock()
 		defer lock.Unlock()
-		control, err := snapshotControl(sessionProfileRuntimeScope(ctx, session, true), sessionKey)
+		control, err := snapshotControlFn(sessionProfileRuntimeScope(ctx, session, true), sessionKey)
 		panicIf(err)
 		revision := control["revision"].(string)
 		lastRevision := strOr(session.Get("control_revision"))
@@ -240,7 +243,7 @@ func sessionControlRead(ctx context.Context, rid any, params map[string]any) map
 	var control map[string]any
 	if failure := catchPanic(func() {
 		var err error
-		control, err = snapshotControl(ctx, sessionKey)
+		control, err = snapshotControlFn(ctx, sessionKey)
 		panicIf(err)
 	}); failure != nil {
 		logger().Debug("session.control.read failed: " + errorMessage(failure))
@@ -305,7 +308,7 @@ func sessionControl(ctx context.Context, rid any, params map[string]any) map[str
 	var control map[string]any
 	if failure := catchPanic(func() {
 		var err error
-		control, err = snapshotControl(ctx, sessionKey)
+		control, err = snapshotControlFn(ctx, sessionKey)
 		panicIf(err)
 	}); failure != nil {
 		logger().Debug("session.control snapshot after " + action + " failed: " + errorMessage(failure))

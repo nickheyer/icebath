@@ -3,16 +3,57 @@
 package pyopenwakeword
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 )
+
+// Directory holding every member of a wheel archive written with its recorded permissions
+func unpackWheel(t *testing.T, wheel string) string {
+	t.Helper()
+	r, err := zip.OpenReader(wheel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	dir := t.TempDir()
+	for _, f := range r.File {
+		target := filepath.Join(dir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		src, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(src)
+		src.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mode := f.Mode().Perm()
+		if mode == 0 {
+			mode = 0o644
+		}
+		if err := os.WriteFile(target, data, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
 
 // Sample bytes of the data chunk of a RIFF WAVE file
 func wavData(t *testing.T, path string) []byte {
@@ -33,9 +74,7 @@ func wavData(t *testing.T, path string) []byte {
 }
 
 func TestRealLibraryMatchesPython(t *testing.T) {
-	_, file, _, _ := runtime.Caller(0)
-	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
-	slices := filepath.Join(root, "dev", "slices")
+	root := unpackWheel(t, filepath.Join("testdata", "pyopen_wakeword", "pyopen_wakeword-1.1.0-py3-none-manylinux_2_35_x86_64.whl"))
 	raw, err := os.ReadFile("testdata/real_run.json")
 	if err != nil {
 		t.Fatal(err)
@@ -51,14 +90,14 @@ func TestRealLibraryMatchesPython(t *testing.T) {
 	if err := json.Unmarshal(raw, &ref); err != nil {
 		t.Fatal(err)
 	}
-	audio := wavData(t, filepath.Join(slices, "wakelibs_f", "src", "model", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01", "test_wavs", "0.wav"))
-	m := Import(filepath.Join(slices, "wakeword_s25", "ref", "pyoww_whl", "unpacked", "pyopen_wakeword"))
+	audio := wavData(t, filepath.Join("testdata", "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01", "test_wavs", "0.wav"))
+	m := Import(filepath.Join(root, "pyopen_wakeword"))
 	for name, want := range ref {
 		var model *OpenWakeWord
 		if name == "okay_nabu" {
 			model, err = m.FromBuiltin(ModelOkayNabu, nil, nil)
 		} else {
-			model, err = m.FromModel(filepath.Join(root, "references", "projects", "hermes-agent", "tools", "wakewords", name+".tflite"), nil)
+			model, err = m.FromModel(filepath.Join("..", "..", "media", "wakewords", name+".tflite"), nil)
 		}
 		if err != nil {
 			t.Fatal(err)

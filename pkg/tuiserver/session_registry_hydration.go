@@ -53,6 +53,7 @@ func loadResumeTranscript(ctx context.Context, db *state.DB, storedID string, mo
 func scheduleResumeHydration(ctx context.Context, sid, storedID string, db *state.DB, closeDB, modelHistoryOnly bool) {
 	ctx = context.WithoutCancel(ctx)
 	go func() {
+		defer threadExceptHook("resume-hydrate-" + sid)
 		session := tuigateway.SessionRecord(sid)
 		if session == nil {
 			if closeDB {

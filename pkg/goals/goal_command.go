@@ -30,17 +30,17 @@ func EnglishGoalRender(key, def string, values map[string]any) string {
 	return mustGoalFormat(def, values)
 }
 
-type goalHandler func(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error)
+type goalHandler func(m Manager, arg string, render GoalRender) (GoalCommandResult, error)
 
-func goalStatus(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalStatus(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	return GoalCommandResult{Output: m.StatusLine()}, nil
 }
 
-func goalShow(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalShow(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	return GoalCommandResult{Output: m.StatusLine() + "\n" + m.RenderContract()}, nil
 }
 
-func goalPause(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalPause(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	state := m.Pause(UserPausedReason)
 	if state == nil {
 		return GoalCommandResult{Output: render("gateway.goal.no_goal_set", "No goal set.", nil)}, nil
@@ -48,7 +48,7 @@ func goalPause(m *GoalManager, arg string, render GoalRender) (GoalCommandResult
 	return GoalCommandResult{Output: render("gateway.goal.paused", "⏸ Goal paused: {goal}", map[string]any{"goal": state.Goal}), ClearPending: "pause"}, nil
 }
 
-func goalResume(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalResume(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	state := m.Resume(true)
 	if state == nil {
 		return GoalCommandResult{Output: render("gateway.goal.no_resume", "No goal to resume.", nil)}, nil
@@ -57,7 +57,7 @@ func goalResume(m *GoalManager, arg string, render GoalRender) (GoalCommandResul
 		Prompt: m.NextContinuationPrompt()}, nil
 }
 
-func goalClear(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalClear(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	had := m.HasGoal()
 	m.Clear()
 	if had {
@@ -66,7 +66,7 @@ func goalClear(m *GoalManager, arg string, render GoalRender) (GoalCommandResult
 	return GoalCommandResult{Output: render("gateway.no_active_goal", "No active goal.", nil), ClearPending: "clear"}, nil
 }
 
-func goalUnwait(m *GoalManager, arg string, render GoalRender) (GoalCommandResult, error) {
+func goalUnwait(m Manager, arg string, render GoalRender) (GoalCommandResult, error) {
 	if m.StopWaiting() {
 		return GoalCommandResult{Output: "▶ Wait barrier cleared — goal loop resumes."}, nil
 	}
@@ -77,7 +77,7 @@ func goalUnwait(m *GoalManager, arg string, render GoalRender) (GoalCommandResul
 func splitOnce(text string) []string { return pystr.SplitWhitespace(text, 1) }
 
 // Parks the goal on the pid the command names, a usage error for a missing or non integer pid
-func goalWait(m *GoalManager, arg string) (GoalCommandResult, error) {
+func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 	if arg == "" {
 		return GoalCommandResult{Output: "Usage: /goal wait <pid> [reason]", Error: true}, nil
 	}
@@ -98,8 +98,8 @@ func goalWait(m *GoalManager, arg string) (GoalCommandResult, error) {
 	case pid.Sign() <= 0:
 		return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
 	default:
-		if _, err := m.requireActive(); err != nil {
-			return GoalCommandResult{}, err
+		if state := m.State(); state == nil || state.Status != "active" {
+			return GoalCommandResult{}, &pyint.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
 		}
 		return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 	}
@@ -110,7 +110,7 @@ func goalWait(m *GoalManager, arg string) (GoalCommandResult, error) {
 	return GoalCommandResult{Output: fmt.Sprintf("⏳ Goal parked on pid %s%s. Loop pauses until it exits.", pid, suffix)}, nil
 }
 
-func goalGateAdd(m *GoalManager, arg string) (GoalCommandResult, error) {
+func goalGateAdd(m Manager, arg string) (GoalCommandResult, error) {
 	gate, err := m.AddGate(arg, 0, 0)
 	if err != nil {
 		return GoalCommandResult{}, err
@@ -119,7 +119,7 @@ func goalGateAdd(m *GoalManager, arg string) (GoalCommandResult, error) {
 		gate.Command, gate.MaxRetries, gate.TimeoutSeconds)}, nil
 }
 
-func goalGateRemove(m *GoalManager, arg string) (GoalCommandResult, error) {
+func goalGateRemove(m Manager, arg string) (GoalCommandResult, error) {
 	index, err := pyint.Of(arg)
 	if err != nil {
 		return GoalCommandResult{}, err
@@ -127,8 +127,10 @@ func goalGateRemove(m *GoalManager, arg string) (GoalCommandResult, error) {
 	var command string
 	if index.IsInt64() {
 		command, err = m.RemoveGate(index.Int64())
-	} else if _, err = m.requireGoal(); err == nil {
-		_, err = goalIndex(-1, len(m.state.Gates))
+	} else if !m.HasGoal() {
+		err = &pyint.Error{Kind: "RuntimeError", Msg: "no active goal"}
+	} else {
+		_, err = goalIndex(-1, len(m.State().Gates))
 	}
 	if err != nil {
 		return GoalCommandResult{}, err
@@ -136,7 +138,7 @@ func goalGateRemove(m *GoalManager, arg string) (GoalCommandResult, error) {
 	return GoalCommandResult{Output: "✓ Gate removed: $ " + command}, nil
 }
 
-func goalGateClear(m *GoalManager, arg string) (GoalCommandResult, error) {
+func goalGateClear(m Manager, arg string) (GoalCommandResult, error) {
 	count, err := m.ClearGates()
 	if err != nil {
 		return GoalCommandResult{}, err
@@ -145,7 +147,7 @@ func goalGateClear(m *GoalManager, arg string) (GoalCommandResult, error) {
 }
 
 var (
-	goalGateHandlers = map[string]func(*GoalManager, string) (GoalCommandResult, error){
+	goalGateHandlers = map[string]func(Manager, string) (GoalCommandResult, error){
 		"add": goalGateAdd, "remove": goalGateRemove, "rm": goalGateRemove, "clear": goalGateClear,
 	}
 	goalExactHandlers = map[string]goalHandler{
@@ -161,7 +163,7 @@ var (
 )
 
 // Control verb result with the trailing words noted as ignored
-func goalBareControl(m *GoalManager, verb, rest string, render GoalRender) (GoalCommandResult, error) {
+func goalBareControl(m Manager, verb, rest string, render GoalRender) (GoalCommandResult, error) {
 	result, err := goalExactHandlers[verb](m, "", render)
 	if err != nil {
 		return result, err
@@ -171,7 +173,7 @@ func goalBareControl(m *GoalManager, verb, rest string, render GoalRender) (Goal
 }
 
 // Gate subcommand dispatch, gate creation only after the adapter authorizes it
-func goalGate(m *GoalManager, arg string, authorizeGate func() string) (GoalCommandResult, error) {
+func goalGate(m Manager, arg string, authorizeGate func() string) (GoalCommandResult, error) {
 	if arg == "" || pystr.Lower(arg) == "list" {
 		return GoalCommandResult{Output: m.RenderGates()}, nil
 	}
@@ -204,7 +206,7 @@ func goalGate(m *GoalManager, arg string, authorizeGate func() string) (GoalComm
 }
 
 // Sets a goal from inline contract lines or a drafted contract and returns its kickoff prompt
-func goalSet(m *GoalManager, arg string, drafting bool, lastUserMessage any, render GoalRender, progress func(string)) (GoalCommandResult, error) {
+func goalSet(m Manager, arg string, drafting bool, lastUserMessage any, render GoalRender, progress func(string)) (GoalCommandResult, error) {
 	var contract *GoalContract
 	headline := arg
 	if drafting {
@@ -221,7 +223,7 @@ func goalSet(m *GoalManager, arg string, drafting bool, lastUserMessage any, ren
 					drafted = nil
 				}
 			}()
-			return goalCommandDraft(m.ctx, arg, nil)
+			return goalCommandDraft(m.Context(), arg, nil)
 		}()
 	} else {
 		var parsed GoalContract
@@ -232,7 +234,7 @@ func goalSet(m *GoalManager, arg string, drafting bool, lastUserMessage any, ren
 	}
 	var previous any = ""
 	if m.HasGoal() {
-		previous = m.state.Goal
+		previous = m.State().Goal
 	}
 	if headline == "" {
 		headline = arg
@@ -240,6 +242,9 @@ func goalSet(m *GoalManager, arg string, drafting bool, lastUserMessage any, ren
 	state, err := m.Set(headline, 0, contract)
 	if err != nil {
 		return GoalCommandResult{}, err
+	}
+	if state == nil {
+		return GoalCommandResult{}, &pyint.Error{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'goal'"}
 	}
 	goal := pyrepr.Str(state.Goal)
 	output := render("gateway.goal.set", "⊙ Goal set ({budget}-turn budget): {goal}", map[string]any{"budget": state.MaxTurns, "goal": state.Goal})
@@ -291,7 +296,7 @@ type GoalCommandOptions struct {
 }
 
 // Applies one goal command to the manager, the goal errors rendered as an invalid goal result
-func DispatchGoalCommand(m *GoalManager, arg string, o GoalCommandOptions) (GoalCommandResult, error) {
+func DispatchGoalCommand(m Manager, arg string, o GoalCommandOptions) (GoalCommandResult, error) {
 	render := o.Render
 	if render == nil {
 		render = EnglishGoalRender

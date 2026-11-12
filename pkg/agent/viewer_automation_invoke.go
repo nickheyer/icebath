@@ -138,6 +138,13 @@ func automationErrorClass(err error) string {
 			return pyErr.Kind
 		}
 	}
+	var named interface{ PyTypeName() string }
+	if errors.As(err, &named) {
+		switch kind := named.PyTypeName(); kind {
+		case "RuntimeError", "ValueError", "IndexError":
+			return kind
+		}
+	}
 	return ""
 }
 

@@ -26,6 +26,7 @@ func TestMain(m *testing.M) {
 	state.SpilloverNamesInText = tools.SpilloverNamesInText
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
 	tools.ProfileSecrets = provider.ProfileSecretSource()
+	tools.NousAccount = provider.NousAccountSource()
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	PersistPersonality = commands.PersistPersonality

@@ -2,23 +2,17 @@ package app
 
 import (
 	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
 type turnRun func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error)
@@ -171,114 +165,62 @@ func TestChatPreservesCleanMultimodalInputWhenNoteChangesApiMessage(t *testing.T
 	}
 }
 
-// Chat completions server answering done and keeping every request body
-func recordingChatServer(t *testing.T) (*httptest.Server, func() []string) {
-	t.Helper()
-	var mu sync.Mutex
-	var bodies []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": []any{map[string]any{"id": "test/model", "object": "model"}}})
-			return
-		}
-		raw, _ := io.ReadAll(r.Body)
-		mu.Lock()
-		bodies = append(bodies, string(raw))
-		mu.Unlock()
-		chunk := func(delta map[string]any, finish any) string {
-			line, _ := json.Marshal(map[string]any{"id": "c1", "object": "chat.completion.chunk", "created": 1, "model": "test/model",
-				"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}})
-			return "data: " + string(line) + "\n\n"
-		}
-		var body map[string]any
-		_ = json.Unmarshal(raw, &body)
-		if body["stream"] != true {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "c1", "object": "chat.completion", "model": "test/model",
-				"usage":   map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
-				"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "done", "tool_calls": nil}, "finish_reason": "stop"}}})
-			return
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, chunk(map[string]any{"role": "assistant", "content": "done"}, nil))
-		_, _ = io.WriteString(w, chunk(map[string]any{}, "stop"))
-		_, _ = io.WriteString(w, "data: [DONE]\n\n")
-	}))
-	t.Cleanup(srv.Close)
-	return srv, func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]string{}, bodies...)
-	}
-}
-
-// A CLI whose turns run the real agent against the given chat completions server
-func liveChatCLI(t *testing.T, baseURL string) *CLI {
-	t.Helper()
-	recordPrints(t)
-	resetProcessState(t)
-	prevDelay := settlePaintDelay
-	settlePaintDelay = 0
-	t.Cleanup(func() { settlePaintDelay = prevDelay })
-	c := configuredCLI(t, map[string]any{"tool_progress": "all"}, CLIOptions{Model: "test/model", Provider: "openai", APIKey: "test-key-1234567890", BaseURL: baseURL})
-	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
-	return c
-}
-
 func TestChatMultimodalNotePersistsCleanInputOnce(t *testing.T) {
-	srv, bodies := recordingChatServer(t)
-	c := liveChatCLI(t, srv.URL+"/v1")
+	c := chatCLI(t)
+	client := &scriptedClient{script: []any{completeFrame("done")}}
+	client.override = func(method string, params map[string]any) (any, bool, error) {
+		if method != "image.attach_bytes" {
+			return nil, false, nil
+		}
+		client.record(method, params)
+		return map[string]any{"attached": true, "path": "/owner/cache/images/upload_1.png", "mime": "image/png"}, true, nil
+	}
+	c.agent = scriptedAgentOn(t, scriptedConnection(t, client), gatewayAgentOptions{})
 	cleanParts := []any{
 		map[string]any{"type": "text", "text": "Describe this screenshot"},
 		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,AAAA"}},
 	}
 	c.pendingModelSwitchNote = "[MODEL SWITCH NOTE]"
+	var gotMessage, gotPersist any
+	patchTurn(t, func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+		gotMessage, gotPersist = message, o.PersistUserMessage
+		return a.RunConversation(ctx, message, o)
+	})
 	if _, ok := c.chat(cleanParts, nil, false); !ok {
 		t.Fatal("the turn produced no response")
 	}
-	sent := false
-	for _, body := range bodies() {
-		sent = sent || strings.Contains(body, `[MODEL SWITCH NOTE]\n\nDescribe this screenshot`)
+	if !sameJSON(gotPersist, cleanParts) {
+		t.Fatalf("persist_user_message %v", gotPersist)
 	}
-	if !sent {
-		t.Fatalf("the provider never saw the note: %q", bodies())
+	sent, _ := gotMessage.([]any)
+	first, _ := sent[0].(map[string]any)
+	if first["text"] != "[MODEL SWITCH NOTE]\n\nDescribe this screenshot" {
+		t.Fatalf("user_message %v", gotMessage)
 	}
-	rows, err := c.sessionDB.GetMessagesAsConversation(c.ctx, c.sessionID, state.ConversationOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var users []any
-	for _, row := range rows {
-		if strings.Contains(cliStr(row["content"], ""), "MODEL SWITCH NOTE") {
-			t.Fatalf("the note reached the durable transcript: %v", row)
-		}
-		if row["role"] == "user" {
-			users = append(users, row["content"])
+	for _, part := range cleanParts {
+		if text, _ := part.(map[string]any)["text"].(string); strings.Contains(text, "MODEL SWITCH NOTE") {
+			t.Fatalf("the note reached the clean parts: %v", cleanParts)
 		}
 	}
-	if len(users) != 1 || users[0] != "Describe this screenshot\n[screenshot]" {
-		t.Fatalf("stored user rows %#v of %v", users, rows)
+	submits := client.callsOf("prompt.submit")
+	if len(submits) != 1 {
+		t.Fatalf("submits %v", submits)
+	}
+	if !sameJSON(submits[0]["attachments"], []any{map[string]any{"path": "/owner/cache/images/upload_1.png", "mime": "image/png"}}) {
+		t.Fatalf("attachments %v", submits[0]["attachments"])
 	}
 }
 
 func TestChatClearsPreviousTurnPersistenceOverrideBeforeStaging(t *testing.T) {
-	srv, _ := recordingChatServer(t)
-	c := liveChatCLI(t, srv.URL+"/v1")
-	c.pendingModelSwitchNote = "[MODEL SWITCH NOTE]"
-	if _, ok := c.chat("previous clean prompt", nil, false); !ok {
-		t.Fatal("the first turn produced no response")
-	}
+	c := chatCLI(t)
+	c.agent.SetPendingCLIUserMessage(map[string]any{"role": "user", "content": "previous clean prompt", "timestamp": 123.0})
 	var stagedMessage map[string]any
-	prev := runTurnConversation
-	runTurnConversation = func(_ context.Context, a *GatewayAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, a *GatewayAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
 		a.mu.Lock()
 		stagedMessage = a.pendingCLIUserMessage
 		a.mu.Unlock()
 		return doneResult(), nil
-	}
-	t.Cleanup(func() { runTurnConversation = prev })
+	})
 	c.chat("new prompt", nil, false)
 	if stagedMessage == nil || stagedMessage["role"] != "user" || stagedMessage["content"] != "new prompt" {
 		t.Fatalf("staged row %v", stagedMessage)

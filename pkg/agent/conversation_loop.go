@@ -48,18 +48,18 @@ var apiCallModules = map[string]bool{"chat_completion_helpers": true}
 
 var loopNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
+// Prompt builder, tool pin helpers and capability probe of the restore path, swapped by tests like the hermes patches
+var (
+	loopBuildSystemPrompt           = BuildSystemPrompt
+	loopRestoreAgentToolPrefix      = mcp.RestoreAgentToolPrefix
+	loopPersistAgentToolNames       = mcp.PersistAgentToolNames
+	loopStoredPromptCapabilityStale = botmode.StoredPromptCapabilityStale
+)
+
 // Native Responses estimate when compaction eligibility is proven, else messages plus tools
 func midturnRequestPressureTokens(ctx context.Context, a *AIAgent, apiMessages []any, effectiveSystem string, approxTokens int) int {
-	if est, ok := a.client.(provider.NativePreflightEstimator); ok {
-		req := &provider.Request{Model: a.model, Messages: apiRowsToMessages(apiMessages)}
-		var toolDefs []map[string]any
-		if len(a.tools) > 0 {
-			toolDefs = a.ToolDefs()
-		}
-		if native, ok := est.EstimateNativePreflightTokens(ctx, req, effectiveSystem, toolDefs); ok && native >= 0 {
-			return native
-		}
-		conversationLoopLog().Debug("native Responses mid-turn estimate unavailable; using generic transcript estimate")
+	if native, ok := estimateNativeResponsesPreflightTokens(ctx, a, apiRowsToMessages(apiMessages), effectiveSystem, toolDefsOf(a.tools)); ok && native >= 0 {
+		return native
 	}
 	if len(a.tools) > 0 {
 		return approxTokens + provider.EstimateToolsTokens(a.ToolDefs())
@@ -83,7 +83,7 @@ func maybeInjectRunBudgetWrapup(a *AIAgent, messages []*state.Message) bool {
 		if msg == nil || msg.Role != "tool" {
 			continue
 		}
-		if pyTruthy(msg.Extra[dbPersistedMarker]) {
+		if msg.Persisted {
 			return false
 		}
 		switch existing := msg.Content.(type) {
@@ -294,10 +294,7 @@ func pressureWithRealFloor(compressor ContextEngine, roughTokens int) int {
 }
 
 func compressorAwaitingRealUsage(compressor ContextEngine) bool {
-	if c, ok := compressor.(provider.CodexContextCompressor); ok {
-		return c.AwaitingRealUsageAfterCompression()
-	}
-	return false
+	return awaitingRealUsageAfterCompression(compressor)
 }
 
 // User facing error when Ollama loaded the model with too little runtime context for tool use
@@ -627,7 +624,7 @@ func botChatPromptStale(ctx context.Context, a *AIAgent, storedPrompt string) (s
 		}
 	}()
 	home := agentHome(a.env)
-	if botmode.StoredPromptCapabilityStale(storedPrompt, home) {
+	if loopStoredPromptCapabilityStale(storedPrompt, home) {
 		return true
 	}
 	if !a.botModeProtocol {
@@ -653,7 +650,7 @@ func persistSystemPrompt(ctx context.Context, a *AIAgent, failureMessage string,
 		return
 	}
 	if persistTools {
-		mcp.PersistAgentToolNames(ctx, a)
+		loopPersistAgentToolNames(ctx, a)
 	}
 }
 
@@ -677,9 +674,9 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Obje
 			}
 		}()
 		if pyTruthy(pin) {
-			mcp.RestoreAgentToolPrefix(ctx, a, pin)
+			loopRestoreAgentToolPrefix(ctx, a, pin)
 		} else if sessionRow != nil && !a.persistDisabled {
-			mcp.PersistAgentToolNames(ctx, a)
+			loopPersistAgentToolNames(ctx, a)
 		}
 	}()
 	return built
@@ -755,7 +752,7 @@ func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *
 	}
 	built := restorePinnedTools(ctx, a, sessionRow)
 	refreshEpoch := requestedEpoch(ctx, a)
-	prompt, err := BuildSystemPrompt(ctx, a, systemMessage)
+	prompt, err := loopBuildSystemPrompt(ctx, a, systemMessage)
 	if err != nil {
 		return err
 	}
@@ -808,7 +805,7 @@ func restoreStoredSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *s
 			skills.ClearSkillsSystemPromptCache(agentHome(a.env), true)
 		}()
 		refreshBotChatTools(ctx, a)
-		prompt, err := BuildSystemPrompt(ctx, a, systemMessage)
+		prompt, err := loopBuildSystemPrompt(ctx, a, systemMessage)
 		if err != nil {
 			return err
 		}

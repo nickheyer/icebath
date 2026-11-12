@@ -45,3 +45,14 @@ func hostProcCmdline(pid int) string {
 	}
 	return string(data)
 }
+
+// One write of data to path opened for appending, the kernel O_APPEND keeping each record whole
+func hostAppendWrite(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(data)
+	return err
+}

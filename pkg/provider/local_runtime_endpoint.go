@@ -250,6 +250,13 @@ func ResolveLlamacppEndpoint(ctx context.Context, cfg map[string]any, h string, 
 
 var detectServerFn = DetectServer
 
+// Replaces the local server probe for a case of another package and hands back the restore
+func SwapDetectServerForTests(fn func([]int) (*DetectedServer, error)) func() {
+	prev := detectServerFn
+	detectServerFn = fn
+	return func() { detectServerFn = prev }
+}
+
 // Endpoint with the default eight second boot wait, any resolution error read as no endpoint like both hermes callers
 func resolveLlamacppEndpoint(ctx context.Context, cfg map[string]any, h string) (string, string, bool) {
 	return resolveLlamacppEndpointWithin(ctx, cfg, h, 8*time.Second)

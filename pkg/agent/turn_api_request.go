@@ -60,14 +60,14 @@ func firePreAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, apiKwa
 	if !lifecycleHasHook(ctx, "pre_api_request") {
 		return
 	}
-	var requestMessages any = apiKwargs["messages"]
-	if _, ok := requestMessages.([]any); !ok {
-		requestMessages = apiKwargs["input"]
+	requestMessages := anyRows(apiKwargs["messages"])
+	if requestMessages == nil {
+		requestMessages = anyRows(apiKwargs["input"])
 	}
-	if _, ok := requestMessages.([]any); !ok {
+	if requestMessages == nil {
 		requestMessages = anyRows(apiMessages)
 	}
-	requestList := append([]any{}, requestMessages.([]any)...)
+	requestList := append([]any{}, requestMessages...)
 	history := make([]any, len(s.Messages))
 	for i, m := range s.Messages {
 		history[i] = state.MessageToDict(m)
@@ -112,6 +112,11 @@ func applyLLMRequestMiddleware(ctx context.Context, a *AIAgent, s *LoopState, ap
 	return payload, original, trace
 }
 
+// Request kwargs builder of the attempt, swapped by tests like the hermes instance patch
+var loopBuildAPIKwargs = func(a *AIAgent, apiMessages, toolsForAPI []map[string]any, toolsOverride bool) (map[string]any, error) {
+	return a.buildAPIKwargs(apiMessages, toolsForAPI, toolsOverride)
+}
+
 // Builds the provider payload for the current route through the request middleware, firing no turn hook
 func buildRequestPayload(ctx context.Context, a *AIAgent, s *LoopState) error {
 	a.resetStreamDeliveryTracking()
@@ -124,7 +129,7 @@ func buildRequestPayload(ctx context.Context, a *AIAgent, s *LoopState) error {
 	apiMessages = mapRows(rows)
 	s.APIMessages = rows
 	observability.ObserveRequestTools(ctx, a, s.ToolsForAPI)
-	apiKwargs, err := a.buildAPIKwargs(apiMessages, s.ToolsForAPI, !sameToolSurface(s.ToolsForAPI, a.tools))
+	apiKwargs, err := loopBuildAPIKwargs(a, apiMessages, s.ToolsForAPI, !sameToolSurface(s.ToolsForAPI, a.tools))
 	if err != nil {
 		return err
 	}

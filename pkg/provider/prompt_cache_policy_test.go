@@ -39,46 +39,91 @@ func cacheTestHome(t *testing.T, cacheTTL any) {
 	writeConfig(t, h, map[string]any{"prompt_caching": map[string]any{"cache_ttl": cacheTTL}})
 }
 
-func TestPlanCacheSectionsThreadsTTLAndPrefix(t *testing.T) {
+func TestPlanCacheSectionsThreadsTtlAndPrefix(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	off := false
 	sys := []map[string]any{{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "hello"}}
-	out, _ := planCacheSectionsForDestination(ctx, sys, nil, "anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-opus-4.8", &off, "1h", nil)
-	markers := collectCacheControls(out)
-	if len(markers) == 0 {
-		t.Fatal("expected cache_control markers on a caching route")
-	}
-	for _, m := range markers {
-		if m["ttl"] != "1h" {
-			t.Fatalf("the configured 1h tier must reach the destination plan markers: %v", markers)
+	t.Run("test_cache_ttl_1h_reaches_markers", func(t *testing.T) {
+		out, _ := planCacheSectionsForDestination(ctx, sys, nil, "anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-opus-4.8", &off, "1h", nil)
+		markers := collectCacheControls(out)
+		if len(markers) == 0 {
+			t.Fatal("expected cache_control markers on a caching route")
 		}
-	}
-	split := []map[string]any{{"role": "system", "content": "stable prefix\nvolatile suffix"}, {"role": "user", "content": "hello"}}
-	prefix := "stable prefix"
-	out, _ = PlanCacheSectionsForDestination(ctx, split, nil, "anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-opus-4.8", &off, "5m", &prefix)
-	parts, ok := out[0]["content"].([]any)
-	if !ok || len(parts) != 2 {
-		t.Fatalf("the destination system prompt must split into static and volatile parts: %#v", out[0]["content"])
-	}
-	if p0, _ := parts[0].(map[string]any); p0["text"] != "stable prefix" {
-		t.Fatalf("static part %v", parts[0])
-	}
-	if p1, _ := parts[1].(map[string]any); p1["text"] != "\nvolatile suffix" {
-		t.Fatalf("volatile part %v", parts[1])
-	}
-	if split[0]["content"] != "stable prefix\nvolatile suffix" {
-		t.Fatal("caller messages must not be mutated")
-	}
-	out, _ = planCacheSectionsForDestination(ctx, sys, nil, "opencode", "https://api.opencode.ai", "chat_completions", "qwen3.6-plus", &off, "1h", nil)
-	markers = collectCacheControls(out)
-	if len(markers) == 0 {
-		t.Fatal("opencode+qwen is a cache-honoring route")
-	}
-	for _, m := range markers {
-		if _, has := m["ttl"]; has {
-			t.Fatalf("Qwen's 5-minute-only context cache must clamp a configured 1h: %v", markers)
+		for _, m := range markers {
+			if m["ttl"] != "1h" {
+				t.Fatalf("the configured 1h tier must reach the destination plan markers: %v", markers)
+			}
 		}
-	}
+	})
+	t.Run("test_static_system_prefix_gets_early_breakpoint", func(t *testing.T) {
+		split := []map[string]any{{"role": "system", "content": "stable prefix\nvolatile suffix"}, {"role": "user", "content": "hello"}}
+		prefix := "stable prefix"
+		out, _ := PlanCacheSectionsForDestination(ctx, split, nil, "anthropic", "https://api.anthropic.com", "anthropic_messages", "claude-opus-4.8", &off, "5m", &prefix)
+		parts, ok := out[0]["content"].([]any)
+		if !ok || len(parts) != 2 {
+			t.Fatalf("the destination system prompt must split into static and volatile parts: %#v", out[0]["content"])
+		}
+		if p0, _ := parts[0].(map[string]any); p0["text"] != "stable prefix" {
+			t.Fatalf("static part %v", parts[0])
+		}
+		if p1, _ := parts[1].(map[string]any); p1["text"] != "\nvolatile suffix" {
+			t.Fatalf("volatile part %v", parts[1])
+		}
+		if split[0]["content"] != "stable prefix\nvolatile suffix" {
+			t.Fatal("caller messages must not be mutated")
+		}
+	})
+	t.Run("test_qwen_1h_clamped_to_5m", func(t *testing.T) {
+		out, _ := planCacheSectionsForDestination(ctx, sys, nil, "opencode", "https://api.opencode.ai", "chat_completions", "qwen3.6-plus", &off, "1h", nil)
+		markers := collectCacheControls(out)
+		if len(markers) == 0 {
+			t.Fatal("opencode+qwen is a cache-honoring route")
+		}
+		for _, m := range markers {
+			if _, has := m["ttl"]; has {
+				t.Fatalf("Qwen's 5-minute-only context cache must clamp a configured 1h: %v", markers)
+			}
+		}
+	})
+}
+
+func TestAuxFallbackReplanThreadsTtl(t *testing.T) {
+	ctx := context.Background()
+	t.Run("test_replan_threads_configured_ttl_to_markers", func(t *testing.T) {
+		cacheTestHome(t, "1h")
+		dest := auxFallbackDestination{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIMode: "anthropic_messages", Model: "claude-opus-4.8"}
+		messages := []map[string]any{{"role": "system", "content": "You are helpful."}, {"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi"}, {"role": "user", "content": "next"}}
+		out, _ := auxReplanSynchronousCacheSections(ctx, messages, nil, dest)
+		markers := collectCacheControls(out)
+		if len(markers) == 0 {
+			t.Fatal("expected cache_control markers on a caching route")
+		}
+		for _, m := range markers {
+			if m["ttl"] != "1h" {
+				t.Fatalf("the configured 1h tier must reach auxiliary fallback replans: %v", markers)
+			}
+		}
+	})
+	t.Run("test_replan_leaves_one_shot_unmarked_on_caching_route", func(t *testing.T) {
+		cacheTestHome(t, "1h")
+		messages := []map[string]any{{"role": "system", "content": "Summarize the transcript."}, {"role": "user", "content": "TRANSCRIPT"}}
+		for _, dest := range []auxFallbackDestination{
+			{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIMode: "anthropic_messages", Model: "claude-opus-4.8"},
+			{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", APIMode: "chat_completions", Model: "anthropic/claude-opus-4.8"},
+		} {
+			out, _ := auxReplanSynchronousCacheSections(ctx, messages, nil, dest)
+			if got := collectCacheControls(out); len(got) != 0 {
+				t.Fatalf("%s marked a one shot %v", dest.Provider, got)
+			}
+		}
+		advisor := ApplyAnthropicCacheControl(messages, "1h", true, "", false)
+		out, _ := auxReplanSynchronousCacheSections(ctx, advisor, nil, auxFallbackDestination{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIMode: "anthropic_messages", Model: "claude-opus-4.8"})
+		if len(collectCacheControls(out)) == 0 {
+			t.Fatal("a pre-decorated advisor request must keep caching")
+		}
+	})
 }
 
 func TestPlanCacheSectionsStripsOnNonCachingRoute(t *testing.T) {

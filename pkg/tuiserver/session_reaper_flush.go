@@ -113,6 +113,7 @@ func flushSessionsBeforeExit(budgetS *float64) int {
 	done := make(chan struct{})
 	window := time.Duration(budget * float64(time.Second))
 	go func() {
+		defer threadExceptHook("hermes-exit-flush")
 		defer close(done)
 		deadline := time.Now().Add(window)
 		for _, session := range sessions {

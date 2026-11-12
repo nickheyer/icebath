@@ -139,8 +139,8 @@ func NewCLI(ctx context.Context, o CLIOptions) (*CLI, error) {
 		env = &tools.Env{Home: home.Dir(ctx), Cwd: cwd}
 		ctx = tools.WithToolEnv(ctx, env)
 	}
-	turnCtx, cancel := context.WithCancel(ctx)
-	c := &CLI{ctx: ctx, env: env, turnCtx: turnCtx, turnCancel: cancel, signalStop: func() {}}
+	turnCtx, cancel := context.WithCancelCause(ctx)
+	c := &CLI{ctx: ctx, env: env, turnCtx: turnCtx, turnCancel: func() { cancel(tools.ErrKeyboardInterrupt) }, signalStop: func() {}}
 	c.initDisplayOptions(o.Verbose, o.Compact)
 	if err := c.initModelRouting(o); err != nil {
 		return nil, err

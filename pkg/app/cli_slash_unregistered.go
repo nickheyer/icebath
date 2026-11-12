@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -19,11 +20,24 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
+// Bundle table and the three dispatch steps of an unregistered slash, replaced by the cases that patch them in hermes
+var (
+	slashSkillBundles   func(ctx context.Context) skills.SkillCommands
+	slashRunSkillBundle func(c *CLI, baseCmd string, info map[string]any, userInstruction string)
+	slashRunSkill       func(c *CLI, baseCmd string, info map[string]any, rest string)
+	slashExpandPrefix   func(c *CLI, cmdOriginal, cmdLower string, skillCommands, skillBundles skills.SkillCommands) bool
+)
+
+func init() {
+	slashSkillBundles, slashRunSkillBundle = getSkillBundles, (*CLI).runSkillBundleCommand
+	slashRunSkill, slashExpandPrefix = (*CLI).runSkillSlashCommand, (*CLI).expandSlashPrefix
+}
+
 // Slash input with no built in handler, quick commands then plugins then bundles then skills then prefix expansion
 func (c *CLI) processUnregisteredSlash(cmdOriginal, cmdLower string) bool {
 	baseCmd := pystr.SplitWhitespace(cmdLower, -1)[0]
 	bare := pystr.LstripChars(baseCmd, "/")
-	skillBundles := getSkillBundles(c.ctx)
+	skillBundles := slashSkillBundles(c.ctx)
 	quickCommands := config.AsMap(mapValueOr(c.config, "quick_commands", map[string]any{}))
 	userArgs := ""
 	if n := len([]rune(baseCmd)); n < len([]rune(cmdOriginal)) {
@@ -50,11 +64,11 @@ func (c *CLI) processUnregisteredSlash(cmdOriginal, cmdLower string) bool {
 		skillCommands = sessionSkillCommands(c)
 	}
 	if info, ok := skillBundles[baseCmd]; ok {
-		c.runSkillBundleCommand(baseCmd, info, userArgs)
+		slashRunSkillBundle(c, baseCmd, info, userArgs)
 	} else if info, ok := skillCommands[baseCmd]; ok {
-		c.runSkillSlashCommand(baseCmd, info, userArgs)
+		slashRunSkill(c, baseCmd, info, userArgs)
 	} else if !(gone && reportGatewayCommandGone(bare, skillsAsAny(skillCommands), skillsAsAny(skillBundles))) {
-		return c.expandSlashPrefix(cmdOriginal, cmdLower, skillCommands, skillBundles)
+		return slashExpandPrefix(c, cmdOriginal, cmdLower, skillCommands, skillBundles)
 	}
 	return true
 }

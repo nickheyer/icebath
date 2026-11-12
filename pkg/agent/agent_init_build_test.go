@@ -23,6 +23,7 @@ func (e *toolSchemaEngine) OnSessionStart(sessionID string, kwargs map[string]an
 }
 
 func TestMinimumContextRefusesSmallWindowsWithTheMatchingRemedy(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := routingAgent("openrouter", "https://openrouter.ai/api/v1")
 	a.contextCompressor = newStubEngine(32000, 0.5)
 	err := enforceMinimumContext(a)
@@ -47,6 +48,7 @@ func TestMinimumContextRefusesSmallWindowsWithTheMatchingRemedy(t *testing.T) {
 }
 
 func TestExplicitClientKwargsSplitTheQueryAndPickTheHostHeaders(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	a := routingAgent("custom", "https://api.kimi.com/coding/v1?api-version=2024&empty=")
 	timeout := 90.0
@@ -80,6 +82,7 @@ func TestExplicitClientKwargsSplitTheQueryAndPickTheHostHeaders(t *testing.T) {
 }
 
 func TestDisplayConfigReadsStreamingLoadModeAndCommentary(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := &AIAgent{}
 	applyDisplayConfig(a, map[string]any{
 		"display": map[string]any{"show_commentary": false},
@@ -97,6 +100,7 @@ func TestDisplayConfigReadsStreamingLoadModeAndCommentary(t *testing.T) {
 }
 
 func TestContextEngineToolsJoinTheSurfaceOnceAndStartTheSession(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	engine := &toolSchemaEngine{stubEngine: newStubEngine(200000, 0.5), schemas: []map[string]any{
 		{"name": "lcm_grep", "description": "search", "parameters": map[string]any{"type": "object"}},
@@ -121,6 +125,7 @@ func TestContextEngineToolsJoinTheSurfaceOnceAndStartTheSession(t *testing.T) {
 }
 
 func TestCompressorMaxTokensReservesTheGeminiDefault(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if got := compressorMaxTokens(&AIAgent{provider: "google-gemini"}); got != provider.GeminiDefaultMaxOutputTokens {
 		t.Fatalf("gemini reservation = %v", got)
 	}

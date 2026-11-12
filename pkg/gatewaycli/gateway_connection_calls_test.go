@@ -83,16 +83,18 @@ func TestEventFramesUpdateTheSessionCacheAndSideAnswersReachTheirWaiter(t *testi
 	var mu sync.Mutex
 	var usages, cancels []map[string]any
 	cached.Lock()
-	cached.UsageListeners = append(cached.UsageListeners, func(_ context.Context, usage map[string]any) {
+	onUsage := SessionListener(func(_ context.Context, usage map[string]any) {
 		mu.Lock()
 		usages = append(usages, usage)
 		mu.Unlock()
 	})
-	cached.RequestListeners = append(cached.RequestListeners, func(_ context.Context, payload map[string]any) {
+	onCancel := SessionListener(func(_ context.Context, payload map[string]any) {
 		mu.Lock()
 		cancels = append(cancels, payload)
 		mu.Unlock()
 	})
+	cached.UsageListeners = append(cached.UsageListeners, &onUsage)
+	cached.RequestListeners = append(cached.RequestListeners, &onCancel)
 	seq := cached.PendingSeq
 	cached.Unlock()
 	client.events.PutNowait(eventFrame("btw.complete", "local-old", map[string]any{"task_id": "task-1", "text": "side"}))

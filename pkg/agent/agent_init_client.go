@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -167,13 +168,34 @@ func stringHeaders(v any) map[string]string {
 	return nil
 }
 
+// Credential pool surface the init ladder reads to tell a burned pool from missing config
+type initCredentialPool interface {
+	HasCredentials() bool
+	HasAvailable(model string) bool
+	Entries() []provider.PooledCredential
+}
+
+// Provider router, fallback entry key and pool loader of the init ladder, the real functions in production
+var (
+	initResolveProviderClient = provider.ResolveProviderClient
+	initResolveEntryAPIKey    = func(ctx context.Context, entry map[string]any) string {
+		return provider.ResolveFallbackEntryAPIKey(ctx, home.Dir(ctx), entry)
+	}
+	initLoadPool = func(ctx context.Context, providerName string) initCredentialPool {
+		if pool := provider.LoadPool(agentPoolEnv(ctx), providerName); pool != nil {
+			return pool
+		}
+		return nil
+	}
+)
+
 // Client kwargs through the provider router, then the init fallback chain, else the missing provider error
 func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[string]any, timeout *float64) (map[string]any, error) {
 	requested := a.provider
 	if requested == "" {
 		requested = "auto"
 	}
-	routed, _, err := provider.ResolveProviderClient(ctx, requested, a.model, provider.ProviderClientOptions{RawCodex: true})
+	routed, _, err := initResolveProviderClient(ctx, requested, a.model, provider.ProviderClientOptions{RawCodex: true})
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +211,8 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 		fbProvider := fmt.Sprint(fb["provider"])
 		fbModel := fmt.Sprint(fb["model"])
 		baseURL, _ := fb["base_url"].(string)
-		fbClient, resolvedModel, ferr := provider.ResolveProviderClient(ctx, fbProvider, fbModel, provider.ProviderClientOptions{
-			RawCodex: true, ExplicitBaseURL: baseURL, ExplicitAPIKey: provider.ResolveFallbackEntryAPIKey(ctx, home.Dir(ctx), fb),
+		fbClient, resolvedModel, ferr := initResolveProviderClient(ctx, fbProvider, fbModel, provider.ProviderClientOptions{
+			RawCodex: true, ExplicitBaseURL: baseURL, ExplicitAPIKey: initResolveEntryAPIKey(ctx, fb),
 		})
 		if ferr != nil {
 			runAgentLog().Debug(fmt.Sprintf("Init-time fallback entry %s failed: %v", fbProvider, ferr))
@@ -219,11 +241,11 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 		return clientKwargsFromRouted(fbClient, timeout), nil
 	}
 	poolExhausted := false
-	var pool *provider.Pool
+	var pool initCredentialPool
 	if explicit != "" && explicit != "auto" {
 		func() {
 			defer func() { _ = recover() }()
-			pool = provider.LoadPool(agentPoolEnv(ctx), explicit)
+			pool = initLoadPool(ctx, explicit)
 			poolExhausted = pool != nil && pool.HasCredentials() && !pool.HasAvailable(a.model)
 		}()
 	}
@@ -236,7 +258,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 		if entries == "" {
 			entries = "none configured"
 		}
-		runAgentLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary '%s' unresolvable (%s); fallback entries refused: %s", a.provider, why, entries))
+		runAgentLog().Warn(fmt.Sprintf("Init-time provider resolution failed: primary %s unresolvable (%s); fallback entries refused: %s", pyrepr.Repr(a.provider), why, entries))
 	}
 	if poolExhausted {
 		message, ok := provider.PoolBillingMessage(ctx, explicit, a.model, pool)

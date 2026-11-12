@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"sync"
 
@@ -136,7 +135,7 @@ func initPromptCacheConfig(ctx context.Context, a *AIAgent) {
 		}
 	}
 	if errClass != "" {
-		slog.Default().With("logger", "agent.agent_init").Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
+		runAgentLog().Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
 			"using default prompt caching settings. Check the active Hermes Python "+
 			"environment and dependencies; run 'icebath config check' after "+
 			"configuration imports work again.", errClass))

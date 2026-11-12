@@ -228,6 +228,7 @@ func startBackendHeartbeatRefresher(ctx context.Context) {
 		}()
 	})
 	go func() {
+		defer threadExceptHook("hermes-gateway-heartbeat")
 		ctx := context.Background()
 		for {
 			select {

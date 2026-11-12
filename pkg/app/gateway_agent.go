@@ -23,7 +23,7 @@ import (
 )
 
 // How long a turn waits for its settlement after an interrupt
-const gatewayInterruptSettleSeconds = 10.0
+var gatewayInterruptSettleSeconds = 10.0
 
 // Poll interval of the turn pump
 const gatewayAgentPoll = 100 * time.Millisecond
@@ -130,57 +130,58 @@ type GatewayAgent struct {
 	sessionDB  *gatewaycli.GatewaySessionStore
 	opts       gatewayAgentOptions
 
-	mu                       sync.Mutex
-	sessionID                string
-	model                    string
-	provider                 string
-	baseURL                  string
-	apiMode                  string
-	maxIterations            int
-	quietMode                bool
-	serviceTier              string
-	reasoningCallback        func(text string)
-	showReasoningSent        *gatewayShowReasoning
-	controlUpdateCallback    func()
-	suppressStatusOutput     bool
-	printFn                  func(string)
-	finite                   bool
-	openRequest              *gatewayOpenRequest
-	sessionMessages          []map[string]any
-	pendingCLIUserMessage    map[string]any
-	voiceTurnPending         bool
-	interruptRequested       bool
-	turnAskIndex             *int
-	usageStale               bool
-	compressor               gatewayCompressorView
-	counters                 map[string]int
-	contextTokens            int
-	turnCallsBase            int
-	turnBaseUsageAnchor      *provider.UsageAnchor
-	turnAPICalls             *int
-	apiLatencyHistory        []float64
-	apiOutputHistory         []float64
-	todoStore                *tools.TodoStore
-	compressionSummary       map[string]any
-	generation               any
-	admission                any
-	turn                     *gatewayTurn
-	epoch                    int
-	interruptSentAt          *time.Time
-	rateLimitState           *provider.RateLimitState
-	configContextLength      *int
-	toolProgressMode         string
-	reasoningConfig          map[string]any
-	reasoningPushed          bool
-	moaPreset                string
-	turnRoute                map[string]any
-	takenTurnRoute           *gatewayTakenRoute
-	turnReasoning            string
-	usageListenerRegistered  string
-	requestListenerSessionID string
-	credits                  *provider.CreditsCapture
-	notificationConfig       map[string]any
-	muteNotificationReply    bool
+	mu                    sync.Mutex
+	sessionID             string
+	model                 string
+	provider              string
+	baseURL               string
+	apiMode               string
+	maxIterations         int
+	quietMode             bool
+	serviceTier           string
+	reasoningCallback     func(text string)
+	showReasoningSent     *gatewayShowReasoning
+	controlUpdateCallback func()
+	suppressStatusOutput  bool
+	printFn               func(string)
+	finite                bool
+	openRequest           *gatewayOpenRequest
+	sessionMessages       []map[string]any
+	pendingCLIUserMessage map[string]any
+	voiceTurnPending      bool
+	interruptRequested    bool
+	turnAskIndex          *int
+	usageStale            bool
+	compressor            gatewayCompressorView
+	counters              map[string]int
+	contextTokens         int
+	turnCallsBase         int
+	turnBaseUsageAnchor   *provider.UsageAnchor
+	turnAPICalls          *int
+	apiLatencyHistory     []float64
+	apiOutputHistory      []float64
+	todoStore             *tools.TodoStore
+	compressionSummary    map[string]any
+	generation            any
+	admission             any
+	turn                  *gatewayTurn
+	turnCtx               context.Context
+	epoch                 int
+	interruptSentAt       *time.Time
+	rateLimitState        *provider.RateLimitState
+	configContextLength   *int
+	toolProgressMode      string
+	reasoningConfig       map[string]any
+	reasoningPushed       bool
+	moaPreset             string
+	turnRoute             map[string]any
+	takenTurnRoute        *gatewayTakenRoute
+	turnReasoning         string
+	usageListener         *gatewaycli.SessionListener
+	requestListener       *gatewaycli.SessionListener
+	credits               *provider.CreditsCapture
+	notificationConfig    map[string]any
+	muteNotificationReply bool
 }
 
 // Session id, show flag and connection epoch of the last show_reasoning write
@@ -240,8 +241,14 @@ func newGatewayAgent(ctx context.Context, o gatewayAgentOptions) (*GatewayAgent,
 	}
 	a.SetReasoningCallback(o.ReasoningCallback)
 	a.SetServiceTier(o.ServiceTier)
-	a.listen(a.SessionID())
+	onUsage := gatewaycli.SessionListener(func(ctx context.Context, usage map[string]any) { a.applySessionUsage(ctx, usage) })
+	onWithdrawn := gatewaycli.SessionListener(func(_ context.Context, payload map[string]any) { a.onRequestWithdrawn(payload) })
+	a.usageListener, a.requestListener = &onUsage, &onWithdrawn
 	state := a.state()
+	state.Lock()
+	state.UsageListeners = append(state.UsageListeners, a.usageListener)
+	state.RequestListeners = append(state.RequestListeners, a.requestListener)
+	state.Unlock()
 	state.Lock()
 	usage := state.Usage
 	state.Unlock()
@@ -251,39 +258,26 @@ func newGatewayAgent(ctx context.Context, o gatewayAgentOptions) (*GatewayAgent,
 	return a, nil
 }
 
-// Registers the usage and request listeners on one session's state once
+// Registers the usage and request listeners on a session's state unless they are already there
 func (a *GatewayAgent) listen(sessionID string) {
 	state := a.connection.State(sessionID)
 	state.Lock()
 	defer state.Unlock()
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.usageListenerRegistered != sessionID {
-		state.UsageListeners = append(state.UsageListeners, a.usageListenerFor(sessionID))
-		a.usageListenerRegistered = sessionID
+	if !slices.Contains(state.UsageListeners, a.usageListener) {
+		state.UsageListeners = append(state.UsageListeners, a.usageListener)
 	}
-	if a.requestListenerSessionID != sessionID {
-		state.RequestListeners = append(state.RequestListeners, a.requestListenerFor(sessionID))
-		a.requestListenerSessionID = sessionID
+	if !slices.Contains(state.RequestListeners, a.requestListener) {
+		state.RequestListeners = append(state.RequestListeners, a.requestListener)
 	}
 }
 
-// Usage listener that stops applying once the agent left that session
-func (a *GatewayAgent) usageListenerFor(sessionID string) func(context.Context, map[string]any) {
-	return func(ctx context.Context, usage map[string]any) {
-		if a.SessionID() == sessionID {
-			a.applySessionUsage(ctx, usage)
-		}
-	}
-}
-
-// Request withdrawal listener that stops acting once the agent left that session
-func (a *GatewayAgent) requestListenerFor(sessionID string) func(context.Context, map[string]any) {
-	return func(ctx context.Context, payload map[string]any) {
-		if a.SessionID() == sessionID {
-			a.onRequestWithdrawn(payload)
-		}
-	}
+// Removes the listeners from the state of a session the agent left, so its later frames repaint nothing here
+func (a *GatewayAgent) unlisten(sessionID string) {
+	state := a.connection.State(sessionID)
+	state.Lock()
+	defer state.Unlock()
+	state.UsageListeners = gatewaycli.WithoutListener(state.UsageListeners, a.usageListener)
+	state.RequestListeners = gatewaycli.WithoutListener(state.RequestListeners, a.requestListener)
 }
 
 // Current tool progress display mode
@@ -562,6 +556,7 @@ func (a *GatewayAgent) SetSessionID(value string) {
 	if previous == "" || value == previous || value == "" {
 		return
 	}
+	a.unlisten(previous)
 	if a.sessionDB != nil {
 		if _, err := a.sessionDB.Attach(a.ctx, value, false); err != nil {
 			if !isGatewayClientError(err) {
@@ -894,6 +889,19 @@ func (a *GatewayAgent) Interrupt() {
 		slog.Debug(fmt.Sprintf("session.interrupt failed: %s", err.Error()))
 	}
 }
+
+// Context of the goroutine running the turn, where the CLI registered its prompt callbacks
+func (a *GatewayAgent) threadCtx() context.Context {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.turnCtx != nil {
+		return a.turnCtx
+	}
+	return a.ctx
+}
+
+// Explicit stop of the running generation, the same session.interrupt
+func (a *GatewayAgent) HardInterrupt() { a.Interrupt() }
 
 // Sends a steer or redirect for the running generation, the voice stop word when the owner took it as one
 func (a *GatewayAgent) correct(verb, text string) any {

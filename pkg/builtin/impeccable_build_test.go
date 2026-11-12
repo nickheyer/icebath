@@ -138,7 +138,7 @@ func TestBuildOrchestrationAntigravityTransformerEmitsSkillsUnderAgent(t *testin
 
 func sourceScripts(t *testing.T) map[string]impeccableScript {
 	t.Helper()
-	skills := readSourceSkills(t, impeccableRepoRoot)
+	skills := readSourceSkills(t, impeccablePayloadRoot)
 	if len(skills) != 1 {
 		t.Fatalf("%d skills in the source", len(skills))
 	}
@@ -214,7 +214,7 @@ func TestSkillScriptsPayloadTheLauncherIsExecutableAndVersionMatchesEngineVersio
 func degradedDist(t *testing.T) string {
 	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
-	skills := readSourceSkills(t, impeccableRepoRoot)
+	skills := readSourceSkills(t, impeccablePayloadRoot)
 	transformProvider(t, "claude-code", skills, dist)
 	transformProvider(t, "codex", skills, dist)
 	return dist
@@ -271,7 +271,7 @@ func TestDegradedModeFallbackReferenceGenerationGeneratedFallbacksPassThroughPro
 }
 
 func TestDegradedModeFallbackReferenceGenerationTheSourceRepoContainsNoHandAuthoredDegradedReferenceFiles(t *testing.T) {
-	if pathExists(filepath.Join(impeccableRepoRoot, "skill", "reference", "degraded")) {
+	if pathExists(impeccableRepoPath("skill/reference/degraded")) {
 		t.Fatal("skill/reference/degraded exists in the source")
 	}
 }
@@ -279,7 +279,7 @@ func TestDegradedModeFallbackReferenceGenerationTheSourceRepoContainsNoHandAutho
 func providerAgentsDir(t *testing.T, provider, configDir string) (string, string) {
 	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
-	transformProvider(t, provider, readSourceSkills(t, impeccableRepoRoot), dist)
+	transformProvider(t, provider, readSourceSkills(t, impeccablePayloadRoot), dist)
 	return dist, filepath.Join(dist, provider, configDir, "agents")
 }
 
@@ -293,7 +293,7 @@ func TestGitHubCopilotCustomAgentGenerationEmitsGithubAgentsNameAgentMdForEveryS
 
 func TestGitHubCopilotCustomAgentGenerationFrontmatterCarriesOnlyNameAndDescriptionDescriptionVerbatimFromTheSource(t *testing.T) {
 	_, agentsDir := providerAgentsDir(t, "github", ".github")
-	source := readTestFile(t, filepath.Join(impeccableRepoRoot, "skill", "agents", "impeccable-finish-reviewer.md"))
+	source := readTestFile(t, impeccableRepoPath("skill/agents/impeccable-finish-reviewer.md"))
 	m := regexp.MustCompile(`(?m)^description:\s*(.+)$`).FindStringSubmatch(source)
 	if m == nil {
 		t.Fatal("source agent has no description")
@@ -369,7 +369,7 @@ var agentSurfaces = [][2]string{
 func agentSurfacesDist(t *testing.T) string {
 	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
-	skills := readSourceSkills(t, impeccableRepoRoot)
+	skills := readSourceSkills(t, impeccablePayloadRoot)
 	for _, provider := range []string{"codex", "agents", "claude-code", "github", "grok"} {
 		transformProvider(t, provider, skills, dist)
 	}

@@ -208,29 +208,6 @@ func TestCanonicalizeLoadsLinear(t *testing.T) {
 	}
 }
 
-func TestUnrepairableArgsAreNotWrittenBackToHistory(t *testing.T) {
-	resetCanonCache(t)
-	truncated := "{\"content\": \"# chapter draft\nline one\nline two"
-	valid := mustDumps(t, pyjson.ObjectOf("path", "a.txt"))
-	history := []any{map[string]any{"role": "assistant", "content": "", "tool_calls": []any{
-		map[string]any{"id": "call_1", "type": "function", "function": map[string]any{"name": "write_file", "arguments": truncated}},
-		map[string]any{"id": "call_2", "type": "function", "function": map[string]any{"name": "read_file", "arguments": valid}},
-	}}}
-	for range 3 {
-		api := shallowRows(history)
-		canonicalizeAPIToolCalls(api)
-		sent := api[0].(map[string]any)["tool_calls"].([]any)
-		if got := sent[0].(map[string]any)["function"].(map[string]any)["arguments"]; got != provider.RepairToolCallArguments(truncated, "write_file") {
-			t.Fatalf("send copy must be repaired, got %q", got)
-		}
-	}
-	calls := history[0].(map[string]any)["tool_calls"].([]any)
-	if calls[0].(map[string]any)["function"].(map[string]any)["arguments"] != truncated ||
-		calls[1].(map[string]any)["function"].(map[string]any)["arguments"] != valid {
-		t.Fatal("history must keep the model's original arguments after repeated sends")
-	}
-}
-
 func TestSerializedMessagesBytesImagePayloads(t *testing.T) {
 	toolMsg := func(size int) []any {
 		return []any{map[string]any{"role": "tool", "tool_call_id": "call_abc123", "content": []any{

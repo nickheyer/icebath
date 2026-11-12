@@ -1,6 +1,7 @@
 package pyast
 
 import (
+	"archive/tar"
 	"bufio"
 	"compress/gzip"
 	"crypto/sha256"
@@ -8,12 +9,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 type cpythonCase struct {
@@ -191,7 +196,46 @@ func firstRunes(s string, n int) string {
 	return s
 }
 
-const hermesRoot = "../../../references/projects/hermes-agent"
+// Recorded hermes sources by slash path, read once from the zstd tar under testdata without touching disk
+var hermesTree = sync.OnceValues(func() (map[string][]byte, error) {
+	f, err := os.Open(filepath.Join("testdata", "hermes_tree.tar.zst"))
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	dec, err := zstd.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+	defer dec.Close()
+	files := map[string][]byte{}
+	tr := tar.NewReader(dec)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return files, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if files[hdr.Name], err = io.ReadAll(tr); err != nil {
+			return nil, err
+		}
+	}
+})
+
+// Bytes of one recorded hermes source, a not exist error when the archive lacks it
+func hermesSource(rel string) ([]byte, error) {
+	files, err := hermesTree()
+	if err != nil {
+		return nil, err
+	}
+	data, ok := files[rel]
+	if !ok {
+		return nil, &fs.PathError{Op: "open", Path: rel, Err: fs.ErrNotExist}
+	}
+	return data, nil
+}
 
 func TestParseMatchesCPythonOnHermesTree(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(readGzip(t, "hermes_tree.tsv.gz"))), "\n")
@@ -206,7 +250,7 @@ func TestParseMatchesCPythonOnHermesTree(t *testing.T) {
 			for line := range jobs {
 				parts := strings.SplitN(line, "\t", 5)
 				rel, srcHash, kind, want := parts[0], parts[1], parts[2], parts[3]
-				data, err := os.ReadFile(filepath.Join(hermesRoot, rel))
+				data, err := hermesSource(rel)
 				if err != nil {
 					results <- result{rel, err.Error()}
 					continue

@@ -73,6 +73,23 @@ func idSetsIntersect(a, b map[string]bool) bool {
 	return false
 }
 
+// Carries in place dict edits back onto the live rows, every field after a failed pass
+func writeBackRepairedRows(msgs []*state.Message, rows []map[string]any, failed bool) {
+	for i, row := range rows {
+		if failed {
+			if !reflect.DeepEqual(state.MessageToDict(msgs[i]), row) {
+				*msgs[i] = *state.MessageFromDict(row)
+			}
+			continue
+		}
+		if s, ok := msgs[i].Content.(string); ok {
+			if decoded, same := row["content"].(string); !same || decoded != s {
+				msgs[i].Content = row["content"]
+			}
+		}
+	}
+}
+
 // Repairs role alternation in place and moves the flush cursor to the surviving flushed rows
 func repairMessageSequenceWithCursor(a *AIAgent, messages *[]*state.Message) (int, error) {
 	msgs := *messages
@@ -90,6 +107,7 @@ func repairMessageSequenceWithCursor(a *AIAgent, messages *[]*state.Message) (in
 	cursor := a.lastFlushedDBIdx
 	repairs, err := state.RepairMessageSequence(&rows)
 	if err != nil || repairs == 0 {
+		writeBackRepairedRows(msgs, rows, err != nil)
 		return repairs, err
 	}
 	rebuilt := make([]*state.Message, len(rows))

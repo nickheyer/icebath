@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"math"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -12,12 +11,13 @@ func (a *AIAgent) CreditsCapture() *provider.CreditsCapture { return a.creditsCa
 
 // Implicit stale timeout capped at half the remaining run budget, never under sixty seconds
 func capToRunBudget(a *AIAgent, timeout float64) float64 {
-	if a.runBudgetSeconds == 0 || a.runBudgetStartedAt == 0 {
-		return timeout
-	}
-	remaining := a.runBudgetSeconds - (nowSeconds() - a.runBudgetStartedAt)
-	return math.Min(timeout, math.Max(60.0, remaining*0.5))
+	return provider.CapToRunBudget(a, timeout)
 }
+
+var _ provider.RunBudgetAgent = (*AIAgent)(nil)
+
+// Wall clock run budget in seconds and the epoch second the turn clock started, zero when unset
+func (a *AIAgent) RunBudget() (float64, float64) { return a.runBudgetSeconds, a.runBudgetStartedAt }
 
 // Codex silence floor when the reasoning config is enabled at high effort or stronger, else zero
 func highEffortSilenceFloor(a *AIAgent) float64 {

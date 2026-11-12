@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
+	"math"
 	"os"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -75,13 +77,41 @@ func cloudStaleTimeout(ctx context.Context, base float64, kwargs map[string]any)
 	return timeout
 }
 
+// RunBudgetAgent is an agent carrying a wall clock run budget and the epoch second its turn clock started
+type RunBudgetAgent interface {
+	RunBudget() (seconds, startedAt float64)
+}
+
+// CapToRunBudget caps an implicit stale timeout at half the remaining run budget, never under sixty seconds
+func CapToRunBudget(agent any, timeout float64) float64 {
+	budgeted, ok := agent.(RunBudgetAgent)
+	if !ok {
+		return timeout
+	}
+	budget, started := budgeted.RunBudget()
+	if budget == 0 || started == 0 {
+		return timeout
+	}
+	remaining := budget - (float64(time.Now().UnixNano())/1e9 - started)
+	return math.Min(timeout, math.Max(60.0, remaining*0.5))
+}
+
 // Explicit provider stale timeout, else the context scaled and reasoning floored default for a route without a run budget
 func cloudStaleTimeoutFor(ctx context.Context, provider, model string, kwargs map[string]any) float64 {
+	return cloudStaleTimeoutForAgent(ctx, nil, provider, model, kwargs)
+}
+
+// Explicit provider stale timeout, else the scaled and floored default capped by the agent run budget unless the env set it
+func cloudStaleTimeoutForAgent(ctx context.Context, agent any, provider, model string, kwargs map[string]any) float64 {
 	if explicit, ok := GetProviderStaleTimeout(ctx, provider, model); ok {
 		return explicit
 	}
-	base, _ := streamEnvStaleBase()
-	return cloudStaleTimeout(ctx, base, kwargs)
+	base, explicitEnv := streamEnvStaleBase()
+	timeout := cloudStaleTimeout(ctx, base, kwargs)
+	if explicitEnv {
+		return timeout
+	}
+	return CapToRunBudget(agent, timeout)
 }
 
 // Replaces old with new wherever it sits between two decimal digits

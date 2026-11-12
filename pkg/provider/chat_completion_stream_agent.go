@@ -406,7 +406,7 @@ func BedrockStreamCall(ctx context.Context, agent ChatCompletionAgent, apiKwargs
 		cb.OnReasoningDelta = func(text string) error { agent.FireReasoningDelta(text); return nil }
 	}
 	r := bedrockStreamRun{
-		region: region, kwargs: kwargs, stale: cloudStaleTimeoutFor(ctx, agent.Provider(), bedrockStreamModel(kwargs), kwargs),
+		region: region, kwargs: kwargs, stale: cloudStaleTimeoutForAgent(ctx, agent, agent.Provider(), bedrockStreamModel(kwargs), kwargs),
 		cb: cb, firstDelta: onFirstDelta, fence: agent,
 		interrupted: func() bool { return agent.InterruptRequested() || ctx.Err() != nil },
 		interruptErr: func(postWorker bool) error {

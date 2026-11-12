@@ -38,6 +38,7 @@ func unavailableWarnings(logs *bytes.Buffer) []string {
 }
 
 func TestMemoryProviderUnavailableWarnsOnceAndDedupes(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, _, logs := memoryWarnHome(t)
 	warnMemoryProviderUnavailable(ctx, "hindsight", "", nil)
 	warnMemoryProviderUnavailable(ctx, "hindsight", "", nil)
@@ -47,6 +48,7 @@ func TestMemoryProviderUnavailableWarnsOnceAndDedupes(t *testing.T) {
 }
 
 func TestMemoryProviderUnavailableDistinctProvidersEachWarn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, _, logs := memoryWarnHome(t)
 	warnMemoryProviderUnavailable(ctx, "hindsight", "", nil)
 	warnMemoryProviderUnavailable(ctx, "mem0", "", nil)
@@ -56,6 +58,7 @@ func TestMemoryProviderUnavailableDistinctProvidersEachWarn(t *testing.T) {
 }
 
 func TestMemoryProviderUnavailableReasonIsAppended(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, _, logs := memoryWarnHome(t)
 	hint := "Install the embedded runtime with: uv pip install hindsight-all."
 	var said []string
@@ -66,6 +69,7 @@ func TestMemoryProviderUnavailableReasonIsAppended(t *testing.T) {
 }
 
 func TestParkedMemoryProviderIsReportedAndNeverReinstalled(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, h, _ := memoryWarnHome(t)
 	plugin := filepath.Join(h, "plugins", "parkedmem")
 	if err := os.MkdirAll(plugin, 0o755); err != nil {
@@ -94,6 +98,7 @@ func TestParkedMemoryProviderIsReportedAndNeverReinstalled(t *testing.T) {
 }
 
 func TestMemoryProviderThatStillFailsAfterRecoveryIsReported(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, h, _ := memoryWarnHome(t)
 	plugin := filepath.Join(h, "plugins", "brokenmem")
 	saved := recoverMemoryProviderAtStartup

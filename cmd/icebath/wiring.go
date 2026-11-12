@@ -174,6 +174,8 @@ func installProcessWiring() {
 	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
+	tuiserver.MintDisplayTicket, tuiserver.DisplayAdmissionOf = dashboard.MintWSTicket, dashboard.SocketAdmission
+	tuiserver.ShareNousDiagnostics, tuiserver.RedactDebugSupportText = selfupdate.ShareNousDiagnostics, selfupdate.RedactDebugSupportTextCapped
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
@@ -352,6 +354,7 @@ func installProcessWiring() {
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
 	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
+	tools.NousAccount = provider.NousAccountSource()
 	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
 	tools.VisionCapabilities = provider.VisionCapabilities{}
 	agent.InstallDelegationRegistryHooks()

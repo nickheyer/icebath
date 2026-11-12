@@ -11,17 +11,29 @@ import (
 	"testing"
 )
 
-var impeccableRepoRoot = filepath.Join(refsRoot, "impeccable")
+// Upstream impeccable checkout files the cases read beyond the skill and plugin subtrees the payload ships
+var impeccableRepoRoot = filepath.Join("testdata", "impeccable")
+
+// Payload copy of the impeccable checkout holding its shipped skill and plugin subtrees
+var impeccablePayloadRoot = filepath.Join("payload", "impeccable")
+
+// Checkout path of a slash relative file, the skill and plugin subtrees read from the payload copy
+func impeccableRepoPath(rel string) string {
+	if first, _, _ := strings.Cut(rel, "/"); first == "skill" || first == "plugin" {
+		return filepath.Join(impeccablePayloadRoot, filepath.FromSlash(rel))
+	}
+	return filepath.Join(impeccableRepoRoot, filepath.FromSlash(rel))
+}
 
 // Temp build root holding the skill source, both root manifests, package.json and ENGINE_VERSION of the reference checkout
 func impeccableBuildRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	if err := copyDirSync(filepath.Join(impeccableRepoRoot, "skill"), filepath.Join(root, "skill")); err != nil {
+	if err := copyDirSync(impeccableRepoPath("skill"), filepath.Join(root, "skill")); err != nil {
 		t.Fatal(err)
 	}
 	for _, rel := range []string{".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "ENGINE_VERSION", "package.json"} {
-		data, err := os.ReadFile(filepath.Join(impeccableRepoRoot, filepath.FromSlash(rel)))
+		data, err := os.ReadFile(impeccableRepoPath(rel))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +117,7 @@ func TestImpeccablePluginBuildReproducesCommittedSubtree(t *testing.T) {
 	}
 
 	built := filepath.Join(root, "plugin")
-	committed := filepath.Join(impeccableRepoRoot, "plugin")
+	committed := impeccableRepoPath("plugin")
 	got, want := treeModes(t, built), treeModes(t, committed)
 	if !slices.Equal(sortedKeys(got), sortedKeys(want)) {
 		t.Fatalf("built plugin files\n%v\ncommitted\n%v", sortedKeys(got), sortedKeys(want))

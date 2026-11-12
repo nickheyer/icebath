@@ -407,21 +407,18 @@ func (g *gatewayAnswering) is(id any) bool {
 func answerGatewayChoices(c *CLI, connection *gatewaycli.GatewayConnection, wake *pythread.Event, answering *gatewayAnswering) {
 	events, state := connection.Events, connection.State(c.sessionID)
 	sessionID := c.sessionID
-	listener := func(ctx context.Context, payload map[string]any) {
+	listener := gatewaycli.SessionListener(func(ctx context.Context, payload map[string]any) {
 		if answering.is(payload["id"]) {
 			c.withdrawGatewayModal("clarify")
 		}
-	}
+	})
 	state.Lock()
-	state.RequestListeners = append(state.RequestListeners, listener)
-	index := len(state.RequestListeners) - 1
+	state.RequestListeners = append(state.RequestListeners, &listener)
 	state.Unlock()
 	defer func() {
 		state.Lock()
 		defer state.Unlock()
-		if index < len(state.RequestListeners) {
-			state.RequestListeners = append(state.RequestListeners[:index:index], state.RequestListeners[index+1:]...)
-		}
+		state.RequestListeners = gatewaycli.WithoutListener(state.RequestListeners, &listener)
 	}()
 	for !wake.Wait(gatewayChoicePoll.Seconds()) {
 		asks := events.TakeMatching(func(item any) bool {

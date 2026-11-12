@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
@@ -570,13 +571,42 @@ func (c *CLI) applyReasoningAfterSwitch(effort string, persistGlobal, oneTurn bo
 	cprint("    " + c.t(key, map[string]any{"effort": effort}))
 }
 
+// Session row writes a session scoped model switch records
+type modelSwitchWriter interface {
+	UpdateSessionModel(ctx context.Context, sessionID, model string) error
+	PatchSessionModelConfig(ctx context.Context, sessionID string, patch map[string]any) error
+}
+
+var _ modelSwitchWriter = (*gatewaycli.GatewaySessionStore)(nil)
+
 // Persists a session scoped switch to the session row with the route in both reader shapes
 func (c *CLI) persistModelSwitchToSession(result *provider.ModelSwitchResult) {
-	if c.sessionDB == nil || c.sessionID == "" {
+	if c.sessionDB == nil {
 		return
 	}
-	c.sessionDB.UpdateSessionModel(c.ctx, c.sessionID, result.NewModel)
-	c.sessionDB.PatchSessionModelConfig(c.ctx, c.sessionID, modelSwitchSessionPatch(c, result))
+	persistModelSwitch(c, c.sessionDB, result)
+}
+
+// Writes the model column and both route shapes through the store, a failing store logged and never raised
+func persistModelSwitch(c *CLI, db modelSwitchWriter, result *provider.ModelSwitchResult) {
+	if c.sessionID == "" {
+		return
+	}
+	patch := modelSwitchSessionPatch(c, result)
+	err := func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = asError(r)
+			}
+		}()
+		if err := db.UpdateSessionModel(c.ctx, c.sessionID, result.NewModel); err != nil {
+			return err
+		}
+		return db.PatchSessionModelConfig(c.ctx, c.sessionID, patch)
+	}()
+	if err != nil {
+		cliLogger.Debug("Failed to persist model switch to session DB", "error", err)
+	}
 }
 
 // Model config patch of a session scoped switch, the route nested and top level with stale keys set to None

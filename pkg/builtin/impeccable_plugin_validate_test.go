@@ -231,7 +231,7 @@ func TestCollectPluginManifestFindingsKnownLoaderKeysNeverReAdmitsAgents(t *test
 }
 
 func TestCommittedPluginSubtreeTheShippedManifestHonorsTheVerifiedLoaderContract(t *testing.T) {
-	wantFindingCount(t, manifestFindings(t, impeccableRepoRoot), 0)
+	wantFindingCount(t, manifestFindings(t, impeccablePayloadRoot), 0)
 }
 
 func versionSkillMd(version string) string {

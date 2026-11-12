@@ -23,7 +23,7 @@ import (
 // Snapshot dirs a sealed payload never reads, never packaged, compiled or baked
 var inertSnapshotDirs = []string{
 	"tests", "tests-js", "website", "evals", ".github", "nix", "docker",
-	"apps", "ui-tui", "web", "scripts", "references", "dev", "site", "packaging", "assets",
+	"apps", "ui-tui", "web", "scripts", "dev", "site", "packaging", "assets",
 }
 
 // Writes text with newline translated to the host line separator the way Path.write_text does

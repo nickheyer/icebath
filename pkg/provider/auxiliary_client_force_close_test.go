@@ -86,7 +86,7 @@ func TestForceCloseTCPSocketsUsesShutRdwr(t *testing.T) {
 	}
 }
 
-func TestForceCloseTCPSocketsDescendsConnectionWrapper(t *testing.T) {
+func TestForceCloseTCPSocketsDescendsHttpcore1ConnectionWrapper(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }))
 	defer srv.Close()
 	tr := auxTrackPoolConns(&http.Transport{TLSClientConfig: srv.Client().Transport.(*http.Transport).TLSClientConfig})

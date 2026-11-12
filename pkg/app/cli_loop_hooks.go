@@ -14,11 +14,11 @@ import (
 
 // cliCommandState holds the slash command, loop and model switch state of the interactive CLI
 type cliCommandState struct {
-	loopManager          *agent.LoopManager
+	loopManager          agent.LoopAutomation
 	lastLoopTickCheck    float64
 	lastGoalBarrierCheck float64
 	// Heartbeat manager of the current session and whether its idle watchdog runs
-	heartbeatManager         *agent.HeartbeatManager
+	heartbeatManager         agent.HeartbeatAutomation
 	heartbeatWatchdogStarted bool
 	// Marks the next process command call as an internal re entry the user's metrics already counted
 	slashRedispatch bool
@@ -38,22 +38,43 @@ func (q *inputQueue) snapshot() []any {
 	return append([]any(nil), q.items...)
 }
 
-// Loop manager bound to the current session id, rebuilt after the session changed, nil without a session
-func (c *CLI) getLoopManager() *agent.LoopManager {
+// Loop manager bound to the current session id, the gateway's on a gateway store and none before its session opens
+func (c *CLI) getLoopManager() agent.LoopAutomation {
+	gateway, connection := c.automationConnection()
+	if gateway && connection == nil {
+		return nil
+	}
 	c.uiMu.Lock()
 	sessionID, existing := c.sessionID, c.loopManager
 	c.uiMu.Unlock()
 	if sessionID == "" {
 		return nil
 	}
-	if existing != nil && existing.SessionID == sessionID {
+	if existing != nil && existing.Session() == sessionID {
 		return existing
 	}
-	manager := agent.NewLoopManager(c.ctx, sessionID)
+	var manager agent.LoopAutomation
+	if gateway {
+		remote, err := NewGatewayLoopManager(c.ctx, sessionID, connection)
+		if err != nil {
+			panic(err)
+		}
+		manager = remote
+	} else {
+		manager = agent.NewLoopManager(c.ctx, sessionID)
+	}
 	c.uiMu.Lock()
 	c.loopManager = manager
 	c.uiMu.Unlock()
 	return manager
+}
+
+// Whether the session's goal defers this loop's tick, asked of the gateway when the manager is the gateway's
+func (c *CLI) goalBlocksLoopTick(mgr agent.LoopAutomation) bool {
+	if remote, isRemote := mgr.(interface{ GoalBlocksTick() bool }); isRemote {
+		return remote.GoalBlocksTick()
+	}
+	return agent.GoalBlocksLoopTick(c.ctx, mgr.Session())
 }
 
 // Prints a manager decision message indented, true when one was printed
@@ -113,7 +134,14 @@ func (c *CLI) maybeFireLoopTick() {
 	if !c.pendingInput.Empty() {
 		return
 	}
-	if agent.GoalBlocksLoopTick(c.ctx, mgr.SessionID) {
+	if blocked := func() (blocked bool) {
+		defer func() {
+			if recover() != nil {
+				blocked = false
+			}
+		}()
+		return c.goalBlocksLoopTick(mgr)
+	}(); blocked {
 		return
 	}
 	wakeup, ok := mgr.FireTick(c.ctx)
@@ -132,7 +160,7 @@ func (c *CLI) maybeFireLoopTick() {
 }
 
 // Announces and queues a fired wakeup, rolling the tick back when the injection fails
-func (c *CLI) injectLoopWakeup(mgr *agent.LoopManager, wakeup string) (ok bool) {
+func (c *CLI) injectLoopWakeup(mgr agent.LoopAutomation, wakeup string) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			cliLogger.Debug(fmt.Sprintf("loop tick injection failed: %v", r))

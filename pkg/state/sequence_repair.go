@@ -616,7 +616,7 @@ func normalizeSentinelEncodedContent(messages []map[string]any) {
 			continue
 		}
 		if s, ok := msg["content"].(string); ok && strings.HasPrefix(s, contentJSONPrefix) {
-			msg["content"] = decodeMessageContent(s)
+			msg["content"] = plainDictTree(decodeMessageContent(s))
 		}
 	}
 }

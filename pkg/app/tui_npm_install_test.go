@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
-const tniHermesScripts = "../../references/projects/hermes-agent/scripts/build"
+const tniHermesScripts = "testdata/hermes/scripts/build"
 
 // The desktop build of these cases runs its node steps under the custody launcher this binary serves
 func init() { selfupdate.DispatchCustodyLauncher() }

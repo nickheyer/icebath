@@ -762,8 +762,13 @@ func isValueError(err error) bool {
 	return errors.As(err, &pyErr) && pyErr.Kind == "ValueError"
 }
 
+// Turn starter every submit path calls, the real one swapped only where a hermes case records dispatches
+var runPromptSubmit func(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, o promptSubmitOptions) bool
+
+func init() { runPromptSubmit = runPromptSubmitTurn }
+
 // Admits and starts one prompt turn on its own goroutine, false when it never started
-func runPromptSubmit(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, o promptSubmitOptions) bool {
+func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, o promptSubmitOptions) bool {
 	if !ensureSessionDBRow(ctx, session) {
 		logger().Warn(fmt.Sprintf("prompt dispatch: session store unavailable for %s — this turn may not persist", sessionKeyOr(session, sid)))
 	}

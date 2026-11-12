@@ -139,7 +139,7 @@ func TestPipCheckReadsTheRealLockLikeTomllib(t *testing.T) {
 		"from pm.pip_check import overridden_versions, override_requirements\n" +
 		"lock = Path(sys.argv[2])\n" +
 		"print(json.dumps([{k: sorted(v) for k, v in overridden_versions(lock).items()}, override_requirements(lock)]))"
-	cmd := exec.Command(peHostPython(t), "-I", "-c", script, reference, lock)
+	cmd := exec.Command(peHostPython(t), "-I", "-B", "-c", script, reference, lock)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, os.Stderr
 	if err := cmd.Run(); err != nil {

@@ -121,6 +121,7 @@ func interruptBusySession(ctx context.Context, sid string, session *tuigateway.S
 	session.Set("_busy_interrupt_pending", true)
 	unlock()
 	go func() {
+		defer threadExceptHook("busy-interrupt-" + sid)
 		defer func() {
 			unlock := lockHistory(session)
 			session.Set("_busy_interrupt_pending", false)

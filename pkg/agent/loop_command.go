@@ -109,7 +109,7 @@ func ParseLoopArgs(text string) LoopArgs {
 }
 
 // Output of a pause control
-func loopPauseOutput(ctx context.Context, mgr *LoopManager) (string, error) {
+func loopPauseOutput(ctx context.Context, mgr LoopAutomation) (string, error) {
 	state, err := mgr.Pause(ctx, loopDefaultPauseReason)
 	if err != nil {
 		return "", err
@@ -121,7 +121,7 @@ func loopPauseOutput(ctx context.Context, mgr *LoopManager) (string, error) {
 }
 
 // Output of a resume control
-func loopResumeOutput(ctx context.Context, mgr *LoopManager) string {
+func loopResumeOutput(ctx context.Context, mgr LoopAutomation) string {
 	state := mgr.Resume(ctx)
 	if state == nil {
 		return "No loop to resume."
@@ -130,7 +130,7 @@ func loopResumeOutput(ctx context.Context, mgr *LoopManager) string {
 }
 
 // Output of a control word, false when the argument is a new loop spec
-func loopControlOutput(ctx context.Context, mgr *LoopManager, word string) (string, bool, error) {
+func loopControlOutput(ctx context.Context, mgr LoopAutomation, word string) (string, bool, error) {
 	switch word {
 	case "", "status":
 		return mgr.StatusLine(), true, nil
@@ -157,7 +157,7 @@ type LoopCommandResult struct {
 }
 
 // Handles the loop command arguments for every surface, storing route on a new loop
-func DispatchLoopCommand(ctx context.Context, mgr *LoopManager, args string, route *pyjson.Object) (LoopCommandResult, error) {
+func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, route *pyjson.Object) (LoopCommandResult, error) {
 	arg := pystr.Strip(args)
 	out, isControl, err := loopControlOutput(ctx, mgr, pystr.Lower(arg))
 	if err != nil {

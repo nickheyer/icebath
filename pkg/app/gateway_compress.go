@@ -60,7 +60,7 @@ func compressNowOnGateway(ctx context.Context, a *GatewayAgent, history []map[st
 		}
 		tailRows = append(tailRows, row)
 	}
-	compressed, _, err := a.CompressContext(ctx, head, nil, request.FocusTopic, tailRows)
+	compressed, _, err := a.compressContext(ctx, head, nil, request.FocusTopic, tailRows)
 	if err != nil {
 		return agent.CompressResult{}, err
 	}

@@ -54,6 +54,7 @@ func maybeNotifyAutoPrune(ctx context.Context, sid, profileHome string) {
 	autoPruneNotified[h] = nowSeconds()
 	autoPruneNotifiedMu.Unlock()
 	memory.SpawnContextThread(ctx, "auto-prune-advice", func(ctx context.Context) {
+		defer threadExceptHook("auto-prune-advice")
 		advice, err := state.AutoPruneAdvise(ctx, h)
 		if err != nil {
 			logger().Error("Exception in thread auto-prune-advice", "exc_info", err.Error())

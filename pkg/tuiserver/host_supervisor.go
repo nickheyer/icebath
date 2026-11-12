@@ -91,6 +91,17 @@ func hostCallLogged(cb func(*pyjson.Object), frame *pyjson.Object, failure strin
 	cb(frame)
 }
 
+// Appends one log record with a single append write so concurrent writers never interleave a line
+func appendLogRecord(path, record string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+		return err
+	}
+	if !strings.HasSuffix(record, "\n") {
+		record += "\n"
+	}
+	return hostAppendWrite(path, []byte(strings.ToValidUTF8(record, "\uFFFD")))
+}
+
 // Command line of a pid, procfs first then ps, empty when neither answers
 func hostPIDCommand(pid int) string {
 	if pid <= 0 {
@@ -797,6 +808,7 @@ func (s *HostSupervisor) maybeRespawnAfterCrash() {
 	delay := min(5.0, 0.25*float64(int(1)<<max(0, len(s.restartTimes)-1)))
 	s.lock.Unlock()
 	go func() {
+		defer threadExceptHook("compute-host-respawn")
 		time.Sleep(time.Duration(delay * float64(time.Second)))
 		s.lock.Lock()
 		defer s.lock.Unlock()

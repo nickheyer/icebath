@@ -33,6 +33,8 @@ func init() {
 	displayRegistry.scopedMethod("display.status", displayStatus)
 	displayRegistry.scopedMethod("display.start", displayStart)
 	displayRegistry.scopedMethod("display.stop", displayStop)
+	displayRegistry.scopedMethod("display.observe", displayObserve)
+	displayRegistry.scopedMethod("display.switchSandboxImage", displaySwitchSandboxImage)
 	displayRegistry.scopedMethod("display.install", displayInstall)
 	displayRegistry.scopedMethod("display.lease.acquire", displayLeaseAcquire)
 	displayRegistry.scopedMethod("display.lease.release", displayLeaseRelease)

@@ -25,7 +25,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-var egmPackRepo = filepath.Join("..", "..", "references", "projects", "elephant-goldfish-model")
+// Upstream EGM checkout files the cases read beyond the entries the payload ships
+var egmPackRepo = filepath.Join("testdata", "elephant-goldfish-model")
+
+// Checkout path of a slash relative EGM entry, the payload copy for every entry the package ships
+func egmRepoPath(rel string) string {
+	switch first, _, _ := strings.Cut(rel, "/"); first {
+	case "skills", "agents", "resources", "docs", "assets", ".codex-plugin", "plugin.json", "README.md", "LICENSE", "TESTING.md":
+		return filepath.Join("payload", "elephant-goldfish-model", filepath.FromSlash(rel))
+	}
+	return filepath.Join(egmPackRepo, filepath.FromSlash(rel))
+}
 
 // Calls build from the materialized pack_plugin.py and prints its paths or the raised exception as JSON
 const egmPackDriver = `import json, runpy, sys, zipfile
@@ -61,9 +71,11 @@ type egmPackResult struct {
 	Folder, Archive, Type, Error string
 }
 
-// Managed python and the materialized pack_plugin.py shared by every packaging test
+// Managed python of a run wide home and the materialized pack_plugin.py shared by every packaging test
 func egmPackTools(t *testing.T) (string, string) {
 	t.Helper()
+	t.Setenv("ICEBATH_HOME", filepath.Join(builtinTestCache, "toolchain-home"))
+	defer t.Setenv("ICEBATH_HOME", t.TempDir())
 	egmPackOnce.Do(func() {
 		var found bool
 		_, egmPackPython, found, egmPackErr = pm.Toolchain(context.Background(), true, false)
@@ -74,7 +86,7 @@ func egmPackTools(t *testing.T) (string, string) {
 			return
 		}
 		var tree *Tree
-		if tree, egmPackErr = Materialize(); egmPackErr == nil {
+		if tree, egmPackErr = materializeAt(builtinTestCache); egmPackErr == nil {
 			egmPackScript = tree.Payload("elephant-goldfish-model/scripts/pack_plugin.py")
 		}
 	})
@@ -121,7 +133,7 @@ func egmPackSource(t *testing.T) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "source")
 	for _, name := range []string{"plugin.json", "LICENSE", "README.md", "TESTING.md", "CONTRIBUTING.md", "AI_POLICY.md", ".github/PULL_REQUEST_TEMPLATE.md"} {
-		data, err := os.ReadFile(filepath.Join(egmPackRepo, name))
+		data, err := os.ReadFile(egmRepoPath(name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -129,7 +141,7 @@ func egmPackSource(t *testing.T) string {
 		os.WriteFile(filepath.Join(root, name), data, 0o644)
 	}
 	for _, name := range []string{"skills", "agents", "resources", "docs", "assets", ".claude-plugin", ".codex-plugin"} {
-		if err := os.CopyFS(filepath.Join(root, name), os.DirFS(filepath.Join(egmPackRepo, name))); err != nil {
+		if err := os.CopyFS(filepath.Join(root, name), os.DirFS(egmRepoPath(name))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -493,7 +505,7 @@ func TestEGMPackArchiveClaimedAfterPreflightIsNotOverwritten(t *testing.T) {
 }
 
 func TestEGMPackPublishedClaudeRuntimeIsCurrent(t *testing.T) {
-	generated, _ := egmPackOK(t, egmPackRepo, "claude", t.TempDir())
+	generated, _ := egmPackOK(t, egmPackSource(t), "claude", t.TempDir())
 	contents := func(folder string) map[string]string {
 		out := map[string]string{}
 		filepath.WalkDir(folder, func(p string, d fs.DirEntry, err error) error {

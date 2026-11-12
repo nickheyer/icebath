@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -266,5 +268,135 @@ func TestWorktreeStatusUnknownAndPrune(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out.String())
 		}
+	}
+}
+
+// Snapshot the store double answers a resume of a known session with
+func storeSnapshot(sessionID string) map[string]any {
+	return map[string]any{"session_id": sessionID, "stored_session_id": sessionID, "messages": []any{}, "revision": 3,
+		"execution_generation": 0, "subscription_id": "sub-" + sessionID,
+		"info": map[string]any{"model": "fake-model", "cwd": "/w", "context_length": 128000, "enabled_toolsets": []any{"file"},
+			"tools": map[string]any{"file": []any{"read_file", "write_file"}}, "skills": map[string]any{"devops": []any{"sdlc-review"}},
+			"mcp_servers": []any{}, "tool_availability": map[string]any{"available_toolsets": []any{"file"}, "unavailable_toolsets": []any{},
+				"lazy_tools": []any{}, "disabled_tools": []any{}}}}
+}
+
+// Worktree handler CLI attached to a scripted gateway session, its tools running there
+func gatewayWorktreeCLI(t *testing.T, mutate func(client *scriptedClient, params map[string]any) error) (*CLI, *bytes.Buffer, *scriptedClient) {
+	t.Helper()
+	c, out := worktreeHandlerCLI(t)
+	client := &scriptedClient{}
+	client.override = func(method string, params map[string]any) (any, bool, error) {
+		client.record(method, params)
+		switch method {
+		case "session.resume":
+			if params["session_id"] != "local-s" {
+				return nil, true, &gateway.GatewayClientError{Msg: "not_found"}
+			}
+			return storeSnapshot("local-s"), true, nil
+		case "session.mutate":
+			if mutate != nil {
+				if err := mutate(client, params); err != nil {
+					return nil, true, err
+				}
+			}
+		}
+		return map[string]any{"status": "ok", "detached": true}, true, nil
+	}
+	conn := scriptedConnection(t, client)
+	c.sessionDB, c.gatewaySessionOpen, c.sessionID = gatewaycli.NewGatewaySessionStore(conn), true, "local-s"
+	t.Cleanup(func() { _ = c.sessionDB.CloseReader() })
+	return c, out, client
+}
+
+func TestNewMovesTheGatewaySessionsWorkspaceIntoTheTree(t *testing.T) {
+	c, out, client := gatewayWorktreeCLI(t, nil)
+	repo := worktreeRepo(t)
+	runWorktree(t, c, "/worktree new moved")
+	wt := filepath.Join(repo, ".worktrees", "moved")
+	mutations := client.callsOf("session.mutate")
+	if len(mutations) != 1 {
+		t.Fatalf("mutations %v", mutations)
+	}
+	params := mutations[0]
+	if params["operation"] != "workspace" || !sameJSON(params["payload"], map[string]any{"cwd": wt}) || params["session_id"] != "local-s" {
+		t.Fatalf("mutation %v", params)
+	}
+	if !sameJSON(params["expected_generation"], 0) {
+		t.Fatalf("expected generation %v", params["expected_generation"])
+	}
+	if !strings.Contains(out.String(), catalogText("cli.commands.worktree.tools_in_worktree", nil)) {
+		t.Fatalf("output %q", out.String())
+	}
+}
+
+func TestNewRefusedByTheGatewayNeverClaimsTheToolsMoved(t *testing.T) {
+	c, out, _ := gatewayWorktreeCLI(t, func(*scriptedClient, map[string]any) error { return &gateway.GatewayRPCError{Msg: "session_busy"} })
+	repo := worktreeRepo(t)
+	runWorktree(t, c, "/worktree new busy")
+	if !strings.Contains(out.String(), "session_busy") || strings.Contains(out.String(), catalogText("cli.commands.worktree.tools_in_worktree", nil)) {
+		t.Fatalf("output %q", out.String())
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	here, _ := filepath.EvalSymlinks(cwd)
+	want, _ := filepath.EvalSymlinks(repo)
+	if here != want {
+		t.Fatalf("cwd %s, want %s", here, want)
+	}
+	if _, set := os.LookupEnv("TERMINAL_CWD"); set || currentWorktree() != nil {
+		t.Fatalf("TERMINAL_CWD set %v active %v", set, currentWorktree())
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".worktrees", "busy")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the refused tree stayed on disk: %v", err)
+	}
+}
+
+func TestNewWhoseShellCannotFollowSaysTheSessionMoved(t *testing.T) {
+	var wt string
+	c, out, _ := gatewayWorktreeCLI(t, func(_ *scriptedClient, params map[string]any) error {
+		payload, _ := params["payload"].(map[string]any)
+		wt, _ = payload["cwd"].(string)
+		return os.Chmod(wt, 0)
+	})
+	repo := worktreeRepo(t)
+	t.Cleanup(func() {
+		if wt != "" {
+			_ = os.Chmod(wt, 0o755)
+		}
+	})
+	runWorktree(t, c, "/worktree new stuck")
+	if want := filepath.Join(repo, ".worktrees", "stuck"); wt != want {
+		t.Fatalf("moved to %q, want %q", wt, want)
+	}
+	failed := catalogText("cli.session.cwd_enter_failed", map[string]any{"path": wt, "error": "[Errno 13] Permission denied: '" + wt + "'"})
+	if !strings.Contains(out.String(), failed) {
+		t.Fatalf("output %q lacks %q", out.String(), failed)
+	}
+	if !strings.Contains(out.String(), catalogText("cli.commands.worktree.tools_in_worktree", nil)) || currentWorktree()["path"] != wt {
+		t.Fatalf("output %q active %v", out.String(), currentWorktree())
+	}
+	if _, set := os.LookupEnv("TERMINAL_CWD"); set {
+		t.Fatal("TERMINAL_CWD moved")
+	}
+}
+
+func TestAMovedSessionGetsItsCleanTreeBackOnResume(t *testing.T) {
+	c, _, _ := gatewayWorktreeCLI(t, nil)
+	repo := worktreeRepo(t)
+	runWorktree(t, c, "/worktree new kept")
+	wt := filepath.Join(repo, ".worktrees", "kept")
+	t.Chdir(repo)
+	cleanupWorktree(c.ctx, currentWorktree())
+	if _, err := os.Stat(wt); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the clean tree stayed after quit: %v", err)
+	}
+	if got := tools.RecreateTUIWorktree(c.ctx, wt, "local-s"); got != wt {
+		t.Fatalf("recreated %q", got)
+	}
+	if info, err := os.Stat(wt); err != nil || !info.IsDir() {
+		t.Fatalf("recreated tree %v %v", info, err)
 	}
 }

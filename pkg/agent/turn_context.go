@@ -226,7 +226,7 @@ func maybeTitleSessionAtTurnStart(ctx context.Context, a *AIAgent, messages []*s
 		if msg == nil || msg.Role != "user" {
 			continue
 		}
-		userText = strings.TrimSpace(state.FlattenMessageText(msg.Content, ""))
+		userText = strings.TrimSpace(state.FlattenMessageText(msg.Content, "\n"))
 		if p, ok := msg.DisplayMetadata["title_preview"].(string); ok {
 			titlePreview = &p
 		}
@@ -621,7 +621,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	var withheld any
 	row := state.MessageToDict(turnUserMsg)
 	if pyTruthy(row[state.CompressedSummaryMetadataKey]) {
-		handoff := strings.TrimSpace(state.FlattenMessageText(state.HandoffOnlyContent(content), ""))
+		handoff := strings.TrimSpace(state.FlattenMessageText(state.HandoffOnlyContent(content), "\n"))
 		if handoff != "" {
 			withheld = handoff + "\n\n" + state.PreLLMBlockWithheldText
 		} else {
@@ -641,7 +641,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	turnUserMsg.Content = withheld
 	turnUserMsg.APIContent = ""
 	turnUserMsg.DisplayMetadata = metadata
-	rowID, ok := turnUserMsg.Extra["_row_id"].(int64)
+	rowID, ok := liveRowID(turnUserMsg)
 	if a.sessionDB == nil || !ok {
 		return
 	}
@@ -746,9 +746,25 @@ func bindInterruptScope(ctx context.Context, a *AIAgent) context.Context {
 func memoryQueryText(originalUserMessage any) string {
 	switch originalUserMessage.(type) {
 	case string, []any:
-		return state.FlattenMessageText(originalUserMessage, "")
+		return state.FlattenMessageText(originalUserMessage, "\n")
 	}
 	return ""
+}
+
+// Python int row id a writer stamped on the live row, false when the row carries none
+func liveRowID(m *state.Message) (int64, bool) {
+	switch v := m.Extra["_row_id"].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case bool:
+		if v {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
 }
 
 // Notifies memory providers of the turn and prefetches external memory once unless the prompt is trivial
@@ -795,7 +811,7 @@ func stampAPIContentSidecar(ctx context.Context, a *AIAgent, messages []*state.M
 	}
 	turnUserMsg.APIContent = *apiContent
 	defer persistLock(a)()
-	rowID, hasRow := turnUserMsg.Extra["_row_id"].(int64)
+	rowID, hasRow := liveRowID(turnUserMsg)
 	inPlace := preflightCompressed && a.lastCompactionInPlace
 	if a.sessionDB == nil || !(hasRow || inPlace) {
 		return
@@ -818,7 +834,7 @@ func appendMultimodalContext(ctx context.Context, a *AIAgent, turnUserMsg *state
 		return
 	}
 	defer persistLock(a)()
-	rowID, ok := turnUserMsg.Extra["_row_id"].(int64)
+	rowID, ok := liveRowID(turnUserMsg)
 	if a.sessionDB == nil || !ok {
 		return
 	}
@@ -847,13 +863,16 @@ func persistTurnStart(a *AIAgent, messages, conversationHistory []*state.Message
 	}, "Early turn-start session persistence failed for session=%s", pendingCLIMessage)
 }
 
+// Rotated session recovery of the prologue, swapped by tests like the hermes module patch
+var turnRecoverRotatedSession = recoverRotatedCompressionSession
+
 // Runs the once per turn setup and returns the loop's input context
 func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*TurnContext, error) {
 	provider.InstallSafeStdio()
 	turnAuthor := provider.ParseTurnAuthor(r.TurnAuthor)
 	a.turnAuthor = turnAuthor
 	conversationHistory := r.ConversationHistory
-	if recovered, ok := recoverRotatedCompressionSession(ctx, a); ok {
+	if recovered, ok := turnRecoverRotatedSession(ctx, a); ok {
 		conversationHistory = recovered
 	}
 	setLoggingSessionContext(a.sessionID)
@@ -937,8 +956,9 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	ensureSessionRow(a, pendingCLI)
 	for _, m := range conversationHistory {
 		if pyTruthy(m[state.PersistAfterAdmissionInterrupt]) {
-			if _, err := a.flushMessagesToSessionDB(conversationHistory); err != nil {
-				return nil, err
+			_, _ = a.flushMessagesToSessionDBWithHistory(conversationHistory, conversationHistory)
+			for i, row := range conversationHistory {
+				*messages[i] = *state.MessageFromDict(row)
 			}
 			break
 		}

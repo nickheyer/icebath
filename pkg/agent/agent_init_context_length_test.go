@@ -20,6 +20,7 @@ func swapAdvertisedContextLength(t *testing.T, n int) {
 }
 
 func TestPinDisagreementWarnsOnceAndKeepsPin(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swapAdvertisedContextLength(t, 200_000)
 	logs := captureInfoLogs(t)
 	if !warnOnceOnPinDisagreement(t.Context(), "claude-sonnet-4", "", 999_000) {
@@ -39,6 +40,7 @@ func TestPinDisagreementWarnsOnceAndKeepsPin(t *testing.T) {
 }
 
 func TestPinnedLabelOnlyWhenShownValueIsThePin(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if !isContextPinned(999_000, 999_000) || contextPinSuffix(999_000, 999_000) != " (pinned)" {
 		t.Fatal("the shown pin is not labelled")
 	}
@@ -63,6 +65,7 @@ func pinTestConfig() map[string]any {
 }
 
 func TestSwitchBackToConfiguredDefaultRouteRestoresContextPin(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cc := &ContextCompressor{}
 	a := &AIAgent{model: "other-model", provider: "openrouter", baseURL: pinTestOtherRoute, contextCompressor: cc}
 	if err := setConfigContextLength(t.Context(), a, configContextLengthForRuntime(t.Context(), a, pinTestConfig())); err != nil {
@@ -81,6 +84,7 @@ func TestSwitchBackToConfiguredDefaultRouteRestoresContextPin(t *testing.T) {
 }
 
 func TestSwitchToOtherRouteDoesNotInheritContextPin(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	pin := pinTestPin
 	cc := &ContextCompressor{configContextLength: &pin}
 	a := &AIAgent{model: "unrelated-model", provider: "openrouter", baseURL: pinTestOtherRoute, contextCompressor: cc, configContextLength: pin}
@@ -114,6 +118,7 @@ func TestResolveContextLengthWarnsOnUnitSuffixAndReadsAuxPin(t *testing.T) {
 }
 
 func TestResolveContextLengthKeepsTheScopedPinAndRecordsCustomProviders(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swapAdvertisedContextLength(t, 0)
 	a := &AIAgent{model: "model-b", provider: "custom:acme", baseURL: pinTestRoute}
 	pin, cps, effective, _ := resolveContextLength(t.Context(), a, pinTestConfig(), pinTestRoute)
@@ -126,6 +131,7 @@ func TestResolveContextLengthKeepsTheScopedPinAndRecordsCustomProviders(t *testi
 }
 
 func TestDisabledProviderMasksItsCustomProviderTwin(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	custom := []map[string]any{{"name": "acme", "provider_key": "acme", "base_url": "http://b.example/v1"}}
 	off := map[string]any{"providers": map[string]any{"acme": map[string]any{"enabled": false, "base_url": "http://a.example/v1"}}}
 	if got := customProviderConfiguredBaseURL("acme", off, custom); got != "" {
@@ -141,6 +147,7 @@ func TestDisabledProviderMasksItsCustomProviderTwin(t *testing.T) {
 }
 
 func TestActiveRouteURLKeepsTheRequestedQueryOnlyForTheSameRoute(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := &AIAgent{baseURL: "https://proxy.example/v1"}
 	if got := activeRouteURL(a, "https://proxy.example/v1?api-version=2"); got != provider.NormalizeRouteBaseURL("https://proxy.example/v1?api-version=2") {
 		t.Fatalf("same route %q", got)
@@ -154,6 +161,7 @@ func TestActiveRouteURLKeepsTheRequestedQueryOnlyForTheSameRoute(t *testing.T) {
 }
 
 func TestAdvertisedContextLengthReadsTheDiskCacheWindow(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
 	if err := os.MkdirAll(filepath.Join(dir, "cache"), 0o755); err != nil {

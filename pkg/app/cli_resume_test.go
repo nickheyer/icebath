@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,16 +111,52 @@ func storedModelConfig(t *testing.T, db *state.SessionDB, sessionID string) (*py
 	return meta, decoded.(*pyjson.Object)
 }
 
+// Store double recording the two writes of a persisted model switch
+type recordingModelWriter struct {
+	model     [2]string
+	patch     map[string]any
+	updateErr error
+}
+
+func (w *recordingModelWriter) UpdateSessionModel(_ context.Context, sessionID, model string) error {
+	if w.updateErr != nil {
+		return w.updateErr
+	}
+	w.model = [2]string{sessionID, model}
+	return nil
+}
+
+func (w *recordingModelWriter) PatchSessionModelConfig(_ context.Context, _ string, patch map[string]any) error {
+	w.patch = patch
+	return nil
+}
+
+// Session database as the store of a persisted model switch
+type sessionRowWriter struct{ db *state.SessionDB }
+
+func (w sessionRowWriter) UpdateSessionModel(_ context.Context, sessionID, model string) error {
+	return w.db.UpdateSessionModel(sessionID, model, "", "")
+}
+
+func (w sessionRowWriter) PatchSessionModelConfig(ctx context.Context, sessionID string, patch map[string]any) error {
+	return w.db.PatchSessionModelConfig(ctx, sessionID, patch)
+}
+
 func TestPersistModelSwitchWritesModelAndBothRouteShapes(t *testing.T) {
-	resumeTestDB(t, state.NewSession{ID: "s1", Model: "m0"})
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := restoreStandIn()
-	c.sessionDB, c.sessionID = testGatewayStore(t), "s1"
-	patch := modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
+	c.sessionID = "s1"
+	written := &recordingModelWriter{}
+	persistModelSwitch(c, written, &provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
+	if written.model != [2]string{"s1", "deepseek-v4-flash-free"} {
+		t.Fatalf("model write %v", written.model)
+	}
+	patch := written.patch
 	nested, _ := patch["gateway_runtime"].(map[string]any)
 	if nested["provider"] != "custom:opencode-zen" || patch["provider"] != "custom:opencode-zen" {
 		t.Fatalf("patch %v", patch)
 	}
-	if patch["base_url"] != "https://oz/v1" || nested["base_url"] != "https://oz/v1" {
+	if patch["base_url"] != "https://oz/v1" {
 		t.Fatalf("patch %v", patch)
 	}
 	if mode, ok := nested["api_mode"]; !ok || mode != nil {
@@ -131,20 +168,62 @@ func TestPersistModelSwitchWritesModelAndBothRouteShapes(t *testing.T) {
 }
 
 func TestPersistModelSwitchClearsStaleRouteKeys(t *testing.T) {
-	resumeTestDB(t, state.NewSession{ID: "stale1", Model: "m0"})
+	db := resumeTestDB(t, state.NewSession{ID: "stale1", Model: "m0"})
 	c := restoreStandIn()
-	c.sessionDB, c.sessionID = testGatewayStore(t), "stale1"
-	modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "claude-x", TargetProvider: "custom:feather", BaseURL: "https://feather/v1", APIMode: "anthropic_messages"})
-	patch := modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "gpt-5.4", TargetProvider: "openrouter", BaseURL: "https://openrouter.ai/api/v1"})
-	nested, _ := patch["gateway_runtime"].(map[string]any)
-	if patch["provider"] != "openrouter" || nested["provider"] != "openrouter" {
-		t.Fatalf("patch %v", patch)
+	c.sessionID = "stale1"
+	store := sessionRowWriter{db}
+	persistModelSwitch(c, store, &provider.ModelSwitchResult{NewModel: "claude-x", TargetProvider: "custom:feather", BaseURL: "https://feather/v1", APIMode: "anthropic_messages"})
+	persistModelSwitch(c, store, &provider.ModelSwitchResult{NewModel: "gpt-5.4", TargetProvider: "openrouter", BaseURL: "https://openrouter.ai/api/v1"})
+	meta, cfg := storedModelConfig(t, db, "stale1")
+	if got, _ := cfg.Get("provider"); got != "openrouter" {
+		t.Fatalf("provider %v", got)
 	}
-	if mode, ok := patch["api_mode"]; !ok || mode != nil {
-		t.Fatalf("stale api_mode not cleared %v", patch)
+	if _, stale := cfg.Get("api_mode"); stale {
+		t.Fatalf("stale api_mode kept: %v", cfg)
 	}
-	if mode, ok := nested["api_mode"]; !ok || mode != nil {
-		t.Fatalf("nested api_mode %v", nested)
+	gw, _ := pyjson.AsObject(cfg.GetOr("gateway_runtime", nil))
+	if gw == nil || gw.GetOr("provider", nil) != "openrouter" || gw.GetOr("api_mode", nil) != nil {
+		t.Fatalf("gateway_runtime %v", gw)
+	}
+	runtime := state.SessionGatewayRuntime(meta)
+	if runtime.GetOr("provider", nil) != "openrouter" {
+		t.Fatalf("runtime %v", runtime)
+	}
+	if _, stale := runtime.Get("api_mode"); stale {
+		t.Fatalf("runtime kept api_mode: %v", runtime)
+	}
+}
+
+func TestPersistModelSwitchSwallowsDbErrors(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	c := restoreStandIn()
+	c.sessionID = "s1"
+	persistModelSwitch(c, &recordingModelWriter{updateErr: errors.New("disk full")},
+		&provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
+}
+
+func TestPersistModelSwitchHealsBareCustom(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	bare := &provider.ModelSwitchResult{NewModel: "qwen3.6-plus", TargetProvider: "custom", BaseURL: "https://my-endpoint/v1"}
+	c := restoreStandIn()
+	c.sessionID = "s1"
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("custom_providers:\n  - name: myendpoint\n    base_url: https://my-endpoint/v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written := &recordingModelWriter{}
+	persistModelSwitch(c, written, bare)
+	if written.patch["provider"] != "custom:myendpoint" {
+		t.Fatalf("healed provider %v", written.patch["provider"])
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("custom_providers: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written = &recordingModelWriter{}
+	persistModelSwitch(c, written, bare)
+	nested, _ := written.patch["gateway_runtime"].(map[string]any)
+	if written.patch["provider"] != nil || nested["provider"] != nil {
+		t.Fatalf("unhealed provider %v", written.patch)
 	}
 }
 

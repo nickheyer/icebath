@@ -46,6 +46,7 @@ func startSessionWork(ctx context.Context, target func(ctx context.Context), nam
 	var thread *memory.ContextThread
 	thread = memory.SpawnContextThread(ctx, name, func(ctx context.Context) {
 		defer provider.Retirement.Release()
+		defer threadExceptHook(name)
 		target(context.WithValue(ctx, runThreadKey{}, thread))
 	})
 	if session != nil {

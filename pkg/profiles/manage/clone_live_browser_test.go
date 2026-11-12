@@ -1,4 +1,4 @@
-package manage
+package manage_test
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/profiles/manage"
 )
 
 func TestCreateProfileCloneAllDoesNotAttachToTheSourceProfilesLiveBrowser(t *testing.T) {
-	tmp := manageEnv(t)
-	captureOut(t)
+	tmp := manage.ManageEnv(t)
+	manage.CaptureOut(t)
 	def := filepath.Join(tmp, ".icebath")
-	writeFile(t, filepath.Join(def, "config.yaml"), "model: test")
+	manage.WriteFile(t, filepath.Join(def, "config.yaml"), "model: test")
 	browserProfile := filepath.Join(def, "bot-desktop", "browser-profile")
 	if err := os.MkdirAll(browserProfile, 0o755); err != nil {
 		t.Fatal(err)
@@ -35,14 +36,14 @@ func TestCreateProfileCloneAllDoesNotAttachToTheSourceProfilesLiveBrowser(t *tes
 	go srv.Serve(ln)
 	defer srv.Close()
 	port := ln.Addr().(*net.TCPAddr).Port
-	writeFile(t, filepath.Join(browserProfile, "DevToolsActivePort"), fmt.Sprintf("%d\n/devtools/browser/source\n", port))
+	manage.WriteFile(t, filepath.Join(browserProfile, "DevToolsActivePort"), fmt.Sprintf("%d\n/devtools/browser/source\n", port))
 	if err := os.Symlink(fmt.Sprintf("host-%d", os.Getpid()), filepath.Join(browserProfile, "SingletonLock")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _, _, ok := browser.RunningInstance(browserProfile); !ok || got != port {
 		t.Fatalf("source browser %d %v want %d", got, ok, port)
 	}
-	dir, err := CreateProfile(context.Background(), "coder", CreateOptions{CloneAll: true})
+	dir, err := manage.CreateProfile(context.Background(), "coder", manage.CreateOptions{CloneAll: true})
 	if err != nil {
 		t.Fatal(err)
 	}

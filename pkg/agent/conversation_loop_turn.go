@@ -521,17 +521,7 @@ func closeDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 	}
 	appendLiveMessage(&messages, boundary)
 	result["messages"] = messages
-	rows := messagesToRows(messages)
-	if _, err := a.flushMessagesToSessionDB(rows); err != nil {
+	if _, err := a.flushLiveMessages(messages, nil); err != nil {
 		conversationLoopLog().Debug("failed-turn boundary not written", "error", err)
-		return
-	}
-	for i, row := range rows {
-		if marker, ok := row[dbPersistedMarker]; ok && messages[i] != nil {
-			if messages[i].Extra == nil {
-				messages[i].Extra = map[string]any{}
-			}
-			messages[i].Extra[dbPersistedMarker] = marker
-		}
 	}
 }

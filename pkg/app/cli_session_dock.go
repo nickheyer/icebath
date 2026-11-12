@@ -23,10 +23,10 @@ func sessionDockSyncAutomation(c *CLI) {
 	if !stale {
 		return
 	}
-	if goalMgr != nil && goalMgr.SessionID == sessionID {
+	if goalMgr != nil && goalMgr.Session() == sessionID {
 		goalMgr.Refresh()
 	}
-	if loopMgr != nil && loopMgr.SessionID == sessionID {
+	if loopMgr != nil && loopMgr.Session() == sessionID {
 		loopMgr.Refresh(c.ctx)
 	}
 }
@@ -36,7 +36,7 @@ func sessionDockGoalLine(c *CLI) string {
 	c.uiMu.Lock()
 	mgr, sessionID := c.goalManager, c.sessionID
 	c.uiMu.Unlock()
-	if mgr == nil || mgr.SessionID != sessionID || !mgr.HasGoal() {
+	if mgr == nil || mgr.Session() != sessionID || !mgr.HasGoal() {
 		return ""
 	}
 	return mgr.StatusLine()
@@ -61,7 +61,7 @@ func sessionDockLoopRow(c *CLI, now float64) (string, string, string) {
 	c.uiMu.Lock()
 	mgr, sessionID := c.loopManager, c.sessionID
 	c.uiMu.Unlock()
-	if mgr == nil || mgr.SessionID != sessionID {
+	if mgr == nil || mgr.Session() != sessionID {
 		return "", "", ""
 	}
 	s := mgr.State()

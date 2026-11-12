@@ -1,4 +1,4 @@
-package manage
+package manage_test
 
 import (
 	"archive/tar"
@@ -20,12 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/profiles/manage"
 )
 
 // Points ICEBATH_HOME at a source-home under the test dir and returns it
 func transferHome(t *testing.T) string {
 	t.Helper()
-	tmp := manageEnv(t)
+	tmp := manage.ManageEnv(t)
 	src := filepath.Join(tmp, "source-home")
 	if err := os.Mkdir(src, 0o755); err != nil {
 		t.Fatal(err)
@@ -49,7 +50,7 @@ func switchHome(t *testing.T, h string) {
 func writeFiles(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for rel, content := range files {
-		writeFile(t, filepath.Join(root, filepath.FromSlash(rel)), content)
+		manage.WriteFile(t, filepath.Join(root, filepath.FromSlash(rel)), content)
 	}
 }
 
@@ -78,7 +79,7 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 		t.Run(route, func(t *testing.T) {
 			src := transferHome(t)
 			tmp := filepath.Dir(src)
-			captureOut(t)
+			manage.CaptureOut(t)
 			ctx := context.Background()
 			portable := map[string]string{
 				"config.yaml":                    "model:\n  model: portable\n",
@@ -130,12 +131,12 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 				}
 			} else if route == "default" || route == "named" {
 				name := map[bool]string{true: "porter", false: "default"}[route == "named"]
-				out, err := ExportProfile(name, filepath.Join(tmp, "portable.tar.gz"), nil)
+				out, err := manage.ExportProfile(name, filepath.Join(tmp, "portable.tar.gz"), nil)
 				if err != nil {
 					t.Fatal(err)
 				}
 				archive = out
-				files, _ := archiveMembers(t, archive)
+				files, _ := manage.ArchiveMembers(t, archive)
 				names := map[string]bool{}
 				for n := range files {
 					names[strings.TrimPrefix(n, name+"/")] = true
@@ -170,28 +171,28 @@ func TestTransfersPreserveUserFilesWithoutPortingPMState(t *testing.T) {
 				})
 				restored = target
 			} else if archive != "" {
-				out, err := ImportProfile(archive, "restored")
+				out, err := manage.ImportProfile(archive, "restored")
 				if err != nil {
 					t.Fatal(err)
 				}
 				restored = out
 			} else {
-				plan, err := InstallDistribution(ctx, source, "restored", false, false)
+				plan, err := manage.InstallDistribution(ctx, source, "restored", false, false)
 				if err != nil {
 					t.Fatal(err)
 				}
 				restored = plan.TargetDir
 			}
 			for rel, content := range portable {
-				if got := readText(t, filepath.Join(restored, filepath.FromSlash(rel))); got != content {
+				if got := manage.ReadText(t, filepath.Join(restored, filepath.FromSlash(rel))); got != content {
 					t.Fatalf("%s %s = %q", route, rel, got)
 				}
 			}
 			for rel, content := range runtime {
-				if exists(filepath.Join(restored, filepath.FromSlash(rel))) {
+				if manage.Exists(filepath.Join(restored, filepath.FromSlash(rel))) {
 					t.Fatalf("%s %s restored", route, rel)
 				}
-				if readText(t, filepath.Join(source, filepath.FromSlash(rel))) != content {
+				if manage.ReadText(t, filepath.Join(source, filepath.FromSlash(rel))) != content {
 					t.Fatalf("%s source %s changed", route, rel)
 				}
 			}
@@ -305,7 +306,7 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 		t.Run(route, func(t *testing.T) {
 			src := transferHome(t)
 			tmp := filepath.Dir(src)
-			captureOut(t)
+			manage.CaptureOut(t)
 			ctx := context.Background()
 			incoming := map[string]string{
 				"config.yaml":                    "model:\n  model: restored\n",
@@ -338,7 +339,7 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 			profileRoute := strings.HasPrefix(route, "profile")
 			if !profileRoute {
 				for rel := range machine {
-					writeFile(t, filepath.Join(target, filepath.FromSlash(rel)), "target-owned runtime\n")
+					manage.WriteFile(t, filepath.Join(target, filepath.FromSlash(rel)), "target-owned runtime\n")
 				}
 			}
 			backupArchive := filepath.Join(tmp, "legacy.zip")
@@ -358,24 +359,24 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 				archive := filepath.Join(tmp, "legacy.tar.gz")
 				tarDirectory(t, staged, "legacy", archive)
 				if route == "profile-denied" {
-					old := rmtreeStagedRuntime
-					rmtreeStagedRuntime = func(p string) error {
+					var old func(string) error
+					old = manage.SwapRmtreeStagedRuntime(func(p string) error {
 						if filepath.Base(p) == "installs" {
 							return fmt.Errorf("staged runtime is locked: %w", fs.ErrPermission)
 						}
 						return old(p)
-					}
-					_, err := ImportProfile(archive, "restored")
-					rmtreeStagedRuntime = old
+					})
+					_, err := manage.ImportProfile(archive, "restored")
+					manage.SwapRmtreeStagedRuntime(old)
 					if !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "staged runtime is locked") {
 						t.Fatalf("import: %v", err)
 					}
-					if exists(target) {
+					if manage.Exists(target) {
 						t.Fatal("a refused import left the target behind")
 					}
 					return
 				}
-				if target, err = ImportProfile(archive, "restored"); err != nil {
+				if target, err = manage.ImportProfile(archive, "restored"); err != nil {
 					t.Fatal(err)
 				}
 			} else {
@@ -384,27 +385,27 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 					owned = topLevelParts(incoming, machine)
 				}
 				writeDistManifest(t, staged, "legacy", owned)
-				plan, err := InstallDistribution(ctx, staged, "restored", true, false)
+				plan, err := manage.InstallDistribution(ctx, staged, "restored", true, false)
 				if err != nil {
 					t.Fatal(err)
 				}
 				target = plan.TargetDir
 			}
 			for rel, content := range incoming {
-				if got := readText(t, filepath.Join(target, filepath.FromSlash(rel))); got != content {
+				if got := manage.ReadText(t, filepath.Join(target, filepath.FromSlash(rel))); got != content {
 					t.Fatalf("%s %s = %q", route, rel, got)
 				}
 			}
 			for rel, content := range machine {
 				p := filepath.Join(target, filepath.FromSlash(rel))
 				if route == "profile" {
-					if exists(p) {
+					if manage.Exists(p) {
 						t.Fatalf("%s imported", rel)
 					}
-				} else if readText(t, p) != "target-owned runtime\n" {
+				} else if manage.ReadText(t, p) != "target-owned runtime\n" {
 					t.Fatalf("%s %s replaced", route, rel)
 				}
-				if readText(t, filepath.Join(staged, filepath.FromSlash(rel))) != content {
+				if manage.ReadText(t, filepath.Join(staged, filepath.FromSlash(rel))) != content {
 					t.Fatalf("staged %s changed", rel)
 				}
 			}
@@ -415,7 +416,7 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 					_, err := backup.RunImport(ctx, home.Dir(ctx), map[string]any{"zipfile": backupArchive, "force": true}, io.Discard)
 					return err
 				})
-				if readText(t, filepath.Join(target, "installs", "key", "facts.json")) != "target-owned runtime\n" {
+				if manage.ReadText(t, filepath.Join(target, "installs", "key", "facts.json")) != "target-owned runtime\n" {
 					t.Fatal("an in-home traversal bypassed the runtime root classification")
 				}
 			}
@@ -428,11 +429,11 @@ func TestIncomingRuntimeStateNeverReplacesTargetRuntime(t *testing.T) {
 					owned = append(owned, strings.ReplaceAll(rel, "/", "\\"))
 				}
 				writeDistManifest(t, staged, "legacy", owned)
-				if _, err := InstallDistribution(ctx, staged, "restored", true, false); err != nil {
+				if _, err := manage.InstallDistribution(ctx, staged, "restored", true, false); err != nil {
 					t.Fatal(err)
 				}
 				for rel := range machine {
-					if readText(t, filepath.Join(target, filepath.FromSlash(rel))) != "target-owned runtime\n" {
+					if manage.ReadText(t, filepath.Join(target, filepath.FromSlash(rel))) != "target-owned runtime\n" {
 						t.Fatalf("explicit backslash owned %s replaced", rel)
 					}
 				}

@@ -45,6 +45,7 @@ func startWithMissingMemoryProvider(t *testing.T, platform string) (*AIAgent, *[
 }
 
 func TestCLIStartPrintsTheRefusal(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	_, printed := startWithMissingMemoryProvider(t, "cli")
 	for _, line := range *printed {
 		if strings.Contains(line, "icebath plugins install scout_missing_provider") {
@@ -55,6 +56,7 @@ func TestCLIStartPrintsTheRefusal(t *testing.T) {
 }
 
 func TestGatewayStartReplaysTheRefusalOnceOnFirstTurn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, _ := startWithMissingMemoryProvider(t, "telegram")
 	var notices []provider.AgentNotice
 	a.noticeCallback = func(n provider.AgentNotice) { notices = append(notices, n) }
@@ -66,6 +68,7 @@ func TestGatewayStartReplaysTheRefusalOnceOnFirstTurn(t *testing.T) {
 }
 
 func TestAGatewayHostedCLISessionPrintsTheStartupWarningOnItsFirstTurn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, printed := startupAgent(t, "cli")
 	a.gatewaySessionKey = "agent:main:cli:dm:local"
 	a.emitStartupWarning("✓ Something moved out of core — installed its plugin.")
@@ -96,6 +99,7 @@ def register(ctx):
 `
 
 func TestUserInstalledEngineIsSelectedByNameThroughAgentInit(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := hostedEngineTestHome(t, map[string]string{"plugins/ctx_demo/__init__.py": ctxDemoEngineSrc, "plugins/notes/__init__.py": "def register(ctx): pass\n"})
 	if plugins.LoadContextEngine(ctx, "notes") != nil {
 		t.Fatal("an unrelated user plugin loaded as an engine")
@@ -158,6 +162,7 @@ func selectRegisteredEngine(t *testing.T, engine ContextEngine) ContextEngine {
 }
 
 func TestEngineWithUncopyableStateIsSelectedViaCloneForAgent(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	singleton := newLockedLCMEngine()
 	selected, ok := selectRegisteredEngine(t, singleton).(*lockedLCMEngine)
 	if !ok || selected == singleton || singleton.clones != 1 {
@@ -166,6 +171,7 @@ func TestEngineWithUncopyableStateIsSelectedViaCloneForAgent(t *testing.T) {
 }
 
 func TestDefaultCloneIsolatesParentFromChildUpdateModel(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	singleton := &lcmEngine{stubEngine{ContextEngineBase: NewContextEngineBase()}}
 	singleton.UpdateModel("big", 1_000_000, "", "", "", "")
 	child := selectRegisteredEngine(t, singleton)

@@ -276,7 +276,7 @@ func initUsageState(a *AIAgent) {
 func loadAgentConfig(ctx context.Context) map[string]any {
 	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
 	if err != nil {
-		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%T); using defaults for memory, skills, compression and related settings. Check the active Icebath environment and dependencies; run 'icebath config check' after configuration imports work again.", err))
+		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Check the active Hermes Python environment and dependencies; run 'icebath config check' after configuration imports work again.", pyErrorClass(err)))
 		return map[string]any{}
 	}
 	return map[string]any(tree)
@@ -361,7 +361,11 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	a.reasoningRejectingRoutes = map[[3]string]map[string]bool{}
 	a.fastWindow = nil
 	initPromptCacheConfig(ctx, a)
-	initTurnState(a, o.RunBudgetSeconds)
+	var runBudget any
+	if o.RunBudgetSeconds != nil {
+		runBudget = *o.RunBudgetSeconds
+	}
+	initTurnState(a, runBudget)
 	setStreamStateDefaults(a)
 	if err := buildClient(ctx, a, o.APIKey, baseURL, o.FallbackModel); err != nil {
 		return err

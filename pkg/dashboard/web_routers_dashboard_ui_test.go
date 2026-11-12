@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-const exampleDashboardFixture = "../../references/projects/hermes-agent/tests/fixtures/plugins/example-dashboard"
+const exampleDashboardFixture = "testdata/hermes/tests/fixtures/plugins/example-dashboard"
 
 // Copies the example dashboard fixture into the user plugins dir of home and enables it, the launch cache dropped
 func installExamplePlugin(t *testing.T, h string) {

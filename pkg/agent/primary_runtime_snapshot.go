@@ -127,14 +127,14 @@ func buildPrimaryRuntimeSnapshot(ctx context.Context, a *AIAgent, apiMode string
 func readReasoningEchoFromConfig(ctx context.Context) bool {
 	warn := func(class string) bool {
 		runAgentLog().Warn(fmt.Sprintf("Agent configuration for model.reasoning_echo could not be loaded (%s); "+
-			"using the default reasoning echo setting. Check the active Icebath Python "+
+			"using the default reasoning echo setting. Check the active Hermes Python "+
 			"environment and dependencies; run 'icebath config check' after "+
 			"configuration imports work again.", class))
 		return false
 	}
 	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
 	if err != nil {
-		return warn(fmt.Sprintf("%T", err))
+		return warn(pyErrorClass(err))
 	}
 	model := cfg["model"]
 	if !pyrepr.Truthy(model) {

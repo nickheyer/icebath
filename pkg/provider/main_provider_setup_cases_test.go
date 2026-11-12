@@ -40,7 +40,7 @@ type recordedScreen struct {
 	Config string              `json:"config"`
 }
 
-// Screens recorded from real hermes by dev/slices/provpicker_s25/picker_ref.py
+// Screens recorded from the provider picker of real hermes
 func recordedPickerScreens(t *testing.T) map[string]recordedScreen {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/provider_picker_screens.json")

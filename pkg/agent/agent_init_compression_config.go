@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -104,14 +103,14 @@ func compressionCodexSettings(cfg map[string]any) (string, bool, *int) {
 	}
 	appServerAuto := strings.ToLower(pyrepr.Str(raw))
 	if appServerAuto != "native" && appServerAuto != "hermes" && appServerAuto != "off" {
-		slog.Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, hermes, off.", pyrepr.Repr(appServerAuto)))
+		runAgentLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, hermes, off.", pyrepr.Repr(appServerAuto)))
 		appServerAuto = "native"
 	}
 	responsesNative := isTruthyValue(cfgValue(cfg, "codex_responses_native", false), false)
 	var compactThreshold *int
 	if rawThreshold := cfg["codex_responses_compact_threshold"]; rawThreshold != nil {
 		if compactThreshold = configPositiveInt(rawThreshold, true); compactThreshold == nil {
-			slog.Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", pyrepr.Repr(rawThreshold)))
+			runAgentLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", pyrepr.Repr(rawThreshold)))
 		}
 	}
 	return appServerAuto, responsesNative, compactThreshold
@@ -191,7 +190,7 @@ func parseCompressionConfig(a *AIAgent, agentCfg map[string]any) (CompressionSet
 
 // Logs an invalid integer config value and prints it to stderr when the warning policy shows diagnostics
 func warnInvalidConfigInt(ctx context.Context, what string, value any, requirement, fallback, printFallback string, a *AIAgent) {
-	slog.Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, pyrepr.Repr(value), requirement, fallback))
+	runAgentLog().Warn(fmt.Sprintf("Invalid %s: %s — %s. Falling back to %s.", what, pyrepr.Repr(value), requirement, fallback))
 	enabled := true
 	func() {
 		defer func() { _ = recover() }()

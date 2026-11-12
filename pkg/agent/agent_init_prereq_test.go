@@ -27,6 +27,7 @@ func captureStatusStdout(t *testing.T) *bytes.Buffer {
 }
 
 func TestCopyInitParamsLandEveryConstructorKeyword(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	status := func(kind string, msg string) {}
 	o := AIAgentOptions{Model: "m", MaxIterations: 7, SaveTrajectories: true, QuietMode: true, ToolProgressMode: "new",
 		Platform: "telegram", PassSessionID: true, LogPrefixChars: 50, ProviderSort: "price", EnabledToolsets: []string{"web"},
@@ -50,6 +51,7 @@ func TestCopyInitParamsLandEveryConstructorKeyword(t *testing.T) {
 }
 
 func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out := captureStatusStdout(t)
 	a := &AIAgent{credentialPoolEntryID: "stale"}
 	initFallbackChain(a, []map[string]any{{"provider": "openrouter", "model": "a"}, {"provider": "x"}, nil, {"provider": "nous", "model": "b"}})
@@ -76,6 +78,7 @@ func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T
 }
 
 func TestOllamaNumCtxOverrideAndCompressorClamp(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := &AIAgent{baseURL: "https://api.example.com/v1", model: "m", quietMode: true}
 	configureOllamaNumCtx(context.Background(), a, map[string]any{"ollama_num_ctx": "16384"}, 8192)
 	if a.ollamaNumCtx != 16384 {
@@ -106,7 +109,8 @@ func TestOllamaNumCtxOverrideAndCompressorClamp(t *testing.T) {
 
 var testAutoraise = map[string]any{"model": "gpt-5.5", "from": 0.50, "to": 0.85}
 
-func TestAutoraiseNoticeMarkerLivesUnderIcebathHome(t *testing.T) {
+func TestMarkerLivesUnderHermesHome(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	h := t.TempDir()
 	ctx := home.WithOverride(context.Background(), h)
 	if filepath.Dir(codexGPT55AutoraiseNoticeMarker(ctx)) != h {
@@ -115,6 +119,7 @@ func TestAutoraiseNoticeMarkerLivesUnderIcebathHome(t *testing.T) {
 }
 
 func TestChangedThresholdRenotifiesOnce(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	recordCodexGPT55AutoraiseNotice(ctx, testAutoraise)
 	if !codexGPT55AutoraiseNoticeSeen(ctx, testAutoraise) {
@@ -134,6 +139,7 @@ func TestChangedThresholdRenotifiesOnce(t *testing.T) {
 }
 
 func TestCompressionSummaryShowsTheAutoraiseNoticeOncePerProfile(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out := captureStatusStdout(t)
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	engine := newStubEngine(272000, 0.85)
@@ -169,6 +175,7 @@ func TestCompressionSummaryShowsTheAutoraiseNoticeOncePerProfile(t *testing.T) {
 }
 
 func TestSnapshotPrimaryRuntimeRecordsRouteAndCompressorState(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	cc := NewContextCompressor(ctx, DefaultContextCompressorOptions("cm"))
 	cc.SetContextLength(128000)
@@ -194,6 +201,7 @@ func TestSnapshotPrimaryRuntimeRecordsRouteAndCompressorState(t *testing.T) {
 }
 
 func TestReadReasoningEchoFromConfig(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	h := t.TempDir()
 	ctx := home.WithOverride(context.Background(), h)
 	write := func(body string) {
@@ -212,6 +220,7 @@ func TestReadReasoningEchoFromConfig(t *testing.T) {
 }
 
 func TestStartupWarningsBecomeStickyNoticesOrWaitForTheFirstTurn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var notices []provider.AgentNotice
 	a := &AIAgent{platform: "telegram"}
 	a.emitStartupWarning("  ✓ provider recovered  ")
@@ -239,6 +248,7 @@ func TestStartupWarningsBecomeStickyNoticesOrWaitForTheFirstTurn(t *testing.T) {
 }
 
 func TestCallbackRailConvertsArgumentsAndSwallowsFailures(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	type label string
 	var got []string
 	a := &AIAgent{}
@@ -258,6 +268,7 @@ func TestCallbackRailConvertsArgumentsAndSwallowsFailures(t *testing.T) {
 }
 
 func TestQuietGatesAndRetryBuffer(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var printed []string
 	a := &AIAgent{platform: "cli", quietMode: true, printFn: func(s string) { printed = append(printed, s) }}
 	if !a.shouldEmitQuietToolMessages() || !a.shouldStartQuietSpinner() {
@@ -354,6 +365,7 @@ func hostedEngineTestHome(t *testing.T, files map[string]string) context.Context
 }
 
 func TestHostedContextEngineCallsThroughAndMirrorsItsBase(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := hostedEngineTestHome(t, map[string]string{"plugins/hosted_demo/__init__.py": hostedEngineSrc})
 	obj := plugins.LoadContextEngine(ctx, "hosted_demo")
 	if obj == nil {

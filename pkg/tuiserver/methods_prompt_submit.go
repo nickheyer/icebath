@@ -552,6 +552,7 @@ func promptSubmit(ctx context.Context, rid any, params map[string]any) map[strin
 		imagePaths, _ = hostedImagePaths(hostedImages)
 	}
 	runThread := memory.SpawnContextThread(ctx, "", func(threadCtx context.Context) {
+		defer threadExceptHook("run-after-agent-ready-" + sid)
 		runAfterAgentReady(threadCtx, rid, sid, session, text, displayKind, displayMetadata, terminalCallback, turnAuthor, imagePaths)
 	})
 	session.Set("_run_thread", runThread)

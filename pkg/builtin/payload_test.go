@@ -3,7 +3,6 @@ package builtin
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,8 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
-
-var refsRoot = filepath.Join("..", "..", "references", "projects")
 
 func TestEmbeddedPayloadEqualsManifest(t *testing.T) {
 	entries, err := manifestEntries()
@@ -52,41 +49,36 @@ func TestEmbeddedPayloadEqualsManifest(t *testing.T) {
 	}
 }
 
-func TestManifestEqualsReferenceTree(t *testing.T) {
-	sources := map[string][]string{"elephant-goldfish-model": {"skills", "agents", "resources", "docs", "plugin.json", "README.md", "LICENSE", "TESTING.md", "AGENTS.md", "scripts/pack_plugin.py", "assets", ".codex-plugin/plugin.json"},
-		"hallmark": {"skills", ".claude-plugin"}, "impeccable": {"plugin", "skill"}}
+// Manifest rows equal the payload tree on disk, executable for an owner exec bit or a shebang
+func TestManifestEqualsPayloadTree(t *testing.T) {
 	var lines []string
-	for project, entries := range sources {
-		for _, entry := range entries {
-			err := filepath.WalkDir(filepath.Join(refsRoot, project, entry), func(p string, d fs.DirEntry, err error) error {
-				if err != nil || !d.Type().IsRegular() {
-					return err
-				}
-				data, err := os.ReadFile(p)
-				if err != nil {
-					return err
-				}
-				info, err := os.Stat(p)
-				if err != nil {
-					return err
-				}
-				rel, _ := filepath.Rel(refsRoot, p)
-				mode := "0644"
-				if info.Mode()&0o100 != 0 || strings.HasPrefix(string(data), "#!") {
-					mode = "0755"
-				}
-				sum := sha256.Sum256(data)
-				lines = append(lines, fmt.Sprintf("%s %s %s", filepath.ToSlash(rel), hex.EncodeToString(sum[:]), mode))
-				return nil
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
+	err := filepath.WalkDir("payload", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return err
 		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel("payload", p)
+		mode := "0644"
+		if info.Mode()&0o100 != 0 || strings.HasPrefix(string(data), "#!") {
+			mode = "0755"
+		}
+		sum := sha256.Sum256(data)
+		lines = append(lines, filepath.ToSlash(rel)+" "+hex.EncodeToString(sum[:])+" "+mode)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	sort.Strings(lines)
 	if want := strings.Join(lines, "\n") + "\n"; want != payloadManifest {
-		t.Fatalf("payload_manifest.txt drifted from the reference tree, rerun go generate")
+		t.Fatalf("payload_manifest.txt differs from the payload tree, rerun go generate")
 	}
 }
 

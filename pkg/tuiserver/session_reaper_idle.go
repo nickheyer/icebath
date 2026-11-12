@@ -172,6 +172,7 @@ func reclaimOrphanedLeases() {
 // Starts the daemon loop that runs one reap after every scan interval, a failed scan never ending it
 func startIdleReaper() {
 	go func() {
+		defer threadExceptHook("tui-idle-reaper")
 		ctx := context.Background()
 		for {
 			time.Sleep(time.Duration(reaperScanS * float64(time.Second)))

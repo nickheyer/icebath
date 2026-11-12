@@ -204,8 +204,10 @@ func claimLaunchHome(ctx context.Context) (string, error) {
 
 // Serves the stdio RPC channel while it holds the launch home, 1 when another owner holds it
 func (e *stdioEntry) main() int {
+	defer panicHook()
 	h, err := claimLaunchHome(e.ctx)
 	if err != nil {
+		recordCrash("unhandled exception", err, nil)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -218,6 +220,7 @@ func (e *stdioEntry) main() int {
 	e.mu.Unlock()
 	defer e.releaseHome()
 	if err := e.serve(); err != nil {
+		recordCrash("unhandled exception", err, nil)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

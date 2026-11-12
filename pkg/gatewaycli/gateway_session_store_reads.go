@@ -170,14 +170,25 @@ func (s *GatewaySessionStore) ReopenSession(args ...any) { noop(args...) }
 // Transcript flush the gateway performs itself
 func (s *GatewaySessionStore) AppendMessagesBatch(args ...any) { noop(args...) }
 
-// Token accounting flush the gateway performs itself
-func (s *GatewaySessionStore) FlushTokenCounts(args ...any) { noop(args...) }
+// Token accounting flush the gateway performs itself, answering false like the store method that returns nothing
+func (s *GatewaySessionStore) FlushTokenCounts(timeoutS float64) bool {
+	noop(timeoutS)
+	return false
+}
+
+var _ interface{ FlushTokenCounts(timeoutS float64) bool } = (*GatewaySessionStore)(nil)
 
 // Model record the gateway performs itself
-func (s *GatewaySessionStore) UpdateSessionModel(args ...any) { noop(args...) }
+func (s *GatewaySessionStore) UpdateSessionModel(_ context.Context, sessionID, model string) error {
+	noop(sessionID, model)
+	return nil
+}
 
 // Model config patch the gateway performs itself
-func (s *GatewaySessionStore) PatchSessionModelConfig(args ...any) { noop(args...) }
+func (s *GatewaySessionStore) PatchSessionModelConfig(_ context.Context, sessionID string, patch map[string]any) error {
+	noop(sessionID, patch)
+	return nil
+}
 
 // Archive maintenance the gateway performs itself
 func (s *GatewaySessionStore) MaybeAutoArchive(args ...any) { noop(args...) }

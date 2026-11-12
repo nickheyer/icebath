@@ -12,44 +12,21 @@ import (
 	"strings"
 )
 
-// Reference roots copied into the payload, each a project and its embedded entries
-var sources = []struct {
-	project string
-	entries []string
-}{
-	{"elephant-goldfish-model", []string{"skills", "agents", "resources", "docs", "plugin.json", "README.md", "LICENSE", "TESTING.md", "AGENTS.md", "scripts/pack_plugin.py", "assets", ".codex-plugin/plugin.json"}},
-	{"hallmark", []string{"skills", ".claude-plugin"}},
-	{"impeccable", []string{"plugin", "skill"}},
-}
-
-// Copies the reference plugin files byte for byte into payload and writes the sorted digest manifest
+// Writes the sorted digest and mode manifest of every regular file under payload, the tree the package embeds
 func main() {
-	refs := filepath.Join("..", "..", "references", "projects")
-	if len(os.Args) > 1 {
-		refs = os.Args[1]
-	}
-	files, err := collect(refs)
+	files, err := collect("payload")
 	if err != nil {
-		fail(err)
-	}
-	if err := os.RemoveAll("payload"); err != nil {
 		fail(err)
 	}
 	var manifest bytes.Buffer
 	for _, rel := range files {
-		data, err := os.ReadFile(filepath.Join(refs, filepath.FromSlash(rel)))
+		p := filepath.Join("payload", filepath.FromSlash(rel))
+		data, err := os.ReadFile(p)
 		if err != nil {
 			fail(err)
 		}
-		info, err := os.Stat(filepath.Join(refs, filepath.FromSlash(rel)))
+		info, err := os.Stat(p)
 		if err != nil {
-			fail(err)
-		}
-		target := filepath.Join("payload", filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			fail(err)
-		}
-		if err := os.WriteFile(target, data, 0o644); err != nil {
 			fail(err)
 		}
 		sum := sha256.Sum256(data)
@@ -60,30 +37,25 @@ func main() {
 	}
 }
 
-// Sorted slash paths of every regular file under the embedded reference entries
-func collect(refs string) ([]string, error) {
+// Sorted slash paths of every regular file under root
+func collect(root string) ([]string, error) {
 	var out []string
-	for _, src := range sources {
-		for _, entry := range src.entries {
-			root := filepath.Join(refs, src.project, entry)
-			err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-				if err != nil {
-					return err
-				}
-				if !d.Type().IsRegular() {
-					return nil
-				}
-				rel, err := filepath.Rel(refs, p)
-				if err != nil {
-					return err
-				}
-				out = append(out, filepath.ToSlash(rel))
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(out)
 	return out, nil

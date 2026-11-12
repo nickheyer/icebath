@@ -21,6 +21,7 @@ import (
 
 // Runs the real sh launcher against a download that stalls mid body and signals its process group
 func TestImpeccableLauncherRemovesPartialDownloadWhenInterrupted(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tree, err := Materialize()
 	if err != nil {
 		t.Fatal(err)

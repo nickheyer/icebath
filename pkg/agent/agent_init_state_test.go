@@ -14,6 +14,7 @@ import (
 func neverMinted(context.Context) (string, error) { panic("the banner invoked the token source") }
 
 func TestKeyBannerLabelsACallableKeyByItsSource(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cases := []struct {
 		name  string
 		key   any
@@ -40,6 +41,7 @@ func TestKeyBannerLabelsACallableKeyByItsSource(t *testing.T) {
 }
 
 func TestStringKeysKeepTheMaskedForm(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out := captureStatusStdout(t)
 	printKeyBanner("sk-live-abcdefghijklmnop3456", "API key", false)
 	if got := strings.TrimSpace(out.String()); got != "🔑 Using API key: sk-live-...3456" {
@@ -66,6 +68,7 @@ func writePromptCachingConfig(t *testing.T, body string) {
 }
 
 func TestRealAgentResolvesAutoFromItsPlatform(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	writePromptCachingConfig(t, "prompt_caching:\n  cache_ttl: auto\n")
 	interactive := &AIAgent{provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-fable-5.1", apiMode: "anthropic_messages", platform: "cli"}
 	scheduled := &AIAgent{provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-fable-5.1", apiMode: "anthropic_messages", platform: "cron"}
@@ -80,6 +83,7 @@ func TestRealAgentResolvesAutoFromItsPlatform(t *testing.T) {
 }
 
 func TestDisabledCacheTTLTurnsPromptCachingOff(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, body := range []string{"prompt_caching:\n  cache_ttl: off\n", "prompt_caching:\n  cache_ttl: false\n", "prompt_caching:\n  cache_ttl: null\n"} {
 		writePromptCachingConfig(t, body)
 		a := &AIAgent{provider: "anthropic", baseURL: "https://api.anthropic.com", model: "claude-fable-5.1", apiMode: "anthropic_messages"}
@@ -97,6 +101,7 @@ func TestDisabledCacheTTLTurnsPromptCachingOff(t *testing.T) {
 }
 
 func TestPromptCacheConfigFailureKeepsDefaults(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	prev := promptCacheConfigLoader
 	t.Cleanup(func() { promptCacheConfigLoader = prev })
 	for _, load := range []func(context.Context) (map[string]any, error){
@@ -116,6 +121,7 @@ func TestPromptCacheConfigFailureKeepsDefaults(t *testing.T) {
 }
 
 func TestInitStateTablesGiveEachAgentFreshState(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, b := &AIAgent{}, &AIAgent{}
 	for _, x := range []*AIAgent{a, b} {
 		setControlStateDefaults(x)

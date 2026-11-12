@@ -150,12 +150,18 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 }
 
 // Submits the prompt and replays the gateway's events into the CLI callbacks, returning the turn result
-func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o agent.RunConversationOptions) (map[string]any, error) {
+func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o agent.RunConversationOptions) (result map[string]any, err error) {
+	defer func() {
+		if ctx.Err() != nil {
+			result, err = nil, context.Cause(ctx)
+		}
+	}()
 	turn := newGatewayTurn(a.SessionID())
 	history := append([]map[string]any{}, o.ConversationHistory...)
 	askIndex := len(history)
 	a.mu.Lock()
 	a.turn = turn
+	a.turnCtx = ctx
 	a.turnAskIndex = &askIndex
 	a.turnAPICalls = nil
 	a.turnCallsBase = a.counters["session_api_calls"]
@@ -215,7 +221,6 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 		return a.failed(history, userMessage, firstNonEmpty(lost.Error(), gateway.GatewayDisconnected), "gateway_connection", false), nil
 	}
 	complete, _ := outcome.(map[string]any)
-	var result map[string]any
 	if a.owns(turn) {
 		result = a.result(ctx, history, userMessage, complete, turn)
 	}

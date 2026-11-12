@@ -574,6 +574,7 @@ func startNotificationPoller(ctx context.Context, sid string, session *tuigatewa
 	notificationPollers.pollers = append(live, notificationPoller{stop, done})
 	notificationPollers.mu.Unlock()
 	go func() {
+		defer threadExceptHook("tui-notif-poller-" + sid)
 		defer close(done)
 		notificationPollerLoop(context.WithoutCancel(ctx), stop, sid, session)
 	}()

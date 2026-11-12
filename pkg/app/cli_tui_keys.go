@@ -18,7 +18,7 @@ import (
 )
 
 // Hard interrupt of a running agent, swapped by tests
-var requestHardInterrupt = func(a *GatewayAgent) { a.Interrupt() }
+var requestHardInterrupt = func(a *GatewayAgent) { a.HardInterrupt() }
 
 // Sleeps for a number of seconds
 func sleepSeconds(s float64) { time.Sleep(time.Duration(s * float64(time.Second))) }

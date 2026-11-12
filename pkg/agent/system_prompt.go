@@ -379,6 +379,16 @@ func profileNameForHome(h string) string {
 	return strings.Split(rel, string(filepath.Separator))[0]
 }
 
+// Copy of the tool env carrying the agent's own enabled and disabled toolsets, the gate memory provider tools read
+func (a *AIAgent) toolsetScopedEnv() *tools.Env {
+	scoped := tools.Env{}
+	if a.env != nil {
+		scoped = *a.env
+	}
+	scoped.Enabled, scoped.Disabled = a.enabledToolsets, a.disabledToolsets
+	return &scoped
+}
+
 // Tool aware memory, session search, skills and kanban guidance joined into one block
 func toolGuidanceBlock(ctx context.Context, a *AIAgent) string {
 	names := a.validToolNames
@@ -740,7 +750,7 @@ func memoryParts(ctx context.Context, a *AIAgent) []string {
 			}
 		}
 	}
-	if a.memoryManager != nil && memory.MemoryProviderToolsExposed(ctx, a.env, toolSurface(a.tools)) {
+	if a.memoryManager != nil && memory.MemoryProviderToolsExposed(ctx, a.toolsetScopedEnv(), toolSurface(a.tools)) {
 		if block := a.memoryManager.BuildSystemPrompt(ctx); block != "" {
 			parts = append(parts, block)
 		}
@@ -1049,13 +1059,16 @@ func InvalidateSystemPrompt(ctx context.Context, a *AIAgent) error {
 	return nil
 }
 
+// Parts builder of the static prefix rebuild, swapped by tests like the hermes module patch
+var reconstructPartsBuilder = BuildSystemPromptParts
+
 // ReconstructStaticPrefix rebuilds the stable tier for a stored prompt, kept only when the prompt starts with it
 func ReconstructStaticPrefix(ctx context.Context, a *AIAgent, systemMessage *string, logLabel string) {
 	stored, existing := a.cachedSystemPrompt, a.cachedSystemPromptStatic
 	if !a.usePromptCaching || stored == "" || (existing != "" && strings.HasPrefix(stored, existing)) || a.staticRebuildFailedFor == stored {
 		return
 	}
-	parts, err := BuildSystemPromptParts(ctx, a, systemMessage)
+	parts, err := reconstructPartsBuilder(ctx, a, systemMessage)
 	if err == nil && parts.Stable != "" && strings.HasPrefix(stored, parts.Stable) {
 		a.cachedSystemPromptStatic, a.staticRebuildFailedFor = parts.Stable, ""
 		return

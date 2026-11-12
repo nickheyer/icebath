@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -117,9 +118,17 @@ func sudoWrongPasswordFailure(output string) bool {
 	return false
 }
 
+// Configured SUDO_PASSWORD of the session secrets, else of the process environment when the env carries none
+func configuredSudoPassword(env *Env) (string, bool) {
+	if env != nil && env.Secrets != nil {
+		return env.Secrets.Get("SUDO_PASSWORD")
+	}
+	return os.LookupEnv("SUDO_PASSWORD")
+}
+
 // Drops a session cached sudo password after sudo rejected it, leaving a configured one alone
 func invalidateCachedSudoOnAuthFailure(env *Env, scope, command, output string) bool {
-	if _, configured := env.Secrets.Get("SUDO_PASSWORD"); configured {
+	if _, configured := configuredSudoPassword(env); configured {
 		return false
 	}
 	if !sudoWrongPasswordFailure(output) || countRealSudoInvocations(command) == 0 || cachedSudoPassword(scope) == "" {
@@ -443,7 +452,7 @@ func transformSudoCommand(ctx context.Context, env *Env, sessionKey, command str
 	if count == 0 {
 		return command, nil
 	}
-	configured, hasConfigured := env.Secrets.Get("SUDO_PASSWORD")
+	configured, hasConfigured := configuredSudoPassword(env)
 	scope := sudoCacheScope(ctx, env, sessionKey)
 	password := configured
 	if !hasConfigured {

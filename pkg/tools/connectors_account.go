@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"sync"
 	"time"
 
@@ -53,7 +52,7 @@ func matchingOpenAccountOperation(names []string, alias, repairID *string, profi
 	}
 	for _, op := range matches {
 		if op != first {
-			return nil, errors.New("requested connectors do not share one open operation")
+			return nil, &AccountOperationMismatch{Msg: "requested connectors do not share one open operation"}
 		}
 	}
 	return first, nil

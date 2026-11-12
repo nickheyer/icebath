@@ -233,6 +233,7 @@ func (h *computeHost) handleTurnStart(frame map[string]any) {
 	h.turns[turn] = strOr(frame["sid"])
 	h.turnsMu.Unlock()
 	go func() {
+		defer threadExceptHook("compute-host-turn")
 		defer func() {
 			close(turn.done)
 			h.turnsMu.Lock()
@@ -808,6 +809,7 @@ func runHost(ctx context.Context, stdin io.Reader, stdout io.Writer) {
 		"cwd": cwd, "hermes_home": os.Getenv("ICEBATH_HOME")})
 	readerDone := make(chan struct{})
 	go func() {
+		defer threadExceptHook("compute-host-control-reader")
 		defer close(readerDone)
 		reader := bufio.NewReader(stdin)
 		for {

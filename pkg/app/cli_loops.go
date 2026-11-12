@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -33,18 +34,39 @@ func (c *CLI) goalMaxTurns() int {
 	return int(n.Int64())
 }
 
-// Goal manager bound to the current session id, rebuilt after the session changed, nil without a session
-func (c *CLI) getGoalManager() *goals.GoalManager {
+// Whether the session store is the gateway's, and its connection once the gateway session is open
+func (c *CLI) automationConnection() (bool, *gatewaycli.GatewayConnection) {
+	if c.sessionDB == nil {
+		return false, nil
+	}
+	return true, gatewayAutomationConnection(c)
+}
+
+// Goal manager bound to the current session id, the gateway's on a gateway store and none before its session opens
+func (c *CLI) getGoalManager() goals.Manager {
+	gateway, connection := c.automationConnection()
+	if gateway && connection == nil {
+		return nil
+	}
 	c.uiMu.Lock()
 	sessionID, existing := c.sessionID, c.goalManager
 	c.uiMu.Unlock()
 	if sessionID == "" {
 		return nil
 	}
-	if existing != nil && existing.SessionID == sessionID {
+	if existing != nil && existing.Session() == sessionID {
 		return existing
 	}
-	manager := goals.NewGoalManager(c.ctx, sessionID, int64(c.goalMaxTurns()))
+	var manager goals.Manager
+	if gateway {
+		remote, err := NewGatewayGoalManager(c.ctx, sessionID, connection)
+		if err != nil {
+			panic(err)
+		}
+		manager = remote
+	} else {
+		manager = goals.NewGoalManager(c.ctx, sessionID, int64(c.goalMaxTurns()))
+	}
 	c.uiMu.Lock()
 	c.goalManager = manager
 	c.uiMu.Unlock()

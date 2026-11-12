@@ -146,6 +146,7 @@ func routeAuthRawStatus(t *testing.T, host *PluginHost, api string, marker any) 
 }
 
 func TestHostAdmissionDoesNotLeakOrComeFromHTTPInput(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	python := routeAuthPython(t)
 	tmp := t.TempDir()
 	api, h := filepath.Join(tmp, "api"), filepath.Join(tmp, "home")
@@ -181,6 +182,7 @@ func TestHostAdmissionDoesNotLeakOrComeFromHTTPInput(t *testing.T) {
 }
 
 func TestAdmissionMatchesNormalGuardAndPreservesUnguardedRoutes(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	python := routeAuthPython(t)
 	root, err := materializeHostChild()
 	if err != nil {

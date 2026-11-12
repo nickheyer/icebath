@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"errors"
-	"fmt"
 	"maps"
 	"math"
 	"os"
@@ -135,7 +134,7 @@ func customProviderModelMatches(agentModel string, entry map[string]any) bool {
 		}
 	case []any:
 		for _, v := range m {
-			catalog = append(catalog, strings.ToLower(strings.TrimSpace(fmt.Sprint(v))))
+			catalog = append(catalog, strings.ToLower(strings.TrimSpace(pyrepr.Str(v))))
 		}
 	}
 	for _, c := range catalog {

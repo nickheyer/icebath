@@ -21,8 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Upstream reference checkout resolved before any test changes directory
-var peReferences, _ = filepath.Abs(filepath.Join("..", "..", "references", "projects", "hermes-agent"))
+// Upstream checkout files the cases read, under testdata and resolved before any test changes directory
+var peReferences, _ = filepath.Abs(filepath.Join("testdata", "hermes"))
 
 // User cache directory read before any test moves HOME
 var peCacheRoot, _ = os.UserCacheDir()

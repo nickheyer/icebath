@@ -72,7 +72,7 @@ func pyFloatOf(v any) (float64, bool) {
 	return value, err == nil
 }
 
-// Patient build wait of a deferred prompt, nil on success or cancel, an error once the build died or timed out
+// Patient build wait of a deferred prompt, nil on success or cancel, an error once the build died
 func waitAgentForPrompt(ctx context.Context, session *tuigateway.Session, rid any, sid string) map[string]any {
 	ready, isEvent := session.Get("agent_ready").(*pythread.Event)
 	if !isEvent || ready == nil {
@@ -113,7 +113,7 @@ func waitAgentForPrompt(ctx context.Context, session *tuigateway.Session, rid an
 	return nil
 }
 
-// Binds a session profile's home, secret and terminal scopes for a build, home and terminal alone when the secret helper fails
+// Binds the home, secret and terminal scopes of a build profile, home and terminal alone when secrets fail
 func bindBuildProfileScopes(ctx context.Context, profileHome string) (scoped context.Context) {
 	defer func() {
 		if recover() != nil {
@@ -330,6 +330,7 @@ func startAgentBuild(ctx context.Context, sid string, session *tuigateway.Sessio
 	build := &agentBuildThread{done: make(chan struct{})}
 	session.Set("_agent_build_thread", build)
 	go func() {
+		defer threadExceptHook("agent-build-" + sid)
 		defer close(build.done)
 		runAgentBuild(context.Background(), sid, key, session, ready)
 	}()

@@ -63,11 +63,16 @@ func appendNoticeToContent(msg *state.Message, notice string) bool {
 
 // Appends the opt in one shot iteration budget checkpoint to the newest unpersisted tool result
 func maybeInjectIterationBudgetWarning(a *AIAgent, messages []*state.Message) bool {
+	return injectIterationBudgetWarning(a.toolContext(), a, messages)
+}
+
+// Iteration budget checkpoint under the caller's context, the kanban form only for the dispatcher owned worker
+func injectIterationBudgetWarning(ctx context.Context, a *AIAgent, messages []*state.Message) bool {
 	if a.interruptRequested.Load() {
 		return false
 	}
 	ratio, haveRatio := a.budgetWarningRatio, a.budgetWarningRatio != 0
-	kanbanWorker := os.Getenv("ICEBATH_KANBAN_TASK") != "" && tools.IsDispatcherOwnedWorkerContext(a.env) && a.validToolNames["kanban_complete"]
+	kanbanWorker := os.Getenv("ICEBATH_KANBAN_TASK") != "" && tools.DispatcherOwnedWorkerActive(ctx, a.env) && a.validToolNames["kanban_complete"]
 	if !haveRatio && kanbanWorker {
 		ratio, haveRatio = 0.9, true
 	}
@@ -84,7 +89,7 @@ func maybeInjectIterationBudgetWarning(a *AIAgent, messages []*state.Message) bo
 		return false
 	}
 	last := messages[len(messages)-1]
-	if last == nil || last.Role != "tool" || pyTruthy(last.Extra[dbPersistedMarker]) {
+	if last == nil || last.Role != "tool" || last.Persisted {
 		return false
 	}
 	if !appendNoticeToContent(last, notice) {
@@ -158,7 +163,7 @@ func prepareIteration(ctx context.Context, a *AIAgent, s *LoopState) error {
 	if a.runBudgetSeconds != 0 {
 		maybeInjectRunBudgetWrapup(a, s.Messages)
 	}
-	maybeInjectIterationBudgetWarning(a, s.Messages)
+	injectIterationBudgetWarning(ctx, a, s.Messages)
 
 	log := conversationLoopLog()
 	s.RequestLogger = log

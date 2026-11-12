@@ -1275,13 +1275,13 @@
 - [x] tools/wake_word_engines.py
 - [ ] tools/xai_video_tools.py
 
-### 17. pkg/agent: 38% (49 of 127 files completed)
+### 17. pkg/agent: 42% (54 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
 - [ ] agent/acp_client.py
 - [ ] agent/acp_openai_bridge.py
 - [x] agent/activity_tracking.py
-- [ ] agent/agent_init.py
-- [ ] agent/agent_init_compression_notice.py
+- [x] agent/agent_init.py
+- [x] agent/agent_init_compression_notice.py
 - [x] agent/agent_init_fallback.py
 - [x] agent/agent_init_memory_provider.py
 - [x] agent/agent_init_ollama.py
@@ -1316,7 +1316,7 @@
 - [x] agent/conversation_compression_reply_anchor.py
 - [ ] agent/conversation_compression_telemetry.py
 - [x] agent/conversation_compression_watermark.py
-- [ ] agent/conversation_loop.py
+- [x] agent/conversation_loop.py
 - [ ] agent/copilot_acp_client.py
 - [ ] agent/history_commentary.py
 - [x] agent/i18n.py
@@ -1342,7 +1342,7 @@
 - [ ] agent/oneshot_footprint.py
 - [ ] agent/persisted_turn_receipt.py
 - [ ] agent/prepared_compaction.py
-- [ ] agent/primary_runtime_snapshot.py
+- [x] agent/primary_runtime_snapshot.py
 - [ ] agent/prompt_builder.py
 - [ ] agent/prompt_refresh.py
 - [x] agent/reactions.py
@@ -1374,7 +1374,7 @@
 - [ ] agent/turn_api_error.py
 - [ ] agent/turn_api_request.py
 - [x] agent/turn_author.py
-- [ ] agent/turn_context.py
+- [x] agent/turn_context.py
 - [ ] agent/turn_context_compaction.py
 - [ ] agent/turn_empty_response.py
 - [x] agent/turn_explainers.py
@@ -2136,11 +2136,11 @@
 - [ ] trajectory_compressor.py
 - [ ] utils.py
 
-### 23. arena: 32% (37 of 115 files completed)
+### 23. arena: 45% (52 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
 - [x] tui_gateway/_env.py
-- [ ] tui_gateway/_stdin_recovery.py
-- [ ] tui_gateway/agent_callbacks.py
+- [x] tui_gateway/_stdin_recovery.py
+- [x] tui_gateway/agent_callbacks.py
 - [ ] tui_gateway/agent_factory.py
 - [ ] tui_gateway/billing_view.py
 - [x] tui_gateway/change_watcher.py
@@ -2175,13 +2175,13 @@
 - [x] tui_gateway/contracts/tools_commands.py
 - [x] tui_gateway/contracts/tools_mcp_plugins.py
 - [ ] tui_gateway/entry.py
-- [ ] tui_gateway/event_publisher.py
-- [ ] tui_gateway/event_replay.py
+- [x] tui_gateway/event_publisher.py
+- [x] tui_gateway/event_replay.py
 - [ ] tui_gateway/free_tier_task_done.py
 - [x] tui_gateway/git_probe.py
 - [ ] tui_gateway/host_supervisor.py
 - [x] tui_gateway/launch_profile_policy.py
-- [ ] tui_gateway/loop_noise.py
+- [x] tui_gateway/loop_noise.py
 - [x] tui_gateway/mcp_oauth_sessions.py
 - [ ] tui_gateway/mcp_rpc_helpers.py
 - [x] tui_gateway/method_ctx.py
@@ -2210,8 +2210,8 @@
 - [x] tui_gateway/methods_session_branch.py
 - [ ] tui_gateway/methods_session_control.py
 - [x] tui_gateway/methods_session_foreign.py
-- [ ] tui_gateway/methods_session_interrupt.py
-- [ ] tui_gateway/methods_session_model_guard.py
+- [x] tui_gateway/methods_session_interrupt.py
+- [x] tui_gateway/methods_session_model_guard.py
 - [ ] tui_gateway/methods_shared_metrics.py
 - [ ] tui_gateway/methods_slash.py
 - [ ] tui_gateway/methods_subagents.py
@@ -2220,7 +2220,7 @@
 - [ ] tui_gateway/methods_vault.py
 - [ ] tui_gateway/methods_voice.py
 - [ ] tui_gateway/model_switch.py
-- [ ] tui_gateway/notification_park.py
+- [x] tui_gateway/notification_park.py
 - [ ] tui_gateway/owner_forward.py
 - [ ] tui_gateway/pet_sheet.py
 - [ ] tui_gateway/plugin_inject.py
@@ -2229,7 +2229,7 @@
 - [ ] tui_gateway/prompt_attachments.py
 - [ ] tui_gateway/prompt_turn.py
 - [ ] tui_gateway/render.py
-- [ ] tui_gateway/rpc_dispatch.py
+- [x] tui_gateway/rpc_dispatch.py
 - [ ] tui_gateway/server.py
 - [ ] tui_gateway/server_requests.py
 - [ ] tui_gateway/session_auto_continue.py
@@ -2244,17 +2244,17 @@
 - [ ] tui_gateway/slash_fuzzy.py
 - [ ] tui_gateway/slash_worker.py
 - [ ] tui_gateway/slash_worker_client.py
-- [ ] tui_gateway/stream_segments.py
-- [ ] tui_gateway/synthetic_turn.py
+- [x] tui_gateway/stream_segments.py
+- [x] tui_gateway/synthetic_turn.py
 - [ ] tui_gateway/theme_bridge.py
 - [ ] tui_gateway/tool_progress.py
-- [ ] tui_gateway/transport.py
-- [ ] tui_gateway/turn_marker.py
-- [ ] tui_gateway/user_messages.py
+- [x] tui_gateway/transport.py
+- [x] tui_gateway/turn_marker.py
+- [x] tui_gateway/user_messages.py
 - [ ] tui_gateway/ws.py
-- [ ] tui_gateway/ws_legacy_fallback.py
+- [x] tui_gateway/ws_legacy_fallback.py
 
-### 24. gateway: 34% (262 of 760 files completed)
+### 24. gateway: 34% (263 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [ ] acp_adapter/__main__.py
 - [ ] acp_adapter/auth.py
@@ -2636,7 +2636,7 @@
 - [x] hermes_cli/foreign_sessions_browser.py
 - [ ] hermes_cli/gateway.py
 - [ ] hermes_cli/gateway_agent.py
-- [ ] hermes_cli/gateway_automation.py
+- [x] hermes_cli/gateway_automation.py
 - [ ] hermes_cli/gateway_chat.py
 - [x] hermes_cli/gateway_chat_commands.py
 - [x] hermes_cli/gateway_chat_listing.py

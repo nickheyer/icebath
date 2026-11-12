@@ -321,7 +321,7 @@ func displaySessionCwd(ctx context.Context, session *tuigateway.Session) string 
 	return healed
 }
 
-// Session store owning the row of a session, a fresh handle on a profile db else the shared launch one, with its release
+// Session store owning the row of a session, a profile db handle else the shared launch one, with its release
 func workdirOwnerDB(ctx context.Context, session *tuigateway.Session, failLog string) (db *state.DB, failed bool, release func()) {
 	release = func() {}
 	profileHome := strOr(session.Get("profile_home"))
@@ -362,6 +362,7 @@ func persistSessionGitMeta(ctx context.Context, session *tuigateway.Session, cwd
 	claimed := *generation
 	ctx = context.WithoutCancel(ctx)
 	go func() {
+		defer threadExceptHook("git-meta")
 		defer func() {
 			if r := recover(); r != nil {
 				logger().Debug("failed to persist session git metadata", "error", r)
@@ -569,7 +570,7 @@ func isHermesOwnedCwd(ctx context.Context, cwd, profileHome string) bool {
 	return tools.IsInstallTree(path)
 }
 
-// Whether a cwd is itself a launch directory, a home, root home, install tree, the user home or the filesystem root
+// Whether a cwd is a launch directory, a home, root home, install tree, user home or filesystem root
 func isLaunchDir(ctx context.Context, cwd, profileHome string) bool {
 	if !filepath.IsAbs(cwd) {
 		return false
@@ -634,7 +635,7 @@ func isOtherProfilesCwd(ctx context.Context, cwd, profileHome string) bool {
 	return path == root || path == filepath.Join(root, "home") || isUnder(path, filepath.Join(root, "profiles")) || tools.IsInstallTree(path)
 }
 
-// Stored cwd a resume may adopt, empty for a host launch dir under ssh, a sandbox launch dir or another profile's dir
+// Stored cwd a resume may adopt, empty for an ssh host launch dir, a sandbox dir or another profile dir
 func resumableStoredCwd(ctx context.Context, cwd any, profileHome string) string {
 	text := strOr(cwd)
 	if text != "" && cwdIsRemote(ctx, profileHome) && isHermesOwnedCwd(ctx, text, profileHome) {

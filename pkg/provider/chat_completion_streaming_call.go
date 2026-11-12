@@ -921,7 +921,7 @@ func (c *streamingCall) resolveStaleTimeout() {
 		timeout = localStreamStaleTimeoutDefault(c.ctx)
 		streamingCallLog.Debug(fmt.Sprintf("Local provider detected (%s) — stale stream timeout set to %.0fs", baseURL, timeout))
 	} else {
-		timeout = cloudStaleTimeoutFor(c.ctx, c.agent.Provider(), c.agent.Model(), c.apiKwargs)
+		timeout = cloudStaleTimeoutForAgent(c.ctx, c.agent, c.agent.Provider(), c.agent.Model(), c.apiKwargs)
 	}
 	c.mu.Lock()
 	c.staleTimeout = timeout

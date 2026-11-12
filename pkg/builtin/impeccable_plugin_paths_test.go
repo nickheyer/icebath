@@ -331,14 +331,14 @@ func TestVerifyPluginSkillRewriteFailsTheBuildWhenTheSkillBaseDirTokenSurvivesTh
 }
 
 func TestSkillSrcMdFrontmatterKeepsAllowedToolsInSourceForNonClaudeProviders(t *testing.T) {
-	src := readTestFile(t, filepath.Join(impeccableRepoRoot, "skill", "SKILL.src.md"))
+	src := readTestFile(t, impeccableRepoPath("skill/SKILL.src.md"))
 	if fm, _ := parseImpeccableFrontmatter(src); !fmHas(fm, "allowed-tools") {
 		t.Fatal("SKILL.src.md frontmatter lost allowed-tools")
 	}
 }
 
 func TestSkillSrcMdSetupStep1AuthoringContractDisambiguatesTheSkillBaseDirToken(t *testing.T) {
-	setup := regexp.MustCompile(`\r\n?`).ReplaceAllString(readTestFile(t, filepath.Join(impeccableRepoRoot, "skill", "SKILL.src.md")), "\n")
+	setup := regexp.MustCompile(`\r\n?`).ReplaceAllString(readTestFile(t, impeccableRepoPath("skill/SKILL.src.md")), "\n")
 	step1 := regexp.MustCompile(`(?m)^1\. .+$`).FindString(setup)
 	if !strings.Contains(step1, "skill folder, not a plugin root") {
 		t.Fatalf("Setup step 1 reads %q", step1)

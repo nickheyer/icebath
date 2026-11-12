@@ -4,17 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 )
-
-var impeccableRepo = filepath.Join("..", "..", "references", "projects", "impeccable")
 
 type oracleRule struct {
 	re   *regexp.Regexp
@@ -71,7 +67,7 @@ func oracleNormalize(text, ws, userHome string) string {
 	for _, r := range oracleAdminRules {
 		text = r.re.ReplaceAllString(text, r.repl)
 	}
-	repo, _ := filepath.Abs(impeccableRepo)
+	repo, _ := filepath.Abs(impeccableRepoRoot)
 	wsReal, _ := filepath.EvalSymlinks(ws)
 	for _, m := range [][2]string{{wsReal, "<WS>"}, {ws, "<WS>"}, {repo, "<REPO>"}, {userHome, "<HOME>"}} {
 		if m[0] != "" {
@@ -147,7 +143,7 @@ func oracleSnapshot(ws string, globs []string) map[string]string {
 
 // Copies a reference workspace tree into a fresh directory
 func stageOracleWorkspace(t *testing.T, name, dst string) {
-	src := filepath.Join(impeccableRepo, "tests", "oracle", "workspaces", name)
+	src := filepath.Join(impeccableRepoRoot, "tests", "oracle", "workspaces", name)
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -179,6 +175,7 @@ type oracleGolden struct {
 // Normalized outputs of the hermes stop case run through designHook
 type oracleHermesRun struct {
 	golden   oracleGolden
+	result   string
 	edit     string
 	editWant string
 	decision map[string]any
@@ -186,32 +183,33 @@ type oracleHermesRun struct {
 	norm     func(string) string
 }
 
-// Builds the engine from the impeccable source tree once into the user cache with four jobs and returns its path
-func impeccableSourceEngine(t *testing.T) string {
+// Test binary standing in as the source built engine, serving its recorded calls and checking both were made in order
+func impeccableRecordedEngine(t *testing.T) string {
 	t.Helper()
-	cache, err := os.UserCacheDir()
+	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := filepath.Join(cache, "icebath-pm-tests", "impeccable-engine-target")
-	cmd := exec.Command("cargo", "build", "--locked", "-j", "4", "-p", "impeccable", "--bin", "impeccable")
-	cmd.Dir = impeccableRepo
-	cmd.Env = append(os.Environ(), "CARGO_TARGET_DIR="+target)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("cargo build of the impeccable engine: %v\n%s", err, out)
+	recording, err := filepath.Abs(impeccableEngineRecording)
+	if err != nil {
+		t.Fatal(err)
 	}
-	exe := ""
-	if runtime.GOOS == "windows" {
-		exe = ".exe"
-	}
-	return filepath.Join(target, "debug", "impeccable"+exe)
+	served := filepath.Join(t.TempDir(), "served.log")
+	t.Setenv(impeccableReplayEnv, recording)
+	t.Setenv(impeccableReplayLogEnv, served)
+	t.Cleanup(func() {
+		if data, _ := os.ReadFile(served); string(data) != "served 0\nserved 1\n" {
+			t.Errorf("engine calls %q, the recording holds the edit then the stop", data)
+		}
+	})
+	return self
 }
 
 // Runs the hook-session-hermes-stop-decision case with the engine at bin, or the launcher downloaded release when bin is empty
 func runOracleHermesStop(t *testing.T, bin string) oracleHermesRun {
 	t.Helper()
 	var run oracleHermesRun
-	raw, err := os.ReadFile(filepath.Join(impeccableRepo, "tests", "oracle", "golden", "hook-session-hermes-stop-decision.json"))
+	raw, err := os.ReadFile(filepath.Join(impeccableRepoRoot, "tests", "oracle", "golden", "hook-session-hermes-stop-decision.json"))
 	if err != nil || json.Unmarshal(raw, &run.golden) != nil || len(run.golden.Steps) != 2 {
 		t.Fatalf("golden %v", err)
 	}
@@ -260,6 +258,7 @@ func runOracleHermesStop(t *testing.T, bin string) oracleHermesRun {
 	run.norm = func(s string) string { return oracleNormalize(s, ws, userHome) }
 	target := filepath.Join(ws, "src", "components", "Card.module.css")
 	result := `{"success": true, "files_modified": ["` + target + `"]}`
+	run.result = result
 	edited, err := h.transformToolResult(ctx, map[string]any{"tool_name": "patch", "args": map[string]any{"path": "src/components/Card.module.css"}, "result": result, "session_id": "hm1"})
 	if err != nil {
 		t.Fatalf("edit step %v", err)
@@ -295,13 +294,24 @@ func goldenStopReason(t *testing.T, g oracleGolden) string {
 }
 
 func TestImpeccableOracleHermesStopDecision(t *testing.T) {
-	run := runOracleHermesStop(t, impeccableSourceEngine(t))
+	run := runOracleHermesStop(t, impeccableRecordedEngine(t))
 	if run.edit != run.editWant {
 		t.Fatalf("edit step\n got %s\nwant %s", run.edit, run.editWant)
 	}
 	reason, _ := run.decision["reason"].(string)
 	if want := goldenStopReason(t, run.golden); run.decision["decision"] != "block" || run.norm(reason) != want || len(run.decision) != 2 {
 		t.Errorf("stop step %v\nwant %s", run.decision, want)
+	}
+	plugin := loadImpeccableRecording(t).Plugin
+	if run.norm(run.result) != plugin.Result {
+		t.Errorf("tool result %s, the upstream plugin was fed %s", run.norm(run.result), plugin.Result)
+	}
+	if want := run.norm(plugin.TransformToolResult); run.edit != want {
+		t.Errorf("edit step\n got %s\nupstream plugin %s", run.edit, want)
+	}
+	pyReason, _ := plugin.PreVerify["reason"].(string)
+	if plugin.PreVerify["decision"] != run.decision["decision"] || run.norm(reason) != run.norm(pyReason) || len(plugin.PreVerify) != len(run.decision) {
+		t.Errorf("stop step %v, upstream plugin %v", run.decision, plugin.PreVerify)
 	}
 	var names []string
 	for name, body := range run.files {

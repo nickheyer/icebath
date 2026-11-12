@@ -532,7 +532,7 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 }
 
 // Manual compression on the owner as session.mutate compress, returning the gateway's compacted transcript
-func (a *GatewayAgent) CompressContext(ctx context.Context, messages []map[string]any, systemMessage *string, focusTopic *string,
+func (a *GatewayAgent) compressContext(ctx context.Context, messages []map[string]any, systemMessage *string, focusTopic *string,
 	verbatimTail []map[string]any) ([]map[string]any, *string, error) {
 	payload := map[string]any{}
 	if focusTopic != nil && *focusTopic != "" {

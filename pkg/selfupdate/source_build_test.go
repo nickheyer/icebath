@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-const sbHermesScripts = "../../references/projects/hermes-agent/scripts/build"
+const sbHermesScripts = "testdata/hermes/scripts/build"
 
 func sbWrite(t *testing.T, path, text string) {
 	t.Helper()
