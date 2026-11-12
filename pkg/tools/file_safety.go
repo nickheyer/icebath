@@ -321,6 +321,14 @@ func writeDeniedError(env *Env, path, verb string, entry bool) string {
 	return verb + " denied: '" + path + "' is a protected system/credential file."
 }
 
+// Model facing write block error for the verb, empty when the path may be written
+func WriteDeniedError(env *Env, path, verb string, entry bool) string {
+	return writeDeniedError(env, path, verb, entry)
+}
+
+// NT or device namespace refusal for the verb, empty for an ordinary path
+func NTNamespaceError(path, verb string) string { return ntNamespaceError(path, verb) }
+
 // Reports whether the path is approval gated like the SSH client config
 func isWriteApprovalRequired(env *Env, path string) bool {
 	resolved := realPath(path)

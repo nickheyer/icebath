@@ -386,10 +386,10 @@ For an ordinary package of that desktop build, use the workspace's
 `dist:win`, `dist:mac`, `dist:linux`, or `pack` command. Those commands do not
 replace the complete tagged build described above.
 
-Icons are generated from `assets/nous-girl-*.svg` and `assets/backgrounds/`.
-`node scripts/generate-icons.mjs` renders them with the Icebath runtime Python
-(`ICEBATH_PYTHON`, else `python` on PATH); Pillow and resvg-py are core
-dependencies. Generated PNG/ICO/ICNS files are not source assets.
+Icons are rendered from `assets/ICE_BATH_*.png` by the Go module in
+`scripts/brand`: `go -C scripts/brand run .` writes them in place and
+`go -C scripts/brand run . --check` verifies them. Generated PNG/ICO/ICNS files
+are not source assets.
 
 [Stable release admission](../../docs/stable-releases.md) requires the full
 pipeline, not just successful packaging. Native signed-package update tests

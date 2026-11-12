@@ -493,6 +493,7 @@ func summarizeRefusedToolResult(toolName string, args *pyjson.Object, content st
 	return pystr.Slice("["+toolName+"]"+target+" "+outcome, 0, pruneMinChars-1), true
 }
 
+// Summary line of a tool call and result, failing where a malformed historical call breaks a branch
 func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any) (string, error) {
 	args := jsonDict(toolArgs)
 	content, isStr := toolContent.(string)

@@ -201,7 +201,7 @@ module.exports = {
     shrink: false,
     // The volume icon defaults to the packager's icns, which is actool's 256px
     // fallback whenever `mac.icon` is the Icon Composer package. Ship our own
-    // drive-with-the-girl artwork instead (dmgbuild's badge option can only
+    // tub artwork on the macOS grid instead (dmgbuild's badge option can only
     // paste onto the stock removable-drive icon). It lives in packaging/ with
     // the background so the `files` whitelist keeps it out of the app bundle.
     icon: 'packaging/dmg-volume.icns',
@@ -211,7 +211,7 @@ module.exports = {
     // frames to 72 dpi and silently drops the 2x representation. A .tiff is
     // handed to dmgbuild untouched (dmg-builder/dist/dmgUtil.js), and living
     // outside assets/ keeps it out of the app bundle via the `files` whitelist.
-    background: 'packaging/nous-dmg-2b.tiff',
+    background: 'packaging/icebath-dmg.tiff',
     iconSize: 96,
     iconTextSize: 11,
     window: {

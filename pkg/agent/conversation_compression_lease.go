@@ -2,13 +2,16 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -87,36 +90,15 @@ func newCompressionActivityHeartbeat(a *AIAgent, intervalSeconds any, emitClient
 
 // float(interval or 60.0) with the non finite and unparsable values read as 60
 func heartbeatSeconds(v any) float64 {
-	var f float64
-	switch x := v.(type) {
-	case float64:
-		f = x
-	case float32:
-		f = float64(x)
-	case int:
-		f = float64(x)
-	case int64:
-		f = float64(x)
-	case bool:
-		if x {
-			f = 1
-		}
-	case string:
-		parsed, err := strconv.ParseFloat(x, 64)
-		if x == "" {
-			parsed, err = 60, nil
-		}
-		if err != nil {
-			return 60
-		}
-		f = parsed
-	default:
+	if !pyrepr.Truthy(v) {
 		return 60
 	}
-	if f == 0 {
-		f = 60
+	f, err := pyint.Float(v)
+	var pyErr *pyint.Error
+	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
+		panic(err)
 	}
-	if math.IsInf(f, 0) || math.IsNaN(f) {
+	if err != nil || math.IsInf(f, 0) || math.IsNaN(f) {
 		return 60
 	}
 	return f

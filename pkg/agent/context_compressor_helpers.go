@@ -518,7 +518,7 @@ func shortErrorText(err error, limit int) string {
 	return pystr.Rstrip(pystr.Slice(text, 0, limit-3)) + "..."
 }
 
-// summaryFailureKind is the classification of a failed summary call
+// Transient failure classes of a summary call, several of which may hold at once
 type summaryFailureKind struct {
 	ModelNotFound, Timeout, JSONDecode, StreamingClosed, EmptyContent, Truncated, Overloaded bool
 }

@@ -1275,9 +1275,9 @@
 - [ ] tools/wake_word_engines.py  defs 20/26  cases 0/0
 - [ ] tools/xai_video_tools.py  defs 7/8  cases 0/0
 
-### 17. pkg/agent: 41% (2120 of 5109 rows closed, defs 2103/2307, cases 17/2802, 25 of 127 files completed)
+### 17. pkg/agent: 43% (2200 of 5109 rows closed, defs 2155/2307, cases 45/2802, 28 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
-- [ ] agent/acp_client.py  defs 11/34  cases 0/35
+- [ ] agent/acp_client.py  defs 32/34  cases 28/35
 - [x] agent/acp_openai_bridge.py  defs 8/8  cases 13/13
 - [ ] agent/activity_tracking.py  defs 5/6  cases 0/8
 - [ ] agent/agent_init.py  defs 61/61  cases 0/28
@@ -1295,19 +1295,19 @@
 - [x] agent/compression_automation.py  defs 1/1  cases 0/0
 - [ ] agent/compression_facade.py  defs 9/11  cases 0/0
 - [ ] agent/context_breakdown.py  defs 23/23  cases 0/20
-- [ ] agent/context_compressor.py  defs 269/276  cases 0/460
-- [ ] agent/context_compressor_prellm.py  defs 4/5  cases 0/0
-- [ ] agent/context_compressor_prune.py  defs 2/4  cases 0/9
+- [ ] agent/context_compressor.py  defs 276/276  cases 0/460
+- [x] agent/context_compressor_prellm.py  defs 5/5  cases 0/0
+- [ ] agent/context_compressor_prune.py  defs 4/4  cases 0/9
 - [ ] agent/context_compressor_retry.py  defs 1/1  cases 0/3
-- [ ] agent/context_compressor_summary.py  defs 2/4  cases 0/0
-- [ ] agent/context_compressor_tail.py  defs 9/11  cases 0/5
-- [ ] agent/context_compressor_telemetry.py  defs 3/9  cases 0/1
-- [ ] agent/context_compressor_window.py  defs 4/5  cases 0/0
-- [ ] agent/context_engine.py  defs 22/23  cases 0/16
+- [x] agent/context_compressor_summary.py  defs 4/4  cases 0/0
+- [ ] agent/context_compressor_tail.py  defs 11/11  cases 0/5
+- [ ] agent/context_compressor_telemetry.py  defs 9/9  cases 0/1
+- [x] agent/context_compressor_window.py  defs 5/5  cases 0/0
+- [ ] agent/context_engine.py  defs 23/23  cases 0/16
 - [ ] agent/context_file_sources.py  defs 6/6  cases 0/3
 - [ ] agent/context_pin.py  defs 4/4  cases 0/2
 - [ ] agent/context_references.py  defs 37/37  cases 0/41
-- [ ] agent/conversation_compression.py  defs 165/175  cases 0/242
+- [ ] agent/conversation_compression.py  defs 173/175  cases 0/242
 - [x] agent/conversation_compression_archive.py  defs 5/5  cases 0/0
 - [x] agent/conversation_compression_checkpoint.py  defs 5/5  cases 0/0
 - [x] agent/conversation_compression_codex.py  defs 3/3  cases 0/0
@@ -1324,7 +1324,7 @@
 - [ ] agent/i18n_layers.py  defs 23/24  cases 0/9
 - [ ] agent/image_replay.py  defs 7/7  cases 0/6
 - [ ] agent/inline_tool_executors.py  defs 9/17  cases 0/2
-- [ ] agent/iteration_budget.py  defs 6/7  cases 0/5
+- [ ] agent/iteration_budget.py  defs 7/7  cases 0/5
 - [ ] agent/lazy_forward.py  defs 1/3  cases 0/0
 - [ ] agent/legacy_cli.py  defs 0/2  cases 0/2
 - [ ] agent/local_prompt_progress.py  defs 7/9  cases 0/21

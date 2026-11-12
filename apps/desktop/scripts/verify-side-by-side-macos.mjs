@@ -2,7 +2,7 @@
 // Native fixture proof, not signed Icebath artifact E2E.
 // Run: node apps/desktop/scripts/verify-side-by-side-macos.mjs <icon-input-root>
 // Inputs: cases.json [{label, env}], plus <label>/icon{,-dark}.icns from
-// scripts/generate_icons.py. Use stable, canary, commit-a, commit-b, in order.
+// scripts/brand. Use stable, canary, commit-a, commit-b, in order.
 // Existing Electron/build dependencies are read-only. All writes stay in /tmp.
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'

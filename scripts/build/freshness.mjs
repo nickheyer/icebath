@@ -50,7 +50,7 @@ function productInputs(product) {
   return [
     workspace, 'apps/shared', 'package.json', 'package-lock.json', '.npmrc', 'pm/lock.json',
     'scripts/build',
-    'scripts/generate-icons.mjs', 'scripts/generate_icons.py',
+    'scripts/brand',
     // The root install-stamp.json is runtime identity rewritten after every install; desktop's
     // baked stamp is a prepared input.
     'assets', 'pyproject.toml', 'uv.lock',
