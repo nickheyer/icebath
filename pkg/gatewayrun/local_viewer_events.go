@@ -340,8 +340,8 @@ func clarifyBatchTurn(ctx context.Context, t *TurnRunner) bool {
 		return false
 	}
 	var inbound any
-	if t.ctx.inboundMessageID != nil {
-		inbound = *t.ctx.inboundMessageID
+	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
+		inbound = *inboundID
 	}
 	return pyrepr.Truthy(gateway.CLITurn(ctx, inbound).GetOr("clarify_batch", nil))
 }

@@ -16,7 +16,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-var statusStdout io.Writer = os.Stdout
+// Writer resolving the process stdout at every write, as print reads sys.stdout when it runs
+type processStdout struct{}
+
+func (processStdout) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
+
+var statusStdout io.Writer = processStdout{}
+
+// Routes agent stdout through w until the returned restore runs, the patch_stdout swap of sys.stdout
+func PatchStatusStdout(w io.Writer) (restore func()) {
+	prev := statusStdout
+	statusStdout = w
+	return func() { statusStdout = prev }
+}
 
 // Reports whether stdout is a terminal, swapped by tests
 var statusStdoutIsTTY = func() bool { return isatty.IsTerminal(os.Stdout.Fd()) }

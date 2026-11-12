@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -205,13 +204,11 @@ func TestNewSanitizesName(t *testing.T) {
 
 func TestEnterNewWorktreeReportsAFailedMove(t *testing.T) {
 	c, out := worktreeHandlerCLI(t)
-	prev := worktreeChdir
-	worktreeChdir = func(string) error { return &os.PathError{Op: "chdir", Path: "/nope", Err: syscall.EACCES} }
-	t.Cleanup(func() { worktreeChdir = prev })
-	if c.enterNewWorktree(map[string]string{"path": "/nope"}) {
+	missing := filepath.Join(t.TempDir(), "nope")
+	if c.enterNewWorktree(map[string]string{"path": missing}) {
 		t.Fatal("a failed chdir entered the tree")
 	}
-	want := catalogText("cli.commands.worktree.enter_failed", map[string]any{"error": "[Errno 13] Permission denied: '/nope'"})
+	want := catalogText("cli.commands.worktree.enter_failed", map[string]any{"error": "[Errno 2] No such file or directory: '" + missing + "'"})
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("output %q want %q", out.String(), want)
 	}

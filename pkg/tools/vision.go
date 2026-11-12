@@ -1022,7 +1022,7 @@ func debugCallData(kind, source, userPrompt, model string) map[string]any {
 
 // Aux vision completion retrying once when the first answer came back empty
 func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts AuxOptions, emptyLog string, first *string) (string, error) {
-	if env == nil || env.Aux == nil {
+	if env == nil || env.AuxClient() == nil {
 		return "", errors.New("no auxiliary model is configured for vision")
 	}
 	var analysis string
@@ -1030,13 +1030,13 @@ func callVisionLLM(ctx context.Context, env *Env, msgs []*state.Message, opts Au
 		analysis = *first
 	} else {
 		var err error
-		if analysis, err = env.Aux.Complete(ctx, msgs, opts); err != nil {
+		if analysis, err = env.AuxClient().Complete(ctx, msgs, opts); err != nil {
 			return "", err
 		}
 	}
 	if analysis == "" {
 		envLog(env).Warn(emptyLog)
-		return env.Aux.Complete(ctx, msgs, opts)
+		return env.AuxClient().Complete(ctx, msgs, opts)
 	}
 	return analysis, nil
 }
@@ -1171,10 +1171,10 @@ func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, 
 		msgs := mediaMessages(prompt, "image_url", dataURL)
 		log.Info("Processing image with vision model...")
 		opts := auxCallOptions(env, model, 120.0, nil)
-		if env == nil || env.Aux == nil {
+		if env == nil || env.AuxClient() == nil {
 			return "", "", errors.New("no auxiliary model is configured for vision")
 		}
-		response, apiErr := env.Aux.Complete(ctx, msgs, opts)
+		response, apiErr := env.AuxClient().Complete(ctx, msgs, opts)
 		if apiErr != nil {
 			if !(isImageSizeError(apiErr) && len(dataURL) > visionResizeTargetBytes) {
 				return "", "", apiErr
@@ -1187,7 +1187,7 @@ func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, 
 			}
 			dataURL = res.url
 			setMediaURL(msgs, "image_url", dataURL)
-			if response, apiErr = env.Aux.Complete(ctx, msgs, opts); apiErr != nil {
+			if response, apiErr = env.AuxClient().Complete(ctx, msgs, opts); apiErr != nil {
 				return "", "", apiErr
 			}
 		}
@@ -1201,15 +1201,16 @@ func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, 
 
 // Reports whether an auxiliary vision client resolves explicitly or through the auto chain, a resolver crash panicking into the registry
 func checkVideoRequirements(env *Env) bool {
-	if env == nil || env.Aux == nil {
+	if env == nil || env.AuxClient() == nil {
 		return false
 	}
-	r, ok := env.Aux.(AuxTaskResolver)
+	r, ok := env.AuxClient().(AuxTaskResolver)
 	if !ok {
-		panic(fmt.Errorf("auxiliary client %T does not implement tools.AuxTaskResolver, the vision gate cannot probe it", env.Aux))
+		panic(fmt.Errorf("auxiliary client %T does not implement tools.AuxTaskResolver, the vision gate cannot probe it", env.AuxClient()))
 	}
+	ctx := WithEnvHome(context.Background(), env)
 	for _, provider := range []string{"", "auto"} {
-		resolved, err := r.ResolvesTask("vision", provider)
+		resolved, err := r.ResolvesVision(ctx, provider)
 		if err != nil {
 			panic(err)
 		}
@@ -1220,9 +1221,9 @@ func checkVideoRequirements(env *Env) bool {
 	return false
 }
 
-// AuxTaskResolver is implemented by auxiliary routers that resolve a task to a client in probe mode without building it
+// AuxTaskResolver is implemented by auxiliary routers that resolve the vision task to a client in probe mode without building it
 type AuxTaskResolver interface {
-	ResolvesTask(task, provider string) (bool, error)
+	ResolvesVision(ctx context.Context, provider string) (bool, error)
 }
 
 // Image gate, an auxiliary vision client or the native fast path

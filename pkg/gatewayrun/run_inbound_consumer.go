@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 const postAdmissionHook = "post_gateway_admission"
@@ -40,14 +40,14 @@ func runPostAdmissionHook(ctx context.Context, r *GatewayRunner, event *gateway.
 		if err != nil {
 			return nil, err
 		}
-		if !plugins.HasHook(scoped, postAdmissionHook) {
+		if !agent.LifecycleHasHook(scoped, postAdmissionHook) {
 			return nil, nil
 		}
 		var messageID any
 		if event.MessageID != nil {
 			messageID = *event.MessageID
 		}
-		return plugins.AInvokeHook(scoped, postAdmissionHook, map[string]any{
+		return agent.LifecycleAInvokeHook(scoped, postAdmissionHook, map[string]any{
 			"session_key": sessionKey, "platform": string(source.Platform), "source": source.ToDict(),
 			"message_id": messageID, "text": event.Text,
 		}), nil

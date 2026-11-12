@@ -34,8 +34,8 @@ var webappSteps = struct {
 // Browser hosted desktop renderer that could not be prepared
 type WebappBuildError struct{ Msg string }
 
-func (e *WebappBuildError) Error() string         { return e.Msg }
-func (e *WebappBuildError) ExceptionName() string { return "WebappBuildError" }
+func (e *WebappBuildError) Error() string      { return e.Msg }
+func (e *WebappBuildError) PyTypeName() string { return "WebappBuildError" }
 
 // Bundle the packaged dist env names, empty when icebath builds its own
 func packagedWebappDist() string {

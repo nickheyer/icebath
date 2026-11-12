@@ -60,7 +60,7 @@ func watchedLeaseHomes() []string {
 		served = append(served, h)
 	}
 	slices.Sort(served)
-	return append([]string{hermesHome}, served...)
+	return append([]string{importedHome()}, served...)
 }
 
 // Modification time of a path, none when it cannot be stat'ed

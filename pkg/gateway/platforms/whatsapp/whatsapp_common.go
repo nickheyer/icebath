@@ -107,6 +107,8 @@ type WhatsAppBehaviorMixin struct {
 	dmAllowlistSource *string
 }
 
+var _ gateway.DMAllowedAdapter = (*WhatsAppBehaviorMixin)(nil)
+
 // Mixin over its host config with the WhatsApp allowlist matching and live DM allowlist installed
 func NewWhatsAppBehaviorMixin(name string, cfg *gateway.PlatformConfig) *WhatsAppBehaviorMixin {
 	policy, err := gateway.NewOwnAccessPolicyMixin(name, "WHATSAPP")
@@ -276,11 +278,7 @@ func (b *WhatsAppBehaviorMixin) LiveDMAllowFrom(ctx context.Context) (map[string
 		}
 		return CoerceAllowList(live), nil
 	}
-	out := map[string]bool{}
-	for entry := range b.AllowFrom {
-		out[entry] = true
-	}
-	return out, nil
+	return b.AllowFromSnapshot(), nil
 }
 
 // WhatsApp id with its device qualifier dropped so it equals the bare form

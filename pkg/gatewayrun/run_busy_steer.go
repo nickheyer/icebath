@@ -389,6 +389,12 @@ func (r *GatewayRunner) redirectActiveTurn(ctx context.Context, runningAgent *ag
 	if !r.tryAgentVerb(ctx, runningAgent, "redirect", text, sessionKey, event) {
 		return false
 	}
+	r.reanchorRunningTurn(runningAgent, sessionKey, event)
+	return true
+}
+
+// Moves the reply anchor and ledger id of the turn the agent still runs onto event, within one state hold
+func (r *GatewayRunner) reanchorRunningTurn(runningAgent *agent.AIAgent, sessionKey string, event *gateway.MessageEvent) {
 	anchor := gateway.ReplyAnchorForEvent(event)
 	var inboundID *string
 	if event.MessageID != nil && *event.MessageID != "" {
@@ -409,7 +415,6 @@ func (r *GatewayRunner) redirectActiveTurn(ctx context.Context, runningAgent *ag
 			turn.ctx.inboundMessageID = inboundID
 		}
 	})
-	return true
 }
 
 // Makes the running turn answer the event too under the state lock, false when a newer turn owns the slot
@@ -417,6 +422,15 @@ func (r *GatewayRunner) foldIntoRunningTurn(runningAgent *agent.AIAgent, session
 	folded := false
 	r.withSessionState(sessionKey, func(s *SessionState) { folded = foldIntoTurn(&s.turn, runningAgent, event) })
 	return folded
+}
+
+// Reply anchor, raw inbound id and reply expectation of a turn context, copied under its session state lock
+func (r *GatewayRunner) turnReplyAnchors(tc *TurnContext) (eventMessageID, inboundMessageID *string, replyExpected *bool) {
+	if state := r.peekSessionState(tc.sessionKey); state != nil {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+	}
+	return tc.eventMessageID, tc.inboundMessageID, tc.replyExpected
 }
 
 // Absorbs the reply expectation of event into a turn the agent still runs, the caller holding the state lock

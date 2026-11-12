@@ -1,7 +1,10 @@
 package app
 
-// Nil gateway catalog because the in process CLI has no gateway connection, so completion reads the plugin registry
+// Plugin command names of the gateway catalog for completion, nil off the gateway so the plugin registry answers
 func pluginCommandNames(c *CLI) map[string]string {
-	_ = c
-	return nil
+	found, onGateway := gatewayPluginNames(c)
+	if !onGateway {
+		return nil
+	}
+	return found
 }

@@ -69,7 +69,7 @@ func resolveAgentPlatform(source string) string { return resolveSessionSource(so
 func scopedSessionProvider(ctx context.Context, a *agent.AIAgent, session *tuigateway.Session) string {
 	profileHome := strOr(session.Get("profile_home"))
 	if profileHome == "" {
-		profileHome = hermesHome
+		profileHome = importedHome()
 	}
 	ctx = profileRuntimeScope(ctx, profileHome, true)
 	if name := strOr(runtimeModelConfig(ctx, a, nil)["provider"]); name != "" {

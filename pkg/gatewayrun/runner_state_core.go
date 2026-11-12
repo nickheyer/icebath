@@ -108,6 +108,7 @@ type runnerCoreState struct {
 	executorClosing              bool
 	sessions                     map[string]*SessionState
 	turnLeases                   *SessionTurnLeaseRegistry
+	sessionStallMu               sync.Mutex
 	sessionStallNotified         map[string]bool
 	transcriptLagStreaks         map[string]int
 	startupRestoreInProgress     bool

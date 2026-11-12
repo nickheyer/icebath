@@ -3,12 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -229,23 +229,27 @@ func containsWord(words []string, w string) bool {
 	return false
 }
 
-// Moves the session into the fresh tree, true when its tools now run there and false after a failed chdir
+// Moves the session into the fresh tree through the gateway first, true when its tools now run there
 func (c *CLI) enterNewWorktree(wtInfo map[string]string) bool {
-	if err := moveCLIWorkspace(wtInfo); err != nil {
+	err := gatewaycli.MoveCLIWorkspace(c.ctx, gatewaycli.WorkspaceCLI{SessionDB: c.sessionDB, GatewaySessionOpen: c.gatewaySessionOpen,
+		SessionID: c.sessionID}, wtInfo)
+	switch {
+	case err == nil:
+	case isGatewayClientError(err):
+		printLines("  " + c.commandsT("worktree.enter_failed", map[string]any{"error": refusalText(c.ctx, err)}))
+		activeWorktreeMu.Lock()
+		active := activeWorktree
+		activeWorktreeMu.Unlock()
+		cleanupWorktree(c.ctx, wtInfo)
+		activeWorktreeMu.Lock()
+		activeWorktree = active
+		activeWorktreeMu.Unlock()
+		return false
+	case gatewayConnectionFor(c) == nil:
 		printLines("  " + c.commandsT("worktree.enter_failed", map[string]any{"error": pypath.OSErrorText(err)}))
 		return false
+	default:
+		printLines("  " + c.t("cli.session.cwd_enter_failed", map[string]any{"path": wtInfo["path"], "error": pypath.OSErrorText(err)}))
 	}
 	return true
 }
-
-// Points this process and TERMINAL_CWD at the tree, a chdir failure leaving both where they were
-func moveCLIWorkspace(wtInfo map[string]string) error {
-	cwd := wtInfo["path"]
-	if err := worktreeChdir(cwd); err != nil {
-		return err
-	}
-	return os.Setenv("TERMINAL_CWD", cwd)
-}
-
-// Seam over the process chdir the worktree move performs
-var worktreeChdir = os.Chdir

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // Post admission plugin hook once per inbound message, never while an admitted row executes
@@ -35,7 +35,7 @@ func (r *GatewayRunner) hmPreGatewayDispatchHook(ctx context.Context, event *gat
 		if r.sessionStore != nil {
 			store = r.sessionStore
 		}
-		return plugins.AInvokeHook(ctx, "pre_gateway_dispatch", map[string]any{"event": event, "gateway": r, "session_store": store})
+		return agent.LifecycleAInvokeHook(ctx, "pre_gateway_dispatch", map[string]any{"event": event, "gateway": r, "session_store": store})
 	}()
 	for _, raw := range results {
 		result, ok := raw.(map[string]any)

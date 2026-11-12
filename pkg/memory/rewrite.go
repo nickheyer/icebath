@@ -161,7 +161,7 @@ func RewriteMemoryQuery(ctx context.Context, env *tools.Env, userMessage string)
 		return ""
 	}
 	log := envLog(env)
-	if env == nil || env.Aux == nil {
+	if env == nil || env.AuxClient() == nil {
 		log.Debug("Memory query rewrite failed: no auxiliary model is configured")
 		return ""
 	}
@@ -173,7 +173,7 @@ func RewriteMemoryQuery(ctx context.Context, env *tools.Env, userMessage string)
 	var response string
 	err := callProvider(func() error {
 		var err error
-		response, err = env.Aux.Complete(ctx, messages, tools.AuxOptions{Task: QueryRewriteTaskKey, Temperature: &zero, MaxTokens: 96})
+		response, err = env.AuxClient().Complete(ctx, messages, tools.AuxOptions{Task: QueryRewriteTaskKey, Temperature: &zero, MaxTokens: 96})
 		return err
 	})
 	if err != nil {

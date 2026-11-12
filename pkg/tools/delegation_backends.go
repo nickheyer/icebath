@@ -21,7 +21,7 @@ var (
 var DelegationBackendHooks struct {
 	ListProviders        func(ctx context.Context) []DelegationProvider
 	RefreshAgentMCPTools func(ctx context.Context, a DelegationRebuildAgent, quietMode, contentAware bool)
-	RecordCacheBreak     func(a DelegationRebuildAgent, reason string)
+	RecordCacheBreak     func(ctx context.Context, a DelegationRebuildAgent, reason string)
 }
 
 // One selectable delegation backend, Available false carrying the reason it cannot run
@@ -174,7 +174,7 @@ func ApplyRequestedToolRebuild(ctx context.Context, a DelegationRebuildAgent) bo
 	if unsafe.SliceData(after) == unsafe.SliceData(before) && len(after) == len(before) {
 		return false
 	}
-	DelegationBackendHooks.RecordCacheBreak(a, "toolset_change")
+	DelegationBackendHooks.RecordCacheBreak(ctx, a, "toolset_change")
 	return true
 }
 

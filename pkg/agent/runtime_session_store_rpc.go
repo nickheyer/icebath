@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -232,9 +233,9 @@ func (r *WorkerRPC) connection(ctx context.Context) (*ownerLink, error) {
 	}
 	url, protocols := gateway.GatewayWSTarget(endpoint, ticket)
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 5 * time.Second, Subprotocols: protocols}
-	ws, _, err := dialer.DialContext(ctx, url, nil)
+	ws, resp, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, pywebsockets.HandshakeError(resp, err)
 	}
 	ws.SetReadLimit(8 * 1024 * 1024)
 	r.link = newOwnerLink(ws)

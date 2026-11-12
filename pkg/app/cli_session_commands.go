@@ -11,6 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -76,7 +78,7 @@ func resetModelToConfigDefault(c *CLI, silent bool) {
 		return
 	}
 	if c.agent != nil && !c.gatewaySessionOpen {
-		if err := c.agent.SwitchModel(c.ctx, r.NewModel, r.TargetProvider, r.APIKey, r.BaseURL, r.APIMode, r.RuntimeCapabilities, false, false, ""); err != nil {
+		if _, err := c.agent.SwitchModel(r.NewModel, r.TargetProvider, false, false, ""); err != nil {
 			cliLogger.Debug("/new model reset to config default failed")
 			return
 		}
@@ -341,31 +343,23 @@ func (c *CLI) notifySessionBoundary(eventType string) {
 	agent.LifecycleInvokeHook(c.ctx, eventType, kwargs)
 }
 
-// Starts a fresh session with a new id and cleared agent state, the old one flushed and ended first
+// Starts a fresh gateway session with cleared agent state, the old one ended first so the gateway finalizes it
 func (c *CLI) newSession(silent bool, title string) {
 	oldSessionID := c.sessionID
-	var boundarySnapshot []map[string]any
-	if c.agent != nil {
-		if len(c.conversationHistory) > 0 {
-			boundarySnapshot = c.agent.LaunchSessionBoundaryMemoryFlush(append([]map[string]any(nil), c.conversationHistory...), oldSessionID)
-		}
-		c.notifySessionBoundary("on_session_finalize")
-	}
 	if c.sessionDB != nil && oldSessionID != "" {
-		if c.agent != nil {
-			func() {
-				defer func() { _ = recover() }()
-				_, _ = c.agent.FlushHistoryToSessionDB(c.conversationHistory, c.conversationHistory)
-			}()
+		if err := c.sessionDB.EndSession(c.ctx, oldSessionID, "new_session"); err != nil {
+			cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", oldSessionID, err))
 		}
-		func() {
-			defer func() { _ = recover() }()
-			_ = c.sessionDB.EndSession(oldSessionID, "new_session")
-		}()
 		c.discardSessionIfEmpty(oldSessionID)
 	}
 	c.sessionStart = time.Now()
-	c.sessionID = c.newSessionID(c.sessionStart)
+	sid, err := c.newSessionID(c.sessionStart, "", "")
+	if err != nil {
+		panic(err)
+	}
+	c.uiMu.Lock()
+	c.sessionID = sid
+	c.uiMu.Unlock()
 	c.writeTerminalBreadcrumb()
 	c.conversationHistory = []map[string]any{}
 	c.pendingTitle = ""
@@ -378,27 +372,13 @@ func (c *CLI) newSession(silent bool, title string) {
 	syncProcessSessionID(c.ctx, c.env, c.sessionID)
 	shownTitle := title
 	if c.agent != nil {
-		c.agent.StartNewCLISession(c.ctx, c.sessionID, c.sessionStart, c.reasoningConfig)
-		if c.sessionDB != nil {
-			func() {
-				defer func() { _ = recover() }()
-				c.agent.SetSessionDBCreated(false)
-				source := os.Getenv("ICEBATH_SESSION_SOURCE")
-				if source == "" {
-					source = "cli"
-				}
-				if err := c.sessionDB.CreateSession(state.NewSession{ID: c.sessionID, Source: source, Model: c.model,
-					ModelConfig: map[string]any{"max_iterations": c.maxTurns, "reasoning_config": c.reasoningConfig}}); err != nil {
-					return
-				}
-				c.agent.SetSessionDBCreated(true)
-			}()
-			if title != "" {
-				shownTitle, _ = applyNewSessionTitle(c, title)
-			}
+		c.agent.SetSessionID(c.sessionID)
+		c.agent.SetReasoningConfig(c.reasoningConfig)
+		c.agent.ResetSessionState()
+		c.agent.setTodoStore(tools.NewTodoStore())
+		if c.sessionDB != nil && title != "" {
+			shownTitle, _ = applyNewSessionTitle(c, title)
 		}
-		c.agent.CommitNewSessionMemory(c.ctx, boundarySnapshot, c.sessionID, oldSessionID)
-		c.notifySessionBoundary("on_session_reset")
 	}
 	if !silent {
 		if shownTitle != "" {
@@ -432,19 +412,17 @@ func (c *CLI) saveConversation(cmd string) {
 	if len(parts) > 1 {
 		filename = parts[1]
 	}
-	var sessionData *pyjson.Object
-	if c.sessionDB != nil && c.sessionID != "" {
-		data, err := state.LoadSaveSnapshot(c.ctx, c.sessionDB, c.sessionID, format)
-		if err != nil {
-			var tooLarge *state.SessionExportTooLargeError
-			if errors.As(err, &tooLarge) {
-				printLines("(._.) " + err.Error())
-				return
-			}
-			data = nil
+	if store := c.gatewayStore(); store != nil {
+		if len(c.conversationHistory) == 0 {
+			printLines(c.t("cli.session.save_nothing", nil))
+			return
 		}
-		sessionData = data
+		if content, ok := c.exportOnGateway(store.Connection, format, filename, redact); ok {
+			writeSave(c, c.sessionID, format, filename, func() (string, error) { return content, nil })
+		}
+		return
 	}
+	var sessionData *pyjson.Object
 	if sessionData == nil || sessionData.Len() == 0 {
 		if len(c.conversationHistory) == 0 {
 			printLines(c.t("cli.session.save_nothing", nil))
@@ -466,13 +444,71 @@ func (c *CLI) saveConversation(cmd string) {
 	writeSave(c, c.sessionID, format, filename, func() (string, error) { return state.RenderSessionForSave(sessionData, format) })
 }
 
-// Installs a rewound history and mirrors it onto the agent
-func (c *CLI) publishTruncatedHistory(truncated []map[string]any, invalidatePrompt bool) {
+// Prints a gateway save refusal, not_found reading as nothing to save
+func printSaveRefusal(c *CLI, err error) {
+	if err.Error() == "not_found" {
+		printLines(c.t("cli.session.save_nothing", nil))
+		return
+	}
+	printLines(c.t("cli.session.save_failed", map[string]any{"error": err.Error()}))
+}
+
+// Owner's rendering of its stored row for save, false when refused or handed to an older gateway's save
+func (c *CLI) exportOnGateway(connection *gatewaycli.GatewayConnection, format, filename string, redact bool) (string, bool) {
+	raw, err := connection.Call(c.ctx, "session.export", map[string]any{"session_id": c.sessionID, "format": format, "redact": redact})
+	if err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
+		var refused *gateway.GatewayRPCError
+		if !(errors.As(err, &refused) && ((refused.Code != nil && *refused.Code == -32601) || refused.Error() == "unknown_method")) {
+			printSaveRefusal(c, err)
+			return "", false
+		}
+		c.saveOnOlderGateway(connection, format, filename, redact)
+		return "", false
+	}
+	reply, _ := pyjson.Plain(raw).(map[string]any)
+	content, isStr := reply["content"].(string)
+	if !isStr {
+		printLines(c.t("cli.session.save_failed", map[string]any{"error": "the gateway returned no export"}))
+		return "", false
+	}
+	return content, true
+}
+
+// Plain json save on an owner without session.export, written on the gateway host
+func (c *CLI) saveOnOlderGateway(connection *gatewaycli.GatewayConnection, format, filename string, redact bool) {
+	if redact || format != "json" || filename != "" {
+		printLines("(._.) This gateway predates this CLI: only a plain /save json works until it restarts " +
+			"(it saves on the gateway host).")
+		return
+	}
+	raw, err := connection.Call(c.ctx, "session.save", map[string]any{"session_id": c.sessionID})
+	if err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
+		printSaveRefusal(c, err)
+		return
+	}
+	reply, _ := pyjson.Plain(raw).(map[string]any)
+	if saved := strOrEmpty(reply["file"]); saved != "" {
+		printLines("(^_^)v Conversation saved on the gateway host: " + saved)
+		return
+	}
+	printLines(c.t("cli.session.save_failed", map[string]any{"error": "the gateway returned no file"}))
+}
+
+// Installs a rewound history and mirrors it onto the agent's transcript
+func (c *CLI) publishTruncatedHistory(truncated []map[string]any) {
 	c.conversationHistory = truncated
 	if c.agent == nil {
 		return
 	}
-	c.agent.PublishTruncatedHistory(c.ctx, c.conversationHistory, invalidatePrompt)
+	c.agent.mu.Lock()
+	c.agent.sessionMessages = c.conversationHistory
+	c.agent.mu.Unlock()
 }
 
 // Drops the last exchange and returns the user text to send again, false when nothing can be retried
@@ -509,7 +545,7 @@ func (c *CLI) retryLast() (string, bool) {
 		}
 		truncated = outcome.Prefix
 	}
-	c.publishTruncatedHistory(truncated, false)
+	c.publishTruncatedHistory(truncated)
 	preview := pystr.Slice(lastMessage, 0, 60)
 	if pystr.Len(lastMessage) > 60 {
 		preview += "..."
@@ -554,10 +590,7 @@ func (c *CLI) undoLast(n int, prefill bool) int {
 		}
 		rewoundRows = outcome.RewoundCount
 	}
-	c.publishTruncatedHistory(truncated, true)
-	if c.agent != nil {
-		c.agent.NotifyMemoryRewound(c.ctx, c.sessionID)
-	}
+	c.publishTruncatedHistory(truncated)
 	key := "cli.session.undo_ok_other"
 	if turnsUndone == 1 {
 		key = "cli.session.undo_ok_one"
@@ -622,7 +655,7 @@ func (c *CLI) toggleYolo() {
 	if c.sessionDB != nil && sessionKey != "default" {
 		db := c.sessionDB
 		persist = func(on bool) error {
-			return db.PatchSessionModelConfig(c.ctx, sessionKey, map[string]any{"yolo_mode": on})
+			return db.SetSessionYolo(c.ctx, sessionKey, on)
 		}
 	}
 	if tools.ToggleSessionYolo(sessionKey, nil, false, persist) {
@@ -656,7 +689,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		}
 	}
 	if request.Preview {
-		result, err := agent.CompressNow(c.ctx, c.agent, c.conversationHistory, request, agent.CompressNowOptions{})
+		result, err := compressNowOnGateway(c.ctx, c.agent, c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}
@@ -669,7 +702,6 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 	_ = c.busyCommand(c.t("cli.session.compress_busy", nil), false, func() {
 		defer func() {
 			if r := recover(); r != nil {
-				agent.FinalizeManualCompressionNotification(c.agent, false)
 				printLines("  " + c.t("cli.session.compress_failed", map[string]any{"error": refusalText(c.ctx, r)}))
 			}
 		}()
@@ -681,11 +713,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		default:
 			printLines(c.t("cli.session.compress_plain", map[string]any{"count": originalCount}))
 		}
-		taskID := c.sessionID
-		if taskID == "" {
-			taskID = "default"
-		}
-		result, err := agent.CompressNow(c.ctx, c.agent, c.conversationHistory, request, agent.CompressNowOptions{TaskID: taskID})
+		result, err := compressNowOnGateway(c.ctx, c.agent, c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}
@@ -701,11 +729,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 			c.sessionID = agentSID
 			c.writeTerminalBreadcrumb()
 			c.pendingTitle = ""
-			if _, err := c.agent.FlushMessagesToSessionDB(c.conversationHistory); err != nil {
-				panic(err)
-			}
 		}
-		agent.FinalizeManualCompressionNotification(c.agent, true)
 		summary := result.Summary
 		icon := "✅"
 		switch {

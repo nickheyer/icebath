@@ -400,15 +400,17 @@ func (s *Store) misfireGraceMinutes() float64 {
 }
 
 // Estop check the agent package registers, unset reading as the Python import guard that skips the check
-var estopCheckPaused func(component string, log *slog.Logger) bool
+var estopCheckPaused func(ctx context.Context, component string, log *slog.Logger) bool
 
 // Installs the estop check every cron entry point consults before dispatching
-func RegisterEstopCheck(fn func(component string, log *slog.Logger) bool) { estopCheckPaused = fn }
+func RegisterEstopCheck(fn func(ctx context.Context, component string, log *slog.Logger) bool) {
+	estopCheckPaused = fn
+}
 
 // Fires jobs whose external fire never arrived once the misfire grace passed, returning how many dispatched
 func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *time.Time) (int, error) {
 	s := cronStoreFrom(ctx)
-	if estopCheckPaused != nil && estopCheckPaused("cron-misfire", s.log) {
+	if estopCheckPaused != nil && estopCheckPaused(ctx, "cron-misfire", s.log) {
 		return 0, nil
 	}
 	if _, builtin := p.(*InProcessCronScheduler); builtin {

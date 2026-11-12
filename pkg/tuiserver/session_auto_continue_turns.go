@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -106,17 +105,6 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 	logger().Info(fmt.Sprintf("auto-continue scheduled for session %s (attempt %d, interrupted %.0fs ago, writer pid %s: %s, reader pid %d)",
 		sessionKey, attempt, age, pyrepr.Str(marker["writer_pid"]), writerState, os.Getpid()))
 	return map[string]any{"attempt": attempt, "interrupted_at": startedAt}
-}
-
-// Marker dict as the decoded object the writer state check reads
-func markerObject(marker map[string]any) any {
-	obj := pyjson.NewObject()
-	for _, key := range []string{"writer_pid", "writer_start_time"} {
-		if v, ok := marker[key]; ok {
-			obj.Set(key, v)
-		}
-	}
-	return obj
 }
 
 // Interrupts a busy turn on its own goroutine, never under the history lock, at most one per session

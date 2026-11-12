@@ -516,7 +516,7 @@ func yoloActive(env *Env) bool {
 	if yoloModeFrozen || IsCurrentSessionYoloEnabled(env) {
 		return true
 	}
-	return sessionFlag(env, "unattended_turn", "ICEBATH_UNATTENDED_TURN")
+	return UnattendedTurnFlag(env)
 }
 
 // Profile key of the permanent allowlist governing this environment

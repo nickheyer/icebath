@@ -21,6 +21,17 @@ import (
 
 func webServerAppLog() *slog.Logger { return slog.Default().With("logger", "hermes_cli.web_server") }
 
+// Startup steps of the standalone lifespan, the real functions swapped only where a hermes case installs a fake
+var (
+	lifespanWarmGatewayModule = warmGatewayModule
+	lifespanEagerReconcile    = eagerReconcileOwnSessionDB
+	lifespanStartHostedRooms  = tuigateway.StartHostedRoomService
+	lifespanStopHostedRooms   = tuigateway.StopHostedRoomService
+	lifespanStartCronTicker   = cron.StartDesktopCronTicker
+	lifespanTerminateGateway  = terminateDesktopManagedGateway
+	statusRestartDrainTimeout = resolveRestartDrainTimeout
+)
+
 // Drops every PTY channel marker left in app state after the registry closed its live sessions
 func unlinkPtyMarkers(app *FastAPI) {
 	seen := map[string]bool{}
@@ -65,19 +76,19 @@ func standaloneLifespanEnter(ctx context.Context, app *FastAPI) (*appLifespanRun
 		hostedStartCancel: make(chan struct{})}
 	go func() {
 		defer close(run.eagerReconcile)
-		eagerReconcileOwnSessionDB(base)
+		lifespanEagerReconcile(base)
 	}()
-	warmGatewayModule(ctx)
+	lifespanWarmGatewayModule(ctx)
 	gateway.RecordBootFingerprint()
 	tuiserver.InstallTUIMessageInjector(base, nil)
 	go func() {
 		defer close(run.hostedStart)
-		if _, err := tuigateway.StartHostedRoomService(); err != nil {
+		if _, err := lifespanStartHostedRooms(); err != nil {
 			webServerAppLog().Error("Hosted Group Chat recovery failed during backend startup", "exc_info", err)
 		}
 		select {
 		case <-run.hostedStartCancel:
-			tuigateway.StopHostedRoomService(1.0)
+			lifespanStopHostedRooms(1.0)
 		default:
 		}
 	}()
@@ -87,7 +98,7 @@ func standaloneLifespanEnter(ctx context.Context, app *FastAPI) (*appLifespanRun
 			webServerAppLog().Error("Desktop startup: orphan gateway reap failed", "exc_info", err)
 		}
 		run.cronStop = make(chan struct{})
-		go cron.StartDesktopCronTicker(base, run.cronStop, 60)
+		go lifespanStartCronTicker(base, run.cronStop, 60)
 	}
 	ptyRegistry.Reopen()
 	run.tasks.Add(3)
@@ -119,7 +130,7 @@ func bootstrapPoolEnv(ctx context.Context) provider.PoolEnv {
 func standaloneLifespanExit(ctx context.Context, app *FastAPI, run *appLifespanRun) error {
 	tuiserver.ClearTUIMessageInjector(context.WithoutCancel(ctx), nil)
 	close(run.hostedStartCancel)
-	tuigateway.StopHostedRoomService(5.0)
+	lifespanStopHostedRooms(5.0)
 	select {
 	case <-run.hostedStart:
 	case <-time.After(time.Second):
@@ -135,7 +146,7 @@ func standaloneLifespanExit(ctx context.Context, app *FastAPI, run *appLifespanR
 		webServerAppLog().Warn("managed local runtime shutdown failed", "exc_info", err)
 	}
 	if run.desktopOwned {
-		terminateDesktopManagedGateway()
+		lifespanTerminateGateway()
 	}
 	return nil
 }

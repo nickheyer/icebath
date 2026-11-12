@@ -23,7 +23,7 @@ func (e *agentModuleMissingError) Error() string {
 	return fmt.Sprintf("No module named '%s'", e.module)
 }
 
-func (e *agentModuleMissingError) ExceptionName() string { return "ModuleNotFoundError" }
+func (e *agentModuleMissingError) PyTypeName() string { return "ModuleNotFoundError" }
 
 // Installs the run_agent AIAgent constructor cron runs build their agent with
 func SetAgentFactory(f func(ctx context.Context, o AgentOptions) (CronAgent, error)) {

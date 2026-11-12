@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -799,8 +800,25 @@ func (c *wsConnection) receive() (string, error) {
 	}
 }
 
+// Free tier gateway probes, installed once the first WebSocket session loads the server like the Python handle_ws import
+var freeTierServerHooksOnce sync.Once
+
+// Hands the free tier challenge and setup flows the server broadcast and the stdio channel flag
+func installFreeTierServerHooks() {
+	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{
+		OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock,
+		BroadcastGlobal: func(event string, payload map[string]any) error {
+			tuigateway.BroadcastGlobalEvent(event, payload)
+			return nil
+		},
+		StdioIsRPCChannel: tuigateway.StdioIsRPCChannel,
+	})
+}
+
 // Runs one WebSocket session wire compatible with the stdio entry, the identity the upgrade verified owning its sessions
 func HandleWS(ctx context.Context, ws ServedSocket, authIdentity map[string]any, subprotocol *string, operator bool) error {
+	freeTierServerHooksOnce.Do(installFreeTierServerHooks)
+	loadServerModule()
 	c := &wsConnection{ctx: ctx, ws: ws, peer: wsPeerLabel(ws), disconnectReason: "not_connected",
 		pending:       make(chan any, wsDispatchQueueMax),
 		sendFailed:    make(chan struct{}),

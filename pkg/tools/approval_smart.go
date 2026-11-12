@@ -85,7 +85,7 @@ func getTaskTimeout(env *Env, task string) time.Duration {
 func smartApprove(ctx context.Context, env *Env, command, description string) string {
 	started := time.Now()
 	log := envLog(env)
-	if env == nil || env.Aux == nil {
+	if env == nil || env.AuxClient() == nil {
 		log.Warn("Smart approvals: LLM call failed, escalating", "elapsed", time.Since(started), "error", "no auxiliary model is configured")
 		return "escalate"
 	}
@@ -104,7 +104,7 @@ func smartApprove(ctx context.Context, env *Env, command, description string) st
 		"Respond with exactly one word: APPROVE, DENY, or ESCALATE"
 	zero := 0.0
 	messages := []*state.Message{{Role: "system", Content: systemPrompt}, {Role: "user", Content: userPrompt}}
-	response, err := env.Aux.Complete(ctx, messages, AuxOptions{Task: "approval", MaxTokens: 16, Temperature: &zero, Timeout: timeout})
+	response, err := env.AuxClient().Complete(ctx, messages, AuxOptions{Task: "approval", MaxTokens: 16, Temperature: &zero, Timeout: timeout})
 	if err != nil {
 		log.Warn("Smart approvals: LLM call failed, escalating", "elapsed", time.Since(started), "error", err)
 		return "escalate"

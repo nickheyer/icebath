@@ -86,15 +86,6 @@ var restartWaitWSMethods = map[string]bool{
 	"approval.pending": true, "approval.received": true, "approval.respond": true, "clarify.respond": true, "clarify.lock": true,
 }
 
-// WebSocket verbs an interactive client may still call during the restart wait
-func RestartWaitWSMethods() []string {
-	out := make([]string, 0, len(restartWaitWSMethods))
-	for m := range restartWaitWSMethods {
-		out = append(out, m)
-	}
-	return out
-}
-
 // True when an interactive WebSocket verb is refused because the runner is draining
 func WSMethodRefusedWhileDraining(runner DrainRunner, method string) bool {
 	return runner.Draining() && !restartWaitWSMethods[method]

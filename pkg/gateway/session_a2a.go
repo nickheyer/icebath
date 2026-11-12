@@ -167,12 +167,12 @@ func ForwardToOwner(ctx context.Context, home string, forward A2AForward, timeou
 	}
 	target, protocols := GatewayWSTarget(ready.Endpoint, ticket)
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 10 * time.Second, Subprotocols: protocols}
-	conn, _, err := dialer.DialContext(ctx, target, http.Header{})
+	conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, err
+		return nil, HandshakeError(resp, err)
 	}
 	conn.SetReadLimit(8 * 1024 * 1024)
 	sock := &wsSocket{conn: conn}

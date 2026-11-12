@@ -73,9 +73,12 @@ type burstRuntime struct {
 	finish   chan struct{}
 	wake     chan struct{}
 	stop     chan struct{}
+
+	authority *SessionAuthority
 }
 
-func (r *burstRuntime) SessionAuthority() any { return r }
+// Bound launch authority marker, the double itself admitting turns the way the hermes authority does
+func (r *burstRuntime) SessionAuthority() *SessionAuthority { return r.authority }
 
 // Busy command policy of the hermes command registry for the commands these cases send
 func installBurstCommandPolicy(t *testing.T) {
@@ -103,7 +106,7 @@ func newBurstRuntime(t *testing.T, a *burstAdapter, self PlatformAdapter, platfo
 	}
 	a.BasePlatformAdapter = NewBasePlatformAdapter(cfg, platform, self)
 	a.Traits.SerialReceiveLoop = serial
-	r := &burstRuntime{adapter: self, schedule: true, turns: map[string]*burstRouteTurn{}, epochs: map[string]int{},
+	r := &burstRuntime{adapter: self, schedule: true, authority: &SessionAuthority{}, turns: map[string]*burstRouteTurn{}, epochs: map[string]int{},
 		running: make(chan struct{}), finish: make(chan struct{}), wake: make(chan struct{}, 1), stop: make(chan struct{})}
 	a.SetBoundMessageHandler(r, r.handle)
 	if busyMode != "" {

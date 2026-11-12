@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/observability"
 )
 
@@ -65,6 +66,12 @@ func (c *CLI) run() {
 			app.onStart = append(app.onStart, func() { enableExtendedEnterKeys(app, nil) })
 		}
 		c.petStartAnim()
+		proxy := &ptStdoutProxy{app: func() *ptApplication { return app }, out: tuiStdout()}
+		restoreStdout := agent.PatchStatusStdout(proxy)
+		defer func() {
+			proxy.Flush()
+			restoreStdout()
+		}()
 		err := app.run()
 		switch {
 		case err == nil, c.tuiSuppressClosedLoopErrors(err), errors.Is(err, syscall.EPIPE):

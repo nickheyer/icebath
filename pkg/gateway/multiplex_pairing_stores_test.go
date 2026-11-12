@@ -32,12 +32,32 @@ func multiplexAllowlistWorld(t *testing.T, profileEnv string) (root, prof string
 		t.Fatal(err)
 	}
 	resetPlatformMembers(t, bundled)
-	RegisterBundledEnv("discord", "", BundledEnvRows{Authz: map[string]any{"allowed_users_env": "DISCORD_ALLOWED_USERS"}})
-	t.Cleanup(func() { RegisterBundledEnv("discord", "", BundledEnvRows{}) })
+	swapBundledEnv(t, "discord", "", BundledEnvRows{Authz: map[string]any{"allowed_users_env": "DISCORD_ALLOWED_USERS"}})
 	wasActive := provider.MultiplexProcess()
 	provider.SetMultiplexActive(true)
 	t.Cleanup(func() { provider.SetMultiplexActive(wasActive) })
 	return root, prof
+}
+
+// Registers declarations of a bundled platform directory for one case and puts back what was registered before
+func swapBundledEnv(t *testing.T, directory, prefix string, rows BundledEnvRows) {
+	t.Helper()
+	bundledEnvModules.Lock()
+	previous, had := bundledEnvModules.byDir[directory][prefix]
+	bundledEnvModules.Unlock()
+	RegisterBundledEnv(directory, prefix, rows)
+	t.Cleanup(func() {
+		bundledEnvModules.Lock()
+		defer bundledEnvModules.Unlock()
+		if had {
+			bundledEnvModules.byDir[directory][prefix] = previous
+			return
+		}
+		delete(bundledEnvModules.byDir[directory], prefix)
+		if len(bundledEnvModules.byDir[directory]) == 0 {
+			delete(bundledEnvModules.byDir, directory)
+		}
+	})
 }
 
 func readTrimmed(t *testing.T, path string) string {

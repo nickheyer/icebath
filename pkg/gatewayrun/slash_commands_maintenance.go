@@ -117,11 +117,8 @@ func (r *GatewayRunner) reloadSkillsReply(ctx context.Context, event *gateway.Me
 	if err != nil {
 		return "", err
 	}
-	if r.pendingSkillsReloadNotes == nil {
-		r.pendingSkillsReloadNotes = map[string]string{}
-	}
 	if sessionKey != "" {
-		r.pendingSkillsReloadNotes[sessionKey] = strings.Join(sections, "\n")
+		r.stageSessionNote(&r.pendingSkillsReloadNotes, sessionKey, strings.Join(sections, "\n"))
 	}
 	return strings.Join(lines, "\n"), nil
 }

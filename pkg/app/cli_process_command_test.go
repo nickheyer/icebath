@@ -125,7 +125,7 @@ func TestUnknownCommandFallsThrough(t *testing.T) {
 
 func TestPendingDisarmedByOtherCommand(t *testing.T) {
 	recordPrints(t)
-	c := resumeCLI(nil)
+	c := resumeCLI(t)
 	c.pendingResumeSessions = []map[string]any{{"id": "sess_002", "title": "Coding"}}
 	c.processCommand("/help")
 	if c.pendingResumeSessions != nil {

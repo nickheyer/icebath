@@ -489,11 +489,12 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			fields.Set(context.name, *context.value)
 		}
 	}
-	if event.ReplyExpected != nil {
-		fields.Set("reply_expected", *event.ReplyExpected)
+	anchorOverride, _, replyExpected := event.ReplyFields()
+	if replyExpected != nil {
+		fields.Set("reply_expected", *replyExpected)
 	}
-	if event.ReplyAnchorOverride != nil {
-		fields.Set("reply_anchor_override", *event.ReplyAnchorOverride)
+	if anchorOverride != nil {
+		fields.Set("reply_anchor_override", *anchorOverride)
 	}
 	if event.EditRevision != nil {
 		fields.Set("edit_revision", *event.EditRevision)

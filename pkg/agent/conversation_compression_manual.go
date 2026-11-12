@@ -244,8 +244,3 @@ func RenderCompressResult(result CompressResult, prefix string) []string {
 	}
 	return out
 }
-
-// Settles the deferred context engine notification of a manual compression once the caller's history commits
-func FinalizeManualCompressionNotification(a *AIAgent, committed bool) bool {
-	return finalizeContextEngineCompressionNotification(a, committed)
-}

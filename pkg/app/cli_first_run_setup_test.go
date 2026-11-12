@@ -41,7 +41,7 @@ func firstRunShell(t *testing.T, stdin string, tty bool, cliConfig map[string]an
 	}
 	t.Cleanup(func() {
 		if c.sessionDB != nil {
-			_ = c.sessionDB.Close()
+			c.sessionDB.Close()
 		}
 	})
 	out.Reset()

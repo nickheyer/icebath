@@ -33,9 +33,9 @@ type CronSchedulerRegistrationError struct {
 
 // Python exception class of a provider registration error
 func cronExceptionName(err error) string {
-	var named interface{ ExceptionName() string }
+	var named interface{ PyTypeName() string }
 	if errors.As(err, &named) {
-		return named.ExceptionName()
+		return named.PyTypeName()
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "TimeoutError"

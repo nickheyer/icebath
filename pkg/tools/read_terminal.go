@@ -5,8 +5,14 @@ import (
 	"fmt"
 )
 
-// ReadTerminalPane reads the desktop in-app terminal through the gateway bridge, installed by the desktop gateway
-var ReadTerminalPane func(env *Env, window map[string]int) (string, error)
+// PaneReader reads one desktop pane window through the agent's GUI callback, an error where the callback raised
+type PaneReader func(window map[string]int) (string, error)
+
+// DesktopRequest sends one payload to the desktop renderer through the agent's GUI callback and returns its raw reply
+type DesktopRequest func(payload map[string]any) (string, error)
+
+// DesktopAnswer sends one payload to the desktop renderer through the agent's GUI callback and returns its decoded answer
+type DesktopAnswer func(payload map[string]any) (map[string]any, error)
 
 // paneWindow is one optional integer argument of a pane read with its floor
 type paneWindow struct {
@@ -16,7 +22,7 @@ type paneWindow struct {
 }
 
 // Shared body of the read_terminal, read_preview and read_window bridges
-func readPane(env *Env, callback func(env *Env, window map[string]int) (string, error), window []paneWindow, errors [4]string) string {
+func readPane(callback PaneReader, window []paneWindow, errors [4]string) string {
 	if callback == nil {
 		return toolErrorJSON(errors[0], nil)
 	}
@@ -41,7 +47,7 @@ func readPane(env *Env, callback func(env *Env, window map[string]int) (string, 
 		}
 		kwargs[w.key] = n
 	}
-	raw, err := callback(env, kwargs)
+	raw, err := callback(kwargs)
 	if err != nil {
 		return toolErrorJSON(errors[2]+err.Error(), nil)
 	}
@@ -52,8 +58,8 @@ func readPane(env *Env, callback func(env *Env, window map[string]int) (string, 
 }
 
 // ReadTerminalTool returns the in-app terminal's contents with line metadata as a JSON string
-func ReadTerminalTool(env *Env, startLine, count any) string {
-	return readPane(env, ReadTerminalPane, []paneWindow{{"start", startLine, 0}, {"count", count, 1}}, [4]string{
+func ReadTerminalTool(startLine, count any, callback PaneReader) string {
+	return readPane(callback, []paneWindow{{"start", startLine, 0}, {"count", count, 1}}, [4]string{
 		"read_terminal is only available in the Icebath desktop app.",
 		"start_line and count must be integers.",
 		"Failed to read terminal: ",
@@ -84,7 +90,7 @@ func init() {
 		Toolset: "desktop_ui",
 		Schema:  readTerminalSchema,
 		Handler: func(ctx context.Context, call *Call) string {
-			return ReadTerminalTool(call.Env, call.Args["start_line"], call.Args["count"])
+			return ReadTerminalTool(call.Args["start_line"], call.Args["count"], nil)
 		},
 		Emoji: "\U0001F5A5\ufe0f",
 	})

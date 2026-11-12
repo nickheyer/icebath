@@ -207,9 +207,9 @@ func recoverRotatedCompressionSession(ctx context.Context, a *AIAgent) (recovere
 
 // Python exception class name shown in recovery warnings
 func pyErrorClass(err error) string {
-	var named interface{ PyClass() string }
+	var named interface{ PyTypeName() string }
 	if errors.As(err, &named) {
-		return named.PyClass()
+		return named.PyTypeName()
 	}
 	return fmt.Sprintf("%T", err)
 }

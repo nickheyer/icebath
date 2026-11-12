@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -17,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -73,9 +75,6 @@ var (
 	mcpShutdown          = shutdownMCPServers
 	mcpReprobe           = mcp.ReprobeToolAvailability
 	mcpDiscover          = func(c *CLI) ([]string, error) { return mcp.ConnectAll(c.ctx, c.env, nil) }
-	mcpRefreshAgent      = func(c *CLI, override []string) {
-		mcp.RefreshAgentMCPTools(c.ctx, c.agent, mcp.RefreshOptions{EnabledOverride: override, Quiet: true})
-	}
 )
 
 // agentUsageReading is what the banner and /usage read off a live agent
@@ -89,17 +88,20 @@ type agentUsageReading struct {
 	RateLimit                                                  *provider.RateLimitState
 }
 
-// Session counters, compressor figures and the last rate limit capture of an agent
-func agentUsageOf(c *CLI, a *agent.AIAgent) agentUsageReading {
-	usage := a.StatusBarUsage(c.ctx)
-	r := agentUsageReading{Model: a.Model(), Calls: a.SessionAPICalls(), Input: usage.Counters["session_input_tokens"],
-		Output: usage.Counters["session_output_tokens"], Reasoning: a.SessionReasoningTokens(), Prompt: usage.Counters["session_prompt_tokens"],
-		Completion: usage.Counters["session_completion_tokens"], Total: usage.Counters["session_total_tokens"],
-		ConfigContextLength: a.ConfigContextLength(), RateLimit: a.CreditsCapture().RateLimit()}
-	if engine := a.ContextCompressor(); engine != nil {
-		base := engine.Base()
-		r.HasCompressor, r.LastPromptTokens, r.ContextLength, r.Compressions = true, base.LastPromptTokens, agent.EngineContextLength(engine), base.CompressionCount
-		r.DisplaySource = agent.ContextDisplaySource(engine)
+// Session counters, compressor figures and the last rate limit state of the gateway agent
+func agentUsageOf(c *CLI, a *GatewayAgent) agentUsageReading {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	r := agentUsageReading{Model: a.model, Calls: a.counters["session_api_calls"], Input: a.counters["session_input_tokens"],
+		Output: a.counters["session_output_tokens"], Reasoning: a.counters["session_reasoning_tokens"], Prompt: a.counters["session_prompt_tokens"],
+		Completion: a.counters["session_completion_tokens"], Total: a.counters["session_total_tokens"], RateLimit: a.rateLimitState,
+		HasCompressor: true, LastPromptTokens: a.compressor.lastPromptTokens, ContextLength: a.compressor.contextLength,
+		Compressions: a.compressor.compressionCount, DisplaySource: "provider_usage"}
+	if a.configContextLength != nil {
+		r.ConfigContextLength = *a.configContextLength
+	}
+	if real := a.compressor.lastRealPromptTokens; real != nil && a.compressor.lastPromptTokens > 0 && a.compressor.lastPromptTokens != *real {
+		r.DisplaySource = "local_estimate"
 	}
 	return r
 }
@@ -214,24 +216,29 @@ func skillLine(item map[string]any) string {
 
 // BannerPlan is what the welcome banner draws, a nil Banner meaning the compact banner
 type BannerPlan struct {
+	Store         *gatewaycli.GatewaySessionStore
+	Inventory     map[string]any
 	ContextLength *int
 	Banner        *welcomeBanner
 }
 
-// Plans the welcome banner, compact on a narrow terminal or with display.compact
+// Plans the welcome banner, compact on a narrow terminal, with display.compact or a gateway session with no snapshot yet
 func bannerPlan(c *CLI) BannerPlan {
+	store := c.gatewayStore()
+	var inventory map[string]any
+	if store != nil {
+		inventory = store.BannerInventory()
+	}
 	var ctxLen *int
 	configCtxLen := 0
 	if c.agent != nil {
 		reading := readAgentUsage(c, c.agent)
-		if reading.HasCompressor {
-			n := reading.ContextLength
-			ctxLen = &n
-		}
+		n := reading.ContextLength
+		ctxLen = &n
 		configCtxLen = reading.ConfigContextLength
 	}
-	if c.compact || terminalColumns() < 80 {
-		return BannerPlan{ContextLength: ctxLen}
+	if c.compact || terminalColumns() < 80 || (store != nil && inventory == nil) {
+		return BannerPlan{Store: store, Inventory: inventory, ContextLength: ctxLen}
 	}
 	cwd, ok := os.LookupEnv("TERMINAL_CWD")
 	if !ok {
@@ -242,7 +249,35 @@ func bannerPlan(c *CLI) BannerPlan {
 		kw.ContextLength = *ctxLen
 		kw.ContextPinned = agent.IsContextPinned(*ctxLen, configCtxLen)
 	}
-	return BannerPlan{ContextLength: ctxLen, Banner: kw}
+	return BannerPlan{Store: store, Inventory: inventory, ContextLength: ctxLen, Banner: kw}
+}
+
+// Main's banner from the gateway session's snapshot, its canonical id shown as the short label
+func (c *CLI) showGatewayBanner(console *pyrich.Console, inventory map[string]any, banner welcomeBanner) error {
+	toolsetOf, _ := inventory["get_toolset_for_tool"].(func(string) any)
+	banner.Tools = inventory["tools"]
+	banner.ToolsetForTool = func(name string) string { return strOrEmpty(toolsetOf(name)) }
+	banner.Availability = inventory["availability"]
+	banner.SkillsByCategory = inventory["skills_by_category"]
+	if cwd := strOrEmpty(inventory["cwd"]); cwd != "" {
+		banner.Cwd = cwd
+	}
+	if n, ok := pyIntValue(inventory["context_length"]); ok && n != 0 {
+		banner.ContextLength = n
+	}
+	banner.SessionID = gatewaycli.SessionLabel(c.sessionID)
+	return welcomeBannerPrinter(c.ctx, console, banner)
+}
+
+// Main's tool availability warning lines as the gateway that resolved this session's tools computed them
+func (c *CLI) printGatewayToolWarnings(lines []any) {
+	if len(lines) == 0 {
+		return
+	}
+	c.consolePrint("")
+	for _, line := range lines {
+		c.consolePrint(pyrepr.Str(line))
+	}
 }
 
 // Rich console the welcome banner prints on, the CLI console at the terminal width
@@ -254,12 +289,17 @@ func (c *CLI) bannerConsole() *pyrich.Console {
 func (c *CLI) showBanner() {
 	c.clearConsole()
 	plan := bannerPlan(c)
+	onGateway := plan.Store != nil
 	if plan.Banner == nil {
 		c.consolePrint(buildCompactBanner())
 		c.showStatus()
 	} else {
 		snapshot := loadBannerSnapshot(c.ctx, c.enabledToolsets)
-		if snapshot != nil {
+		if plan.Inventory != nil {
+			if err := c.showGatewayBanner(c.bannerConsole(), plan.Inventory, *plan.Banner); err != nil {
+				panic(err)
+			}
+		} else if snapshot != nil {
 			c.deferToolWarnings = true
 			tsMap, _ := snapshot.Get("toolset_map")
 			kw := *plan.Banner
@@ -286,7 +326,9 @@ func (c *CLI) showBanner() {
 			c.saveBannerSnapshotQuietly(toolDefs, availability, "banner snapshot save failed")
 		}
 	}
-	if os.Getenv("ICEBATH_DEFER_AGENT_STARTUP") != "1" {
+	if warnings, isList := plan.Inventory["tool_availability_warnings"].([]any); isList {
+		c.printGatewayToolWarnings(warnings)
+	} else if !onGateway && os.Getenv("ICEBATH_DEFER_AGENT_STARTUP") != "1" {
 		if c.deferToolWarnings {
 			go c.showToolAvailabilityWarnings()
 		} else {
@@ -419,8 +461,13 @@ func helpRow(cmd, desc string, width int) {
 		map[string]any{"accent": accentHex(), "cmd": cmd, "width": width, "desc": pyrich.Escape(desc)}))
 }
 
-// Notes of skills a built in command shadows, from this process's own skill scan
+// Notes of skills a built in command shadows, the gateway's notice on its session, else this process's scan
 func (c *CLI) skillCollisionNotes() []string {
+	return gatewaySkillNotes(c, c.localSkillCollisionNotes)
+}
+
+// Notes of skills a built in command shadows from this process's own skill scan
+func (c *CLI) localSkillCollisionNotes() []string {
 	var notes []string
 	for _, s := range skillsScope(c.ctx).FindAllSkills(false) {
 		name, _ := s["name"].(string)
@@ -612,7 +659,16 @@ func sortedMapKeys[V any](m map[string]V) []string {
 
 // Prints every tool of the full catalog grouped by toolset with its first description sentence
 func (c *CLI) showTools() {
-	toolDefs := toolDefinitionsFor(c, true)
+	toolsetFor := func(name string) string { return toolsetOfTool(c, name) }
+	toolDefs, remoteToolsets, remote, err := gatewaySessionTools(c.ctx)
+	if err != nil {
+		panic(err)
+	}
+	if remote {
+		toolsetFor = func(name string) string { return strOrEmpty(remoteToolsets[name]) }
+	} else {
+		toolDefs = toolDefinitionsFor(c, true)
+	}
 	if len(toolDefs) == 0 {
 		infoPrint(c.t("cli.tools.none_available", nil))
 		return
@@ -631,7 +687,7 @@ func (c *CLI) showTools() {
 	byToolset := map[string][]toolRow{}
 	for _, def := range sorted {
 		name := toolName(def)
-		toolset := toolsetOfTool(c, name)
+		toolset := toolsetFor(name)
 		if toolset == "" {
 			toolset = "unknown"
 		}
@@ -826,9 +882,6 @@ func (c *CLI) agentOrSelf(name string) string {
 		}
 	case "api_key":
 		own = c.apiKey
-		if c.agent != nil {
-			fromAgent = c.agent.APIKey()
-		}
 	}
 	if fromAgent != "" {
 		return fromAgent
@@ -858,49 +911,43 @@ func (c *CLI) usageReset(force bool) {
 
 // Prints the context window grid and category table of the live agent, the per item costs with all
 func (c *CLI) showContextBreakdown(cmdOriginal string) {
-	if c.agent == nil {
-		infoPrint("  " + c.t("cli.shared.no_active_agent", nil))
+	if connection := gatewayConnectionFor(c); connection != nil {
+		c.showGatewayContextBreakdown(connection)
 		return
 	}
-	args := ""
-	if strings.Contains(cmdOriginal, " ") {
-		parts := pystr.SplitWhitespace(cmdOriginal, 1)
-		if len(parts) < 2 {
-			panic(fmt.Errorf("list index out of range"))
-		}
-		args = pystr.Lower(pystr.Strip(parts[1]))
-	}
-	expanded := args == "all" || args == "full" || args == "details"
-	var payload agent.ContextBreakdown
-	err := pyExcept(func() (err error) {
-		payload, err = agent.ComputeSessionContextBreakdown(c.ctx, c.agent, c.conversationHistory)
-		return err
-	})
+	infoPrint("  " + c.t("cli.shared.no_active_agent", nil))
+}
+
+// Main's context grid and table over the gateway agent's own breakdown of the session's prompt, tools and transcript
+func (c *CLI) showGatewayContextBreakdown(connection *gatewaycli.GatewayConnection) {
+	raw, err := connection.Call(c.ctx, "session.context_breakdown", map[string]any{"session_id": c.sessionID})
 	if err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
 		infoPrint("  " + c.t("cli.context.compute_failed", map[string]any{"error": err.Error()}))
 		return
 	}
-	var details *agent.ContextDetails
-	if expanded {
-		var d agent.ContextDetails
-		if err := pyExcept(func() (err error) {
-			d, err = agent.ComputeContextDetails(c.ctx, c.agent)
-			return err
-		}); err != nil {
-			d = agent.ContextDetails{Skills: []agent.ContextSkillCost{}, Toolsets: []agent.ContextToolsetCost{}}
-		}
-		details = &d
+	reply, _ := pyjson.Plain(raw).(map[string]any)
+	if categories, _ := reply["categories"].([]any); len(categories) == 0 {
+		infoPrint("  " + c.t("cli.shared.no_active_agent", nil))
+		return
 	}
-	var fileLines []string
-	if err := pyExcept(func() error {
-		sources, err := agent.ContextFileSourcesForAgent(c.ctx, c.agent)
-		if err == nil {
-			fileLines = agent.RenderContextFileLines(sources)
-		}
-		return err
-	}); err != nil {
-		fileLines = nil
+	var payload agent.ContextBreakdown
+	var sources []agent.ContextFileSource
+	encoded, err := json.Marshal(reply)
+	if err == nil {
+		err = json.Unmarshal(encoded, &payload)
 	}
+	if files, isList := reply["context_files"].([]any); err == nil && isList {
+		if encoded, err = json.Marshal(files); err == nil {
+			err = json.Unmarshal(encoded, &sources)
+		}
+	}
+	if err != nil {
+		panic(err)
+	}
+	fileLines := agent.RenderContextFileLines(sources)
 	model := payload.Model
 	if model == "" {
 		model = c.model
@@ -908,7 +955,7 @@ func (c *CLI) showContextBreakdown(cmdOriginal string) {
 	infoPrint("")
 	infoPrint("  " + c.t("cli.context.header", map[string]any{"model": model}))
 	infoPrint("")
-	lines := agent.RenderContextBreakdownLines(c.ctx, payload, details, true)
+	lines := agent.RenderContextBreakdownLines(c.ctx, payload, nil, true)
 	if len(fileLines) > 0 {
 		lines = append(append(lines, ""), fileLines...)
 	}
@@ -1203,9 +1250,47 @@ func (c *CLI) reloadMCP() {
 			infoPrint("  " + c.t("gateway.reload_mcp.failed", map[string]any{"error": panicText(r)}))
 		}
 	}()
+	if connection := gatewayConnectionFor(c); connection != nil {
+		c.reloadGatewayMCP(connection)
+		return
+	}
 	if err := c.reloadMCPLocal(); err != nil {
 		infoPrint("  " + c.t("gateway.reload_mcp.failed", map[string]any{"error": err.Error()}))
 	}
+}
+
+// Reloads MCP on the gateway that owns the servers and the session's agent, then counts the session's tools
+func (c *CLI) reloadGatewayMCP(connection *gatewaycli.GatewayConnection) {
+	if _, running := c.busyState(); !running {
+		infoPrint(c.t("cli.reload_mcp.reloading", nil))
+	}
+	raw, err := connection.Call(c.ctx, "reload.mcp", map[string]any{"session_id": c.sessionID, "confirm": true})
+	var snapshot any
+	if err == nil {
+		snapshot, err = connection.Call(c.ctx, "session.resume", map[string]any{"session_id": c.sessionID})
+	}
+	if err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
+		infoPrint("  " + c.t("gateway.reload_mcp.failed", map[string]any{"error": err.Error()}))
+		return
+	}
+	result, _ := pyjson.Plain(raw).(map[string]any)
+	infoPrint(pystr.Rstrip("  " + strOrEmpty(result["message"])))
+	connection.State(c.sessionID).AdoptSnapshot(snapshot)
+	snap, _ := pyjson.Plain(snapshot).(map[string]any)
+	info, _ := snap["info"].(map[string]any)
+	count, ok := pyIntValue(info["tool_count"])
+	if !ok {
+		count = 0
+		groups, _ := info["tools"].(map[string]any)
+		for _, names := range groups {
+			list, _ := names.([]any)
+			count += len(list)
+		}
+	}
+	infoPrint("  " + c.t("cli.reload_mcp.agent_updated", map[string]any{"count": strconv.Itoa(count)}))
 }
 
 // Body of the MCP reload, the first failure returned for the failed line
@@ -1251,27 +1336,6 @@ func (c *CLI) reloadMCPLocal() error {
 	} else {
 		infoPrint("  " + c.t("cli.reload_mcp.tools_available", map[string]any{"tools": strconv.Itoa(len(newTools)), "servers": strconv.Itoa(len(connected))}))
 	}
-	if c.agent != nil {
-		var override []string
-		if et := c.enabledToolsets; len(et) > 0 && !slices.Contains(et, "all") && !slices.Contains(et, "*") {
-			merged := slices.Clone(et)
-			names := make([]string, 0, len(connected))
-			for _, k := range connected {
-				names = append(names, serverKeyText(k))
-			}
-			sort.Strings(names)
-			for _, name := range names {
-				if !slices.Contains(merged, name) {
-					merged = append(merged, name)
-				}
-			}
-			override = merged
-		}
-		mcpRefreshAgent(c, override)
-		if override != nil {
-			c.enabledToolsets = override
-		}
-	}
 	var changeParts []string
 	for _, label := range []string{"Added", "Removed", "Reconnected"} {
 		if len(buckets[label]) == 0 {
@@ -1293,16 +1357,7 @@ func (c *CLI) reloadMCPLocal() error {
 	}
 	c.conversationHistory = append(c.conversationHistory, map[string]any{"role": "user",
 		"content": "[IMPORTANT: MCP servers have been reloaded. " + changeDetail + toolSummary + ". The tool list for this conversation has been updated accordingly.]"})
-	count := 0
-	if c.agent != nil {
-		func() {
-			defer func() { _ = recover() }()
-			msgs := agent.RowsToMessages(c.conversationHistory)
-			_ = c.agent.PersistSession(&msgs, msgs)
-		}()
-		count = len(c.agent.ToolDefs())
-	}
-	infoPrint("  " + c.t("cli.reload_mcp.agent_updated", map[string]any{"count": strconv.Itoa(count)}))
+	infoPrint("  " + c.t("cli.reload_mcp.agent_updated", map[string]any{"count": "0"}))
 	return nil
 }
 
@@ -1334,10 +1389,28 @@ func (c *CLI) reloadSkills() {
 	if _, running := c.busyState(); !running {
 		infoPrint(c.t("cli.reload_skills.reloading", nil))
 	}
-	result, err := reloadSkillsFor(c)
-	if err != nil {
-		infoPrint("  " + c.t("gateway.reload_skills.failed", map[string]any{"error": err.Error()}))
-		return
+	var result map[string]any
+	if view := gatewayProcessView(); view != nil {
+		raw, err := view.connection.Call(c.ctx, "skills.reload", map[string]any{"session_id": view.sessionID()})
+		if err != nil {
+			if !isGatewayClientError(err) {
+				panic(err)
+			}
+			infoPrint("  " + c.t("gateway.reload_skills.failed", map[string]any{"error": err.Error()}))
+			return
+		}
+		reply, _ := pyjson.Plain(raw).(map[string]any)
+		result, _ = reply["result"].(map[string]any)
+		if result == nil {
+			result = map[string]any{}
+		}
+		invalidateGatewayCatalog(c)
+	} else {
+		var err error
+		if result, err = reloadSkillsFor(c); err != nil {
+			infoPrint("  " + c.t("gateway.reload_skills.failed", map[string]any{"error": err.Error()}))
+			return
+		}
 	}
 	added, removed := reloadItems(result["added"]), reloadItems(result["removed"])
 	total := result["total"]

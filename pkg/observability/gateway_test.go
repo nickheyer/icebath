@@ -196,12 +196,10 @@ func TestPlatformNamesArePublishedOrProvenByTheInstallerRecord(t *testing.T) {
 	savedOwner := CatalogPlatformOwnerHook
 	t.Cleanup(func() {
 		CatalogPlatformOwnerHook = savedOwner
-		SetCatalogSource("bundled_platform_names", nil)
-		SetCatalogSource("catalog_platform_names", nil)
 		ResetCatalogCaches()
 	})
-	SetCatalogSource("bundled_platform_names", func() ([]string, error) { return []string{"irc"}, nil })
-	SetCatalogSource("catalog_platform_names", func() ([]string, error) { return []string{"sendblue", "vk-platform"}, nil })
+	setCatalog(t, "bundled_platform_names", "irc")
+	setCatalog(t, "catalog_platform_names", "sendblue", "vk-platform")
 	CatalogPlatformOwnerHook = func(homeDir, platform string) (any, bool) {
 		if platform == "vk" {
 			return "vk-platform", true

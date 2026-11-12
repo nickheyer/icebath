@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -19,7 +18,7 @@ import (
 )
 
 // Hard interrupt of a running agent, swapped by tests
-var requestHardInterrupt = func(a *agent.AIAgent) { agent.RequestHardInterrupt(a, "", "") }
+var requestHardInterrupt = func(a *GatewayAgent) { a.Interrupt() }
 
 // Sleeps for a number of seconds
 func sleepSeconds(s float64) { time.Sleep(time.Duration(s * float64(time.Second))) }
@@ -873,29 +872,43 @@ func (c *CLI) tuiEnterWhileBusy(text string, images []string, payload any, mode 
 	if effective == "" {
 		effective = c.busyInputMode
 	}
-	redirected := false
+	var redirected any = false
 	if effective == "steer" {
 		if len(images) > 0 || text == "" {
 			effective = "queue"
-		} else if c.agent != nil && c.agent.Steer(text) {
-			cprint("  " + accentANSI.String() + c.t("cli.tui.steered", map[string]any{"preview": preview80(text)}) + resetANSI)
 		} else {
-			effective = "queue"
+			var accepted any = false
+			if c.agent != nil {
+				accepted = c.agent.Steer(text)
+			}
+			if gatewayCorrectionVoiceStopped(accepted) {
+				return
+			}
+			if accepted == true {
+				cprint("  " + accentANSI.String() + c.t("cli.tui.steered", map[string]any{"preview": preview80(text)}) + resetANSI)
+			} else {
+				effective = "queue"
+			}
 		}
 	}
-	switch effective {
-	case "queue":
+	switch {
+	case effective == "queue" && text != "" && len(images) == 0 && c.gatewayQueueStore() != nil:
+		c.queueEnqueue(text)
+	case effective == "queue":
 		c.pendingInput.Put(payload)
 		preview := text
 		if preview == "" {
 			preview = tn(c.ctx, "cli.tui.images_attached_preview", len(images), nil)
 		}
 		cprint("  " + c.t("cli.tui.queued_next_turn", map[string]any{"preview": preview80(preview)}))
-	case "interrupt":
+	case effective == "interrupt":
 		if len(images) == 0 && text != "" && c.agent != nil {
 			redirected = c.agent.Redirect(text)
 		}
-		if redirected {
+		if gatewayCorrectionVoiceStopped(redirected) {
+			return
+		}
+		if redirected == true {
 			cprint("  " + accentANSI.String() + c.t("cli.tui.redirected_turn", map[string]any{"preview": preview80(text)}) + resetANSI)
 		} else {
 			c.interruptQueue.Put(payload)
@@ -913,7 +926,7 @@ func (c *CLI) tuiEnterWhileBusy(text string, images []string, payload any, mode 
 	cfg := CLIConfig(c.ctx)
 	if !tools.IsSeen(cfg, tools.OnboardingBusyInputFlag) {
 		hintMode := effective
-		if redirected {
+		if redirected == true {
 			hintMode = "redirect"
 		}
 		cprint("  " + dimANSI + tools.BusyInputHintCLI(hintMode) + resetANSI)

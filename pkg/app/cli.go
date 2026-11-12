@@ -11,18 +11,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/goals"
-
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -344,7 +344,7 @@ type CLI struct {
 	fallbackModel            []map[string]any
 
 	activeAgentRouteSignature  string
-	agent                      *agent.AIAgent
+	agent                      *GatewayAgent
 	toolCallbacksInstalled     bool
 	app                        tuiApplication
 	conversationHistory        []map[string]any
@@ -352,8 +352,7 @@ type CLI struct {
 	promptStartTime            *float64
 	promptDuration             float64
 	lastTurnFinishedAt         *float64
-	sessionDB                  *state.SessionDB
-	sessionDBUnavailable       bool
+	sessionDB                  *gatewaycli.GatewaySessionStore
 	pendingTitle               string
 	resumed                    bool
 	sessionID                  string
@@ -478,6 +477,12 @@ type CLI struct {
 	cacheHitBaselineModel           string
 	seededFirstMessage              *seededQueryMessage
 	gatewaySessionOpen              bool
+	gatewayPluginCommands           *gatewayPluginCatalog
+	gatewaySkills                   *gatewaySkillCatalog
+	gatewayPluginToolsetCache       *gatewayToolsetCatalog
+	gatewayCommandWait              *pythread.Event
+	observeUnsupported              *gatewayBoundary
+	observeNoticeShown              bool
 	backgroundReviewNoticeDelivered bool
 	turnCtx                         context.Context
 	turnCancel                      context.CancelFunc
@@ -515,7 +520,7 @@ var (
 	tuiInputModesMu                          sync.Mutex
 	signalWatchdogArmed                      bool
 	signalWatchdogMu                         sync.Mutex
-	activeAgentRef                           *agent.AIAgent
+	activeAgentRef                           *GatewayAgent
 	activeAgentRefMu                         sync.Mutex
 	sessionEndMessages                       []string
 	sessionEndMessagesMu                     sync.Mutex
@@ -603,7 +608,7 @@ func runCleanup(ctx context.Context, env *tools.Env, notifySessionFinalize bool)
 			cliLogger.Warn(fmt.Sprintf("CLI cleanup memory shutdown failed: %v", r))
 		}
 	}()
-	shutdownAgentMemoryProvider(ctx, currentActiveAgent())
+	shutdownAgentMemoryProvider(currentActiveAgent())
 }
 
 // Runs one cleanup step, swallowing its panic the way hermes suppresses the step's exception
@@ -641,13 +646,13 @@ func resetTerminalInputModesOnExit() {
 	_, _ = tty.WriteString(terminalInputModeResetSeq)
 }
 
-func currentActiveAgent() *agent.AIAgent {
+func currentActiveAgent() *GatewayAgent {
 	activeAgentRefMu.Lock()
 	defer activeAgentRefMu.Unlock()
 	return activeAgentRef
 }
 
-func setActiveAgent(a *agent.AIAgent) {
+func setActiveAgent(a *GatewayAgent) {
 	activeAgentRefMu.Lock()
 	activeAgentRef = a
 	activeAgentRefMu.Unlock()
@@ -734,8 +739,18 @@ func ensureSkillCommands(ctx context.Context) skills.SkillCommands {
 // GetSkillCommands returns the interactive skill command table the slash dispatcher matches
 func GetSkillCommands(ctx context.Context) skills.SkillCommands { return ensureSkillCommands(ctx) }
 
-// Returns the skill commands this CLI's own process scans, the Go CLI owning its own session
-func sessionSkillCommands(c *CLI) skills.SkillCommands { return ensureSkillCommands(c.ctx) }
+// Skill commands of the CLI, the gateway session's own when it is open, else this process's scan
+func sessionSkillCommands(c *CLI) skills.SkillCommands {
+	found, onGateway := gatewaySessionSkills(c)
+	if !onGateway {
+		return ensureSkillCommands(c.ctx)
+	}
+	out := make(skills.SkillCommands, len(found))
+	for key, info := range found {
+		out[key] = info
+	}
+	return out
+}
 
 // Returns the cached skill bundle table, loading it on first use
 func getSkillBundles(ctx context.Context) skills.SkillCommands {

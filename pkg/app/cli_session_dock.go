@@ -124,13 +124,19 @@ func sessionDockPromptText(item any) string {
 	return strings.Join(pystr.SplitWhitespace(text, -1), " ")
 }
 
-// Previews of the turns waiting in the pending input queue, oldest first
+// Previews of the gateway's queued admissions then the turns waiting in the pending input, oldest first
 func sessionDockQueuedPrompts(c *CLI) []string {
-	if c.pendingInput == nil {
-		return nil
+	var items []any
+	if store := c.gatewayQueueStore(); store != nil {
+		for _, text := range publishedQueue(c, store) {
+			items = append(items, text)
+		}
+	}
+	if c.pendingInput != nil {
+		items = append(items, c.pendingInput.snapshot()...)
 	}
 	var out []string
-	for _, item := range c.pendingInput.snapshot() {
+	for _, item := range items {
 		if text := sessionDockPromptText(item); text != "" {
 			out = append(out, text)
 		}

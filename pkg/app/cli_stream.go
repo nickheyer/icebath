@@ -156,7 +156,7 @@ func (c *CLI) flushCreditNotices() {
 func (c *CLI) onNoticeClear(key string) {}
 
 // Active reasoning display callback for the current mode, nil when reasoning is hidden
-func (c *CLI) currentReasoningCallback() any {
+func (c *CLI) currentReasoningCallback() func(string) {
 	if c.showReasoning && c.streamingEnabled {
 		return c.streamReasoningDelta
 	}

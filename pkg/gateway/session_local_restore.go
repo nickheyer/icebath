@@ -23,9 +23,7 @@ type authorityRegistryRunner interface {
 }
 
 // Runner that predates the registry and holds its single launch authority
-type launchAuthorityRunner interface {
-	SessionAuthority() *SessionAuthority
-}
+type launchAuthorityRunner = SessionAuthorityHolder
 
 // Runner holding the launch adapters and the live adapter map of each served secondary profile
 type adapterMapRunner interface {

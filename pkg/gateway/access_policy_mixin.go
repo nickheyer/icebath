@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -23,6 +24,52 @@ type OwnAccessPolicyMixin struct {
 	EntryMatches func(ctx context.Context, entries map[string]bool, target string) (bool, error)
 	// LiveDMAllowFrom is the allowlist enforced right now, the construction allowlist when nil
 	LiveDMAllowFrom func(ctx context.Context) (map[string]bool, error)
+
+	allowMu sync.RWMutex
+}
+
+var (
+	_ AttrAdapter              = (*OwnAccessPolicyMixin)(nil)
+	_ AllowlistSnapshotAdapter = (*OwnAccessPolicyMixin)(nil)
+)
+
+// Host policy attributes the runner reads by name, nil for a name the mixin does not hold
+func (p *OwnAccessPolicyMixin) AdapterAttr(name string) any {
+	switch name {
+	case "_dm_policy":
+		return p.DMPolicy
+	case "_group_policy":
+		return p.GroupPolicy
+	}
+	return nil
+}
+
+// Copy of the construction DM allowlist taken under its lock
+func (p *OwnAccessPolicyMixin) AllowFromSnapshot() map[string]bool {
+	p.allowMu.RLock()
+	defer p.allowMu.RUnlock()
+	out := make(map[string]bool, len(p.AllowFrom))
+	for entry, present := range p.AllowFrom {
+		if present {
+			out[entry] = true
+		}
+	}
+	return out
+}
+
+// Drops revoked principals from the DM allowlist in place, leaving it whole when a match panics
+func (p *OwnAccessPolicyMixin) PurgeAllowlistSnapshots(keep func(entry string) bool) {
+	drop := []string{}
+	for entry := range p.AllowFromSnapshot() {
+		if !keep(entry) {
+			drop = append(drop, entry)
+		}
+	}
+	p.allowMu.Lock()
+	defer p.allowMu.Unlock()
+	for _, entry := range drop {
+		delete(p.AllowFrom, entry)
+	}
 }
 
 // Policy of a host, refused like a class with no platform prefix is at creation
@@ -68,8 +115,15 @@ func (p *OwnAccessPolicyMixin) liveDMAllowFrom(ctx context.Context) (map[string]
 	if p.LiveDMAllowFrom != nil {
 		return p.LiveDMAllowFrom(ctx)
 	}
-	return p.AllowFrom, nil
+	return p.AllowFromSnapshot(), nil
 }
+
+// Adapter rechecking a DM sender against its live allowlist under the profile scope of the context
+type DMAllowedAdapter interface {
+	IsDMAllowed(ctx context.Context, senderID string) (bool, error)
+}
+
+var _ DMAllowedAdapter = (*OwnAccessPolicyMixin)(nil)
 
 // Strict DM authorization, pairing never implying access
 func (p *OwnAccessPolicyMixin) IsDMAllowed(ctx context.Context, senderID string) (bool, error) {

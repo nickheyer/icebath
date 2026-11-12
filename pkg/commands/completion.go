@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // Completion is one prompt completion replacing the word under the cursor
@@ -524,6 +525,7 @@ func (c *SlashCompleter) fuzzyFileCompletions(word, query string, limit int) []C
 	return out
 }
 
+// Plugin command names and descriptions, the provider's answer else this process's plugin registry
 func (c *SlashCompleter) pluginCommands() map[string]string {
 	if c.src.PluginCommands != nil {
 		if found := c.src.PluginCommands(); found != nil {
@@ -531,8 +533,8 @@ func (c *SlashCompleter) pluginCommands() map[string]string {
 		}
 	}
 	out := map[string]string{}
-	for _, d := range PluginEntries(c.src.Registry) {
-		out[d.Name] = d.Description
+	for name, info := range plugins.GetPluginCommands(context.Background()) {
+		out[name] = info.Description
 	}
 	return out
 }

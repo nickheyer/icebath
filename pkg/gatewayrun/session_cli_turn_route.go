@@ -100,8 +100,8 @@ func oneTurnRuntime(ctx context.Context, override *pyjson.Object, model string, 
 // Committed model override of the executing admission, nil for any other turn
 func turnModelOverride(ctx context.Context, t *TurnRunner) *pyjson.Object {
 	var inbound any
-	if t.ctx.inboundMessageID != nil {
-		inbound = *t.ctx.inboundMessageID
+	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
+		inbound = *inboundID
 	}
 	override, _ := gateway.CLITurn(ctx, inbound).GetOr("model_override", nil).(*pyjson.Object)
 	if override == nil || override.Len() == 0 {

@@ -126,7 +126,7 @@ func newSlashWorker(ctx context.Context, sessionKey, model, profileHome, provide
 	}
 	target := profileHome
 	if target == "" && provider.IsMultiplexActive(ctx) {
-		target = hermesHome
+		target = importedHome()
 	}
 	childEnv, err := tools.ServedProfileChildEnv(ctx, configEnv(ctx), nil, target, true)
 	if err != nil {

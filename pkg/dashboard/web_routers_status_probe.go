@@ -196,7 +196,7 @@ func getStatus(ctx context.Context, req *Request, profile string) (*pyjson.Objec
 	if err != nil {
 		return nil, err
 	}
-	drainTimeout, err := resolveRestartDrainTimeout(ctx)
+	drainTimeout, err := statusRestartDrainTimeout(ctx)
 	if err != nil {
 		return nil, err
 	}

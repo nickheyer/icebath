@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -47,10 +48,10 @@ var (
 	resolveTurnRoute         = (*CLI).resolveTurnAgentConfig
 	initTurnAgent            = (*CLI).initAgent
 	stageAppendHook          = func() {}
-	runTurnConversation      = func(ctx context.Context, a *agent.AIAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
-		return a.RunConversationContent(ctx, message, o)
+	runTurnConversation      = func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+		return a.RunConversation(ctx, message, o)
 	}
-	interruptTurnAgent = func(a *agent.AIAgent, message string) { a.Interrupt(message) }
+	interruptTurnAgent = func(a *GatewayAgent, message string) { a.Interrupt() }
 )
 
 // queuedInput is the composer message bundled with its image attachments, the payload the prompt submits
@@ -105,14 +106,13 @@ func (c *CLI) turnModel() string {
 }
 
 // Adopts fallback_providers edits made while this chat is open, a torn config keeping the last good chain
-func (c *CLI) syncFallbackChainWithConfig(a *agent.AIAgent) {
+func (c *CLI) syncFallbackChainWithConfig() {
 	cfg, err := loadFallbackChainConfig(home.ConfigPath(home.Dir(c.ctx)), nil)
 	if err != nil {
 		cliLogger.Debug(fmt.Sprintf("fallback chain sync skipped (keeping current chain): %s", err))
 		return
 	}
 	c.fallbackModel = provider.GetFallbackChain(cfg)
-	a.ApplyFallbackChain(c.fallbackModel)
 }
 
 // Runs one user turn and returns the agent's response, false when the turn produced none
@@ -156,7 +156,7 @@ func (c *CLI) chat(message any, images []string, voiceInput bool) (response stri
 	if a == nil {
 		return "", false
 	}
-	c.syncFallbackChainWithConfig(a)
+	c.syncFallbackChainWithConfig()
 	message = c.chatRouteImages(message, images)
 	if text, isText := message.(string); isText {
 		message = state.SanitizeSurrogates(text)
@@ -169,7 +169,7 @@ func (c *CLI) chat(message any, images []string, voiceInput bool) (response stri
 		chatConsolePrint("[" + accentHex() + "]" + strings.Repeat("─", 40) + "[/]")
 		cprint("")
 	}
-	defer a.NotificationPolicySnapshot("cli", agent.NotificationConfigSnapshot(c.ctx))()
+	defer a.NotificationPolicySnapshot(agent.NotificationConfigSnapshot(c.ctx))()
 	turn := &chatTurn{}
 	turn.muteNotificationReply = config.DiagnosticTurnMuted(c.ctx, displayMetadata, "cli", a.NotificationConfig())
 	defer c.chatReleaseTurnAudio(turn)
@@ -266,7 +266,7 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 }
 
 // Appends the staged user row to the transcript under the agent's persist lock and returns its display metadata
-func (c *CLI) chatStageUserMessage(a *agent.AIAgent, message any) map[string]any {
+func (c *CLI) chatStageUserMessage(a *GatewayAgent, message any) map[string]any {
 	staged := state.StampMessageTimestamp(map[string]any{"role": "user", "content": message}, nil)
 	var displayMetadata map[string]any
 	if n, isNotification := message.(tools.TimelineNotification); isNotification {
@@ -275,10 +275,9 @@ func (c *CLI) chatStageUserMessage(a *agent.AIAgent, message any) map[string]any
 		staged["display_kind"] = n.DisplayKind
 		staged["display_metadata"] = displayMetadata
 	}
-	a.StagePendingCLIUserMessage(staged, func() {
-		stageAppendHook()
-		c.conversationHistory = append(append([]map[string]any{}, c.conversationHistory...), staged)
-	})
+	a.SetPendingCLIUserMessage(staged)
+	stageAppendHook()
+	c.conversationHistory = append(append([]map[string]any{}, c.conversationHistory...), staged)
 	return displayMetadata
 }
 
@@ -466,7 +465,7 @@ func (c *CLI) restoreMoaModelFields(saved map[string]string) {
 }
 
 // Failed turn result carrying the chat error copy for an error run_conversation raised
-func (c *CLI) runConversationFailure(a *agent.AIAgent, err error) map[string]any {
+func (c *CLI) runConversationFailure(a *GatewayAgent, err error) map[string]any {
 	cliLogger.Error(fmt.Sprintf("run_conversation raised: %s", err))
 	providerName, model := c.provider, c.model
 	if a.Provider() != "" {
@@ -594,14 +593,8 @@ func (c *CLI) writeInterruptDebugLog(msg any) {
 		return
 	}
 	defer f.Close()
-	children := c.agent.ActiveChildInterrupts()
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s interrupt fired: msg=%s, children=%d, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
-		pyrepr.StrRepr(pystr.Slice(pyrepr.Str(msg), 0, 60)), len(children), pyrepr.Repr(c.agent.InterruptRequested()))
-	for i, flag := range children {
-		fmt.Fprintf(&b, "  child[%d]._interrupt=%s\n", i, pyrepr.Repr(flag))
-	}
-	_, _ = f.WriteString(b.String())
+	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
+		pyrepr.StrRepr(pystr.Slice(pyrepr.Str(msg), 0, 60)), pyrepr.Repr(c.agent.InterruptRequested()))
 }
 
 // Transcript rows of a turn result, false when the result carries no messages key
@@ -671,11 +664,57 @@ func (c *CLI) chatSettleTurn(turn *chatTurn) {
 // Acknowledges a turn the gateway lost in a restart, the in process CLI holding no gateway session
 func (c *CLI) handleDiscardCommand(cmdOriginal string) {
 	_, rest, _ := strings.Cut(cmdOriginal, " ")
-	if pystr.Strip(rest) == "" {
+	admissionID := pystr.Strip(rest)
+	if admissionID == "" {
 		cprint("  Usage: /discard <admission_id>")
 		return
 	}
-	cprint("  /discard: no gateway session is open")
+	connection := gatewayConnectionFor(c)
+	if connection == nil {
+		cprint("  /discard: no gateway session is open")
+		return
+	}
+	var lost, snapshot map[string]any
+	err := func() error {
+		raw, err := connection.Reattach(c.ctx, c.sessionID, nil)
+		if err != nil {
+			return err
+		}
+		before, _ := pyjson.Plain(raw).(map[string]any)
+		if lost, err = gatewayLostAdmission(before, admissionID); err != nil {
+			return err
+		}
+		if _, err = connection.Call(c.ctx, "prompt.resolve_unknown", map[string]any{"session_id": c.sessionID,
+			"admission_id": requireKey(lost, "admission_id"), "execution_generation": requireKey(lost, "execution_generation")}); err != nil {
+			return err
+		}
+		raw, err = connection.Reattach(c.ctx, c.sessionID, nil)
+		snapshot, _ = pyjson.Plain(raw).(map[string]any)
+		return err
+	}()
+	if err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
+		cprint("  /discard: " + err.Error())
+		return
+	}
+	left := 0
+	pending, _ := snapshot["pending"].([]any)
+	for _, row := range anyRows(pending) {
+		if requireKey(row, "status") == "unknown" {
+			left++
+		}
+	}
+	tail := "You can send messages again."
+	if left > 0 {
+		plural := ""
+		if left > 1 {
+			plural = "s"
+		}
+		tail = fmt.Sprintf("%d more paused turn%s to /discard first.", left, plural)
+	}
+	cprint(fmt.Sprintf("  Discarded %s; it was not re-run. %s", pyrepr.Str(lost["admission_id"]), tail))
 }
 
 // Post turn display of errors, the interrupt marker, reasoning and response blocks, bell and requeues

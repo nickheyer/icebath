@@ -311,7 +311,7 @@ func forwardPrompt(ctx context.Context, sid string, session *tuigateway.Session,
 		profileHome = strOr(session.Get("profile_home"))
 	}
 	if profileHome == "" {
-		profileHome = hermesHome
+		profileHome = importedHome()
 	}
 	resolved, err := pypath.Realpath(profileHome, pypath.Lax)
 	if err != nil {

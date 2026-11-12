@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-// TourRequest sends one tour request to the renderer and returns its raw reply, installed by the desktop gateway
-var TourRequest func(env *Env, payload map[string]any) (string, error)
-
 var (
 	tourActions  = []string{"targets", "show", "start", "next", "prev", "stop"}
 	tourSurfaces = []string{"app", "preview"}
@@ -16,9 +13,11 @@ var (
 )
 
 // Dispatches one tour action to the desktop renderer and returns its outcome
-func handleTour(ctx context.Context, call *Call) string {
-	args := call.Args
-	if TourRequest == nil {
+func handleTour(ctx context.Context, call *Call) string { return TourTool(call.Args, nil) }
+
+// Runs one gui_tour action through the agent's tour callback
+func TourTool(args map[string]any, request DesktopRequest) string {
+	if request == nil {
 		return toolErrorJSON("tour is only available in the Icebath desktop app.", nil)
 	}
 	verb := strings.ToLower(strings.TrimSpace(argS(args, "action")))
@@ -78,7 +77,7 @@ func handleTour(ctx context.Context, call *Call) string {
 	if argHas(args, "step_index") {
 		payload["step_index"] = args["step_index"]
 	}
-	raw, err := TourRequest(call.Env, payload)
+	raw, err := request(payload)
 	if err != nil {
 		return toolErrorJSON("Tour action failed: "+err.Error(), nil)
 	}

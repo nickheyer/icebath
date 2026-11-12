@@ -10,9 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -368,35 +367,13 @@ func (c *CLI) initRuntimeState(resume string) {
 	c.initUIState()
 }
 
-// Opens state.db early so /title works before the first message, surfacing a failed store prominently
+// Opens the gateway session store early so a title works before the first message, the gateway the single writer
 func (c *CLI) initSessionStore() {
-	c.sessionDB = nil
-	c.sessionDBUnavailable = false
-	db, err := state.NewSessionDB(c.ctx, filepath.Join(home.Dir(c.ctx), "state.db"), false)
-	if err == nil {
-		c.sessionDB = db
-		return
-	}
-	c.sessionDBUnavailable = true
-	cliLogger.Warn(fmt.Sprintf("Failed to initialize SessionDB — session will NOT be indexed for search: %v", err))
-	failure := state.DescribeStorageFailure(c.ctx, err)
-	present := func() error {
-		rich := i18n.T(c.ctx, "cli.session_store.unavailable_rich", "", map[string]any{
-			"reason": failure.Gloss, "action": failure.Action, "details": state.StorageFailureDetails(err, 200)})
-		if _, werr := fmt.Fprintln(stderrWriter(), pyrich.Render(rich, c.console.ShouldUseColor())); werr != nil {
-			fmt.Fprintln(c.console.Out, i18n.T(c.ctx, "cli.session_store.unavailable_plain", "", map[string]any{
-				"reason": failure.Gloss, "action": failure.Action}))
-		}
-		return nil
-	}
-	_, _ = config.RenderNotification(c.ctx, present, "cli", true, nil)
+	c.sessionDB = gatewaycli.SessionStore()
 }
 
-// Mints the local session id the Go CLI owns, its store having no gateway facade
+// Mints main's local session id, replaced by the gateway's once the CLI opens its gateway session
 func newSessionID(now time.Time) string { return state.NewSessionIDAt(now, 6) }
-
-// Mints the id for /new and /branch, main's local mint on this CLI's own store
-func (c *CLI) newSessionID(now time.Time) string { return newSessionID(now) }
 
 // Sets the per run UI state every chat call needs, since -q never goes through run
 func (c *CLI) initUIState() {

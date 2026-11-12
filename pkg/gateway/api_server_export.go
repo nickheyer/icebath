@@ -55,9 +55,6 @@ func APINormalizeMultimodalContent(content any) (any, error) {
 // Whether content carries text or media worth a turn
 func APIContentHasVisiblePayload(content any) bool { return apiContentHasVisiblePayload(content) }
 
-// Text capped at the normalized text limit
-func APICapText(text string) string { return apiCapText(text) }
-
 // Wall clock seconds of the API server clock
 func APINow() float64 { return apiNow() }
 
@@ -77,11 +74,6 @@ func APIIdentifyOutput(items []*pyjson.Object, responseID string) ([]*pyjson.Obj
 // Multiplex runtime scope of a request profile
 func APIProfileScope(ctx context.Context, profile string) (context.Context, error) {
 	return apiProfileScope(ctx, profile)
-}
-
-// Whether a prefix names the profile this gateway serves
-func APIPrefixNamesServedProfile(ctx context.Context, profile string) bool {
-	return apiPrefixNamesServedProfile(ctx, profile)
 }
 
 // Writes a platform runtime status snapshot, a failure only logged

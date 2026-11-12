@@ -684,9 +684,3 @@ func (p *LocalSessionPolicy) RunBudgetSeconds(ctx context.Context) (*float64, er
 	agent, _ := cfg["agent"].(map[string]any)
 	return NormalizeRunBudgetSeconds(agent["run_budget_seconds"]), nil
 }
-
-// Frozen launch policy of the turn executing in ctx, nil for standalone serve and messaging turns
-func activeLocalPolicy(ctx context.Context) *LocalSessionPolicy {
-	policy, _ := ActivePolicy(ctx).(*LocalSessionPolicy)
-	return policy
-}

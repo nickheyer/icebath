@@ -84,8 +84,9 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 	alreadyStreamed := runAgentStreamConfirmedFinalDelivery(sc, firstResponse)
 	silent := false
 	displayKind := optAny(tc.persistUserDisplayKind)
+	anchor, inboundID, replyExpected := r.turnReplyAnchors(tc)
 	if isIntentionalSilence(deliveryResult, firstResponse) {
-		silent = r.silenceAllowedForSource(ctx, tc.source, displayKind, tc.replyExpected, deliveryResult)
+		silent = r.silenceAllowedForSource(ctx, tc.source, displayKind, replyExpected, deliveryResult)
 		if silent {
 			runLog().Info(fmt.Sprintf("Queued follow-up for session %s: suppressing intentional silence marker before continuing.", logSessionKey(sessionKey)))
 			firstResponse = ""
@@ -95,7 +96,7 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 			alreadyStreamed = false
 		}
 	}
-	r.recordRoomSilenceDecision(ctx, sessionKey, deliveryResult, silent, displayKind, tc.replyExpected)
+	r.recordRoomSilenceDecision(ctx, sessionKey, deliveryResult, silent, displayKind, replyExpected)
 	deliverMedia := !pyrepr.Truthy(deliveryResult["failed"])
 	if firstResponse != "" {
 		if alreadyStreamed {
@@ -113,8 +114,8 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 					delivered, err = false, fmt.Errorf("%s", pyrepr.Str(rec))
 				}
 			}()
-			return r.deliverQueuedFirstResponse(ctx, firstResponse, tc.source, adapter, tc.statusThreadMetadata, tc.eventMessageID,
-				alreadyStreamed, deliverMedia, consumer, sessionKey, tc.inboundMessageID)
+			return r.deliverQueuedFirstResponse(ctx, firstResponse, tc.source, adapter, tc.statusThreadMetadata, anchor,
+				alreadyStreamed, deliverMedia, consumer, sessionKey, inboundID)
 		}()
 		if err != nil {
 			runLog().Warn(fmt.Sprintf("Failed to send first response before queued message: %s", err))
@@ -167,7 +168,7 @@ func (r *GatewayRunner) runAgentQueuedFollowup(ctx context.Context, tc *TurnCont
 	nextDisplayKind := gateway.DisplayKindForEvent(ctx, gateway.DisplayEventOf(pendingEvent))
 	var nextReplyExpected *bool
 	if pendingEvent != nil {
-		nextReplyExpected = pendingEvent.ReplyExpected
+		_, _, nextReplyExpected = pendingEvent.ReplyFields()
 		if pendingEvent.Source != nil {
 			nextSource = pendingEvent.Source
 		}

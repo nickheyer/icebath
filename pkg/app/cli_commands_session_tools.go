@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -58,39 +57,61 @@ func (c *CLI) handleStopCommand() {
 	}
 	if c.agent != nil {
 		cp("  " + c.t("cli.tui.interrupting", nil))
-		agent.RequestHardInterrupt(c.agent, "", "")
+		requestHardInterrupt(c.agent)
 	}
 	go c.stopBackgroundWork()
 }
 
 // Kills running background processes then interrupts background delegations, printing through cprint
 func (c *CLI) stopBackgroundWork() {
-	registry := tools.DefaultProcessRegistry()
+	registry, view := c.processRegistry(), gatewayProcessView()
+	if view != nil {
+		view.refresh(c.ctx, true)
+	}
 	var running []map[string]any
-	for _, p := range registry.ListSessions(c.ctx, c.env, "", "", false) {
+	for _, p := range registry.listSessions(c.ctx) {
 		if p["status"] == "running" {
 			running = append(running, p)
 		}
 	}
 	nAsync := tools.AsyncDelegationActiveCount()
+	if view != nil {
+		nAsync = view.activeDelegations()
+	}
 	if len(running) == 0 && nAsync == 0 {
 		cp("  " + c.commandsT("stop.none_running", nil))
 		return
 	}
 	if len(running) > 0 {
 		cp("  " + c.commandsT("stop.stopping", map[string]any{"count": len(running)}))
-		killed := registry.KillAll(c.ctx, c.env, "", nil, "cli.stop", false)
+		killed, err := registry.killAll(c.ctx, "cli.stop")
+		if err != nil {
+			panic(err)
+		}
 		cp("  " + c.commandsT("stop.stopped", map[string]any{"count": killed}))
 	}
 	if nAsync > 0 {
-		interrupted := tools.InterruptAllAsyncDelegations("/stop")
+		var interrupted int
+		if view != nil {
+			count, err := view.interruptDelegations(c.ctx)
+			if err != nil {
+				panic(err)
+			}
+			interrupted = count
+		} else {
+			interrupted = tools.InterruptAllAsyncDelegations("/stop")
+		}
 		cp("  " + c.commandsT("stop.interrupted_delegations", map[string]any{"count": interrupted}))
 	}
 }
 
 // Handles /agents, background processes, background delegations and the agent state
 func (c *CLI) handleAgentsCommand() {
-	processes := tools.DefaultProcessRegistry().ListSessions(c.ctx, c.env, "", "", false)
+	registry, view := c.processRegistry(), gatewayProcessView()
+	if view != nil {
+		view.refresh(c.ctx, true)
+	}
+	processes := registry.listSessions(c.ctx)
 	var running, finished []map[string]any
 	for _, p := range processes {
 		if p["status"] == "running" {
@@ -112,7 +133,11 @@ func (c *CLI) handleAgentsCommand() {
 	if len(finished) > 0 {
 		cp("  " + c.commandsT("agents.recently_finished", map[string]any{"count": len(finished)}))
 	}
-	c.printLocalDelegations()
+	if view == nil {
+		c.printLocalDelegations()
+	} else if nAsync := view.activeDelegations(); nAsync != 0 {
+		cp("  " + c.commandsT("agents.background_delegations", map[string]any{"count": nAsync}))
+	}
 	if c.agentRunning {
 		cp("  " + c.commandsT("agents.agent_running", nil))
 	} else {

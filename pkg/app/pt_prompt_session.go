@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/agent"
 )
 
 // One line prompt over the prompt application with a bottom toolbar, erased once a line is accepted
@@ -103,15 +105,28 @@ func (s *ptPromptSession) cancel() {
 
 // Line buffered writer printing complete lines above a running prompt and straight to out otherwise
 type ptStdoutProxy struct {
-	mu      sync.Mutex
-	session *ptPromptSession
-	out     io.Writer
-	buffer  bytes.Buffer
+	mu     sync.Mutex
+	app    func() *ptApplication
+	out    io.Writer
+	buffer bytes.Buffer
 }
+
+var _ agent.StdoutProxy = (*ptStdoutProxy)(nil)
 
 // Proxy that patches prints made while the session prompts so they land above it
 func (s *ptPromptSession) patchStdout(out io.Writer) *ptStdoutProxy {
-	return &ptStdoutProxy{session: s, out: out}
+	return &ptStdoutProxy{app: s.app, out: out}
+}
+
+// Marks the writer as the patch_stdout proxy whose flushes break carriage return frames
+func (p *ptStdoutProxy) StdoutProxy() {}
+
+// Descriptor of the terminal behind the proxy, the StdoutProxy fileno that isatty reads
+func (p *ptStdoutProxy) Fd() uintptr {
+	if f, ok := p.out.(interface{ Fd() uintptr }); ok {
+		return f.Fd()
+	}
+	return ^uintptr(0)
 }
 
 // Buffers text and writes everything up to its last newline
@@ -141,7 +156,7 @@ func (p *ptStdoutProxy) Flush() {
 
 // Prints text above the running prompt or writes it to the terminal when no prompt runs
 func (p *ptStdoutProxy) emit(text string) {
-	if a := p.session.app(); a != nil && a.IsRunning() {
+	if a := p.app(); a != nil && a.IsRunning() {
 		if strings.HasSuffix(text, "\n") {
 			a.PrintAbove(strings.TrimSuffix(text, "\n"))
 		} else {

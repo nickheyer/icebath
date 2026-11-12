@@ -132,7 +132,10 @@ type cronSessionDB interface {
 	SetTitle(sessionID, title string) (bool, error)
 	EndSession(id, reason string) error
 	UpdateSessionCwd(id, cwd, repoRoot, branch string) error
+	SessionLifecycleStatuses(ctx context.Context, sessionIDs []string) (map[string]string, error)
 }
+
+var _ cronSessionDB = (*state.DB)(nil)
 
 // Session store whose cleanup calls run under the cleanup bound and fail fast after one failure
 type boundedCronSessionDB struct {
@@ -187,14 +190,8 @@ func (b *boundedCronSessionDB) GetNextTitleInLineage(ctx context.Context, base s
 	return next, err
 }
 
-func (b *boundedCronSessionDB) sessionLifecycleStatuses(ids []string) (statuses map[string]string, err error) {
-	src, has := b.db.(interface {
-		SessionLifecycleStatuses(ids []string) (map[string]string, error)
-	})
-	if !has {
-		return nil, errors.New("'SessionDB' object has no attribute 'session_lifecycle_statuses'")
-	}
-	err = b.call("session_lifecycle_statuses", func() (e error) { statuses, e = src.SessionLifecycleStatuses(ids); return e })
+func (b *boundedCronSessionDB) sessionLifecycleStatuses(ctx context.Context, ids []string) (statuses map[string]string, err error) {
+	err = b.call("session_lifecycle_statuses", func() (e error) { statuses, e = b.db.SessionLifecycleStatuses(ctx, ids); return e })
 	return statuses, err
 }
 
@@ -612,9 +609,9 @@ func (s *Store) openCronSessionDB(ctx context.Context, job *Job) (*state.DB, err
 // Python TimeoutError raised by the cron run path
 type pyTimeoutError struct{ msg string }
 
-func (e *pyTimeoutError) Error() string         { return e.msg }
-func (e *pyTimeoutError) ExceptionName() string { return "TimeoutError" }
-func (e *pyTimeoutError) Timeout() bool         { return true }
+func (e *pyTimeoutError) Error() string      { return e.msg }
+func (e *pyTimeoutError) PyTypeName() string { return "TimeoutError" }
+func (e *pyTimeoutError) Timeout() bool      { return true }
 
 // Logs the agent's last activity, hard interrupts it and returns the inactivity TimeoutError
 func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float64) error {
@@ -911,7 +908,7 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 		}
 	}
 	endReason := "cron_complete"
-	if statuses, serr := b.sessionLifecycleStatuses([]string{finalID}); serr != nil {
+	if statuses, serr := b.sessionLifecycleStatuses(ctx, []string{finalID}); serr != nil {
 		s.log.Debug(fmt.Sprintf("Job '%s': session lifecycle classification failed: %v", jobID, serr))
 	} else if lc := statuses[finalID]; lc == "interrupted" || lc == "error" || lc == "empty" {
 		endReason = "cron_incomplete_no_output"

@@ -23,8 +23,8 @@ type pyOSError struct {
 	err   error
 }
 
-func (e *pyOSError) Error() string   { return e.err.Error() }
-func (e *pyOSError) PyClass() string { return e.class }
+func (e *pyOSError) Error() string      { return e.err.Error() }
+func (e *pyOSError) PyTypeName() string { return e.class }
 
 // Signal zero liveness of a runtime file pid, permission denied meaning the process exists
 func platformPIDAlive(pid *big.Int) (observation[bool], error) {

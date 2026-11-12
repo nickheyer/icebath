@@ -527,7 +527,7 @@ func (c *CLI) voiceFullDuplexListener() {
 				}()
 				if c.agent != nil && c.agentRunning {
 					cprint("\n" + voiceDim(c.t("cli.voice.interjection", nil)))
-					c.agent.Interrupt("")
+					c.agent.Interrupt()
 				}
 			}()
 		}

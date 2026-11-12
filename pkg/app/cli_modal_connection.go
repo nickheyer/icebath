@@ -25,8 +25,14 @@ type connectionModalState struct {
 // Browser launch and the two card answers, swapped by tests
 var (
 	openConnectionURL = provider.OpenBrowserURL
-	connectionRespond = agentConnectionRespond
-	connectionRetryFn = agentConnectionRetry
+	connectionRespond = func(ctx context.Context, c *CLI, opID string, result map[string]any) error {
+		_, err := c.agent.ConnectionRespond(opID, result)
+		return err
+	}
+	connectionRetryFn = func(ctx context.Context, c *CLI, name string) error {
+		_, err := c.agent.ConnectionRetry(name)
+		return err
+	}
 )
 
 // Rows of a payload list as maps

@@ -26,6 +26,7 @@ func TestPluginPostMessageReadsTheBoundTurnSessionKey(t *testing.T) {
 		mu.Unlock()
 		return nil, map[string]any{"ok": false, "error": "no_conversation", "detail": "unknown session"}, nil
 	}
+	plugins.InstallServices(s)
 	ctx := context.Background()
 	c := plugins.NewContext(&plugins.Manifest{Name: "progress"}, plugins.GetPluginManager(ctx))
 	if got := c.PostMessage(ctx, "hi").Result(); got["error"] != "no_conversation" || len(resolved) != 0 {

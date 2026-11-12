@@ -6,15 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// SetupBeatCard asks the desktop to show a beat card and blocks until the user answers or the card closes, installed by the desktop gateway
-var SetupBeatCard func(env *Env, payload map[string]any) (map[string]any, error)
-
-// SetupBeatEndTurn ends the agent's turn once a result is in, installed by the agent loop
-var SetupBeatEndTurn func(env *Env)
 
 // OnboardingPluginNames lists the onboarding catalog plugins this OS runs, installed by pkg/plugins
 var OnboardingPluginNames func(env *Env) []string
@@ -232,8 +224,8 @@ func onbCard(env *Env, beat string, step OnboardingStep, args map[string]any) ma
 	return card
 }
 
-// Shows a beat's card through the desktop and returns the user's answer with the next beat's reminder
-func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolCallID string, args map[string]any) string {
+// Shows a beat's card through the agent's setup beat callback, a card written past ending the turn
+func SetupBeatTool(ctx context.Context, env *Env, db OnboardingStore, sessionID, toolCallID string, args map[string]any, card DesktopAnswer, endTurn func()) string {
 	beat, _ := args["beat"].(string)
 	if !containsString(SetupBeatIDs, beat) {
 		return toolErrorJSON(fmt.Sprintf("beat must be one of: %s.", strings.Join(SetupBeatIDs, ", ")), nil)
@@ -263,7 +255,7 @@ func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolC
 			return JSONASCII(Dict("error", onboardingEndedText))
 		}
 	}
-	if SetupBeatCard == nil {
+	if card == nil {
 		return toolErrorJSON("setup_beat cards show only in the Icebath desktop app.", nil)
 	}
 	if beat == "connectors" {
@@ -288,7 +280,7 @@ func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolC
 		question = OnboardingQuestion(beat, locale)
 	}
 	payload := map[string]any{"beat": beat, "question": question, "card": onbCard(env, beat, shown, args), "tool_call_id": emptyAsNull(toolCallID)}
-	reply, err := SetupBeatCard(env, payload)
+	reply, err := card(payload)
 	if err != nil {
 		slog.Warn("onboarding: the card did not answer", "beat", beat, "error", err)
 		reply = nil
@@ -303,8 +295,8 @@ func setupBeatTool(ctx context.Context, env *Env, db *state.DB, sessionID, toolC
 		return toolErrorJSON(err.Error(), nil)
 	}
 	result := onbResult(env, step, beat, "")
-	if _, wrote := event.(OnbWrote); wrote && SetupBeatEndTurn != nil {
-		SetupBeatEndTurn(env)
+	if _, wrote := event.(OnbWrote); wrote && endTurn != nil {
+		endTurn()
 	}
 	return result
 }
@@ -337,6 +329,6 @@ var setupBeatSchema = map[string]any{
 func registerSetupBeatTool() {
 	Register(Def{Name: "setup_beat", Toolset: "onboarding", Schema: setupBeatSchema, Emoji: "\U0001F39B", Timeout: OnboardingCardTimeout * time.Second,
 		Handler: func(ctx context.Context, call *Call) string {
-			return setupBeatTool(WithEnvHome(ctx, call.Env), call.Env, call.Env.State, call.SessionID, call.ToolCallID, call.Args)
+			return SetupBeatTool(WithEnvHome(ctx, call.Env), call.Env, call.Env.State, call.SessionID, call.ToolCallID, call.Args, nil, nil)
 		}})
 }

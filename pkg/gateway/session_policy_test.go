@@ -22,7 +22,7 @@ func TestSessionPolicySurfacesAndLabels(t *testing.T) {
 		t.Fatal("tool is not an alias of cli")
 	}
 	for label, want := range map[any]any{nil: nil, "": nil, "local": nil, "unknown": nil, "gui": "desktop", "cli": "cli", "tool": "tool", "oneshot": "oneshot", "telegram": "telegram"} {
-		if got := createdSurface(label); got != want {
+		if got := state.CreatedSurface(label); got != want {
 			t.Errorf("%v: %v", label, got)
 		}
 	}

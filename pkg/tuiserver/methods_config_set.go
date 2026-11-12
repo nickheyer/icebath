@@ -765,7 +765,7 @@ func setCwd(ctx context.Context, rid any, params map[string]any, key string, val
 		return rpcErr(rid, 4002, "working directory does not exist: "+raw, nil)
 	}
 	panicIf(writeConfigKey(ctx, "terminal.cwd", cwd))
-	if resolveLax(home.Dir(ctx)) == resolveLax(hermesHome) {
+	if resolveLax(home.Dir(ctx)) == resolveLax(importedHome()) {
 		os.Setenv("TERMINAL_CWD", cwd)
 	}
 	return cfgKV(rid, "terminal.cwd", cwd, "cwd", cwd, "branch", tools.GitProbeBranch(cwd))

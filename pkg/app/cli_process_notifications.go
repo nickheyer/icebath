@@ -19,7 +19,7 @@ func (c *CLI) ownsProcessNotificationEvent(event map[string]any) bool {
 	}
 	resolved := eventKey
 	if c.sessionDB != nil {
-		if r, err := c.sessionDB.ResolveResumeSessionID(eventKey); err == nil && r != "" {
+		if r, err := c.sessionDB.ResolveResumeSessionID(c.ctx, eventKey); err == nil && r != "" {
 			resolved = r
 		}
 	}
@@ -43,6 +43,10 @@ var (
 
 // Claims this session's finished process and delegation events and queues each batch as pending input
 func (c *CLI) drainProcessNotifications(consumer string) {
+	if store := c.gatewayStore(); store != nil {
+		queueAdmittedTurn(c, store)
+		return
+	}
 	var claimed []tools.DrainedNotification
 	for _, n := range drainRegistryNotifications(c) {
 		claim, ok, err := claimEventDelivery(c.env, n.Event, consumer)
@@ -97,6 +101,7 @@ func (c *CLI) tuiUnwrapInput(userInput any) (any, bool, bool) {
 	}
 	seeded, isSeeded := userInput.(*seededQueryMessage)
 	if isSeeded {
+		armAdopted(c, seeded)
 		if len(seeded.Images) > 0 {
 			userInput = submittedInput{Text: seeded.Text, Images: seeded.Images}
 		} else {

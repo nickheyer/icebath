@@ -793,6 +793,7 @@ func defaultHostWorkers() int {
 // Serves the compute host protocol over stdin and stdout until shutdown, stdin closing or a signal
 func runHost(ctx context.Context, stdin io.Reader, stdout io.Writer) {
 	_ = os.Setenv("ICEBATH_COMPUTE_HOST_CHILD", "1")
+	loadServerModule()
 	if stdin == nil {
 		stdin = os.Stdin
 	}
@@ -855,11 +856,11 @@ func runHost(ctx context.Context, stdin io.Reader, stdout io.Writer) {
 	}
 }
 
-// Runs the compute host child when the binary was re-executed as it, exiting with its status
-func DispatchComputeHostEntry(ctx context.Context) {
+// Runs the compute host child when the binary was re-executed as it, ending through exit so exit hooks run
+func DispatchComputeHostEntry(ctx context.Context, exit func(int)) {
 	if len(os.Args) < 2 || os.Args[1] != ComputeHostEntry {
 		return
 	}
 	runHost(ctx, nil, nil)
-	os.Exit(0)
+	exit(0)
 }

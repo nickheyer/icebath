@@ -94,15 +94,12 @@ func previewClose(env *Env, rawURL string) string {
 		pyObject("success", true, "closed", closed))
 }
 
-// ReadPreviewPane reads the active preview tab through the gateway bridge, installed by the desktop gateway
-var ReadPreviewPane func(env *Env, window map[string]int) (string, error)
-
 // Returns the active preview tab's contents and metadata as a JSON string
-func readPreviewTool(env *Env, start, count any) string {
-	if ReadPreviewPane == nil {
+func ReadPreviewTool(start, count any, callback PaneReader) string {
+	if callback == nil {
 		return toolErrorJSON("preview read must run inside a desktop session (no GUI callback here).", nil)
 	}
-	return readPane(env, ReadPreviewPane, []paneWindow{{"start", start, 0}, {"count", count, 1}}, [4]string{
+	return readPane(callback, []paneWindow{{"start", start, 0}, {"count", count, 1}}, [4]string{
 		"read_preview is only available in the Icebath desktop app.",
 		"start and count must be integers.",
 		"Failed to read the preview pane: ",
@@ -112,15 +109,18 @@ func readPreviewTool(env *Env, start, count any) string {
 	})
 }
 
-// Dispatches the desktop_preview action
-func handlePreview(ctx context.Context, call *Call) string {
-	switch strings.TrimSpace(argS(call.Args, "action")) {
+// Dispatches the desktop_preview action, a read without the GUI callback refused
+func handlePreview(ctx context.Context, call *Call) string { return PreviewTool(call.Env, call.Args) }
+
+// Opens or closes a preview tab, or reads one when no GUI callback is at hand
+func PreviewTool(env *Env, args map[string]any) string {
+	switch strings.TrimSpace(argS(args, "action")) {
 	case "open":
-		return openPreviewTool(call.Env, argS(call.Args, "url"), argS(call.Args, "label"))
+		return openPreviewTool(env, argS(args, "url"), argS(args, "label"))
 	case "close":
-		return previewClose(call.Env, argS(call.Args, "url"))
+		return previewClose(env, argS(args, "url"))
 	case "read":
-		return readPreviewTool(call.Env, call.Args["start"], call.Args["count"])
+		return ReadPreviewTool(args["start"], args["count"], nil)
 	}
 	return toolErrorJSON("action must be one of: open, close, read.", nil)
 }
@@ -148,9 +148,6 @@ var previewSchema = map[string]any{
 	},
 }
 
-// PreviewAct sends one preview.act request to the renderer and returns its raw reply, installed by the desktop gateway
-var PreviewAct func(env *Env, payload map[string]any) (string, error)
-
 var (
 	annotateActions = []string{"add", "hold", "remove", "clear"}
 	annotateWire    = map[string]string{"add": "pin", "hold": "hold", "remove": "unpin", "clear": "unpin"}
@@ -161,8 +158,8 @@ const previewNoPageText = "No GUI window answered with a page: no preview tab is
 	"may be older than this backend — its bridge-unavailable error names that case."
 
 // Puts one annotation up, takes one down, or clears them all
-func annotatePreviewTool(env *Env, action string, ref, selector, label *string) string {
-	if PreviewAct == nil {
+func AnnotatePreviewTool(action string, ref, selector, label *string, act DesktopRequest) string {
+	if act == nil {
 		return toolErrorJSON("annotate_preview is only available in the Icebath desktop app.", nil)
 	}
 	verb := strings.ToLower(strings.TrimSpace(action))
@@ -186,7 +183,7 @@ func annotatePreviewTool(env *Env, action string, ref, selector, label *string) 
 	if label != nil {
 		payload["text"] = *label
 	}
-	raw, err := PreviewAct(env, payload)
+	raw, err := act(payload)
 	if err != nil {
 		return toolErrorJSON("Failed to annotate the in-app browser: "+err.Error(), nil)
 	}
@@ -228,8 +225,12 @@ var (
 
 // Dispatches one preview interaction to the desktop renderer and returns its outcome
 func handleDrivePreview(ctx context.Context, call *Call) string {
-	args := call.Args
-	if PreviewAct == nil {
+	return DrivePreviewTool(call.Args, nil)
+}
+
+// Runs one drive_preview action through the agent's preview callback
+func DrivePreviewTool(args map[string]any, act DesktopRequest) string {
+	if act == nil {
 		return toolErrorJSON("drive_preview is only available in the Icebath desktop app.", nil)
 	}
 	verb := strings.ToLower(strings.TrimSpace(argS(args, "action")))
@@ -270,7 +271,7 @@ func handleDrivePreview(ctx context.Context, call *Call) string {
 		}
 		payload[wire] = n
 	}
-	raw, err := PreviewAct(call.Env, payload)
+	raw, err := act(payload)
 	if err != nil {
 		return toolErrorJSON("Failed to act on the in-app browser: "+err.Error(), nil)
 	}

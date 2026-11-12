@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/media"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -67,21 +66,16 @@ func armExitWatchdog(ctx context.Context, timeoutS float64, fromSignal bool) {
 	}()
 }
 
-// Runs the memory provider shutdown at the real session boundary with the agent's session messages
-func shutdownAgentMemoryProvider(ctx context.Context, a *agent.AIAgent) {
+// Logs the memory shutdown at the session boundary, the gateway running the providers of a gateway session
+func shutdownAgentMemoryProvider(a *GatewayAgent) {
 	if a == nil {
 		return
-	}
-	if mm, ok := a.MemoryManager().(interface{ FlushPending(time.Duration) bool }); ok && mm != nil {
-		mm.FlushPending(10 * time.Second)
 	}
 	sid := a.SessionID()
 	if sid == "" {
 		sid = "<unknown>"
 	}
-	msgs := a.SessionMessages()
-	cliLogger.Info(fmt.Sprintf("CLI cleanup calling memory shutdown for session %s with %d message(s)", sid, len(msgs)))
-	a.ShutdownMemoryProvider(ctx, agent.SessionMessageDicts(msgs))
+	cliLogger.Info(fmt.Sprintf("CLI cleanup calling memory shutdown for session %s with %d message(s)", sid, len(a.SessionMessages())))
 }
 
 // Stops the CLI's wake word listener when this process owns one
@@ -114,6 +108,9 @@ var cleanupSteps = []func(context.Context, *tools.Env){stopCLIWakeWord, cleanupA
 
 // Reports whether shutdown should fire the session finalize hook for the id
 func shouldEmitCleanupSessionFinalize(sessionID string) bool {
+	if currentActiveAgent() != nil {
+		return false
+	}
 	sessionIDSetsMu.Lock()
 	defer sessionIDSetsMu.Unlock()
 	if sessionID != "" && handedOffSessionIDs[sessionID] {
@@ -143,7 +140,7 @@ func notifySessionFinalizeMessages(ctx context.Context, sessionID, platform, rea
 }
 
 // Returns the agent and session id of a one shot run, the agent's id winning over the CLI's
-func oneshotAgentAndSession(c *CLI) (*agent.AIAgent, string) {
+func oneshotAgentAndSession(c *CLI) (*GatewayAgent, string) {
 	a := c.agent
 	sid := ""
 	if a != nil {
@@ -155,39 +152,14 @@ func oneshotAgentAndSession(c *CLI) (*agent.AIAgent, string) {
 	return a, sid
 }
 
-// Fires the on_session_end hook for a turn cut short, never failing
-func invokeInterruptedSessionEnd(ctx context.Context, a *agent.AIAgent, sessionID, reason string, extra map[string]any) {
-	defer func() { _ = recover() }()
-	kwargs := map[string]any{"session_id": sessionID, "completed": false, "interrupted": true, "reason": reason, "platform": "cli"}
-	var model any
-	if a != nil {
-		model = a.Model()
-		if p := a.Platform(); p != "" {
-			kwargs["platform"] = p
-		}
-	}
-	kwargs["model"] = model
-	for k, v := range extra {
-		kwargs[k] = v
-	}
-	plugins.InvokeHook(ctx, "on_session_end", kwargs)
-}
-
-// Interrupts the agent and fires on_session_end for an interrupted non interactive run
+// Interrupts the gateway turn of an interrupted non interactive run, the gateway firing its on_session_end
 func emitInterruptedSessionEnd(c *CLI, reason string) {
-	a, sessionID := oneshotAgentAndSession(c)
+	a, _ := oneshotAgentAndSession(c)
 	if a == nil {
 		return
 	}
-	a.Interrupt(strings.ReplaceAll(reason, "_", " "))
-	if sessionHandedOff(sessionID) {
-		return
-	}
-	if sessionID != "" {
-		c.sessionID = sessionID
-	}
-	invokeInterruptedSessionEnd(c.ctx, a, sessionID, reason, map[string]any{
-		"task_id": a.TaskID(), "turn_id": a.TurnID(), "api_request_id": a.CurrentAPIRequestID()})
+	cliLogger.Debug(fmt.Sprintf("interrupting the gateway turn: %s", strings.ReplaceAll(reason, "_", " ")))
+	a.Interrupt()
 }
 
 // Prints the session finalize messages of a one shot run once per session id
@@ -196,7 +168,7 @@ func notifySingleQuerySessionFinalize(c *CLI, reason string) {
 	sessionIDSetsMu.Lock()
 	attempted := singleQueryFinalizeAttemptedSessionIDs[sessionID]
 	sessionIDSetsMu.Unlock()
-	if attempted || sessionHandedOff(sessionID) {
+	if attempted || sessionHandedOff(sessionID) || a != nil {
 		return
 	}
 	defer func() {
@@ -204,40 +176,25 @@ func notifySingleQuerySessionFinalize(c *CLI, reason string) {
 		singleQueryFinalizeAttemptedSessionIDs[sessionID] = true
 		sessionIDSetsMu.Unlock()
 	}()
-	platform := "cli"
-	if a != nil && a.Platform() != "" {
-		platform = a.Platform()
-	}
-	for _, message := range notifySessionFinalizeMessages(c.ctx, sessionID, platform, reason) {
+	for _, message := range notifySessionFinalizeMessages(c.ctx, sessionID, "cli", reason) {
 		fmt.Fprintln(stderrWriter(), message)
 	}
 }
 
-// Durably flushes and finalizes the one shot session row before exit, idempotent and never failing
+// Ends the one shot gateway session with cli_close before exit, the gateway finalizing it
 func flushOneShotSessionStore(c *CLI) {
 	a, sessionID := oneshotAgentAndSession(c)
 	if a == nil || sessionID == "" || sessionHandedOff(sessionID) {
 		return
 	}
-	if a.PersistDisabled() {
-		return
-	}
-	if msgs := a.SessionMessages(); len(msgs) > 0 {
-		if err := a.PersistSession(&msgs, agent.RowsToMessages(c.conversationHistory)); err != nil {
-			cliLogger.Debug(fmt.Sprintf("one-shot final session persist retry failed: %v", err))
-		}
-	}
-	db := a.SessionDB()
+	db := a.sessionDB
 	if db == nil {
 		db = c.sessionDB
 	}
 	if db == nil {
 		return
 	}
-	if !db.FlushTokenCounts(5.0) {
-		cliLogger.Debug("one-shot token-count drain failed")
-	}
-	if err := db.EndSession(sessionID, "cli_close"); err != nil {
+	if err := db.EndSession(c.ctx, sessionID, "cli_close"); err != nil {
 		cliLogger.Debug(fmt.Sprintf("one-shot end_session failed: %v", err))
 	}
 }
@@ -267,7 +224,7 @@ func finalizeSingleQuery(c *CLI) {
 		if a == nil {
 			a = currentActiveAgent()
 		}
-		shutdownAgentMemoryProvider(c.ctx, a)
+		shutdownAgentMemoryProvider(a)
 	}()
 	waitForOneshotBackgroundCompletions(c)
 	runCleanup(c.ctx, c.env, false)

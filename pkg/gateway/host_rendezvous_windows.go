@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"unsafe"
 
@@ -83,58 +81,9 @@ func verifyPrivateSecurity(handle windows.Handle, owner string) error {
 	return nil
 }
 
-// Creates path new with a protected owner and SYSTEM DACL, refusing reparse points and escaped handles
-func writeNewPrivateFile(path string, data []byte) error {
-	sa, owner, err := privateSecurityAttributes()
-	if err != nil {
-		return err
-	}
-	name, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return err
-	}
-	handle, err := windows.CreateFile(name, windows.GENERIC_WRITE|windows.READ_CONTROL, 0, sa, windows.CREATE_NEW,
-		windows.FILE_ATTRIBUTE_NORMAL|openReparsePoint, 0)
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(handle)
-	buf := make([]uint16, windows.MAX_LONG_PATH)
-	n, err := windows.GetFinalPathNameByHandle(handle, &buf[0], uint32(len(buf)), 0)
-	if err != nil {
-		return err
-	}
-	actual := strings.TrimPrefix(windows.UTF16ToString(buf[:n]), `\\?\`)
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(filepath.Clean(actual), filepath.Clean(abs)) {
-		return errors.New("Windows SSH runtime handle escaped its expected path")
-	}
-	var info windows.ByHandleFileInformation
-	if err := windows.GetFileInformationByHandle(handle, &info); err != nil {
-		return err
-	}
-	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		return errors.New("Windows SSH runtime path contains a reparse point")
-	}
-	if err := verifyPrivateSecurity(handle, owner); err != nil {
-		return err
-	}
-	var written uint32
-	if err := windows.WriteFile(handle, data, &written, nil); err != nil {
-		return err
-	}
-	return windows.FlushFileBuffers(handle)
-}
-
-// Replaces path with an owner and SYSTEM only protected DACL file, removing any existing one first
+// Replaces path through the SSH runtime writer with an owner and SYSTEM only protected DACL file
 func writePrivateText(path, text string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return writeNewPrivateFile(path, []byte(text))
+	return WritePrivateFile(path, []byte(text))
 }
 
 var hostSignalInstalled bool

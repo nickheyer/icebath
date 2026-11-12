@@ -15,8 +15,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	runEntryTestChild()
 	runTestChild()
-	DispatchComputeHostEntry(context.Background())
+	DispatchComputeHostEntry(context.Background(), func(code int) { AtExit(); os.Exit(code) })
 	hermetic.BlockExternalHTTP()
 	state.AdmissionMediaReferences = gateway.AdmissionMediaReferences
 	state.HostedDocumentReferences = gateway.HostedDocumentReferences

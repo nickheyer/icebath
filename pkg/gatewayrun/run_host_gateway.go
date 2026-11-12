@@ -2,7 +2,6 @@ package gatewayrun
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -418,12 +417,3 @@ func hostAttachOrNone(ctx context.Context, replace, force bool) (*bool, error) {
 
 // Pointer to a copy of b
 func boolRef(b bool) *bool { return &b }
-
-// Error is a SystemExit carrying its exit code
-func systemExitCode(err error) (int, bool) {
-	var exit *gateway.SystemExitError
-	if errors.As(err, &exit) {
-		return exit.Code, true
-	}
-	return 0, false
-}

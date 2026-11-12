@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -121,6 +124,12 @@ func (c *CLI) cmdClear(cmdOriginal string) {
 	plan := bannerPlan(c)
 	if plan.Banner == nil {
 		chatConsolePrint(buildCompactBanner())
+	} else if plan.Inventory != nil {
+		var bannerErr error
+		defaultChatConsole.emit(func(r *pyrich.Console) { bannerErr = c.showGatewayBanner(r, plan.Inventory, *plan.Banner) })
+		if bannerErr != nil {
+			panic(bannerErr)
+		}
 	} else {
 		kw := *plan.Banner
 		kw.Tools = toolDefinitionsFor(c, false)
@@ -221,7 +230,10 @@ func (c *CLI) recordModelFriction(signal string, turns int) {
 	}
 	opts := observability.FrictionOptions{SessionID: c.sessionID, Provider: c.provider, Model: c.model, Turns: turns}
 	if c.agent != nil {
-		opts.Agent = c.agent
+		opts.Provider, opts.Model = c.agent.Provider(), c.agent.Model()
+		if sid := c.agent.SessionID(); sid != "" {
+			opts.SessionID = sid
+		}
 	}
 	observability.RecordModelFriction(c.ctx, signal, opts)
 }
@@ -319,17 +331,20 @@ func (c *CLI) cmdPlugins(string) {
 		}
 		return
 	}
-	loaded := map[string]map[string]any{}
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				loaded = map[string]map[string]any{}
+	loaded, onGateway := gatewayLoadedPlugins(c)
+	if !onGateway {
+		loaded = map[string]map[string]any{}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					loaded = map[string]map[string]any{}
+				}
+			}()
+			for _, p := range plugins.GetPluginManager(c.ctx).ListPlugins() {
+				loaded[cliStr(p["name"], "")] = p
 			}
 		}()
-		for _, p := range plugins.GetPluginManager(c.ctx).ListPlugins() {
-			loaded[cliStr(p["name"], "")] = p
-		}
-	}()
+	}
 	printLines(c.t("cli.plugins.user_plugins_header", map[string]any{"count": len(userEntries)}))
 	for _, e := range userEntries {
 		status := listing.Status(h, e)
@@ -394,13 +409,71 @@ func queueItemText(item any) string {
 	return pyrepr.Str(item)
 }
 
-// Enqueues a prompt for the next turn with its paste references expanded
+// Gateway session store while this CLI is a viewer of the gateway's session, nil otherwise
+func (c *CLI) gatewayQueueStore() *gatewaycli.GatewaySessionStore {
+	if c.sessionID == "" {
+		return nil
+	}
+	return c.gatewayStore()
+}
+
+// One queue entry, the owner's admission id or empty for a turn waiting in the pending input
+type queueItem struct {
+	admission string
+	item      any
+}
+
+// The owner's queued admissions in its FIFO order, then the turns still waiting in the pending input
+func (c *CLI) queueItems() []queueItem {
+	var items []queueItem
+	if store := c.gatewayQueueStore(); store != nil {
+		for _, row := range queuedRows(c, store) {
+			items = append(items, queueItem{row.admission, row.text})
+		}
+	}
+	for _, item := range c.pendingInput.snapshot() {
+		items = append(items, queueItem{"", item})
+	}
+	return items
+}
+
+// Admissions of the owner's FIFO among the queue entries
+func ownedQueueCount(items []queueItem) int {
+	owned := 0
+	for _, item := range items {
+		if item.admission != "" {
+			owned++
+		}
+	}
+	return owned
+}
+
+// Enqueues a prompt, in the gateway's durable FIFO while a turn runs, else for the next local turn
 func (c *CLI) queueEnqueue(text string) {
 	payload, err := c.expandPasteReferences(text)
 	if err != nil {
 		panic(err)
 	}
-	c.pendingInput.Put(payload)
+	var store *gatewaycli.GatewaySessionStore
+	if c.agentRunning {
+		store = c.gatewayQueueStore()
+	}
+	if store != nil {
+		if _, err := submitQueued(c, store, payload); err != nil {
+			var unknown *QueueOutcomeUnknown
+			switch {
+			case errors.As(err, &unknown):
+				cprint("  " + c.t("cli.queue.submit_unknown", map[string]any{"error": err.Error()}))
+			case isGatewayClientError(err):
+				cprint("  " + c.t("cli.queue.gateway_refused", map[string]any{"error": err.Error()}))
+			default:
+				panic(err)
+			}
+			return
+		}
+	} else {
+		c.pendingInput.Put(payload)
+	}
 	key := "cli.queue.queued"
 	if c.agentRunning {
 		key = "cli.queue.queued_next_turn"
@@ -408,9 +481,9 @@ func (c *CLI) queueEnqueue(text string) {
 	cprint("  " + c.t(key, map[string]any{"preview": queuePreview(payload)}))
 }
 
-// Lists the queued prompts, voice ones tagged
+// Lists the owner's queued admissions then the local queue, voice items tagged
 func (c *CLI) queueList(rest string) {
-	items := c.pendingInput.snapshot()
+	items := c.queueItems()
 	if len(items) == 0 {
 		suffix := ""
 		if rest == "" {
@@ -420,19 +493,59 @@ func (c *CLI) queueList(rest string) {
 		return
 	}
 	cprint("  " + c.t("cli.queue.pending_header", map[string]any{"count": len(items)}))
-	for idx, item := range items {
+	for idx, entry := range items {
 		tag := ""
-		if _, voice := item.(*voiceInputMessage); voice {
+		if _, voice := entry.item.(*voiceInputMessage); voice {
 			tag = " [voice]"
 		}
-		cprint(fmt.Sprintf("    %d. %s%s", idx+1, queuePreview(strings.ReplaceAll(queueItemText(item), "\n", " ")), tag))
+		cprint(fmt.Sprintf("    %d. %s%s", idx+1, queuePreview(strings.ReplaceAll(queueItemText(entry.item), "\n", " ")), tag))
 	}
 }
 
-// Drops every queued prompt
+// Runs one owner verb on queued item index, printing its refusal in its own words
+func (c *CLI) queueGatewayCall(verb string, index int, call func(store *gatewaycli.GatewaySessionStore) (string, error)) string {
+	result, err := call(c.gatewayQueueStore())
+	if err == nil {
+		return result
+	}
+	var refused *gateway.GatewayRPCError
+	switch {
+	case errors.As(err, &refused):
+		if queueStartedRefusals[refused.Error()] {
+			cprint("  " + c.t("cli.queue.already_started", map[string]any{"index": index}))
+			break
+		}
+		key := "cli.queue.remove_refused"
+		if verb == "replace" {
+			key = "cli.queue.edit_refused"
+		}
+		cprint("  " + c.t(key, map[string]any{"index": index, "error": err.Error()}))
+	case isGatewayClientError(err):
+		cprint("  " + c.t("cli.queue.change_unknown", map[string]any{"index": index, "error": err.Error()}))
+	default:
+		panic(err)
+	}
+	return ""
+}
+
+// Cancels the owner's queued admissions and drops every local queued prompt
 func (c *CLI) queueClear(string) {
+	cleared := 0
+	idx := 0
+	for _, entry := range c.queueItems() {
+		if entry.admission == "" {
+			continue
+		}
+		idx++
+		admission := entry.admission
+		if c.queueGatewayCall("cancel", idx, func(store *gatewaycli.GatewaySessionStore) (string, error) {
+			return cancelQueued(c, store, admission)
+		}) == "cancelled" {
+			cleared++
+		}
+	}
 	before, _ := c.mutatePendingInput(func([]any) []any { return nil })
-	cleared := len(before)
+	cleared += len(before)
 	key := "cli.queue.cleared_other"
 	if cleared == 1 {
 		key = "cli.queue.cleared_one"
@@ -440,7 +553,7 @@ func (c *CLI) queueClear(string) {
 	cprint("  " + c.t(key, map[string]any{"count": cleared}))
 }
 
-// Removes the queued prompt at a one based index
+// Removes the queued prompt at a one based index, the owner's admissions first
 func (c *CLI) queueRemove(rest string) {
 	bits := strings.Fields(rest)
 	idx, ok := 0, false
@@ -451,11 +564,28 @@ func (c *CLI) queueRemove(rest string) {
 		cprint("  " + c.t("cli.queue.usage_remove", nil))
 		return
 	}
+	items := c.queueItems()
+	owned := ownedQueueCount(items)
+	if idx >= 1 && idx <= owned {
+		entry := items[idx-1]
+		switch c.queueGatewayCall("cancel", idx, func(store *gatewaycli.GatewaySessionStore) (string, error) {
+			return cancelQueued(c, store, entry.admission)
+		}) {
+		case "cancelled":
+			cprint("  " + c.t("cli.queue.removed", map[string]any{"index": idx, "preview": queuePreview(queueItemText(entry.item))}))
+		case "stopped":
+			cprint("  " + c.t("cli.queue.started_stopped", map[string]any{"index": idx}))
+		case "started":
+			cprint("  " + c.t("cli.queue.already_started", map[string]any{"index": idx}))
+		}
+		return
+	}
+	local := idx - owned
 	var removed []any
 	before, _ := c.mutatePendingInput(func(items []any) []any {
-		if idx >= 1 && idx <= len(items) {
-			removed = append(removed, items[idx-1])
-			return append(items[:idx-1], items[idx:]...)
+		if local >= 1 && local <= len(items) {
+			removed = append(removed, items[local-1])
+			return append(items[:local-1], items[local:]...)
 		}
 		return items
 	})
@@ -463,10 +593,10 @@ func (c *CLI) queueRemove(rest string) {
 		cprint("  " + c.t("cli.queue.removed", map[string]any{"index": idx, "preview": queuePreview(queueItemText(removed[0]))}))
 		return
 	}
-	cprint("  " + c.t("cli.queue.item_not_found", map[string]any{"index": idx, "size": len(before)}))
+	cprint("  " + c.t("cli.queue.item_not_found", map[string]any{"index": idx, "size": owned + len(before)}))
 }
 
-// Replaces the queued prompt at a one based index, a voice item keeping its voice marker
+// Replaces the queued prompt at a one based index, the owner admitting an edit at the back of its FIFO
 func (c *CLI) queueEdit(rest string) {
 	bits := pystr.SplitWhitespace(rest, 1)
 	idx, ok := 0, false
@@ -481,28 +611,40 @@ func (c *CLI) queueEdit(rest string) {
 	if err != nil {
 		panic(err)
 	}
+	items := c.queueItems()
+	owned := ownedQueueCount(items)
+	if idx >= 1 && idx <= owned {
+		admission := items[idx-1].admission
+		if c.queueGatewayCall("replace", idx, func(store *gatewaycli.GatewaySessionStore) (string, error) {
+			return replaceQueued(c, store, admission, newText)
+		}) != "" {
+			cprint("  " + c.t("cli.queue.updated", map[string]any{"index": idx, "preview": queuePreview(newText)}))
+		}
+		return
+	}
+	local := idx - owned
 	changed := false
 	before, _ := c.mutatePendingInput(func(items []any) []any {
-		if idx >= 1 && idx <= len(items) {
-			old := items[idx-1]
+		if local >= 1 && local <= len(items) {
+			old := items[local-1]
 			if _, voice := old.(*voiceInputMessage); voice {
-				items[idx-1] = &voiceInputMessage{Text: newText}
+				items[local-1] = &voiceInputMessage{Text: newText}
 				changed = true
 			} else {
 				changed = !pyrepr.Equal(old, newText)
-				items[idx-1] = newText
+				items[local-1] = newText
 			}
 		}
 		return items
 	})
 	if !changed {
-		cprint("  " + c.t("cli.queue.item_not_found", map[string]any{"index": idx, "size": len(before)}))
+		cprint("  " + c.t("cli.queue.item_not_found", map[string]any{"index": idx, "size": owned + len(before)}))
 		return
 	}
 	cprint("  " + c.t("cli.queue.updated", map[string]any{"index": idx, "preview": queuePreview(newText)}))
 }
 
-// Moves a queued prompt from one one based position to another
+// Moves a local queued prompt between one based positions, the owner's FIFO having no reorder verb
 func (c *CLI) queueMove(rest string) {
 	bits := strings.Fields(rest)
 	src, dst, ok := 0, 0, false
@@ -516,6 +658,12 @@ func (c *CLI) queueMove(rest string) {
 		cprint("  " + c.t("cli.queue.usage_move", nil))
 		return
 	}
+	owned := ownedQueueCount(c.queueItems())
+	if owned > 0 && min(src, dst) <= owned && src != dst {
+		cprint("  " + c.t("cli.queue.move_gateway_fifo", nil))
+		return
+	}
+	src, dst = src-owned, dst-owned
 	moved := false
 	before, _ := c.mutatePendingInput(func(items []any) []any {
 		if src >= 1 && src <= len(items) && dst >= 1 && dst <= len(items) {
@@ -527,10 +675,10 @@ func (c *CLI) queueMove(rest string) {
 		return items
 	})
 	if !moved && src != dst {
-		cprint("  " + c.t("cli.queue.move_out_of_range", map[string]any{"size": len(before)}))
+		cprint("  " + c.t("cli.queue.move_out_of_range", map[string]any{"size": owned + len(before)}))
 		return
 	}
-	cprint("  " + c.t("cli.queue.moved", map[string]any{"source": src, "destination": dst}))
+	cprint("  " + c.t("cli.queue.moved", map[string]any{"source": src + owned, "destination": dst + owned}))
 }
 
 // Handles /queue, managing the queue for a fitting verb and enqueueing anything else
@@ -585,7 +733,7 @@ func (c *CLI) cmdSteer(cmdOriginal string) {
 	case payload == "":
 		cprint("  " + c.t("cli.steer.usage", nil))
 	case c.agentRunning && c.agent != nil:
-		accepted, err := func() (ok bool, err error) {
+		accepted, err := func() (ok any, err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					err = asError(r)
@@ -596,7 +744,8 @@ func (c *CLI) cmdSteer(cmdOriginal string) {
 		switch {
 		case err != nil:
 			cprint("  " + c.t("cli.steer.failed", map[string]any{"error": err.Error()}))
-		case accepted:
+		case gatewayCorrectionVoiceStopped(accepted):
+		case accepted == true:
 			cprint("  " + c.t("cli.steer.queued", map[string]any{"preview": queuePreview(payload)}))
 		default:
 			cprint("  " + c.t("cli.steer.rejected_empty", nil))

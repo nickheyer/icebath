@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -252,9 +251,9 @@ func TestShowUsageMatchesReference(t *testing.T) {
 			c.sessionStart = time.Now().Add(-(3*time.Hour + 5*time.Minute))
 			c.conversationHistory = []map[string]any{{"role": "user", "content": "a"}, {"role": "user", "content": "a"}, {"role": "user", "content": "a"}, {"role": "user", "content": "a"}}
 			if tc.reading != nil {
-				c.agent = &agent.AIAgent{}
+				c.agent = &GatewayAgent{ctx: context.Background()}
 				reading := *tc.reading
-				swap(t, &readAgentUsage, func(*CLI, *agent.AIAgent) agentUsageReading { return reading })
+				swap(t, &readAgentUsage, func(*CLI, *GatewayAgent) agentUsageReading { return reading })
 			}
 			if tc.command != "" {
 				c.handleUsageCommand(tc.command)
@@ -390,8 +389,8 @@ func TestShowBannerWarningsMatchReference(t *testing.T) {
 			c, out := referenceCLI(t, ref.Columns)
 			t.Chdir(t.TempDir())
 			c.model, c.baseURL, c.enabledToolsets = tc.model, tc.baseURL, []string{"file"}
-			c.agent = &agent.AIAgent{}
-			swap(t, &readAgentUsage, func(*CLI, *agent.AIAgent) agentUsageReading {
+			c.agent = &GatewayAgent{ctx: context.Background()}
+			swap(t, &readAgentUsage, func(*CLI, *GatewayAgent) agentUsageReading {
 				return agentUsageReading{HasCompressor: true, ContextLength: tc.ctxLen}
 			})
 			swap(t, &toolDefinitionsFor, func(*CLI, bool) []map[string]any { return []map[string]any{} })

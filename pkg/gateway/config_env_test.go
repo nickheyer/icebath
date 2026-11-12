@@ -193,7 +193,7 @@ func TestBundledEnvRowsRunWithoutTheirPlugin(t *testing.T) {
 	os.MkdirAll(filepath.Join(bundled, "platforms", "zzchat"), 0o755)
 	os.WriteFile(filepath.Join(bundled, "platforms", "zzchat", "plugin.yaml"), []byte("name: zzchat\n"), 0o644)
 	resetPlatformMembers(t, bundled)
-	RegisterBundledEnv("zzchat", "", BundledEnvRows{
+	swapBundledEnv(t, "zzchat", "", BundledEnvRows{
 		Overrides: []EnvStep{
 			&EnvCred{Platform: "zzchat", Creds: [][]string{{"ZZCHAT_TOKEN"}, {"ZZCHAT_A", "ZZCHAT_B"}}, Token: "ZZCHAT_TOKEN",
 				Fixed: []EnvSpec{{Key: "url", Env: "ZZCHAT_URL", Default: "https://x/", Fn: StripSlash}, {Key: "id", AnyOf: []string{"ZZCHAT_A", "ZZCHAT_B"}, Default: "none"},
@@ -206,7 +206,6 @@ func TestBundledEnvRowsRunWithoutTheirPlugin(t *testing.T) {
 		EnableCredentials: []string{"ZZCHAT_TOKEN"},
 		Authz:             map[string]any{"allowed_users_env": "ZZCHAT_ALLOWED_USERS"},
 	})
-	t.Cleanup(func() { RegisterBundledEnv("zzchat", "", BundledEnvRows{}) })
 	for k, v := range map[string]string{"ZZCHAT_TOKEN": "tok", "ZZCHAT_B": "bee", "ZZCHAT_RETRIES": "x", "ZZCHAT_ALLOW": "  a  ",
 		"ZZCHAT_HOME": "h1", "ZZCHAT_HOME_NAME": "Main", "ZZCHAT_REPLY": "ALL", "ZZCHAT_PORT": "nope", "ZZCHAT_HOME2_THREAD_ID": "9"} {
 		t.Setenv(k, v)

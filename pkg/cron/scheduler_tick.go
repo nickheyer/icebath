@@ -178,7 +178,7 @@ func (s *Store) tickAdmitted(ctx context.Context, o tickOptions) (int, error) {
 		return 0, err
 	}
 	defer releaseTickLock(lockFD)
-	if estopCheckPaused != nil && estopCheckPaused("cron", s.log) {
+	if estopCheckPaused != nil && estopCheckPaused(ctx, "cron", s.log) {
 		return 0, nil
 	}
 	if o.CanDispatch != nil && !o.CanDispatch() {

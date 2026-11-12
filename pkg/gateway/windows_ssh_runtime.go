@@ -875,6 +875,17 @@ func DispatchWindowsSSHRuntime(ctx context.Context, argv []string) (any, error) 
 	return entry.run(ctx, argv[1:])
 }
 
+// Argv word running the hermes_cli.windows_ssh_runtime module entry the Desktop SSH remote launches
+const WindowsSSHRuntimeEntry = "__icebath_windows_ssh_runtime__"
+
+// Runs one Windows SSH runtime operation and exits with its status when argv carries the entry word
+func DispatchWindowsSSHRuntimeEntry(ctx context.Context, exit func(int)) {
+	if len(os.Args) < 2 || os.Args[1] != WindowsSSHRuntimeEntry {
+		return
+	}
+	exit(WindowsSSHRuntimeMain(ctx, os.Args[2:], os.Stdout, os.Stderr))
+}
+
 // Prints the compact JSON result of one operation, or its error on stderr with exit status one
 func WindowsSSHRuntimeMain(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	result, err := DispatchWindowsSSHRuntime(ctx, argv)

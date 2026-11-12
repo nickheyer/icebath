@@ -459,9 +459,9 @@ func (t *WebSocketRelayTransport) dial(ctx context.Context) (*relayConn, error) 
 	}
 	dctx, cancel := context.WithTimeout(ctx, relayWSOpenTimeout)
 	defer cancel()
-	ws, _, err := dialer.DialContext(dctx, t.url, header)
+	ws, resp, err := dialer.DialContext(dctx, t.url, header)
 	if err != nil {
-		return nil, err
+		return nil, HandshakeError(resp, err)
 	}
 	ws.SetReadLimit(relayWSMaxSize)
 	c := &relayConn{ws: ws, closed: make(chan struct{}), pongs: make(chan string, 1)}

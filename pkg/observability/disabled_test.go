@@ -37,10 +37,6 @@ func captureDisabled(t *testing.T) *disabledMarks {
 		surfaceMu.Lock()
 		processSurface = savedSurface
 		surfaceMu.Unlock()
-		for _, name := range []string{"bundled_platform_names", "bundled_skill_names"} {
-			SetCatalogSource(name, nil)
-		}
-		SetCatalogSource("bundled_plugin_names", bundledPluginNames)
 		ResetCatalogCaches()
 	})
 	relayEnabled = func(context.Context) bool {
@@ -54,10 +50,9 @@ func captureDisabled(t *testing.T) *disabledMarks {
 		m.rows = append(m.rows, Mark{mark, data})
 	}
 	pluginToolsetKeys = func(context.Context) map[string]bool { return map[string]bool{} }
-	SetCatalogSource("bundled_platform_names", func() ([]string, error) { return []string{"telegram"}, nil })
-	SetCatalogSource("bundled_plugin_names", func() ([]string, error) { return []string{"disk-cleanup", "telegram"}, nil })
-	SetCatalogSource("bundled_skill_names", func() ([]string, error) { return []string{"arxiv"}, nil })
-	ResetCatalogCaches()
+	setCatalog(t, "bundled_platform_names", "telegram")
+	setCatalog(t, "bundled_plugin_names", "disk-cleanup", "telegram")
+	setCatalog(t, "bundled_skill_names", "arxiv")
 	return m
 }
 

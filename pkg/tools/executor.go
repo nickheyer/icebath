@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -60,7 +61,7 @@ var sequentialDeadlineExemptTools = map[string]bool{"delegate_task": true, "mana
 // Rounds made only of these mute tool progress
 var HousekeepingTools = map[string]bool{"memory": true, "todo_list": true, "skill_manage": true, "session_search": true}
 
-var userInterruptReasons = map[string]bool{ReasonUserInterrupt: true}
+var userInterruptReasons = map[string]bool{"explicit stop requested": true, "user sent a new message": true, ReasonUserInterrupt: true}
 
 // Normalizes a timeout, non positive or NaN means unbounded, else capped at the platform safe maximum
 func clampTimeoutSeconds(seconds float64, ok bool) time.Duration {
@@ -156,7 +157,7 @@ func InterruptSkipWording(reason string) string {
 		return "Turn interrupted"
 	}
 	if userInterruptReasons[reason] {
-		return strings.ToUpper(reason[:1]) + reason[1:]
+		return pystr.Capitalize(reason)
 	}
 	return "Turn aborted — " + strings.ReplaceAll(reason, "_", " ")
 }

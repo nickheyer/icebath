@@ -609,5 +609,5 @@ func forceAdhocMacosSigning(env map[string]string, sourceMode bool) bool {
 // Python exception of a desktop step carrying its class and message
 type desktopPyError struct{ name, msg string }
 
-func (e desktopPyError) Error() string         { return e.msg }
-func (e desktopPyError) ExceptionName() string { return e.name }
+func (e desktopPyError) Error() string      { return e.msg }
+func (e desktopPyError) PyTypeName() string { return e.name }

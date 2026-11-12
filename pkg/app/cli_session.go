@@ -5,13 +5,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -74,28 +72,6 @@ func (c *CLI) clearTerminalOnExit() {
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.SysProcAttr = tools.WindowsHideAttr()
 	_ = cmd.Run()
-}
-
-// Flushes the agent's live transcript before the session row ends, a failure only logged
-func (c *CLI) persistActiveSessionBeforeClose() {
-	a := c.agent
-	if a == nil {
-		return
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("Could not persist active CLI session before close: %v", r))
-		}
-	}()
-	if !a.PersistActiveSessionBeforeClose(c.ctx, func() []map[string]any { return c.conversationHistory }) {
-		return
-	}
-	if sessionID := a.SessionID(); sessionID != "" {
-		if sessionID != c.sessionID {
-			c.sessionID = sessionID
-		}
-		c.writeTerminalBreadcrumb()
-	}
 }
 
 // Prints the session resume commands, title, duration and message counts on exit
@@ -222,7 +198,7 @@ func (c *CLI) discardSessionIfEmpty(sessionID string) bool {
 	if c.sessionDB == nil || sessionID == "" || len(c.conversationHistory) > 0 {
 		return false
 	}
-	removed, err := c.sessionDB.DeleteSessionIfEmpty(c.ctx, sessionID, filepath.Join(home.Dir(c.ctx), "sessions"))
+	removed, err := c.sessionDB.DeleteSessionIfEmpty(c.ctx, sessionID)
 	if err != nil {
 		cliLogger.Debug(fmt.Sprintf("Could not prune empty session %s", sessionID), "error", err)
 		return false

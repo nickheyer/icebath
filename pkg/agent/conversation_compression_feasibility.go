@@ -40,9 +40,6 @@ func engineContextLength(e ContextEngine) int {
 	return e.Base().ContextLength
 }
 
-// EngineContextLength is the resolved window of any context engine
-func EngineContextLength(e ContextEngine) int { return engineContextLength(e) }
-
 // Stores and emits a feasibility verdict once per distinct text
 func emitFeasibilityNotice(a *AIAgent, msg string) {
 	if a.lastFeasibilityNotice != nil && *a.lastFeasibilityNotice == msg {

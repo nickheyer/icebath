@@ -43,10 +43,11 @@ var Banner struct {
 	UpdateResult    func(timeout time.Duration) *int64
 }
 
-// Launch home captured at start, the launch state db handle and the homes served besides the launch one
+// Launch home captured on first use, the launch state db handle and the homes served besides the launch one
 var (
-	hermesHome         = home.Process()
-	hermesHomeAtImport = hermesHome
+	hermesHome         string
+	hermesHomeAtImport string
+	homeImportOnce     sync.Once
 	dbMu               sync.Mutex
 	sharedDB           *state.DB
 	dbError            string
@@ -63,9 +64,20 @@ func LaunchHome() string { return launchHome() }
 // Named profile home on this host, empty for the launch profile, an error naming an unknown profile
 func ProfileHome(profile string) (string, error) { return profileHome(profile) }
 
+// Home captured on the first read after the profile override, the value tui_gateway.server takes at import
+func importedHome() string {
+	homeImportOnce.Do(func() {
+		if hermesHome == "" {
+			hermesHome = home.Process()
+			hermesHomeAtImport = hermesHome
+		}
+	})
+	return hermesHome
+}
+
 // Launch profile home at call time, the swapped copy when a harness changed it else the live process home
 func launchHome() string {
-	if hermesHome != hermesHomeAtImport {
+	if importedHome() != hermesHomeAtImport {
 		return hermesHome
 	}
 	return home.Process()
@@ -132,7 +144,7 @@ func profileHome(profile string) (string, error) {
 	if err != nil || dir == "" || !isDir(dir) {
 		return "", &ProfileUnavailableError{fmt.Sprintf("Profile '%s' does not exist.", name)}
 	}
-	if resolveLax(dir) == resolveLax(hermesHome) {
+	if resolveLax(dir) == resolveLax(importedHome()) {
 		return "", nil
 	}
 	servedProfileMu.Lock()
@@ -204,7 +216,7 @@ func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 
 // Launch profile terminal cwd read by path, never through the active home override
 func launchConfiguredCwd(ctx context.Context) string {
-	return profileConfiguredCwd(ctx, hermesHome)
+	return profileConfiguredCwd(ctx, importedHome())
 }
 
 // Fallback cwd with no explicit, stored or profile cwd, the configured terminal cwd else the process cwd

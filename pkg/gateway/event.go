@@ -138,6 +138,7 @@ type MessageEvent struct {
 	fifoOnly               bool
 	stopEpoch              int
 	slashCommandCounted    bool
+	replyGuard             sync.Locker
 
 	lastChunkLen int
 }
@@ -147,7 +148,32 @@ func NewMessageEvent(text string) *MessageEvent {
 	return &MessageEvent{Text: text, MessageType: MessageTypeText, Metadata: map[string]any{}, Timestamp: time.Now(), AllowGatewayControl: true}
 }
 
-// Takes the other event's reply expectation unless this one is addressed or the other is not
+// Binds the lock of the running turn that owns the reply fields, the first binding kept for the event's life
+func (e *MessageEvent) GuardReplyFields(guard sync.Locker) {
+	if e.replyGuard == nil {
+		e.replyGuard = guard
+	}
+}
+
+// Reply anchor override, ledger id and reply expectation copied under the bound turn lock when one is bound
+func (e *MessageEvent) ReplyFields() (anchorOverride, ledgerID *string, replyExpected *bool) {
+	if e.replyGuard != nil {
+		e.replyGuard.Lock()
+		defer e.replyGuard.Unlock()
+	}
+	return e.ReplyAnchorOverride, e.LedgerMessageID, e.ReplyExpected
+}
+
+// Stores the ledger id that keys the final send, under the bound turn lock when one is bound
+func (e *MessageEvent) SetLedgerMessageID(id *string) {
+	if e.replyGuard != nil {
+		e.replyGuard.Lock()
+		defer e.replyGuard.Unlock()
+	}
+	e.LedgerMessageID = id
+}
+
+// Takes the other event's reply expectation unless this one is addressed or the other is not under the caller's lock
 func (e *MessageEvent) AbsorbReplyExpected(other *MessageEvent) {
 	if (e.ReplyExpected == nil || !*e.ReplyExpected) && (other.ReplyExpected == nil || *other.ReplyExpected) {
 		e.ReplyExpected = other.ReplyExpected

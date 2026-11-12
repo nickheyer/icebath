@@ -100,10 +100,6 @@ func wallNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Notifies once per stall episode for pending inbound sessions and returns the notices sent
 func (r *GatewayRunner) checkSessionStalls(ctx context.Context, timeoutSeconds float64) (int, error) {
-	if r.sessionStallNotified == nil {
-		r.sessionStallNotified = map[string]bool{}
-	}
-	notified := r.sessionStallNotified
 	sent, now := 0, wallNow()
 	candidates, err := r.stallCandidates(ctx)
 	if err != nil {
@@ -113,15 +109,15 @@ func (r *GatewayRunner) checkSessionStalls(ctx context.Context, timeoutSeconds f
 		activity := r.sessionActivityForStall(key)
 		idle := gateway.ResolveSessionIdleSecondsFromActivity(activity, &now)
 		if gateway.ShouldClearSessionStallNotification(timeoutSeconds, idle, true) {
-			delete(notified, key)
+			r.setStallNotified(key, false)
 		}
-		if idle == nil || !gateway.ShouldEmitSessionStallNotification(timeoutSeconds, idle, true, notified[key]) {
+		if idle == nil || !gateway.ShouldEmitSessionStallNotification(timeoutSeconds, idle, true, r.stallNotified(key)) {
 			continue
 		}
 		if activity == nil {
 			activity = map[string]any{}
 		}
-		ok, err := r.notifySessionStall(ctx, key, c.adapter, c.event, *idle, activity, timeoutSeconds, notified)
+		ok, err := r.notifySessionStall(ctx, key, c.adapter, c.event, *idle, activity, timeoutSeconds)
 		if err != nil {
 			return sent, err
 		}
@@ -129,12 +125,35 @@ func (r *GatewayRunner) checkSessionStalls(ctx context.Context, timeoutSeconds f
 			sent++
 		}
 	}
-	for key := range notified {
+	r.sessionStallMu.Lock()
+	for key := range r.sessionStallNotified {
 		if _, live := candidates[key]; !live {
-			delete(notified, key)
+			delete(r.sessionStallNotified, key)
 		}
 	}
+	r.sessionStallMu.Unlock()
 	return sent, nil
+}
+
+// Latches or clears the stall notice of a session under the stall lock, creating the latch map when absent
+func (r *GatewayRunner) setStallNotified(sessionKey string, latched bool) {
+	r.sessionStallMu.Lock()
+	defer r.sessionStallMu.Unlock()
+	if !latched {
+		delete(r.sessionStallNotified, sessionKey)
+		return
+	}
+	if r.sessionStallNotified == nil {
+		r.sessionStallNotified = map[string]bool{}
+	}
+	r.sessionStallNotified[sessionKey] = true
+}
+
+// Whether the stall notice of the session is latched for the current episode, read under the stall lock
+func (r *GatewayRunner) stallNotified(sessionKey string) bool {
+	r.sessionStallMu.Lock()
+	defer r.sessionStallMu.Unlock()
+	return r.sessionStallNotified[sessionKey]
 }
 
 // First truthy value of an activity summary among keys, unknown when none is
@@ -148,7 +167,7 @@ func activityText(activity map[string]any, keys ...string) string {
 }
 
 // Logs one stall episode and delivers its notice, true only when sent and latched
-func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey string, adapter gateway.PlatformAdapter, pending *gateway.MessageEvent, idleSeconds float64, activity map[string]any, timeoutSeconds float64, notified map[string]bool) (bool, error) {
+func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey string, adapter gateway.PlatformAdapter, pending *gateway.MessageEvent, idleSeconds float64, activity map[string]any, timeoutSeconds float64) (bool, error) {
 	runLog().Warn(fmt.Sprintf("Session stall detected: session=%s idle=%.0fs (timeout=%.0fs, ~%d min); pending "+
 		"inbound present | last_activity=%s | provenance=%s (agent.session_stall_timeout)",
 		sessionKey, idleSeconds, timeoutSeconds, max(1, int(idleSeconds/60)),
@@ -160,7 +179,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 	}
 	if source == nil || source.ChatID == "" {
 		runLog().Warn(fmt.Sprintf("Session stall notify skipped (no chat_id): session=%s", sessionKey))
-		notified[sessionKey] = true
+		r.setStallNotified(sessionKey, true)
 		return false, nil
 	}
 	slotted, _ := adapter.Base().PeekPendingMessage(sessionKey)
@@ -176,7 +195,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 		}
 		runLog().Info(fmt.Sprintf("Session stall notify aborted (no longer stale): session=%s pending=%s fresh_idle=%s",
 			sessionKey, pyrepr.Str(stillPending), pyrepr.Str(fresh)))
-		delete(notified, sessionKey)
+		r.setStallNotified(sessionKey, false)
 		return false, nil
 	}
 	err := func() error {
@@ -205,7 +224,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 			return err
 		}
 		if !presented {
-			notified[sessionKey] = true
+			r.setStallNotified(sessionKey, true)
 			return errStallSuppressed
 		}
 		if result != nil && !result.Success {
@@ -227,7 +246,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 		runLog().Warn(fmt.Sprintf("Session stall notify failed for %s: %s", sessionKey, err.Error()))
 		return false, nil
 	}
-	notified[sessionKey] = true
+	r.setStallNotified(sessionKey, true)
 	return true, nil
 }
 

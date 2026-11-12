@@ -379,7 +379,7 @@ func cfgGetMtime(ctx context.Context, params map[string]any) (out map[string]any
 			out = map[string]any{"mtime": 0}
 		}
 	}()
-	version, err := config.ConfigVersionOrNone(ctx, filepath.Join(hermesHome, "config.yaml"))
+	version, err := config.ConfigVersionOrNone(ctx, filepath.Join(importedHome(), "config.yaml"))
 	if err != nil {
 		return map[string]any{"mtime": 0}
 	}
@@ -390,7 +390,7 @@ func cfgGetMtime(ctx context.Context, params map[string]any) (out map[string]any
 var configGetters = map[string]func(ctx context.Context, params map[string]any) map[string]any{
 	"provider": cfgGetProvider,
 	"profile": func(ctx context.Context, params map[string]any) map[string]any {
-		return map[string]any{"home": hermesHome, "display": home.Display(home.Dir(ctx))}
+		return map[string]any{"home": importedHome(), "display": home.Display(home.Dir(ctx))}
 	},
 	"project": cfgGetProject,
 	"full": func(ctx context.Context, params map[string]any) map[string]any {

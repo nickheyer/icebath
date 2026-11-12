@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Handles /bundles, the installed skill bundles rendered in session
@@ -133,61 +132,14 @@ func (c *CLI) heartbeatSet(mgr *agent.HeartbeatManager, arg string) {
 		dimLine(c.commandsT("heartbeat.set_note", nil)))
 }
 
-// Handles /refine, the memory and skill review fork run on demand with optional focus
+// Answers /refine off the gateway, where no agent exists yet, the gateway running it whenever a session is open
 func (c *CLI) handleRefineCommand(cmd string) {
-	focus := commandArg(cmd, false)
-	if c.agent == nil {
-		cp(dimLine(c.commandsT("refine.nothing_yet", nil)))
-		return
-	}
-	snapshot := append([]map[string]any(nil), c.conversationHistory...)
-	if len(snapshot) == 0 {
-		cp(dimLine(c.commandsT("refine.empty", nil)))
-		return
-	}
-	var focusArg *string
-	if focus != "" {
-		focusArg = &focus
-	}
-	err := func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = asError(r)
-			}
-		}()
-		c.agent.SpawnExplicitBackgroundReview(c.ctx, snapshot, true, c.agent.ValidToolNames()["skill_manage"], focusArg)
-		return nil
-	}()
-	if err != nil {
-		cp("  " + c.commandsT("refine.failed", map[string]any{"error": err.Error()}))
-		return
-	}
-	tail := ""
-	if focus != "" {
-		tail = c.commandsT("refine.focus_suffix", map[string]any{"focus": focus})
-	}
-	cp("  " + c.commandsT("refine.started", map[string]any{"focus": tail}))
+	cp(dimLine(c.commandsT("refine.nothing_yet", nil)))
 }
 
-// Handles /review, an independent reviewer subagent over the recent messages
+// Answers /review off the gateway, where no agent exists yet, the gateway running it whenever a session is open
 func (c *CLI) handleReviewCommand(cmd string) {
-	prompt := commandArg(cmd, false)
-	if c.agent == nil {
-		cp(dimLine(c.commandsT("review.nothing_yet", nil)))
-		return
-	}
-	snapshot := append([]map[string]any(nil), c.conversationHistory...)
-	defer func() {
-		if r := recover(); r != nil {
-			cp("  " + c.commandsT("review.failed", map[string]any{"error": errorText(r)}))
-		}
-	}()
-	result, err := tools.StartReview(c.ctx, c.env, c.agent, snapshot, prompt)
-	if err != nil {
-		cp(dimLine(err.Error()))
-		return
-	}
-	cp("  " + tools.FormatDispatchNote(result, prompt))
+	cp(dimLine(c.commandsT("review.nothing_yet", nil)))
 }
 
 // Handles /goal through the shared goal dispatcher, a returned prompt queued as the next turn

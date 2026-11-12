@@ -19,10 +19,8 @@ func cleanSubagentRegistry(t *testing.T) {
 }
 
 // Agent owning children under the session id
-func ownerAgent(sessionID string) *agent.AIAgent {
-	a := &agent.AIAgent{}
-	a.SetSessionID(sessionID)
-	return a
+func ownerAgent(t *testing.T, sessionID string) *GatewayAgent {
+	return offlineAgent(t, &CLI{ctx: context.Background(), sessionID: sessionID})
 }
 
 // Child double whose steer text is recorded
@@ -34,7 +32,7 @@ func (s steerableChild) Steer(text string) bool {
 }
 
 // CLI holding only the agent, session and pending queue the dock reads
-func dockCLI(t *testing.T, a *agent.AIAgent, sessionID string) *CLI {
+func dockCLI(t *testing.T, a *GatewayAgent, sessionID string) *CLI {
 	t.Helper()
 	recordPrints(t)
 	c := bareCLI()
@@ -61,7 +59,7 @@ func TestDockScopesChildrenAndFitsShortNarrowTerminal(t *testing.T) {
 			"goal": strings.Repeat("Check 界", 20), "started_at": 10.0, "status": "running", "last_tool": "read_file"})
 	}
 	agent.RegisterSubagent(map[string]any{"subagent_id": "foreign", "owner_agent_session_id": "other", "goal": "SECRET"})
-	c := dockCLI(t, ownerAgent("owner"), "")
+	c := dockCLI(t, ownerAgent(t, "owner"), "")
 	dock := newSubagentMonitor(c)
 	if !dock.refreshAt(20) {
 		t.Fatal("first refresh unchanged")
@@ -108,7 +106,7 @@ func TestMonitorControlsRecheckOwnershipAndKeepSelection(t *testing.T) {
 	var delivered []string
 	agent.RegisterSubagent(map[string]any{"subagent_id": "mine", "owner_agent_session_id": "owner", "goal": "Check module",
 		"started_at": 10.0, "status": "running", "agent": steerableChild{delivered: &delivered}})
-	owner := ownerAgent("owner")
+	owner := ownerAgent(t, "owner")
 	dock := newSubagentMonitor(dockCLI(t, owner, ""))
 	dock.refreshAt(20)
 	dock.selectBy(1)
@@ -169,7 +167,7 @@ func TestDockPaintsProcessesUnderAgentsAndRetiresFinishedRows(t *testing.T) {
 		tools.DefaultProcessRegistry().ListSessions(ctx, nil, "", "", false)
 		return processExited(quick.ID)
 	})
-	c := dockCLI(t, ownerAgent("owner"), "")
+	c := dockCLI(t, ownerAgent(t, "owner"), "")
 	dock := newSubagentMonitor(c)
 	if !dock.refreshAt(nowSeconds()) {
 		t.Fatal("refresh unchanged")
@@ -222,7 +220,7 @@ func TestDockPaintsProcessesUnderAgentsAndRetiresFinishedRows(t *testing.T) {
 	if strings.Contains(collapsed, "\n") || !strings.Contains(collapsed, want) {
 		t.Fatalf("collapsed %q", collapsed)
 	}
-	later := processRows(ctx, nil, nowSeconds()+processDockRetainSeconds+1)
+	later := processRows(ctx, localProcessRegistry{}, nowSeconds()+processDockRetainSeconds+1)
 	if len(later) != 1 || later[0]["id"] != slow.ID {
 		t.Fatalf("rows after the window %v", later)
 	}

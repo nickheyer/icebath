@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds a finished process stays on the dock before it leaves
@@ -53,16 +52,14 @@ func processStatus(entry map[string]any) string {
 }
 
 // Running processes plus those exited within the retain window, running ones longest first
-func processRows(ctx context.Context, env *tools.Env, now float64) []map[string]any {
-	registry := tools.DefaultProcessRegistry()
+func processRows(ctx context.Context, registry cliProcessRegistry, now float64) []map[string]any {
 	var rows []map[string]any
-	for _, entry := range registry.ListSessions(ctx, env, "", "", false) {
+	for _, entry := range registry.listSessions(ctx) {
 		id, _ := entry["session_id"].(string)
-		proc := registry.Get(env, id)
-		if proc == nil {
+		f, found := registry.get(id)
+		if !found {
 			continue
 		}
-		f := proc.DockFields()
 		status := processStatus(entry)
 		exitedAt := 0.0
 		if status != "running" {
@@ -126,12 +123,12 @@ func processGlyph(row map[string]any) string {
 }
 
 // Printable last 32KiB of a process's output
-func processTail(ctx context.Context, env *tools.Env, processID string) string {
-	proc := tools.DefaultProcessRegistry().Get(env, processID)
-	if proc == nil {
+func processTail(ctx context.Context, registry cliProcessRegistry, processID string) string {
+	fields, found := registry.get(processID)
+	if !found {
 		return i18n.T(ctx, "cli.dock.process_gone", "", nil)
 	}
-	text := []rune(proc.DockFields().OutputBuffer)
+	text := []rune(fields.OutputBuffer)
 	if len(text) > 32768 {
 		text = text[len(text)-32768:]
 	}
@@ -148,8 +145,8 @@ func processTail(ctx context.Context, env *tools.Env, processID string) string {
 }
 
 // Kills a dock process through the registry and returns its result
-func killDockProcess(ctx context.Context, env *tools.Env, processID string) map[string]any {
-	return tools.DefaultProcessRegistry().KillProcess(ctx, env, processID, "process.kill", true)
+func killDockProcess(ctx context.Context, registry cliProcessRegistry, processID string) map[string]any {
+	return registry.killProcess(ctx, processID)
 }
 
 // Wall clock seconds as a float

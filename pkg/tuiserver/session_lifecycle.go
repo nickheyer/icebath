@@ -76,11 +76,6 @@ func notifySessionBoundary(ctx context.Context, eventType string, sessionID *str
 	return []string{}
 }
 
-// Claims the active session slot of a live session, failing closed with the ownership refusal when the claim errors
-func claimActiveSessionSlot(ctx context.Context, sessionKey, liveSessionID, surface, profileHome string) (*activesessions.Lease, *string) {
-	return tuigateway.ClaimActiveSessionSlot(ctx, sessionKey, liveSessionID, surface, profileHome)
-}
-
 // Adopts the parent slot as an inert token on a compute host child whose frame vouches for this id
 func installBorrowedLease(sid string, session *tuigateway.Session, frame map[string]any) {
 	vouch, isDict := frame["active_session_lease"].(map[string]any)

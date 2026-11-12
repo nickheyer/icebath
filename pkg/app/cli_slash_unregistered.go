@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -31,19 +32,40 @@ func (c *CLI) processUnregisteredSlash(cmdOriginal, cmdLower string) bool {
 	if entry, ok := quickCommands[bare]; ok {
 		return c.runQuickCommand(baseCmd, entry, userArgs)
 	}
+	plugin, err := gatewayPluginLookup(c, bare)
+	if err != nil {
+		var unavailable *CatalogUnavailable
+		if errors.As(err, &unavailable) {
+			return true
+		}
+		panic(err)
+	}
+	gone := false
 	skillCommands := sessionSkillCommands(c)
-	if getPluginCmdHandlerNames(c.ctx)[bare] {
-		c.runPluginSlashCommand(baseCmd, userArgs)
-		return true
+	if (plugin != nil && *plugin) || (plugin == nil && getPluginCmdHandlerNames(c.ctx)[bare]) {
+		gone = c.runPluginSlashCommand(baseCmd, userArgs) == pluginGone
+		if !gone {
+			return true
+		}
+		skillCommands = sessionSkillCommands(c)
 	}
 	if info, ok := skillBundles[baseCmd]; ok {
 		c.runSkillBundleCommand(baseCmd, info, userArgs)
 	} else if info, ok := skillCommands[baseCmd]; ok {
 		c.runSkillSlashCommand(baseCmd, info, userArgs)
-	} else {
+	} else if !(gone && reportGatewayCommandGone(bare, skillsAsAny(skillCommands), skillsAsAny(skillBundles))) {
 		return c.expandSlashPrefix(cmdOriginal, cmdLower, skillCommands, skillBundles)
 	}
 	return true
+}
+
+// Skill command table as a name keyed map for the gone report's prefix check
+func skillsAsAny(table skills.SkillCommands) map[string]any {
+	out := make(map[string]any, len(table))
+	for key, info := range table {
+		out[key] = info
+	}
+	return out
 }
 
 // Runs a config quick command, exec through a sanitized shell and alias by dispatching its target
@@ -89,10 +111,13 @@ func (c *CLI) runQuickCommand(baseCmd string, raw any, userArgs string) bool {
 }
 
 // Runs an in process plugin slash command with the clarify panel answering its choices
-func (c *CLI) runPluginSlashCommand(baseCmd, userArgs string) {
+func (c *CLI) runPluginSlashCommand(baseCmd, userArgs string) pluginRunOutcome {
+	if answered := runGatewayPluginCommand(c, pystr.LstripChars(baseCmd, "/"), userArgs); answered != pluginNotRun {
+		return answered
+	}
 	handler, ok := plugins.GetPluginCommandHandler(c.ctx, pystr.LstripChars(baseCmd, "/"))
 	if !ok || handler == nil {
-		return
+		return pluginNotRun
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -112,6 +137,7 @@ func (c *CLI) runPluginSlashCommand(baseCmd, userArgs string) {
 	if pyrepr.Truthy(result) {
 		cprint(pyrepr.Str(result))
 	}
+	return pluginNotRun
 }
 
 // Queues a loaded skill message as the next turn
@@ -145,6 +171,9 @@ func (c *CLI) queueLoadedSkills(msg, label string, missing []string) {
 
 // Loads one skill or a stack of up to five leading skills with the instruction after them
 func (c *CLI) runSkillSlashCommand(baseCmd string, info map[string]any, rest string) {
+	if runGatewaySkill(c, baseCmd, rest) {
+		return
+	}
 	scope := skillsScope(c.ctx)
 	extra, instruction, err := scope.SplitStackedSkillCommands(c.ctx, rest, true)
 	if err != nil {
@@ -256,9 +285,6 @@ func (c *CLI) showConfig() {
 		configPath, configStatus = backend.Describe(c.ctx, h), ""
 	}
 	displayKey := c.apiKey
-	if c.agent != nil && c.agent.APIKey() != "" {
-		displayKey = c.agent.APIKey()
-	}
 	apiKeyDisplay := c.t("cli.config.api_key_not_set", nil)
 	if label := provider.CredentialLabel(displayKey); label != "" {
 		apiKeyDisplay = label

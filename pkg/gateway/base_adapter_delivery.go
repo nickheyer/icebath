@@ -124,8 +124,8 @@ func (b *BasePlatformAdapter) recordDeliveryObligation(ctx context.Context, even
 		}
 		source := event.Source
 		ref := ""
-		if event.LedgerMessageID != nil {
-			ref = *event.LedgerMessageID
+		if _, ledgerID, _ := event.ReplyFields(); ledgerID != nil {
+			ref = *ledgerID
 		} else if event.MessageID != nil {
 			ref = *event.MessageID
 		}

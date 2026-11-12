@@ -9,7 +9,7 @@ import (
 func TestWorkerPersistenceErrorCarriesTheReasonAndClass(t *testing.T) {
 	err := NewWorkerPersistenceError("worker_cron_registration_required")
 	var wp *WorkerPersistenceError
-	if !errors.As(err, &wp) || err.Error() != "worker_cron_registration_required" || wp.ExceptionName() != "WorkerPersistenceError" {
+	if !errors.As(err, &wp) || err.Error() != "worker_cron_registration_required" || wp.PyTypeName() != "WorkerPersistenceError" {
 		t.Fatalf("err = %#v", err)
 	}
 }

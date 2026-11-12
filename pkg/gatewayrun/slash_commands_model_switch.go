@@ -162,11 +162,8 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	if oneTurn {
 		onceNote = "This override applies to the next turn only. "
 	}
-	if r.pendingModelNotes == nil {
-		r.pendingModelNotes = map[string]string{}
-	}
-	r.pendingModelNotes[sw.SessionKey] = fmt.Sprintf("[Note: model was just switched from %s to %s via %s. %sAdjust your self-identification accordingly.]",
-		provider.FormatModelForDisplay(sw.CurrentModel), provider.FormatModelForDisplay(result.NewModel), via, onceNote)
+	r.stageSessionNote(&r.pendingModelNotes, sw.SessionKey, fmt.Sprintf("[Note: model was just switched from %s to %s via %s. %sAdjust your self-identification accordingly.]",
+		provider.FormatModelForDisplay(sw.CurrentModel), provider.FormatModelForDisplay(result.NewModel), via, onceNote))
 	requestOverrides := map[string]any{}
 	for k, v := range result.RequestOverrides {
 		requestOverrides[k] = v

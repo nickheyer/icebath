@@ -53,7 +53,10 @@ func TestStartAndQuitClosesTheGatewaySessionWithNoAgent(t *testing.T) {
 
 func TestNewSessionIdOffTheGatewayIsMainsMint(t *testing.T) {
 	host := &CLI{}
-	minted := host.newSessionID(time.Date(2026, 10, 12, 1, 2, 3, 0, time.Local))
+	minted, err := host.newSessionID(time.Date(2026, 10, 12, 1, 2, 3, 0, time.Local), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasPrefix(minted, "20261012_010203_") {
 		t.Fatalf("minted %q", minted)
 	}

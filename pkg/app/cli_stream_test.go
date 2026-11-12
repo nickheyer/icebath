@@ -99,7 +99,7 @@ func configuredCLI(t *testing.T, display map[string]any, o CLIOptions) *CLI {
 	}
 	t.Cleanup(func() {
 		if c.sessionDB != nil {
-			_ = c.sessionDB.Close()
+			c.sessionDB.Close()
 		}
 	})
 	return c
@@ -592,8 +592,8 @@ func TestReasoningDisplayModeSelection(t *testing.T) {
 		c.showReasoning, c.streamingEnabled = true, true
 		var got []string
 		c.streamReasoningDeltaHook = func(text string) { got = append(got, text) }
-		cb, ok := c.currentReasoningCallback().(func(string))
-		if !ok {
+		cb := c.currentReasoningCallback()
+		if cb == nil {
 			t.Fatal("no callback")
 		}
 		cb("x")
@@ -605,8 +605,8 @@ func TestReasoningDisplayModeSelection(t *testing.T) {
 		recordPrints(t)
 		c := bareCLI()
 		c.verbose = true
-		cb, ok := c.currentReasoningCallback().(func(string))
-		if !ok {
+		cb := c.currentReasoningCallback()
+		if cb == nil {
 			t.Fatal("no callback")
 		}
 		cb("x")
@@ -684,7 +684,7 @@ func TestCliNoticeAndWaitCallbacksKeepDefaultOutput(t *testing.T) {
 				t.Fatalf("NewAIAgent: %v", err)
 			}
 			a.SetSuppressStatusOutput(true)
-			c.agent = a
+			c.agent = offlineAgent(t, c)
 			a.EmitNotice(provider.AgentNotice{Level: "warn", Text: "arbitrary warning wording"})
 			a.EmitDiagnosticWait("arbitrary retry wording")
 			c.flushCreditNotices()

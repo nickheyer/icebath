@@ -31,9 +31,6 @@ func NamedProfileRefusedUnderMultiplexer(ctx context.Context, w io.Writer, force
 	return namedProfileRefusedUnderMultiplexer(ctx, w, force)
 }
 
-// Whether a systemd unit at either scope serves this home
-func SystemdUnitInstalled(ctx context.Context) (bool, error) { return systemdUnitInstalled(ctx) }
-
 // Installed unit or plist kind, else windows when the thunk says so, empty when none
 func InstalledServiceKindFor(ctx context.Context, windows func() (bool, error)) (string, error) {
 	return installedServiceKindFor(ctx, windows)

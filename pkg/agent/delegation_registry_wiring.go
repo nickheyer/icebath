@@ -8,6 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -153,6 +155,12 @@ func InstallDelegationRegistryHooks() {
 		return delegationRegistry.ListProviders(ctx, "")
 	}
 	tools.DelegationBackendHooks.ListProviders = tools.DelegationRegistryHooks.ListProviders
+	tools.DelegationBackendHooks.RefreshAgentMCPTools = func(ctx context.Context, a tools.DelegationRebuildAgent, quiet, contentAware bool) {
+		mcp.RefreshAgentMCPTools(ctx, a.(*delegationAgentView).a, mcp.RefreshOptions{Quiet: quiet, ContentAware: contentAware})
+	}
+	tools.DelegationBackendHooks.RecordCacheBreak = func(ctx context.Context, a tools.DelegationRebuildAgent, reason string) {
+		observability.RecordCacheBreak(ctx, a.(*delegationAgentView).a, reason)
+	}
 	tools.DelegationRegistryHooks.DisabledPlugins = plugins.DisabledPlugins
 	tools.DelegationRegistryHooks.DiscoverPlugins = plugins.DiscoverPlugins
 	tools.DelegationRegistryHooks.LoadBundled = loadBundledDelegationStrategy

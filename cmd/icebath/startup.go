@@ -39,6 +39,7 @@ var version string
 
 // Assigns every process hook and then runs the hidden child entry argv names, the first step of main
 func startProcess(ctx context.Context) {
+	logging.InstallSlogBridge()
 	installProcessWiring()
 	dispatchChildEntries(ctx)
 }
@@ -55,6 +56,7 @@ func dispatchChildEntries(ctx context.Context) {
 	gateway.DispatchSystemdStopMarkEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
 	gateway.DispatchKanbanWorkerClientEntry(ctx)
+	gateway.DispatchWindowsSSHRuntimeEntry(ctx, exit)
 	tools.DispatchDDGSWorkerEntry()
 	tools.DispatchCommitGraphRefreshEntry(ctx)
 	provider.DispatchCodexToolsMCPServerEntry()
@@ -62,7 +64,8 @@ func dispatchChildEntries(ctx context.Context) {
 	agent.DispatchManagedWorkerEntry(exit)
 	app.DispatchUninstallModuleEntry(ctx)
 	app.DispatchSlashWorkerEntry(ctx, exit)
-	tuiserver.DispatchComputeHostEntry(ctx)
+	tuiserver.DispatchComputeHostEntry(ctx, exit)
+	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	acp.DispatchModuleEntry(ctx, exit)
 }

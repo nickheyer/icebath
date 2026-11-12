@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -17,6 +18,8 @@ import (
 func resumeTestDB(t *testing.T, rows ...state.NewSession) *state.SessionDB {
 	t.Helper()
 	h := goalHooksHome(t)
+	seededResumeHome = h
+	t.Cleanup(func() { seededResumeHome = "" })
 	db, err := state.NewSessionDB(context.Background(), filepath.Join(h, "state.db"), false)
 	if err != nil {
 		t.Fatal(err)
@@ -108,60 +111,40 @@ func storedModelConfig(t *testing.T, db *state.SessionDB, sessionID string) (*py
 }
 
 func TestPersistModelSwitchWritesModelAndBothRouteShapes(t *testing.T) {
-	db := resumeTestDB(t, state.NewSession{ID: "s1", Model: "m0"})
+	resumeTestDB(t, state.NewSession{ID: "s1", Model: "m0"})
 	c := restoreStandIn()
-	c.sessionDB, c.sessionID = db, "s1"
-	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
-	meta, cfg := storedModelConfig(t, db, "s1")
-	if model, _ := meta.Get("model"); model != "deepseek-v4-flash-free" {
-		t.Fatalf("model %v", model)
+	c.sessionDB, c.sessionID = testGatewayStore(t), "s1"
+	patch := modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "deepseek-v4-flash-free", TargetProvider: "custom:opencode-zen", BaseURL: "https://oz/v1"})
+	nested, _ := patch["gateway_runtime"].(map[string]any)
+	if nested["provider"] != "custom:opencode-zen" || patch["provider"] != "custom:opencode-zen" {
+		t.Fatalf("patch %v", patch)
 	}
-	gw, _ := cfg.Get("gateway_runtime")
-	nested := gw.(*pyjson.Object)
-	if p, _ := nested.Get("provider"); p != "custom:opencode-zen" {
-		t.Fatalf("nested %v", pyjson.Plain(nested))
+	if patch["base_url"] != "https://oz/v1" || nested["base_url"] != "https://oz/v1" {
+		t.Fatalf("patch %v", patch)
 	}
-	if p, _ := cfg.Get("provider"); p != "custom:opencode-zen" {
-		t.Fatalf("top %v", pyjson.Plain(cfg))
-	}
-	if u, _ := cfg.Get("base_url"); u != "https://oz/v1" {
-		t.Fatalf("top %v", pyjson.Plain(cfg))
-	}
-	if mode, ok := nested.Get("api_mode"); !ok || mode != nil {
+	if mode, ok := nested["api_mode"]; !ok || mode != nil {
 		t.Fatalf("nested api_mode %v %v", mode, ok)
 	}
-	if _, ok := cfg.Get("api_mode"); ok {
-		t.Fatalf("top api_mode kept %v", pyjson.Plain(cfg))
+	if mode, ok := patch["api_mode"]; !ok || mode != nil {
+		t.Fatalf("top api_mode %v %v", mode, ok)
 	}
 }
 
 func TestPersistModelSwitchClearsStaleRouteKeys(t *testing.T) {
-	db := resumeTestDB(t, state.NewSession{ID: "stale1", Model: "m0"})
+	resumeTestDB(t, state.NewSession{ID: "stale1", Model: "m0"})
 	c := restoreStandIn()
-	c.sessionDB, c.sessionID = db, "stale1"
-	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "claude-x", TargetProvider: "custom:feather", BaseURL: "https://feather/v1", APIMode: "anthropic_messages"})
-	c.persistModelSwitchToSession(&provider.ModelSwitchResult{NewModel: "gpt-5.4", TargetProvider: "openrouter", BaseURL: "https://openrouter.ai/api/v1"})
-	meta, cfg := storedModelConfig(t, db, "stale1")
-	if p, _ := cfg.Get("provider"); p != "openrouter" {
-		t.Fatalf("provider %v", p)
+	c.sessionDB, c.sessionID = testGatewayStore(t), "stale1"
+	modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "claude-x", TargetProvider: "custom:feather", BaseURL: "https://feather/v1", APIMode: "anthropic_messages"})
+	patch := modelSwitchSessionPatch(c, &provider.ModelSwitchResult{NewModel: "gpt-5.4", TargetProvider: "openrouter", BaseURL: "https://openrouter.ai/api/v1"})
+	nested, _ := patch["gateway_runtime"].(map[string]any)
+	if patch["provider"] != "openrouter" || nested["provider"] != "openrouter" {
+		t.Fatalf("patch %v", patch)
 	}
-	if _, ok := cfg.Get("api_mode"); ok {
-		t.Fatalf("stale api_mode kept %v", pyjson.Plain(cfg))
+	if mode, ok := patch["api_mode"]; !ok || mode != nil {
+		t.Fatalf("stale api_mode not cleared %v", patch)
 	}
-	gw, _ := cfg.Get("gateway_runtime")
-	nested := gw.(*pyjson.Object)
-	if p, _ := nested.Get("provider"); p != "openrouter" {
-		t.Fatalf("nested %v", pyjson.Plain(nested))
-	}
-	if mode, _ := nested.Get("api_mode"); mode != nil {
-		t.Fatalf("nested api_mode %v", mode)
-	}
-	runtime := state.SessionGatewayRuntime(meta)
-	if p, _ := runtime.Get("provider"); p != "openrouter" {
-		t.Fatalf("runtime %v", pyjson.Plain(runtime))
-	}
-	if _, ok := runtime.Get("api_mode"); ok {
-		t.Fatalf("runtime api_mode %v", pyjson.Plain(runtime))
+	if mode, ok := nested["api_mode"]; !ok || mode != nil {
+		t.Fatalf("nested api_mode %v", nested)
 	}
 }
 
@@ -173,8 +156,8 @@ func TestShowRecentSessionsIncludesIndexesAndResumeHint(t *testing.T) {
 		}
 	}
 	rec := recordPrints(t)
-	c := bareCLI()
-	c.sessionDB, c.sessionID = db, "current_session"
+	c := resumeCLI(t)
+	c.sessionDB, c.sessionID = testGatewayStore(t), "current_session"
 	if !c.showRecentSessions("resume", 10) {
 		t.Fatal("nothing shown")
 	}
@@ -191,7 +174,7 @@ func TestHandleResumeByIndexOutOfRange(t *testing.T) {
 	}
 	rec := recordPrints(t)
 	c := bareCLI()
-	c.sessionDB, c.sessionID = db, "current_session"
+	c.sessionDB, c.sessionID = testGatewayStore(t), "current_session"
 	c.handleResumeCommand("/resume 9")
 	if strings.Join(rec.plain(), "\n") == "" || c.sessionID != "current_session" {
 		t.Fatalf("printed %q session %q", strings.Join(rec.plain(), "\n"), c.sessionID)
@@ -206,8 +189,8 @@ func TestBareResumeArmsPendingSelection(t *testing.T) {
 		}
 	}
 	recordPrints(t)
-	c := bareCLI()
-	c.sessionDB, c.sessionID = db, "current_session"
+	c := resumeCLI(t)
+	c.sessionDB, c.sessionID = testGatewayStore(t), "current_session"
 	c.handleResumeCommand("/resume")
 	if len(c.pendingResumeSessions) != 2 {
 		t.Fatalf("pending %v", c.pendingResumeSessions)
@@ -238,18 +221,24 @@ func twoSessionDB(t *testing.T, researchCwd string) *state.SessionDB {
 	return db
 }
 
+// Home whose state.db the running resume case seeded, the store reads it whatever ICEBATH_HOME says later
+var seededResumeHome string
+
 // CLI on the current session of a resume test with the minimal recap display
-func resumeCLI(db *state.SessionDB) *CLI {
+func resumeCLI(t *testing.T) *CLI {
 	c := bareCLI()
-	c.sessionDB, c.sessionID, c.resumeDisplay = db, "current_session", "minimal"
+	if seededResumeHome != "" {
+		c.ctx = home.WithOverride(c.ctx, seededResumeHome)
+	}
+	c.sessionDB, c.sessionID, c.resumeDisplay = testGatewayStore(t), "current_session", "minimal"
 	c.console = console()
 	return c
 }
 
 func TestHandleResumeByIndexSwitchesToNumberedSession(t *testing.T) {
-	db := twoSessionDB(t, "")
+	twoSessionDB(t, "")
 	rec := recordPrints(t)
-	c := resumeCLI(db)
+	c := resumeCLI(t)
 	c.handleResumeCommand("/resume 2")
 	if c.sessionID != "sess_001" || !strings.Contains(strings.Join(rec.plain(), "\n"), "Research") {
 		t.Fatalf("session %q printed %q", c.sessionID, rec.plain())
@@ -259,10 +248,10 @@ func TestHandleResumeByIndexSwitchesToNumberedSession(t *testing.T) {
 func TestHandleResumeRestoresRecordedCwd(t *testing.T) {
 	t.Chdir(t.TempDir())
 	recorded := t.TempDir()
-	db := twoSessionDB(t, recorded)
+	twoSessionDB(t, recorded)
 	recordPrints(t)
 	t.Setenv("TERMINAL_CWD", "")
-	c := resumeCLI(db)
+	c := resumeCLI(t)
 	c.handleResumeCommand("/resume Research")
 	if os.Getenv("TERMINAL_CWD") != recorded {
 		t.Fatalf("TERMINAL_CWD %q", os.Getenv("TERMINAL_CWD"))
@@ -275,10 +264,10 @@ func TestHandleResumeRestoresRecordedCwd(t *testing.T) {
 func TestSessionsCommandRestoresRecordedCwd(t *testing.T) {
 	t.Chdir(t.TempDir())
 	recorded := t.TempDir()
-	db := twoSessionDB(t, recorded)
+	twoSessionDB(t, recorded)
 	recordPrints(t)
 	t.Setenv("TERMINAL_CWD", "")
-	c := resumeCLI(db)
+	c := resumeCLI(t)
 	c.handleSessionsCommand("/sessions Research")
 	if os.Getenv("TERMINAL_CWD") != recorded {
 		t.Fatalf("TERMINAL_CWD %q", os.Getenv("TERMINAL_CWD"))
@@ -286,9 +275,9 @@ func TestSessionsCommandRestoresRecordedCwd(t *testing.T) {
 }
 
 func TestPendingNumberResumesSelectedSession(t *testing.T) {
-	db := twoSessionDB(t, "")
+	twoSessionDB(t, "")
 	recordPrints(t)
-	c := resumeCLI(db)
+	c := resumeCLI(t)
 	c.pendingResumeSessions = c.listRecentSessions(10)
 	if !c.consumePendingResumeSelection("2") {
 		t.Fatal("selection not consumed")

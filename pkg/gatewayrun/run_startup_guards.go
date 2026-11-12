@@ -111,6 +111,10 @@ func (r *GatewayRunner) startLoopHeartbeatTask(ctx context.Context) {
 	}
 	startTime := r.gatewayStartedAt
 	loop := r.gatewayLoop
+	if loop == nil {
+		runLog().Debug("Failed to start gateway loop heartbeat", "exc_info", fmt.Errorf("RuntimeError: no running event loop"))
+		return
+	}
 	task := spawnGatewayTask(context.WithoutCancel(ctx), "gateway-loop-heartbeat", func(taskCtx context.Context) (any, error) {
 		return nil, gateway.LoopHeartbeatForever(taskCtx, loop, gateway.LoopHeartbeatOptions{
 			IntervalS: gateway.DefaultHeartbeatIntervalS, StartTime: &startTime,

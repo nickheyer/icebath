@@ -61,9 +61,11 @@ func (r *GatewayRunner) conversationBoundary(ctx context.Context, sessionKey, re
 			s.conversation.queuedEvents = queued
 		}
 	})
-	delete(r.pendingModelNotes, sessionKey)
-	delete(r.sessionStallNotified, sessionKey)
+	r.popSessionNote(&r.pendingModelNotes, sessionKey)
+	r.setStallNotified(sessionKey, false)
+	r.transcriptLagMu.Lock()
 	delete(r.transcriptLagStreaks, sessionKey)
+	r.transcriptLagMu.Unlock()
 	r.clearSessionBoundarySecurityState(ctx, sessionKey)
 	runLog().Debug(fmt.Sprintf("Cleared conversation scope for %s (%s)", sessionKey, reason))
 }
@@ -73,7 +75,7 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 	if sessionKey == "" {
 		return
 	}
-	delete(r.pendingSkillsReloadNotes, sessionKey)
+	r.popSessionNote(&r.pendingSkillsReloadNotes, sessionKey)
 	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
 		s.persistent.approvals = nil
 		s.persistent.updatePromptPending = false

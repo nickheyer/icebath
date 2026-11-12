@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"sync"
@@ -310,6 +312,7 @@ func NegotiateRequestTier(route Route, overrides map[string]any) {
 		overrides["service_tier"] = effective
 	}
 	if effective != requested {
-		metadataLog.Debug("Codex service tier not advertised for selected credential", "requested", requested, "effective", effective)
+		slog.Default().With("logger", "agent.codex_service_tiers").Debug(
+			fmt.Sprintf("Codex service tier %s -> %s: not advertised for selected credential", requested, effective))
 	}
 }

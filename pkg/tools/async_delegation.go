@@ -1627,9 +1627,9 @@ type AsyncDispatch struct {
 
 // Python exception class name of a runner failure
 func asyncExceptionName(err error) string {
-	var named interface{ ExceptionName() string }
+	var named interface{ PyTypeName() string }
 	if errors.As(err, &named) {
-		return named.ExceptionName()
+		return named.PyTypeName()
 	}
 	return "RuntimeError"
 }

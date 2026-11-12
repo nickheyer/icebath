@@ -82,6 +82,7 @@ func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o Run
 // RunConversationContent admits one turn of text or content parts, then runs the conversation loop
 func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o RunConversationOptions) (result map[string]any, err error) {
 	ctx = withLifecycleEnv(ctx, a.env)
+	defer bindAdmissionFiniteScope(ctx, a.env)()
 	cancelBackgroundReviewForLiveTurn(a)
 	effectiveTaskID := o.TaskID
 	if effectiveTaskID == "" {

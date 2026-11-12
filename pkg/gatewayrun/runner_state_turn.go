@@ -19,6 +19,7 @@ type runnerTurnState struct {
 	turnProcessMu         sync.Mutex
 	turnProcessStamps     map[*agent.AIAgent]turnProcessStamp
 	// One shot per session notes prepended to the next user message, set by the model and skills reload commands
+	sessionNotesMu           sync.Mutex
 	pendingModelNotes        map[string]string
 	pendingSkillsReloadNotes map[string]string
 	// Guards the consecutive transcript lag streaks of the cached history guard

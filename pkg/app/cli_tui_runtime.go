@@ -21,12 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Worker draining pending input, running idle housekeeping between inputs and dispatching each one
 func (c *CLI) tuiProcessLoop() {
+	var held *ownQueueHold
 	for !c.exitRequested() {
 		func() {
 			defer func() {
@@ -39,6 +39,14 @@ func (c *CLI) tuiProcessLoop() {
 					cliLogger.Warn(fmt.Sprintf("process_loop unhandled error (msg may be lost): %v", r))
 				}
 			}()
+			if held != nil {
+				var userInput any
+				held, userInput = c.tuiHoldStep(held)
+				if userInput != nil {
+					c.tuiProcessOneInput(userInput)
+				}
+				return
+			}
 			userInput, ok := c.pendingInput.Get(100 * time.Millisecond)
 			if !ok {
 				c.uiMu.Lock()
@@ -49,9 +57,25 @@ func (c *CLI) tuiProcessLoop() {
 				}
 				return
 			}
-			c.tuiProcessOneInput(userInput)
+			held = beginOwnQueueHold(c, userInput)
+			if held == nil {
+				c.tuiProcessOneInput(userInput)
+			}
 		}()
 	}
+}
+
+// One step of holding a local input behind this viewer's own queued admission, the owner's running turn first
+func (c *CLI) tuiHoldStep(hold *ownQueueHold) (*ownQueueHold, any) {
+	quietly(func() { c.drainProcessNotifications("cli-idle") })
+	if item := hold.takeGatewayTurn(c.pendingInput); item != nil {
+		return hold, item
+	}
+	if hold.done() {
+		return nil, hold.item
+	}
+	time.Sleep(50 * time.Millisecond)
+	return hold, nil
 }
 
 // Runs one idle step, a failure never leaving the loop
@@ -293,6 +317,13 @@ func (c *CLI) tuiPrintStartup() {
 	if _, rows := pyshutil.GetTerminalSize(80, 24); rows > 2 {
 		fmt.Fprint(console().Out, strings.Repeat("\n", rows-1))
 	}
+	if err := c.ensureGatewaySession(); err != nil {
+		if !isGatewayClientError(err) {
+			panic(err)
+		}
+		fmt.Fprintln(stderrWriter(), "Error: "+err.Error())
+		panic(singleQueryExit{code: 2})
+	}
 	c.showBanner()
 	c.showSecurityAdvisories()
 	func() {
@@ -439,7 +470,7 @@ func (c *CLI) tuiShutdown() {
 	c.uiMu.Lock()
 	running := c.agentRunning
 	c.uiMu.Unlock()
-	if c.agent != nil && running {
+	if c.agent != nil && running && !c.detachOnExit {
 		quietly(func() { requestHardInterrupt(c.agent) })
 	}
 	if rec := c.voiceRecorderHandle(); rec != nil {
@@ -453,9 +484,8 @@ func (c *CLI) tuiShutdown() {
 	browser.SetSaveLoginPromptCallback(c.ctx, nil)
 	browser.SetCodePromptCallback(c.ctx, nil)
 	lockVaultSessions(c)
-	c.persistActiveSessionBeforeClose()
 	if sid := c.closingSessionID(); c.sessionDB != nil && sid != "" {
-		if err := c.sessionDB.EndSession(sid, "cli_close"); err != nil {
+		if err := c.sessionDB.EndSession(c.ctx, sid, "cli_close"); err != nil {
 			cliLogger.Debug(fmt.Sprintf("Could not close session in DB: %v", err))
 		}
 		if !c.deleteSessionOnExit {
@@ -468,7 +498,7 @@ func (c *CLI) tuiShutdown() {
 				c.discardSessionIfEmpty(sid)
 			}()
 		} else {
-			deleted, err := c.sessionDB.DeleteSession(c.ctx, sid, state.DeleteSessionOptions{SessionsDir: filepath.Join(home.Dir(c.ctx), "sessions")})
+			deleted, err := c.sessionDB.DeleteSession(c.ctx, sid)
 			switch {
 			case err != nil:
 				cliLogger.Debug(fmt.Sprintf("Could not delete session on exit: %v", err))
@@ -478,9 +508,6 @@ func (c *CLI) tuiShutdown() {
 				cprint("  " + dimANSI + c.t("cli.tui.session_delete_missing", map[string]any{"session_id": pyrich.Escape(sid)}) + resetANSI)
 			}
 		}
-	}
-	if c.agent != nil && running {
-		invokeInterruptedSessionEnd(c.ctx, c.agent, c.agent.SessionID(), "shutdown", nil)
 	}
 	signalWatchdogMu.Lock()
 	signalled := signalWatchdogArmed

@@ -52,11 +52,6 @@ func bindRetryRewrite(ctx context.Context, rewrite *RetryRewrite) context.Contex
 	return context.WithValue(ctx, retryRewriteKey{}, rewrite)
 }
 
-// Context with no rewrite bound, for work that must not inherit the re-send's plan
-func unbindRetryRewrite(ctx context.Context) context.Context {
-	return context.WithValue(ctx, retryRewriteKey{}, (*RetryRewrite)(nil))
-}
-
 // Bound rewrite of this native admission, once, and only for the same source object on the same store
 func takeRetryRewrite(ctx context.Context, event *MessageEvent, db *state.SessionDB) *RetryRewrite {
 	rewrite, _ := ctx.Value(retryRewriteKey{}).(*RetryRewrite)

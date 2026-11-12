@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -31,9 +31,6 @@ var onWords = map[string]bool{"on": true, "enable": true, "true": true, "1": tru
 var offWords = map[string]bool{"off": true, "disable": true, "false": true, "0": true}
 
 var busyModes = []string{"queue", "steer", "interrupt"}
-
-var branchCopyKeys = []string{"content", "tool_calls", "tool_call_id", "reasoning", "reasoning_content", "reasoning_details",
-	"codex_reasoning_items", "codex_message_items", "timestamp", "data_use"}
 
 // Indented accent line, the standard slash command headline shape
 func accentLine(text string) string { return "  " + accentText(text) }
@@ -121,7 +118,9 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 				err = asError(r)
 			}
 		}()
-		newSessionID = c.newSessionID(now)
+		if newSessionID, err = c.newSessionID(now, c.sessionID, ""); err != nil {
+			return err
+		}
 		branchTitle = branchName
 		if branchTitle == "" {
 			current, _, terr := c.sessionDB.GetSessionTitle(c.ctx, c.sessionID)
@@ -136,66 +135,21 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 			}
 		}
 		parentSessionID = c.sessionID
-		parentPrompt := ""
-		if c.agent != nil {
-			parentPrompt = c.agent.CachedSystemPrompt()
-		}
-		if parentPrompt == "" {
-			if meta := c.sessionMeta(parentSessionID); meta != nil {
-				parentPrompt = cliStr(meta["system_prompt"], "")
-			}
-		}
-		source := os.Getenv("ICEBATH_SESSION_SOURCE")
-		if source == "" {
-			source = "cli"
-		}
-		return c.sessionDB.CreateSession(state.NewSession{ID: newSessionID, Source: source, Model: c.model, ParentSessionID: parentSessionID,
-			SystemPrompt: parentPrompt, ModelConfig: tools.WithSessionYolo(map[string]any{"max_iterations": c.maxTurns,
-				"reasoning_config": c.reasoningConfig, "_branched_from": parentSessionID}, parentSessionID)})
+		return nil
 	}()
 	if err != nil {
 		cp("  " + c.gatewayT("branch.create_failed", map[string]any{"error": err.Error()}))
 		return
 	}
 	c.endCurrentSession("branched")
-	func() {
-		defer func() { _ = recover() }()
-		rows := make([]map[string]any, 0, len(c.conversationHistory))
-		for _, msg := range c.conversationHistory {
-			row := map[string]any{"role": mapValueOr(msg, "role", "user")}
-			toolName := msg["tool_name"]
-			if !cliTruthy(toolName) {
-				toolName = msg["name"]
-			}
-			row["tool_name"] = toolName
-			if sidecar, ok := msg["api_content"].(string); ok {
-				row["api_content"] = sidecar
-			} else {
-				row["api_content"] = nil
-			}
-			for _, k := range branchCopyKeys {
-				row[k] = msg[k]
-			}
-			for k, v := range state.MessageIdentity(msg, true) {
-				row[k] = v
-			}
-			rows = append(rows, row)
-		}
-		chunk := 500
-		_, _ = c.sessionDB.AppendMessagesBatch(c.ctx, newSessionID, rows, state.AppendGuards{}, &chunk)
-	}()
-	func() {
-		defer func() { _ = recover() }()
-		_, _ = c.sessionDB.SetSessionTitle(c.ctx, newSessionID, branchTitle)
-	}()
+	if _, err := c.sessionDB.SetSessionTitle(c.ctx, newSessionID, branchTitle); err != nil {
+		cliLogger.Debug(fmt.Sprintf("branch title %s failed: %v", newSessionID, err))
+	}
 	tools.TransferSessionYolo(c.sessionID, newSessionID)
 	c.sessionID, c.sessionStart, c.pendingTitle = newSessionID, now, ""
 	c.resumed = true
 	syncProcessSessionID(c.ctx, c.env, newSessionID)
-	if c.agent != nil {
-		c.agent.SetSessionStart(now)
-	}
-	c.syncAgentToSession(newSessionID, parentSessionID, "branch")
+	c.syncAgentToSession(newSessionID)
 	msgCount := 0
 	for _, m := range c.conversationHistory {
 		if m["role"] == "user" {
@@ -341,7 +295,7 @@ func (c *CLI) handleSkillsCommand(cmd string) {
 	var buf strings.Builder
 	console := pyrich.NewConsole(&buf)
 	console.Color, console.Terminal, console.Width = true, true, terminalColumns()
-	if err := skills.NewHubCLI(skillsScope(c.ctx)).HandleSkillsSlash(c.ctx, cmd, console); err != nil {
+	if err := handleGatewaySkillsSlash(c, cmd, console); err != nil {
 		panic(err)
 	}
 	if text := strings.TrimRight(buf.String(), "\n"); text != "" {
@@ -356,16 +310,9 @@ func (c *CLI) handleMemoryCommand(cmd string) {
 	if len(fields) > 0 {
 		args = fields[1:]
 	}
-	var store *memory.Store
-	if c.agent != nil {
-		store = c.agent.MemoryStore()
-	}
-	if store == nil {
-		loaded, err := memory.LoadOnDiskStore(c.ctx, c.env)
-		if err != nil {
-			panic(err)
-		}
-		store = loaded
+	store, err := memory.LoadOnDiskStore(c.ctx, c.env)
+	if err != nil {
+		panic(err)
 	}
 	out, handled, err := memory.HandlePendingSubcommand(c.ctx, c.env, tools.WriteApprovalMemory, args, memory.PendingOptions{MemoryStore: store,
 		SetMode: func(enabled bool) error { c.saveWriteApproval("memory", enabled); return nil }})

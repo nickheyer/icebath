@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 )
 
 // Frames a publisher queues before writes are dropped
@@ -35,9 +36,9 @@ func NewWsPublisherTransport(url string, connectTimeout time.Duration) *WsPublis
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 	dialer := websocket.Dialer{HandshakeTimeout: connectTimeout}
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	conn, resp, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
-		publisherLog().Debug(fmt.Sprintf("event publisher connect failed: %s", err))
+		publisherLog().Debug(fmt.Sprintf("event publisher connect failed: %s", pywebsockets.HandshakeError(resp, err)))
 		t.dead.Store(true)
 		return t
 	}

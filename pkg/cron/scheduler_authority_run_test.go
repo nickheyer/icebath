@@ -31,8 +31,8 @@ func stubCanonicalDoors(t *testing.T, connect func(context.Context) (cronRPCClie
 
 type gatewayClientError struct{ msg string }
 
-func (e *gatewayClientError) Error() string         { return e.msg }
-func (e *gatewayClientError) ExceptionName() string { return "GatewayClientError" }
+func (e *gatewayClientError) Error() string      { return e.msg }
+func (e *gatewayClientError) PyTypeName() string { return "GatewayClientError" }
 
 func TestAgentCronIsTransportOnlyAndRefusesWithoutOwner(t *testing.T) {
 	s, _ := newTestStore(t)

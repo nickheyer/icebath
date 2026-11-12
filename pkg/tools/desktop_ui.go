@@ -210,12 +210,9 @@ var focusPaneSchema = map[string]any{
 	},
 }
 
-// ReadWindowBelowPane asks the desktop main process which OS window sits under the app window
-var ReadWindowBelowPane func(env *Env, window map[string]int) (string, error)
-
-// Returns the window underneath the desktop window as a JSON string
-func readWindowBelowTool(env *Env) string {
-	return readPane(env, ReadWindowBelowPane, nil, [4]string{
+// Returns the window underneath the desktop window as a JSON string, asked of the desktop main process
+func ReadWindowBelowTool(callback PaneReader) string {
+	return readPane(callback, nil, [4]string{
 		"read_window_below is only available in the Icebath desktop app.",
 		"",
 		"Failed to read the window below: ",
@@ -253,11 +250,11 @@ func registerDesktopUITools() {
 	Register(Def{Name: "focus_pane", Toolset: "desktop_ui", Schema: focusPaneSchema, Emoji: "\U0001FA9F",
 		Handler: func(ctx context.Context, call *Call) string { return focusPaneTool(call.Env, argS(call.Args, "pane")) }})
 	Register(Def{Name: "read_window_below", Toolset: "desktop_ui", Schema: readWindowBelowSchema, Emoji: "\U0001FA9F",
-		Handler: func(ctx context.Context, call *Call) string { return readWindowBelowTool(call.Env) }})
+		Handler: func(ctx context.Context, call *Call) string { return ReadWindowBelowTool(nil) }})
 	Register(Def{Name: "desktop_preview", Toolset: "desktop_ui", Schema: previewSchema, Emoji: "\U0001F5BC️", Handler: handlePreview})
 	Register(Def{Name: "annotate_preview", Toolset: "desktop_ui", Schema: annotatePreviewSchema, Emoji: "\U0001F516",
 		Handler: func(ctx context.Context, call *Call) string {
-			return annotatePreviewTool(call.Env, argS(call.Args, "action"), optString(call.Args, "ref"), optString(call.Args, "selector"), optString(call.Args, "label"))
+			return AnnotatePreviewFromArgs(call.Args, nil)
 		}})
 	Register(Def{Name: "drive_preview", Toolset: "desktop_ui", Schema: drivePreviewSchema, Emoji: "\U0001F5B1️", Handler: handleDrivePreview})
 	Register(Def{Name: "gui_tour", Toolset: "desktop_ui", Schema: tourSchema, Emoji: "\U0001F9ED",
@@ -265,8 +262,18 @@ func registerDesktopUITools() {
 		Handler: handleTour})
 	Register(Def{Name: "set_theme", Toolset: "desktop_ui", Schema: setThemeSchema, Emoji: "\U0001F3A8",
 		Handler: func(ctx context.Context, call *Call) string {
-			return setThemeTool(call.Env, optString(call.Args, "accent"), optString(call.Args, "mode"), optString(call.Args, "layout"), optString(call.Args, "picker"))
+			return SetThemeFromArgs(call.Args, nil)
 		}})
+}
+
+// Annotates the preview from the tool arguments through the agent's preview callback
+func AnnotatePreviewFromArgs(args map[string]any, act DesktopRequest) string {
+	return AnnotatePreviewTool(argS(args, "action"), optString(args, "ref"), optString(args, "selector"), optString(args, "label"), act)
+}
+
+// Applies appearance values or shows a picker from the tool arguments through the agent's theme callback
+func SetThemeFromArgs(args map[string]any, request DesktopAnswer) string {
+	return SetThemeTool(optString(args, "accent"), optString(args, "mode"), optString(args, "layout"), optString(args, "picker"), request)
 }
 
 // String argument pointer, nil when absent or null, so optional and empty stay distinct

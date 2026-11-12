@@ -153,9 +153,9 @@ func authorityRPC(ctx context.Context, profileHome, method string, params map[st
 		}
 		target, protocols := GatewayWSTarget(discovery.Endpoint, ticket)
 		dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 10 * time.Second, Subprotocols: protocols}
-		conn, _, err := dialer.DialContext(ctx, target, http.Header{})
+		conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 		if err != nil {
-			return nil, err
+			return nil, HandshakeError(resp, err)
 		}
 		conn.SetReadLimit(1 << 20)
 		sock := &wsSocket{conn: conn}

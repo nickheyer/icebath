@@ -483,7 +483,8 @@ func (t *TurnRunner) progressRestoreTyping(ctx context.Context, st *progressEdit
 		return err
 	}
 	if tc.runStillCurrent() {
-		return st.adapter.SendTyping(ctx, tc.source.ChatID, gateway.TypingMetadataForTurn(st.adapter, tc.source.ChatID, tc.eventMessageID, tc.progressMetadata))
+		anchor, _, _ := t.runner.turnReplyAnchors(tc)
+		return st.adapter.SendTyping(ctx, tc.source.ChatID, gateway.TypingMetadataForTurn(st.adapter, tc.source.ChatID, anchor, tc.progressMetadata))
 	}
 	return nil
 }

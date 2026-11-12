@@ -40,7 +40,7 @@ func (s *TextDebounceState) CancelTimer(unless *adapterTask) {
 
 // Runner exposing its session authority, the shared runtime owning non command input when present
 type SessionAuthorityHolder interface {
-	SessionAuthority() any
+	SessionAuthority() *SessionAuthority
 }
 
 // Installed by the process wiring over pkg/commands, the busy policy of a typed command name

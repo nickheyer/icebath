@@ -258,6 +258,12 @@ func (c *CLI) handleBrowserCommand(cmd string) {
 	if len(parts) > 1 {
 		rest = pystr.Strip(parts[1])
 	}
+	if word == "connect" || word == "disconnect" || word == "status" {
+		if connection := gatewayConnectionFor(c); connection != nil {
+			c.gatewayBrowser(connection, word, rest)
+			return
+		}
+	}
 	switch word {
 	case "connect":
 		if rest == "" {

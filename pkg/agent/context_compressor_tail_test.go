@@ -215,7 +215,7 @@ func TestSkillSafetyRuleRidesTheHandoffExactlyOnce(t *testing.T) {
 	if again := WithPrunedRowSkillSafetyRule(original, ruled); again[1]["content"] != ruled[1]["content"] {
 		t.Fatal("already ruled")
 	}
-	if WithoutSkillSafetyRule("x"+skillSafetySuffix) != "x" {
+	if withoutSkillSafetyRule("x"+skillSafetySuffix) != "x" {
 		t.Fatal("strip rule")
 	}
 }

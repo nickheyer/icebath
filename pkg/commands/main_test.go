@@ -15,5 +15,16 @@ func TestMain(m *testing.M) {
 	tools.BundledPlatformSecretEnvs = func() []string { return nil }
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
-	os.Exit(m.Run())
+	os.Exit(runSandboxed(m))
+}
+
+// Runs the cases under a session home so discovery a case reaches never touches the real home
+func runSandboxed(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "commands-home-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	os.Setenv("ICEBATH_HOME", dir)
+	return m.Run()
 }

@@ -22,12 +22,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Hard interrupts the agent for a shutdown signal, then sleeps the ICEBATH_SIGTERM_GRACE window
-func interruptAgentForSignal(a *agent.AIAgent, sig os.Signal) {
+// Interrupts the gateway turn for a shutdown signal, then sleeps the ICEBATH_SIGTERM_GRACE window
+func interruptAgentForSignal(a *GatewayAgent, sig os.Signal) {
 	if a == nil {
 		return
 	}
-	agent.RequestHardInterrupt(a, fmt.Sprintf("received signal %s", signalNumber(sig)), "")
+	cliLogger.Debug(fmt.Sprintf("interrupting the gateway turn: received signal %s", signalNumber(sig)))
+	a.Interrupt()
 	if grace := floatEnv("ICEBATH_SIGTERM_GRACE", 1.5); grace > 0 {
 		time.Sleep(time.Duration(grace * float64(time.Second)))
 	}
@@ -184,7 +185,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 	func() {
 		defer bindQuietSessionKey(c.env, sessionKey)()
 		var err error
-		result, err = c.agent.RunConversationContent(c.turnCtx, effectiveQuery, agent.RunConversationOptions{ConversationHistory: c.conversationHistory, TurnAuthor: author})
+		result, err = c.agent.RunConversation(c.turnCtx, effectiveQuery, agent.RunConversationOptions{ConversationHistory: c.conversationHistory, TurnAuthor: author})
 		if err != nil && c.turnCtx.Err() != nil {
 			emitInterruptedSessionEnd(c, "keyboard_interrupt")
 			if emitter != nil {
@@ -395,15 +396,10 @@ func installSingleQuerySignalHandlers(c *CLI) {
 }
 
 // Neutralizes every stdout writing callback so -Q stdout carries only the final response
-func configureQuietAgent(a *agent.AIAgent) {
+func configureQuietAgent(a *GatewayAgent) {
 	a.SetQuietMode(true)
 	a.SetSuppressStatusOutput(true)
-	a.SetStreamDeltaCallback(nil)
-	a.SetToolGenCallback(nil)
-	a.SetReasoningCallback(nil)
-	a.SetToolProgressCallback(nil)
-	a.SetToolStartCallback(nil)
-	a.SetToolCompleteCallback(nil)
+	a.silencePresentation()
 	a.SetToolProgressMode("off")
 }
 

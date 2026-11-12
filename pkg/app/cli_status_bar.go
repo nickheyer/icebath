@@ -35,9 +35,7 @@ var (
 		"session_total_tokens", "session_api_calls"}
 	readBattery          = hostinfo.ReadBattery
 	loadStatusBarConfig  = func(c *CLI) (map[string]any, error) { return config.Load(home.Dir(c.ctx), nil) }
-	activeDelegations    = tools.AsyncDelegationActiveCount
-	runningProcessCount  = func() int { return tools.DefaultProcessRegistry().CountRunning() }
-	statusBarUsage       = func(c *CLI, a *agent.AIAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
+	statusBarUsage       = func(c *CLI, a *GatewayAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
 	statusBarSnapshotFor = (*CLI).getStatusBarSnapshot
 	tuiTerminalWidthFor  = (*CLI).getTUITerminalWidth
 )
@@ -317,8 +315,8 @@ func (c *CLI) getStatusBarSnapshot() map[string]any {
 	}
 	func() {
 		defer func() { _ = recover() }()
-		processes, subagents := runningProcessCount(), activeDelegations()
-		snapshot["active_background_processes"], snapshot["active_background_subagents"] = processes, subagents
+		counts := gatewayBackgroundCounts()
+		snapshot["active_background_processes"], snapshot["active_background_subagents"] = counts["active_background_processes"], counts["active_background_subagents"]
 	}()
 	if manager := c.getGoalManager(); manager != nil && manager.IsActive() {
 		snapshot["goal_active"] = true
@@ -801,7 +799,8 @@ func (c *CLI) petReactTurnEnd() {
 					done = false
 				}
 			}()
-			if items, ok := a.TodoItems(); ok {
+			if store := a.TodoStore(); store != nil {
+				items := store.Read()
 				statuses := make([]string, len(items))
 				for i, item := range items {
 					statuses[i] = item.Status

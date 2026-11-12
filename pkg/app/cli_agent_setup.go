@@ -9,13 +9,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -129,12 +131,37 @@ func keylessCustomBase(baseURL string) bool {
 }
 
 // Returns the descendant holding a compression chain head's messages, empty when there is none
-func compressionDescendant(db *state.SessionDB, sessionID string) string {
-	resolved, err := db.ResolveResumeSessionID(sessionID)
+func compressionDescendant(ctx context.Context, db *gatewaycli.GatewaySessionStore, sessionID string) string {
+	resolved, err := db.ResolveResumeSessionID(ctx, sessionID)
 	if err != nil || resolved == "" || resolved == sessionID {
 		return ""
 	}
 	return resolved
+}
+
+// Id the gateway answers for a physical row, its session.resume owner, unchanged off the gateway or on a refusal
+func gatewayOwnedID(ctx context.Context, db *gatewaycli.GatewaySessionStore, sessionID string) string {
+	owner, _ := gatewayOpen(ctx, db, sessionID)
+	return owner
+}
+
+// Owner id and refusal code of one session.resume, the refusal set only when this viewer may not open it
+func gatewayOpen(ctx context.Context, db *gatewaycli.GatewaySessionStore, sessionID string) (string, string) {
+	if db == nil {
+		return sessionID, ""
+	}
+	snapshot, err := db.Attach(ctx, sessionID, false)
+	if err != nil {
+		var refused *gateway.GatewayRPCError
+		if errors.As(err, &refused) && gatewaycli.ResumeGone[refused.Error()] {
+			return sessionID, refused.Error()
+		}
+		return sessionID, ""
+	}
+	if owner, _ := snapshot.Vals["stored_session_id"].(string); owner != "" {
+		return owner, ""
+	}
+	return sessionID, ""
 }
 
 // Returns the recap text of a user row, multimodal lists becoming text parts and image markers
@@ -298,11 +325,8 @@ func resumePanelColors(c *CLI) [4]string {
 	return out
 }
 
-// Drops the agent so the next turn rebuilds it, releasing its LLM clients first
+// Drops the agent so the next turn rebuilds it, the gateway keeping the session's clients
 func retireAgent(c *CLI) {
-	if c.agent != nil {
-		c.agent.ReleaseClients(c.ctx)
-	}
 	c.agent = nil
 }
 
@@ -638,24 +662,27 @@ func (c *CLI) resolveTurnAgentConfig(userMessage any) turnRoute {
 // Switches a resumed empty compression chain head to the descendant holding the messages
 func (c *CLI) followCompressionChain(sessionMeta map[string]any, announce func(string)) map[string]any {
 	c.resumeReadID = c.sessionID
-	if resolvedID := compressionDescendant(c.sessionDB, c.sessionID); resolvedID != "" {
+	if resolvedID := compressionDescendant(c.ctx, c.sessionDB, c.sessionID); resolvedID != "" {
 		if meta := c.sessionMeta(resolvedID); meta != nil {
 			sessionMeta = meta
 		}
 		c.resumeReadID = resolvedID
-		announce(resolvedID)
-		c.sessionID = resolvedID
+		if owner := gatewayOwnedID(c.ctx, c.sessionDB, resolvedID); owner != resolvedID {
+			c.sessionID = owner
+		} else {
+			announce(resolvedID)
+			c.sessionID = resolvedID
+		}
 	}
 	return sessionMeta
 }
 
 // Returns a session row as a plain map, nil when the store has no such row
 func (c *CLI) sessionMeta(sessionID string) map[string]any {
-	obj, err := c.sessionDB.GetSession(c.ctx, sessionID)
-	if err != nil || obj == nil {
+	meta, err := c.sessionDB.GetSession(c.ctx, sessionID)
+	if err != nil || len(meta) == 0 {
 		return nil
 	}
-	meta, _ := pyjson.Plain(obj).(map[string]any)
 	return meta
 }
 
@@ -667,7 +694,7 @@ func (c *CLI) restoreSessionState(sessionMeta map[string]any, quiet bool) {
 }
 
 // Clears ended_at so the resumed session is active again
-func (c *CLI) reopenSession() { _ = c.sessionDB.ReopenSession(c.ctx, c.sessionID) }
+func (c *CLI) reopenSession() { c.sessionDB.ReopenSession(c.ctx, c.sessionID) }
 
 // Validates a late resume and loads its history from the DB, false when the resume must abort
 func (c *CLI) loadResumedHistoryLate() bool {
@@ -752,12 +779,12 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		return false
 	}
 	if c.sessionDB == nil {
-		db, err := state.NewSessionDB(c.ctx, home.Dir(c.ctx)+"/state.db", false)
-		if err != nil {
-			cliLogger.Warn(fmt.Sprintf("SQLite session store not available — session will NOT be indexed: %v", err))
-		} else {
-			c.sessionDB = db
-		}
+		c.sessionDB = gatewaycli.SessionStore()
+	}
+	if err := c.ensureGatewaySession(); err != nil {
+		raiseSystemExit(ExitOnResumeRefusal(err))
+		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
+		return false
 	}
 	if c.resumed && c.sessionDB != nil && len(c.conversationHistory) == 0 && !c.loadResumedHistoryLate() {
 		return false
@@ -767,42 +794,35 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		rt = currentRuntime(c)
 	}
 	effectiveModel := firstNonEmpty(modelOverride, c.model)
-	oneTurn := c.pendingOneTurnModelRestore != nil
-	var runBudget *float64
-	if c.runBudgetSeconds != nil {
-		v := *c.runBudgetSeconds
-		runBudget = &v
-	}
-	opts := agent.AIAgentOptions{
-		Model: effectiveModel, APIKey: rt.APIKey, BaseURL: rt.BaseURL, Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
-		APIMode: rt.APIMode, ACPCommand: rt.Command, ACPArgs: rt.Args, CredentialPool: rt.CredentialPool, Runtime: rt.Resolved,
-		MaxIterations: c.maxTurns, RunBudgetSeconds: runBudget, EnabledToolsets: c.enabledToolsets, DisabledToolsets: c.disabledToolsets,
-		VerboseLogging: c.verbose, QuietMode: !c.verbose, ToolProgressMode: c.toolProgressMode, EphemeralSystemPrompt: c.systemPrompt,
-		PrefillMessages: c.prefillMessages, ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier, RequestOverrides: requestOverrides,
-		ProvidersAllowed: c.providersOnly, ProvidersIgnored: c.providersIgnore, ProvidersOrder: c.providersOrder, ProviderSort: c.providerSort,
-		ProviderRequireParameters: c.providerRequireParams, ProviderDataCollection: c.providerDataCollection,
-		OpenRouterMinCodingScore: c.openRouterMinCodingScore, SessionID: c.sessionID, Platform: "cli", SessionDB: c.sessionDB,
-		ReasoningCallback: c.currentReasoningCallback(), FallbackModel: c.fallbackModel, ThinkingCallback: c.onThinking,
-		CheckpointsEnabled: c.checkpointsEnabled, CheckpointMaxSnapshots: c.checkpointMaxSnapshots, CheckpointMaxTotalSizeMB: c.checkpointMaxTotalSizeMB,
-		CheckpointMaxFileSizeMB: c.checkpointMaxFileSizeMB, PassSessionID: c.passSessionID, SkipContextFiles: c.ignoreRules, SkipMemory: c.ignoreRules,
-		ToolProgressCallback: c.onToolProgress, NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ReactionCallback: c.onReaction,
-		Env: c.env, Cwd: c.env.Cwd,
+	pendingOneTurn := c.pendingOneTurnModelRestore
+	oneTurn := pendingOneTurn != nil
+	o := gatewayAgentOptions{SessionDB: c.sessionDB, SessionID: c.sessionID, Model: effectiveModel, Provider: rt.Provider, BaseURL: rt.BaseURL,
+		APIMode: rt.APIMode, MaxIterations: c.maxTurns, QuietMode: !c.verbose, ToolProgressMode: c.toolProgressMode,
+		ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier, PushReasoning: c.reasoningUserSet && !oneTurn, OneTurn: oneTurn,
+		ReasoningCallback: c.currentReasoningCallback(), ThinkingCallback: c.onThinking, ToolProgressCallback: c.onToolProgress,
+		NoticeCallback: c.onNotice, NoticeClearCallback: c.onNoticeClear, ReactionCallback: c.onReaction, ToolEnv: c.env,
+		ApprovalCallback: c.approvalCallback, SudoPasswordCallback: c.sudoPasswordCallback}
+	if oneTurn {
+		o.OneTurnReasoning = strOrEmpty(pendingOneTurn["one_turn_reasoning"])
+		o.OneTurnAlias = strOrEmpty(pendingOneTurn["one_turn_alias"])
 	}
 	if c.singleQueryMode {
-		opts.ClarifyCallback = singleQueryClarifyCallback
+		o.ClarifyCallback = singleQueryClarifyCallback
 	} else {
-		opts.ClarifyCallback = c.clarifyCallback
-		opts.ConnectionCallback = c.connectionCallback
+		o.ClarifyCallback = c.clarifyCallback
+		o.ConnectionCallback = c.connectionCallback
+		o.ConnectionUpdateCallback = c.connectionOnChange
+		o.ModelConfirmCallback = c.confirmOwnerModelSwitch
+		o.ModalWithdrawCallback = c.withdrawGatewayModal
 	}
 	if c.inlineDiffsEnabled {
-		opts.ToolStartCallback = c.onToolStart
-		opts.ToolCompleteCallback = c.onToolComplete
+		o.ToolCompleteCallback = c.onToolComplete
 	}
 	if c.streamingEnabled {
-		opts.StreamDeltaCallback = c.streamDelta
-		opts.ToolGenCallback = c.onToolGenStart
+		o.StreamDeltaCallback = c.streamDelta
+		o.ToolGenCallback = c.onToolGenStart
 	}
-	a, err := agent.NewAIAgent(c.ctx, opts)
+	a, err := newGatewayAgent(c.ctx, o)
 	if err != nil {
 		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
 		for _, line := range home.PartialUpdateHint(err) {
@@ -812,32 +832,32 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	}
 	c.agent = a
 	setActiveAgent(a)
-	a.SetPushReasoning(c.reasoningUserSet && !oneTurn)
-	a.SetOneTurn(oneTurn, c.pendingOneTurnModelRestore)
 	a.SetControlUpdateCallback(c.markAutomationStale)
-	if c.autoLoadSkillsResult != nil {
-		a.SetAutoLoadSkillsResult(c.autoLoadSkillsResult.Prompt, c.autoLoadSkillsResult.Loaded, c.autoLoadSkillsResult.Missing)
-	}
 	a.SetPrintFn(c.agentStatusPrint)
 	a.SetFinite(c.singleQueryMode)
+	bindGatewayAgent(a)
 	provider.SeedCreditsAtSessionStart(a.CreditsCapture())
 	c.activeAgentRouteSignature = routeSignature(effectiveModel, rt)
 	if a.ReasoningPushed() {
 		c.reasoningUserSet = false
 	}
 	if c.pendingTitle != "" && c.sessionDB != nil {
-		if err := a.EnsureDBSession(); err != nil {
-			cprint("  " + i18n.T(c.ctx, "cli.resume.title_apply_failed", "", map[string]any{"error": err}))
-		} else if a.SessionDBCreated() {
-			if _, terr := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, c.pendingTitle); terr != nil {
-				cprint("  " + i18n.T(c.ctx, "cli.resume.title_apply_failed", "", map[string]any{"error": terr}))
-			} else {
-				cprint("  " + i18n.T(c.ctx, "cli.resume.title_applied", "", map[string]any{"title": c.pendingTitle}))
-				c.pendingTitle = ""
-			}
+		if _, terr := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, c.pendingTitle); terr != nil {
+			cprint("  " + i18n.T(c.ctx, "cli.resume.title_apply_failed", "", map[string]any{"error": terr}))
+		} else {
+			cprint("  " + i18n.T(c.ctx, "cli.resume.title_applied", "", map[string]any{"title": c.pendingTitle}))
+			c.pendingTitle = ""
 		}
 	}
 	return true
+}
+
+// Raises the system exit a refusal printed, nothing for any other error
+func raiseSystemExit(err error) {
+	var exit *pm.SystemExit
+	if errors.As(err, &exit) {
+		panic(singleQueryExit{code: exit.Code})
+	}
 }
 
 // Returns a safe resume error without materializing transcript rows, empty when resuming is allowed

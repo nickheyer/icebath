@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Child process whose argv carries the given trailing arguments, killed when the test ends
@@ -37,7 +38,7 @@ func spawnArgvChild(t *testing.T, args ...string) int {
 
 // test_mcp_tool.py TestFilterMCPChildren test_filters_gateway_children_by_argv_marker
 func TestFilterMCPChildrenFiltersGatewayChildrenByArgvMarker(t *testing.T) {
-	gateway := spawnArgvChild(t, "-m", "tui_gateway.slash_worker", "--session-key", "abc")
+	gateway := spawnArgvChild(t, tuigateway.SlashWorkerEntry, "--session-key", "abc")
 	jdtls := spawnArgvChild(t, "-jar", "/opt/jdtls/plugins/org.eclipse.equinox.launcher_1.7.0.jar")
 	node := spawnArgvChild(t, "server.js")
 	kept := filterMCPChildren(map[int]bool{gateway: true, jdtls: true, node: true})

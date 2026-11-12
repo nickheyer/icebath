@@ -294,6 +294,14 @@ func (AuxAdapter) Complete(ctx context.Context, messages []*state.Message, opts 
 	return strings.TrimSpace(ExtractContentOrReasoning(resp, -1)), nil
 }
 
+// Whether the vision task resolves a client for the provider in probe mode, the check_video_requirements probe
+func (AuxAdapter) ResolvesVision(ctx context.Context, provider string) (bool, error) {
+	_, client, _, err := ResolveVisionProviderClient(AuxProbeMode(ctx), provider, "", "", nil, false, nil)
+	return client != nil, err
+}
+
+var _ tools.AuxTaskResolver = AuxAdapter{}
+
 // CompleteChat runs one auxiliary chat completion forwarding tool definitions and returns the completion dict
 func (AuxAdapter) CompleteChat(ctx context.Context, messages []map[string]any, toolDefs []map[string]any, opts tools.AuxOptions) (map[string]any, error) {
 	resp, err := CallLLM(ctx, auxAdapterKwargs(messages, toolDefs, opts))

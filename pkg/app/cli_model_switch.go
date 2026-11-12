@@ -170,7 +170,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 	}
 	c.resolveCLIReasoning()
 	if c.agent != nil {
-		if err := c.agent.SwitchModel(c.ctx, c.model, c.provider, c.apiKey, c.baseURL, c.apiMode, nil, false, false, ""); err != nil {
+		if _, err := c.agent.SwitchModel(c.model, c.provider, false, false, ""); err != nil {
 			cliLogger.Debug("In-place agent model swap on resume failed")
 		}
 	}
@@ -189,11 +189,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 func (c *CLI) snapshotModelRuntime() map[string]any {
 	snapshot := c.runtimeFields()
 	snapshot["reasoning_config"] = pycopy.DeepCopy(snapshot["reasoning_config"])
-	var primary any
-	if c.agent != nil {
-		primary = pycopy.DeepCopy(c.agent.PrimaryRuntime())
-	}
-	snapshot["agent_primary_runtime"] = primary
+	snapshot["agent_primary_runtime"] = nil
 	return snapshot
 }
 
@@ -219,23 +215,19 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 	if value, ok := snapshot["reasoning_config"]; ok {
 		restoreReasoning(value)
 	}
-	if primary, ok := snapshot["agent_primary_runtime"].(map[string]any); ok && len(primary) > 0 {
-		restored, err := a.RestorePrimarySnapshot(c.ctx, primary)
-		if err != nil {
-			cliLogger.Debug("CLI one-turn model restore via primary runtime failed")
-		} else if restored {
-			return
-		}
-	}
-	caps, _ := snapshot["capabilities"].(map[string]bool)
-	err := a.SwitchModel(c.ctx, snapshotText(snapshot, "model"), snapshotText(snapshot, "provider"), snapshotText(snapshot, "api_key"),
-		snapshotText(snapshot, "base_url"), snapshotText(snapshot, "api_mode"), caps, true, true, "")
+	restored, err := a.SwitchModel(snapshotText(snapshot, "model"), snapshotText(snapshot, "provider"), true, true, "")
 	if err != nil {
 		cliLogger.Warn(fmt.Sprintf("CLI one-turn model restore failed: %v", err))
+	}
+	if err != nil || !restored {
 		for key, value := range oneTurn {
 			c.setRuntimeField(key, value)
 		}
-		cprint("  " + c.t("cli.model.switch_failed", map[string]any{"model": snapshotText(snapshot, "model"), "error": err, "old_model": a.Model()}))
+		notice := c.t("cli.model.switch_cancelled", nil)
+		if err != nil {
+			notice = c.t("cli.model.switch_failed", map[string]any{"model": snapshotText(snapshot, "model"), "error": err, "old_model": a.Model()})
+		}
+		cprint("  " + notice)
 		return
 	}
 	if value, ok := snapshot["reasoning_config"]; ok {
@@ -360,11 +352,6 @@ func (c *CLI) askSwitchAnyway(title, detail string) bool {
 	return c.normalizeSlashConfirmChoice(raw, choices) == "once"
 }
 
-// Selection facts of the live agent from its last billed prompt, nil without a positive measurement
-func selectionContextForAgent(a *agent.AIAgent) *provider.SelectionContext {
-	return agent.SelectionContextForAgent(a)
-}
-
 // Asks before applying a costly switch, true when the switch may go ahead
 func (c *CLI) confirmExpensiveModelSwitch(result *provider.ModelSwitchResult) bool {
 	c.confirmedSwitchWarning = ""
@@ -414,11 +401,13 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 			cliLogger.Debug(fmt.Sprintf("preflight-compression switch warning failed: %v", r))
 		}
 	}()
-	var configContext *int
-	if n := c.agent.ConfigContextLength(); n != 0 {
-		configContext = &n
+	var providers []map[string]any
+	for _, p := range customProviders {
+		if m, ok := p.(map[string]any); ok {
+			providers = append(providers, m)
+		}
 	}
-	c.agent.MergePreflightCompressionWarning(c.ctx, result, append([]map[string]any(nil), c.conversationHistory...), customProviders, configContext, agent.PreflightConfigured{})
+	mergeGatewayPreflightWarning(c.ctx, c.agent, result, append([]map[string]any(nil), c.conversationHistory...), providers, c.agent.ConfigContextLength())
 }
 
 // Stages a switch onto the CLI fields then swaps the live agent, rolling the CLI back when the swap fails
@@ -444,13 +433,16 @@ func (c *CLI) stageAndSwapModel(result *provider.ModelSwitchResult, oldModel str
 		return true
 	}
 	defer func() { c.confirmedSwitchWarning = "" }()
-	err := c.agent.SwitchModel(c.ctx, result.NewModel, result.TargetProvider, result.APIKey, result.BaseURL, result.APIMode,
-		result.RuntimeCapabilities, c.modelSwitchOneTurn, false, result.ResolvedViaAlias)
-	if err == nil {
+	switched, err := c.agent.SwitchModel(result.NewModel, result.TargetProvider, c.modelSwitchOneTurn, false, result.ResolvedViaAlias)
+	if err == nil && switched {
 		return true
 	}
 	for key, value := range snapshot {
 		c.setRuntimeField(key, value)
+	}
+	if err == nil {
+		cprint("  " + c.t("cli.model.switch_cancelled", nil))
+		return false
 	}
 	if err.Error() == "launch_credentials_unavailable" {
 		cprint("  " + refusalText(c.ctx, err))
@@ -488,14 +480,7 @@ func (c *CLI) printSwitchSummary(result *provider.ModelSwitchResult, oldModel st
 	var configContext *int
 	var customProviders []map[string]any
 	if c.agent != nil {
-		if n := c.agent.ConfigContextLength(); n != 0 {
-			configContext = &n
-		}
-		for _, p := range c.agent.CustomProviderEntries() {
-			if m, ok := p.(map[string]any); ok {
-				customProviders = append(customProviders, m)
-			}
-		}
+		configContext = c.agent.ConfigContextLength()
 	}
 	baseURL, apiKey := result.BaseURL, result.APIKey
 	if baseURL == "" {
@@ -559,15 +544,14 @@ func (c *CLI) applyReasoningAfterSwitch(effort string, persistGlobal, oneTurn bo
 			c.pendingOneTurnModelRestore["one_turn_reasoning"] = effort
 		}
 		if c.agent != nil {
-			c.agent.SetReasoningConfig(parsed)
+			c.agent.StageTurnReasoning(parsed)
 		}
 		cprint("    " + c.t("cli.model.reasoning_effort", map[string]any{"effort": effort}))
 		return
 	}
 	c.reasoningUserSet = true
 	if c.agent != nil {
-		c.agent.SetReasoningConfig(parsed)
-		c.agent.SetPushReasoning(true)
+		c.agent.PinReasoning(parsed)
 	}
 	saved := persistGlobal && saveConfigValue(c.ctx, "agent.reasoning_effort", effort)
 	if saved {
@@ -591,19 +575,19 @@ func (c *CLI) persistModelSwitchToSession(result *provider.ModelSwitchResult) {
 	if c.sessionDB == nil || c.sessionID == "" {
 		return
 	}
+	c.sessionDB.UpdateSessionModel(c.ctx, c.sessionID, result.NewModel)
+	c.sessionDB.PatchSessionModelConfig(c.ctx, c.sessionID, modelSwitchSessionPatch(c, result))
+}
+
+// Model config patch of a session scoped switch, the route nested and top level with stale keys set to None
+func modelSwitchSessionPatch(c *CLI, result *provider.ModelSwitchResult) map[string]any {
 	route := map[string]any{"provider": noneIfEmpty(healBareCustomProvider(c, result.TargetProvider, result.BaseURL, result.NewModel)),
 		"base_url": noneIfEmpty(result.BaseURL), "api_mode": noneIfEmpty(result.APIMode)}
 	patch := map[string]any{"gateway_runtime": route}
 	for k, v := range route {
 		patch[k] = v
 	}
-	if err := c.sessionDB.SetSessionModel(c.ctx, c.sessionID, result.NewModel, "", "", ""); err != nil {
-		cliLogger.Debug("Failed to persist model switch to session DB")
-		return
-	}
-	if err := c.sessionDB.PatchSessionModelConfig(c.ctx, c.sessionID, patch); err != nil {
-		cliLogger.Debug("Failed to persist model switch to session DB")
-	}
+	return patch
 }
 
 // Nil for an empty string, the or None of a route field
@@ -879,6 +863,9 @@ func (c *CLI) configuredDefaultRoute() (string, string) {
 
 // Context the large context guard would see for a once switch, the live measurement else the persisted anchor
 func (c *CLI) oneTurnSelectionContextFor() *provider.SelectionContext {
+	if c.agent != nil {
+		c.agent.refreshStats(nil)
+	}
 	if live := selectionContextForAgent(c.agent); live != nil {
 		return live
 	}
@@ -890,7 +877,11 @@ func (c *CLI) oneTurnSelectionContextFor() *provider.SelectionContext {
 		cliLogger.Debug("one-turn selection context unavailable")
 		return nil
 	}
-	tokens, ok := provider.PersistedAnchorTokens(c.ctx, c.sessionDB, c.sessionID, agent.RowsToMessages(messages), true)
+	reader := c.sessionDB.Reader(c.ctx)
+	if reader == nil {
+		return nil
+	}
+	tokens, ok := provider.PersistedAnchorTokens(c.ctx, reader.DB(), c.sessionID, agent.RowsToMessages(messages), true)
 	if !ok || tokens == 0 {
 		return nil
 	}

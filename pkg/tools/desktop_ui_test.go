@@ -162,12 +162,10 @@ func TestPreviewActionsAndDriveValidation(t *testing.T) {
 	if r := handlePreview(context.Background(), call); !strings.Contains(r, "preview read must run inside a desktop session") {
 		t.Fatal(r)
 	}
-	ReadPreviewPane = func(env *Env, window map[string]int) (string, error) {
+	read := func(window map[string]int) (string, error) {
 		return `{"kind":"browser","start":` + itoa(window["start"]) + `}`, nil
 	}
-	t.Cleanup(func() { ReadPreviewPane = nil })
-	call.Args = map[string]any{"action": "read", "start": float64(-5), "count": "3"}
-	if r := handlePreview(context.Background(), call); mustJSON(t, r)["start"] != float64(0) {
+	if r := ReadPreviewTool(float64(-5), "3", read); mustJSON(t, r)["start"] != float64(0) {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "bogus"}
@@ -179,35 +177,34 @@ func TestPreviewActionsAndDriveValidation(t *testing.T) {
 		t.Fatal(r)
 	}
 	var got map[string]any
-	PreviewAct = func(env *Env, payload map[string]any) (string, error) { got = payload; return `{"ok":true}`, nil }
-	t.Cleanup(func() { PreviewAct = nil })
-	if r := handleDrivePreview(context.Background(), drive); !strings.Contains(r, "click needs a ref") {
+	act := func(payload map[string]any) (string, error) { got = payload; return `{"ok":true}`, nil }
+	if r := DrivePreviewTool(drive.Args, act); !strings.Contains(r, "click needs a ref") {
 		t.Fatal(r)
 	}
 	drive.Args = map[string]any{"action": "type", "ref": "btn"}
-	if r := handleDrivePreview(context.Background(), drive); !strings.Contains(r, "type needs the text to enter.") {
+	if r := DrivePreviewTool(drive.Args, act); !strings.Contains(r, "type needs the text to enter.") {
 		t.Fatal(r)
 	}
 	drive.Args = map[string]any{"action": "scroll", "amount": "12", "to": "top", "max": 2.7}
-	if r := handleDrivePreview(context.Background(), drive); mustJSON(t, r)["ok"] != true || got["amount"] != 12 || got["max"] != 2 {
+	if r := DrivePreviewTool(drive.Args, act); mustJSON(t, r)["ok"] != true || got["amount"] != 12 || got["max"] != 2 {
 		t.Fatalf("%s %v", r, got)
 	}
 	drive.Args = map[string]any{"action": "scroll", "amount": "lots"}
-	if r := handleDrivePreview(context.Background(), drive); !strings.Contains(r, "amount and max must be integers.") {
+	if r := DrivePreviewTool(drive.Args, act); !strings.Contains(r, "amount and max must be integers.") {
 		t.Fatal(r)
 	}
-	PreviewAct = func(env *Env, payload map[string]any) (string, error) { return "", nil }
+	act = func(payload map[string]any) (string, error) { return "", nil }
 	drive.Args = map[string]any{"action": "elements"}
-	if r := handleDrivePreview(context.Background(), drive); !strings.Contains(r, "No GUI window answered with a page") {
+	if r := DrivePreviewTool(drive.Args, act); !strings.Contains(r, "No GUI window answered with a page") {
 		t.Fatal(r)
 	}
-	ann := annotatePreviewTool(env, "", nil, nil, nil)
+	ann := AnnotatePreviewTool("", nil, nil, nil, act)
 	if !strings.Contains(ann, "add needs a ref") {
 		t.Fatal(ann)
 	}
-	PreviewAct = func(env *Env, payload map[string]any) (string, error) { got = payload; return "plain", nil }
+	act = func(payload map[string]any) (string, error) { got = payload; return "plain", nil }
 	label := "cheap"
-	if r := annotatePreviewTool(env, "clear", nil, nil, &label); mustJSON(t, r)["text"] != "plain" || got["action"] != "unpin" || got["text"] != "cheap" {
+	if r := AnnotatePreviewTool("clear", nil, nil, &label, act); mustJSON(t, r)["text"] != "plain" || got["action"] != "unpin" || got["text"] != "cheap" {
 		t.Fatalf("%s %v", r, got)
 	}
 }
@@ -219,67 +216,65 @@ func TestTourValidationAndDispatch(t *testing.T) {
 		t.Fatal(r)
 	}
 	var got map[string]any
-	TourRequest = func(env *Env, payload map[string]any) (string, error) { got = payload; return `{"shown":true}`, nil }
-	t.Cleanup(func() { TourRequest = nil })
+	request := func(payload map[string]any) (string, error) { got = payload; return `{"shown":true}`, nil }
 	call.Args = map[string]any{"action": "start", "surface": "preview"}
-	if r := handleTour(context.Background(), call); !strings.Contains(r, "built-in tour runs on surface='app'") {
+	if r := TourTool(call.Args, request); !strings.Contains(r, "built-in tour runs on surface='app'") {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "start", "steps": []any{"x"}}
-	if r := handleTour(context.Background(), call); !strings.Contains(r, "steps[0] must be an object.") {
+	if r := TourTool(call.Args, request); !strings.Contains(r, "steps[0] must be an object.") {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "start", "steps": []any{map[string]any{}}}
-	if r := handleTour(context.Background(), call); !strings.Contains(r, "steps[0] needs a selector and/or title/text.") {
+	if r := TourTool(call.Args, request); !strings.Contains(r, "steps[0] needs a selector and/or title/text.") {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "start", "preset": "quick", "steps": []any{map[string]any{"text": "x"}}}
-	if r := handleTour(context.Background(), call); !strings.Contains(r, "pass steps or preset, not both.") {
+	if r := TourTool(call.Args, request); !strings.Contains(r, "pass steps or preset, not both.") {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "show"}
-	if r := handleTour(context.Background(), call); !strings.Contains(r, "show needs a selector") {
+	if r := TourTool(call.Args, request); !strings.Contains(r, "show needs a selector") {
 		t.Fatal(r)
 	}
 	call.Args = map[string]any{"action": "Start", "preset": "quick", "step_index": float64(2)}
-	if r := handleTour(context.Background(), call); mustJSON(t, r)["shown"] != true || got["action"] != "start" || got["surface"] != "app" || got["preset"] != "quick" || got["step_index"] != float64(2) {
+	if r := TourTool(call.Args, request); mustJSON(t, r)["shown"] != true || got["action"] != "start" || got["surface"] != "app" || got["preset"] != "quick" || got["step_index"] != float64(2) {
 		t.Fatalf("%s %v", r, got)
 	}
 }
 
 func TestSetThemeValidation(t *testing.T) {
-	env := desktopTestEnv(t, "")
+	desktopTestEnv(t, "")
 	s := func(v string) *string { return &v }
-	if r := setThemeTool(env, s("red"), nil, nil, nil); !strings.Contains(r, "only available in the Icebath desktop app") {
+	if r := SetThemeTool(s("red"), nil, nil, nil, nil); !strings.Contains(r, "only available in the Icebath desktop app") {
 		t.Fatal(r)
 	}
 	var got map[string]any
-	SetThemeRequest = func(env *Env, values map[string]any) (map[string]any, error) {
+	request := func(values map[string]any) (map[string]any, error) {
 		got = values
 		return map[string]any{"applied": values}, nil
 	}
-	t.Cleanup(func() { SetThemeRequest = nil })
-	if r := setThemeTool(env, nil, nil, nil, nil); !strings.Contains(r, "Pass at least one of accent, mode or layout") {
+	if r := SetThemeTool(nil, nil, nil, nil, request); !strings.Contains(r, "Pass at least one of accent, mode or layout") {
 		t.Fatal(r)
 	}
-	if r := setThemeTool(env, s("red"), nil, nil, s("accent")); !strings.Contains(r, "pass picker alone") {
+	if r := SetThemeTool(s("red"), nil, nil, s("accent"), request); !strings.Contains(r, "pass picker alone") {
 		t.Fatal(r)
 	}
-	if r := setThemeTool(env, nil, nil, nil, s("font")); !strings.Contains(r, "picker must be one of: accent, layout.") {
+	if r := SetThemeTool(nil, nil, nil, s("font"), request); !strings.Contains(r, "picker must be one of: accent, layout.") {
 		t.Fatal(r)
 	}
-	if r := setThemeTool(env, nil, s("dim"), nil, nil); !strings.Contains(r, `Unknown mode 'dim'.`) {
+	if r := SetThemeTool(nil, s("dim"), nil, nil, request); !strings.Contains(r, `Unknown mode 'dim'.`) {
 		t.Fatal(r)
 	}
-	r := setThemeTool(env, s("#12abEF"), s(" dark "), nil, nil)
+	r := SetThemeTool(s("#12abEF"), s(" dark "), nil, nil, request)
 	if got["accent"] != "#12abEF" || got["mode"] != "dark" || !strings.Contains(r, "applied") {
 		t.Fatalf("%s %v", r, got)
 	}
-	bad := mustJSON(t, setThemeTool(env, s("plaid"), nil, nil, nil))
+	bad := mustJSON(t, SetThemeTool(s("plaid"), nil, nil, nil, request))
 	if bad["success"] != false || !strings.Contains(bad["error"].(string), "Unknown accent 'plaid'") || len(bad["available"].([]any)) != 9 {
 		t.Fatal(bad)
 	}
-	if r := setThemeTool(env, nil, nil, nil, s("layout")); got["picker"] != "layout" || r == "" {
+	if r := SetThemeTool(nil, nil, nil, s("layout"), request); got["picker"] != "layout" || r == "" {
 		t.Fatal(r)
 	}
 }

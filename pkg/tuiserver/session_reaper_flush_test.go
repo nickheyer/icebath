@@ -6,7 +6,6 @@ import (
 	"context"
 	"os"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -14,50 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// Agent exposing the persist contract of the flush, recording each flushed transcript
-type flushAgent struct {
-	mu         sync.Mutex
-	messages   []*state.Message
-	flushCalls [][]*state.Message
-	persist    func(messages []*state.Message)
-}
-
-func newFlushAgent(content string) *flushAgent {
-	return &flushAgent{messages: []*state.Message{{Role: "user", Content: content}}}
-}
-
-func (a *flushAgent) SessionMessages() []*state.Message { return a.messages }
-
-func (a *flushAgent) PersistSession(messages *[]*state.Message, _ []*state.Message) error {
-	a.mu.Lock()
-	a.flushCalls = append(a.flushCalls, append([]*state.Message(nil), *messages...))
-	a.mu.Unlock()
-	if a.persist != nil {
-		a.persist(*messages)
-	}
-	return nil
-}
-
-func (a *flushAgent) calls() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.flushCalls)
-}
-
-// Registers one in memory session holding the agent for the case
-func registerFlushSession(t *testing.T, sid string, a flushableAgent, extra map[string]any) *tuigateway.Session {
-	t.Helper()
-	fields := map[string]any{"agent": a, "session_key": sid, "running": false}
-	for k, v := range extra {
-		fields[k] = v
-	}
-	session := tuigateway.NewSession(fields)
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
-	return session
-}
 
 // Puts the signal slots and the install state back the way the case found them
 func restoreSignalState(t *testing.T, prev map[os.Signal]*pysignal.Handler) {

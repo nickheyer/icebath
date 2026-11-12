@@ -411,6 +411,12 @@ type relayRedialReleaser interface {
 	ReleaseRedial() bool
 }
 
+var (
+	_ relayDormantAdapter = (*gateway.RelayAdapter)(nil)
+	_ relayRedialHolder   = (*gateway.RelayAdapter)(nil)
+	_ relayRedialReleaser = (*gateway.RelayAdapter)(nil)
+)
+
 // Watches for idle, drives the relay dormant, then suspends the machine
 func (r *GatewayRunner) scaleToZeroWatcher(ctx context.Context, interval float64) error {
 	if err := sleepCtx(ctx, math.Min(interval, 30.0)); err != nil {

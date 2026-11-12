@@ -212,7 +212,7 @@ func resetTerminalState(t *testing.T) {
 	prevMin, prevHook, prevEvidence, prevArm := preExecGuardMinTimeout, TerminalOutputTransformHook, VerificationEvidenceRecorder, ArmProcessWatcher
 	startCleanupThreadFn = func(*Env) {}
 	SkillLocks = noSkillLocks{}
-	TerminalBackendInstallHint = func(string) string { return "" }
+	TerminalBackendInstallHint = func(context.Context, string) string { return "" }
 	t.Cleanup(func() {
 		StopCleanupThread()
 		envConfigFn, checkAllGuardsFn, startCleanupThreadFn, planExecutionFn, acquireEnvFn = prevCfg, prevGuards, prevCleanup, prevPlan, prevAcquire

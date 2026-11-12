@@ -47,12 +47,12 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 
 func TestReadPanePassesDesktopJSONThroughAsPythonDoes(t *testing.T) {
 	answer := `{"total_lines": 3, "start": 0, "ratio": 1.0, "text": "a\u00e9"}`
-	pane := func(env *Env, window map[string]int) (string, error) { return answer, nil }
-	if got := readPane(nil, pane, nil, [4]string{}); got != `{"total_lines": 3, "start": 0, "ratio": 1.0, "text": "aé"}` {
+	pane := func(window map[string]int) (string, error) { return answer, nil }
+	if got := readPane(pane, nil, [4]string{}); got != `{"total_lines": 3, "start": 0, "ratio": 1.0, "text": "aé"}` {
 		t.Fatalf("passthrough %s", got)
 	}
 	answer = "not json"
-	if got := readPane(nil, pane, nil, [4]string{}); got != `{"text": "not json"}` {
+	if got := readPane(pane, nil, [4]string{}); got != `{"text": "not json"}` {
 		t.Fatalf("wrapped %s", got)
 	}
 }

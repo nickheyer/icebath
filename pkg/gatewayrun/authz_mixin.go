@@ -355,31 +355,29 @@ func (r *GatewayRunner) adapterExtraForSource(ctx context.Context, source *gatew
 	return adapterConfigExtra(adapter), nil
 }
 
-// Adapter rechecking a DM sender against its live allowlist
-type dmAllowedAdapter interface {
-	IsDMAllowed(userID string) bool
-}
-
 // Own policy adapter verdict when no environment allowlist exists, nil for no verdict
-func (r *GatewayRunner) ownPolicyAuthorizes(ctx context.Context, source *gateway.SessionSource, userID string, isGroup bool, adapterProfile *string) *bool {
+func (r *GatewayRunner) ownPolicyAuthorizes(ctx context.Context, source *gateway.SessionSource, userID string, isGroup bool, adapterProfile *string) (*bool, error) {
 	yes := true
 	if isGroup && r.adapterGroupHasSenderAllowlist(ctx, source.Platform, source.ChatID, adapterProfile) {
-		return &yes
+		return &yes, nil
 	}
 	kind := "dm"
 	if isGroup {
 		kind = "group"
 	}
 	if r.adapterPolicy(ctx, source.Platform, kind, adapterProfile) != "allowlist" {
-		return nil
+		return nil, nil
 	}
 	if !isGroup {
-		if checker, ok := r.authorizationAdapter(ctx, source.Platform, adapterProfile).(dmAllowedAdapter); ok {
-			verdict := checker.IsDMAllowed(userID)
-			return &verdict
+		if checker, ok := r.authorizationAdapter(ctx, source.Platform, adapterProfile).(gateway.DMAllowedAdapter); ok {
+			verdict, err := checker.IsDMAllowed(ctx, userID)
+			if err != nil {
+				return nil, err
+			}
+			return &verdict, nil
 		}
 	}
-	return &yes
+	return &yes, nil
 }
 
 // Adapter normalising allowlist entries and ids to one spelling
@@ -636,7 +634,11 @@ func (r *GatewayRunner) principalAuthorized(ctx context.Context, source *gateway
 	globalAllowlist := authEnv(ctx, "GATEWAY_ALLOWED_USERS")
 	if platformAllowlist == "" && groupUserAllowlist == "" && groupChatAllowlist == "" && globalAllowlist == "" {
 		if allowDelegation && r.adapterFlag(ctx, source.Platform, "enforces_own_access_policy", adapterProfile) {
-			if verdict := r.ownPolicyAuthorizes(ctx, source, userID, isGroup, adapterProfile); verdict != nil {
+			verdict, err := r.ownPolicyAuthorizes(ctx, source, userID, isGroup, adapterProfile)
+			if err != nil {
+				return false, err
+			}
+			if verdict != nil {
 				return *verdict, nil
 			}
 		}

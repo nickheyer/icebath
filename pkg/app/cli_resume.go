@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Sources the in chat session listing never shows
@@ -140,7 +141,11 @@ func (c *CLI) showRecentSessions(reason string, limit int) bool {
 
 // Session title or id resolved to an id on its live compression tip, empty when neither matches
 func (c *CLI) resolveSessionByNameOrID(nameOrID string) string {
-	db := c.sessionDB
+	reader := c.sessionDB.Reader(c.ctx)
+	if reader == nil {
+		return ""
+	}
+	db := reader.DB()
 	resolved := ""
 	if session, err := db.GetSession(c.ctx, nameOrID); err == nil && session != nil {
 		resolved = cliStr(session.GetOr("id", ""), "")
@@ -186,7 +191,7 @@ func (c *CLI) resolveResumeTarget(target string) (string, map[string]any, bool) 
 		cp("  "+c.commandsT("resume.not_found", map[string]any{"target": target}), "  "+c.commandsT("resume.not_found_hint", nil))
 		return "", nil, false
 	}
-	resolvedID, err := c.sessionDB.ResolveResumeSessionID(targetID)
+	resolvedID, err := c.sessionDB.ResolveResumeSessionID(c.ctx, targetID)
 	if err != nil {
 		resolvedID = targetID
 	}
@@ -200,26 +205,21 @@ func (c *CLI) resolveResumeTarget(target string) (string, map[string]any, bool) 
 	return targetID, sessionMeta, true
 }
 
-// Flushes unpersisted messages then ends the current session row with reason, each step allowed to fail
+// Ends the current gateway session with reason, the switch going ahead when the end fails
 func (c *CLI) endCurrentSession(reason string) {
-	if c.agent != nil {
-		func() {
-			defer func() { _ = recover() }()
-			_, _ = c.agent.FlushMessagesToSessionDB(c.conversationHistory)
-		}()
+	if err := c.sessionDB.EndSession(c.ctx, c.sessionID, reason); err != nil {
+		cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", c.sessionID, err))
 	}
-	func() {
-		defer func() { _ = recover() }()
-		_ = c.sessionDB.EndSession(c.sessionID, reason)
-	}()
 }
 
-// Points a built agent at the switched session, keeping its memory lineage
-func (c *CLI) syncAgentToSession(sessionID, parentSessionID, reason string) {
+// Points a built agent at the switched session with fresh per session figures and todo mirror
+func (c *CLI) syncAgentToSession(sessionID string) {
 	if c.agent == nil {
 		return
 	}
-	c.agent.SyncToSession(c.ctx, sessionID, parentSessionID, reason, len(c.conversationHistory))
+	c.agent.SetSessionID(sessionID)
+	c.agent.ResetSessionState()
+	c.agent.setTodoStore(tools.NewTodoStore())
 }
 
 // Switches to a previous session by number, title or id mid conversation
@@ -258,11 +258,15 @@ func (c *CLI) handleResumeCommand(cmdOriginal string) {
 		return
 	}
 	readID := targetID
+	targetID, refusal := gatewayOpen(c.ctx, c.sessionDB, targetID)
+	if refusal != "" {
+		cp(fmt.Sprintf("  %s %s (%s)", c.gatewayT("resume.switch_failed", nil), targetID, refusal))
+		return
+	}
 	if targetID == c.sessionID {
 		cp("  " + c.commandsT("resume.already_on", nil))
 		return
 	}
-	oldSessionID := c.sessionID
 	c.endCurrentSession("resumed_other")
 	c.sessionID, c.resumed, c.pendingTitle = targetID, true, ""
 	syncProcessSessionID(c.ctx, c.env, targetID)
@@ -272,11 +276,8 @@ func (c *CLI) handleResumeCommand(cmdOriginal string) {
 	}
 	c.conversationHistory = withoutSessionMeta(modelHistory)
 	c.resumeDisplayHistory = withoutSessionMeta(displayHistory)
-	func() {
-		defer func() { _ = recover() }()
-		_ = c.sessionDB.ReopenSession(c.ctx, targetID)
-	}()
-	c.syncAgentToSession(targetID, oldSessionID, "resume")
+	c.sessionDB.ReopenSession(c.ctx, targetID)
+	c.syncAgentToSession(targetID)
 	titlePart := ""
 	if title := cliStr(sessionMeta["title"], ""); title != "" {
 		titlePart = ` "` + title + `"`

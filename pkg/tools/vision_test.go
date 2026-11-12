@@ -64,8 +64,8 @@ type resolvingAux struct {
 	asked    []string
 }
 
-func (r *resolvingAux) ResolvesTask(task, provider string) (bool, error) {
-	r.asked = append(r.asked, task+"|"+provider)
+func (r *resolvingAux) ResolvesVision(ctx context.Context, provider string) (bool, error) {
+	r.asked = append(r.asked, "vision|"+provider)
 	return r.resolves[provider], r.err
 }
 

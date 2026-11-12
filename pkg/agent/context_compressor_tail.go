@@ -256,8 +256,6 @@ func WithSkillSafetyRule(summary string, head, tail []map[string]any) (string, [
 }
 
 // Content minus an attached skill safety rule
-func WithoutSkillSafetyRule(content string) string { return withoutSkillSafetyRule(content) }
-
 func withoutSkillSafetyRule(content string) string {
 	return strings.ReplaceAll(content, skillSafetySuffix, "")
 }

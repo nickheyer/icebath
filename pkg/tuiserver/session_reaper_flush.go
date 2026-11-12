@@ -191,6 +191,7 @@ func handleExitFlushSignal(sig os.Signal) error {
 
 // Installs the chaining SIGTERM and SIGINT flush handlers once, true when they are in place
 func InstallExitFlushSignalHandlers() bool {
+	loadServerModule()
 	exitFlushMu.Lock()
 	defer exitFlushMu.Unlock()
 	if exitFlushHandlersInstalled {

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -252,7 +252,7 @@ func (r *GatewayRunner) handleResetCommand(ctx context.Context, event *gateway.M
 	}
 	func() {
 		defer func() { _ = recover() }()
-		plugins.InvokeHook(ctx, "on_session_reset", map[string]any{"session_id": newSIDValue, "reason": "new_session",
+		agent.LifecycleInvokeHook(ctx, "on_session_reset", map[string]any{"session_id": newSIDValue, "reason": "new_session",
 			"platform": string(source.Platform), "old_session_id": oldSID, "new_session_id": newSIDValue})
 	}()
 	tipLine := func() (line string) {

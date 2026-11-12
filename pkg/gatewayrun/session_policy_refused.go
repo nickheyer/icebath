@@ -30,8 +30,8 @@ func refusedTurnResult(ctx context.Context, policy *gateway.LocalSessionPolicy, 
 // One turn reasoning level the executing admission committed with its model override, else the session's
 func oneTurnReasoning(ctx context.Context, t *TurnRunner, reasoningConfig map[string]any) map[string]any {
 	var inbound any
-	if t.ctx.inboundMessageID != nil {
-		inbound = *t.ctx.inboundMessageID
+	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
+		inbound = *inboundID
 	}
 	override, _ := gateway.CLITurn(ctx, inbound).GetOr("model_override", nil).(*pyjson.Object)
 	if override == nil {

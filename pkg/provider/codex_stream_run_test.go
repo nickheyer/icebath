@@ -1230,6 +1230,9 @@ func TestCodexStreamWireErrorEventNestedEnvelopeAttrStyle(t *testing.T) {
 	if !errors.As(err, &streamErr) || !strings.Contains(err.Error(), "Slow down") || streamErr.Code != "rate_limit_exceeded" {
 		t.Fatalf("err %T %v", err, err)
 	}
+	if body, _ := streamErr.Body["error"].(map[string]any); body["code"] != "rate_limit_exceeded" || body["param"] != nil || body["type"] != "error" {
+		t.Fatalf("body %v", streamErr.Body)
+	}
 }
 
 func TestCodexStreamAssemblerKeepsTheServedTier(t *testing.T) {

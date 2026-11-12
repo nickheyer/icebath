@@ -4,7 +4,7 @@ package tuigateway
 func SessionHasLiveTransport(session *Session) bool { return sessionHasLiveTransport(session, nil) }
 
 // Whether a transport is the module stdio transport
-func IsStdioTransport(t any) bool { return t == Transport(stdioTransport) }
+func IsStdioTransport(t any) bool { return t == stdioTransport() }
 
 // Whether a transport is closed or its peer is gone
 func TransportIsDead(transport Transport) bool { return transportIsDead(transport) }

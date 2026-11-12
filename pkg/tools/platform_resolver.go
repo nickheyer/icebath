@@ -180,8 +180,8 @@ func pyExceptionClass(err error) string {
 	if pe, ok := err.(*os.PathError); ok && strings.Contains(pe.Err.Error(), "is a directory") {
 		return "IsADirectoryError"
 	}
-	if cls, ok := err.(interface{ PyClass() string }); ok {
-		return cls.PyClass()
+	if cls, ok := err.(interface{ PyTypeName() string }); ok {
+		return cls.PyTypeName()
 	}
 	return "OSError"
 }

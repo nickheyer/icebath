@@ -138,9 +138,7 @@ func installProcessWiring() {
 	}
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
 	cron.RegisterWorkerConfigHooks = gateway.RegisterWorkerConfigHooks
-	cron.RegisterEstopCheck(func(component string, log *slog.Logger) bool {
-		return tools.CheckPaused(context.Background(), component, log)
-	})
+	cron.RegisterEstopCheck(tools.CheckPaused)
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
 	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
@@ -257,6 +255,7 @@ func installProcessWiring() {
 	mcp.TUILaunchHome, mcp.TUIProfileHome, mcp.TUIProfileRuntimeScope = tuiserver.LaunchHome, tuiserver.ProfileHome, tuiserver.ProfileRuntimeScope
 	observability.ResolveSessionPlatformHook = tuiserver.ResolveSessionPlatform
 	pm.InteractiveAppRunning = app.PromptAppIsRunning
+	provider.SetFreeTierGatewayHooks(provider.FreeTierGatewayHooks{OwnsRuntimeLock: gateway.OwnsGatewayRuntimeLock})
 	pm.CuaDriverChildEnv = cuaDriverChildEnv
 	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
 	tools.ApprovalHookInvoker = approvalHookInvoker
@@ -347,7 +346,7 @@ func installProcessWiring() {
 	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
 	tools.MediaDeliveryPathValidator = mediaDeliveryPathValidator
-	tools.TerminalBackendInstallHint = func(backend string) string { return provider.TerminalBackendInstallHint(context.Background(), backend) }
+	tools.TerminalBackendInstallHint = provider.TerminalBackendInstallHint
 	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime
@@ -427,7 +426,7 @@ func pluginServices() *plugins.Services {
 	s := &plugins.Services{
 		InvokeLifecycleHook: agent.LifecycleInvokeHook,
 		RequestToolApproval: func(ctx context.Context, toolName, message, ruleKey, turnID, toolCallID, sessionID string) (map[string]any, error) {
-			return tools.RequestPluginToolApproval(ctx, processToolsEnv(ctx), toolName, message, ruleKey, turnID, toolCallID, sessionID)
+			return tools.RequestPluginToolApproval(ctx, callerToolsEnv(ctx), toolName, message, ruleKey, turnID, toolCallID, sessionID)
 		},
 		FailoverReason:              failoverReason,
 		ClearDashboardAuthProviders: gateway.ClearDashboardAuthProviders,
@@ -515,6 +514,14 @@ func pluginServices() *plugins.Services {
 	}
 	gateway.InstallPluginServices(s)
 	return s
+}
+
+// Session Env of the calling turn bound on ctx, the process Env of the bound home outside a turn
+func callerToolsEnv(ctx context.Context) *tools.Env {
+	if env := tools.ToolEnvFrom(ctx); env != nil {
+		return env
+	}
+	return processToolsEnv(ctx)
 }
 
 // The tool environment of one home with its config, for plugin facing memory calls
@@ -611,7 +618,7 @@ func botDesktopInstallPackages(env *tools.Env, askPassword func() (string, error
 
 // Validated media delivery path of a candidate, empty when the gateway refuses it and raising on a resolve failure
 func mediaDeliveryPathValidator(env *tools.Env, candidate, sessionKey string) string {
-	path, err := gateway.ValidateMediaDeliveryPath(context.Background(), candidate, sessionKey)
+	path, err := gateway.ValidateMediaDeliveryPath(tools.WithEnvHome(context.Background(), env), candidate, sessionKey)
 	if err != nil {
 		panic(err)
 	}

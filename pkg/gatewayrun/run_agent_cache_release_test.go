@@ -348,9 +348,9 @@ func TestADesktopClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *test
 		t.Fatal("stuck release never started")
 	}
 	leaseGW := endGatewayTurn(t, r, key, src)
-	leaseDesk, refusal := tuigateway.ClaimActiveSessionSlot(context.Background(), key, "desktop-view", "desktop", tmp)
+	leaseDesk, refusal := tuigateway.ClaimActiveSessionSlotRefusal(context.Background(), key, "desktop-view", "desktop", tmp)
 	if refusal != nil {
-		t.Fatalf("Desktop saw the ended gateway turn as the session's owner: %s", *refusal)
+		t.Fatalf("Desktop saw the ended gateway turn as the session's owner: %s", refusal.PyStr())
 	}
 	drainLeaseWorker(t, leaseGW, stuck)
 	entries, err := activesessions.RegistrySnapshot(context.Background(), tmp, true)

@@ -125,6 +125,7 @@ func TestDirectPluginPlatformRegistrationInfersImmutableScope(t *testing.T) {
 			Registry.RestoreRegistration(name, e, l, globalEntry, globalLoader, "")
 		}
 		tools.Default.RestorePluginOverridePolicy(module, policy, nil, homeA)
+		tools.Default.ForgetPluginModuleScopeForTests(module, homeA)
 	})
 	ctxA, ctxB := home.WithOverride(context.Background(), homeA), home.WithOverride(context.Background(), homeB)
 	if err := Registry.Register(ctxB, entry, ""); err != nil {

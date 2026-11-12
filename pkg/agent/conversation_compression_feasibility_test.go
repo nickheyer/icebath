@@ -199,7 +199,7 @@ func TestEngineContextLengthResolvesTheBuiltinWindow(t *testing.T) {
 	if cc.ContextEngineBase.ContextLength != 0 {
 		t.Fatal("window resolved before first access")
 	}
-	if got := EngineContextLength(cc); got != 100_000 || cc.ContextEngineBase.ContextLength != 100_000 {
+	if got := engineContextLength(cc); got != 100_000 || cc.ContextEngineBase.ContextLength != 100_000 {
 		t.Fatalf("built in window %d", got)
 	}
 }

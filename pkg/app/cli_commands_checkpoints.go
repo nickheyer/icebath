@@ -1,12 +1,10 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -79,20 +77,6 @@ func (c *CLI) rollbackKept(result map[string]any) {
 	}
 }
 
-// The agent's checkpoint manager, nil after printing why it is unavailable
-func (c *CLI) checkpointManager(disabledLines []string) *tools.CheckpointManager {
-	if c.agent == nil {
-		printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
-		return nil
-	}
-	mgr := c.agent.CheckpointManager()
-	if mgr == nil || !mgr.Enabled {
-		printLines(disabledLines...)
-		return nil
-	}
-	return mgr
-}
-
 // Working directory the checkpoint and diff commands read, TERMINAL_CWD before the process cwd
 func terminalCwd() string {
 	if cwd, ok := os.LookupEnv("TERMINAL_CWD"); ok {
@@ -102,133 +86,13 @@ func terminalCwd() string {
 	return cwd
 }
 
-// A one based checkpoint number resolved to its hash, any other ref passed through, empty after printing a bad number
-func (c *CLI) resolveCheckpointRef(ref string, checkpoints []tools.CheckpointEntry) string {
-	n, ok := parsePyInt(ref)
-	if !ok {
-		return ref
-	}
-	if idx := n - 1; idx >= 0 && idx < len(checkpoints) {
-		return checkpoints[idx].Hash
-	}
-	printLines("  " + c.t("cli.session.invalid_checkpoint", map[string]any{"count": len(checkpoints)}))
-	return ""
-}
-
 // Handles /rollback, listing, diffing or restoring checkpoints, a restore also undoing the last chat turn
 func (c *CLI) handleRollbackCommand(command string) {
-	mgr := c.checkpointManager(catalogLines(c.commandsT("rollback.not_enabled", nil)))
-	if mgr == nil {
+	if connection := gatewayConnectionFor(c); connection != nil {
+		gatewayRollback(c, connection, command)
 		return
 	}
-	cwd := terminalCwd()
-	fields := strings.Fields(command)
-	var args []string
-	restoreAll := false
-	for _, a := range fields[1:] {
-		low := pystr.Lower(a)
-		if low == "--all" || low == "--force" {
-			restoreAll = true
-			continue
-		}
-		args = append(args, a)
-	}
-	if reason := mgr.UnsupportedBackendReason(""); reason != "" {
-		printLines("  " + reason)
-		if len(args) > 0 {
-			return
-		}
-	}
-	if len(args) == 0 {
-		checkpoints := mgr.ListCheckpoints(cwd)
-		if len(checkpoints) == 0 {
-			all, err := mgr.ListAllCheckpoints()
-			if err != nil {
-				panic(err)
-			}
-			if len(all) > 0 {
-				printLines("  "+c.commandsT("rollback.none_here_showing_all", map[string]any{"cwd": cwd}),
-					tools.FormatCheckpointList(all, c.commandsT("rollback.all_directories", nil)))
-				return
-			}
-		}
-		printLines(tools.FormatCheckpointList(checkpoints, cwd))
-		return
-	}
-	isDiff := pystr.Lower(args[0]) == "diff"
-	if isDiff && len(args) < 2 {
-		printLines("  " + c.commandsT("rollback.usage_diff", nil))
-		return
-	}
-	checkpoints := mgr.ListCheckpoints(cwd)
-	if len(checkpoints) == 0 {
-		printLines("  " + c.gatewayT("rollback.none_found", map[string]any{"cwd": cwd}))
-		return
-	}
-	refIndex := 0
-	if isDiff {
-		refIndex = 1
-	}
-	target := c.resolveCheckpointRef(args[refIndex], checkpoints)
-	if target == "" {
-		return
-	}
-	if isDiff {
-		c.rollbackDiff(mgr, cwd, target)
-		return
-	}
-	filePath := ""
-	if len(args) > 1 {
-		filePath = args[1]
-	}
-	c.rollbackRestore(mgr, cwd, target, filePath, restoreAll)
-}
-
-// Prints the diff since a checkpoint, the body capped at 80 lines
-func (c *CLI) rollbackDiff(mgr *tools.CheckpointManager, cwd, target string) {
-	result := mgr.Diff(cwd, target)
-	if !cliTruthy(result["success"]) {
-		printLines("  ❌ " + pyrepr.Str(result["error"]))
-		return
-	}
-	stat, diff := cliStr(result["stat"], ""), cliStr(result["diff"], "")
-	if stat == "" && diff == "" {
-		printLines("  " + c.commandsT("rollback.no_changes_since", nil))
-		return
-	}
-	if stat != "" {
-		printLines("\n" + stat)
-	}
-	if diff != "" {
-		lines := pystr.Splitlines(diff, false)
-		if len(lines) > 80 {
-			printLines(strings.Join(lines[:80], "\n"), "\n  "+c.commandsT("rollback.more_lines", map[string]any{"count": len(lines) - 80}))
-		} else {
-			printLines("\n" + diff)
-		}
-	}
-}
-
-// Restores a checkpoint, one file or the whole tree, then undoes the last chat turn
-func (c *CLI) rollbackRestore(mgr *tools.CheckpointManager, cwd, target, filePath string, restoreAll bool) {
-	result := mgr.Restore(cwd, target, filePath, !restoreAll && filePath == "")
-	if !cliTruthy(result["success"]) {
-		printLines("  ❌ " + pyrepr.Str(result["error"]))
-		return
-	}
-	restored := map[string]any{"hash": result["restored_to"], "reason": result["reason"]}
-	if filePath != "" {
-		restored["file"] = filePath
-		printLines("  " + c.commandsT("rollback.restored_file", restored))
-	} else {
-		printLines("  " + c.commandsT("rollback.restored_all", restored))
-	}
-	c.rollbackKept(result)
-	printLines("  " + c.commandsT("rollback.snapshot_saved", nil))
-	if len(c.conversationHistory) > 0 {
-		c.undoLast(1, false)
-		printLines("  " + c.commandsT("rollback.chat_turn_undone", nil))
-	}
+	printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
 }
 
 var diffModes = map[string]string{
@@ -254,7 +118,7 @@ func (c *CLI) handleDiffCommand(command string) {
 	}
 	cwd := terminalCwd()
 	if mode == "session" {
-		c.printSessionDiffFor(cwd, statOnly)
+		c.printSessionDiffFor()
 		return
 	}
 	result := tools.CollectWorkingDiff(cwd, mode, paths)
@@ -298,17 +162,9 @@ func (c *CLI) printDiffBody(diff, statHint string, limit, total int) {
 	c.printDiffText(diff)
 }
 
-// Prints the cumulative checkpoint baseline diff of /diff session
-func (c *CLI) printSessionDiffFor(cwd string, statOnly bool) {
-	mgr := c.checkpointManager(catalogLines(c.commandsT("diff.not_enabled", nil)))
-	if mgr == nil {
-		return
-	}
-	if reason := mgr.UnsupportedBackendReason(""); reason != "" {
-		printLines("  " + reason)
-		return
-	}
-	c.printSessionDiff(mgr.SessionDiff(cwd), statOnly)
+// Prints why the session diff is unavailable off the gateway, no local agent holding a checkpoint baseline
+func (c *CLI) printSessionDiffFor() {
+	printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
 }
 
 // Renders a session diff result, stat then the body unless stat only
@@ -484,21 +340,37 @@ func (c *CLI) restoreSnapshotCommand(parts []string) {
 		}
 		snapID = pyrepr.Str(plainMap(snaps[idx-1])["id"])
 	}
-	if c.sessionDB != nil {
-		func() {
-			defer func() { _ = recover() }()
-			_ = c.sessionDB.Close()
-			c.sessionDB = nil
-		}()
+	store := c.gatewayStore()
+	chat := store != nil && c.gatewaySessionOpen
+	onGateway := chat && strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_URL")) == ""
+	var restored bool
+	var err error
+	gatewayTarget := false
+	if onGateway {
+		dir, derr := backup.QuickSnapshotDir(snapID, h)
+		gatewayTarget, err = dir != "", derr
 	}
-	restored, err := backup.RestoreQuickSnapshot(c.ctx, snapID, h)
+	switch {
+	case err != nil:
+	case gatewayTarget:
+		restored, err = c.restoreGatewaySnapshot(store, snapID)
+	default:
+		if c.sessionDB != nil && !chat {
+			c.sessionDB.Close()
+			c.sessionDB = nil
+		}
+		restored, err = backup.RestoreQuickSnapshot(c.ctx, snapID, h)
+	}
 	if err != nil {
 		cliLogger.Warn(fmt.Sprintf("Snapshot restore failed: %v", err))
 		printLines("  "+c.commandsT("snapshot.restore_incomplete", map[string]any{"snapshot_id": snapID}), "  "+err.Error())
 		return
 	}
 	if restored {
-		printLines("  "+c.commandsT("snapshot.restored", map[string]any{"snapshot_id": snapID}), "  "+c.commandsT("snapshot.restart_recommended", nil))
+		printLines("  " + c.commandsT("snapshot.restored", map[string]any{"snapshot_id": snapID}))
+		if !onGateway {
+			printLines("  " + c.commandsT("snapshot.restart_recommended", nil))
+		}
 		return
 	}
 	all, err := backup.ListQuickSnapshots(1000000, h)
@@ -586,12 +458,6 @@ func (c *CLI) handleImportCommand(command string) {
 	printLines("  " + c.commandsT("import.use_it", map[string]any{"name": imported}))
 }
 
-const (
-	handoffPendingTimeout = 60 * time.Second
-	handoffRunningTimeout = 900 * time.Second
-	handoffHeartbeatEvery = 30 * time.Second
-)
-
 // Prints the lines and keeps the CLI session
 func handoffKeep(lines ...string) bool {
 	cp(lines...)
@@ -609,20 +475,10 @@ func (c *CLI) handleHandoffCommand(cmdOriginal string) bool {
 	if homeChannel == nil {
 		return true
 	}
-	sessionTitle, ok := c.handoffPrepareSession()
-	if !ok {
+	if !c.handoffPrepareSession() {
 		return true
 	}
-	requested, err := c.sessionDB.RequestHandoff(c.ctx, c.sessionID, platformName)
-	if err != nil {
-		panic(err)
-	}
-	if !requested {
-		return handoffKeep("  " + c.commandsT("handoff.already_in_flight", nil))
-	}
-	cp("  "+c.commandsT("handoff.queued", map[string]any{"title": sessionTitle, "platform": platformName, "home": pyrepr.Str(homeChannel.Name)}),
-		"  "+c.commandsT("handoff.waiting", nil))
-	return c.handoffWait(platformName, sessionTitle)
+	panic(c.sessionDB.Refused("request_handoff"))
 }
 
 // Home channel of the destination platform, nil after printing why it is unknown, disabled or homeless
@@ -662,93 +518,20 @@ func (c *CLI) handoffValidateTarget(platformName string) *gateway.HomeChannel {
 	return homeChannel
 }
 
-// Refuses mid turn and makes sure a session row exists, returning the display title
-func (c *CLI) handoffPrepareSession() (string, bool) {
+// Refuses mid turn and makes sure a session row exists, false after printing why it cannot
+func (c *CLI) handoffPrepareSession() bool {
 	if c.agentRunning {
 		cp("  " + c.commandsT("shared.agent_busy", map[string]any{"command": "/handoff"}))
-		return "", false
+		return false
 	}
 	if c.sessionDB == nil {
 		c.initSessionStore()
 	}
-	if c.sessionDB == nil {
-		cp(c.dbUnavailableLine())
-		return "", false
-	}
 	if c.sessionMeta(c.sessionID) == nil {
 		if _, err := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, "handoff-"+pystr.Slice(c.sessionID, 0, 8)); err != nil {
 			cp("  " + c.commandsT("handoff.session_row_failed", map[string]any{"error": err.Error()}))
-			return "", false
-		}
-	}
-	title := ""
-	if meta := c.sessionMeta(c.sessionID); meta != nil {
-		title = cliStr(meta["title"], "")
-	}
-	if title == "" {
-		title = pystr.Slice(c.sessionID, 0, 8)
-	}
-	return title, true
-}
-
-// Polls the handoff row, sixty seconds unclaimed then fifteen minutes running with heartbeats
-func (c *CLI) handoffWait(platformName, sessionTitle string) bool {
-	pendingDeadline := time.Now().Add(handoffPendingTimeout)
-	var runningDeadline, nextHeartbeat time.Time
-	lastState := "pending"
-	for {
-		var row map[string]any
-		func() {
-			defer func() { _ = recover() }()
-			row = plainMap(c.sessionDB.GetHandoffState(c.ctx, c.sessionID))
-		}()
-		current := cliStr(row["state"], "")
-		if current == "" {
-			current = "pending"
-		}
-		if current != lastState {
-			if current == "running" {
-				cp("  " + c.commandsT("handoff.picked_up", nil))
-				runningDeadline = time.Now().Add(handoffRunningTimeout)
-				nextHeartbeat = time.Now().Add(handoffHeartbeatEvery)
-			}
-			lastState = current
-		}
-		if current == "completed" {
-			cp("", "  "+c.commandsT("handoff.complete", map[string]any{"platform": platformName}),
-				"  "+c.commandsT("handoff.resume_hint", map[string]any{"title": sessionTitle}), "")
-			markSessionHandedOff(c.sessionID)
-			c.shouldExit = true
 			return false
 		}
-		if current == "failed" {
-			errText := cliStr(row["error"], "")
-			if errText == "" {
-				errText = c.commandsT("handoff.unknown_error", nil)
-			}
-			return handoffKeep("  "+c.commandsT("handoff.failed", map[string]any{"error": errText}), "  "+c.commandsT("handoff.session_intact_retry", nil))
-		}
-		now := time.Now()
-		if current == "pending" {
-			if !now.Before(pendingDeadline) {
-				break
-			}
-		} else {
-			if !nextHeartbeat.IsZero() && !now.Before(nextHeartbeat) {
-				cp("  " + c.commandsT("handoff.still_transferring", nil))
-				nextHeartbeat = now.Add(handoffHeartbeatEvery)
-			}
-			if !runningDeadline.IsZero() && !now.Before(runningDeadline) {
-				return handoffKeep("  "+c.commandsT("handoff.taking_long", nil),
-					"  "+c.commandsT("handoff.check_platform", map[string]any{"platform": platformName}),
-					"  "+c.commandsT("handoff.no_longer_waiting", nil), "  "+c.commandsT("handoff.retry_when_settled", nil))
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
 	}
-	func() {
-		defer func() { _ = recover() }()
-		_, _ = c.sessionDB.FailHandoff(context.WithoutCancel(c.ctx), c.sessionID, "timed out waiting for gateway", []string{"pending"})
-	}()
-	return handoffKeep("  "+c.commandsT("handoff.timed_out", nil), "  "+c.commandsT("handoff.session_intact", nil))
+	return true
 }

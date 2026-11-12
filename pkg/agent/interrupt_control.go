@@ -3,7 +3,6 @@ package agent
 import (
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 
@@ -21,7 +20,7 @@ const (
 // Interrupt categories that mean a human stopped the turn
 var UserInterruptReasons = map[string]bool{reasonHardStop: true, reasonNewMessage: true, reasonUserInterrupt: true}
 
-var interruptStdout io.Writer = os.Stdout
+var interruptStdout io.Writer = processStdout{}
 
 // One buffered steer submission and the ticket naming it, nil for a ticketless steer
 type steerPart struct {
@@ -55,18 +54,6 @@ func interruptIssuer(a *AIAgent) string {
 		return ""
 	}
 	return strings.ReplaceAll(strings.TrimSpace(reason), " ", "_")
-}
-
-// Reason a tool call was skipped in words safe for tool output, from the recorded interrupt reason
-func interruptSkipWording(a *AIAgent) string {
-	reason := a.toolInterruptReason
-	if reason == "" {
-		return "Turn interrupted"
-	}
-	if UserInterruptReasons[reason] {
-		return pystr.Capitalize(reason)
-	}
-	return "Turn aborted — " + strings.ReplaceAll(reason, "_", " ")
 }
 
 // Turn exit reason for an API call cut short by an interrupt, naming a system issuer when present

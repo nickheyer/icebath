@@ -12,8 +12,16 @@ import (
 // Prints the compact startup status line of key state, model, tool count, toolsets and provider
 func (c *CLI) showStatus() {
 	var toolStatus string
-	if os.Getenv("ICEBATH_DEFER_AGENT_STARTUP") == "1" {
+	store := c.gatewayStore()
+	var inventory map[string]any
+	if store != nil {
+		inventory = store.BannerInventory()
+	}
+	if os.Getenv("ICEBATH_DEFER_AGENT_STARTUP") == "1" || (store != nil && inventory == nil) {
 		toolStatus = c.t("cli.session.status_tools_deferred", nil)
+	} else if inventory != nil {
+		listed, _ := inventory["tools"].([]any)
+		toolStatus = c.t("cli.session.status_tools_count", map[string]any{"count": len(listed)})
 	} else {
 		toolStatus = c.t("cli.session.status_tools_count", map[string]any{"count": len(toolDefinitionsFor(c, false))})
 	}

@@ -172,5 +172,5 @@ func (l *DesktopBuildLock) Enter(ctx context.Context) error {
 // OSError a desktop build raises with its message only
 type desktopOSError string
 
-func (e desktopOSError) Error() string         { return string(e) }
-func (e desktopOSError) ExceptionName() string { return "OSError" }
+func (e desktopOSError) Error() string      { return string(e) }
+func (e desktopOSError) PyTypeName() string { return "OSError" }

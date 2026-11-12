@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -211,7 +211,7 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 			if platform == "" {
 				platform = "tui"
 			}
-			plugins.InvokeHook(scoped, "on_session_end", map[string]any{"completed": false, "interrupted": true,
+			agent.LifecycleInvokeHook(scoped, "on_session_end", map[string]any{"completed": false, "interrupted": true,
 				"session_id": sid, "model": a.Model(), "platform": platform})
 		})
 	}

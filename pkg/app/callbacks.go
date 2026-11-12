@@ -1,7 +1,9 @@
 package app
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -16,6 +18,30 @@ func invalidateCLI(c *CLI) { c.paintNow() }
 // Drops stale draft input so Enter never stores it as the secret
 func clearSecretInput(c *CLI) { c.clearSecretInputBuffer() }
 
+// Saver of a captured secret, swapped while a gateway secret request captures the value instead
+type secretSaver func(ctx context.Context, h, key, value string) (config.SecureSaveResult, error)
+
+var (
+	secretSaverMu     sync.Mutex
+	secretSaverActive secretSaver = config.SaveEnvValueSecure
+)
+
+// Saver the next secret capture stores through
+func currentSecretSaver() secretSaver {
+	secretSaverMu.Lock()
+	defer secretSaverMu.Unlock()
+	return secretSaverActive
+}
+
+// Installs a saver and returns the one it replaced
+func swapSecretSaver(saver secretSaver) secretSaver {
+	secretSaverMu.Lock()
+	defer secretSaverMu.Unlock()
+	previous := secretSaverActive
+	secretSaverActive = saver
+	return previous
+}
+
 // Result of a secret capture that stored nothing
 func skippedSecret(varName, reason, message string) map[string]any {
 	return map[string]any{"success": true, "reason": reason, "stored_as": varName, "validated": false, "skipped": true, "message": message}
@@ -28,7 +54,7 @@ func secretResult(c *CLI, varName, value string) (map[string]any, error) {
 		return skippedSecret(varName, "cancelled", "Secret setup was skipped."), nil
 	}
 	h := home.Dir(c.ctx)
-	stored, err := config.SaveEnvValueSecure(c.ctx, h, varName, value)
+	stored, err := currentSecretSaver()(c.ctx, h, varName, value)
 	if err != nil {
 		var valueErr *providerregistry.ValueError
 		if errors.As(err, &valueErr) {

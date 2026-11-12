@@ -109,6 +109,7 @@ type SessionState struct {
 	Missed              map[string]bool
 	Gaps                int
 	AttachedGaps        int
+	ServiceTierSent     *string
 }
 
 func NewSessionState(sessionID string) *SessionState {

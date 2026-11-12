@@ -3,7 +3,7 @@ package tuigateway
 import "slices"
 
 // Module stdio transport, the sink of a request no transport was bound for
-func ModuleStdioTransport() Transport { return stdioTransport }
+func ModuleStdioTransport() Transport { return stdioTransport() }
 
 // Parked sink a disconnected WebSocket session holds until it is resumed or reaped
 func DetachedWSTransport() Transport { return detachedWSTransport }

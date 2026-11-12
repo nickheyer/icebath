@@ -99,12 +99,19 @@ func (c *CLI) processCommand(command string) bool {
 		c.pendingResumeSessions = nil
 	}
 	handler, ok := slashDispatch[canonical]
-	if def != nil {
+	if ok && runGatewaySetting(c, canonical, cmdOriginal) {
+		return true
+	}
+	runs := ok && !gatewayCLIRefused[canonical]
+	if def != nil && !observeGatewayCommand(c, baseWord, slashArgs(cmdOriginal), runs) {
 		sessionKey, platform := c.sessionID, "cli"
 		plugins.FirePreCommandHook(c.ctx, "cli", canonical, baseWord, slashArgs(cmdOriginal), &sessionKey, &platform)
 	}
 	if !ok {
 		return c.processUnregisteredSlash(cmdOriginal, cmdLower)
+	}
+	if runGatewayCLICommand(c, canonical, cmdOriginal) {
+		return true
 	}
 	return handler(c, cmdOriginal)
 }

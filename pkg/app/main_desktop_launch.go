@@ -1083,8 +1083,8 @@ func preparedElectronRuntime(projectRoot string) (string, error, error) {
 // KeyError Python raises for a missing mapping key
 type guiKeyErr struct{ key string }
 
-func (e *guiKeyErr) Error() string         { return pyrepr.StrRepr(e.key) }
-func (e *guiKeyErr) ExceptionName() string { return "KeyError" }
+func (e *guiKeyErr) Error() string      { return pyrepr.StrRepr(e.key) }
+func (e *guiKeyErr) PyTypeName() string { return "KeyError" }
 
 // KeyError for a missing key
 func guiKeyError(key string) error { return &guiKeyErr{key: key} }

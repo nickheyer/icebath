@@ -42,7 +42,7 @@ const codexCacheMax = 128
 // Cross process lock wait for the context length cache file
 var contextCacheLockTimeout = 5 * time.Second
 
-var metadataLog = slog.Default()
+var metadataLog = slog.Default().With("logger", "agent.model_metadata")
 
 // Every writer of a paired memo holds this from sweep to publish
 var memoLock sync.Mutex

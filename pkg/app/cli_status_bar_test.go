@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -38,9 +40,9 @@ type usageSpec struct {
 // Attaches an agent whose status bar usage the test owns and may change between repaints
 func attachUsage(t *testing.T, c *CLI, spec *usageSpec) {
 	t.Helper()
-	c.agent = &agent.AIAgent{}
+	c.agent = &GatewayAgent{ctx: context.Background()}
 	prev := statusBarUsage
-	statusBarUsage = func(*CLI, *agent.AIAgent) agent.StatusBarUsage {
+	statusBarUsage = func(*CLI, *GatewayAgent) agent.StatusBarUsage {
 		usage := agent.StatusBarUsage{Counters: map[string]int{
 			"session_input_tokens": spec.prompt, "session_output_tokens": spec.completion, "session_cache_read_tokens": spec.cacheRead,
 			"session_cache_write_tokens": spec.cacheWrite, "session_prompt_tokens": spec.prompt, "session_completion_tokens": spec.completion,
@@ -89,10 +91,15 @@ func TestCLIStatusBar(t *testing.T) {
 		if c.sessionDB == nil {
 			t.Fatal("the configured CLI has no session store")
 		}
-		if err := c.sessionDB.EnsureSession(state.NewSession{ID: c.sessionID, Source: "cli"}); err != nil {
+		writer, err := state.NewSessionDB(c.ctx, home.StatePath(home.Dir(c.ctx)), false)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, "user-profiles"); err != nil {
+		t.Cleanup(func() { writer.Close() })
+		if err := writer.EnsureSession(state.NewSession{ID: c.sessionID, Source: "cli"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.SetSessionTitle(c.ctx, c.sessionID, "user-profiles"); err != nil {
 			t.Fatal(err)
 		}
 		if got := c.getStatusBarSnapshot()["session_title"]; got != "user-profiles" {

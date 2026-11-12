@@ -13,4 +13,5 @@ type RunnerIngressContract interface {
 	restoredSourceRunner
 	fallbackRefreshRunner
 	channelPromptRunner
+	SessionAuthorityHolder
 }

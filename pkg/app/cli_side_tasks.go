@@ -165,6 +165,16 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 	c.backgroundTaskCounter++
 	taskNum := c.backgroundTaskCounter
 	preview := ellipsize(prompt, 60)
+	if connection := gatewayConnectionFor(c); connection != nil {
+		taskID, wait, err := gatewaySideStart(c.ctx, connection, c.sessionID, "background", prompt)
+		if err != nil {
+			panic(err)
+		}
+		cp("  "+c.commandsT("background.started", map[string]any{"number": taskNum, "preview": preview}),
+			"  "+c.commandsT("background.task_id", map[string]any{"task_id": taskID}), "  "+c.commandsT("background.keep_chatting", nil)+"\n")
+		c.startBackgroundWorker(taskID, taskNum, preview, wait)
+		return
+	}
 	taskID := newBackgroundTaskID(time.Now())
 	if !c.ensureRuntimeCredentials() {
 		cp("  " + c.commandsT("background.no_credentials", nil))
@@ -195,7 +205,7 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 			Model: route.model, ACPCommand: rt.Command, ACPArgs: rt.Args, MaxIterations: c.maxTurns,
 			APIKey: rt.APIKey, BaseURL: rt.BaseURL, Provider: rt.Provider, APIMode: rt.APIMode,
 			EnabledToolsets: c.enabledToolsets, QuietMode: true, VerboseLogging: false, SessionID: taskID, Platform: "cli",
-			SideAgent: true, SessionDB: c.sessionDB, ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier,
+			SideAgent: true, ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier,
 			RequestOverrides: route.requestOverrides, ProvidersAllowed: c.providersOnly, ProvidersIgnored: c.providersIgnore,
 			ProvidersOrder: c.providersOrder, ProviderSort: c.providerSort, ProviderRequireParameters: c.providerRequireParams,
 			ProviderDataCollection: c.providerDataCollection, OpenRouterMinCodingScore: c.openRouterMinCodingScore,
@@ -308,17 +318,29 @@ func (c *CLI) handleBtwCommand(cmd string) {
 		cp(catalogLines(c.commandsT("btw.usage", nil))...)
 		return
 	}
+	if connection := gatewayConnectionFor(c); connection != nil {
+		_, wait, err := gatewaySideStart(c.ctx, connection, c.sessionID, "btw", question)
+		if err != nil {
+			panic(err)
+		}
+		preview := ellipsize(question, 60)
+		cp(append(catalogLines(c.gatewayT("btw.started", map[string]any{"preview": preview})), "")...)
+		run := c.sideWorker(wait, sideWorkerSpec{name: "btw-side-question", failLabel: "/btw",
+			headerLines: []string{"  " + c.commandsT("btw.header", map[string]any{"preview": preview})},
+			titleSuffix: c.commandsT("btw.title_suffix", nil), emptyNote: "  " + c.commandsT("btw.no_answer", nil)})
+		go run()
+		return
+	}
 	if !c.ensureRuntimeCredentials() {
 		cp("  " + c.commandsT("btw.no_credentials", nil))
 		return
 	}
 	historySnapshot := append([]map[string]any{}, c.conversationHistory...)
-	parent := c.agent
 	route := c.resolveTurnAgentConfig(question)
 	rt := route.runtime
 	var parentSession any
-	if parent != nil {
-		parentSession = parent.SessionID()
+	if c.agent != nil {
+		parentSession = c.agent.SessionID()
 	}
 	mainRuntime := map[string]any{
 		"model": route.model, "provider": rt.Provider, "base_url": rt.BaseURL, "api_key": rt.APIKey, "api_mode": rt.APIMode,
@@ -328,7 +350,7 @@ func (c *CLI) handleBtwCommand(cmd string) {
 	cp(append(catalogLines(c.gatewayT("btw.started", map[string]any{"preview": preview})), "")...)
 	produce := func() (string, error) {
 		opts := agent.NewSideQuestionOptions()
-		opts.Parent, opts.MainRuntime = parent, mainRuntime
+		opts.MainRuntime = mainRuntime
 		return agent.AnswerSideQuestion(c.freshThreadContext(), question, historySnapshot, opts)
 	}
 	run := c.sideWorker(produce, sideWorkerSpec{name: "btw-side-question", failLabel: "/btw",

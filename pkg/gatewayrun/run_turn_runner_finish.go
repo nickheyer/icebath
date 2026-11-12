@@ -12,19 +12,36 @@ import (
 )
 
 // Consumes a one shot per session note into the next user message, prepended to the turn message
-func (t *TurnRunner) prependPendingNote(notes map[string]string) {
+func (t *TurnRunner) prependPendingNote(notes *map[string]string) {
 	tc := t.ctx
-	if len(notes) == 0 || tc.sessionKey == "" {
+	if tc.sessionKey == "" {
 		return
 	}
-	note, ok := notes[tc.sessionKey]
-	if !ok {
-		return
-	}
-	delete(notes, tc.sessionKey)
-	if note != "" {
+	note, ok := t.runner.popSessionNote(notes, tc.sessionKey)
+	if ok && note != "" {
 		tc.message = note + "\n\n" + tc.message
 	}
+}
+
+// Records a one shot note for the next user message of the session under the notes lock
+func (r *GatewayRunner) stageSessionNote(notes *map[string]string, sessionKey, note string) {
+	r.sessionNotesMu.Lock()
+	defer r.sessionNotesMu.Unlock()
+	if *notes == nil {
+		*notes = map[string]string{}
+	}
+	(*notes)[sessionKey] = note
+}
+
+// Removes and returns the one shot note of the session under the notes lock, false when none is staged
+func (r *GatewayRunner) popSessionNote(notes *map[string]string, sessionKey string) (string, bool) {
+	r.sessionNotesMu.Lock()
+	defer r.sessionNotesMu.Unlock()
+	note, ok := (*notes)[sessionKey]
+	if ok {
+		delete(*notes, sessionKey)
+	}
+	return note, ok
 }
 
 // Whether the delivery platform reports a restore and asks what next instead of continuing the work

@@ -72,6 +72,17 @@ type Aux interface {
 	Complete(ctx context.Context, messages []*state.Message, opts AuxOptions) (string, error)
 }
 
+// ProcessAux is the auxiliary client an Env without its own resolves every call through, set by pkg/provider
+var ProcessAux Aux
+
+// Auxiliary client of the env, its own when set else the process client that resolves the task from config per call
+func (e *Env) AuxClient() Aux {
+	if e != nil && e.Aux != nil {
+		return e.Aux
+	}
+	return ProcessAux
+}
+
 // Question is one prompt the user answers inside a form
 type Question struct {
 	Header      string

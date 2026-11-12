@@ -86,7 +86,8 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		}
 		displayMetadata := map[string]any{"gateway_input_owner": optAny(prepared.persistenceOwner)}
 		maps.Copy(displayMetadata, gateway.PersistedUserMetadataForEvent(ctx, gateway.DisplayEventOf(event)))
-		maps.Copy(displayMetadata, gateway.ReplyExpectedMetadata(event.ReplyExpected))
+		_, _, replyExpected := event.ReplyFields()
+		maps.Copy(displayMetadata, gateway.ReplyExpectedMetadata(replyExpected))
 		maps.Copy(displayMetadata, config.DiagnosticMetadata(event))
 		messageText, _ := prepared.messageText.(string)
 		var persistUserTimestamp *float64
@@ -99,7 +100,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 			eventMessageID: gateway.ReplyAnchorForEvent(event), inboundMessageID: inboundMessageID,
 			channelPrompt: turnChannelPrompt, titleUserMessage: prepared.titleUserMessage,
 			persistUserMessage: prepared.persistUserMessage, persistUserTimestamp: persistUserTimestamp,
-			persistUserDisplayKind: displayKindPointer(prepared.persistUserDisplayKind), replyExpected: event.ReplyExpected,
+			persistUserDisplayKind: displayKindPointer(prepared.persistUserDisplayKind), replyExpected: replyExpected,
 			persistUserDisplayMetadata: displayMetadata, messageType: event.MessageType,
 			scheduledHeartbeat: event.HeartbeatSessionID() != nil && *event.HeartbeatSessionID() != "",
 			sessionEnv:         sessionEnv,
@@ -111,7 +112,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		if agentResult != nil {
 			if terminal := agentResult["queued_terminal_inbound_id"]; pyrepr.Truthy(terminal) {
 				id := pyrepr.Str(terminal)
-				event.LedgerMessageID = &id
+				event.SetLedgerMessageID(&id)
 			}
 			if category, ok := agentResult["queued_terminal_notification_category"]; ok {
 				if event.Metadata == nil {
@@ -128,8 +129,9 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 			r.hmwaDiscardStaleResult(ctx, source, quickKey, runGeneration)
 			return nil, nil
 		}
+		_, _, replyExpected = event.ReplyFields()
 		response, silent, agentMessages, err := r.hmwaShapeAgentResponse(ctx, agentResult, source, prepared.history, entry, sessionKey,
-			quickKey, runGeneration, runStartSessionID, platformName, msgStartTime, prepared.persistUserDisplayKind, event.ReplyExpected)
+			quickKey, runGeneration, runStartSessionID, platformName, msgStartTime, prepared.persistUserDisplayKind, replyExpected)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +159,8 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 			response, failedEarly, hiddenIncomplete, overflow); err != nil {
 			return nil, err
 		}
-		r.recordRoomSilenceDecision(ctx, sessionKey, agentResult, silent, prepared.persistUserDisplayKind, event.ReplyExpected)
+		_, _, replyExpected = event.ReplyFields()
+		r.recordRoomSilenceDecision(ctx, sessionKey, agentResult, silent, prepared.persistUserDisplayKind, replyExpected)
 		return r.deliverTurnResponseThenLimitOffer(ctx, event, source, entry, sessionKey, runGeneration, agentResult, agentMessages, response, footerLine, silent)
 	}()
 	if err != nil && ctx.Err() == nil {

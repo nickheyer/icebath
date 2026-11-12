@@ -191,7 +191,7 @@ func TestFireOverdueJobs(t *testing.T) {
 	})
 	t.Run("test_estop_skips_sweep_and_next_sweep_after_resume_catches_up", func(t *testing.T) {
 		s, ctx, job := misfireFixture(t)
-		patchChronos(t, &estopCheckPaused, func(component string, log *slog.Logger) bool {
+		patchChronos(t, &estopCheckPaused, func(_ context.Context, component string, log *slog.Logger) bool {
 			return tools.CheckPaused(context.Background(), component, log)
 		})
 		parkInPast(t, s, job.ID, 30)

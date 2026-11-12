@@ -96,8 +96,8 @@ func markNotifyMetadata(metadata map[string]any) map[string]any {
 
 // Message id a reply should anchor on for platforms with reply semantics, nil for none
 func replyAnchorForEvent(event *MessageEvent) *string {
-	if event.ReplyAnchorOverride != nil {
-		return event.ReplyAnchorOverride
+	if override, _, _ := event.ReplyFields(); override != nil {
+		return override
 	}
 	platform, chatType := "", ""
 	var threadID *string

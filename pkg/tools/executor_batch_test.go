@@ -413,4 +413,19 @@ func TestSoftInterruptWithToolReasonIsAttributedToTheSystem(t *testing.T) {
 	if fmt.Sprint(host.interrupts) != "[fix the login bug|"+ReasonUserInterrupt+"]" || host.ToolInterruptReason() != ReasonUserInterrupt {
 		t.Fatalf("user stop rebooked %q", host.interrupts)
 	}
+	if got := InterruptSkipWording("guard {x}"); got != "Turn aborted — guard {x}" {
+		t.Fatalf("system wording %q", got)
+	}
+}
+
+// Human stop reasons read capitalized, an empty reason reads interrupted, any other reason reads aborted
+func TestInterruptSkipWordingReadsTheRecordedReason(t *testing.T) {
+	for reason, want := range map[string]string{
+		"": "Turn interrupted", "explicit stop requested": "Explicit stop requested", "user sent a new message": "User sent a new message",
+		ReasonUserInterrupt: "User interrupt", "terminal_batch_timeout": "Turn aborted — terminal batch timeout",
+	} {
+		if got := InterruptSkipWording(reason); got != want {
+			t.Errorf("%q gives %q, want %q", reason, got, want)
+		}
+	}
 }

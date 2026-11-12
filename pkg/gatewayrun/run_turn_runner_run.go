@@ -170,8 +170,8 @@ func (t *TurnRunner) prepareTurnMessage(ctx context.Context, agentHistory []map[
 	r := t.runner
 	persistOverride := tc.persistUserMessage
 	var inbound any
-	if tc.inboundMessageID != nil {
-		inbound = *tc.inboundMessageID
+	if _, inboundID, _ := r.turnReplyAnchors(tc); inboundID != nil {
+		inbound = *inboundID
 	}
 	apiText, hasAPIText := gateway.CLITurn(ctx, inbound).Get("api_text")
 	hasAPIText = hasAPIText && apiText != nil
@@ -184,7 +184,7 @@ func (t *TurnRunner) prepareTurnMessage(ctx context.Context, agentHistory []map[
 		persistOverride = cleanText
 		tc.message = pyrepr.Str(apiText)
 	}
-	t.prependPendingNote(r.pendingModelNotes)
+	t.prependPendingNote(&r.pendingModelNotes)
 	window := gateway.AutoContinueFreshnessWindow()
 	interruptionIsFresh := isFreshGatewayInterruption(lastTranscriptTimestamp(tc.history), nil, window)
 	var entry *gateway.SessionEntry
@@ -219,7 +219,7 @@ func (t *TurnRunner) prepareTurnMessage(ctx context.Context, agentHistory []map[
 			"IGNORE those pending results. Address the user's NEW message " +
 			"below FIRST. Do NOT re-execute old tool calls from the history.]\n\n" + tc.message
 	}
-	t.prependPendingNote(r.pendingSkillsReloadNotes)
+	t.prependPendingNote(&r.pendingSkillsReloadNotes)
 	if hasAPIText {
 		persistOverride = cleanText
 	}
@@ -284,8 +284,9 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 	if persistTimestamp != nil {
 		opts.PersistUserTimestamp = persistTimestamp
 	}
-	if tc.inboundMessageID != nil {
-		opts.PersistUserPlatformID = *tc.inboundMessageID
+	_, inboundID, replyExpected := t.runner.turnReplyAnchors(tc)
+	if inboundID != nil {
+		opts.PersistUserPlatformID = *inboundID
 	}
 	captured := gateway.ExecutionResultOf(ctx)
 	beforePrompt, beforeCompletion := a.SessionPromptTokens(), a.SessionCompletionTokens()
@@ -294,7 +295,7 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 	if tc.persistUserDisplayKind != nil {
 		displayKind = *tc.persistUserDisplayKind
 	}
-	a.SetSilenceMarkerNeedsReply(!gateway.SilenceAllowed(displayKind, tc.replyExpected, nil, nil))
+	a.SetSilenceMarkerNeedsReply(!gateway.SilenceAllowed(displayKind, replyExpected, nil, nil))
 	result, err := func() (map[string]any, error) {
 		defer restore()
 		defer a.SetSilenceMarkerNeedsReply(false)
@@ -378,8 +379,8 @@ func (t *TurnRunner) syncSessionAfterRun(ctx context.Context, agentHistory []map
 		}
 	}
 	var inbound any
-	if tc.inboundMessageID != nil {
-		inbound = *tc.inboundMessageID
+	if _, inboundID, _ := r.turnReplyAnchors(tc); inboundID != nil {
+		inbound = *inboundID
 	}
 	if !pyrepr.Truthy(gateway.CLITurn(ctx, inbound).GetOr("model_override", nil)) {
 		r.syncSessionModelFromAgent(ctx, agentSessionID, a)

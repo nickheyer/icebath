@@ -128,8 +128,18 @@ func (m *subagentMonitor) selected() (map[string]any, bool) {
 	return row, row != nil && row["kind"] == "process"
 }
 
-// Subagent backend of this process, its own registry since the CLI runs its agent in process
-func (m *subagentMonitor) subagents() *localSubagents {
+// Subagent surface the dock and monitor read, the gateway session's view or this process's registry
+type subagentBackend interface {
+	subagentRows(busy bool) []map[string]any
+	subagentTail(subagentID string, fetch bool) string
+	subagentControl(action, subagentID string, message any) (map[string]any, error)
+}
+
+// Subagent backend, the gateway session's view when its children run there, else this process's registry
+func (m *subagentMonitor) subagents() subagentBackend {
+	if view := gatewayProcessView(); view != nil {
+		return view
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.local == nil {
@@ -155,7 +165,7 @@ func (m *subagentMonitor) refreshAt(now float64) bool {
 		row["key"] = row["subagent_id"]
 		delete(row, "running_seconds")
 	}
-	processes := processRows(c.ctx, c.env, now)
+	processes := processRows(c.ctx, c.processRegistry(), now)
 	sessionDockSyncAutomation(c)
 	goal := sessionDockGoalLine(c)
 	loopBadge, loop, loopPrompt := sessionDockLoopRow(c, now)
@@ -298,7 +308,7 @@ func (m *subagentMonitor) control(action string, message any, target any) (map[s
 		if action != "stop" {
 			return map[string]any{"error": m.cli.t("cli.subagents.cannot_steer_process", nil)}, nil
 		}
-		return killDockProcess(m.cli.ctx, m.cli.env, pyrepr.Str(target)), nil
+		return killDockProcess(m.cli.ctx, m.cli.processRegistry(), pyrepr.Str(target)), nil
 	}
 	return m.subagents().subagentControl(action, pyrepr.Str(target), message)
 }
@@ -543,10 +553,9 @@ type localSubagents struct {
 
 // Live child rows of the CLI agent's spawn tree with start time and latest tool
 func (l *localSubagents) subagentRows(bool) []map[string]any {
-	parent := l.cli.agent
 	var entries []map[string]any
-	if parent != nil {
-		entries = agent.SubagentListRows(parent)
+	if parent := l.cli.agent; parent != nil {
+		entries = agent.SubagentListRowsForSession(parent.SessionID())
 	}
 	live := map[string]map[string]any{}
 	if len(entries) > 0 {
@@ -576,7 +585,10 @@ func (l *localSubagents) subagentTail(subagentID string, _ bool) string {
 
 // Runs a steer or stop control action against the CLI agent's spawn tree
 func (l *localSubagents) subagentControl(action, subagentID string, message any) (map[string]any, error) {
-	return agent.SubagentControl(action, subagentID, message, l.cli.agent)
+	if parent := l.cli.agent; parent != nil {
+		return agent.SubagentControlForSession(action, subagentID, message, parent.SessionID())
+	}
+	return agent.SubagentControl(action, subagentID, message, nil)
 }
 
 // Whether a prompt owns the composer, every composer shortcut staying off while one is open

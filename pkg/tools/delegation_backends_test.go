@@ -58,7 +58,7 @@ func installBackendHooks(t *testing.T) {
 			d.tools = append([]map[string]any{}, d.tools...)
 		}
 	}
-	DelegationBackendHooks.RecordCacheBreak = func(a DelegationRebuildAgent, reason string) {
+	DelegationBackendHooks.RecordCacheBreak = func(_ context.Context, a DelegationRebuildAgent, reason string) {
 		d := a.(*rebuildAgentDouble)
 		d.cacheBreaks = append(d.cacheBreaks, reason)
 	}

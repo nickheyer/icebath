@@ -12,12 +12,12 @@ import (
 
 // Real stdout reserved for JSON RPC frames, the module stdio transport over it and the live session records
 var (
-	stdoutMu       sync.Mutex
-	realStdout     io.Writer = os.Stdout
-	stdioTransport           = NewStdioTransport(func() io.Writer { return realStdout }, &stdoutMu)
-	sessionsMu     sync.RWMutex
-	sessions       = map[string]*Session{}
-	sessionOrder   []string
+	stdoutMu     sync.Mutex
+	realStdout   io.Writer = os.Stdout
+	stdioSink    Transport = NewStdioTransport(func() io.Writer { return realStdout }, &stdoutMu)
+	sessionsMu   sync.RWMutex
+	sessions     = map[string]*Session{}
+	sessionOrder []string
 	// Presentation mute of a diagnostic only turn, installed by the agent package that owns the mute state
 	presentationMuted = func(ctx context.Context, event, sid string) bool { return false }
 )
@@ -104,7 +104,7 @@ func WriteJSON(ctx context.Context, obj *pyjson.Object) bool {
 	if transport := CurrentTransport(ctx); transport != nil {
 		return transport.Write(obj)
 	}
-	return stdioTransport.Write(obj)
+	return stdioTransport().Write(obj)
 }
 
 // Emits one event for a session unless its presentation is muted, stamped with the running turn identity

@@ -468,8 +468,8 @@ func resolveLockAPI(lockDB any) (db compressionLockDB, lookupErr error) {
 
 type pyTypeError struct{ msg string }
 
-func (e *pyTypeError) Error() string   { return e.msg }
-func (e *pyTypeError) PyClass() string { return "TypeError" }
+func (e *pyTypeError) Error() string      { return e.msg }
+func (e *pyTypeError) PyTypeName() string { return "TypeError" }
 
 // Sit out return of lease acquisition with the prompt, aborted telemetry and the terminal status edge
 func abortLease(ctx context.Context, a *AIAgent, lifecycle *compactionLifecycle, systemMessage *string, attempt *compressionAttempt, failureClass string, prompt *string) (string, error) {

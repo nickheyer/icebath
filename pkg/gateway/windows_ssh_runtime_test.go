@@ -193,3 +193,21 @@ func TestForeignInlineSourceCarryingAModuleNameIsNotOwnership(t *testing.T) {
 		t.Fatalf("state = %s", text)
 	}
 }
+
+// The module entry prints the compact JSON result on stdout, or the error on stderr with status one
+func TestWindowsSSHRuntimeMainPrintsTheResultOrTheError(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "state-root")
+	sshRoster(t, root)
+	t.Setenv("ICEBATH_HOME", root)
+	var out, errw strings.Builder
+	if code := WindowsSSHRuntimeMain(context.Background(), []string{"inventory"}, &out, &errw); code != 0 || errw.Len() != 0 {
+		t.Fatalf("inventory exit %d stderr %q", code, errw.String())
+	}
+	if !strings.HasPrefix(out.String(), `{"`) || strings.Contains(out.String(), `", "`) || !strings.Contains(out.String(), `"profiles":["default","bob","win-research"]`) {
+		t.Fatalf("stdout %q", out.String())
+	}
+	out.Reset()
+	if code := WindowsSSHRuntimeMain(context.Background(), []string{"no-such-op"}, &out, &errw); code != 1 || out.Len() != 0 || errw.String() != "{\"error\":\"invalid operation\"}\n" {
+		t.Fatalf("bad op exit %d stdout %q stderr %q", code, out.String(), errw.String())
+	}
+}

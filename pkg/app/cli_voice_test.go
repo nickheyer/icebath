@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/media"
 )
@@ -502,13 +501,13 @@ func TestVoiceFullDuplexListenerGenerationTripInterruptsAgentAndSubmits(t *testi
 		return wav
 	}, "")
 	c.agentRunning = true
-	c.agent = &agent.AIAgent{}
+	c.agent = offlineAgent(t, c)
 	pipeStop := newSyncEvent()
 	c.voiceTTSStop = pipeStop
 	transcribeAs(t, map[string]any{"success": true, "transcript": "actually wait"})
 	c.voiceFullDuplexListener()
-	if !c.agent.IsInterrupted() || !pipeStop.IsSet() {
-		t.Fatalf("interrupted %v pipe stop %v", c.agent.IsInterrupted(), pipeStop.IsSet())
+	if !c.agent.InterruptRequested() || !pipeStop.IsSet() {
+		t.Fatalf("interrupted %v pipe stop %v", c.agent.InterruptRequested(), pipeStop.IsSet())
 	}
 	queued, _ := c.pendingInput.GetNoWait()
 	if msg, ok := queued.(*voiceInputMessage); !ok || msg.Text != "actually wait" {
@@ -545,10 +544,10 @@ func TestVoiceFullDuplexListenerStopPhraseMidGenerationInterruptsAndEndsChat(t *
 		return wav
 	}, "voice:\n  barge_in: true\n  stop_phrases: [stop]\n")
 	c.agentRunning = true
-	c.agent = &agent.AIAgent{}
+	c.agent = offlineAgent(t, c)
 	transcribeAs(t, map[string]any{"success": true, "transcript": "stop"})
 	c.voiceFullDuplexListener()
-	if !c.agent.IsInterrupted() {
+	if !c.agent.InterruptRequested() {
 		t.Fatal("turn not interrupted at trip")
 	}
 	if c.voiceMode || c.voiceContinuous {

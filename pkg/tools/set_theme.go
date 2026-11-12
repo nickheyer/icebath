@@ -6,9 +6,6 @@ import (
 	"strings"
 )
 
-// SetThemeRequest applies appearance values or shows one picker card and returns the renderer's answer, installed by the desktop gateway
-var SetThemeRequest func(env *Env, values map[string]any) (map[string]any, error)
-
 var (
 	accentSwatches  = []string{"mono", "green", "cyan", "nous", "violet", "pink", "red", "orange"}
 	themeAccent     = "theme"
@@ -29,8 +26,8 @@ func accentError(accent string) string {
 }
 
 // Applies the given appearance values, or shows one picker card and waits for the pick
-func setThemeTool(env *Env, accent, mode, layout, picker *string) string {
-	if SetThemeRequest == nil {
+func SetThemeTool(accent, mode, layout, picker *string, request DesktopAnswer) string {
+	if request == nil {
 		return toolErrorJSON("set_theme is only available in the Icebath desktop app.", nil)
 	}
 	values := map[string]any{}
@@ -46,7 +43,7 @@ func setThemeTool(env *Env, accent, mode, layout, picker *string) string {
 		if len(values) > 0 {
 			return toolErrorJSON("picker shows a card for the user to choose; pass picker alone, without values.", nil)
 		}
-		return themeReply(SetThemeRequest(env, map[string]any{"picker": *picker}))
+		return themeReply(request(map[string]any{"picker": *picker}))
 	}
 	if len(values) == 0 {
 		return toolErrorJSON("Pass at least one of accent, mode or layout, or picker to let the user choose.", nil)
@@ -59,7 +56,7 @@ func setThemeTool(env *Env, accent, mode, layout, picker *string) string {
 			return msg
 		}
 	}
-	return themeReply(SetThemeRequest(env, values))
+	return themeReply(request(values))
 }
 
 // Renderer answer as JSON, the error as a tool error

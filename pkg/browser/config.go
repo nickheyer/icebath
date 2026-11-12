@@ -292,7 +292,7 @@ func (s settings) nativeVision() bool {
 			return false
 		}
 	}
-	return s.env != nil && s.env.Aux == nil
+	return s.env != nil && s.env.AuxClient() == nil
 }
 
 // Embed byte budget for a screenshot baked into history, clamped to 64 KiB through 4 MiB

@@ -285,11 +285,6 @@ func TestConversationRootIDFallbacks(t *testing.T) {
 }
 
 func TestRuntimeHelpersSmall(t *testing.T) {
-	code := "invalid_value"
-	ev := NewStreamErrorEvent("boom", &code, nil, nil)
-	if ev.Error() != "boom" || ev.Body["error"].(map[string]any)["code"] != "invalid_value" || ev.Body["error"].(map[string]any)["param"] != nil {
-		t.Fatalf("event %+v", ev)
-	}
 	if pyStrRepr("it's") != `"it's"` || pyStrRepr("gpt-5.5") != "'gpt-5.5'" || pyStrRepr("a'b\"c") != `'a\'b"c'` {
 		t.Fatal("repr")
 	}

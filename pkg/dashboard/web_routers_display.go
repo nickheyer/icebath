@@ -98,8 +98,11 @@ func displayWS(ctx context.Context, ws *WebSocket) error {
 	if displaySignedOut(ctx, ws, info) {
 		return ws.Close(ctx, closeBadTicket, "Signed out")
 	}
-	return displayBridge(ctx, ws, info)
+	return displayBridgeRun(ctx, ws, info)
 }
+
+// Viewer bridge of an admitted display socket, the real bridge swapped only where a hermes case installs a fake
+var displayBridgeRun = displayBridge
 
 // Whether the browser tab that asked for this viewer signed out since, tracking the socket with that tab otherwise
 func displaySignedOut(ctx context.Context, ws *WebSocket, info *pyjson.Object) bool {

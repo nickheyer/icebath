@@ -82,6 +82,7 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 		return refusal.Message, nil
 	}
 	event, source, isInternal = r.hmRescueOrphanedFIFO(ctx, event, source, isInternal, quickKey)
+	event.GuardReplyFields(&r.sessionState(quickKey).mu)
 	runGeneration := 0
 	r.withSessionState(quickKey, func(s *SessionState) {
 		if lease != nil {

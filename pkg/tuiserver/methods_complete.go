@@ -82,7 +82,7 @@ func pasteCollapse(ctx context.Context, rid any, params map[string]any) map[stri
 	lineCount := strings.Count(text, "\n") + 1
 	base := connectionProfileHome(ctx)
 	if base == "" {
-		base = hermesHome
+		base = importedHome()
 	}
 	pasteDir := filepath.Join(base, "pastes")
 	if err := os.MkdirAll(pasteDir, 0o777); err != nil {

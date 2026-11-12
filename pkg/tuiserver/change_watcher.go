@@ -28,7 +28,7 @@ func watcherHome(ctx context.Context) string {
 	if override := home.Override(ctx); override != "" {
 		return override
 	}
-	return hermesHome
+	return importedHome()
 }
 
 // st_mtime_ns of a path, false when it cannot be stat'ed

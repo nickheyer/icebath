@@ -227,7 +227,7 @@ func (a *monitorApp) updateTail() {
 	case row == nil:
 		text = m.cli.t("cli.subagents.entry_gone", nil)
 	case isProcess:
-		text = processTail(m.cli.ctx, m.cli.env, pyrepr.Str(row["id"]))
+		text = processTail(m.cli.ctx, m.cli.processRegistry(), pyrepr.Str(row["id"]))
 	default:
 		text = subagentTail(m, row)
 	}

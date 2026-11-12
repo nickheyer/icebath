@@ -23,7 +23,7 @@ func BindIdentity(isAuthenticated func(identity any) bool, ownerSubject func() s
 
 // Whether a transport is a real attached client, not the stdio sink, the parked sink or a closed peer
 func transportIsLivePeer(transport Transport) bool {
-	if transport == nil || transport == detachedWSTransport || transport == Transport(stdioTransport) {
+	if transport == nil || transport == detachedWSTransport || transport == stdioTransport() {
 		return false
 	}
 	switch transport.(type) {

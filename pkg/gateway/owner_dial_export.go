@@ -22,9 +22,9 @@ func DialOwnerSocket(ctx context.Context, profileHome string, endpoint *GatewayE
 	}
 	target, protocols := GatewayWSTarget(endpoint, ticket)
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 10 * time.Second, Subprotocols: protocols}
-	conn, _, err := dialer.DialContext(ctx, target, http.Header{})
+	conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 	if err != nil {
-		return nil, err
+		return nil, HandshakeError(resp, err)
 	}
 	conn.SetReadLimit(maxSize)
 	return &wsSocket{conn: conn}, nil

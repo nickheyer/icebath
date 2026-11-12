@@ -32,7 +32,7 @@ func finiteClarifyReply() *pyjson.Object {
 }
 
 // True while the bound turn is a finite one that auto approves because nobody can answer a prompt
-func unattendedTurn(ctx context.Context) bool {
+func UnattendedTurn(ctx context.Context) bool {
 	bound, _ := ctx.Value(finiteTurnKey{}).(finiteTurnState)
 	return bound.unattended
 }

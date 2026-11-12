@@ -28,32 +28,6 @@ func reviewShouldDefer(ctx context.Context, a *AIAgent, taskCfg map[string]any) 
 	return reviewDeferMode(taskCfg) == "auto" && reviewTargetsManagedLocal(ctx, a, taskCfg)
 }
 
-// StreamErrorEvent is a provider error synthesized from a standalone Responses type error SSE frame
-type StreamErrorEvent struct {
-	Message    string
-	Code       *string
-	Param      *string
-	StatusCode *int
-	Body       map[string]any
-}
-
-// Builds the event with the OpenAI SDK shaped body the error classifiers read
-func NewStreamErrorEvent(message string, code, param *string, statusCode *int) *StreamErrorEvent {
-	return &StreamErrorEvent{Message: message, Code: code, Param: param, StatusCode: statusCode, Body: map[string]any{
-		"error": map[string]any{"message": message, "code": optionalString(code), "param": optionalString(param), "type": "error"},
-	}}
-}
-
-func (e *StreamErrorEvent) Error() string { return e.Message }
-
-// Nil string pointer as None and a set pointer as its value
-func optionalString(s *string) any {
-	if s == nil {
-		return nil
-	}
-	return *s
-}
-
 // SessionDBForRecall is the executor host view of the recall database
 func (a *AIAgent) SessionDBForRecall(ctx context.Context) *state.DB {
 	return a.getSessionDBForRecall(ctx)

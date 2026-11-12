@@ -63,9 +63,6 @@ func surfaceGroups() map[string]map[string]bool {
 	return groups
 }
 
-// Created source of a policy or live label, nil for local, unknown and empty labels
-func createdSurface(label any) any { return state.CreatedSurface(label) }
-
 // Whether a launch field is the session choice by its last committed session edit, else launched
 func sessionPinned(config map[string]any, field string, launched bool) bool {
 	if pins, ok := config[SessionPins].(map[string]any); ok {

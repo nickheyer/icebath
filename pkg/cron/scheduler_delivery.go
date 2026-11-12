@@ -609,9 +609,9 @@ func pyExceptionName(err error) string {
 	if errors.Is(err, errFutureTimeout) {
 		return "TimeoutError"
 	}
-	var named interface{ ExceptionName() string }
+	var named interface{ PyTypeName() string }
 	if errors.As(err, &named) {
-		return named.ExceptionName()
+		return named.PyTypeName()
 	}
 	return "Exception"
 }
@@ -622,8 +622,8 @@ func attributeError(obj any, attr string) error {
 
 type pyAttributeError struct{ msg string }
 
-func (e *pyAttributeError) Error() string         { return e.msg }
-func (e *pyAttributeError) ExceptionName() string { return "AttributeError" }
+func (e *pyAttributeError) Error() string      { return e.msg }
+func (e *pyAttributeError) PyTypeName() string { return "AttributeError" }
 
 // True only for a success result with no delivered false, an evidence gap appended when no id or raw response
 func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]bool) bool {

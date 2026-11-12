@@ -10,72 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/state"
 )
-
-func TestCloseWaitsForAtomicCliStagingBeforeSnapshot(t *testing.T) {
-	srv, _ := chatCompletionsServer(t, "old answer")
-	c := liveChatCLI(t, srv.URL+"/v1")
-	if _, ok := c.chat("old prompt", nil, false); !ok {
-		t.Fatal("the first turn produced no response")
-	}
-	stagingEntered, releaseStaging := make(chan struct{}), make(chan struct{})
-	runEntered, releaseRun := make(chan struct{}), make(chan struct{})
-	prevHook, prevRun := stageAppendHook, runTurnConversation
-	stageAppendHook = func() {
-		close(stagingEntered)
-		<-releaseStaging
-	}
-	prefix := append([]map[string]any{}, c.conversationHistory...)
-	runTurnConversation = func(context.Context, *agent.AIAgent, any, agent.RunConversationOptions) (map[string]any, error) {
-		close(runEntered)
-		<-releaseRun
-		return map[string]any{"final_response": "done", "messages": append(append([]map[string]any{}, prefix...), map[string]any{"role": "assistant", "content": "done"}),
-			"api_calls": 1, "completed": true, "partial": true, "response_previewed": true}, nil
-	}
-	t.Cleanup(func() { stageAppendHook, runTurnConversation = prevHook, prevRun })
-	chatDone := make(chan struct{})
-	go func() {
-		defer close(chatDone)
-		c.chat("new prompt", nil, false)
-	}()
-	wait := func(ch <-chan struct{}, what string) {
-		t.Helper()
-		select {
-		case <-ch:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("timed out waiting for %s", what)
-		}
-	}
-	wait(stagingEntered, "the staging append")
-	closeFinished := make(chan struct{})
-	go func() {
-		defer close(closeFinished)
-		c.persistActiveSessionBeforeClose()
-	}()
-	select {
-	case <-closeFinished:
-		t.Fatal("close took its snapshot while the staging handoff still held the persist lock")
-	case <-time.After(100 * time.Millisecond):
-	}
-	stageAppendHook = func() {}
-	close(releaseStaging)
-	wait(runEntered, "the worker")
-	wait(closeFinished, "the close persistence")
-	close(releaseRun)
-	wait(chatDone, "the chat turn")
-	rows, err := c.sessionDB.GetMessagesAsConversation(c.ctx, c.sessionID, state.ConversationOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var contents []any
-	for _, row := range rows {
-		contents = append(contents, row["content"])
-	}
-	if !reflect.DeepEqual(contents, []any{"old prompt", "old answer", "new prompt"}) {
-		t.Fatalf("durable transcript %#v", contents)
-	}
-}
 
 // Runs the non quiet one shot entry against a recording conversation and returns the recorded calls
 func oneShotCalls(t *testing.T, query string) []map[string]any {
@@ -87,7 +22,7 @@ func oneShotCalls(t *testing.T, query string) []map[string]any {
 		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
 	t.Cleanup(func() { SetCLIConfig(nil) })
 	var calls []map[string]any
-	patchTurn(t, func(_ context.Context, _ *agent.AIAgent, _ any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ *GatewayAgent, _ any, o agent.RunConversationOptions) (map[string]any, error) {
 		_, envSet := os.LookupEnv(provider.TurnAuthorEnvName)
 		calls = append(calls, map[string]any{"turn_author": o.TurnAuthor, "env_author_set": envSet})
 		return map[string]any{"final_response": "done", "completed": true}, nil

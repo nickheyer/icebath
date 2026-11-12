@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-type turnRun func(ctx context.Context, a *agent.AIAgent, message any, o agent.RunConversationOptions) (map[string]any, error)
+type turnRun func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error)
 
 // Replaces the credential, route, agent build and conversation steps of a turn the way hermes tests patch them
 func patchTurn(t *testing.T, run turnRun) {
@@ -35,17 +35,6 @@ func patchTurn(t *testing.T, run turnRun) {
 	t.Cleanup(func() {
 		ensureTurnCredentials, resolveTurnRoute, initTurnAgent, runTurnConversation, settlePaintDelay = prevEnsure, prevResolve, prevInit, prevRun, prevDelay
 	})
-}
-
-// A real agent bound to the CLI session that never reaches a provider unless a turn runs
-func offlineAgent(t *testing.T, c *CLI) *agent.AIAgent {
-	t.Helper()
-	a, err := agent.NewAIAgent(c.ctx, agent.AIAgentOptions{Model: "test/model", APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1",
-		Provider: "openai", Platform: "cli", QuietMode: true, SkipContextFiles: true, SkipMemory: true, SessionID: c.sessionID, MaxIterations: 90})
-	if err != nil {
-		t.Fatalf("NewAIAgent: %v", err)
-	}
-	return a
 }
 
 func doneResult() map[string]any {
@@ -110,14 +99,14 @@ func chatCLI(t *testing.T) *CLI {
 func TestUnacknowledgedInterruptMessageIsRequeuedNotDropped(t *testing.T) {
 	c := chatCLI(t)
 	c.interruptQueue.Put("urgent new message")
-	patchTurn(t, func(context.Context, *agent.AIAgent, any, agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(context.Context, *GatewayAgent, any, agent.RunConversationOptions) (map[string]any, error) {
 		time.Sleep(500 * time.Millisecond)
 		return map[string]any{"final_response": "turn finished normally", "messages": []map[string]any{{"role": "user", "content": "original"},
 			{"role": "assistant", "content": "turn finished normally"}}, "api_calls": 1, "completed": true, "partial": true, "response_previewed": true}, nil
 	})
 	var interrupts []string
 	prev := interruptTurnAgent
-	interruptTurnAgent = func(a *agent.AIAgent, message string) {
+	interruptTurnAgent = func(a *GatewayAgent, message string) {
 		interrupts = append(interrupts, message)
 		prev(a, message)
 	}
@@ -139,7 +128,7 @@ func TestChatPersistsCleanInputWhenAQueuedNoteChangesApiMessage(t *testing.T) {
 	c := chatCLI(t)
 	var gotMessage any
 	var gotOptions agent.RunConversationOptions
-	patchTurn(t, func(_ context.Context, _ *agent.AIAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		gotMessage, gotOptions = message, o
 		return doneResult(), nil
 	})
@@ -154,7 +143,7 @@ func TestChatPreservesCleanMultimodalInputWhenNoteChangesApiMessage(t *testing.T
 	c := chatCLI(t)
 	var gotMessage any
 	var gotOptions agent.RunConversationOptions
-	patchTurn(t, func(_ context.Context, _ *agent.AIAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		gotMessage, gotOptions = message, o
 		return doneResult(), nil
 	})
@@ -281,20 +270,16 @@ func TestChatClearsPreviousTurnPersistenceOverrideBeforeStaging(t *testing.T) {
 	if _, ok := c.chat("previous clean prompt", nil, false); !ok {
 		t.Fatal("the first turn produced no response")
 	}
-	var stagedIdx *int
-	var stagedOverride, stagedTimestamp any
 	var stagedMessage map[string]any
 	prev := runTurnConversation
-	runTurnConversation = func(_ context.Context, a *agent.AIAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
-		stagedIdx, stagedOverride, stagedTimestamp = a.PersistUserMessageStaging()
-		stagedMessage = a.PendingCLIUserMessage()
+	runTurnConversation = func(_ context.Context, a *GatewayAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
+		a.mu.Lock()
+		stagedMessage = a.pendingCLIUserMessage
+		a.mu.Unlock()
 		return doneResult(), nil
 	}
 	t.Cleanup(func() { runTurnConversation = prev })
 	c.chat("new prompt", nil, false)
-	if stagedOverride != nil || stagedIdx != nil || stagedTimestamp != nil {
-		t.Fatalf("stale staging survived: idx %v override %v timestamp %v", stagedIdx, stagedOverride, stagedTimestamp)
-	}
 	if stagedMessage == nil || stagedMessage["role"] != "user" || stagedMessage["content"] != "new prompt" {
 		t.Fatalf("staged row %v", stagedMessage)
 	}
@@ -312,8 +297,10 @@ func TestChatSubmitsAtReferencesUnexpanded(t *testing.T) {
 	t.Chdir(dir)
 	var gotMessage any
 	var staged map[string]any
-	patchTurn(t, func(_ context.Context, a *agent.AIAgent, message any, _ agent.RunConversationOptions) (map[string]any, error) {
-		gotMessage, staged = message, a.PendingCLIUserMessage()
+	patchTurn(t, func(_ context.Context, a *GatewayAgent, message any, _ agent.RunConversationOptions) (map[string]any, error) {
+		a.mu.Lock()
+		gotMessage, staged = message, a.pendingCLIUserMessage
+		a.mu.Unlock()
 		return doneResult(), nil
 	})
 	c.chat("inspect @file:example.py", nil, false)
@@ -329,7 +316,7 @@ func TestChatTurnAdoptsChainAddedAfterTheCliOpenedAndKeepsItOnTornConfig(t *test
 	c := configuredCLI(t, map[string]any{"tool_progress": "all"}, CLIOptions{Compact: &compact, MaxTurns: &one})
 	c.agent = offlineAgent(t, c)
 	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
-	patchTurn(t, func(context.Context, *agent.AIAgent, any, agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(context.Context, *GatewayAgent, any, agent.RunConversationOptions) (map[string]any, error) {
 		return doneResult(), nil
 	})
 	fallback := []map[string]any{{"provider": "xai-oauth", "model": "grok-4.6"}}
@@ -341,12 +328,12 @@ func TestChatTurnAdoptsChainAddedAfterTheCliOpenedAndKeepsItOnTornConfig(t *test
 		c.chat("hello", nil, false)
 	}
 	turn("fallback_providers:\n  - provider: xai-oauth\n    model: grok-4.6\n")
-	if !reflect.DeepEqual(c.fallbackModel, fallback) || !reflect.DeepEqual(c.agent.FallbackModel(), fallback[0]) {
-		t.Fatalf("cli chain %v agent first %v", c.fallbackModel, c.agent.FallbackModel())
+	if !reflect.DeepEqual(c.fallbackModel, fallback) {
+		t.Fatalf("cli chain %v", c.fallbackModel)
 	}
 	turn("fallback_providers: [\n  - provider: {{{\n")
-	if !reflect.DeepEqual(c.fallbackModel, fallback) || !reflect.DeepEqual(c.agent.FallbackModel(), fallback[0]) {
-		t.Fatalf("a torn config wiped the chain: cli %v agent %v", c.fallbackModel, c.agent.FallbackModel())
+	if !reflect.DeepEqual(c.fallbackModel, fallback) {
+		t.Fatalf("a torn config wiped the chain: cli %v", c.fallbackModel)
 	}
 }
 

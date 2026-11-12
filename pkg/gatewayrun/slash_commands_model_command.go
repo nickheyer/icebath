@@ -366,11 +366,8 @@ func (r *GatewayRunner) handleModelReset(ctx context.Context, event *gateway.Mes
 			runLog().Debug("Failed to persist model reset to DB", "error", err)
 		}
 	}
-	if r.pendingModelNotes == nil {
-		r.pendingModelNotes = map[string]string{}
-	}
-	r.pendingModelNotes[sessionKey] = fmt.Sprintf("[Note: the session model override was cleared; model changed from %s back to the default %s. Adjust your self-identification accordingly.]",
-		provider.FormatModelForDisplay(pyrepr.Str(pyrepr.Or(previous["model"], ""))), provider.FormatModelForDisplay(defaultModel))
+	r.stageSessionNote(&r.pendingModelNotes, sessionKey, fmt.Sprintf("[Note: the session model override was cleared; model changed from %s back to the default %s. Adjust your self-identification accordingly.]",
+		provider.FormatModelForDisplay(pyrepr.Str(pyrepr.Or(previous["model"], ""))), provider.FormatModelForDisplay(defaultModel)))
 	r.evictCachedAgent(ctx, sessionKey, false, false)
 	reply := i18n.T(ctx, "gateway.model.reset_done", "", map[string]any{"model": provider.FormatModelForDisplay(shown)})
 	return &reply, nil

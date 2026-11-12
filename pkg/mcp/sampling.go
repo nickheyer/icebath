@@ -433,7 +433,7 @@ func (h *samplingHandler) buildLLMCall(params *CreateMessageParams, model string
 func (h *samplingHandler) callLLM(ctx context.Context, messages, toolDefs []map[string]any, opts tools.AuxOptions) (map[string]any, error, bool) {
 	var aux ChatAux
 	if h.env != nil {
-		aux, _ = h.env.Aux.(ChatAux)
+		aux, _ = h.env.AuxClient().(ChatAux)
 	}
 	if aux == nil {
 		return nil, fmt.Errorf("no auxiliary LLM client with chat completions is configured for task 'mcp'"), false

@@ -225,12 +225,8 @@ func TestToolFieldBuckets(t *testing.T) {
 }
 
 func TestModelCallFieldsReportTerminalModelAndShippedProvider(t *testing.T) {
-	SetCatalogSource("provider_names", func() ([]string, error) { return []string{"openrouter", "anthropic"}, nil })
-	SetCatalogSource("user_named_model_providers", func() ([]string, error) { return []string{"custom", "lmstudio"}, nil })
-	t.Cleanup(func() {
-		SetCatalogSource("provider_names", nil)
-		SetCatalogSource("user_named_model_providers", nil)
-	})
+	setCatalog(t, "provider_names", "openrouter", "anthropic")
+	setCatalog(t, "user_named_model_providers", "custom", "lmstudio")
 	check := func(in map[string]any, want map[string]string) {
 		t.Helper()
 		if got := ModelCallFields(in); !maps.Equal(got, want) {

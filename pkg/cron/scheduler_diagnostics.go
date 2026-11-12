@@ -59,7 +59,7 @@ type tracedError struct {
 
 func (e *tracedError) Error() string                { return e.msg }
 func (e *tracedError) Unwrap() error                { return e.cause }
-func (e *tracedError) ExceptionName() string        { return e.name }
+func (e *tracedError) PyTypeName() string           { return e.name }
 func (e *tracedError) StackFrames() []runtime.Frame { return e.frames }
 
 // Error of an exception class raised at the caller with its cause and the caller frames recorded

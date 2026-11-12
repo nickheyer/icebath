@@ -1,18 +1,15 @@
 package gateway
 
 import (
-	"fmt"
+	"net/http"
 
-	"github.com/gorilla/websocket"
+	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 )
 
 // InvalidStatusError is the websockets InvalidStatus of a handshake the server answered with a non 101 HTTP status
-type InvalidStatusError struct{ StatusCode int }
+type InvalidStatusError = pywebsockets.InvalidStatus
 
-func (e *InvalidStatusError) Error() string {
-	return fmt.Sprintf("server rejected WebSocket connection: HTTP %d", e.StatusCode)
+// Dial error as websockets connect raises it, a refused upgrade naming the HTTP status it got
+func HandshakeError(resp *http.Response, err error) error {
+	return pywebsockets.HandshakeError(resp, err)
 }
-
-func (e *InvalidStatusError) PyTypeName() string { return "InvalidStatus" }
-
-func (e *InvalidStatusError) Unwrap() error { return websocket.ErrBadHandshake }

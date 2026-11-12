@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -75,7 +76,7 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"observability.ResolveSessionPlatformHook": observability.ResolveSessionPlatformHook != nil, "pm.InteractiveAppRunning": pm.InteractiveAppRunning != nil,
 		"pm.CuaDriverChildEnv": pm.CuaDriverChildEnv != nil, "pm.LooksLikeGatewayCommandLine": pm.LooksLikeGatewayCommandLine != nil,
 		"tools.ApprovalHookInvoker": tools.ApprovalHookInvoker != nil, "tools.ViewerTurnHasApprover": tools.ViewerTurnHasApprover != nil,
-		"tools.ActivePolicySource": tools.ActivePolicySource != nil, "tools.LoadCLIConfig": tools.LoadCLIConfig != nil,
+		"tools.ActivePolicySource": tools.ActivePolicySource != nil, "tools.LoadCLIConfig": tools.LoadCLIConfig != nil, "tools.ProcessAux": tools.ProcessAux != nil,
 		"tools.TerminalOutputTransformHook": tools.TerminalOutputTransformHook != nil, "tools.SupervisedGatewayPid": tools.SupervisedGatewayPid != nil,
 		"tools.ModelNotFoundPatterns": tools.ModelNotFoundPatterns != nil, "tools.DelegationFallbackChain": tools.DelegationFallbackChain != nil,
 		"tuiserver.SaveClipboardImage": tuiserver.SaveClipboardImage != nil, "tuiserver.HasClipboardImage": tuiserver.HasClipboardImage != nil,
@@ -114,4 +115,9 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 	requireFuncFields(t, "profiles.GatewayStatusHooks", profiles.GatewayStatusHooks)
 	requireFuncFields(t, "provider.PluginHooks", *provider.PluginHooks())
 	requireFuncFields(t, "plugins.Services", *pluginServices())
+	requireFuncFields(t, "tools.ToolsConfigHooks", tools.ToolsConfigHooks)
+	requireFuncFields(t, "tools.DelegationBackendHooks", tools.DelegationBackendHooks)
+	requireFuncFields(t, "tools.DelegationRegistryHooks", tools.DelegationRegistryHooks)
+	requireFuncFields(t, "memory.CuratorHooks", memory.CuratorHooks)
+	requireFuncFields(t, "gatewayrun.MigrateS6", gatewayrun.MigrateS6)
 }

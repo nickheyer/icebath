@@ -138,8 +138,8 @@ func (t *TurnRunner) buildStreamConsumer(ctx context.Context, scfg gateway.Strea
 		onNewMessage = func() { queue.put(progressReset{}) }
 	}
 	replyTo := ""
-	if tc.eventMessageID != nil {
-		replyTo = *tc.eventMessageID
+	if anchor, _, _ := t.runner.turnReplyAnchors(tc); anchor != nil {
+		replyTo = *anchor
 	}
 	consumer := gateway.NewGatewayStreamConsumer(adapter, tc.source.ChatID, gateway.StreamConsumerOptions{
 		Config: consumerCfg, Metadata: tc.statusThreadMetadata, OnNewMessage: onNewMessage,

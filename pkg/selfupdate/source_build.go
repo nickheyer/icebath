@@ -146,13 +146,13 @@ type sourceNoneArgvError struct{}
 func (sourceNoneArgvError) Error() string {
 	return "expected str, bytes or os.PathLike object, not NoneType"
 }
-func (sourceNoneArgvError) ExceptionName() string { return "TypeError" }
+func (sourceNoneArgvError) PyTypeName() string { return "TypeError" }
 
 // Error of a build env lacking the PATH key
 type sourceKeyError struct{ key string }
 
-func (e sourceKeyError) Error() string         { return fmt.Sprintf("'%s'", e.key) }
-func (e sourceKeyError) ExceptionName() string { return "KeyError" }
+func (e sourceKeyError) Error() string      { return fmt.Sprintf("'%s'", e.key) }
+func (e sourceKeyError) PyTypeName() string { return "KeyError" }
 
 // Node build script runner of the checkout, the run_source_script hermes tests replace
 var runSourceScript = runSourceScriptIn
@@ -258,7 +258,7 @@ func (e *ProductBuildError) Error() string {
 	return strings.Join(parts, "; ")
 }
 
-func (e *ProductBuildError) ExceptionName() string { return "ProductBuildError" }
+func (e *ProductBuildError) PyTypeName() string { return "ProductBuildError" }
 
 // Argv and exit status of a failed command, else the exception name and message
 func failureText(err error) string {
@@ -283,9 +283,9 @@ func failureText(err error) string {
 
 // Python exception class an error stands for
 func exceptionName(err error) string {
-	var named interface{ ExceptionName() string }
+	var named interface{ PyTypeName() string }
 	if errors.As(err, &named) {
-		return named.ExceptionName()
+		return named.PyTypeName()
 	}
 	var pyErr *pm.PyError
 	if errors.As(err, &pyErr) && pyErr.Class != "" {

@@ -13,13 +13,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/tools"
 
@@ -97,25 +97,11 @@ const logLevelCritical = slog.LevelError + 4
 // threading.TIMEOUT_MAX, the largest wait a lock accepts before raising OverflowError
 const pyThreadTimeoutMax = 9223372036.0
 
-var (
-	watchdogOSExit    = os.Exit
-	logQueueDrainHook atomic.Pointer[func(timeoutS float64)]
-)
+var watchdogOSExit = os.Exit
 
-// Installs the bounded drain of the logging queue listener, nil when no listener runs
-func SetLogQueueDrain(fn func(timeoutS float64)) {
-	if fn == nil {
-		logQueueDrainHook.Store(nil)
-		return
-	}
-	logQueueDrainHook.Store(&fn)
-}
-
-// Flushes queued log records within timeout, nothing to do while no queue listener is installed
+// Flushes queued log records within timeout so the critical line reaches the file before the hard exit
 func drainLogQueue(timeoutS float64) {
-	if fn := logQueueDrainHook.Load(); fn != nil {
-		(*fn)(timeoutS)
-	}
+	logging.DrainLogQueue(time.Duration(timeoutS * float64(time.Second)))
 }
 
 // threading.Event.wait, a non positive or NaN timeout polls and one past TIMEOUT_MAX overflows
