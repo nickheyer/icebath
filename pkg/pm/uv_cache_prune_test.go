@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -129,47 +128,23 @@ func peRunJSON(t *testing.T, argv []string, cwd string) any {
 	return out
 }
 
-func TestVenvEntryRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T) {
-	if runtime.GOOS == "windows" {
+func TestEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("platforms linux, macos")
 	}
-	isolateHome(t)
-	root := t.TempDir()
-	venv, site := peTrapVenv(t, root)
-	prefix, err := VenvEntryCommand(context.Background(), peHostPython(t), []string{"-I", "-u"}, site)
+	tmp := isolateHome(t)
+	venv, _ := peTrapVenv(t, tmp)
+	peWrite(t, filepath.Join(tmp, "venv_only_dep.py"), "VALUE = 'cwd shadow'\n")
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containsString(prefix, VenvPython(venv)) || !containsString(prefix, "-S") {
-		t.Fatalf("prefix %v", prefix)
-	}
-	script := filepath.Join(root, "work", "script.py")
-	peWrite(t, script, "import json, sys, venv_only_dep, pth_only_dep\nprint(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv]))\n")
-	if got := peRunJSON(t, append(append([]string{}, prefix...), script, "a", "--flag"), root); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{script, "a", "--flag"}}) {
-		t.Fatalf("script %v", got)
-	}
-	code := "import json, sys, venv_only_dep, pth_only_dep; print(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv, __name__]))"
-	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code, "x"), root); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{"-c", "x"}, "__main__"}) {
-		t.Fatalf("code %v", got)
-	}
-	got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_only_cli", "y"), root).([]any)
-	argv := got[1].([]any)
-	if got[0] != "from the venv" || !reflect.DeepEqual(argv[1:], []any{"y"}) || !strings.HasSuffix(argv[0].(string), "venv_only_cli.py") {
-		t.Fatalf("module %v", got)
-	}
-}
-
-func TestEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
-	isolateHome(t)
-	root := t.TempDir()
-	_, site := peTrapVenv(t, root)
-	peWrite(t, filepath.Join(root, "venv_only_dep.py"), "VALUE = 'cwd shadow'\n")
-	entry, err := VenvEntryScript(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	code := "import json, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, " + pyrepr.StrRepr(filepath.Dir(entry)) + " in sys.path]))"
-	if got := peRunJSON(t, []string{peHostPython(t), "-I", "-S", entry, site, "-c", code}, root); !reflect.DeepEqual(got, []any{"from the venv", false}) {
+	state := InstallStateDir(context.Background(), RepoRoot())
+	code := "import json, os, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, [p for p in sys.path if p in ('', os.getcwd()) or p.startswith(" +
+		pyrepr.StrRepr(state) + ")]]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from the venv", []any{}}) {
 		t.Fatalf("got %v", got)
 	}
 }

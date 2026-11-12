@@ -365,7 +365,7 @@ func tryFastChatLaunch(argv []string) (bool, int) {
 	if containerExecInfo() != nil || wantsTUIEarly(argv) {
 		return false, 0
 	}
-	if first := firstPositional(argv); first != "" && first != "chat" {
+	if first, ok := firstPositional(argv); ok && first != "chat" {
 		return false, 0
 	}
 	a, ok := lightChatArgs(argv)
@@ -395,14 +395,14 @@ func tryTermuxFastCLILaunch(argv []string) (bool, int) {
 		printVersionInfo(true)
 		return true, 0
 	}
-	first := firstPositional(argv)
+	first, hasFirst := firstPositional(argv)
 	hasOneshot := false
 	for _, arg := range argv {
 		if arg == "-z" || arg == "--oneshot" || len(arg) > 10 && arg[:10] == "--oneshot=" {
 			hasOneshot = true
 		}
 	}
-	if !hasOneshot && first != "" && first != "chat" {
+	if !hasOneshot && hasFirst && first != "chat" {
 		return false, 0
 	}
 	a, ok := lightChatArgs(argv)
@@ -442,7 +442,7 @@ func tryTermuxFastTUILaunch(argv []string) (bool, int) {
 	if !wantsTUIEarly(argv) {
 		return false, 0
 	}
-	if first := firstPositional(argv); first != "" && first != "chat" {
+	if first, ok := firstPositional(argv); ok && first != "chat" {
 		return false, 0
 	}
 	a, ok := lightChatArgs(argv)

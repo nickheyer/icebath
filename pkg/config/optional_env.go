@@ -25,8 +25,10 @@ type OptionalEnvTable struct {
 	order   []string
 	fillMu  sync.Mutex
 	fill    *optionalEnvFill
-	filling pythread.Local
 }
+
+// Marks the goroutine running a fill so its own reads of any table see the table without the fill
+var optionalEnvFilling pythread.Local
 
 // Saved table contents and armed fill a test puts back afterwards
 type OptionalEnvState struct {
@@ -63,12 +65,12 @@ func (t *OptionalEnvTable) ready() {
 	if fill == nil {
 		return
 	}
-	if active, _ := t.filling.Get(); active == true {
+	if active, _ := optionalEnvFilling.Get(); active == true {
 		return
 	}
-	t.filling.Set(true)
+	optionalEnvFilling.Set(true)
 	entries := func() []NamedEnvVar {
-		defer t.filling.Set(false)
+		defer optionalEnvFilling.Set(false)
 		return fill.run()
 	}()
 	t.fillMu.Lock()
@@ -125,6 +127,18 @@ func (t *OptionalEnvTable) Items() []NamedEnvVar {
 	out := make([]NamedEnvVar, len(t.order))
 	for i, name := range t.order {
 		out[i] = NamedEnvVar{Name: name, Entry: t.entries[name]}
+	}
+	return out
+}
+
+// Entries without their names in insertion order after the armed fill ran
+func (t *OptionalEnvTable) Values() []EnvVar {
+	t.ready()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	out := make([]EnvVar, len(t.order))
+	for i, name := range t.order {
+		out[i] = t.entries[name]
 	}
 	return out
 }

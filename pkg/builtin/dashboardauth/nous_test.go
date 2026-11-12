@@ -147,7 +147,7 @@ func startNous(t *testing.T, p *NousDashboardAuthProvider, redirect string) gate
 
 func pkceParts(result gateway.LoginStart) map[string]string {
 	parts := map[string]string{}
-	for _, seg := range strings.Split(result.CookiePayload["hermes_session_pkce"], ";") {
+	for _, seg := range strings.Split(result.CookiePayload["icebath_session_pkce"], ";") {
 		if k, v, ok := strings.Cut(seg, "="); ok {
 			parts[k] = v
 		}
@@ -174,7 +174,7 @@ func TestAuthorizeURLHasRequiredParams(t *testing.T) {
 // test_nous_provider.py TestStartLogin test_code_verifier_in_cookie_payload_43_to_128_chars
 func TestCodeVerifierInCookiePayload43To128Chars(t *testing.T) {
 	r := startNous(t, newNous(t, "agent:inst1"), nousCallback)
-	if _, ok := r.CookiePayload["hermes_session_pkce"]; !ok {
+	if _, ok := r.CookiePayload["icebath_session_pkce"]; !ok {
 		t.Fatal(r.CookiePayload)
 	}
 	if n := len(pkceParts(r)["verifier"]); n < 43 || n > 128 {
@@ -193,7 +193,7 @@ func TestStateInCookiePayloadMatchesURLParam(t *testing.T) {
 // test_nous_provider.py TestStartLogin test_two_calls_produce_different_state_and_verifier
 func TestTwoCallsProduceDifferentStateAndVerifier(t *testing.T) {
 	p := newNous(t, "agent:inst1")
-	if startNous(t, p, nousCallback).CookiePayload["hermes_session_pkce"] == startNous(t, p, nousCallback).CookiePayload["hermes_session_pkce"] {
+	if startNous(t, p, nousCallback).CookiePayload["icebath_session_pkce"] == startNous(t, p, nousCallback).CookiePayload["icebath_session_pkce"] {
 		t.Fatal("identical pkce payloads")
 	}
 }

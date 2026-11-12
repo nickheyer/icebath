@@ -134,6 +134,67 @@ func TestUnsealedTreesRunTheVenvInterpreter(t *testing.T) {
 	}
 }
 
+// Store interpreter prefix inside a payload, the host binary copied with its stdlib and libpython linked in, returning its relative path
+func svPayloadStore(t *testing.T, payload, prefix string) string {
+	t.Helper()
+	host, err := filepath.EvalSymlinks(peHostPython(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(host), "python"), "t")
+	if strings.Count(version, ".") != 1 {
+		t.Fatalf("host interpreter %s names no major.minor", host)
+	}
+	data, err := os.ReadFile(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative := filepath.Join(prefix, "bin", filepath.Base(host))
+	writeFile(t, filepath.Join(payload, relative), data, 0o755)
+	linked := 0
+	hostPrefix := filepath.Dir(filepath.Dir(host))
+	for _, lib := range []string{"lib", "lib64"} {
+		entries, _ := os.ReadDir(filepath.Join(hostPrefix, lib))
+		for _, entry := range entries {
+			if name := entry.Name(); name == "python"+version || strings.HasPrefix(name, "libpython") {
+				link := filepath.Join(payload, prefix, lib, name)
+				sttMkdir(t, filepath.Dir(link))
+				if err := os.Symlink(filepath.Join(hostPrefix, lib, name), link); err != nil {
+					t.Fatal(err)
+				}
+				linked++
+			}
+		}
+	}
+	if linked == 0 {
+		t.Fatalf("no python%s stdlib beside %s", version, host)
+	}
+	return filepath.ToSlash(relative)
+}
+
+// Sealed payload whose manifest names storePython, returning the checkout inside it
+func svSealedPayload(t *testing.T, payload, storePython string) string {
+	t.Helper()
+	repo := sttMkdir(t, filepath.Join(payload, "icebath-agent"))
+	manifest, _ := json.Marshal(map[string]any{"schema": 1, "target": "test", "repo": "icebath-agent", "venv": "venv", "store": "tools",
+		"runtime": map[string]any{"repoDir": "icebath-agent", "toolsDir": "tools", "storePython": storePython,
+			"sitePackages": "venv/site", "commands": map[string]any{}}})
+	writeFile(t, filepath.Join(payload, "manifest.json"), manifest, 0o666)
+	return repo
+}
+
+// Reports the venv launcher and pyvenv.cfg home name the store interpreter
+func svHealedOnto(t *testing.T, venv, storePython string) {
+	t.Helper()
+	if target, err := os.Readlink(VenvPython(venv)); err != nil || target != storePython {
+		t.Fatalf("launcher links %q %v want %q", target, err, storePython)
+	}
+	cfg, err := os.ReadFile(filepath.Join(venv, "pyvenv.cfg"))
+	if home, _, ok := pyvenvHome(string(cfg)); err != nil || !ok || home != filepath.Dir(storePython) {
+		t.Fatalf("pyvenv.cfg %q %v want home %q", cfg, err, filepath.Dir(storePython))
+	}
+}
+
 func TestSealedPayloadRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T) {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("platforms linux, macos")
@@ -141,18 +202,30 @@ func TestSealedPayloadRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T
 	tmp := isolateHome(t)
 	venv, _ := peTrapVenv(t, tmp)
 	payload := filepath.Join(tmp, "payload")
-	repo := sttMkdir(t, filepath.Join(payload, "icebath-agent"))
-	writeFile(t, filepath.Join(payload, "tools", "python", "python"), []byte("#!/bin/sh\nexec "+peHostPython(t)+" \"$@\"\n"), 0o755)
-	manifest, _ := json.Marshal(map[string]any{"schema": 1, "target": "test", "repo": "icebath-agent", "venv": "venv", "store": "tools",
-		"runtime": map[string]any{"repoDir": "icebath-agent", "toolsDir": "tools", "storePython": "tools/python/python",
-			"sitePackages": "venv/site", "commands": map[string]any{}}})
-	writeFile(t, filepath.Join(payload, "manifest.json"), manifest, 0o666)
-	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"})
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	storePython, err := payloadStorePython(resolvePath(repo))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if containsString(prefix, VenvPython(venv)) || prefix[0] != resolvePath(filepath.Join(payload, "tools", "python", "python")) || !containsString(prefix, "-S") {
-		t.Fatalf("prefix %v", prefix)
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"})
+	if err != nil || !reflect.DeepEqual(prefix, []string{VenvPython(venv), "-I", "-u"}) {
+		t.Fatalf("prefix %v %v", prefix, err)
+	}
+	svHealedOnto(t, venv, storePython)
+	if !strings.HasPrefix(storePython, resolvePath(payload)+string(filepath.Separator)) {
+		t.Fatalf("store interpreter %s is outside the payload", storePython)
+	}
+	cfg := filepath.Join(venv, "pyvenv.cfg")
+	before, _ := os.Stat(cfg)
+	launcher, _ := os.Lstat(VenvPython(venv))
+	if again, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"}); err != nil || !reflect.DeepEqual(again, prefix) {
+		t.Fatalf("second prefix %v %v", again, err)
+	}
+	if after, _ := os.Stat(cfg); !os.SameFile(before, after) {
+		t.Fatal("a venv already on the store interpreter had its pyvenv.cfg rewritten")
+	}
+	if after, _ := os.Lstat(VenvPython(venv)); !os.SameFile(launcher, after) {
+		t.Fatal("a venv already on the store interpreter had its launcher replaced")
 	}
 	script := filepath.Join(tmp, "work", "script.py")
 	peWrite(t, script, "import json, sys, venv_only_dep, pth_only_dep\nprint(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv]))\n")
@@ -166,6 +239,81 @@ func TestSealedPayloadRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T
 	got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_only_cli", "y"), tmp).([]any)
 	argv := got[1].([]any)
 	if got[0] != "from the venv" || !reflect.DeepEqual(argv[1:], []any{"y"}) || !strings.HasSuffix(argv[0].(string), "venv_only_cli.py") {
+		t.Fatalf("module %v", got)
+	}
+}
+
+func TestSealedPayloadVenvFollowsAMovedStoreInterpreter(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
+	}
+	tmp := isolateHome(t)
+	venv, _ := peTrapVenv(t, tmp)
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	if _, err := VenvCommand(context.Background(), repo, venv, []string{"-I"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(venv, "pyvenv.cfg")
+	if err := os.WriteFile(cfg, append([]byte("include-system-site-packages = false\n"), readFile(t, cfg)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(cfg, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(payload, "tools")); err != nil {
+		t.Fatal(err)
+	}
+	repo = svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python-next")))
+	storePython, err := payloadStorePython(resolvePath(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svHealedOnto(t, venv, storePython)
+	text := string(readFile(t, cfg))
+	if !strings.HasPrefix(text, "include-system-site-packages = false\n") || !strings.Contains(text, "\nversion = ") || strings.Count(text, "home") != 1 {
+		t.Fatalf("pyvenv.cfg lost its other keys %q", text)
+	}
+	if info, err := os.Stat(cfg); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("pyvenv.cfg mode %v %v", info, err)
+	}
+	code := "import json, sys, venv_only_dep, pth_only_dep; print(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.prefix == sys.base_prefix]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", false}) {
+		t.Fatalf("moved store %v", got)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := VenvCommand(cancelled, repo, venv, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled launch %v", err)
+	}
+}
+
+func TestVenvSitePthPathLinesImportLinesAndDottedPackagesBehaveAsInHermes(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
+	}
+	tmp := isolateHome(t)
+	venv, site := peTrapVenv(t, tmp)
+	peWrite(t, filepath.Join(site, "hook.pth"), "import os; os.environ['VENV_PTH_IMPORT'] = 'ran'\n")
+	peWrite(t, filepath.Join(site, "venv_pkg", "__init__.py"), "")
+	peWrite(t, filepath.Join(site, "venv_pkg", "sub", "__init__.py"), "")
+	peWrite(t, filepath.Join(site, "venv_pkg", "sub", "mod.py"), "import json, os, sys\nVALUE = 'dotted'\n"+
+		"if __name__ == '__main__':\n    print(json.dumps([VALUE, __package__, sys.argv[1:], os.environ.get('VENV_PTH_IMPORT')]))\n")
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := "import json, os, pth_only_dep, venv_pkg.sub.mod; print(json.dumps([pth_only_dep.VALUE, venv_pkg.sub.mod.VALUE, os.environ.get('VENV_PTH_IMPORT')]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from a .pth", "dotted", "ran"}) {
+		t.Fatalf("code %v", got)
+	}
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_pkg.sub.mod", "z"), tmp); !reflect.DeepEqual(got, []any{"dotted", "venv_pkg.sub", []any{"z"}, "ran"}) {
 		t.Fatalf("module %v", got)
 	}
 }

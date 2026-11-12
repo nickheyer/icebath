@@ -145,7 +145,7 @@ func digestLoopResponse(response string) string {
 			text = replaced
 		}
 	}
-	sum := sha256.Sum256([]byte(strings.ToValidUTF8(text, "�")))
+	sum := sha256.Sum256(pystr.EncodeUTF8Replace(text))
 	return hex.EncodeToString(sum[:])
 }
 

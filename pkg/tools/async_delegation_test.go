@@ -41,6 +41,8 @@ func resetAsyncDelegationForTests() { ResetAsyncDelegationForTests() }
 
 func asyncTestEnv(t *testing.T) *Env {
 	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	resetAsyncDelegationForTests()
 	drainCompletionQueue()
 	t.Cleanup(func() {
@@ -51,7 +53,7 @@ func asyncTestEnv(t *testing.T) *Env {
 		resetAsyncDelegationForTests()
 		drainCompletionQueue()
 	})
-	return &Env{Home: t.TempDir(), Values: &sync.Map{}}
+	return &Env{Home: dir, Values: &sync.Map{}}
 }
 
 func drainCompletionQueue() {
@@ -477,14 +479,14 @@ func TestWorkerDelegationLedgerBindingIsOwnerScoped(t *testing.T) {
 		workerDelegationStoreMu.Unlock()
 	})
 	IsWorkerProcess = func() bool { return false }
-	if l, err := workerLedger(); l != nil || err != nil || requireLedgerOwner() != nil {
+	if l, err := WorkerLedger(); l != nil || err != nil || requireLedgerOwner() != nil {
 		t.Fatal("the owner routes locally")
 	}
 	if err := BindWorkerDelegationStore(&fakeWorkerStore{pid: os.Getpid()}); err == nil || err.Error() != "permission_denied" {
 		t.Fatalf("owner bind = %v", err)
 	}
 	IsWorkerProcess = func() bool { return true }
-	if _, err := workerLedger(); err == nil || err.Error() != "worker_delegation_ledger_unbound" {
+	if _, err := WorkerLedger(); err == nil || err.Error() != "worker_delegation_ledger_unbound" {
 		t.Fatalf("unbound worker = %v", err)
 	}
 	if err := requireLedgerOwner(); err == nil || err.Error() != "worker_delegation_owner_only" {
@@ -497,7 +499,7 @@ func TestWorkerDelegationLedgerBindingIsOwnerScoped(t *testing.T) {
 	if err := BindWorkerDelegationStore(&fakeWorkerStore{pid: os.Getpid()}); err == nil || err.Error() != "worker_delegation_already_bound" {
 		t.Fatalf("second bind = %v", err)
 	}
-	l, _ := workerLedger()
+	l, _ := WorkerLedger()
 	if _, err := l.Dispatch(map[string]any{"parent_session_id": "other"}); err == nil || err.Error() != "permission_denied" {
 		t.Fatalf("foreign parent = %v", err)
 	}

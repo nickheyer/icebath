@@ -26,7 +26,7 @@ func closureInstallSpy(t *testing.T) (*closureSpy, context.Context, *bytes.Buffe
 	t.Helper()
 	tmp := isolateHome(t)
 	repo := filepath.Join(tmp, "checkout")
-	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences, "pyproject.toml")))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
 	peSwap(t, &repoRoot, func() string { return repo })
 	spy := &closureSpy{fail: map[string]bool{}, activate: func() []string { return []string{} }}
 	peSwap(t, &cliInstallNames, func(_ context.Context, names []string, _ *string, verify bool) (int, error) {

@@ -38,7 +38,11 @@ func ManagedWorkerMain(ctx context.Context) (code int) {
 	defer channel.Close()
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "managed worker failed\n%v\n", r)
+			if err, ok := r.(error); ok {
+				fmt.Fprintf(os.Stderr, "managed worker failed\n%s\n", formatWorkerFailure(err))
+			} else {
+				fmt.Fprintf(os.Stderr, "managed worker failed\n%v\n", r)
+			}
 			_ = channel.Send("error", pyjson.ObjectOf("reason", "managed_worker_failed"))
 			code = 1
 		}
@@ -101,7 +105,10 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *Wo
 	}
 	scope := frame.Vals["scope"].(*pyjson.Object).Copy()
 	profileHome := frame.Vals["home"].(string)
-	rpc := NewWorkerRPC(profileHome)
+	rpc, err := NewWorkerRPC(profileHome)
+	if err != nil {
+		return err
+	}
 	adoptParams := pyjson.NewObject()
 	for _, key := range scope.Keys {
 		if key != "epoch" {

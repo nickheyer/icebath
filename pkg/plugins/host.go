@@ -139,8 +139,7 @@ func (h *PluginHost) argv(ctx context.Context, extra ...string) ([]string, error
 	if err != nil {
 		return nil, err
 	}
-	argv := append(append([]string{}, launcher...), python, "-P", "-m", hostChildModule)
-	return append(argv, extra...), nil
+	return hostChildArgv(launcher, python, extra...)
 }
 
 // Child environment acting for this profile with its hosted ambient credentials and the resource path
@@ -161,8 +160,8 @@ func (h *PluginHost) env() ([]string, error) {
 		return nil, err
 	}
 	env["PYTHONPATH"] = pythonPath
-	if _, ok := env[hostLogLevelEnv]; !ok {
-		env[hostLogLevelEnv] = "WARNING"
+	if _, ok := env[HostLogLevelEnv]; !ok {
+		env[HostLogLevelEnv] = "WARNING"
 	}
 	env[HostProcessEnv] = "1"
 	for k, v := range h.envOverride {
@@ -328,7 +327,15 @@ func (h *PluginHost) spawn(argv []string, s *hostStart) (*Channel, *hostProcess,
 		}
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = childEnds[0], childEnds[1], childEnds[2]
+	terminal, releaseTerminal, err := attachTerminal(cmd)
+	if err != nil {
+		closeAll(parentEnds)
+		closeAll(childEnds)
+		return nil, nil, err
+	}
+	cmd.Env = append(cmd.Env, HostTerminalEnv+"="+terminal)
 	err = cmd.Start()
+	releaseTerminal()
 	closeAll(childEnds)
 	if err != nil {
 		closeAll(parentEnds)
@@ -555,6 +562,9 @@ func hostInProcessCtxMethods(ctx context.Context) map[string]bool {
 		return served
 	}
 	for name := range HostInProcessObjectBases {
+		served[name] = true
+	}
+	for name := range hostInProcessServed {
 		served[name] = true
 	}
 	return served
@@ -916,6 +926,8 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 		return h.serveParentCall(ctx, params)
 	case "parent_event":
 		return h.serveParentEvent(ctx, params)
+	case "parent_object":
+		return h.serveParentObject(ctx, params)
 	case "release_parent":
 		h.releaseParentCallables(listOrEmpty(params["ids"]))
 		return nil, nil
@@ -957,7 +969,7 @@ func (h *PluginHost) serveCtx(ctx context.Context, params map[string]any) (any, 
 	h.stateMu.Unlock()
 	_, unsupported := HostUnsupportedCtxMethods[method]
 	_, skipped := HostSkippedCtxMethods[method]
-	if strings.HasPrefix(method, "_") || (unsupported && !served) || skipped || method == "on_unload" || method == "spawn_task" {
+	if strings.HasPrefix(method, "_") || ((unsupported || skipped) && !served) || method == "on_unload" || method == "spawn_task" {
 		return nil, &PluginHostUnsupported{Msg: fmt.Sprintf("ctx.%s() cannot be called across the plugin host", method)}
 	}
 	base := HostObjectBases[method]
@@ -1009,6 +1021,30 @@ func (h *PluginHost) serveFacade(ctx context.Context, params map[string]any) (an
 	if !ok {
 		return nil, refusal
 	}
+	return h.serveFacadeAttr(ctx, target, method, params)
+}
+
+// Serves one parent object a hosted plugin holds, its repr, a plain attribute or a method call
+func (h *PluginHost) serveParentObject(ctx context.Context, params map[string]any) (any, error) {
+	id, _ := wireInt(params["id"])
+	h.stateMu.Lock()
+	slot, ok := h.parents[id]
+	h.stateMu.Unlock()
+	if !ok || slot.obj == nil {
+		return nil, &HostBuiltinError{Type: "LookupError", Message: fmt.Sprintf("icebath object %d was released", id)}
+	}
+	if config.PyTruthy(params["repr"]) {
+		return slot.obj.PyRepr(), nil
+	}
+	method := wireStr(params["method"])
+	if strings.HasPrefix(method, "_") {
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute %s", slot.obj.PyTypeName(), config.PyRepr(method))}
+	}
+	return h.serveFacadeAttr(ctx, slot.obj, method, params)
+}
+
+// Reads one attribute of a parent facade, probing or calling it when it is a method
+func (h *PluginHost) serveFacadeAttr(ctx context.Context, target HostFacade, method string, params map[string]any) (any, error) {
 	value, isMethod, async, err := target.HostAttr(ctx, method)
 	if err != nil {
 		return nil, err
@@ -1056,6 +1092,13 @@ func hostFacadeObject(ctx context.Context, c *Context, facade string) (any, erro
 type HostFacade interface {
 	HostAttr(ctx context.Context, name string) (value any, isMethod bool, async bool, err error)
 	HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error)
+}
+
+// Parent object a ctx method returns that the plugin keeps by reference, with the Python type name and repr it shows
+type HostObjectFacade interface {
+	HostFacade
+	PyTypeName() string
+	PyRepr() string
 }
 
 func listOrEmpty(v any) []any {

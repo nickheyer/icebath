@@ -35,7 +35,7 @@ func ControlSnapshot(ctx context.Context, getMeta func(ctx context.Context, key 
 			return nil, &ControlStoreError{err}
 		}
 	}
-	if raw, err = read(loopMetaPrefix + target); err != nil {
+	if raw, err = read(loopMetaKey(target)); err != nil {
 		return nil, err
 	}
 	if raw != "" {

@@ -372,11 +372,11 @@ func storedToolCallLabels(message map[string]any) map[string]any {
 	out := map[string]any{}
 	calls, _ := message["tool_calls"].([]any)
 	for _, raw := range calls {
-		call, ok := raw.(map[string]any)
+		call, ok := pyjson.Dict(raw)
 		if !ok {
 			continue
 		}
-		fn, _ := call["function"].(map[string]any)
+		fn, _ := pyjson.Dict(call["function"])
 		if fn == nil {
 			fn = map[string]any{}
 		}

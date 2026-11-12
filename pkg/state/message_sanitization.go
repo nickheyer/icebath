@@ -2,6 +2,7 @@ package state
 
 import (
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"strings"
 
@@ -67,6 +68,16 @@ func fixStrField(container any, key any, fix func(string) string) bool {
 			c[k] = fixed
 			return true
 		}
+	case *pyjson.Object:
+		k, _ := key.(string)
+		value, ok := c.Vals[k].(string)
+		if !ok {
+			return false
+		}
+		if fixed := fix(value); fixed != value {
+			c.Set(k, fixed)
+			return true
+		}
 	case []any:
 		i, _ := key.(int)
 		value, ok := c[i].(string)
@@ -94,7 +105,16 @@ func SanitizeStructure(payload any, fix func(string) string) bool {
 				switch value.(type) {
 				case string:
 					found = fixStrField(n, key, fix) || found
-				case map[string]any, []any:
+				case map[string]any, *pyjson.Object, []any:
+					stack = append(stack, value)
+				}
+			}
+		case *pyjson.Object:
+			for _, key := range n.Keys {
+				switch value := n.Vals[key]; value.(type) {
+				case string:
+					found = fixStrField(n, key, fix) || found
+				case map[string]any, *pyjson.Object, []any:
 					stack = append(stack, value)
 				}
 			}
@@ -103,7 +123,7 @@ func SanitizeStructure(payload any, fix func(string) string) bool {
 				switch value.(type) {
 				case string:
 					found = fixStrField(n, i, fix) || found
-				case map[string]any, []any:
+				case map[string]any, *pyjson.Object, []any:
 					stack = append(stack, value)
 				}
 			}
@@ -140,10 +160,12 @@ func SanitizeMessages(messages []any, fix func(string) string, deep bool) bool {
 		fields = append(fields, strField{msg, "name"})
 		if toolCalls, isList := msg["tool_calls"].([]any); isList {
 			for _, tc := range toolCalls {
-				tcd, isDict := tc.(map[string]any)
-				var fn map[string]any
+				tcd, isDict := tc, isMapping(tc)
+				var fn any
 				if isDict {
-					fn, _ = tcd["function"].(map[string]any)
+					if f, _ := mappingGet(tcd, "function"); isMapping(f) {
+						fn = f
+					}
 				}
 				if deep && isDict {
 					fields = append(fields, strField{tcd, "id"})
@@ -166,7 +188,7 @@ func SanitizeMessages(messages []any, fix func(string) string, deep bool) bool {
 			switch value.(type) {
 			case string:
 				msgFound = fixStrField(msg, key, fix) || msgFound
-			case map[string]any, []any:
+			case map[string]any, *pyjson.Object, []any:
 				if deep {
 					msgFound = SanitizeStructure(value, fix) || msgFound
 				}
@@ -209,6 +231,9 @@ func ToolCallSet(tc any, key string, value any) error {
 	switch m := tc.(type) {
 	case map[string]any:
 		m[key] = value
+		return nil
+	case *pyjson.Object:
+		m.Set(key, value)
 		return nil
 	case *pyObject:
 		for i := range *m {

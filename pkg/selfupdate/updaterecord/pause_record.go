@@ -113,6 +113,87 @@ func mapOf(v any) map[string]any {
 	return m
 }
 
+// Mapping an element must be for its get call, failing the way that attribute access does
+func getter(v any) (map[string]any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	}
+	return m, nil
+}
+
+// Mapping of (v or {}) for a get call, a truthy non mapping failing that attribute access
+func getterOrEmpty(v any) (map[string]any, error) {
+	if !truthy(v) {
+		return map[string]any{}, nil
+	}
+	return getter(v)
+}
+
+// Mapping of (v or {}) for an items call, a truthy non mapping failing that attribute access
+func itemsOrEmpty(v any) (map[string]any, error) {
+	if !truthy(v) {
+		return map[string]any{}, nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(v))
+	}
+	return m, nil
+}
+
+// Elements of (v or []) as Python iterates them, a non iterable failing with its TypeError text
+func iterOrEmpty(v any) ([]any, error) { return pyList(orEmptyList(v)) }
+
+// String forms of the elements of (v or []), a non iterable failing with its TypeError text
+func pyStrSet(v any) (map[string]bool, error) {
+	items, err := iterOrEmpty(v)
+	if err != nil {
+		return nil, err
+	}
+	set := map[string]bool{}
+	for _, item := range items {
+		set[pyrepr.Str(item)] = true
+	}
+	return set, nil
+}
+
+// dict.update of target with (v or {}), a mapping or a sequence of key value pairs
+func pyDictUpdate(target map[string]any, v any) error {
+	if m, ok := v.(map[string]any); ok || !truthy(v) {
+		for k, x := range m {
+			target[k] = x
+		}
+		return nil
+	}
+	items, err := pyList(v)
+	if err != nil {
+		return err
+	}
+	for i, item := range items {
+		pair, err := pyList(item)
+		if err != nil {
+			return fmt.Errorf("cannot convert dictionary update sequence element #%d to a sequence", i)
+		}
+		if len(pair) != 2 {
+			return fmt.Errorf("dictionary update sequence element #%d has length %d; 2 is required", i, len(pair))
+		}
+		switch key := pair[0].(type) {
+		case string:
+			target[key] = pair[1]
+		case []any, map[string]any:
+			return fmt.Errorf("unhashable type: '%s'", pyrepr.TypeName(key))
+		default:
+			spelled, err := pyjson.Dumps(key)
+			if err != nil {
+				return err
+			}
+			target[spelled] = pair[1]
+		}
+	}
+	return nil
+}
+
 func listContains(list []any, v any) bool {
 	for _, x := range list {
 		if pyrepr.Equal(x, v) {
@@ -146,21 +227,6 @@ func setdefaultList(token map[string]any, key string) ([]any, error) {
 	return list, nil
 }
 
-// Existing mapping under key or a new empty one stored there, the setdefault of a dict field
-func setdefaultMap(token map[string]any, key string) (map[string]any, error) {
-	v, ok := token[key]
-	if !ok {
-		m := map[string]any{}
-		token[key] = m
-		return m, nil
-	}
-	m, isMap := v.(map[string]any)
-	if !isMap {
-		return nil, fmt.Errorf("'%s' object has no attribute 'setdefault'", pyrepr.TypeName(v))
-	}
-	return m, nil
-}
-
 func pauseWarn(w io.Writer, format string, args ...any) { fmt.Fprintf(w, format+"\n", args...) }
 
 // Persists token keeping this pause's owner, merging a dead pause's orphaned set and refusing a live one
@@ -182,8 +248,16 @@ func WritePause(ctx context.Context, token, owner map[string]any, path string) e
 		if !pyrepr.Equal(existing["install_root"], PauseInstallRoot()) {
 			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused for another checkout (%s)", path, pyrepr.Str(existing["install_root"]))}
 		}
-		if PauseIdentityIsLive(mapOf(existing["owner"])) {
-			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused by live process %s", path, pyrepr.Str(mapOf(existing["owner"])["pid"]))}
+		recorded, err := getterOrEmpty(existing["owner"])
+		if err != nil {
+			return err
+		}
+		if PauseIdentityIsLive(recorded) {
+			live, err := getter(existing["owner"])
+			if err != nil {
+				return err
+			}
+			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused by live process %s", path, pyrepr.Str(live["pid"]))}
 		}
 		dropped, err := DropNeverStopped(shallowCopy(pauseTokenOf(existing)))
 		if err != nil {
@@ -193,14 +267,18 @@ func WritePause(ctx context.Context, token, owner map[string]any, path string) e
 			return err
 		}
 	}
+	var holder any = owner
 	if owner == nil {
+		holder = PauseIdentity(0)
 		if same {
-			owner = mapOf(existing["owner"])
-		} else {
-			owner = PauseIdentity(0)
+			kept, ok := existing["owner"]
+			if !ok {
+				return &KeyErrorText{Key: "owner"}
+			}
+			holder = kept
 		}
 	}
-	return pauseAtomicWrite(path, map[string]any{"schema": 1, "owner": owner, "install_root": PauseInstallRoot(), "token": token})
+	return pauseAtomicWrite(path, map[string]any{"schema": 1, "owner": holder, "install_root": PauseInstallRoot(), "token": token})
 }
 
 // Persists the intended stops and each mapped gateway's marker path before the first stop request
@@ -284,6 +362,7 @@ func SyncPause(ctx context.Context, token map[string]any) error {
 		owed["resume_needed"] = true
 		delete(owed, "resume_deferred")
 		err = WritePause(ctx, owed, nil, "")
+		shareGrownLists(token, owed)
 	} else {
 		err = DischargePause(ctx, token, "")
 	}
@@ -294,6 +373,18 @@ func SyncPause(ctx context.Context, token map[string]any) error {
 		pauseWarn(pauseStdout, "  ⚠ Could not update the paused-gateway record %s: %s", PauseRecordPath(), pauseErrText(err))
 	}
 	return nil
+}
+
+// Lists a merge grew on the shallow copy reach the token too, as the list objects both share in Python
+func shareGrownLists(token, owed map[string]any) {
+	for _, key := range []string{"baselines", "absorbed", "unmapped", "posix_units", "services", "expected_services"} {
+		if _, shared := token[key].([]any); !shared {
+			continue
+		}
+		if grown, ok := owed[key].([]any); ok {
+			token[key] = grown
+		}
+	}
 }
 
 // A live update other than the update tree holding this install's checkout lock
@@ -353,7 +444,11 @@ func retirePause(path string, carriers []PauseFile) error {
 	ids := map[string]bool{}
 	for _, c := range carriers {
 		token := pauseTokenOf(c.Body)
-		for _, i := range append([]any{token["pause_id"]}, listItems(orEmptyList(token["absorbed"]))...) {
+		absorbed, err := iterOrEmpty(token["absorbed"])
+		if err != nil {
+			return err
+		}
+		for _, i := range append([]any{token["pause_id"]}, absorbed...) {
 			if truthy(i) {
 				ids[pyrepr.Str(i)] = true
 			}
@@ -400,10 +495,14 @@ func pauseHolder(src string, body map[string]any) map[string]any {
 }
 
 // Files that only copy an obligation another file carries or that was completed, never a held one
-func pauseRedundant(found []PauseFile, held, retired map[string]bool) map[string]bool {
+func pauseRedundant(found []PauseFile, held, retired map[string]bool) (map[string]bool, error) {
 	carriers := map[string]string{}
 	for _, f := range found {
-		for _, oid := range listItems(orEmptyList(pauseTokenOf(f.Body)["absorbed"])) {
+		absorbed, err := iterOrEmpty(pauseTokenOf(f.Body)["absorbed"])
+		if err != nil {
+			return nil, err
+		}
+		for _, oid := range absorbed {
 			if _, ok := carriers[pyrepr.Str(oid)]; !ok {
 				carriers[pyrepr.Str(oid)] = f.Src
 			}
@@ -432,8 +531,13 @@ func pauseRedundant(found []PauseFile, held, retired map[string]bool) map[string
 	}
 	rev := map[string]int64{}
 	for _, f := range found {
+		rev[f.Src] = 0
 		if truthy(f.Body["rev"]) {
-			rev[f.Src], _ = pyIntValue(f.Body["rev"])
+			n, err := pyIntConvert(f.Body["rev"])
+			if err != nil {
+				return nil, err
+			}
+			rev[f.Src] = n
 		}
 	}
 	for _, oid := range order {
@@ -462,7 +566,7 @@ func pauseRedundant(found []PauseFile, held, retired map[string]bool) map[string
 	for s := range held {
 		delete(redundant, s)
 	}
-	return redundant
+	return redundant, nil
 }
 
 func pauseSurvey(path string) ([]PauseFile, map[string]bool, map[string]bool, error) {
@@ -480,7 +584,11 @@ func pauseSurvey(path string) ([]PauseFile, map[string]bool, map[string]bool, er
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return found, held, pauseRedundant(found, held, retired), nil
+	redundant, err := pauseRedundant(found, held, retired)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return found, held, redundant, nil
 }
 
 func pathExists(path string) bool {
@@ -747,30 +855,51 @@ func pauseLivePIDs(token map[string]any) map[string]bool {
 	return live
 }
 
-func pauseWithout(token map[string]any, pids map[string]bool) map[string]any {
+// Strips the profiles, unmapped and supervised entries whose pid is in pids from token
+func pauseWithout(token map[string]any, pids map[string]bool) (map[string]any, error) {
+	source, err := itemsOrEmpty(token["profiles"])
+	if err != nil {
+		return nil, err
+	}
 	profiles := map[string]any{}
-	for p, pid := range mapOf(token["profiles"]) {
+	for p, pid := range source {
 		if !pids[pyrepr.Str(pid)] {
 			profiles[p] = pid
 		}
 	}
 	token["profiles"] = profiles
-	token["unmapped"] = filterByPID(token["unmapped"], pids, false)
-	if _, ok := token["posix_units"]; ok {
-		token["posix_units"] = filterByPID(token["posix_units"], pids, false)
+	unmapped, err := filterByPID(token["unmapped"], pids, false)
+	if err != nil {
+		return nil, err
 	}
-	return token
+	token["unmapped"] = unmapped
+	if units, ok := token["posix_units"]; ok {
+		kept, err := filterByPID(units, pids, false)
+		if err != nil {
+			return nil, err
+		}
+		token["posix_units"] = kept
+	}
+	return token, nil
 }
 
 // Entries whose pid is in or out of pids, keeping their order
-func filterByPID(v any, pids map[string]bool, inside bool) []any {
+func filterByPID(v any, pids map[string]bool, inside bool) ([]any, error) {
+	items, err := iterOrEmpty(v)
+	if err != nil {
+		return nil, err
+	}
 	out := []any{}
-	for _, u := range listItems(orEmptyList(v)) {
-		if pids[pyrepr.Str(mapOf(u)["pid"])] == inside {
+	for _, u := range items {
+		entry, err := getter(u)
+		if err != nil {
+			return nil, err
+		}
+		if pids[pyrepr.Str(entry["pid"])] == inside {
 			out = append(out, u)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // True when this update's stop request for pid is still on disk, nil when its evidence cannot be read
@@ -858,12 +987,19 @@ func namesRequest(token map[string]any, pid, path string, ttl *int) (*bool, erro
 
 // Pids this update asked to stop and pids whose request evidence cannot be read
 func pauseAsked(token map[string]any) (map[string]bool, map[string]bool, error) {
-	sent := strSet(token["stop_sent"])
+	sent, err := pyStrSet(token["stop_sent"])
+	if err != nil {
+		return nil, nil, err
+	}
 	asked, unknown := map[string]bool{}, map[string]bool{}
 	for p := range sent {
 		asked[p] = true
 	}
-	for _, raw := range listItems(orEmptyList(token["stop_requested"])) {
+	requested, err := iterOrEmpty(token["stop_requested"])
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, raw := range requested {
 		p := pyrepr.Str(raw)
 		if sent[p] {
 			continue
@@ -897,22 +1033,34 @@ func DropNeverStopped(token map[string]any) (map[string]any, error) {
 			drop[pid] = true
 		}
 	}
-	return pauseWithout(token, drop), nil
+	return pauseWithout(token, drop)
 }
 
 // Removes and returns the profiles, unmapped and supervised entries whose process is still draining
-func SplitDraining(token map[string]any) map[string]any {
+func SplitDraining(token map[string]any) (map[string]any, error) {
 	live := pauseLivePIDs(token)
+	source, err := itemsOrEmpty(token["profiles"])
+	if err != nil {
+		return nil, err
+	}
 	profiles := map[string]any{}
-	for p, pid := range mapOf(token["profiles"]) {
+	for p, pid := range source {
 		if live[pyrepr.Str(pid)] {
 			profiles[p] = pid
 		}
 	}
-	draining := map[string]any{"profiles": profiles, "unmapped": filterByPID(token["unmapped"], live, true),
-		"posix_units": filterByPID(token["posix_units"], live, true)}
-	pauseWithout(token, live)
-	return draining
+	unmapped, err := filterByPID(token["unmapped"], live, true)
+	if err != nil {
+		return nil, err
+	}
+	units, err := filterByPID(token["posix_units"], live, true)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := pauseWithout(token, live); err != nil {
+		return nil, err
+	}
+	return map[string]any{"profiles": profiles, "unmapped": unmapped, "posix_units": units}, nil
 }
 
 // Folds an orphaned pause into this update's token so one resume brings both sets back
@@ -921,42 +1069,63 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 		token = map[string]any{"resume_needed": true, "profiles": map[string]any{}, "unmapped_pids": []any{}, "unmapped": []any{}}
 	}
 	token["resume_needed"] = true
-	extend := func(key string, items []any) error {
+	extend := func(key string, source func() ([]any, error)) error {
 		list, err := setdefaultList(token, key)
+		if err != nil {
+			return err
+		}
+		items, err := source()
 		if err != nil {
 			return err
 		}
 		token[key] = extendMissing(list, items)
 		return nil
 	}
+	adoptedList := func(key string) func() ([]any, error) {
+		return func() ([]any, error) { return iterOrEmpty(adopted[key]) }
+	}
 	setdefaults := func(key string) error {
-		m, err := setdefaultMap(token, key)
-		if err != nil {
+		if _, ok := token[key]; !ok {
+			token[key] = map[string]any{}
+		}
+		source, err := itemsOrEmpty(adopted[key])
+		if err != nil || len(source) == 0 {
 			return err
 		}
-		for k, v := range mapOf(adopted[key]) {
+		m, isMap := token[key].(map[string]any)
+		if !isMap {
+			return fmt.Errorf("'%s' object has no attribute 'setdefault'", pyrepr.TypeName(token[key]))
+		}
+		for k, v := range source {
 			if _, ok := m[k]; !ok {
 				m[k] = v
 			}
 		}
 		return nil
 	}
-	if err := extend("baselines", listItems(orEmptyList(adopted["baselines"]))); err != nil {
+	if err := extend("baselines", adoptedList("baselines")); err != nil {
 		return nil, err
 	}
-	var ids []any
-	for _, i := range append([]any{adopted["pause_id"]}, listItems(orEmptyList(adopted["absorbed"]))...) {
-		if truthy(i) {
-			ids = append(ids, i)
+	absorbedIDs := func() ([]any, error) {
+		inner, err := iterOrEmpty(adopted["absorbed"])
+		if err != nil {
+			return nil, err
 		}
+		var ids []any
+		for _, i := range append([]any{adopted["pause_id"]}, inner...) {
+			if truthy(i) {
+				ids = append(ids, i)
+			}
+		}
+		return ids, nil
 	}
-	if err := extend("absorbed", ids); err != nil {
+	if err := extend("absorbed", absorbedIDs); err != nil {
 		return nil, err
 	}
 	if err := setdefaults("profiles"); err != nil {
 		return nil, err
 	}
-	if err := extend("unmapped", listItems(orEmptyList(adopted["unmapped"]))); err != nil {
+	if err := extend("unmapped", adoptedList("unmapped")); err != nil {
 		return nil, err
 	}
 	if err := setdefaults("identities"); err != nil {
@@ -967,19 +1136,32 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 	if adoptedHas || tokenHas {
 		requested, sent := adopted["stop_requested"], adopted["stop_sent"]
 		if requested == nil {
-			keys := make([]string, 0)
-			for k := range mapOf(adopted["identities"]) {
-				keys = append(keys, k)
+			keys, err := iterOrEmpty(adopted["identities"])
+			if err != nil {
+				return nil, err
 			}
-			requested = stringList(keys)
-			sent = requested
+			requested, sent = keys, keys
 		}
-		req := strSet(token["stop_requested"])
-		for k := range strSet(requested) {
-			req[k] = true
+		req, err := pyStrSet(token["stop_requested"])
+		if err != nil {
+			return nil, err
 		}
-		got := strSet(token["stop_sent"])
-		for k := range strSet(sent) {
+		asked, err := pyList(requested)
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range asked {
+			req[pyrepr.Str(k)] = true
+		}
+		got, err := pyStrSet(token["stop_sent"])
+		if err != nil {
+			return nil, err
+		}
+		issued, err := pyStrSet(sent)
+		if err != nil {
+			return nil, err
+		}
+		for k := range issued {
 			got[k] = true
 		}
 		token["stop_requested"], token["stop_sent"] = sortedSet(req), sortedSet(got)
@@ -997,39 +1179,54 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 	}
 	if truthy(adopted["platform"]) {
 		token["platform"] = adopted["platform"]
-		if err := extend("posix_units", listItems(orEmptyList(adopted["posix_units"]))); err != nil {
+		if err := extend("posix_units", adoptedList("posix_units")); err != nil {
 			return nil, err
 		}
 	}
-	if err := extend("services", listItems(orEmptyList(adopted["services"]))); err != nil {
+	if err := extend("services", adoptedList("services")); err != nil {
 		return nil, err
 	}
 	if services := token["services"].([]any); len(services) > 0 {
-		if err := extend("expected_services", services); err != nil {
+		if err := extend("expected_services", func() ([]any, error) { return services, nil }); err != nil {
 			return nil, err
 		}
-		if _, err := setdefaultList(token, "restarted_services"); err != nil {
-			return nil, err
+		if _, ok := token["restarted_services"]; !ok {
+			token["restarted_services"] = []any{}
 		}
-		m, err := setdefaultMap(token, "service_profiles")
-		if err != nil {
-			return nil, err
+		if _, ok := token["service_profiles"]; !ok {
+			token["service_profiles"] = map[string]any{}
 		}
-		for k, v := range mapOf(adopted["service_profiles"]) {
-			m[k] = v
+		m, isMap := token["service_profiles"].(map[string]any)
+		if !isMap {
+			return nil, fmt.Errorf("'%s' object has no attribute 'update'", pyrepr.TypeName(token["service_profiles"]))
+		}
+		if err := pyDictUpdate(m, adopted["service_profiles"]); err != nil {
+			return nil, err
 		}
 	}
 	return token, nil
 }
 
-func pauseHasWork(token map[string]any) bool {
-	for _, u := range listItems(orEmptyList(token["unmapped"])) {
-		if truthy(mapOf(u)["argv"]) {
-			return true
+// Whether a token still owes a profile, a relaunchable unmapped gateway, a service or a cold start
+func pauseHasWork(token map[string]any) (bool, error) {
+	if truthy(token["profiles"]) {
+		return true, nil
+	}
+	unmapped, err := iterOrEmpty(token["unmapped"])
+	if err != nil {
+		return false, err
+	}
+	for _, u := range unmapped {
+		entry, err := getter(u)
+		if err != nil {
+			return false, err
+		}
+		if truthy(entry["argv"]) {
+			return true, nil
 		}
 	}
-	return truthy(token["profiles"]) || truthy(token["services"]) || truthy(token["posix_units"]) ||
-		truthy(token["cold_start_if_installed"]) || truthy(token["cold_start_profiles"])
+	return truthy(token["services"]) || truthy(token["posix_units"]) ||
+		truthy(token["cold_start_if_installed"]) || truthy(token["cold_start_profiles"]), nil
 }
 
 // Resumes a claimed set under the checkout lock, handing it back untouched when an update holds the checkout
@@ -1072,7 +1269,7 @@ func resumeFenced(ctx context.Context, claimPath string, body map[string]any) er
 			body = current
 		}
 		if token, err = DropNeverStopped(shallowCopy(pauseTokenOf(body))); err == nil {
-			draining = SplitDraining(token)
+			draining, err = SplitDraining(token)
 		}
 	}
 	release()
@@ -1099,7 +1296,11 @@ func runPauseResume(ctx context.Context, token map[string]any) (failure string) 
 			failure = fmt.Sprint(r)
 		}
 	}()
-	if !pauseHasWork(token) {
+	work, err := pauseHasWork(token)
+	if err != nil {
+		return err.Error()
+	}
+	if !work {
 		token["resume_needed"] = false
 		return ""
 	}

@@ -18,10 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 const (
 	sessionHeaderName              = "X-Icebath-Session-Token"
+	legacySessionHeaderName        = "X-Hermes-Session-Token"
 	dashboardEmbeddedChatEnabled   = true
 	desktopMCPDiscoveryDelay       = time.Second
 	dashboardHealthWindowSeconds   = 300.0
@@ -72,7 +74,7 @@ func importWebServerState() {
 	if v, ok := os.LookupEnv("ICEBATH_WEB_DIST"); ok {
 		webDist = v
 	} else {
-		webDist = filepath.Join(projectRoot, "cmd", "icebath", "web_dist")
+		webDist = webbundle.Dist(projectRoot)
 	}
 	gatewayHealthURL, gatewayHealthURLSet = os.LookupEnv("GATEWAY_HEALTH_URL")
 	gatewayHealthTimeout = parseGatewayHealthTimeout()
@@ -301,10 +303,18 @@ func sshRuntimeIntact() bool {
 	return dev == ident.dev && ino == ident.ino
 }
 
+// Session token header the request carries, the icebath name first and the hermes name plugins still send second
+func presentedSessionHeader(h Headers) string {
+	if v := h.Get(sessionHeaderName); v != "" {
+		return v
+	}
+	return h.Get(legacySessionHeaderName)
+}
+
 // Whether the request carries the dashboard session token in its header or a legacy bearer authorization
 func hasValidSessionToken(req *Request) bool {
 	token := SessionToken()
-	if h := req.Headers().Get(sessionHeaderName); h != "" && subtle.ConstantTimeCompare([]byte(h), []byte(token)) == 1 {
+	if h := presentedSessionHeader(req.Headers()); h != "" && subtle.ConstantTimeCompare([]byte(h), []byte(token)) == 1 {
 		return true
 	}
 	return subtle.ConstantTimeCompare([]byte(req.Headers().Get("authorization")), []byte("Bearer "+token)) == 1

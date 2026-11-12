@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Toolset disponibili"
     currently_enabled_legend: "(*) = attualmente attivo"
     tip_enable_all: "Suggerimento: usa 'all' o '*' per attivare tutti i toolset"
-    example: "Esempio: python cli.py --toolsets web,terminal"
+    example: "Esempio: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Sottocomando /usage sconosciuto: {args}. Prova /usage oppure /usage reset [--force]."

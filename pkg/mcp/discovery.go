@@ -523,10 +523,6 @@ func Connect(ctx context.Context, env *tools.Env, servers map[string]*Rendered) 
 	if config.SafeWorkerEnabled() {
 		return []string{}, nil
 	}
-	if !ensureMCPSDK() {
-		mcpLogger().Debug("MCP SDK not available -- skipping explicit MCP registration")
-		return []string{}, nil
-	}
 	raw := map[string]any{}
 	for name, r := range servers {
 		raw[name] = r.Config
@@ -613,10 +609,6 @@ func ConnectAll(ctx context.Context, env *tools.Env, allowed []string) ([]string
 			mcpLogger().Debug("No MCP servers in --toolsets filter; skipping MCP load entirely")
 			return []string{}, nil
 		}
-	}
-	if !ensureMCPSDK() {
-		mcpLogger().Debug("MCP SDK not available -- skipping MCP tool discovery")
-		return []string{}, nil
 	}
 	cookie := acquireDiscoveryLockWithRetry(ctx)
 	defer cookie.Release()
@@ -1089,9 +1081,6 @@ type ToolSummary struct {
 
 // Probe connects each enabled server, lists its tools and disconnects, registering nothing and omitting failed servers
 func Probe(ctx context.Context, env *tools.Env) map[string][]ToolSummary {
-	if !ensureMCPSDK() {
-		return map[string][]ToolSummary{}
-	}
 	enabled := map[string]*Rendered{}
 	for name, r := range ownerServerConfigs(ctx, env) {
 		if ServerEnabled(r.Config) {

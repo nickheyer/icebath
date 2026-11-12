@@ -17,6 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Agent constructor every gateway run path builds its agents with
+var newAIAgent = agent.NewAIAgent
+
 // Runtime keys a side agent takes from its frozen policy route
 var sideRuntimeKeys = []string{"api_key", "base_url", "provider", "requested_provider", "api_mode", "command", "args",
 	"credential_pool", "max_tokens", "capabilities"}
@@ -154,7 +157,7 @@ func (r *GatewayRunner) sideAgent(ctx context.Context, a *gateway.SessionAuthori
 		return nil, err
 	}
 	opts.Env = env
-	return agent.NewAIAgent(ctx, opts)
+	return newAIAgent(ctx, opts)
 }
 
 // Installs a fresh review run on the session's review guard, nil while an earlier review still holds it

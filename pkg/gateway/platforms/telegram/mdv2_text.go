@@ -1,7 +1,7 @@
 package telegram
 
 import (
-	"html"
+	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
@@ -45,9 +45,9 @@ func firstGroup(m *regexp2.Match) string { return m.GroupByNumber(1).String() }
 func boldLabelHTML(line string) string {
 	label, rest, ok := strings.Cut(line, ":")
 	if !ok {
-		return "<b>" + html.EscapeString(line) + "</b>"
+		return "<b>" + pyhtml.Escape(line, true) + "</b>"
 	}
-	return "<b>" + html.EscapeString(label) + ":</b>" + html.EscapeString(rest)
+	return "<b>" + pyhtml.Escape(label, true) + ":</b>" + pyhtml.Escape(rest, true)
 }
 
 // Telegram MarkdownV2 special characters escaped with a preceding backslash

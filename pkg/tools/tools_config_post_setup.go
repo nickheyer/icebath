@@ -199,7 +199,7 @@ func pythonHook(module, extra, label, installing string, onInstall func() []stri
 
 func staticLines(lines ...string) func() []string { return func() []string { return lines } }
 
-var pythonPostSetupHookKeys = []string{"faster_whisper", "kittentts", "piper", "ddgs"}
+var pythonPostSetupHookKeys = []string{"faster_whisper", "kittentts", "piper"}
 
 var pythonPostSetupHooks = map[string]pythonPostSetupHook{
 	"faster_whisper": pythonHook("faster_whisper", "stt-whisper", "faster-whisper",
@@ -213,9 +213,6 @@ var pythonPostSetupHooks = map[string]pythonPostSetupHook{
 		"Default voice: en_US-lessac-medium (downloaded on first TTS call)",
 		"Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md",
 		"Switch voices by setting tts.piper.voice in config.yaml"),
-	"ddgs": pythonHook("ddgs", "ddgs", "ddgs", "Installing ddgs (DuckDuckGo search package)...", nil,
-		"No API key required. DuckDuckGo enforces server-side rate limits.",
-		"Pair with an extract provider if you also need web_extract."),
 }
 
 // Enables one Python provider through the application dependency transaction

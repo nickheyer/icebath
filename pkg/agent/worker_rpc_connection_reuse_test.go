@@ -278,7 +278,7 @@ func waitLinkClosed(t *testing.T, rpc *WorkerRPC) {
 func TestOneConnectionServesEveryCall(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	for i := 1; i <= 5; i++ {
 		if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(i)) {
@@ -293,7 +293,7 @@ func TestOneConnectionServesEveryCall(t *testing.T) {
 func TestReconnectsWithAFreshTicketAfterTheOwnerDropsIt(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	owner.setDrop("after_reply")
 	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(1)}) {
@@ -316,7 +316,7 @@ func TestReconnectsWithAFreshTicketAfterTheOwnerDropsIt(t *testing.T) {
 func TestInFlightCallOnADroppedConnectionFailsAndIsNotResent(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(1)}) {
 		t.Fatalf("first %v", got)
@@ -362,7 +362,7 @@ func isNetClosed(err error) bool {
 func TestIdleBroadcastsPastTheReceiveHighWaterMarkKeepTheConnection(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	if n := reuseCall(t, rpc, "flood", "events", int64(64))["n"]; !pyjson.Equal(n, int64(1)) {
 		t.Fatalf("flood n=%v", n)
@@ -389,7 +389,7 @@ func TestIdleBroadcastsPastTheReceiveHighWaterMarkKeepTheConnection(t *testing.T
 func TestOwnerStallShorterThanTheReceiptBudgetDoesNotFailOnAPingDeadline(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(1)) {
 		t.Fatalf("first n=%v", n)
@@ -412,7 +412,7 @@ func TestOwnerStallShorterThanTheReceiptBudgetDoesNotFailOnAPingDeadline(t *test
 func TestConcurrentCallersAreSerializedAndEachGetsItsOwnReply(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	replies := map[string][]map[string]any{"a": nil, "b": nil}
 	var mu sync.Mutex
@@ -466,7 +466,7 @@ func TestConcurrentCallersAreSerializedAndEachGetsItsOwnReply(t *testing.T) {
 func TestAnOwnerErrorReplyKeepsTheConnectionForTheNextCall(t *testing.T) {
 	home := t.TempDir()
 	owner := startReuseOwner(t, home)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	_, err := rpc.Call(context.Background(), "fail", nil)
 	var persistence *tools.WorkerPersistenceError

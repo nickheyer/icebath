@@ -131,8 +131,9 @@ func assistantHasTodoToolCall(assistantMsg map[string]any, toolCallID string) bo
 // Raw arguments of a tool call entry in dict or struct form
 func toolCallArguments(tc any) any {
 	switch t := tc.(type) {
-	case map[string]any:
-		if fn, ok := t["function"].(map[string]any); ok {
+	case map[string]any, *pyjson.Object:
+		d, _ := pyjson.Dict(t)
+		if fn, ok := pyjson.Dict(d["function"]); ok {
 			return fn["arguments"]
 		}
 	case state.ToolCall:
@@ -148,8 +149,9 @@ func toolCallArguments(tc any) any {
 // Function name of a tool call entry in dict or struct form
 func getToolCallNameStatic(tc any) string {
 	switch t := tc.(type) {
-	case map[string]any:
-		if fn, ok := t["function"].(map[string]any); ok {
+	case map[string]any, *pyjson.Object:
+		d, _ := pyjson.Dict(t)
+		if fn, ok := pyjson.Dict(d["function"]); ok {
 			name, _ := fn["name"].(string)
 			return name
 		}

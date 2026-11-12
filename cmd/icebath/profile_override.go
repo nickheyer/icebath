@@ -200,12 +200,13 @@ func applyProfileOverride(argv []string) []string {
 	if consume > 0 {
 		explicitCLIProfile = profileName
 		argv = append(append([]string{}, argv[:index]...), argv[index+consume:]...)
+		os.Args = append([]string{os.Args[0]}, argv...)
 	}
 	return argv
 }
 
-// First command word of argv as the CLI parser splits it, empty for a bare launch
-func firstPositional(argv []string) string {
+// First command word of argv as the CLI parser splits it, false for a bare launch
+func firstPositional(argv []string) (string, bool) {
 	return commands.NewCLI().FirstPositional(argv)
 }
 

@@ -231,7 +231,7 @@ func ClearDashboardAuthProviders() {
 
 // Registry name of a dashboard auth provider object, false for anything that does not implement the protocol
 func HostedDashboardAuthProviderName(obj any) (string, bool) {
-	p, ok := obj.(DashboardAuthProvider)
+	p, ok := adaptHostedDashboardAuthProvider(obj).(DashboardAuthProvider)
 	if !ok {
 		return "", false
 	}
@@ -242,6 +242,7 @@ func HostedDashboardAuthProviderName(obj any) (string, bool) {
 type dashboardAuthRegistryService struct{}
 
 func (dashboardAuthRegistryService) RegisterGlobal(provider any) (string, error) {
+	provider = adaptHostedDashboardAuthProvider(provider)
 	if err := AssertDashboardAuthProtocol(provider); err != nil {
 		return "", err
 	}
@@ -253,7 +254,7 @@ func (dashboardAuthRegistryService) RegisterGlobal(provider any) (string, error)
 }
 
 func (dashboardAuthRegistryService) UnregisterGlobal(name string, provider any) {
-	if p, ok := provider.(DashboardAuthProvider); ok {
+	if p, ok := adaptHostedDashboardAuthProvider(provider).(DashboardAuthProvider); ok {
 		UnregisterGlobalDashboardAuthProvider(name, p)
 	}
 }

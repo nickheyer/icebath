@@ -369,7 +369,7 @@ function buildRoutes(
   return routes;
 }
 
-const SIDEBAR_COLLAPSED_KEY = "hermes-sidebar-collapsed";
+const SIDEBAR_COLLAPSED_KEY = "icebath-sidebar-collapsed";
 
 export default function App() {
   const { t } = useI18n();
@@ -672,7 +672,7 @@ export default function App() {
 
               {sidebarNav.pluginItems.length > 0 && (
                 <div
-                  aria-labelledby="hermes-sidebar-plugin-nav-heading"
+                  aria-labelledby="icebath-sidebar-plugin-nav-heading"
                   className="flex flex-col border-t border-current/10 pb-2"
                   role="group"
                 >
@@ -682,7 +682,7 @@ export default function App() {
                       "font-sans text-display text-xs tracking-[0.12em] text-text-tertiary",
                       isDesktopCollapsed && "lg:hidden",
                     )}
-                    id="hermes-sidebar-plugin-nav-heading"
+                    id="icebath-sidebar-plugin-nav-heading"
                   >
                     {t.app.pluginNavSection}
                   </span>
@@ -945,7 +945,7 @@ function SidebarSystemActions({
   const navigate = useNavigate();
   const { activeAction, isBusy, isRunning, pendingAction, runAction } =
     useSystemActions();
-  const canUpdateHermes = status?.can_update_hermes === true;
+  const canUpdateHermes = status?.can_update_icebath === true;
   // Served by the shared multiplexer: a restart blips every bot on this device — say which.
   const sharedGateway = sharedGatewayProfiles(status);
   const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);

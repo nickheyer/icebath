@@ -570,10 +570,6 @@ func TestDmgbuildStagesPairedRuntimeAndStaysOutOfPayload(t *testing.T) {
 			if base := p.Base(); !base.Internal || base.OnPath() {
 				t.Fatal("dmgbuild must be internal and off PATH")
 			}
-			bundled, err := bundlePackageNames()
-			if err != nil || slices.Contains(bundled, "dmgbuild") {
-				t.Fatalf("dmgbuild is part of the payload %v %v", bundled, err)
-			}
 			for _, other := range AllTargets {
 				if !strings.HasPrefix(other, "darwin-") && p.MissingReason(other) == "" {
 					t.Fatalf("dmgbuild claims %s", other)

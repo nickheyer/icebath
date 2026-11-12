@@ -3,9 +3,11 @@ package selfupdate
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -291,5 +293,25 @@ func TestDumpFallbackProjectionKeepsRouteMetadataOnly(t *testing.T) {
 	}
 	if _, has := item.Vals["base_url"]; has {
 		t.Fatal("a non string base_url projected")
+	}
+}
+
+func TestDumpStatesGoRuntimeInPlaceOfPythonLines(t *testing.T) {
+	ctx, h := dumpHome(t)
+	out := dumpOutput(t, ctx, h)
+	lines := strings.Split(out, "\n")
+	want := []string{"version:", "os:", "go:", "profile:", "icebath_home:"}
+	for i, prefix := range want {
+		if !strings.HasPrefix(lines[i+1], prefix) {
+			t.Fatalf("line %d is %q, want prefix %q:\n%s", i+1, lines[i+1], prefix, out)
+		}
+	}
+	if goLine := fmt.Sprintf("%-18s%s", "go:", strings.TrimPrefix(strings.Fields(runtime.Version())[0], "go")); lines[3] != goLine {
+		t.Fatalf("go line %q want %q", lines[3], goLine)
+	}
+	for _, label := range []string{"python:", "openai_sdk:"} {
+		if strings.Contains(out, label) {
+			t.Fatalf("dump of the Go binary states %q:\n%s", label, out)
+		}
 	}
 }

@@ -433,7 +433,7 @@ func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, prov
 	a.apiMode = apiMode
 	a.reasoningEchoFlag = pyrepr.Truthy(entry["reasoning_echo"])
 	clear(a.transportCache)
-	a.codexReasoningReplayEnabled, a.codexReasoningReplayRejected = true, false
+	resetCodexReasoningReplay(a)
 	a.fallbackActivated = true
 	a.rebindFallbackCredentialPool(ctx, providerName, model)
 	if providerName == "moa" {

@@ -110,7 +110,7 @@ func (r *GatewayRunner) enrichModelSwitchWarningsForGateway(ctx context.Context,
 	if db := r.sessionDB(ctx); db != nil && r.sessionStore != nil {
 		if entry, err := r.sessionStore.GetOrCreateSession(ctx, source, false, true); err == nil && entry != nil {
 			if rows, err := db.DB().GetMessagesAsConversation(ctx, entry.SessionID, state.ConversationOptions{}); err == nil {
-				messages = rows
+				messages = append([]map[string]any{}, rows...)
 			}
 		}
 	}

@@ -536,12 +536,17 @@ func TestLockMarkerMutexIsReentrantAlongTheContextAndBusyElsewhere(t *testing.T)
 	}
 }
 
-func TestLockCheckoutLockOutlivesItsOwnerWhileAnInheritingChildRuns(t *testing.T) {
+func TestCheckoutLockOutlivesItsOwnerWhileAnInheritingChildRuns(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("POSIX descriptor inheritance")
+		t.Skip("platforms posix")
 	}
-	root := t.TempDir()
-	lock := NewUpdateLock(lcMarker(t), root, true)
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	tmp := t.TempDir()
+	root := filepath.Join(tmp, "checkout")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lock := NewUpdateLock(filepath.Join(tmp, "marker"), root, true)
 	if !lcAcquire(t, lock) {
 		t.Fatalf("%+v", lock.Holder)
 	}
@@ -550,18 +555,21 @@ func TestLockCheckoutLockOutlivesItsOwnerWhileAnInheritingChildRuns(t *testing.T
 		t.Fatalf("%v %v", files, err)
 	}
 	child := exec.Command("sleep", "120")
-	child.ExtraFiles = CustodySpawnFiles()
+	child.ExtraFiles = files
 	if err := child.Start(); err != nil {
-		t.Skip(err)
+		t.Fatal(err)
 	}
 	lock.Release(context.Background())
-	if held, _ := CheckoutLockHeld(context.Background(), root); !held {
-		t.Fatal("the lock died with its owner while the inheriting child runs")
+	if busy, err := UpdateInProgress(context.Background(), root); !busy || err != nil {
+		t.Fatalf("the owner's exit must not free a lock its child holds %v", err)
 	}
 	child.Process.Kill()
 	child.Wait()
-	if held, _ := CheckoutLockHeld(context.Background(), root); held {
-		t.Fatal("the lock outlived the last inheriting child")
+	if busy, err := UpdateInProgress(context.Background(), root); busy || err != nil {
+		t.Fatalf("the lock outlived the last inheriting child %v", err)
+	}
+	if path, err := CheckoutLockPath(root); err != nil || filepath.Base(path) != ".icebath-update.lock" {
+		t.Fatalf("a checkout without .git locks %q %v", path, err)
 	}
 }
 

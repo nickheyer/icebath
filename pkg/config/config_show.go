@@ -1,12 +1,16 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"math"
+	"math/big"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const defaultVercelImage = "vercel/sandbox/universal:latest"
@@ -68,56 +72,26 @@ func subMap(m map[string]any, key string) map[string]any {
 	return AsMap(v)
 }
 
-// Number of a numeric config value for percentage display
-func showNumber(v any, key string) (float64, error) {
+// Python value times 100 then format .0f, the TypeError or ValueError either step raises
+func showPercent(v any) (string, error) {
+	var product any
 	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
-	case int:
-		return float64(x), nil
 	case float64:
-		return x, nil
-	}
-	return 0, fmt.Errorf("compression.%s must be a number, got %s", key, PyTypeName(v))
-}
-
-// Integer conversion of a value the way Python int accepts it
-func pyInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case int:
-		return x, true
-	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return 0, false
-		}
-		return int(x), true
+		product = x * 100
+	case float32:
+		product = float64(x) * 100
 	case string:
-		n, err := strconv.Atoi(strings.TrimSpace(x))
-		return n, err == nil
+		product = strings.Repeat(x, 100)
+	default:
+		if n, ok := pyint.Instance(v); ok {
+			product = new(big.Int).Mul(n, big.NewInt(100))
+		} else if PyTypeName(v) == "list" {
+			product = v
+		} else {
+			return "", &pyrepr.FormatError{Class: "TypeError", Msg: "unsupported operand type(s) for *: '" + PyTypeName(v) + "' and 'int'"}
+		}
 	}
-	return 0, false
-}
-
-// Integer text with comma thousands separators
-func commaInt(n int) string {
-	s := strconv.Itoa(n)
-	neg := strings.HasPrefix(s, "-")
-	s = strings.TrimPrefix(s, "-")
-	for i := len(s) - 3; i > 0; i -= 3 {
-		s = s[:i] + "," + s[i:]
-	}
-	if neg {
-		return "-" + s
-	}
-	return s
+	return pyrepr.Format(product, ".0f")
 }
 
 // Administrator pinned config and env keys with the managed dir, nothing without a managed scope
@@ -155,7 +129,7 @@ func (p showPrinter) modelSection(cfg map[string]any, src ShowSources) {
 	if err != nil {
 		return
 	}
-	if ghost, ok := env["ICEBATH_MAX_ITERATIONS"]; ok && strings.TrimSpace(ghost) != strings.TrimSpace(PyStr(maxTurns)) {
+	if ghost, ok := env["ICEBATH_MAX_ITERATIONS"]; ok && pystr.Strip(ghost) != pystr.Strip(PyStr(maxTurns)) {
 		p.line("%s", colorize("                ⚠ .env has stale ICEBATH_MAX_ITERATIONS="+ghost+" (run 'icebath doctor --fix' to remove)", ColorYellow))
 	}
 }
@@ -247,21 +221,30 @@ func (p showPrinter) compressionSection(cfg map[string]any) error {
 		return nil
 	}
 	p.line("  Enabled:      yes")
-	threshold, err := showNumber(getOr(compression, "threshold", 0.50), "threshold")
+	threshold, err := showPercent(getOr(compression, "threshold", 0.50))
 	if err != nil {
 		return err
 	}
-	p.line("  Threshold:    %.0f%%", threshold*100)
+	p.line("  Threshold:    %s%%", threshold)
 	if tt := compression["threshold_tokens"]; tt != nil {
-		if n, ok := pyInt(tt); ok && n > 0 {
-			p.line("  Token cap:    %s tokens (takes lower of ratio vs absolute)", commaInt(n))
+		n, err := pyint.Of(tt)
+		var intErr *pyint.Error
+		switch {
+		case errors.As(err, &intErr) && intErr.Kind == "OverflowError":
+			return &pyrepr.FormatError{Class: intErr.Kind, Msg: intErr.Msg}
+		case err == nil && n.Sign() > 0:
+			capText, ferr := pyrepr.Format(n, ",")
+			if ferr != nil {
+				return ferr
+			}
+			p.line("  Token cap:    %s tokens (takes lower of ratio vs absolute)", capText)
 		}
 	}
-	ratio, err := showNumber(getOr(compression, "target_ratio", 0.20), "target_ratio")
+	ratio, err := showPercent(getOr(compression, "target_ratio", 0.20))
 	if err != nil {
 		return err
 	}
-	p.line("  Target ratio: %.0f%% of threshold preserved", ratio*100)
+	p.line("  Target ratio: %s%% of threshold preserved", ratio)
 	p.line("  Protect last: %s messages", PyStr(getOr(compression, "protect_last_n", 20)))
 	p.line("  Protect first: %s non-system head messages", PyStr(getOr(compression, "protect_first_n", 3)))
 	aux := subMap(subMap(cfg, "auxiliary"), "compression")

@@ -10,6 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"io"
 	"io/fs"
+	"math"
+	"math/big"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +20,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -60,27 +64,42 @@ func pyreFind(re *regexp2.Regexp, s string) []string {
 	return out
 }
 
-// Cutoff of a relative time like 1h, 30m or 2d, false when unparseable
-func parseLogSince(since string) (time.Time, bool) {
+// Naive wall clock cutoff of a relative time like 1h, 30m or 2d in UTC, false when unparseable
+func parseLogSince(since string) (time.Time, bool, error) {
 	m := pyreFind(logSinceRE, pystr.Lower(pystr.Strip(since)))
 	if m == nil {
-		return time.Time{}, false
+		return time.Time{}, false, nil
 	}
-	n, ok := pystr.IntText(m[1])
-	if !ok || !n.IsInt64() {
-		return time.Time{}, false
+	n, _ := pystr.IntText(m[1])
+	unit := map[string]int64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]]
+	total := new(big.Int).Mul(n, big.NewInt(unit))
+	days := new(big.Int).Div(total, big.NewInt(86400))
+	if days.Cmp(big.NewInt(math.MaxInt32)) > 0 {
+		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C int"}
 	}
-	unit := map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour}[m[2]]
-	return time.Now().Add(-time.Duration(n.Int64()) * unit), true
+	if days.Int64() > 999999999 {
+		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("days=%d; must have magnitude <= 999999999", days.Int64())}
+	}
+	now := naiveLocalNow()
+	if total.Int64() > now.Unix()-time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix() {
+		return time.Time{}, false, &pyint.Error{Kind: "OverflowError", Msg: "date value out of range"}
+	}
+	return time.Unix(now.Unix()-total.Int64(), int64(now.Nanosecond())).UTC(), true, nil
 }
 
-// Naive local timestamp at the first stamp of a line, false without one
+// Local wall clock of now at microsecond precision as a naive time in UTC, as datetime.now gives it
+func naiveLocalNow() time.Time {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond()/1000*1000, time.UTC)
+}
+
+// Naive timestamp in UTC at the first stamp of a line, false without one or when strptime refuses it
 func parseLogLineTimestamp(line string) (time.Time, bool) {
 	m := pyreFind(logTSRE, line)
 	if m == nil {
 		return time.Time{}, false
 	}
-	t, err := time.ParseInLocation("2006-01-02 15:04:05", strings.ReplaceAll(m[1], "T", " "), time.Local)
+	t, _, err := pydatetime.Strptime(strings.ReplaceAll(m[1], "T", " "), "%Y-%m-%d %H:%M:%S")
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -247,7 +266,7 @@ func readLastNLogLines(path string, n int) ([]string, error) {
 		}
 		var decoded []string
 		for _, raw := range parts {
-			if len(bytes.TrimSpace(raw)) > 0 {
+			if len(bytes.Trim(raw, " \t\n\r\x0b\x0c")) > 0 {
 				decoded = append(decoded, pystr.DecodeUTF8Replace(raw)+"\n")
 			}
 		}
@@ -349,7 +368,10 @@ func TailLog(ctx context.Context, w io.Writer, o TailLogOptions) (int, error) {
 	}
 	var f logFilters
 	if o.Since != "" {
-		cutoff, ok := parseLogSince(o.Since)
+		cutoff, ok, err := parseLogSince(o.Since)
+		if err != nil {
+			return 1, err
+		}
 		if !ok {
 			fmt.Fprintf(w, "Invalid --since value: %s. Use format like '1h', '30m', '2d'.\n", pyrepr.Repr(o.Since))
 			return 1, nil

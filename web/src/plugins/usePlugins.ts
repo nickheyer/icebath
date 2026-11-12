@@ -25,7 +25,7 @@ import {
   setPluginLoadError,
 } from "./registry";
 
-export const MANIFEST_CACHE_KEY = "hermes:plugin-manifests";
+export const MANIFEST_CACHE_KEY = "icebath:plugin-manifests";
 
 /** One profile's cached list: another profile's never seeds it. */
 function manifestCacheKey(profile: string): string {

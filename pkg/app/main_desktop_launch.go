@@ -503,7 +503,7 @@ func readDesktopLaunchOptions(ctx context.Context) (desktopLaunchOptions, error)
 		if runtime.GOOS == "windows" {
 			split, err = pyshlex.SplitNonPOSIX(flags)
 		} else {
-			split, err = pyshlex.SplitPOSIX(flags, true)
+			split, err = pyshlex.SplitPOSIX(flags, false)
 		}
 		if err != nil {
 			return opts, err
@@ -982,7 +982,7 @@ func cmdGUI(ctx context.Context, ns map[string]any, explicitProfile string, w io
 		}
 		if missing != nil {
 			fmt.Fprintf(w, "✗ Prepared Electron runtime is missing: %s\n", missing.Error())
-			fmt.Fprintln(w, "  From the project root, run: node scripts/build/electron-runtime.mjs --source .")
+			fmt.Fprintln(w, "  From the project root, run: icebath electron-runtime --source .")
 			return 1, nil
 		}
 		launch = []string{executable, "."}
@@ -1073,7 +1073,7 @@ func preparedElectronRuntime(projectRoot string) (string, error, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	executable := filepath.Join(electron, "dist", pystr.Strip(text))
+	executable := pypath.PathJoin(electron, "dist", pystr.Strip(text))
 	if st, err := os.Stat(executable); err != nil || !st.Mode().IsRegular() {
 		return "", errors.New(executable), nil
 	}

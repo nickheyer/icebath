@@ -49,7 +49,7 @@ func GuardSectionOverwrite(key string, value any, userConfig map[string]any, for
 	if force {
 		return key, nil
 	}
-	sub := SortedKeys(existing)
+	sub := MappingKeys(existing)
 	lines := []string{fmt.Sprintf("✗ Cannot set '%s' to a scalar — '%s' is a configuration section with %d sub-key(s).", key, key, len(sub))}
 	if len(sub) > 0 {
 		lines = append(lines, "  Sub-keys: "+strings.Join(sub[:min(8, len(sub))], ", "))

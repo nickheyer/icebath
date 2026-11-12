@@ -16,6 +16,7 @@ import (
 )
 
 func TestLocalSTTModelSummaryMarksTheDefault(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	installSTTCatalogDoubles(t)
 	if got := localSTTModelSummary(); got != "base (default), tiny, small, medium, large-v3, turbo" {
 		t.Fatalf("summary %q", got)
@@ -35,6 +36,7 @@ func TestLocalSTTModelSummaryMarksTheDefault(t *testing.T) {
 }
 
 func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cases := map[string]string{
 		"kittentts": "      Installing kittentts (~25-80MB model, CPU-only)...\n✓     kittentts dependencies ready. Restart Icebath to use them.\n" +
 			"      Voices: Jasper, Bella, Luna, Bruno, Rosie, Hugo, Kiki, Leo\n" +
@@ -43,9 +45,6 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 			"      Default voice: en_US-lessac-medium (downloaded on first TTS call)\n" +
 			"      Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md\n" +
 			"      Switch voices by setting tts.piper.voice in config.yaml\n",
-		"ddgs": "      Installing ddgs (DuckDuckGo search package)...\n✓     ddgs dependencies ready. Restart Icebath to use them.\n" +
-			"      No API key required. DuckDuckGo enforces server-side rate limits.\n" +
-			"      Pair with an extract provider if you also need web_extract.\n",
 	}
 	for key, want := range cases {
 		s, out := newTestToolsSetup(t, "")
@@ -59,7 +58,7 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 	}
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { return errors.New("worker crashed") })
-	if err := s.runPostSetup("ddgs"); err == nil || err.Error() != "worker crashed" {
+	if err := s.runPostSetup("piper"); err == nil || err.Error() != "worker crashed" {
 		t.Fatalf("unhandled sync failure %v", err)
 	}
 	if err := s.runPostSetup("no_such_hook"); err != nil {
@@ -68,6 +67,7 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 }
 
 func TestEnsureBrowserUseCLIReportsTheHarness(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, out := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"python", "-m", "browser_harness.run"} })
 	s.ensureBrowserUseCLI()
@@ -82,6 +82,7 @@ func TestEnsureBrowserUseCLIReportsTheHarness(t *testing.T) {
 }
 
 func TestPostSetupLightpandaReportsTheBinary(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, c := range []struct {
 		bin, goos, want string
 	}{
@@ -106,6 +107,7 @@ func TestPostSetupLightpandaReportsTheBinary(t *testing.T) {
 }
 
 func TestPostSetupChromiumInstallFailures(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	setup := func(t *testing.T, ensureErr error, termux bool) (*ToolsSetup, *strings.Builder, *int) {
 		s, out := newTestToolsSetup(t, "")
 		ensures := 0
@@ -155,6 +157,7 @@ func TestPostSetupChromiumInstallFailures(t *testing.T) {
 }
 
 func TestPostSetupChromiumSkipsHostLibrariesOffLinux(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, c := range []struct {
 		goos   string
 		termux bool
@@ -193,6 +196,7 @@ func setupPromptDoubles(t *testing.T, choice int, answer string) *[]string {
 }
 
 func TestPostSetupXAIGrokCredentialPaths(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	unsetEnv(t, "XAI_API_KEY")
 	s, out := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.XAIOAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": true} })
@@ -252,6 +256,7 @@ func TestPostSetupXAIGrokCredentialPaths(t *testing.T) {
 }
 
 func TestPostSetupOpenAICodexSignIn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	relogin := "icebath auth add openai-codex"
 	s, out := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.CodexAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": true} })
@@ -329,6 +334,7 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 }
 
 func TestPostSetupAuthReadyPredicates(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestToolsSetup(t, "")
 	unsetEnv(t, "XAI_API_KEY")
 	swapHook(t, &XAIOAuthTokensReader, func(context.Context, string) error { return errors.New("none") })
@@ -346,6 +352,7 @@ func TestPostSetupAuthReadyPredicates(t *testing.T) {
 }
 
 func TestCuaDriverHookRunsTheInstaller(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestToolsSetup(t, "")
 	var cons []*cliui.Console
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(_ context.Context, env *Env, con *cliui.Console) (bool, error) {
@@ -364,13 +371,14 @@ func TestCuaDriverHookRunsTheInstaller(t *testing.T) {
 }
 
 func TestValidPostSetupKeysCoverCatalogAndPluginRows(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.BrowserRegistry, fakePickerRegistry(nil,
 		&fakePickerProvider{name: "steel", schema: map[string]any{"name": "Steel", "post_setup": "steel_cli"}}))
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, &PickerRegistry{List: func(context.Context, *Env) []PickerProvider { panic("image registry boom") }})
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, nil)
 	got := s.ValidPostSetupKeys()
-	want := []string{"browserbase", "chromium", "cua_driver", "ddgs", "faster_whisper", "kittentts", "lightpanda", "piper", "steel_cli", "xai_grok"}
+	want := []string{"browserbase", "chromium", "cua_driver", "faster_whisper", "kittentts", "lightpanda", "piper", "steel_cli", "xai_grok"}
 	var keys []string
 	for k := range got {
 		keys = append(keys, k)
@@ -382,6 +390,7 @@ func TestValidPostSetupKeysCoverCatalogAndPluginRows(t *testing.T) {
 }
 
 func TestRunPostSetupCommandExitCodes(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swapHook(t, &ToolsConfigHooks.BrowserRegistry, fakePickerRegistry(nil))
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, fakePickerRegistry(nil))
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, fakePickerRegistry(nil))
@@ -391,7 +400,7 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "")
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "bogus"}); code != 2 ||
-		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: browserbase, chromium, cua_driver, ddgs, faster_whisper, kittentts, lightpanda, piper, xai_grok\n" {
+		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: browserbase, chromium, cua_driver, faster_whisper, kittentts, lightpanda, piper, xai_grok\n" {
 		t.Fatalf("unknown %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")
@@ -425,6 +434,7 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 }
 
 func TestPostSetupInstalledChecks(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, _ := newTestToolsSetup(t, "")
 	if !s.PostSetupAlreadyInstalled("chromium") {
 		t.Fatal("unchecked key read as missing")
@@ -444,18 +454,18 @@ func TestPostSetupInstalledChecks(t *testing.T) {
 		t.Fatal("crashing check read as missing")
 	}
 	swapHook(t, &postSetupModuleImportable, func(context.Context, string) bool { panic("probe crash") })
-	if s.moduleInstalled("ddgs") {
+	if s.moduleInstalled("piper") {
 		t.Fatal("crashing probe read as installed")
 	}
 	var probed []string
 	swapHook(t, &postSetupModuleImportable, func(_ context.Context, m string) bool { probed = append(probed, m); return m == "piper" })
-	for key, want := range map[string]bool{"faster_whisper": false, "kittentts": false, "piper": true, "ddgs": false} {
+	for key, want := range map[string]bool{"faster_whisper": false, "kittentts": false, "piper": true} {
 		if got, err := postSetupReady[key](s); err != nil || got != want {
 			t.Fatalf("%s ready %v %v", key, got, err)
 		}
 	}
 	slices.Sort(probed)
-	if !slices.Equal(probed, []string{"ddgs", "faster_whisper", "kittentts", "piper"}) {
+	if !slices.Equal(probed, []string{"faster_whisper", "kittentts", "piper"}) {
 		t.Fatalf("probed %v", probed)
 	}
 	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return "/bin/lightpanda" })
@@ -477,6 +487,7 @@ func TestPostSetupInstalledChecks(t *testing.T) {
 }
 
 func TestPMRuntimeOrOSErrorClasses(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, c := range []struct {
 		err  error
 		want bool
@@ -500,6 +511,7 @@ func TestPMRuntimeOrOSErrorClasses(t *testing.T) {
 }
 
 func TestSelectedEnvironmentPythonNamesAnInterpreter(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	python, err := selectedEnvironmentPython(context.Background())
 	if err != nil {
 		t.Fatal(err)

@@ -2487,7 +2487,7 @@ describe('applyStoredSessionPreviewRuntimeInfo does not persist the preview', ()
     expect($currentProvider.get()).toBe('')
 
     // …but nothing was persisted: the composer's sticky selection survives.
-    expect(localStorage.getItem('hermes.desktop.composer.model')).toBe('user-pick')
-    expect(localStorage.getItem('hermes.desktop.composer.provider')).toBe('anthropic')
+    expect(localStorage.getItem('icebath.desktop.composer.model')).toBe('user-pick')
+    expect(localStorage.getItem('icebath.desktop.composer.provider')).toBe('anthropic')
   })
 })

@@ -5,8 +5,11 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -106,6 +109,50 @@ func TestEmptyBootEpochDoesNotStaleALiveOwner(t *testing.T) {
 	empty.BootEpoch = ""
 	if !HostLivenessIsProven(&empty) || HostRecordIsStale(&empty) {
 		t.Fatal("an empty epoch staled a live owner")
+	}
+}
+
+func init() {
+	platformHostChildModes["sigterm-gateway-loop"] = func(hold func()) int {
+		if outcome, _ := ClaimHostLock(context.Background(), RoleGateway); outcome != HostLockAcquired {
+			return 1
+		}
+		PublishHostRecord(context.Background(), RoleGateway, HostPublishOptions{Profiles: []string{}, Home: os.Getenv("ICEBATH_HOME")})
+		HostCleanupOnExit(RoleGateway)
+		SupersedeHostSignalCleanup()
+		loop := make(chan os.Signal, 1)
+		signal.Notify(loop, syscall.SIGTERM)
+		fmt.Println("published")
+		<-loop
+		time.Sleep(300 * time.Millisecond)
+		os.Exit(0)
+		return 0
+	}
+}
+
+func TestGatewayLoopSigtermLeavesTheHostRecordOfItsHardExit(t *testing.T) {
+	hostDir(t)
+	child := startHostChild(t, "sigterm-gateway-loop", "ICEBATH_HOME="+t.TempDir())
+	if child.readLine(t) != "published" || !exists(HostRecordPath(RoleGateway)) {
+		t.Fatal("child did not publish")
+	}
+	child.cmd.Process.Signal(syscall.SIGTERM)
+	done := make(chan struct{})
+	go func() { child.cmd.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("child outlived SIGTERM")
+	}
+	if code := child.cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("the loop handler exits 0, got %d after a second SIGTERM", code)
+	}
+	raw, err := os.ReadFile(HostRecordPath(RoleGateway))
+	if err != nil {
+		t.Fatal("the superseded cleanup removed the record the gateway hard exit leaves")
+	}
+	if !strings.HasPrefix(string(raw), "{\n  \"role\": \"gateway\",\n  \"home\": ") {
+		t.Fatalf("record is not the two space indented document of atomic_json_write: %q", raw)
 	}
 }
 

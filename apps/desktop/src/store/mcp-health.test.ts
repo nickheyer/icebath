@@ -161,7 +161,7 @@ it('shows the toast with Sign in + Disable, then stays quiet for a day and re-nu
 
 it('honors a persisted snooze in a fresh module session, then re-notifies after it expires', async () => {
   const servers = { mcp_servers: { linear: { url: 'https://mcp.linear.app/mcp', auth: 'oauth' } } }
-  const key = 'hermes:mcp-health-snooze-until:default::linear'
+  const key = 'icebath:mcp-health-snooze-until:default::linear'
   let clock = 1_700_000_000_000
   const until = clock + 24 * 60 * 60 * 1000
   const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => clock)

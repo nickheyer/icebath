@@ -130,7 +130,7 @@ func iterTerminalCalls(db *sql.DB, sinceTS float64) ([]terminalCall, error) {
 		}
 		for _, item := range list {
 			call, _ := item.(map[string]any)
-			fn, _ := call["function"].(map[string]any)
+			fn, _ := pyjson.Dict(call["function"])
 			if fn["name"] != "terminal" {
 				continue
 			}

@@ -16,7 +16,7 @@ func (c *CLI) tuiInputRuleHeight(position string, width *int) int {
 	if position != "top" && position != "bottom" {
 		panic("Unknown input rule position: " + position)
 	}
-	if c.statusBarSuppressedAfterResize {
+	if c.statusBarSuppressedAfterResize.Load() {
 		return 0
 	}
 	if position == "top" || !c.useMinimalTUIChrome(width) {

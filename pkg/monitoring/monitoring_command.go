@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -33,7 +35,7 @@ func onOff(v any) string {
 }
 
 // CmdMonitoring prints the gateway monitoring status, hermes_cli/main_agent_cmds.py cmd_monitoring
-func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
+func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (int, error) {
 	action := "status"
 	if v := pyrepr.Str(ns["monitoring_action"]); pyrepr.Truthy(ns["monitoring_action"]) {
 		action = v
@@ -44,7 +46,8 @@ func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w io.Writer
 	}
 	mon := configDictOrEmpty(tree["monitoring"])
 	if action != "status" {
-		return 2, fmt.Errorf("Unknown monitoring action: %s", action)
+		fmt.Fprintf(errw, "Unknown monitoring action: %s\n", action)
+		return 2, nil
 	}
 	gh := configDictOrEmpty(mon["gateway_health_export"])
 	otlp := configDictOrEmpty(configDictOrEmpty(mon["export"])["otlp"])
@@ -69,11 +72,7 @@ func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w io.Writer
 	} else {
 		fmt.Fprintln(w, "  OTLP endpoint:  not configured (monitoring.export.otlp)")
 	}
-	sdk := "not installed"
-	if OTLPAvailable() {
-		sdk = "installed"
-	}
-	fmt.Fprintf(w, "  OTel SDK:       %s (optional extra: icebath-agent[otlp])\n", sdk)
+	fmt.Fprintf(w, "  OTel SDK:       %s\n", strings.TrimSpace(OTelSDKModule+" "+hostinfo.ModuleVersion(OTelSDKModule)))
 	fmt.Fprintln(w, "\n  Scope: gateway service health + redacted diagnostics only.")
 	fmt.Fprintln(w, "  No prompts, messages, tool args/results, usage analytics, or traces.")
 	return 0, nil

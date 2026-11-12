@@ -81,19 +81,44 @@ func (c *CLI) persistPromptSummary(icon, label, detail, outcome string) {
 		"icon": icon, "label": label, "detail": detail, "outcome": outcome}) + resetANSI)
 }
 
-// Clears the screen and scrollback of a real console so nothing is stranded above the exit summary
-func (c *CLI) clearTerminalOnExit() {
+var (
+	// Exit screen clear the summary runs first, the real console wipe in production
+	clearTerminalOnExit = (*CLI).wipeConsoleOnExit
+	// Executable lookup of the exit clear fallback, the PATH search in production
+	clearCommandWhich = func(name string) (string, bool) { return pyshutil.Which(name, nil) }
+	// Runs the exit clear fallback child, the real process in production
+	runClearCommand = (*exec.Cmd).Run
+	// Active profile lookup of the exit resume hint, the profile resolver in production
+	exitSummaryActiveProfileName = profiles.GetActiveProfileName
+)
+
+// Active profile for the resume hint, default when the lookup fails
+func exitSummaryProfileName(ctx context.Context) (name string) {
+	defer func() {
+		if r := recover(); r != nil {
+			name = "default"
+		}
+	}()
+	return exitSummaryActiveProfileName(ctx)
+}
+
+// Clears the screen and scrollback of a real console, falling back to the platform clear command without a shell
+func (c *CLI) wipeConsoleOnExit() {
 	con := console()
 	if !con.StdoutIsTTY() {
 		return
 	}
-	if _, err := io.WriteString(con.Out, "\033[3J\033[2J\033[H"); err == nil {
+	_, err := io.WriteString(con.Out, "\033[3J\033[2J\033[H")
+	if flusher, ok := con.Out.(interface{ Flush() error }); ok && err == nil {
+		err = flusher.Flush()
+	}
+	if err == nil {
 		return
 	}
 	var argv []string
 	if IsWindows() {
 		argv = []string{"cmd", "/c", "cls"}
-	} else if clearBin, ok := pyshutil.Which("clear", nil); ok {
+	} else if clearBin, ok := clearCommandWhich("clear"); ok && clearBin != "" {
 		argv = []string{clearBin}
 	}
 	if len(argv) == 0 {
@@ -102,13 +127,13 @@ func (c *CLI) clearTerminalOnExit() {
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.SysProcAttr = tools.WindowsHideAttr()
-	_ = cmd.Run()
+	_ = runClearCommand(cmd)
 }
 
 // Prints the session resume commands, title, duration and message counts on exit
 func (c *CLI) printExitSummary(clearScreen bool) {
 	if clearScreen {
-		c.clearTerminalOnExit()
+		clearTerminalOnExit(c)
 	}
 	out := console().Out
 	fmt.Fprintln(out)
@@ -146,7 +171,7 @@ func (c *CLI) printExitSummary(clearScreen bool) {
 	}
 	fmt.Fprintln(out, c.t("cli.session.exit_resume_hint", nil))
 	profileFlag := ""
-	if active := profiles.GetActiveProfileName(c.ctx); active != "default" && active != "custom" {
+	if active := exitSummaryProfileName(c.ctx); active != "default" && active != "custom" {
 		profileFlag = " -p " + active
 	}
 	fmt.Fprintf(out, "  icebath --resume %s%s\n", c.sessionID, profileFlag)

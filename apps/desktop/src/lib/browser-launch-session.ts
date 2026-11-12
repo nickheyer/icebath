@@ -12,7 +12,7 @@ export function webappSignInRequired(): GatewayReauthRequiredError {
 
 /** Where this tab keeps its launch-link grant for the Webapp at ``basePath`` on this origin. */
 export function webappSessionKey(basePath: string): string {
-  return `hermes.webapp.session.v1:${JSON.stringify([window.location.origin, basePath])}`
+  return `icebath.webapp.session.v1:${JSON.stringify([window.location.origin, basePath])}`
 }
 
 /**

@@ -84,7 +84,7 @@ var (
 
 // Name of a tool definition, empty when the function block or its name is missing
 func snapshotDefName(def map[string]any) string {
-	fn, _ := def["function"].(map[string]any)
+	fn, _ := pyjson.Dict(def["function"])
 	name, _ := fn["name"].(string)
 	return name
 }

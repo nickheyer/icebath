@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -48,7 +50,7 @@ type PlatformEntry struct {
 	AllowUpdateCommand         bool                                                                                                                         `py:"allow_update_command"`
 	PlatformHint               string                                                                                                                       `py:"platform_hint"`
 	EnvEnablementFn            func(ctx context.Context) map[string]any                                                                                     `py:"env_enablement_fn"`
-	ApplyYAMLConfigFn          func(yamlCfg, block map[string]any) (map[string]any, error)                                                                  `py:"apply_yaml_config_fn"`
+	ApplyYAMLConfigFn          func(ctx context.Context, yamlCfg, block map[string]any) (map[string]any, error)                                             `py:"apply_yaml_config_fn"`
 	CronDeliverEnvVar          string                                                                                                                       `py:"cron_deliver_env_var"`
 	ParseTargetRefFn           func(ref string) (chatID string, threadID *string, ok bool)                                                                  `py:"parse_target_ref_fn"`
 	ValidateTargetRefFn        func(ref string) any                                                                                                         `py:"validate_target_ref_fn"`
@@ -695,19 +697,29 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	if entry == nil {
 		return nil
 	}
-	depsOK := false
-	if entry.CheckFn == nil {
-		slog.Warn(fmt.Sprintf("Platform '%s' check_fn raised: %s", entry.Label, "'NoneType' object is not callable"))
-	} else {
-		depsOK = entry.CheckFn()
+	probe := func(fn func() (bool, error), failureMsg string) (ok bool) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
+				ok = false
+			}
+		}()
+		got, err := fn()
+		if err != nil {
+			slog.Warn(fmt.Sprintf(failureMsg, entry.Label, err))
+			return false
+		}
+		return got
 	}
+	depsOK := probe(func() (bool, error) {
+		if entry.CheckFn == nil {
+			return false, errors.New("'NoneType' object is not callable")
+		}
+		return entry.CheckFn(), nil
+	}, "Platform '%s' check_fn raised: %s")
 	if !depsOK && entry.EnsureDepsFn != nil {
 		slog.Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
-		ok, err := entry.EnsureDepsFn(ctx)
-		if err != nil {
-			slog.Warn(fmt.Sprintf("Platform '%s' dependency install raised: %s", entry.Label, err))
-		}
-		depsOK = err == nil && ok
+		depsOK = probe(func() (bool, error) { return entry.EnsureDepsFn(ctx) }, "Platform '%s' dependency install raised: %s")
 	}
 	if !depsOK {
 		hint := ""
@@ -718,26 +730,38 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		return nil
 	}
 	if entry.ValidateConfig != nil {
-		ok, err := entry.ValidateConfig(cfg)
+		valid, err := guardedCall(func() (bool, error) { return entry.ValidateConfig(cfg) })
 		if err != nil {
 			slog.Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
 			return nil
 		}
-		if !ok {
+		if !valid {
 			slog.Warn(fmt.Sprintf("Platform '%s' config validation failed", entry.Label))
 			return nil
 		}
 	}
-	if entry.AdapterFactory == nil {
-		slog.Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, "'NoneType' object is not callable"))
-		return nil
-	}
-	adapter, err := entry.AdapterFactory(ctx, cfg)
+	adapter, err := guardedCall(func() (any, error) {
+		if entry.AdapterFactory == nil {
+			return nil, errors.New("'NoneType' object is not callable")
+		}
+		return entry.AdapterFactory(ctx, cfg)
+	})
 	if err != nil {
 		slog.Error(fmt.Sprintf("Failed to create adapter for platform '%s': %s", entry.Label, err))
 		return nil
 	}
 	return adapter
+}
+
+// Result of fn with a panic returned as its error the way a raising Python call surfaces
+func guardedCall[T any](fn func() (T, error)) (out T, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			var zero T
+			out, err = zero, errors.New(pyrepr.Str(rec))
+		}
+	}()
+	return fn()
 }
 
 // The registry as the plugin manager's platform service, scopes given as home paths

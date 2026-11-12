@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -321,7 +322,30 @@ func TestSourceBuildMetadataReadsOnlyMarkupOutsideScriptAndStyle(t *testing.T) {
 	page := `<title>x <META NAME="icebath-build" content="v1.0.1"></title><noscript><meta name="icebath-build" content="v1.0.2"/></noscript>` +
 		`<script><meta name="icebath-build" content="v1.0.3"></script><style><meta name="icebath-build"></style><meta name="icebath-build">`
 	tags := buildMetadataTags(page)
-	if len(tags) != 3 || tags[0] != "v1.0.1" || tags[1] != "v1.0.2" || tags[2] != nil {
+	if len(tags) != 2 || tags[0] != "v1.0.2" || tags[1] != nil {
 		t.Fatalf("tags %v", tags)
+	}
+	meta := func(content string) string { return `<meta name="icebath-build" content="` + content + `">` }
+	for _, tc := range []struct {
+		name, page string
+		want       []any
+	}{
+		{"selfclose_script", `<script/>` + meta("a"), []any{"a"}},
+		{"selfclose_title", `<title/>` + meta("a"), []any{"a"}},
+		{"noscript", `<noscript>` + meta("a") + `</noscript>`, []any{"a"}},
+		{"plaintext", `<plaintext>` + meta("a"), nil},
+		{"textarea", `<textarea>` + meta("a") + `</textarea>` + meta("b"), []any{"b"}},
+		{"title_upper_close", `<title>x</TITLE>` + meta("a"), []any{"a"}},
+		{"xmp", `<xmp>` + meta("a") + `</xmp>` + meta("b"), []any{"b"}},
+		{"script_lt", `<script>if (a</script) {}</script>` + meta("a"), []any{"a"}},
+		{"iframe", `<iframe>` + meta("a") + `</iframe>` + meta("b"), []any{"b"}},
+		{"noembed_noframes", `<noembed>` + meta("a") + `</noembed><noframes>` + meta("b") + `</noframes>` + meta("c"), []any{"c"}},
+		{"comment", `<!-- ` + meta("a") + ` -->` + meta("b"), []any{"b"}},
+		{"unterminated_title", `<title>x ` + meta("q"), nil},
+		{"escaped_content", `<META Name="icebath-build" CONTENT="x&amp;y"/>`, []any{"x&y"}},
+	} {
+		if got := buildMetadataTags(tc.page); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("%s tags %#v, want %#v", tc.name, got, tc.want)
+		}
 	}
 }

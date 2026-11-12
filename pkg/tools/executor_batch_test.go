@@ -139,7 +139,8 @@ func TestMemoryToolCallsCarryTheCallerScopeAndGatewayKeyOnBothPaths(t *testing.T
 					ref := &ToolCallRef{Name: "pw_remember", Args: args, TaskID: "t", CallID: "c", Trace: []map[string]any{}}
 					result, err = e.resolveSequentialDispatch(ctx, ref, &msgs).execute(ctx, args)
 				} else {
-					result, err = e.invokeTool(ctx, "pw_remember", args, "", "t", "c", &msgs, nil)
+					result, err = e.invokeTool(ctx, "pw_remember", args, "", "t", "c", InvokeToolOptions{Messages: &msgs,
+						PreToolBlockChecked: true, SkipToolRequestMiddleware: true, SkipToolExecutionMiddleware: true})
 				}
 				if err != nil || result != `{"ok": true}` {
 					errs <- fmt.Sprintf("%s %v", result, err)

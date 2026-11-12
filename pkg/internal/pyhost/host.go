@@ -16,6 +16,7 @@ type Options struct {
 	Interpreter   *Interpreter
 	PycachePrefix string
 	ExtraPaths    []string
+	Environment   bool
 	Argv          []string
 }
 

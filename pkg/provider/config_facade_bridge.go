@@ -28,7 +28,7 @@ func init() {
 		PublishScopedEnv:            publishScopedEnv,
 		SaveProviderEnvCredential:   saveProviderEnvCredential,
 		RemoveProviderEnvCredential: removeProviderEnvCredential,
-		CoreDeclaredEnvNames:        configFacadeCoreDeclaredEnvNames,
+		CoreDeclaredEnvNames:        CoreDeclaredEnvNames,
 	})
 }
 
@@ -126,16 +126,4 @@ func configLoadIssue(err error) config.ConfigIssue { return config.ConfigLoadIss
 // Bridges the active home terminal config into the process env the terminal tools read
 func applyTerminalConfigToEnv(ctx context.Context) error {
 	return config.ApplyTerminalConfigToEnv(ctx, home.Dir(ctx), config.TerminalEnvOptions{})
-}
-
-// Names core declares, the static table read before platform manifests plus the provider profile names
-func configFacadeCoreDeclaredEnvNames() map[string]bool {
-	FillProviderEnvVars()
-	out := config.StaticCoreEnvNames()
-	providerEnvMu.Lock()
-	defer providerEnvMu.Unlock()
-	for name := range providerEnvNames {
-		out[name] = true
-	}
-	return out
 }

@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -89,7 +90,7 @@ func nonblankString(v any) (string, bool) {
 }
 
 // Replayable tool call dict with resolved call and response item ids, arguments kept unredacted for replay
-func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) map[string]any {
+func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) *pyjson.Object {
 	rawID := tc.ID
 	callID, ok := nonblankString(tc.Extra["call_id"])
 	if !ok {
@@ -108,18 +109,18 @@ func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) map[string
 	if !ok {
 		_, responseItemID = provider.SplitResponsesToolID(rawID)
 	}
-	fn := map[string]any{"name": tc.Function.Name, "arguments": tc.Function.Arguments}
-	out := map[string]any{"id": callID, "call_id": callID,
-		"response_item_id": provider.DeriveResponsesFunctionCallID(callID, responseItemID), "type": tc.Type, "function": fn}
+	fn := pyjson.ObjectOf("name", tc.Function.Name, "arguments", tc.Function.Arguments)
+	out := pyjson.ObjectOf("id", callID, "call_id", callID,
+		"response_item_id", provider.DeriveResponsesFunctionCallID(callID, responseItemID), "type", tc.Type, "function", fn)
 	if extra, has := tc.Extra["extra_content"]; has && extra != nil {
-		out["extra_content"] = provider.DumpIfModel(extra)
+		out.Set("extra_content", provider.DumpIfModel(extra))
 	}
 	sig := tc.Extra["thought_signature"]
 	if !pyrepr.Truthy(sig) {
 		sig = tc.Function.Extra["thought_signature"]
 	}
 	if s, ok := sig.(string); ok && s != "" {
-		fn["thought_signature"] = s
+		fn.Set("thought_signature", s)
 	}
 	return out
 }

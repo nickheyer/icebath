@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/browser/harnesshost"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -15,6 +16,7 @@ import (
 var extraChildModes = map[string]func() int{}
 
 func TestMain(m *testing.M) {
+	harnesshost.DispatchEntry()
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())

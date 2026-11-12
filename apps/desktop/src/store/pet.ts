@@ -214,7 +214,7 @@ function deriveLivePetState(activity: PetActivity, busy: boolean): PetState {
  * idle. Pure desktop-client behavior (no agent/config dependency), so it lives
  * in localStorage like the pet's drag position — per-device, not per-profile.
  */
-const ROAM_KEY = 'hermes.desktop.pet-roam.v1'
+const ROAM_KEY = 'icebath.desktop.pet-roam.v1'
 export const $petRoam = atom<boolean>(storedBoolean(ROAM_KEY, false))
 
 export const setPetRoam = (on: boolean) => {

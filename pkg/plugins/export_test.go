@@ -30,3 +30,6 @@ func BundledManifestOf(key string) *Manifest {
 	}
 	return nil
 }
+
+// Empties the bundled table for the external test main
+func DropImportedBundledPlugins() { dropImportedBundledPlugins() }

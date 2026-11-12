@@ -29,9 +29,9 @@ function contains(parent, child) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
 }
 
-const productMarker = '.hermes-product'
+const productMarker = '.icebath-product'
 const productOwner = 'hermes-frontend-product-v1\n'
-const developerOutputs = ['ui-tui/dist', 'hermes_cli/web_dist', 'apps/desktop/dist', 'apps/desktop/dist-webapp', 'apps/desktop/build/native-deps']
+const developerOutputs = ['ui-tui/dist', 'cmd/icebath/web_dist', 'apps/desktop/dist', 'apps/desktop/dist-webapp', 'apps/desktop/build/native-deps']
 
 // `npm run builder -- --<platform> --<arch>` stages one native tree per target
 // (apps/desktop/scripts/run-electron-builder.mjs): build/native-deps-<platform>-<arch>.

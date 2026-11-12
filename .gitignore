@@ -504,6 +504,10 @@ dist/
 .bytecode-fingerprint.tmp
 .icebath-bootstrap-complete
 /.install_method
+/icebath
+/icebath.exe
+/icebath.build
+/icebath.exe.build
 icebath_agent.egg-info/
 cmd/icebath/web_dist/
 cmd/icebath/tui_dist/*

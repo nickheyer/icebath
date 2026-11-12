@@ -114,6 +114,7 @@ type runnerCoreState struct {
 	startupRestoreInProgress     bool
 	startupRestoreQueue          []*gateway.MessageEvent
 	startupRestoreTasks          []*gatewayTask
+	startupRestoreTasksMu        sync.Mutex
 	platformLockTakeoverOnStart  bool
 	sessionSources               *pydict.Dict[string, *gateway.SessionSource]
 	sessionSourcesMax            int

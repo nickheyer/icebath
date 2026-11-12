@@ -24,7 +24,7 @@ describe('openGatewaySocket', () => {
   it('moves a local dial ticket out of the URL into the gateway subprotocol', () => {
     expect(open('ws://127.0.0.1:5151/api/audio/speak-stream?native_dial=n1&ticket=t1&profile=beta')).toEqual([
       'ws://127.0.0.1:5151/api/audio/speak-stream?native_dial=n1&profile=beta',
-      ['hermes-gateway-v1', 'hermes-gateway-ticket.t1']
+      ['icebath-gateway-v1', 'hermes-gateway-ticket.t1']
     ])
   })
 

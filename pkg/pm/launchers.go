@@ -38,6 +38,9 @@ var windowsBinLaunchers = []string{"icebath", "icebath-acp"}
 // WindowsBinLaunchers lists the launcher names the managed bin directory publishes
 func WindowsBinLaunchers() []string { return append([]string(nil), windowsBinLaunchers...) }
 
+// LegacyAgentEntry is the argv entry that runs the legacy single query runner the icebath-agent command opens
+const LegacyAgentEntry = "__icebath_run_agent__"
+
 // Subcommand each published command runs on the install binary
 var entryPoints = map[string][]string{"icebath": nil, "icebath-acp": {"acp"}}
 
@@ -548,7 +551,7 @@ func publishConveniences(root, outDir string, names []string, create bool) ([]pu
 		}
 		command := []string{filepath.Join(checkoutLauncherDir(root), name)}
 		if name == "icebath-agent" {
-			command = []string{filepath.Join(checkoutLauncherDir(root), "icebath")}
+			command = []string{filepath.Join(checkoutLauncherDir(root), "icebath"), LegacyAgentEntry}
 		}
 		if writeShell(target, command, "") == "" {
 			return published, fmt.Errorf("could not publish launcher %s", target)

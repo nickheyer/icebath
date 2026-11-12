@@ -189,11 +189,14 @@ func recoveryValidatePaths(sourcePath, outputPath, workDir string) (string, stri
 var recoverySourceFingerprint = recoverySourceFingerprintOf
 
 // Size and nanosecond mtime of the source and each sidecar present, keyed main or by suffix
-func recoverySourceFingerprintOf(source string) *pyjson.Object {
+func recoverySourceFingerprintOf(source string) (*pyjson.Object, error) {
 	fingerprint := pyjson.NewObject()
 	for _, suffix := range recoverySidecarSuffixes {
-		info, err := os.Stat(recoverySidecar(source, suffix))
+		info, err := pypath.PathlibStat(recoverySidecar(source, suffix))
 		if err != nil {
+			return nil, err
+		}
+		if info == nil {
 			continue
 		}
 		key := suffix
@@ -202,7 +205,7 @@ func recoverySourceFingerprintOf(source string) *pyjson.Object {
 		}
 		fingerprint.Set(key, pyjson.ObjectOf("size", info.Size(), "mtime_ns", info.ModTime().UnixNano()))
 	}
-	return fingerprint
+	return fingerprint, nil
 }
 
 // Byte count in binary units with one decimal
@@ -253,7 +256,10 @@ func recoveryDiskFree(path string) (int64, error) {
 // Requires free space for the disposable bundle, the output and safety headroom, returning the space report
 func recoveryDiskSpacePreflight(source, workRoot, outputParent string) (*pyjson.Object, error) {
 	var bundle int64
-	fingerprint := recoverySourceFingerprint(source)
+	fingerprint, err := recoverySourceFingerprint(source)
+	if err != nil {
+		return nil, err
+	}
 	for _, key := range fingerprint.Keys {
 		info, _ := fingerprint.Get(key)
 		size, _ := info.(*pyjson.Object).Get("size")
@@ -713,7 +719,10 @@ func recoveryEntryRows(entry *pyjson.Object) *int64 {
 
 // Copies the source bundle into a fresh temp dir under the work root and inspects the copy
 func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjson.Object, error) {
-	before := recoverySourceFingerprint(source)
+	before, err := recoverySourceFingerprint(source)
+	if err != nil {
+		return "", "", nil, err
+	}
 	tempDir, err := os.MkdirTemp(workRoot, "icebath-session-recovery-")
 	if err != nil {
 		return "", "", nil, err
@@ -723,7 +732,11 @@ func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjso
 		if err != nil {
 			return "", nil, err
 		}
-		if !pyjson.Equal(recoverySourceFingerprint(source), before) {
+		after, err := recoverySourceFingerprint(source)
+		if err != nil {
+			return "", nil, err
+		}
+		if !pyjson.Equal(after, before) {
 			return "", nil, recoverySafetyError("The source database bundle changed while it was being copied. Stop every Icebath process using this " +
 				"profile and retry. This includes the interactive `icebath` CLI session this command may have been " +
 				"launched from: a running parent CLI writes session bookkeeping (compression ticks, context " +
@@ -774,7 +787,11 @@ func inspectSessionDatabase(ctx context.Context, sourcePath, workDir string) (*p
 		report.Set(key, v)
 	}
 	fingerprint, _ := inspection.Get("source_fingerprint")
-	report.Set("source_unchanged", pyjson.Equal(recoverySourceFingerprint(source), fingerprint))
+	now, err := recoverySourceFingerprint(source)
+	if err != nil {
+		return nil, err
+	}
+	report.Set("source_unchanged", pyjson.Equal(now, fingerprint))
 	return report, nil
 }
 
@@ -990,6 +1007,23 @@ type recoveryRangeSalvage struct {
 	stoppedAtQueryLimit  bool
 }
 
+// Bisecting copy of one table with its select, insert and exact rowid statements, counters on result
+func newRecoveryRangeSalvage(source, destination state.SQLiteConn, table string, columns []string, chunkSize int,
+	progress func(*pyjson.Object), sourceRows *int64, insertPrefix string, rowFilter func(row []any, columns []string) bool,
+	result *pyjson.Object) *recoveryRangeSalvage {
+	quoted, marks := recoveryQuotedColumns(columns)
+	return &recoveryRangeSalvage{source: source, destination: destination, table: table, chunkSize: chunkSize,
+		progress: progress, sourceRows: sourceRows, rowFilter: rowFilter, result: result, columnNames: append([]string{}, columns...),
+		selectSQL: fmt.Sprintf(`SELECT rowid, %s FROM "%s" WHERE rowid BETWEEN ? AND ? ORDER BY rowid`, quoted, table),
+		insertSQL: fmt.Sprintf(`%s INTO "%s" (%s) VALUES (%s)`, insertPrefix, table, quoted, marks),
+		exactSQL:  fmt.Sprintf(`SELECT %s FROM "%s" WHERE rowid = ?`, quoted, table)}
+}
+
+// Records a skipped rowid range on the shared result
+func (s *recoveryRangeSalvage) skip(low, high int64, msg string) {
+	recoveryAppendSkippedRange(s.result, low, high, msg)
+}
+
 // Rows the filter keeps
 func (s *recoveryRangeSalvage) keep(values [][]any) [][]any {
 	if s.rowFilter == nil {
@@ -1028,7 +1062,7 @@ func (s *recoveryRangeSalvage) recoverExactRowid(rowid int64) (bool, error) {
 	if err != nil {
 		if class, ok := state.SQLiteClassOf(err); ok && class == state.SQLiteIntegrityError {
 			recoveryBump(s.result, "destination_rejected_rows", 1)
-			recoveryAppendSkippedRange(s.result, rowid, rowid, "destination constraint rejected row: "+sessionsExcText(err))
+			s.skip(rowid, rowid, "destination constraint rejected row: "+sessionsExcText(err))
 			return true, nil
 		}
 		return false, err
@@ -1045,7 +1079,7 @@ func (s *recoveryRangeSalvage) copyRange(low, high int64) error {
 	}
 	if recoveryCounter(s.result, "range_queries") >= recoveryMaxSalvageQueries {
 		s.stoppedAtQueryLimit = true
-		recoveryAppendSkippedRange(s.result, low, high, "salvage range query limit reached")
+		s.skip(low, high, "salvage range query limit reached")
 		return nil
 	}
 	recoveryBump(s.result, "range_queries", 1)
@@ -1114,7 +1148,7 @@ func (s *recoveryRangeSalvage) copyRange(low, high int64) error {
 			return err
 		}
 		if !ok {
-			recoveryAppendSkippedRange(s.result, retryLow, high, sessionsExcText(readErr))
+			s.skip(retryLow, high, sessionsExcText(readErr))
 		}
 		return nil
 	}
@@ -1160,12 +1194,8 @@ func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string
 		result.Set("error", msg)
 		return result, nil
 	}
-	quoted, marks := recoveryQuotedColumns(columns)
-	salvage := &recoveryRangeSalvage{source: source, destination: destination, table: table, chunkSize: chunkSize,
-		progress: progress, sourceRows: sourceRows, rowFilter: rowFilter, result: result, columnNames: columns,
-		selectSQL: fmt.Sprintf(`SELECT rowid, %s FROM "%s" WHERE rowid BETWEEN ? AND ? ORDER BY rowid`, quoted, table),
-		insertSQL: fmt.Sprintf(`%s INTO "%s" (%s) VALUES (%s)`, insertPrefix, table, quoted, marks),
-		exactSQL:  fmt.Sprintf(`SELECT %s FROM "%s" WHERE rowid = ?`, quoted, table)}
+	salvage := newRecoveryRangeSalvage(source, destination, table, columns, chunkSize, progress, sourceRows, insertPrefix,
+		rowFilter, result)
 	if err := salvage.copyRange(low, high); err != nil {
 		return nil, err
 	}
@@ -1792,9 +1822,13 @@ func recoveryFinalizeDerivedMetadata(destination state.SQLiteConn) (*pyjson.Obje
 }
 
 // Recover report with the shared header, mode fields and verdict, a changed source clearing the named verification flag
-func recoveryReport(source, output string, inspection, diskSpace, verification *pyjson.Object, onSourceChange string, fields ...any) *pyjson.Object {
+func recoveryReport(source, output string, inspection, diskSpace, verification *pyjson.Object, onSourceChange string, fields ...any) (*pyjson.Object, error) {
 	fingerprint := inspection.GetOr("source_fingerprint", nil)
-	unchanged := pyjson.Equal(recoverySourceFingerprint(source), fingerprint)
+	now, err := recoverySourceFingerprint(source)
+	if err != nil {
+		return nil, err
+	}
+	unchanged := pyjson.Equal(now, fingerprint)
 	if !unchanged {
 		recoveryVerifyError(verification, "the source database bundle changed during recovery")
 		verification.Set(onSourceChange, false)
@@ -1818,7 +1852,7 @@ func recoveryReport(source, output string, inspection, diskSpace, verification *
 	report.Set("installed", false)
 	report.Set("runtime_state", pyjson.ObjectOf("policy", "transcript-only; runtime ledger excluded; fresh epoch on activation",
 		"excluded_tables", excluded))
-	return report
+	return report, nil
 }
 
 // Salvages canonical rows into a separate output, a state.db output first reserving offline ownership of its home
@@ -1954,7 +1988,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		cleanupValue = orphanCleanup
 	}
 	return recoveryReport(source, output, inspection, diskSpace, verification, "complete",
-		"allow_partial", allowPartial, "copy", copyReport, "orphan_cleanup", cleanupValue, "derived_metadata", derived), nil
+		"allow_partial", allowPartial, "copy", copyReport, "orphan_cleanup", cleanupValue, "derived_metadata", derived)
 }
 
 // Writes the JSON report to a new file, refusing to overwrite an existing one

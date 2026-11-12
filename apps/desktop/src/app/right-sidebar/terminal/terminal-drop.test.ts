@@ -42,9 +42,9 @@ function transfer(files: File[], hermesPaths?: string[]): DataTransfer {
   return {
     files: list,
     getData: (type: string) =>
-      type === 'application/x-hermes-paths' && hermesPaths ? JSON.stringify(hermesPaths.map(path => ({ path }))) : '',
+      type === 'application/x-icebath-paths' && hermesPaths ? JSON.stringify(hermesPaths.map(path => ({ path }))) : '',
     items: files.map(entry => ({ getAsFile: () => entry, kind: 'file' })),
-    types: [...(hermesPaths ? ['application/x-hermes-paths'] : []), ...(files.length ? ['Files'] : [])]
+    types: [...(hermesPaths ? ['application/x-icebath-paths'] : []), ...(files.length ? ['Files'] : [])]
   } as unknown as DataTransfer
 }
 

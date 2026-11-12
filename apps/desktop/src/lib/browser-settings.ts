@@ -10,7 +10,7 @@ interface BrowserSettingsOptions {
 
 /** This page's hosted gateway, the same scope `createBrowserSettings` keys on. */
 export function browserPageBasePath(): string {
-  return normalizeBasePath((window as Window & BrowserHostGlobals).__HERMES_BASE_PATH__)
+  return normalizeBasePath((window as Window & BrowserHostGlobals).__ICEBATH_BASE_PATH__)
 }
 
 /** A profile not named is the one the serving gateway runs as, the profile its
@@ -18,7 +18,7 @@ export function browserPageBasePath(): string {
 export function browserDefaultProjectDirKey(basePath: string, profile: string): string {
   const owner = profile.trim() || browserLaunchProfileOrDefault()
 
-  return `hermes:browser:default-project-dir:${JSON.stringify([basePath || '/', owner])}`
+  return `icebath:browser:default-project-dir:${JSON.stringify([basePath || '/', owner])}`
 }
 
 /**
@@ -32,7 +32,7 @@ export function browserDefaultProjectDirKey(basePath: string, profile: string): 
  * keeps a later launch as another profile from taking default's own folder.
  */
 function adoptLegacyLaunchFolder(basePath: string): void {
-  const marker = `hermes:browser:default-project-dir-adopted:${JSON.stringify([basePath || '/'])}`
+  const marker = `icebath:browser:default-project-dir-adopted:${JSON.stringify([basePath || '/'])}`
 
   if (readKey(marker)) {
     return

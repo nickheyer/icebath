@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"os"
 	"strings"
@@ -62,8 +63,8 @@ func (r *GatewayRunner) shouldSendVoiceReply(ctx context.Context, event *gateway
 		}
 		calls, _ := msg["tool_calls"].([]any)
 		for _, raw := range calls {
-			call, _ := raw.(map[string]any)
-			fn, _ := call["function"].(map[string]any)
+			call, _ := pyjson.Dict(raw)
+			fn, _ := pyjson.Dict(call["function"])
 			if fn["name"] == "text_to_speech" {
 				return false
 			}

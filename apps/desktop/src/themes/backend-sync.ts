@@ -29,7 +29,7 @@ import { type DesktopTheme, isValidTheme } from './types'
 // resolve a persisted skin pick synchronously, like a built-in or a user
 // install. Without it the stored name failed `resolveTheme` on every launch
 // and the app silently painted the default until the next `skin.changed`.
-const BACKEND_THEMES_KEY = 'hermes-desktop-backend-themes-v1'
+const BACKEND_THEMES_KEY = 'icebath-desktop-backend-themes-v1'
 
 // Electron reads the active local `display.skin` before it creates the
 // renderer. Seed it alongside the existing cache so an unreachable primary

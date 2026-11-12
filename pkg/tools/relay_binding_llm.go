@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -59,22 +60,19 @@ func (t *RelayTurnContext) FinalizeLock() *sync.Mutex { return &t.finalizeMu }
 // Python AttributeError text for a binding attribute the native module lacks
 func RelayAttributeError(object, name string) error { return relayAttributeError(object, name) }
 
-type relayLoopKey struct{}
-
-// Context of code driven by a Relay event loop, the running loop asyncio reports
+// Context of code driven by a Relay event loop, the running loop every on loop check reports
 func RelayWithRunningLoop(ctx context.Context) context.Context {
-	return context.WithValue(ctx, relayLoopKey{}, true)
+	return pyctx.WithRunningLoop(ctx)
 }
 
 // Context of a worker thread spawned off the loop, which has no running loop
 func RelayWithoutRunningLoop(ctx context.Context) context.Context {
-	return context.WithValue(ctx, relayLoopKey{}, false)
+	return pyctx.WithoutRunningLoop(ctx)
 }
 
-// Whether ctx runs on a Relay event loop
+// Whether ctx runs on an event loop, the Relay loop included
 func RelayHasRunningEventLoop(ctx context.Context) bool {
-	on, _ := ctx.Value(relayLoopKey{}).(bool)
-	return on
+	return pyctx.RunningLoop(ctx)
 }
 
 // Awaits a RelayAwaitable on a fresh loop, refusing when ctx already runs on one

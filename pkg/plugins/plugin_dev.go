@@ -147,7 +147,7 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 		return err
 	}
 	host.envOverride = map[string]string{home.EnvHome: tmp, "ICEBATH_BUNDLED_PLUGINS": bundled,
-		EnvEnableProjectPlugins: "0", hostDenyNetworkEnv: "1"}
+		EnvEnableProjectPlugins: "0", HostDenyNetworkEnv: "1"}
 	scope := manager.home
 	entriesBefore := map[string]*tools.Def{}
 	for _, name := range tools.Default.AllToolNames(hctx, scope) {

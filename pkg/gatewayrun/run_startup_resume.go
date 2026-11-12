@@ -182,9 +182,11 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 		task := r.retainBackgroundTask(spawnGatewayTask(context.WithoutCancel(ctx), "", func(ctx context.Context) (any, error) {
 			return nil, r.runStartupResumeEvent(ctx, adapter, event, key)
 		}))
+		r.startupRestoreTasksMu.Lock()
 		if r.startupRestoreInProgress {
 			r.startupRestoreTasks = append(r.startupRestoreTasks, task)
 		}
+		r.startupRestoreTasksMu.Unlock()
 		scheduled++
 	}
 	if scheduled > 0 {
@@ -252,3 +254,16 @@ func (r *GatewayRunner) awaitStartupBootSends(ctx context.Context, plannedRestar
 		"background boot-path send failed after gate release: see traceback", slog.LevelWarn, true)
 	return nil
 }
+
+// Holds the startup restore gate open for an adapter recovery task while startup restore runs
+func (r *GatewayRunner) JoinStartupRestore(ctx context.Context, name string, wait func(ctx context.Context) error) {
+	r.startupRestoreTasksMu.Lock()
+	defer r.startupRestoreTasksMu.Unlock()
+	if !r.startupRestoreInProgress {
+		return
+	}
+	task := spawnGatewayTask(context.WithoutCancel(ctx), name, func(ctx context.Context) (any, error) { return nil, wait(ctx) })
+	r.startupRestoreTasks = append(r.startupRestoreTasks, task)
+}
+
+var _ gateway.StartupRestoreTaskJoiner = (*GatewayRunner)(nil)

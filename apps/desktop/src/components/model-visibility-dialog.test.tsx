@@ -75,8 +75,8 @@ describe('Edit Models reset', () => {
 
     await waitFor(async () => expect(await isShown(/gpt-6/i)).toBe(true))
     expect(await isShown(/gpt-5\.5/i)).toBe(true)
-    expect(window.localStorage.getItem('hermes.desktop.visible-models')).toBeNull()
-    expect(window.localStorage.getItem('hermes.desktop.known-models')).toBeNull()
+    expect(window.localStorage.getItem('icebath.desktop.visible-models')).toBeNull()
+    expect(window.localStorage.getItem('icebath.desktop.known-models')).toBeNull()
   })
 
   it('keeps the user’s choices when the reset is cancelled', async () => {

@@ -20,7 +20,6 @@ const (
 	gptImage2APIModel = "gpt-image-2"
 	gptImage2Default  = "gpt-image-2-medium"
 	promptRequired    = "Prompt is required and must be a non-empty string"
-	openAIMissing     = "openai Python package not installed (pip install openai)"
 )
 
 // Fixed model catalog keeping the upstream dict order

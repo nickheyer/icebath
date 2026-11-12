@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=icebath-setup
+Exec=icebath-setup
+Icon=icebath-setup
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

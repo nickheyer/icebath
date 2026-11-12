@@ -306,7 +306,7 @@ func sourceRead(ctx context.Context, target string, missingOK bool) (string, boo
 	return text, true, nil
 }
 
-// Content of every meta tag named icebath-build, only script and style bodies read as raw text like HTMLParser
+// Content of every meta tag named icebath-build, skipping raw text bodies HTMLParser skips but reading noscript and self closed tags
 func buildMetadataTags(page string) []any {
 	var tags []any
 	z := html.NewTokenizer(strings.NewReader(page))
@@ -319,7 +319,7 @@ func buildMetadataTags(page string) []any {
 			continue
 		}
 		token := z.Token()
-		if kind == html.StartTagToken && token.Data != "script" && token.Data != "style" {
+		if kind == html.SelfClosingTagToken || token.Data == "noscript" {
 			z.NextIsNotRawText()
 		}
 		if token.Data != "meta" {

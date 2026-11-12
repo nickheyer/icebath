@@ -265,8 +265,8 @@ func (s *UpdateAdmission) recordReceipt(ctx context.Context, key string) {
 		s.receiptsDirty = append(s.receiptsDirty, bot)
 	}
 	if s.receiptFlush == nil || s.receiptFlush.Done() {
-		s.receiptFlush = gateway.SpawnAdapterTask(ctx, func(context.Context) error {
-			s.flushReceipts(ctx)
+		s.receiptFlush = gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
+			s.flushReceipts(tctx)
 			return nil
 		})
 	}
@@ -274,9 +274,13 @@ func (s *UpdateAdmission) recordReceipt(ctx context.Context, key string) {
 
 // Writes each dirty bot's fresh receipts to its file until no bot is dirty
 func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
+	current := gateway.CurrentAdapterTask(ctx)
 	for {
 		s.mu.Lock()
 		if len(s.receiptsDirty) == 0 {
+			if current != nil && s.receiptFlush == current {
+				s.receiptFlush = nil
+			}
 			s.mu.Unlock()
 			return
 		}

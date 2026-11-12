@@ -1025,15 +1025,19 @@ func (c *ccRoute) convertMessages(msgs []*state.Message, echoOptIn bool) []*omap
 				fn := newOmap()
 				fn.Set("name", tc.Function.Name)
 				fn.Set("arguments", tc.Function.Arguments)
+				var extra any
 				if carrier := toolCarriers[tc.ID]; keepSig && carrier != nil {
 					if sig, ok := carrier["thought_signature"].(string); ok && sig != "" {
 						fn.Set("thought_signature", sig)
 					}
-					if extra := carrier["extra_content"]; extra != nil && thoughtSignature(extra) != "" {
-						t.Set("extra_content", extra)
+					if e := carrier["extra_content"]; e != nil && thoughtSignature(e) != "" {
+						extra = e
 					}
 				}
 				t.Set("function", fn)
+				if extra != nil {
+					t.Set("extra_content", extra)
+				}
 				tcs = append(tcs, t)
 			}
 			om.Set("tool_calls", tcs)
@@ -1136,12 +1140,12 @@ func aliasReservedTools(tools []map[string]any, reserved []string, nameOf func(m
 }
 
 func chatToolName(t map[string]any) string {
-	fn, _ := t["function"].(map[string]any)
+	fn, _ := pyjson.Dict(t["function"])
 	return stringOf(fn["name"])
 }
 
 func chatToolRename(t map[string]any, alias string) map[string]any {
-	fn, _ := t["function"].(map[string]any)
+	fn, _ := pyjson.Dict(t["function"])
 	nf := make(map[string]any, len(fn))
 	for k, v := range fn {
 		nf[k] = v
@@ -1385,7 +1389,7 @@ func sanitizeMoonshotTools(tools []map[string]any) []map[string]any {
 	out := make([]map[string]any, 0, len(tools))
 	anyChange := false
 	for _, tool := range tools {
-		fn, ok := tool["function"].(map[string]any)
+		fn, ok := pyjson.Dict(tool["function"])
 		if !ok {
 			out = append(out, tool)
 			continue

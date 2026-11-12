@@ -19,7 +19,7 @@ import { $backendThemes } from './backend-sync'
 import { BUILTIN_THEMES } from './presets'
 import { type DesktopTheme, isValidTheme } from './types'
 
-const USER_THEMES_KEY = 'hermes-desktop-user-themes-v1'
+const USER_THEMES_KEY = 'icebath-desktop-user-themes-v1'
 
 // Marketplace imports stamp their description "VS Code · <publisher.extension>"
 // (see `convertVscodeColorTheme`). This is the one place that convention is read

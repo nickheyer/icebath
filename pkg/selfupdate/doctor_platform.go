@@ -16,13 +16,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pyhost"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -38,10 +43,10 @@ type doctorPython struct {
 	Path       []string
 }
 
-// doctorPackage is one importable module the managed runtime is expected to carry
+// doctorPackage is one library, program or runtime package an optional capability loads, probed the way that capability loads it
 type doctorPackage struct {
-	Module, Name string
-	Optional     bool
+	Name    string
+	Present func(ctx context.Context) bool
 }
 
 const doctorPythonProbe = "import json, sys\nprint(json.dumps({'version': list(sys.version_info[:3]), 'prefix': sys.prefix, 'base_prefix': sys.base_prefix, 'path': sys.path}))\n"
@@ -62,11 +67,27 @@ var (
 	doctorDescribeHolderPID    = state.DescribeHolderPID
 	doctorSelectedVenvDir      = func(ctx context.Context) (string, error) { return pm.SelectedVenv(ctx, pm.RepoRoot()) }
 	doctorPackages             = []doctorPackage{
-		{"openai", "OpenAI SDK", false}, {"rich", "Rich (terminal UI)", false}, {"dotenv", "python-dotenv", false},
-		{"ruamel.yaml", "ruamel.yaml", false}, {"httpx", "HTTPX", false},
-		{"croniter", "Croniter (cron expressions)", true}, {"telegram", "python-telegram-bot", true}, {"discord", "discord.py", true},
+		{"PortAudio (voice mode audio)", func(context.Context) bool { return pysounddevice.Load() == nil }},
+		{"Opus (Discord voice playback)", func(context.Context) bool { return discord.LoadOpusLibrary() == nil }},
+		{"FFmpeg (audio conversion)", func(context.Context) bool { return media.FindFFmpegBinary() != "" }},
+		{"Porcupine (wake word)", func(ctx context.Context) bool { return media.LoadPorcupineLibrary(ctx) == nil }},
+		{"sherpa-onnx (wake word)", func(ctx context.Context) bool { return media.LoadSherpaOnnxLibrary(ctx) == nil }},
+		{"openWakeWord (wake word)", func(ctx context.Context) bool { return media.LoadOpenWakeWordLibrary(ctx) == nil }},
+		{"Python tool runtime (execute_code)", func(ctx context.Context) bool { _, err := codeexec.RuntimePython(ctx); return err == nil }},
+		{"Python shared library (plugins, browser harness)", doctorPythonSharedLibraryPresent},
+		{"browser-harness (browser_exec)", func(ctx context.Context) bool { return doctorModuleImportable(ctx, "browser_harness") }},
 	}
 )
+
+// Whether the runtime interpreter the plugin host and browser harness embed has a loadable shared library
+func doctorPythonSharedLibraryPresent(ctx context.Context) bool {
+	python, err := codeexec.RuntimePython(ctx)
+	if err != nil {
+		return false
+	}
+	_, err = pyhost.Discover(python)
+	return err == nil
+}
 
 // Default client TLS context, the error its construction raises when a trust bundle cannot be loaded
 var doctorDefaultTLSContext = func() error {
@@ -113,7 +134,7 @@ func doctorPythonRepairHint(ctx context.Context, d *Doctor) (string, error) {
 	if config.IsNixInstallMethod(method) {
 		return config.RecommendedUpdateCommandForMethod(method), nil
 	}
-	if method == "docker" || method == "apt" {
+	if method == "docker" || config.IsPackageManagerInstallMethod(method) {
 		hint := "Run `" + config.RecommendedUpdateCommandForMethod(method) + "`"
 		if method == "docker" {
 			hint += ", then recreate the Icebath container"
@@ -151,7 +172,7 @@ func doctorSQLiteUpgradeHint(ctx context.Context, d *Doctor, installMethod strin
 		action = cmd
 	case method == "docker":
 		action = "run `" + cmd + "`, then recreate all Icebath containers"
-	case method == "apt":
+	case config.IsPackageManagerInstallMethod(method):
 		action = "run `" + cmd + "`"
 	}
 	return "(" + action + "; fixed versions: 3.51.3+ / 3.50.7 / 3.44.6 — see https://sqlite.org/wal.html#walresetbug)", nil
@@ -532,7 +553,7 @@ func doctorCheckMacosTCCGrants(ctx context.Context, d *Doctor) {
 	}
 	doctorCheckOK(d.W, "macOS TCC signing identity is stable", doctorTCCStableDetail[strings.Contains(strings.ToLower(dr), "certificate")])
 	doctorCheckInfo(d.W, "If macOS still re-prompts for permissions (toggle shows ON): the stored grant is stale — run "+
-		"`tccutil reset ScreenCapture com.nousresearch.icebath` (repeat per affected service), toggle it ON in "+
+		"`tccutil reset ScreenCapture ai.icebath` (repeat per affected service), toggle it ON in "+
 		"System Settings, then fully quit & relaunch Icebath once.")
 }
 
@@ -740,25 +761,14 @@ func checkCertificates(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 	})
 }
 
-// Reports each expected runtime module as importable, optional and absent, or missing with the repair hint
+// Reports each library, program and runtime package an optional capability needs as present or not installed
 func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		for _, p := range doctorPackages {
-			switch {
-			case doctorModuleImportable(ctx, p.Module):
-				detail := ""
-				if p.Optional {
-					detail = "(optional)"
-				}
-				doctorCheckOK(d.W, p.Name, detail)
-			case p.Optional:
+			if p.Present(ctx) {
+				doctorCheckOK(d.W, p.Name, "(optional)")
+			} else {
 				doctorCheckWarn(d.W, p.Name, "(optional, not installed)")
-			default:
-				hint, err := doctorPythonRepairHint(ctx, d)
-				if err != nil {
-					return err
-				}
-				doctorFailAndIssue(d.W, p.Name, "(missing)", "Repair "+p.Name+": "+hint, &f.Issues)
 			}
 		}
 		return nil
@@ -901,7 +911,7 @@ func checkCommandInstallation(ctx context.Context, d *Doctor, shouldFix bool) (*
 		if err != nil {
 			return err
 		}
-		if config.IsNixInstallMethod(method) || method == "docker" || method == "apt" {
+		if config.IsNixInstallMethod(method) || method == "docker" || config.IsPackageManagerInstallMethod(method) {
 			if command := doctorWhich("icebath"); command != "" {
 				doctorCheckOK(w, "Icebath command managed by "+method+" ("+command+")", "")
 				return nil

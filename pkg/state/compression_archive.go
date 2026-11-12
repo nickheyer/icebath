@@ -33,10 +33,8 @@ func RetiredRowPayload(message map[string]any) map[string]any {
 	var calls []any
 	if items, ok := listItems(message["tool_calls"]); ok && pyTruthy(message["tool_calls"]) {
 		for _, call := range items {
-			if m, ok := call.(map[string]any); ok {
-				calls = append(calls, m["id"])
-			} else if o, ok := call.(pyObject); ok {
-				v, _ := o.get("id")
+			if isMapping(call) {
+				v, _ := mappingGet(call, "id")
 				calls = append(calls, v)
 			}
 		}

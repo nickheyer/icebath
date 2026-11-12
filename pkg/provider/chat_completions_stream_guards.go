@@ -197,7 +197,7 @@ func (a *ccToolCallAccumulator) Feed(delta map[string]any) (string, int) {
 		rawIdx = n
 	}
 	tcID := ccDeltaID(delta["id"])
-	fn, _ := delta["function"].(map[string]any)
+	fn, _ := pyjson.Dict(delta["function"])
 	fnName := stringOf(fn["name"])
 	if _, ok := a.activeSlotByIdx[rawIdx]; !ok {
 		a.activeSlotByIdx[rawIdx] = rawIdx

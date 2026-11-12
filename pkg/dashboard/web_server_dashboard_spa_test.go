@@ -98,7 +98,7 @@ func TestPageAllowsItsScriptsAndChunksButLocksPrivilegedExecution(t *testing.T) 
 			if !slices.Equal(external, []string{"/hermes/assets/app.js"}) {
 				t.Fatalf("external %v", external)
 			}
-			if !slices.ContainsFunc(inline, func(s string) bool { return strings.Contains(s, "__HERMES_BASE_PATH__") }) {
+			if !slices.ContainsFunc(inline, func(s string) bool { return strings.Contains(s, "__ICEBATH_BASE_PATH__") }) {
 				t.Fatalf("inline %v", inline)
 			}
 			for _, script := range inline {
@@ -145,7 +145,7 @@ func TestEverySpellingOfTheEntryDocumentGetsThePolicy(t *testing.T) {
 		}
 		response := newTestClient(t, app).get(path)
 		if response.Status != 200 || !strings.Contains(response.Headers.Get("content-security-policy"), "'sha256-") ||
-			!strings.Contains(string(response.Body), "__HERMES_BASE_PATH__") {
+			!strings.Contains(string(response.Body), "__ICEBATH_BASE_PATH__") {
 			t.Fatalf("%s: %d %q %v", path, response.Status, response.Body, response.AppErr)
 		}
 	}
@@ -259,7 +259,7 @@ func TestSpaDocumentsShareTheBootstrapPolicy(t *testing.T) {
 				}
 				if path == "/" || path == "/chat/session" || (path == "/index.html" && surface == "webapp") {
 					if !strings.Contains(response.Headers.Get("cache-control"), "no-store") ||
-						!strings.Contains(text, `window.__HERMES_BASE_PATH__="`+prefix+`"`) ||
+						!strings.Contains(text, `window.__ICEBATH_BASE_PATH__="`+prefix+`"`) ||
 						!strings.Contains(text, `src="`+prefix+`/assets/app.js"`) {
 						t.Fatalf("%v %q %s: %q", surface, prefix, path, text)
 					}
@@ -279,7 +279,7 @@ func TestTheDashboardServesIndexHtmlAndItsBootstrapAsOnMain(t *testing.T) {
 		if raw.Status != 200 || string(raw.Body) != spaPolicyHTML {
 			t.Fatalf("gated %v: %d %q", gated, raw.Status, raw.Body)
 		}
-		if strings.Contains(string(client.get("/").Body), "__HERMES_UI_SURFACE__") {
+		if strings.Contains(string(client.get("/").Body), "__ICEBATH_UI_SURFACE__") {
 			t.Fatalf("gated %v: surface named", gated)
 		}
 	}
@@ -288,7 +288,7 @@ func TestTheDashboardServesIndexHtmlAndItsBootstrapAsOnMain(t *testing.T) {
 func TestTheWebappPageNamesItsSurface(t *testing.T) {
 	client := spaPolicyApp(t, "webapp", false)
 	for _, path := range []string{"/", "/index.html"} {
-		if !strings.Contains(string(client.get(path).Body), `window.__HERMES_UI_SURFACE__="webapp"`) {
+		if !strings.Contains(string(client.get(path).Body), `window.__ICEBATH_UI_SURFACE__="webapp"`) {
 			t.Fatalf("%s: surface not named", path)
 		}
 	}
@@ -311,7 +311,7 @@ func initialProfileApp(t *testing.T, initial string) *testClient {
 
 func TestSpaBootstrapIncludesDashboardInitialProfile(t *testing.T) {
 	response := initialProfileApp(t, "worker_x").get("/chat?resume=session-1")
-	if response.Status != 200 || !strings.Contains(string(response.Body), `window.__HERMES_INITIAL_PROFILE__="worker_x";`) {
+	if response.Status != 200 || !strings.Contains(string(response.Body), `window.__ICEBATH_INITIAL_PROFILE__="worker_x";`) {
 		t.Fatalf("%d %q", response.Status, response.Body)
 	}
 }

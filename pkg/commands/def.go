@@ -35,6 +35,7 @@ type Def struct {
 	ArgumentMode string
 	Plugin       string
 	Handler      Handler
+	Meta
 }
 
 // Localized slash description from the catalog, the English field when no catalog carries the key

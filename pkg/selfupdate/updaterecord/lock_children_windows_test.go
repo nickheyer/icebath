@@ -60,6 +60,9 @@ func lockChildPOSIX(ctx context.Context, mode string, args []string) (int, bool)
 
 // Child stand-ins this package's tests start on Windows, the update lock holders and claimants
 func pcChild(mode string, args []string) int {
+	if code, ok := debtChild(mode, args); ok {
+		return code
+	}
 	if code, ok := lockChild(mode, args); ok {
 		return code
 	}

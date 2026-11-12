@@ -468,7 +468,7 @@ func CheckAPIServerRequirements() bool { return true }
 
 var corsHeaders = [][2]string{
 	{"Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"},
-	{"Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Hermes-Session-Id"},
+	{"Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Hermes-Session-Id, X-Icebath-Session-Id"},
 }
 
 var securityHeaders = [][2]string{
@@ -509,6 +509,7 @@ func corsMiddleware(ctx context.Context, app *gateway.WebApplication, request *g
 		}
 		return resp, nil
 	}
+	icebathRequestHeaders(request.Header)
 	resp, err := handler(ctx, request)
 	if err != nil {
 		return nil, err
@@ -516,6 +517,7 @@ func corsMiddleware(ctx context.Context, app *gateway.WebApplication, request *g
 	for _, h := range headers {
 		resp.Headers.Set(h[0], h[1])
 	}
+	icebathResponseHeaders(resp.Headers)
 	return resp, nil
 }
 

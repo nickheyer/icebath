@@ -19,7 +19,7 @@ function readJson<T>(relativePath: string): T {
 const root = readJson<Manifest>('package.json')
 const desktop = readJson<Manifest>('apps/desktop/package.json')
 const lock = readJson<Lockfile>('package-lock.json')
-const pins = readJson<PmLock>('pm/lock.json').packages
+const pins = readJson<PmLock>('pkg/pm/lock.json').packages
 
 function nodeRange(manifest: Manifest): string {
   assert.ok(manifest.engines?.node, 'workspace must declare engines.node')

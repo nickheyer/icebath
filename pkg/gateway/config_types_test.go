@@ -57,6 +57,7 @@ func resetPlatformMembers(t *testing.T, bundled string) {
 }
 
 func TestStreamingConfigNestedAndModeAlias(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, h := yamlHome(t, "streaming:\n  enabled: true\n  transport: draft\n")
 	if s := loadLayers(t, ctx, h).Streaming; !s.Enabled || s.Transport != "draft" {
 		t.Fatalf("top level %+v", s)
@@ -93,6 +94,7 @@ func TestStreamingConfigNestedAndModeAlias(t *testing.T) {
 }
 
 func TestPlatformMembersAndBundledAliases(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	bundled := t.TempDir()
 	for dir, manifest := range map[string]string{"a2a": "name: a2a-platform\n", "irc": "name: IRC\n", "line": "name: a2a\n"} {
 		os.MkdirAll(filepath.Join(bundled, "platforms", dir), 0o755)
@@ -134,6 +136,7 @@ func TestPlatformMembersAndBundledAliases(t *testing.T) {
 }
 
 func TestHomeChannelAndPlatformConfig(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	h := NewHomeChannel(PlatformDiscord, " https://discord.com/channels/1/22/ ", "Home")
 	if h.ChatID != "22" {
@@ -168,6 +171,7 @@ func TestHomeChannelAndPlatformConfig(t *testing.T) {
 }
 
 func TestGatewayConfigFromDictCoercion(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := home.WithOverride(context.Background(), "/srv/h")
 	gw, err := GatewayConfigFromDict(ctx, map[string]any{
 		"gateway":                        map[string]any{"systemd_watchdog_seconds": "30", "max_concurrent_sessions": 4.0, "loop_watchdog_max_strikes": 5000, "multiplex_profiles": "no"},
@@ -223,6 +227,7 @@ func TestGatewayConfigFromDictCoercion(t *testing.T) {
 func ptr(s string) *string { return &s }
 
 func TestConnectedPlatformsAndValidation(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	gw := DefaultGatewayConfig(ctx)
 	gw.Platforms = map[Platform]*PlatformConfig{
@@ -252,6 +257,7 @@ func TestConnectedPlatformsAndValidation(t *testing.T) {
 }
 
 func TestMergePlatformSectionsOrder(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	gw := map[string]any{"platforms": map[string]any{"telegram": map[string]any{"extra": map[string]any{"a": 1, "b": 1}}}}
 	yamlCfg := map[string]any{
@@ -280,6 +286,7 @@ func TestMergePlatformSectionsOrder(t *testing.T) {
 }
 
 func TestAuthoredExtraWinsAndSharedKeys(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, h := yamlHome(t, "telegram:\n  reply_to_mode: all\n  require_mention: true\n  allowed_chats: [1]\n  extra:\n    reply_to_mode: off\n"+
 		"platforms:\n  telegram:\n    extra:\n      require_mention: false\n  slack:\n    allowed_chats: [2]\n    channel_prompts: {c: p}\n    enabled: true\n")
 	gw := map[string]any{}
@@ -301,6 +308,7 @@ func TestAuthoredExtraWinsAndSharedKeys(t *testing.T) {
 }
 
 func TestRegistryLifecycleAndAdapters(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, _ := yamlHome(t, "")
 	r := NewPlatformRegistry()
 	installs := 0
@@ -363,19 +371,22 @@ func TestRegistryLifecycleAndAdapters(t *testing.T) {
 }
 
 func TestPluginYAMLHooksAndActivation(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx, h := yamlHome(t, "irc:\n  server: a\nplatforms:\n  irc:\n    extra:\n      server: b\n")
 	saved := Registry
 	Registry = NewPlatformRegistry()
 	t.Cleanup(func() { Registry = saved })
 	seenBlock := map[string]any{}
 	e := NewPlatformEntry("irc", "IRC", nil, func() bool { return true })
-	e.ApplyYAMLConfigFn = func(yamlCfg, block map[string]any) (map[string]any, error) {
+	e.ApplyYAMLConfigFn = func(_ context.Context, yamlCfg, block map[string]any) (map[string]any, error) {
 		seenBlock = block
 		return map[string]any{"seeded": 1}, nil
 	}
 	Registry.register(e, "")
 	boom := NewPlatformEntry("boom", "Boom", nil, nil)
-	boom.ApplyYAMLConfigFn = func(yamlCfg, block map[string]any) (map[string]any, error) { return nil, errors.New("x") }
+	boom.ApplyYAMLConfigFn = func(_ context.Context, yamlCfg, block map[string]any) (map[string]any, error) {
+		return nil, errors.New("x")
+	}
 	Registry.register(boom, "")
 	untouched := 0
 	Registry.RegisterDeferred("cold", &plugins.DeferredPlatformLoader{Load: func(ctx context.Context) { untouched++ }}, "")
@@ -401,6 +412,7 @@ func TestPluginYAMLHooksAndActivation(t *testing.T) {
 }
 
 func TestToolsAndProviderHooksInstalled(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if tools.RegisteredAdapterSecretEnv == nil || tools.RegisteredPlatformNames == nil ||
 		provider.GatewayHooks.MergePlatformSections == nil || provider.GatewayHooks.PlatformEnabled == nil {
 		t.Fatal("init installs the hooks")
@@ -423,6 +435,7 @@ func TestToolsAndProviderHooksInstalled(t *testing.T) {
 }
 
 func TestCoerceIntKeepsPythonIntsPastTheGoIntRange(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	huge := "123456789012345678901234567890"
 	s := StreamingConfigFromDict(map[string]any{"buffer_threshold": huge})
 	if got := s.ToDict()["buffer_threshold"]; pyrepr.Repr(got) != huge {
@@ -458,6 +471,7 @@ func TestCoerceIntKeepsPythonIntsPastTheGoIntRange(t *testing.T) {
 }
 
 func TestMessagingPlatformLabelsCoverMembersBundledDirsAndAliases(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	bundled := t.TempDir()
 	for dir, manifest := range map[string]string{"a2a": "name: a2a-platform\n", "irc": "name: IRC\n"} {
 		os.MkdirAll(filepath.Join(bundled, "platforms", dir), 0o755)

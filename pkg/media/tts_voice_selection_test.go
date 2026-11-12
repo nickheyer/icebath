@@ -70,7 +70,6 @@ func TestVoiceIDReachesElevenlabsAndIsIgnoredElsewhere(t *testing.T) {
 	cfg := elevenLabsTestConfig()
 	fixedTTSConfig(t, cfg)
 	var seen []string
-	swap(t, &ttsImportElevenLabs, func(context.Context) error { return nil })
 	swap(t, &ttsResolveProviderKey, func(*tools.Env, string, string) string { return "el-test-key" })
 	swap(t, &ttsElevenLabsPost, func(_ context.Context, endpoint, _ string, _ map[string]any) (*http.Response, error) {
 		u, _ := url.Parse(endpoint)

@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Beskikbare Gereedskapstelle"
     currently_enabled_legend: "(*) = tans geaktiveer"
     tip_enable_all: "Wenk: Gebruik 'all' of '*' om alle gereedskapstelle te aktiveer"
-    example: "Voorbeeld: python cli.py --toolsets web,terminal"
+    example: "Voorbeeld: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Onbekende /usage-subopdrag: {args}. Probeer /usage of /usage reset [--force]."

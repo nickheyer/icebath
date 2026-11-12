@@ -13,6 +13,7 @@ import (
 func TUISlashCompleter(ctx context.Context, skillCommands, skillBundles skills.SkillCommands) *SlashCompleter {
 	readonlyCfg := func() (config.Tree, error) { return config.LoadReadonly(ctx, home.Dir(ctx), nil) }
 	return NewCompleter(CompleterSources{
+		Ctx: ctx,
 		Cfg: func() config.Tree {
 			cfg, err := readonlyCfg()
 			if err != nil {

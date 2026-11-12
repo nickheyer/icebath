@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"context"
+	"fmt"
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/cron"
@@ -275,4 +276,28 @@ func (r *GatewayRunner) restoredSource(ctx context.Context, entry *gateway.Sessi
 		return nil, err
 	}
 	return entry.Origin, nil
+}
+
+// Adapter map and gateway config of an adapter's owning profile, the runner's own for the primary profile
+func ProfileAdaptersAndConfig(ctx context.Context, runner any, profile string) (*gateway.AdapterMap, *gateway.GatewayConfig, error) {
+	r, ok := runner.(*GatewayRunner)
+	if !ok {
+		return nil, nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'adapters'", runner)
+	}
+	if profile == "" {
+		return r.primaryAdapters(), r.config, nil
+	}
+	adapters := r.adaptersForProfile(ctx, &profile)
+	if adapters == r.primaryAdapters() {
+		return adapters, r.config, nil
+	}
+	dir, err := profiles.GetProfileDir(profile)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg, err := gateway.LoadGatewayConfig(gateway.ProfileRuntimeScope(ctx, dir, true))
+	if err != nil {
+		return nil, nil, err
+	}
+	return adapters, cfg, nil
 }

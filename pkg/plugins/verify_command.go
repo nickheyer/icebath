@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -164,7 +166,7 @@ func printVerifyHumanReport(w io.Writer, recipe *verify.Recipe, source string, r
 	fmt.Fprintln(w)
 	width := 0
 	for _, p := range result.Phases {
-		width = max(width, len(p.Phase))
+		width = max(width, utf8.RuneCountInString(p.Phase))
 	}
 	if len(result.Phases) > 0 {
 		for _, p := range result.Phases {
@@ -197,12 +199,12 @@ func printVerifyHumanReport(w io.Writer, recipe *verify.Recipe, source string, r
 	for _, p := range result.Phases {
 		if !p.OK() {
 			fmt.Fprintf(w, "\n--- output tail: %s (%s) ---\n", p.Phase, p.Command)
-			fmt.Fprintln(w, strings.TrimRight(p.OutputTail, " \t\r\n\x0b\x0c"))
+			fmt.Fprintln(w, pystr.Rstrip(p.OutputTail))
 		}
 	}
 	if r := result.Readiness; r != nil && !r.Ready && r.OutputTail != "" {
 		fmt.Fprintln(w, "\n--- output tail: start ---")
-		fmt.Fprintln(w, strings.TrimRight(r.OutputTail, " \t\r\n\x0b\x0c"))
+		fmt.Fprintln(w, pystr.Rstrip(r.OutputTail))
 	}
 }
 

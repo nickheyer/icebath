@@ -13,7 +13,7 @@ const stockDefaultSkin = {
   colors: { banner_text: '#FFF8DC', status_bar_bg: '#1a1a2e', ui_accent: '#FFBF00', banner_border: '#CD7F32' }
 }
 
-const BACKEND_THEMES_KEY = 'hermes-desktop-backend-themes-v1'
+const BACKEND_THEMES_KEY = 'icebath-desktop-backend-themes-v1'
 
 const cssVar = (name: string) => window.document.documentElement.style.getPropertyValue(name)
 const paintedSkin = () => window.document.documentElement.dataset.hermesTheme

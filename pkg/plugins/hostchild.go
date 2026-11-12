@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -23,10 +25,11 @@ import (
 var hostChildFS embed.FS
 
 const (
-	hostChildModule       = "icebath_cli.plugin_host_child"
 	HostProcessEnv        = "ICEBATH_PLUGIN_HOST_PROCESS"
-	hostLogLevelEnv       = "ICEBATH_PLUGIN_HOST_LOG_LEVEL"
-	hostDenyNetworkEnv    = "ICEBATH_PLUGIN_HOST_DENY_NETWORK"
+	HostLogLevelEnv       = "ICEBATH_PLUGIN_HOST_LOG_LEVEL"
+	HostDenyNetworkEnv    = "ICEBATH_PLUGIN_HOST_DENY_NETWORK"
+	HostTerminalEnv       = "ICEBATH_PLUGIN_HOST_TERMINAL"
+	PluginHostEntry       = "plugin-host"
 	hostIsolationResource = "icebath_cli/plugin_isolation.py"
 )
 
@@ -72,7 +75,9 @@ var HostObjectBases = map[string]string{
 
 // Unsupported registrars the parent serves for an in process plugin, mapped to the base their object subclasses
 var HostInProcessObjectBases = map[string]string{
-	"register_login_backend": "agent.vault_backends.base:LoginBackend",
+	"register_login_backend":           "agent.vault_backends.base:LoginBackend",
+	"register_browser_page_backend":    "agent.browser_page_backend:BrowserPageBackend",
+	"register_dashboard_auth_provider": "hermes_cli.dashboard_auth:DashboardAuthProvider",
 }
 
 // Provider bases a category loader hands back as hosted objects though no ctx registration names them
@@ -231,4 +236,22 @@ func hostLauncher(h string) ([]string, error) {
 		return out, nil
 	}
 	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("'%s' object is not iterable", pyTypeName(launcher))}
+}
+
+var hostEntryDispatched atomic.Bool
+
+// Records that this binary dispatches the plugin host entry, so a parent may re-execute it as the child
+func MarkPluginHostEntry() { hostEntryDispatched.Store(true) }
+
+// Argv that starts this binary as the plugin host child for the interpreter under the configured launcher
+func hostChildArgv(launcher []string, python string, extra ...string) ([]string, error) {
+	if !hostEntryDispatched.Load() {
+		return nil, errors.New("the plugin host would re-execute a binary that never called pluginhost.DispatchPluginHostEntry, call it first in main or TestMain")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	argv := append(append([]string{}, launcher...), exe, PluginHostEntry, "--python", python)
+	return append(argv, extra...), nil
 }

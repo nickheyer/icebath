@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 	"sync"
@@ -497,8 +498,8 @@ func (h *samplingHandler) buildToolUseResult(calls []any, resp map[string]any) (
 	}
 	content := make([]any, 0, len(calls))
 	for _, raw := range calls {
-		tc, _ := raw.(map[string]any)
-		fn, _ := tc["function"].(map[string]any)
+		tc, _ := pyjson.Dict(raw)
+		fn, _ := pyjson.Dict(tc["function"])
 		input, ok := parseToolCallArguments(h.serverName, fn["arguments"])
 		if !ok {
 			return nil, &RPCError{Code: CodeInternalError, Message: "Input should be a valid dictionary"}

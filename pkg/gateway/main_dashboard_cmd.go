@@ -30,6 +30,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -438,7 +439,7 @@ func resolveDashboardWebDist(ctx context.Context, l DashboardLaunch, headless bo
 			return &DashboardExit{Code: 1}
 		}
 	case skipBuild:
-		distRoot := filepath.Join(root, "cmd", "icebath", "web_dist")
+		distRoot := webbundle.Dist(root)
 		if envSet {
 			distRoot = pypath.PathJoin(envDist)
 		}

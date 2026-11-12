@@ -24,6 +24,7 @@ type shape struct {
 	format  string
 	w, h    int
 	frames  []int
+	icns    icnsLayout
 	corners bool
 }
 
@@ -36,8 +37,8 @@ func encodePNG(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Multi size ICO of PNG entries, 32 bits per pixel with zero planes, each frame resized from src
-func encodeICO(src *image.NRGBA, sizes []int) ([]byte, error) {
+// Multi size ICO of PNG entries at 32 bits per pixel and the planes value the original carries
+func encodeICO(src *image.NRGBA, sizes []int, planes uint16) ([]byte, error) {
 	var head, body bytes.Buffer
 	head.Write([]byte{0, 0, 1, 0})
 	binary.Write(&head, binary.LittleEndian, uint16(len(sizes)))
@@ -56,7 +57,7 @@ func encodeICO(src *image.NRGBA, sizes []int) ([]byte, error) {
 			side = 0
 		}
 		head.Write([]byte{side, side, 0, 0})
-		binary.Write(&head, binary.LittleEndian, [2]uint16{0, 32})
+		binary.Write(&head, binary.LittleEndian, [2]uint16{planes, 32})
 		binary.Write(&head, binary.LittleEndian, [2]uint32{uint32(len(data)), uint32(offset + body.Len())})
 		body.Write(data)
 	}
@@ -64,23 +65,48 @@ func encodeICO(src *image.NRGBA, sizes []int) ([]byte, error) {
 	return head.Bytes(), nil
 }
 
-// ICNS PNG representations in the order the originals carry them, pixel size per type
-var icnsTypes = []struct {
-	kind string
-	size int
-}{{"ic07", 128}, {"ic08", 256}, {"ic09", 512}, {"ic10", 1024}, {"ic11", 32}, {"ic12", 64}, {"ic13", 256}, {"ic14", 512}}
+// One ICNS chunk, its pixel size and whether it holds PNG, run length ARGB or the info plist
+type icnsType struct {
+	kind   string
+	size   int
+	format string
+}
 
-// ICNS container with a table of contents and every PNG type of the originals, frames resized from src
-func encodeICNS(src *image.NRGBA) ([]byte, error) {
+// Chunk layout of one original ICNS and whether it opens with a table of contents
+type icnsLayout struct {
+	toc   bool
+	types []icnsType
+}
+
+// Layouts of the originals, the Pillow writer of the desktop, wails3 generate icons and iconutil
+var (
+	pillowIcns = icnsLayout{true, []icnsType{{"ic07", 128, "png"}, {"ic08", 256, "png"}, {"ic09", 512, "png"}, {"ic10", 1024, "png"},
+		{"ic11", 32, "png"}, {"ic12", 64, "png"}, {"ic13", 256, "png"}, {"ic14", 512, "png"}}}
+	wailsIcns    = icnsLayout{false, []icnsType{{"ic13", 256, "png"}, {"ic08", 256, "png"}, {"ic07", 128, "png"}, {"ic12", 64, "png"}, {"ic11", 32, "png"}}}
+	iconutilIcns = icnsLayout{false, []icnsType{{"ic12", 64, "png"}, {"ic07", 128, "png"}, {"ic13", 256, "png"}, {"ic08", 256, "png"},
+		{"ic04", 16, "argb"}, {"ic14", 512, "png"}, {"ic09", 512, "png"}, {"ic05", 32, "argb"}, {"ic10", 1024, "png"},
+		{"ic11", 32, "png"}, {"info", 0, "info"}}}
+)
+
+// ICNS container in the given layout, every image chunk resized from src
+func encodeICNS(src *image.NRGBA, layout icnsLayout) ([]byte, error) {
 	var toc, body bytes.Buffer
-	for _, t := range icnsTypes {
-		frame := src
-		if t.size != src.Bounds().Dx() {
-			frame = resize(src, t.size, t.size)
-		}
-		data, err := encodePNG(frame)
-		if err != nil {
-			return nil, err
+	for _, t := range layout.types {
+		var data []byte
+		switch t.format {
+		case "info":
+			data = encodeBplist(iconInfo)
+		case "argb":
+			data = encodeARGB(resize(src, t.size, t.size))
+		default:
+			frame := src
+			if t.size != src.Bounds().Dx() {
+				frame = resize(src, t.size, t.size)
+			}
+			var err error
+			if data, err = encodePNG(frame); err != nil {
+				return nil, err
+			}
 		}
 		toc.WriteString(t.kind)
 		binary.Write(&toc, binary.BigEndian, uint32(8+len(data)))
@@ -90,6 +116,11 @@ func encodeICNS(src *image.NRGBA) ([]byte, error) {
 	}
 	var out bytes.Buffer
 	out.WriteString("icns")
+	if !layout.toc {
+		binary.Write(&out, binary.BigEndian, uint32(8+body.Len()))
+		out.Write(body.Bytes())
+		return out.Bytes(), nil
+	}
 	binary.Write(&out, binary.BigEndian, uint32(8+8+toc.Len()+body.Len()))
 	out.WriteString("TOC ")
 	binary.Write(&out, binary.BigEndian, uint32(8+toc.Len()))
@@ -98,30 +129,194 @@ func encodeICNS(src *image.NRGBA) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// Pixel sizes of each ICNS PNG representation keyed by type
-func readICNS(data []byte) (map[string]image.Image, error) {
+// ARGB chunk body, each straight alpha channel run length coded the way icns stores it
+func encodeARGB(img *image.NRGBA) []byte {
+	out := []byte("ARGB")
+	n := img.Bounds().Dx() * img.Bounds().Dy()
+	for _, c := range []int{3, 0, 1, 2} {
+		ch := make([]byte, n)
+		for i := range ch {
+			ch[i] = img.Pix[i*4+c]
+		}
+		var lit []byte
+		flush := func() {
+			for len(lit) > 0 {
+				k := min(len(lit), 128)
+				out = append(append(out, byte(k-1)), lit[:k]...)
+				lit = lit[k:]
+			}
+		}
+		for i := 0; i < n; {
+			run := 1
+			for i+run < n && ch[i+run] == ch[i] && run < 130 {
+				run++
+			}
+			if run < 3 {
+				lit = append(lit, ch[i])
+				i++
+				continue
+			}
+			flush()
+			out = append(out, byte(run+125), ch[i])
+			i += run
+		}
+		flush()
+	}
+	return out
+}
+
+// Decodes a run length coded ARGB chunk of side by side pixels
+func decodeARGB(body []byte, side int) (*image.NRGBA, error) {
+	if len(body) < 4 || string(body[:4]) != "ARGB" {
+		return nil, errors.New("ARGB chunk without its magic")
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, side, side))
+	src, n := body[4:], side*side
+	for _, c := range []int{3, 0, 1, 2} {
+		for i := 0; i < n; {
+			if len(src) < 2 {
+				return nil, errors.New("truncated ARGB channel")
+			}
+			count, literal := int(src[0])+1, src[0]&0x80 == 0
+			if !literal {
+				count = int(src[0]) - 125
+			}
+			if i+count > n || literal && len(src) < 1+count {
+				return nil, errors.New("ARGB run overruns its channel")
+			}
+			for k := 0; k < count; k++ {
+				if literal {
+					img.Pix[(i+k)*4+c] = src[1+k]
+				} else {
+					img.Pix[(i+k)*4+c] = src[1]
+				}
+			}
+			i += count
+			if literal {
+				src = src[1+count:]
+			} else {
+				src = src[2:]
+			}
+		}
+	}
+	return img, nil
+}
+
+// Binary plist values, a UID reference and an ordered dictionary
+type (
+	plistUID  int
+	plistPair struct {
+		key   string
+		value any
+	}
+	plistDict []plistPair
+)
+
+// NSKeyedArchiver dictionary iconutil stores in the info chunk, name icon and an empty asset catalog reference
+var iconInfo = plistDict{
+	{"$version", 100000}, {"$archiver", "NSKeyedArchiver"}, {"$top", plistDict{{"root", plistUID(1)}}},
+	{"$objects", []any{"$null",
+		plistDict{{"NS.keys", []any{plistUID(2), plistUID(3)}}, {"NS.objects", []any{plistUID(4), plistUID(5)}}, {"$class", plistUID(6)}},
+		"name", "assetcatalog-reference", "icon",
+		plistDict{{"NS.keys", []any{}}, {"NS.objects", []any{}}, {"$class", plistUID(6)}},
+		plistDict{{"$classname", "NSDictionary"}, {"$classes", []any{"NSDictionary", "NSObject"}}},
+	}},
+}
+
+// Binary plist version 00 with one byte object references and four byte offsets
+func encodeBplist(top any) []byte {
+	var objs [][]byte
+	marker := func(kind byte, n int) []byte {
+		if n < 15 {
+			return []byte{kind<<4 | byte(n)}
+		}
+		return []byte{kind<<4 | 0xf, 0x10, byte(n)}
+	}
+	var add func(v any) byte
+	add = func(v any) byte {
+		at := len(objs)
+		objs = append(objs, nil)
+		var b []byte
+		switch x := v.(type) {
+		case string:
+			b = append(marker(0x5, len(x)), x...)
+		case int:
+			b = binary.BigEndian.AppendUint32([]byte{0x12}, uint32(x))
+		case plistUID:
+			b = []byte{0x80, byte(x)}
+		case []any:
+			b = marker(0xa, len(x))
+			for _, e := range x {
+				b = append(b, add(e))
+			}
+		case plistDict:
+			b = marker(0xd, len(x))
+			for _, p := range x {
+				b = append(b, add(p.key))
+			}
+			for _, p := range x {
+				b = append(b, add(p.value))
+			}
+		}
+		objs[at] = b
+		return byte(at)
+	}
+	add(top)
+	out := []byte("bplist00")
+	offsets := make([]byte, 0, 4*len(objs))
+	for _, o := range objs {
+		offsets = binary.BigEndian.AppendUint32(offsets, uint32(len(out)))
+		out = append(out, o...)
+	}
+	table := len(out)
+	out = append(out, offsets...)
+	trailer := make([]byte, 32)
+	trailer[6], trailer[7] = 4, 1
+	binary.BigEndian.PutUint64(trailer[8:], uint64(len(objs)))
+	binary.BigEndian.PutUint64(trailer[24:], uint64(table))
+	return append(out, trailer...)
+}
+
+// Every image chunk of an ICNS keyed by type in file order, the info plist checked against iconutil's
+func readICNS(data []byte) (map[string]image.Image, []string, error) {
 	if len(data) < 8 || string(data[:4]) != "icns" || int(binary.BigEndian.Uint32(data[4:8])) != len(data) {
-		return nil, errors.New("not an icns container of its declared length")
+		return nil, nil, errors.New("not an icns container of its declared length")
 	}
 	out := map[string]image.Image{}
+	var order []string
 	for i := 8; i < len(data); {
 		if i+8 > len(data) {
-			return nil, errors.New("truncated icns chunk")
+			return nil, nil, errors.New("truncated icns chunk")
 		}
 		kind, n := string(data[i:i+4]), int(binary.BigEndian.Uint32(data[i+4:i+8]))
 		if n < 8 || i+n > len(data) {
-			return nil, fmt.Errorf("bad icns chunk %q", kind)
+			return nil, nil, fmt.Errorf("bad icns chunk %q", kind)
 		}
-		if kind != "TOC " {
-			img, err := png.Decode(bytes.NewReader(data[i+8 : i+n]))
+		body := data[i+8 : i+n]
+		order = append(order, kind)
+		switch kind {
+		case "TOC ":
+		case "info":
+			if !bytes.Equal(body, encodeBplist(iconInfo)) {
+				return nil, nil, errors.New("icns info is not the iconutil asset catalog plist")
+			}
+		case "ic04", "ic05":
+			side := map[string]int{"ic04": 16, "ic05": 32}[kind]
+			img, err := decodeARGB(body, side)
 			if err != nil {
-				return nil, fmt.Errorf("icns %s: %w", kind, err)
+				return nil, nil, fmt.Errorf("icns %s: %w", kind, err)
+			}
+			out[kind] = img
+		default:
+			img, err := png.Decode(bytes.NewReader(body))
+			if err != nil {
+				return nil, nil, fmt.Errorf("icns %s: %w", kind, err)
 			}
 			out[kind] = img
 		}
 		i += n
 	}
-	return out, nil
+	return out, order, nil
 }
 
 // PNG frames of an ICO keyed by the directory width, 256 for a zero entry
@@ -505,18 +700,25 @@ func inspect(want shape, data []byte) error {
 		}
 		return nil
 	case "ICNS":
-		reps, err := readICNS(data)
+		reps, order, err := readICNS(data)
 		if err != nil {
 			return err
 		}
-		for _, t := range icnsTypes {
-			img, ok := reps[t.kind]
-			if !ok || img.Bounds().Dx() != t.size || img.Bounds().Dy() != t.size {
+		var kinds []string
+		if want.icns.toc {
+			kinds = append(kinds, "TOC ")
+		}
+		for _, t := range want.icns.types {
+			kinds = append(kinds, t.kind)
+			if t.format == "info" {
+				continue
+			}
+			if img, ok := reps[t.kind]; !ok || img.Bounds().Dx() != t.size || img.Bounds().Dy() != t.size {
 				return fmt.Errorf("ICNS %s missing or not %dx%d", t.kind, t.size, t.size)
 			}
 		}
-		if len(reps) != len(icnsTypes) {
-			return fmt.Errorf("ICNS holds %d representations, expected %d", len(reps), len(icnsTypes))
+		if fmt.Sprint(order) != fmt.Sprint(kinds) {
+			return fmt.Errorf("ICNS chunks %q, expected %q", order, kinds)
 		}
 		return nil
 	case "TIFF":

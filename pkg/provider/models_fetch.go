@@ -205,7 +205,7 @@ func writeOpenrouterCatalogDisk(ctx context.Context, curated []CatalogModel) {
 	for _, c := range curated {
 		rows = append(rows, []string{c.ID, c.Description})
 	}
-	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), map[string]any{"fetched_at": modelsClock().Unix(), "curated": rows}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), pyjson.ObjectOf("fetched_at", float64(modelsClock().UnixNano())/1e9, "curated", rows), pyjson.Indent(2)); err != nil {
 		modelsLog.Debug("openrouter curated catalog disk write failed", "error", err)
 	}
 }

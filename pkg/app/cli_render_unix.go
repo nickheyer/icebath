@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"regexp"
-	"strconv"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -22,8 +22,8 @@ var termiosGet = func(fd int) (*unix.Termios, error) { return unix.IoctlGetTermi
 // Writes termios attributes to a descriptor with the given set request
 var termiosSet = func(fd int, req uint, attrs *unix.Termios) error { return unix.IoctlSetTermios(fd, req, attrs) }
 
-// Reports input waiting on the descriptor before the deadline, retrying interrupted polls
-func fdReadable(fd int, until time.Time) bool {
+// Reports input waiting on the descriptor before the deadline, retrying interrupted polls and returning poll failures
+func fdReadable(fd int, until time.Time) (bool, error) {
 	for {
 		ms := time.Until(until).Milliseconds()
 		if ms < 0 {
@@ -34,61 +34,92 @@ func fdReadable(fd int, until time.Time) bool {
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}
-		return err == nil && n > 0
+		if err != nil {
+			return false, err
+		}
+		if n > 0 && fds[0].Revents&unix.POLLNVAL != 0 {
+			return false, unix.EBADF
+		}
+		return n > 0, nil
 	}
 }
 
-// Terminal background via OSC 11 as #RRGGBB, fenced by a DA1 sentinel and skipped over SSH
-func queryOSC11Background() (string, bool) {
+// Reads up to the buffer length from the descriptor, retrying interrupted reads
+func readRetrying(fd int, buf []byte) (int, error) {
+	for {
+		n, err := unix.Read(fd, buf)
+		if !errors.Is(err, unix.EINTR) {
+			return n, err
+		}
+	}
+}
+
+// Color component scaled from its hex digit width onto 0 to 255
+func osc11Component(h []byte) int64 {
+	v, _ := new(big.Int).SetString(string(h), 16)
+	bits := uint(len(h) * 4)
+	if bits == 0 {
+		return 0
+	}
+	full := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), bits), big.NewInt(1))
+	return new(big.Int).Quo(v.Mul(v, big.NewInt(255)), full).Int64()
+}
+
+// Terminal background via OSC 11 as #RRGGBB, fenced by a DA1 sentinel and skipped over SSH, a poll failure returned
+func queryOSC11Background() (string, bool, error) {
 	con := console()
 	if !con.StdinIsTTY() || !con.StdoutIsTTY() {
-		return "", false
+		return "", false, nil
 	}
 	for _, v := range []string{"SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"} {
 		if os.Getenv(v) != "" {
-			return "", false
+			return "", false, nil
 		}
 	}
 	in, ok := con.In.(*os.File)
 	if !ok {
-		return "", false
+		return "", false, nil
 	}
 	fd := int(in.Fd())
 	old, err := termiosGet(fd)
 	if err != nil {
-		return "", false
+		return "", false, nil
 	}
 	cbreak := *old
-	cbreak.Lflag &^= unix.ECHO | unix.ICANON
-	cbreak.Cc[unix.VMIN] = 1
-	cbreak.Cc[unix.VTIME] = 0
-	if err := termiosSet(fd, tcSetsFlush, &cbreak); err != nil {
-		return "", false
-	}
 	defer func() {
 		_ = termiosSet(fd, tcSetsFlush, old)
 		drain := time.Now().Add(50 * time.Millisecond)
 		scratch := make([]byte, 64)
 		for time.Now().Before(drain) {
-			if !fdReadable(fd, drain) {
+			if ready, err := fdReadable(fd, drain); err != nil || !ready {
 				break
 			}
-			if n, err := unix.Read(fd, scratch); err != nil || n == 0 {
+			if n, err := readRetrying(fd, scratch); err != nil || n == 0 {
 				break
 			}
 		}
 	}()
+	cbreak.Lflag &^= unix.ECHO | unix.ICANON
+	cbreak.Cc[unix.VMIN] = 1
+	cbreak.Cc[unix.VTIME] = 0
+	if err := termiosSet(fd, tcSetsFlush, &cbreak); err != nil {
+		return "", false, nil
+	}
 	if _, err := io.WriteString(con.Out, "\x1b]11;?\x1b\\\x1b[c"); err != nil {
-		return "", false
+		return "", false, nil
 	}
 	deadline := time.Now().Add(time.Second)
 	var buf []byte
 	chunk := make([]byte, 64)
 	for time.Now().Before(deadline) {
-		if !fdReadable(fd, deadline) {
+		ready, err := fdReadable(fd, deadline)
+		if err != nil {
+			return "", false, err
+		}
+		if !ready {
 			continue
 		}
-		n, err := unix.Read(fd, chunk)
+		n, err := readRetrying(fd, chunk)
 		if err != nil || n == 0 {
 			break
 		}
@@ -99,17 +130,9 @@ func queryOSC11Background() (string, bool) {
 	}
 	m := osc11RGBRe.FindSubmatch(buf)
 	if m == nil {
-		return "", false
+		return "", false, nil
 	}
-	norm := func(h []byte) uint64 {
-		v, _ := strconv.ParseUint(string(h), 16, 64)
-		bits := uint(len(h) * 4)
-		if bits == 0 {
-			return 0
-		}
-		return v * 255 / ((1 << bits) - 1)
-	}
-	return fmt.Sprintf("#%02X%02X%02X", norm(m[1]), norm(m[2]), norm(m[3])), true
+	return fmt.Sprintf("#%02X%02X%02X", osc11Component(m[1]), osc11Component(m[2]), osc11Component(m[3])), true, nil
 }
 
 // Re applies raw mode when the descriptor drifted back to cooked, false when already raw or not a tty

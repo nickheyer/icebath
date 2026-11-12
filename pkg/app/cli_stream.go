@@ -375,12 +375,14 @@ func (c *CLI) streamReasoningDelta(text string) {
 	c.streamReasoning(text)
 }
 
+// Reasoning delta renderer run with the stream lock held, the live reasoning block in production
+var streamReasoningSink = (*CLI).renderReasoningDelta
+
+// Routes a reasoning delta to the installed renderer with the stream lock held
+func (c *CLI) streamReasoning(text string) { streamReasoningSink(c, text) }
+
 // Opens the reasoning block on the first token and prints complete or overlong lines as they arrive
-func (c *CLI) streamReasoning(text string) {
-	if c.streamReasoningDeltaHook != nil {
-		c.streamReasoningDeltaHook(text)
-		return
-	}
+func (c *CLI) renderReasoningDelta(text string) {
 	if text == "" {
 		return
 	}
@@ -499,6 +501,9 @@ func (c *CLI) streamDelta(text any) {
 	if text == nil {
 		c.flushStreamLocked()
 		c.resetStreamStateLocked()
+		return
+	}
+	if !pyrepr.Truthy(text) {
 		return
 	}
 	c.streamDeltaText(pyrepr.Str(text))
@@ -621,12 +626,14 @@ func (c *CLI) flushStreamTableBuf() {
 	}
 }
 
+// Response text renderer run with the stream lock held, the live response block in production
+var emitStreamTextSink = (*CLI).renderStreamText
+
+// Routes visible response text to the installed renderer with the stream lock held
+func (c *CLI) emitStreamText(text string) { emitStreamTextSink(c, text) }
+
 // Opens the response block on the first visible text and prints every completed line
-func (c *CLI) emitStreamText(text string) {
-	if c.emitStreamTextHook != nil {
-		c.emitStreamTextHook(text)
-		return
-	}
+func (c *CLI) renderStreamText(text string) {
 	if text == "" {
 		return
 	}

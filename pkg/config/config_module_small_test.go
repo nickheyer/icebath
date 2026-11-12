@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
 func TestConfigFilePermissions(t *testing.T) {
@@ -81,9 +83,7 @@ func TestContainerWithoutStampIsNotDocker(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", tmp)
 	t.Setenv("ICEBATH_MANAGED", "")
 	os.Unsetenv("ICEBATH_MANAGED")
-	prev := runningInContainer
-	runningInContainer = func() bool { return true }
-	t.Cleanup(func() { runningInContainer = prev })
+	t.Cleanup(hostinfo.PinContainer(true))
 	if got, err := DetectInstallMethod(t.Context(), tmp, tmp); err != nil || got != "git" {
 		t.Fatalf("method %q %v", got, err)
 	}

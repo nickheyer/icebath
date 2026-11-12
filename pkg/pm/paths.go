@@ -27,7 +27,7 @@ const EnvInstallRoot = "ICEBATH_INSTALL_ROOT"
 const EnvRuntimeDir = "ICEBATH_RUNTIME_DIR"
 
 // Directory of the resolved running executable, the tree this process runs from
-var repoRoot = func() string {
+func binaryTree() string {
 	exe, err := os.Executable()
 	if err != nil {
 		wd, _ := os.Getwd()
@@ -41,6 +41,8 @@ var repoRoot = func() string {
 
 // Tree the running binary lives in
 func RepoRoot() string { return repoRoot() }
+
+var repoRoot = binaryTree
 
 // Makes dir the tree the running binary reports until the returned restore runs
 func PatchRepoRoot(dir string) func() {

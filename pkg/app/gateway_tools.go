@@ -430,8 +430,8 @@ func (v *GatewayProcessView) subagentRows(busy bool) []map[string]any {
 	return out
 }
 
-// Child's live transcript tail from the cache, asking the gateway at most once a second when fetching
-func (v *GatewayProcessView) subagentTail(subagentID string, fetch bool) string {
+// Child's live transcript tail from the cache, nil when the gateway has none, fetching at most once a second
+func (v *GatewayProcessView) subagentTail(subagentID string, fetch bool) *string {
 	now := nowSeconds()
 	v.mu.Lock()
 	var cached *gatewayTail
@@ -440,10 +440,10 @@ func (v *GatewayProcessView) subagentTail(subagentID string, fetch bool) string 
 	}
 	v.mu.Unlock()
 	if !fetch || (cached != nil && now-cached.at < gatewayToolsPollSeconds) {
-		if cached != nil && cached.text != nil {
-			return *cached.text
+		if cached != nil {
+			return cached.text
 		}
-		return ""
+		return nil
 	}
 	var text *string
 	raw, err := v.connection.CallWith(context.Background(), "subagent.tail", map[string]any{"session_id": v.sessionID(), "subagent_id": subagentID},
@@ -466,10 +466,7 @@ func (v *GatewayProcessView) subagentTail(subagentID string, fetch bool) string 
 	v.mu.Lock()
 	v.tail = &gatewayTail{subagentID: subagentID, at: now, text: text}
 	v.mu.Unlock()
-	if text != nil {
-		return *text
-	}
-	return ""
+	return text
 }
 
 // Steers or stops one child of the session, answering a note or an error like the local registry

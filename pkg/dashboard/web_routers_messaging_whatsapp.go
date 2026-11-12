@@ -6,15 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -24,12 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -47,36 +38,27 @@ var (
 	whatsappTerminal     = map[string]bool{"connected": true, "error": true, "expired": true, "cancelled": true}
 )
 
-// Bridge process of a pairing, the slice of subprocess.Popen the onboarding flow drives
+// Pairing bridge of an onboarding session, the slice of subprocess.Popen the onboarding flow drives
 type whatsappPairingProc interface {
-	Pid() int
 	Stdout() io.Reader
 	Poll() *int
-	Wait(timeout time.Duration) (int, error)
-	Terminate() error
-	Kill() error
+	Wait(timeout time.Duration) (int, bool)
+	Terminate()
 }
 
-// Pairing bridge started with stdout and stderr on one pipe, reaped by its own waiter
-type execPairingProc struct {
-	cmd    *exec.Cmd
+// Pair only bridge running in this process with its JSON events on one pipe, its exit code recorded once it returns
+type inProcessPairing struct {
+	stop   context.CancelFunc
 	stdout *os.File
 	done   chan struct{}
 	code   int
 }
 
-func (p *execPairingProc) Pid() int { return p.cmd.Process.Pid }
+// Read end of the event pipe, at EOF once the bridge returned
+func (p *inProcessPairing) Stdout() io.Reader { return p.stdout }
 
-// Merged stdout and stderr pipe, nil when the bridge was started without one
-func (p *execPairingProc) Stdout() io.Reader {
-	if p.stdout == nil {
-		return nil
-	}
-	return p.stdout
-}
-
-// Exit code once the bridge exited, negative for a signal, nil while it runs
-func (p *execPairingProc) Poll() *int {
+// Exit code once the bridge returned, negative when it was stopped, nil while it runs
+func (p *inProcessPairing) Poll() *int {
 	select {
 	case <-p.done:
 		code := p.code
@@ -86,38 +68,22 @@ func (p *execPairingProc) Poll() *int {
 	}
 }
 
-// Exit code after the bridge exits, TimeoutExpired when a non negative timeout passes first
-func (p *execPairingProc) Wait(timeout time.Duration) (int, error) {
+// Exit code after the bridge returns, false when a non negative timeout passes first
+func (p *inProcessPairing) Wait(timeout time.Duration) (int, bool) {
 	if timeout < 0 {
 		<-p.done
-		return p.code, nil
+		return p.code, true
 	}
 	select {
 	case <-p.done:
-		return p.code, nil
+		return p.code, true
 	case <-time.After(timeout):
-		return 0, &pysubprocess.TimeoutExpired{Cmd: p.cmd.Args, Timeout: int(timeout / time.Second)}
+		return 0, false
 	}
 }
 
-// Sends the bridge SIGTERM, TerminateProcess on Windows
-func (p *execPairingProc) Terminate() error {
-	if p.Poll() != nil {
-		return nil
-	}
-	if runtime.GOOS == "windows" {
-		return p.cmd.Process.Kill()
-	}
-	return p.cmd.Process.Signal(syscall.SIGTERM)
-}
-
-// Sends the bridge SIGKILL
-func (p *execPairingProc) Kill() error {
-	if p.Poll() != nil {
-		return nil
-	}
-	return p.cmd.Process.Kill()
-}
+// Cancels the bridge context, which stops the bridge with the SIGTERM exit code
+func (p *inProcessPairing) Terminate() { p.stop() }
 
 // Lowercased pairing mode, 400 for anything but bot or self-chat
 func normalizeWhatsappOnboardingMode(value any) (string, error) {
@@ -220,220 +186,40 @@ func whatsappLinkedAccountFromSession(sessionPath string) (accountID, accountNam
 	return accountID, accountName, whatsappPhoneFromIdentifier(accountID), nil
 }
 
-// Environment with the PM npm and its Node dependency composed in, a resolution failure returned as the error
-func whatsappNodePathEnv() (env map[string]string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if e, ok := r.(error); ok {
-				err = e
-				return
-			}
-			err = fmt.Errorf("%v", r)
-		}
-	}()
-	return whatsappNodeEnv(), nil
-}
+// Pairing transport of the dashboard flow, the in process QR pairing of the whatsapp package
+var whatsappRunPairing = whatsapp.RunPairingEnv
 
-// Environment list of a map, sorted by name
-func envList(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		out = append(out, k+"="+env[k])
-	}
-	return out
-}
+// Pairing spawn, the module attribute hermes tests patch
+var spawnWhatsappPairingProcess = spawnWhatsappPairingBridge
 
-// Seconds as a duration, a non positive count expiring at once and an oversized one saturating
-func npmInstallTimeout(seconds int64) time.Duration {
-	if seconds <= 0 {
-		return time.Nanosecond
-	}
-	if seconds > math.MaxInt64/int64(time.Second) {
-		return time.Duration(math.MaxInt64)
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-// Package manager hooks of the bridge setup, the module attributes hermes tests patch
-var (
-	whatsappNodeEnv   = func() map[string]string { return pm.WithIcebathNodePath(nil) }
-	whatsappFindNode  = pm.FindNodeExecutable
-	whatsappEnsure    = pm.Ensure
-	whatsappInstalled = func(ctx context.Context, name string) (*pm.InstalledPackage, error) {
-		return pm.Installed(ctx, name, false)
-	}
-	whatsappBridgeDir = whatsapp.ResolveWhatsAppBridgeDir
-)
-
-// Installs the bridge node modules when the dashboard is the setup surface, 500 on install failure
-func ensureWhatsappBridgeDependencies(ctx context.Context, bridgeDir string) error {
-	if _, err := os.Stat(filepath.Join(bridgeDir, "node_modules")); err == nil {
-		return nil
-	}
-	npm, err := whatsappFindNode(ctx, "npm")
-	if err != nil {
-		return err
-	}
-	result, err := func() (*pysubprocess.Completed, error) {
-		env, err := whatsappNodePathEnv()
-		if err != nil {
-			return nil, err
-		}
-		if npm == "" {
-			runner, err := whatsappEnsure(ctx, "npm", pm.EnsureOptions{Explicit: true})
-			if err != nil {
-				return nil, err
-			}
-			env = runner.Env
-			installed, err := whatsappInstalled(ctx, "npm")
-			if err != nil {
-				return nil, err
-			}
-			if installed == nil || installed.Binary == "" {
-				return nil, pm.NewInstallError("npm", "npm binary is missing after preparation", "")
-			}
-			npm = installed.Binary
-		}
-		timeout := npmInstallTimeout(config.EnvInt("WHATSAPP_NPM_INSTALL_TIMEOUT", 300))
-		return pysubprocess.RunWith(ctx, []string{npm, "install", "--silent"},
-			pysubprocess.Options{Dir: bridgeDir, Env: envList(env), Timeout: timeout, Attr: tools.WindowsHideAttr()})
-	}()
-	if err != nil {
-		var timeout *pysubprocess.TimeoutExpired
-		if errors.As(err, &timeout) {
-			return NewHTTPException(500, "Installing WhatsApp bridge dependencies timed out.")
-		}
-		var install *pm.InstallError
-		if errors.As(err, &install) || pypath.IsOSError(err) {
-			return NewHTTPException(500, "Failed to install WhatsApp bridge dependencies: "+pyErrText(err))
-		}
-		return err
-	}
-	if result.Returncode != 0 {
-		output := result.Stderr
-		if len(output) == 0 {
-			output = result.Stdout
-		}
-		lines := pystr.Splitlines(pystr.Strip(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(output))), false)
-		if len(lines) > 10 {
-			lines = lines[len(lines)-10:]
-		}
-		detail := strings.Join(lines, "\n")
-		if detail == "" {
-			detail = "no output"
-		}
-		return NewHTTPException(500, "npm install failed for WhatsApp bridge: "+detail)
-	}
-	return nil
-}
-
-// Bridge dependency install and pairing bridge spawn, the module attributes hermes tests patch
-var (
-	whatsappEnsureBridgeDependencies = ensureWhatsappBridgeDependencies
-	spawnWhatsappPairingProcess      = spawnWhatsappPairingBridge
-)
-
-// Starts the pair only bridge on the session dir as an owned child with stdout and stderr on one pipe
+// Starts the pair only JSON bridge on the session dir in this process with its events on one pipe
 func spawnWhatsappPairingBridge(ctx context.Context, sessionPath, mode string) (whatsappPairingProc, error) {
-	bridgeDir := whatsappBridgeDir(ctx)
-	bridgeScript := filepath.Join(bridgeDir, "bridge.js")
-	if _, err := os.Stat(bridgeScript); err != nil {
-		return nil, NewHTTPException(500, fmt.Sprintf("WhatsApp bridge script was not found at %s.", bridgeScript))
-	}
-	if err := whatsappEnsureBridgeDependencies(ctx, bridgeDir); err != nil {
-		return nil, err
-	}
-	node, err := whatsappFindNode(ctx, "node")
-	if err != nil {
-		return nil, err
-	}
-	if node == "" {
-		node, err = func() (string, error) {
-			if _, err := whatsappEnsure(ctx, "node", pm.EnsureOptions{Explicit: true}); err != nil {
-				return "", err
-			}
-			installed, err := whatsappInstalled(ctx, "node")
-			if err != nil {
-				return "", err
-			}
-			if installed == nil || installed.Binary == "" {
-				return "", pm.NewInstallError("node", "Node.js binary is missing after preparation", "")
-			}
-			return installed.Binary, nil
-		}()
-		if err != nil {
-			var install *pm.InstallError
-			if errors.As(err, &install) {
-				return nil, NewHTTPException(500, "Node.js preparation failed: "+err.Error())
-			}
-			return nil, err
-		}
-	}
 	if err := os.MkdirAll(sessionPath, 0o777); err != nil {
 		return nil, err
 	}
-	env, err := whatsappNodePathEnv()
-	if err != nil {
-		return nil, err
-	}
-	env["WHATSAPP_MODE"] = mode
-	env["WHATSAPP_DM_POLICY"] = "pairing"
-	cmd := exec.Command(node, bridgeScript, "--pair-only", "--pair-json", "--session", sessionPath)
-	cmd.Dir = bridgeDir
-	cmd.Env = envList(env)
-	cmd.SysProcAttr = tools.WindowsHideAttr()
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stdout, cmd.Stderr = writer, writer
-	if err := tools.SpawnOwned(ctx, cmd, "whatsapp-pairing"); err != nil {
-		reader.Close()
-		writer.Close()
-		return nil, err
-	}
-	writer.Close()
-	return watchedPairingProc(cmd, reader), nil
-}
-
-// Pairing process over a started command, its exit code recorded by a waiter goroutine
-func watchedPairingProc(cmd *exec.Cmd, stdout *os.File) *execPairingProc {
-	p := &execPairingProc{cmd: cmd, stdout: stdout, done: make(chan struct{})}
+	runCtx, stop := context.WithCancel(ctx)
+	p := &inProcessPairing{stop: stop, stdout: reader, done: make(chan struct{})}
+	env := map[string]string{"WHATSAPP_MODE": mode, "WHATSAPP_DM_POLICY": "pairing"}
 	go func() {
-		err := cmd.Wait()
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			p.code = pysubprocess.Returncode(exitErr)
-		} else if err != nil {
-			p.code = -1
-		}
-		close(p.done)
+		defer close(p.done)
+		defer stop()
+		p.code = whatsappRunPairing(runCtx, sessionPath, mode, env, writer, true)
+		writer.Close()
 	}()
-	return p
+	return p, nil
 }
 
-// Stops a pairing bridge, killing it when terminate fails, then releases its group once it is gone
+// Stops a pairing bridge and waits out the grace for it to return
 func terminateWhatsappPairing(proc whatsappPairingProc) {
-	if proc == nil {
+	if proc == nil || proc.Poll() != nil {
 		return
 	}
-	if proc.Poll() == nil {
-		err := proc.Terminate()
-		if err == nil {
-			_, err = proc.Wait(whatsappTerminateWaitSecs * time.Second)
-		}
-		if err != nil && proc.Kill() == nil {
-			proc.Wait(whatsappTerminateWaitSecs * time.Second)
-		}
-	}
-	if proc.Poll() != nil {
-		tools.ReleaseProcessGroupOnceEmpty(proc.Pid(), func() { proc.Poll() }, 0)
-	}
+	proc.Terminate()
+	proc.Wait(whatsappTerminateWaitSecs * time.Second)
 }
 
 // Marks the pairing errored unless its status is in unless or another process superseded proc
@@ -541,6 +327,9 @@ func watchWhatsappPairing(pairingID string, proc whatsappPairingProc) {
 	returncode, err := func() (int, error) {
 		var eventErr error
 		if out := proc.Stdout(); out != nil {
+			if closer, ok := out.(io.Closer); ok {
+				defer closer.Close()
+			}
 			readErr := universalLines(out, func(line string) bool {
 				raw := pystr.Strip(line)
 				if raw == "" {
@@ -575,11 +364,7 @@ func watchWhatsappPairing(pairingID string, proc whatsappPairingProc) {
 				return 0, readErr
 			}
 		}
-		code, err := proc.Wait(-1)
-		if err != nil {
-			return 0, err
-		}
-		tools.ReleaseProcessGroupOnceEmpty(proc.Pid(), func() { proc.Poll() }, time.Second)
+		code, _ := proc.Wait(-1)
 		return code, nil
 	}()
 	if superseded {
@@ -861,12 +646,8 @@ func waitWhatsappPairingFlush(pairingID string) error {
 		return err
 	}
 	if reserved && proc != nil {
-		if _, err := proc.Wait(whatsappTerminateWaitSecs * time.Second); err != nil {
-			var timeout *pysubprocess.TimeoutExpired
-			if errors.As(err, &timeout) {
-				return NewHTTPException(409, "WhatsApp is still saving its linked device. Wait a moment and try Save and restart again.")
-			}
-			return err
+		if _, exited := proc.Wait(whatsappTerminateWaitSecs * time.Second); !exited {
+			return NewHTTPException(409, "WhatsApp is still saving its linked device. Wait a moment and try Save and restart again.")
 		}
 	}
 	whatsappOnboardingMu.Lock()

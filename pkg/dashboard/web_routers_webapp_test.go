@@ -42,7 +42,7 @@ func issueWindowTicket(t *testing.T, c *testClient) string {
 
 // Window session exchange of a ticket from the same origin
 func spendWindowTicket(c *testClient, ticket string) *testResponse {
-	return c.request("POST", "/webapp/window-session", nil, "Origin", "http://127.0.0.1", "X-Hermes-Window-Ticket", ticket)
+	return c.request("POST", "/webapp/window-session", nil, "Origin", "http://127.0.0.1", "X-Icebath-Window-Ticket", ticket)
 }
 
 func TestChildHandoffIsBoundToLocalWebappStart(t *testing.T) {
@@ -206,18 +206,18 @@ func TestChildHandoffIsPrivateSingleUseAndAuthorizesRealApi(t *testing.T) {
 				t.Fatalf("ticket opened the API %d", r.Status)
 			}
 			for _, origin := range []string{"", "null", "http://127.0.0.1:9999", "https://127.0.0.1", "http://evil.example"} {
-				denied := c.request("POST", "/webapp/window-session", nil, "Origin", origin, "X-Hermes-Window-Ticket", ticket)
+				denied := c.request("POST", "/webapp/window-session", nil, "Origin", origin, "X-Icebath-Window-Ticket", ticket)
 				if denied.Status != 403 || strings.Contains(string(denied.Body), token) {
 					t.Fatalf("origin %q got %d", origin, denied.Status)
 				}
 			}
 			rebinding := c.request("POST", "/webapp/window-session", nil, "Host", "evil.example", "Origin", "http://evil.example",
-				"X-Hermes-Window-Ticket", ticket)
+				"X-Icebath-Window-Ticket", ticket)
 			if rebinding.Status != 400 {
 				t.Fatalf("rebinding %d", rebinding.Status)
 			}
 			doubled := requestWithRawHeaders(c, "POST", "/webapp/window-session",
-				[]Header{{"origin", "http://127.0.0.1"}, {"origin", "http://127.0.0.1"}}, "X-Hermes-Window-Ticket", ticket)
+				[]Header{{"origin", "http://127.0.0.1"}, {"origin", "http://127.0.0.1"}}, "X-Icebath-Window-Ticket", ticket)
 			if doubled.Status != 403 {
 				t.Fatalf("doubled origin %d", doubled.Status)
 			}

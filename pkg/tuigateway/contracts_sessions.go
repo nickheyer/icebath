@@ -8,7 +8,7 @@ var OpenRequestEntry = pydantic.NewModel("OpenRequestEntry", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
 	pydantic.Req("method", pydantic.Str),
 	pydantic.Req("params", pydantic.Dict(pydantic.Any)),
-)
+).Described("One unanswered server→client request (``server_requests.Request.snapshot``); the reconnecting\nclient re-delivers it to its request handlers.")
 
 var InflightTurn = pydantic.NewModel("InflightTurn", ClosedConfig,
 	pydantic.Def("assistant", pydantic.Str, ""),
@@ -22,7 +22,7 @@ var InflightTurn = pydantic.NewModel("InflightTurn", ClosedConfig,
 	pydantic.Def("status", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("recoverable", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("error_surface", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("``session_auto_continue._inflight_snapshot``: the live (or retained failed) turn a reconnecting\nclient rebuilds its bubbles from.")
 
 var QueuedPrompt = pydantic.NewModel("QueuedPrompt", ClosedConfig,
 	pydantic.Req("user", pydantic.Str),
@@ -31,12 +31,12 @@ var QueuedPrompt = pydantic.NewModel("QueuedPrompt", ClosedConfig,
 var TodoState = pydantic.NewModel("TodoState", ClosedConfig,
 	pydantic.Req("todos", pydantic.List(pydantic.Dict(pydantic.Any))),
 	pydantic.Req("revision", pydantic.Int),
-)
+).Described("``tool_progress._normalize_todo_state``: the authoritative todo snapshot.")
 
 var AutoContinue = pydantic.NewModel("AutoContinue", ClosedConfig,
 	pydantic.Req("attempt", pydantic.Int),
 	pydantic.Req("interrupted_at", pydantic.Float),
-)
+).Described("A crash-interrupted turn was scheduled to continue right after this resume.")
 
 var LiveSessionStatus = pydantic.Enum("LiveSessionStatus", "idle", "idle", "starting", "starting", "waiting", "waiting", "working", "working", "streaming", "streaming", "resuming", "resuming")
 
@@ -68,7 +68,7 @@ var SeedMessage = pydantic.NewModel("SeedMessage", OpenParamsConfig,
 	pydantic.Def("content", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("text", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("display_kind", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One create-time transcript row (``session_history._coerce_seed_history``); ``text`` is the\nlegacy alias of ``content``; only ``display_kind: \"hidden\"`` is accepted from the wire. Clients\nforward stored rows verbatim (``_row_id``, ``timestamp``, …) and the coercer drops what it does\nnot use, so the row stays open.")
 
 var SessionCreateParams = pydantic.Extend(ProfileParams, "SessionCreateParams", ParamsConfig,
 	pydantic.Def("cols", pydantic.Nullable(pydantic.Int), nil),
@@ -127,7 +127,7 @@ var SessionResumeParams = pydantic.Extend(SessionParams, "SessionResumeParams", 
 	pydantic.Def("eager_build", pydantic.Bool, false),
 	pydantic.Def("close_on_disconnect", pydantic.Bool, false),
 	pydantic.Def("inline_images", pydantic.Bool, true),
-)
+).Described("``session_id`` is the STORED id (or an exact title); the reply's ``session_id`` is the runtime id.")
 
 var SessionResumeResult = pydantic.Extend(LiveSessionSnapshot, "SessionResumeResult", ClosedConfig)
 
@@ -158,7 +158,7 @@ var SessionListRow = pydantic.NewModel("SessionListRow", ClosedConfig,
 	pydantic.Def("live_message_count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("source", pydantic.Str, ""),
 	pydantic.Def("lineage_root_id", pydantic.Nullable(pydantic.Str), nil).Alias("_lineage_root_id"),
-)
+).Described("``methods_session._session_row_summary``; ``resolved_id`` only on a title lookup that followed a\ncompression lineage to its tip.")
 
 var SessionListResult = pydantic.NewModel("SessionListResult", ClosedConfig,
 	pydantic.Req("sessions", pydantic.List(SessionListRow)),
@@ -193,7 +193,7 @@ var SessionActiveItem = pydantic.NewModel("SessionActiveItem", ClosedConfig,
 	pydantic.Req("started_at", pydantic.Float),
 	pydantic.Req("status", LiveSessionStatus),
 	pydantic.Req("title", pydantic.Str),
-)
+).Described("``server._session_live_item``.")
 
 var SessionActiveListResult = pydantic.NewModel("SessionActiveListResult", ClosedConfig,
 	pydantic.Req("sessions", pydantic.List(SessionActiveItem)),
@@ -201,7 +201,7 @@ var SessionActiveListResult = pydantic.NewModel("SessionActiveListResult", Close
 
 var _ = Method("session.active_list", SessionActiveListParams, SessionActiveListResult, "Live sessions in this process, insertion order (not a DB browser).")
 
-var SessionDeleteParams = pydantic.Extend(SessionParams, "SessionDeleteParams", ParamsConfig)
+var SessionDeleteParams = pydantic.Extend(SessionParams, "SessionDeleteParams", ParamsConfig).Described("``session_id`` is the STORED id.")
 
 var SessionDeleteResult = pydantic.NewModel("SessionDeleteResult", ClosedConfig,
 	pydantic.Req("deleted", pydantic.Str),
@@ -225,7 +225,7 @@ var SessionSetHiddenParams = pydantic.NewModel("SessionSetHiddenParams", ParamsC
 	pydantic.Req("session_id", pydantic.Str),
 	pydantic.Req("hidden", pydantic.Bool),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``session_id`` is a live runtime id first, else a stored id / key / title.")
 
 var SessionSetHiddenResult = pydantic.NewModel("SessionSetHiddenResult", ClosedConfig,
 	pydantic.Req("hidden", pydantic.Bool),
@@ -239,7 +239,7 @@ var SessionArchiveParams = pydantic.NewModel("SessionArchiveParams", ParamsConfi
 	pydantic.Def("session_key", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("archived", pydantic.Bool, true),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``session_id`` (or its ``session_key`` alias) is a live runtime id first, else a stored id / key / title.")
 
 var SessionArchiveResult = pydantic.NewModel("SessionArchiveResult", ClosedConfig,
 	pydantic.Req("archived", pydantic.Bool),
@@ -265,7 +265,7 @@ var SessionCwdSetParams = pydantic.Extend(SessionParams, "SessionCwdSetParams", 
 	pydantic.Req("cwd", pydantic.Str),
 )
 
-var SessionCwdSetResult = pydantic.Extend(SessionLiveInfo, "SessionCwdSetResult", OpenConfig)
+var SessionCwdSetResult = pydantic.Extend(SessionLiveInfo, "SessionCwdSetResult", OpenConfig).Described("The refreshed ``session.info`` view (full agent view, or the lazy shape).")
 
 var _ = Method("session.cwd.set", SessionCwdSetParams, SessionCwdSetResult, "Change a live, idle session's working directory.")
 
@@ -329,9 +329,9 @@ var SessionSaveParams = pydantic.Extend(SessionParams, "SessionSaveParams", Para
 
 var SessionSaveResult = pydantic.NewModel("SessionSaveResult", OpenConfig,
 	pydantic.Def("file", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Under turn isolation the compute host's result passes through verbatim.")
 
-var _ = Method("session.save", SessionSaveParams, SessionSaveResult, "Export the transcript to ~/.hermes/sessions/saved (classic /save).")
+var _ = Method("session.save", SessionSaveParams, SessionSaveResult, "Export the transcript to ~/.icebath/sessions/saved (classic /save).")
 
 var SessionStatusParams = pydantic.Extend(SessionParams, "SessionStatusParams", ParamsConfig)
 
@@ -375,7 +375,7 @@ var ContextFileSource = pydantic.NewModel("ContextFileSource", ClosedConfig,
 	pydantic.Req("est_tokens", pydantic.Int),
 	pydantic.Req("loaded", pydantic.Bool),
 	pydantic.Req("status", pydantic.Str),
-)
+).Described("One row of ``agent.context_file_sources.list_context_file_sources``.")
 
 var SessionContextBreakdownResult = pydantic.NewModel("SessionContextBreakdownResult", ClosedConfig,
 	pydantic.Req("categories", pydantic.List(ContextCategory)),
@@ -387,7 +387,7 @@ var SessionContextBreakdownResult = pydantic.NewModel("SessionContextBreakdownRe
 	pydantic.Req("context_source", pydantic.Str),
 	pydantic.Req("model", pydantic.Str),
 	pydantic.Def("context_files", pydantic.List(ContextFileSource), []any{}),
-)
+).Described("``agent.context_breakdown.compute_session_context_breakdown`` (empty categories before the agent builds)\nplus the per-file context manifest (empty until the agent exists).")
 
 var _ = Method("session.context_breakdown", SessionContextBreakdownParams, SessionContextBreakdownResult, "Cursor-style split of the context window by category.")
 
@@ -399,7 +399,7 @@ var CompressionSummary = pydantic.NewModel("CompressionSummary", OpenConfig,
 	pydantic.Def("headline", pydantic.Str, ""),
 	pydantic.Def("token_line", pydantic.Str, ""),
 	pydantic.Def("note", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``agent.manual_compression_feedback.summarize_manual_compression``.")
 
 var SessionCompressParams = pydantic.Extend(SessionParams, "SessionCompressParams", ParamsConfig,
 	pydantic.Def("focus_topic", pydantic.Nullable(pydantic.Str), nil),
@@ -421,7 +421,7 @@ var SessionCompressResult = pydantic.NewModel("SessionCompressResult", OpenConfi
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("host_ack", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("In-process: the before/after summary + replacement transcript. Compute host: its result passes\nthrough (hence open) with ``turn_isolation``; a lock held elsewhere answers ``compressed: false``.")
 
 var _ = Method("session.compress", SessionCompressParams, SessionCompressResult, "Manual /compress of an idle session, optionally focused on a topic.")
 
@@ -482,7 +482,7 @@ var SpawnTreeEntry = pydantic.NewModel("SpawnTreeEntry", OpenConfig,
 	pydantic.Def("finished_at", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("label", pydantic.Str, ""),
 	pydantic.Def("count", pydantic.Int, 0),
-)
+).Described("Index row (``server._append_spawn_tree_index``) or a legacy file scan.")
 
 var SpawnTreeListResult = pydantic.NewModel("SpawnTreeListResult", ClosedConfig,
 	pydantic.Req("entries", pydantic.List(SpawnTreeEntry)),
@@ -500,7 +500,7 @@ var SpawnTreeLoadResult = pydantic.NewModel("SpawnTreeLoadResult", OpenConfig,
 	pydantic.Def("finished_at", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("label", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Fac("subagents", pydantic.List(pydantic.Dict(pydantic.Any)), pydantic.NewList),
-)
+).Described("The snapshot file as written by ``spawn_tree.save`` (open: the file is the contract).")
 
 var _ = Method("spawn_tree.load", SpawnTreeLoadParams, SpawnTreeLoadResult, "Read one saved spawn-tree snapshot (path must be under the spawn-trees root).")
 
@@ -539,7 +539,7 @@ var SessionEventsStatsResult = pydantic.NewModel("SessionEventsStatsResult", Clo
 	pydantic.Req("max_per_session", pydantic.Int),
 	pydantic.Req("max_bytes_per_session", pydantic.Int),
 	pydantic.Req("max_bytes_process", pydantic.Int),
-)
+).Described("``event_replay.replay_stats``.")
 
 var _ = Method("session.events.stats", SessionEventsStatsParams, SessionEventsStatsResult, "Replay-buffer occupancy telemetry (ops/debug).")
 
@@ -552,7 +552,7 @@ var LlmOneshotParams = pydantic.Extend(ProfileParams, "LlmOneshotParams", Params
 	pydantic.Def("temperature", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("max_tokens", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Needs a ``template`` or ``instructions`` / ``input``; a live ``session_id`` lends its model.")
 
 var LlmOneshotResult = pydantic.NewModel("LlmOneshotResult", ClosedConfig,
 	pydantic.Req("text", pydantic.Str),

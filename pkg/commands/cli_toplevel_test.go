@@ -221,7 +221,7 @@ func TestHelperSetsMatchTopLevelParser(t *testing.T) {
 func TestFirstPositionalSkipsReasoningValue(t *testing.T) {
 	c := NewCLI()
 	argv := []string{"--reasoning", "high", "chat", "hello"}
-	if got := c.FirstPositional(argv); got != "chat" {
+	if got, _ := c.FirstPositional(argv); got != "chat" {
 		t.Fatalf("first positional %q", got)
 	}
 	if c.PluginCLIDiscoveryNeeded(argv) {
@@ -235,7 +235,7 @@ func TestReasoningFormsDoNotShadowTheSubcommand(t *testing.T) {
 		{"--reasoning", "ultra", "--provider", "openai", "-z", "prompt here"},
 		{"-m", "x", "--reasoning=low", "chat"},
 	} {
-		if first := c.FirstPositional(argv); first == "high" || first == "ultra" || first == "low" {
+		if first, _ := c.FirstPositional(argv); first == "high" || first == "ultra" || first == "low" {
 			t.Fatalf("a reasoning level leaked through as the positional: %q", first)
 		}
 	}

@@ -441,9 +441,6 @@ func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath st
 	if err != nil {
 		return "", err
 	}
-	if err := ttsImportElevenLabs(ctx); err != nil {
-		return "", err
-	}
 	base := defaultElevenLabsBaseURL
 	if b := strings.TrimRight(pyrepr.Str(orEmptyString(elConfig["base_url"])), "/"); b != "" {
 		base = b
@@ -873,9 +870,6 @@ func generateMistralTTS(ctx context.Context, env *tools.Env, text, outputPath st
 	server := defaultMistralServerURL
 	if pyTruthy(miConfig["base_url"]) {
 		server = pyrepr.Str(miConfig["base_url"])
-	}
-	if err := ttsImportMistral(ctx); err != nil {
-		return "", err
 	}
 	voiceID := miConfig["voice_id"]
 	if !pyTruthy(voiceID) {

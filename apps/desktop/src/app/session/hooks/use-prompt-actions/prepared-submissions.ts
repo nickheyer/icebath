@@ -6,18 +6,18 @@ import type { SessionOwnerScope } from '@/store/session-request-router'
 import type { SubmissionDestination } from './submission-destination'
 import type { SubmitTextOptions } from './utils'
 
-const STORAGE_KEY = 'hermes.desktop.preparedSubmissions.v1'
+const STORAGE_KEY = 'icebath.desktop.preparedSubmissions.v1'
 // One localStorage key per browser journal entry. Every tab of the origin shares this storage with
 // last-writer-wins per KEY, so while the journal was one blob under STORAGE_KEY, two tabs rewriting
 // it at once could drop an entry the other had just written or restore one it had just retired.
 // Writing or retiring an entry now touches only keys of its own.
-export const ENTRY_PREFIX = 'hermes.desktop.preparedSubmissions.v2:'
+export const ENTRY_PREFIX = 'icebath.desktop.preparedSubmissions.v2:'
 // The blob may still hold an earlier build's uncertain sends. They stay adoptable from it, behind
 // any entry under its own key, and the blob is never rewritten: retiring a key also retires the
 // blob's entry there only when that entry carries the retired id, recorded as that id under a
 // marker key of its own. So no tab can undo another's retirement, and a different send that a
 // still-open tab of the earlier build writes under the same key stays visible.
-const LEGACY_RETIRED_PREFIX = 'hermes.desktop.preparedSubmissions.v1.retired:'
+const LEGACY_RETIRED_PREFIX = 'icebath.desktop.preparedSubmissions.v1.retired:'
 
 export interface PreparedSubmission {
   id: string
@@ -39,9 +39,9 @@ export interface PreparedSubmission {
 // last-writer-wins per KEY, so a single blob let one window's read-modify-write drop the tombstone
 // another window had just written for a different entry (and a reload then re-adopted that
 // admitted input). Each retirement now writes only the record it owns.
-const SPENT_PREFIX = 'hermes.desktop.preparedSubmissions.spent.v2:'
+const SPENT_PREFIX = 'icebath.desktop.preparedSubmissions.spent.v2:'
 // The pre-v2 single blob: still honored, drained entry by entry as each tombstone clears.
-const LEGACY_SPENT_KEY = 'hermes.desktop.preparedSubmissions.spent.v1'
+const LEGACY_SPENT_KEY = 'icebath.desktop.preparedSubmissions.spent.v1'
 const retired = new Map<string, string>()
 
 function readLegacySpent(): Record<string, string> {

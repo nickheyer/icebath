@@ -506,10 +506,16 @@ func (e *UpstreamTargetBroken) Error() string {
 	return "upstream/main (" + short(e.SHA) + ") has a syntax error in " + e.Path
 }
 
+// Upstream remote probe and commit counter the fork sync reads, the pair hermes tests replace
+var (
+	upstreamRemotePresent = hasUpstreamRemote
+	upstreamCommitCount   = countCommitsBetween
+)
+
 // Compares origin/main with upstream/main and fast forwards when strictly behind, true when the compare happened
 func syncWithUpstreamIfNeeded(ctx context.Context, w io.Writer, gitCmd []string, cwd string, assumeYes bool,
 	inputFn func(prompt, def string) (string, error), move checkoutMoveFunc) (bool, error) {
-	if !hasUpstreamRemote(ctx, gitCmd, cwd) {
+	if !upstreamRemotePresent(ctx, gitCmd, cwd) {
 		if shouldSkipUpstreamPrompt(ctx) {
 			return false, nil
 		}
@@ -530,8 +536,8 @@ func syncWithUpstreamIfNeeded(ctx context.Context, w io.Writer, gitCmd []string,
 	upstream, _ := gitStdout(ctx, gitCmd, []string{"rev-parse", "-q", "--verify", "refs/remotes/upstream/main^{commit}"}, cwd, false)
 	originAhead, upstreamAhead := -1, -1
 	if upstream != "" {
-		originAhead = countCommitsBetween(ctx, gitCmd, cwd, upstream, "refs/remotes/origin/main")
-		upstreamAhead = countCommitsBetween(ctx, gitCmd, cwd, "refs/remotes/origin/main", upstream)
+		originAhead = upstreamCommitCount(ctx, gitCmd, cwd, upstream, "refs/remotes/origin/main")
+		upstreamAhead = upstreamCommitCount(ctx, gitCmd, cwd, "refs/remotes/origin/main", upstream)
 	}
 	if originAhead < 0 || upstreamAhead < 0 {
 		fmt.Fprintln(w, "  ✗ Could not compare branches. Skipping upstream sync.")
@@ -842,11 +848,19 @@ func noMove(context.Context, checkoutMoveBind) (map[string]any, func() error, er
 	return map[string]any{}, func() error { return nil }, nil
 }
 
-// Restores package-lock.json files npm rewrote unless a manifest the lockfile records is dirty
-func discardLockfileChurn(ctx context.Context, w io.Writer, gitCmd []string, repoRoot string, move checkoutMoveFunc) {
+// Restores package-lock.json files npm rewrote unless a manifest is dirty, only an interrupt or exit escaping
+func discardLockfileChurn(ctx context.Context, w io.Writer, gitCmd []string, repoRoot string, move checkoutMoveFunc) error {
+	if err := lockfileChurnSteps(ctx, w, gitCmd, repoRoot, move); err != nil && isUpdateExit(err) {
+		return err
+	}
+	return nil
+}
+
+// Discards the lockfile churn, returning the first failure the cleanup met
+func lockfileChurnSteps(ctx context.Context, w io.Writer, gitCmd []string, repoRoot string, move checkoutMoveFunc) error {
 	diff, err := gitRunCaptured(ctx, gitCmd, []string{"diff", "--name-only"}, repoRoot, false, nil)
 	if err != nil || diff.ReturnCode != 0 {
-		return
+		return err
 	}
 	var changed []string
 	dirtyManifests := map[string]bool{}
@@ -859,7 +873,7 @@ func discardLockfileChurn(ctx context.Context, w io.Writer, gitCmd []string, rep
 	}
 	rootOwners, err := npmLockfileOwners(repoRoot)
 	if err != nil {
-		return
+		return err
 	}
 	rootDirty := false
 	for owner := range rootOwners {
@@ -880,16 +894,17 @@ func discardLockfileChurn(ctx context.Context, w io.Writer, gitCmd []string, rep
 		dirty = append(dirty, path)
 	}
 	if len(dirty) == 0 {
-		return
+		return nil
 	}
 	err = withCheckoutMove(ctx, move, checkoutMoveBind{Paths: dirty}, func(map[string]any) error {
 		_, err := gitRunCaptured(ctx, gitCmd, append([]string{"checkout", "--"}, dirty...), repoRoot, false, nil)
 		return err
 	})
 	if err != nil {
-		return
+		return err
 	}
-	fmt.Fprintf(w, "→ Discarded npm lockfile churn (%d file(s))\n", len(dirty))
+	_, err = fmt.Fprintf(w, "→ Discarded npm lockfile churn (%d file(s))\n", len(dirty))
+	return err
 }
 
 // Takes a managed checkout off core.autocrlf=true once its line ending churn is cleared, leaving it clean

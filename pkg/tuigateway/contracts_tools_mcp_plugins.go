@@ -6,7 +6,7 @@ import (
 
 var sessionScoped = pydantic.NewModel("_SessionScoped", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Handlers that look a live session up with ``_sessions.get(params.get(\"session_id\"))``: an\nabsent / unknown id falls back to the launch profile's config, so it is never required.")
 
 var ToolsetRow = pydantic.NewModel("ToolsetRow", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -14,7 +14,7 @@ var ToolsetRow = pydantic.NewModel("ToolsetRow", ClosedConfig,
 	pydantic.Req("tool_count", pydantic.Int),
 	pydantic.Req("enabled", pydantic.Bool),
 	pydantic.Def("tools", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("One row of ``methods_tools._toolset_rows``; ``tools`` only when the caller asked for them\n(``tools.list``).")
 
 var ToolsetsListResult = pydantic.NewModel("ToolsetsListResult", ClosedConfig,
 	pydantic.Req("toolsets", pydantic.List(ToolsetRow)),
@@ -48,7 +48,7 @@ var ToolsConfigureParams = pydantic.NewModel("ToolsConfigureParams", ParamsConfi
 	pydantic.Req("names", pydantic.List(pydantic.Str)),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``names`` are toolset keys or ``server:tool`` MCP targets; with ``session_id`` the live session's\nprofile is authoritative and its agent is rebuilt.")
 
 var ToolsConfigureResult = pydantic.NewModel("ToolsConfigureResult", ClosedConfig,
 	pydantic.Req("changed", pydantic.List(pydantic.Str)),
@@ -64,20 +64,20 @@ var _ = Method("tools.configure", ToolsConfigureParams, ToolsConfigureResult, "P
 var ReloadEnvParams = pydantic.NewModel("ReloadEnvParams", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("The shared owner serves ``/reload`` for one session the caller controls (``session_id``).")
 
 var ReloadEnvResult = pydantic.NewModel("ReloadEnvResult", ClosedConfig,
 	pydantic.Req("updated", pydantic.Int),
 )
 
-var _ = Method("reload.env", ReloadEnvParams, ReloadEnvResult, "Re-read ~/.hermes/.env (CLI /reload parity); built agents keep their pool until /new.")
+var _ = Method("reload.env", ReloadEnvParams, ReloadEnvResult, "Re-read ~/.icebath/.env (CLI /reload parity); built agents keep their pool until /new.")
 
 var ReloadMcpParams = pydantic.NewModel("ReloadMcpParams", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("confirm", pydantic.Bool, false),
 	pydantic.Def("always", pydantic.Bool, false),
 	pydantic.Def("rev", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Without ``confirm`` the handler may answer ``confirm_required`` (per ``approvals.mcp_reload_confirm``);\n``always`` persists the opt-out; ``rev`` is the config revision the caller wants loaded (coalescing).")
 
 var ReloadMcpStatus = pydantic.Enum("ReloadMcpStatus", "confirm_required", "confirm_required", "reloaded", "reloaded")
 
@@ -93,7 +93,7 @@ var ReloadMcpResult = pydantic.NewModel("ReloadMcpResult", ClosedConfig,
 	pydantic.Def("session", pydantic.Nullable(ReloadMcpSession), nil),
 	pydantic.Def("unavailable", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("session_servers", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("``session``: what the calling local session's MCP servers did (a new policy generation, nothing to\nchange, or deferred while a turn runs or waits); ``unavailable``: configured servers that did not connect\nbeside what did apply; ``session_servers``: the MCP servers that session's committed policy runs.")
 
 var _ = Method("reload.mcp", ReloadMcpParams, ReloadMcpResult, "Tear down and rediscover MCP servers for every live session (prompt cache is invalidated).")
 
@@ -104,7 +104,7 @@ var SkillsManageParams = pydantic.Extend(ProfileParams, "SkillsManageParams", Pa
 	pydantic.Def("query", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("page", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("page_size", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``query`` is the search text / hub identifier / browse page (digits); ``page`` / ``page_size``\napply to ``browse``.")
 
 var SkillHubHit = pydantic.NewModel("SkillHubHit", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -117,7 +117,7 @@ var SkillBrowseItem = pydantic.NewModel("SkillBrowseItem", OpenConfig,
 	pydantic.Def("source", pydantic.Str, ""),
 	pydantic.Def("trust", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("identifier", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``hermes_cli.skills_hub.browse_skills`` row.")
 
 var SkillInspectInfo = pydantic.NewModel("SkillInspectInfo", OpenConfig,
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
@@ -126,7 +126,7 @@ var SkillInspectInfo = pydantic.NewModel("SkillInspectInfo", OpenConfig,
 	pydantic.Def("identifier", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("tags", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("skill_md_preview", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``hermes_cli.skills_hub.inspect_skill``; ``{}`` when the identifier resolves nowhere.")
 
 var SkillsManageResult = pydantic.NewModel("SkillsManageResult", ClosedConfig,
 	pydantic.Def("skills", pydantic.Nullable(pydantic.Dict(pydantic.List(pydantic.Str))), nil),
@@ -138,14 +138,14 @@ var SkillsManageResult = pydantic.NewModel("SkillsManageResult", ClosedConfig,
 	pydantic.Def("total_pages", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("total", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("info", pydantic.Nullable(SkillInspectInfo), nil),
-)
+).Described("Shape follows the action: ``list`` → ``skills`` (category → names); ``search`` → ``results``;\n``install`` → ``installed`` + ``name``; ``browse`` → ``items`` + paging; ``inspect`` → ``info``.")
 
 var _ = Method("skills.manage", SkillsManageParams, SkillsManageResult, "Skills hub backend: list the profile's skills or search / browse / inspect / install from the hub.")
 
 var SkillsReloadParams = pydantic.NewModel("SkillsReloadParams", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``session_id`` binds the rescan to that session's profile and workspace (project skills);\n``profile`` scopes a session-less rescan.")
 
 var SkillCommandRef = pydantic.NewModel("SkillCommandRef", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -158,7 +158,7 @@ var SkillsReloadDiff = pydantic.NewModel("SkillsReloadDiff", OpenConfig,
 	pydantic.Fac("unchanged", pydantic.List(pydantic.Str), pydantic.NewList),
 	pydantic.Def("total", pydantic.Int, 0),
 	pydantic.Def("commands", pydantic.Int, 0),
-)
+).Described("``agent.skill_commands.reload_skills``.")
 
 var SkillsReloadResult = pydantic.NewModel("SkillsReloadResult", ClosedConfig,
 	pydantic.Req("output", pydantic.Str),
@@ -179,7 +179,7 @@ var LearningFrame = pydantic.NewModel("LearningFrame", ClosedConfig,
 	pydantic.Req("visible", pydantic.Int),
 	pydantic.Req("grid", pydantic.List(pydantic.List(pydantic.Any))),
 	pydantic.Fac("labels", pydantic.List(pydantic.Dict(pydantic.Any)), pydantic.NewList),
-)
+).Described("``agent.learning_graph_render.render_graph`` projection; ``grid`` rows are lists of\n``[text, styleKey, alpha?, hexOverride?]`` runs.")
 
 var LearningLegendItem = pydantic.NewModel("LearningLegendItem", ClosedConfig,
 	pydantic.Req("glyph", pydantic.Str),
@@ -240,7 +240,7 @@ var LearningEditParams = pydantic.Extend(LearningNodeParams, "LearningEditParams
 var LearningMutationResult = pydantic.NewModel("LearningMutationResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``agent.learning_mutations`` — ``ok: false`` carries the reason in ``message``.")
 
 var LearningDetailResult = pydantic.Extend(LearningMutationResult, "LearningDetailResult", ClosedConfig,
 	pydantic.Def("kind", pydantic.Nullable(pydantic.Str), nil),
@@ -286,7 +286,7 @@ var McpServerSummary = pydantic.NewModel("McpServerSummary", ClosedConfig,
 	pydantic.Def("tools", pydantic.Nullable(pydantic.Any), nil),
 	pydantic.Req("source", McpServerSource),
 	pydantic.Def("plugin", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``tui_gateway/mcp_rpc_helpers.summarize_server`` — a server's config without secret values.")
 
 var McpServersListResult = pydantic.NewModel("McpServersListResult", ClosedConfig,
 	pydantic.Req("servers", pydantic.List(McpServerSummary)),
@@ -305,7 +305,7 @@ var McpServerRuntimeRow = pydantic.NewModel("McpServerRuntimeRow", ClosedConfig,
 	pydantic.Req("status", McpRuntimeStatus),
 	pydantic.Req("source", McpServerSource),
 	pydantic.Def("plugin", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Safe projection of ``tools.mcp_tool_discovery.get_mcp_status`` rows.")
 
 var McpServersStatusResult = pydantic.NewModel("McpServersStatusResult", ClosedConfig,
 	pydantic.Req("servers", pydantic.List(McpServerRuntimeRow)),
@@ -322,7 +322,7 @@ var McpServersAddParams = pydantic.Extend(McpServerNameParams, "McpServersAddPar
 	pydantic.Def("preset", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("config", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("bearer_token", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``preset`` (catalog id) and/or ``config`` (url/command/args/env/headers/auth/tools); a\n``bearer_token`` is written to the profile's .env, only the header template persists.")
 
 var McpServersAddResult = pydantic.NewModel("McpServersAddResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),
@@ -359,7 +359,7 @@ var McpServersTestResult = pydantic.NewModel("McpServersTestResult", ClosedConfi
 	pydantic.Def("resources", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Req("oauth_needed", pydantic.Bool),
 	pydantic.Def("oauth_tokens_present", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``ok: false`` carries ``error``; ``prompts`` / ``resources`` are only counted on success.")
 
 var _ = Method("mcp.servers.test", McpServerNameParams, McpServersTestResult, "Connect, list tools, disconnect — an OAuth server with no token on disk is reported as not ok.")
 
@@ -372,7 +372,7 @@ var _ = Method("mcp.servers.remove", McpServerNameParams, McpServersRemoveResult
 
 var McpOauthStartParams = pydantic.Extend(McpServerNameParams, "McpOauthStartParams", ParamsConfig,
 	pydantic.Def("client_redirect_uri", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("With ``client_redirect_uri`` the CLIENT hosts the loopback and relays the code via\n``mcp.servers.oauth.callback``.")
 
 var McpOauthStartResult = pydantic.NewModel("McpOauthStartResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),
@@ -385,7 +385,7 @@ var _ = Method("mcp.servers.oauth.start", McpOauthStartParams, McpOauthStartResu
 
 var McpOauthFlowParams = pydantic.Extend(McpServerNameParams, "McpOauthFlowParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
-)
+).Described("``session_id`` is the OAuth flow id returned by ``oauth.start`` (not a gateway session).")
 
 var McpOauthPollStatus = pydantic.Enum("McpOauthPollStatus", "pending", "pending", "approved", "approved", "error", "error")
 
@@ -466,7 +466,7 @@ var PluginsManageParams = pydantic.Extend(ProfileParams, "PluginsManageParams", 
 	pydantic.Def("accept_capabilities", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("values", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("names", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``, ``inspected_sha`` = the commit ``inspect`` read: a custom source with no\n``ref`` whose branch moved since is refused); ``inspect``: ``identifier``/``repo`` or ``catalog_name``;\n``install_desktop``: ``identifier``/``repo`` (any source ``install`` takes) or ``catalog_name``, always\nwith ``ref`` (the commit ``inspect`` read and the dialog showed; another commit is refused) (+ ``force``) — the desktop half onto\nthe host that serves this client; ``remove_desktop``: ``name``\n(+ ``force`` for a package's own half); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin\nthat widened the plugin after the user confirmed the ``delta``, + ``force`` to apply an update whose\nsecurity scan returned caution after the user saw the findings); ``remove``: ``name`` (user installs only);\n``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only);\n``presence``: ``names`` (catalog names, answered in that order).")
 
 var PluginSettingFieldType = pydantic.Enum("PluginSettingFieldType", "string", "string", "number", "number", "boolean", "boolean", "enum", "enum", "secret", "secret", "json", "json")
 
@@ -481,9 +481,9 @@ var PluginSettingField = pydantic.NewModel("PluginSettingField", ClosedConfig,
 	pydantic.Def("choices", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("env", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("has_value", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("One ``config_schema`` key of a plugin manifest, rendered by the Plugins hub\n(``hermes_cli.plugins_settings.plugin_settings_fields``). ``secret`` fields carry no value: ``env``\nnames the ``.env`` variable and ``has_value`` whether it is set.")
 
-var PluginServerState = pydantic.Enum("PluginServerState", "connected", "connected", "app_not_running", "app_not_running", "hermes_not_connected", "hermes_not_connected", "endpoint_unavailable", "endpoint_unavailable", "no_interactive_session", "no_interactive_session", "version_too_old", "version_too_old", "missing_app", "missing_app", "unsupported_gpu", "unsupported_gpu", "unknown", "unknown")
+var PluginServerState = pydantic.Enum("PluginServerState", "connected", "connected", "app_not_running", "app_not_running", "icebath_not_connected", "icebath_not_connected", "endpoint_unavailable", "endpoint_unavailable", "no_interactive_session", "no_interactive_session", "version_too_old", "version_too_old", "missing_app", "missing_app", "unsupported_gpu", "unsupported_gpu", "unknown", "unknown")
 
 var PluginServerRow = pydantic.NewModel("PluginServerRow", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -512,19 +512,19 @@ var AgentPluginRow = pydantic.NewModel("AgentPluginRow", ClosedConfig,
 	pydantic.Def("pinned_sha", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("settings_schema", pydantic.Nullable(pydantic.List(PluginSettingField)), nil),
 	pydantic.Fac("tools", pydantic.List(pydantic.Str), pydantic.NewList),
-)
+).Described("``methods_tools._plugin_rows`` + ``plugins_cmd_catalog.catalog_row_fields`` provenance.")
 
 var PluginLiveServer = pydantic.NewModel("PluginLiveServer", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Req("connected", pydantic.Bool),
 	pydantic.Fac("tools", pydantic.List(pydantic.Str), pydantic.NewList),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One plugin MCP server connected at activation: its callable tool names, or the reason it did not connect.")
 
 var PluginLiveSkill = pydantic.NewModel("PluginLiveSkill", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Def("description", pydantic.Str, ""),
-)
+).Described("One plugin skill usable now through ``skill_view`` (qualified ``<plugin>:<skill>``).")
 
 var PluginLiveNow = pydantic.NewModel("PluginLiveNow", ClosedConfig,
 	pydantic.Fac("mcp_servers", pydantic.List(PluginLiveServer), pydantic.NewList),
@@ -541,7 +541,7 @@ var PluginActivation = pydantic.NewModel("PluginActivation", ClosedConfig,
 	pydantic.Fac("deferred", pydantic.Dict(pydantic.List(pydantic.Str)), pydantic.NewDict),
 	pydantic.Fac("missing_dependencies", pydantic.List(pydantic.Str), pydantic.NewList),
 	pydantic.Fac("missing_in", pydantic.List(PluginRestartTarget), pydantic.NewList),
-)
+).Described("What a plugin loaded mid-run does NOW vs later (``hermes_cli.plugins_activation``). ``activated_now``\nkinds (``{kind: [names]}``): ``gateway_commands`` (slash names), ``locales`` (``<lang>.<surface>``\nlanguage-pack layers), ``gateway_transforms`` / ``hooks`` (hook\nnames), ``callbacks`` (platforms / ``slack:<action_id>``) — live in the running gateway once it reloaded\n(``gateway_reloaded``). ``live_now``: the plugin's MCP servers (connected, with their tools, or the\nerror) and skills, usable in every open chat of the profile from its next turn — the chats also get a\nnote listing them. ``deferred`` kinds: ``tools`` (Python tool names) and ``prompt`` (section ids)\napply from the next session. ``missing_dependencies``: the plugin's declared Python requirements a\nrunning process cannot import (installed after it booted, or never); ``missing_in`` names which\nprocesses (``gateway``, ``backend`` = the Desktop / dashboard process) — only restarting them loads them.")
 
 var OnboardingCatalogPlugin = pydantic.NewModel("OnboardingCatalogPlugin", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -551,7 +551,7 @@ var OnboardingCatalogPlugin = pydantic.NewModel("OnboardingCatalogPlugin", Close
 	pydantic.Req("platforms", pydantic.List(pydantic.Str)),
 	pydantic.Req("app_state", CatalogAppState),
 	pydantic.Req("sentence", pydantic.Str),
-)
+).Described("A catalog plugin curated for the onboarding card (``onboarding: true``) that this OS runs.\n``app_state`` is the pinned ``plugin.json`` declaration judged on this host; ``sentence`` names what\nis missing (empty when present or unknown).")
 
 var CatalogPluginPresence = pydantic.NewModel("CatalogPluginPresence", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -559,7 +559,7 @@ var CatalogPluginPresence = pydantic.NewModel("CatalogPluginPresence", ClosedCon
 	pydantic.Req("state", CatalogAppState),
 	pydantic.Req("sentence", pydantic.Str),
 	pydantic.Req("disclosure", pydantic.Str),
-)
+).Described("A named catalog plugin this OS runs. ``state`` is the pinned ``plugin.json`` app declaration judged\non this host; ``sentence`` names what is missing (empty when present or unknown); ``disclosure`` is the\ncatalog description's ``Disclosure:`` sentence (empty when it has none).")
 
 var PluginScanFinding = pydantic.NewModel("PluginScanFinding", ClosedConfig,
 	pydantic.Req("pattern_id", pydantic.Str),
@@ -568,7 +568,7 @@ var PluginScanFinding = pydantic.NewModel("PluginScanFinding", ClosedConfig,
 	pydantic.Req("file", pydantic.Str),
 	pydantic.Req("line", pydantic.Int),
 	pydantic.Req("description", pydantic.Str),
-)
+).Described("One security-scan finding (``tools.plugin_guard``) on a plugin tree the scan blocked.")
 
 var PluginsManageResult = pydantic.NewModel("PluginsManageResult", ClosedConfig,
 	pydantic.Def("plugins", pydantic.Nullable(pydantic.List(AgentPluginRow)), nil),
@@ -608,7 +608,7 @@ var PluginsManageResult = pydantic.NewModel("PluginsManageResult", ClosedConfig,
 	pydantic.Def("path", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("paired_with_agent", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("unpaired_from", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``list`` → ``plugins`` + counts; ``toggle`` → ``ok``/``unchanged``/``restart_required``/``name``\n(the canonical key written)/``plugin``; ``install`` → ``hermes_cli.plugins_cmd.dashboard_install_plugin``'s\nok payload; ``inspect`` → ``ok``/``agent``/``desktop``/``agent_name``/``desktop_name``/``sha`` (the commit\nread)/``warnings``/``insecure`` or ``ok=false`` + ``error``; ``toggle``/``install``/``update`` that loaded a plugin also carry ``gateway_reloaded`` (the\nrunning gateway picked it up and re-wired its handlers) and ``activation`` — the honest split of what is\nlive now vs deferred, so ``restart_required`` is True only when no gateway answered or the running\ngateway/backend cannot import the plugin's Python dependencies (``activation.missing_dependencies``); ``update`` → ``ok``/``unchanged``/``sha``, or ``ok=false`` + ``consent_required`` with the\n``delta`` (``{surface: [added...]}``) / ``delta_lines`` a widened pin adds — nothing changed until the\nclient retries with ``accept_capabilities`` — or ``ok=false`` + ``scan_blocked`` with ``scan_verdict`` /\n``scan_findings`` (retry a caution verdict with ``force``); ``remove`` → ``ok``/``name`` plus\n``cleared_memory_provider`` when the removed plugin was the live ``memory.provider``.")
 
 var _ = Method("plugins.manage", PluginsManageParams, PluginsManageResult, "Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, or remove a user install.")
 
@@ -624,11 +624,11 @@ var PluginCatalogLookupEntry = pydantic.NewModel("PluginCatalogLookupEntry", Clo
 	pydantic.Req("sha", pydantic.Str),
 	pydantic.Req("subdir", pydantic.Str),
 	pydantic.Def("tier", pydantic.Str, "community"),
-)
+).Described("The fields an install needs: the same ones the embedded catalog picker posts on a pick.")
 
 var PluginCatalogLookupResult = pydantic.NewModel("PluginCatalogLookupResult", ClosedConfig,
 	pydantic.Req("status", PluginCatalogLookupStatus),
 	pydantic.Def("entry", pydantic.Nullable(PluginCatalogLookupEntry), nil),
-)
+).Described("``found`` carries ``entry``. ``unknown`` covers a name the catalog doesn't list and one it removed;\n``unavailable`` means neither the live catalog nor the in-tree fallback could be read.")
 
-var _ = Method("plugins.catalog.lookup", PluginCatalogLookupParams, PluginCatalogLookupResult, "One curated plugin-catalog entry by name, from the backend's live catalog (cached, with the in-tree fallback and kill list); backs hermes://plugin/install?catalog= deep links.")
+var _ = Method("plugins.catalog.lookup", PluginCatalogLookupParams, PluginCatalogLookupResult, "One curated plugin-catalog entry by name, from the backend's live catalog (cached, with the in-tree fallback and kill list); backs icebath://plugin/install?catalog= deep links.")

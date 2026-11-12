@@ -291,10 +291,10 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 			auxCfg = v
 		}
 	}
-	a.auxCompressionContextLengthConfig = 0
+	a.auxCompressionContextLengthConfig = nil
 	if m, ok := auxCfg.(map[string]any); ok && m["context_length"] != nil {
 		if n, ok := configIntOf(m["context_length"]); ok {
-			a.auxCompressionContextLengthConfig = n
+			a.auxCompressionContextLengthConfig = &n
 		}
 	}
 	modelCfg, _ := agentCfg["model"].(map[string]any)

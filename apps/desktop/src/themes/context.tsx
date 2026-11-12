@@ -41,15 +41,15 @@ import { $userThemes, listAllThemes, resolveTheme } from './user-themes'
 // Legacy global skin (pre per-profile themes). Still the inheritance fallback
 // for any profile without its own assignment, so single-profile users and old
 // installs are unaffected.
-const SKIN_KEY = 'hermes-desktop-theme-v2'
-const MODE_KEY = 'hermes-desktop-mode-v1'
+const SKIN_KEY = 'icebath-desktop-theme-v2'
+const MODE_KEY = 'icebath-desktop-mode-v1'
 // Per-profile skin + light/dark mode assignments: { [profileKey]: value }. A
 // profile inherits the global default until it's given its own appearance.
-const PROFILE_SKINS_KEY = 'hermes-desktop-profile-themes-v1'
-const PROFILE_MODES_KEY = 'hermes-desktop-profile-modes-v1'
+const PROFILE_SKINS_KEY = 'icebath-desktop-profile-themes-v1'
+const PROFILE_MODES_KEY = 'icebath-desktop-profile-modes-v1'
 // Last active profile, recorded so the boot-time paint can pick that profile's
 // theme before the gateway reports which profile actually launched.
-const LAST_PROFILE_KEY = 'hermes-desktop-active-profile-v1'
+const LAST_PROFILE_KEY = 'icebath-desktop-active-profile-v1'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -403,8 +403,8 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark', chatFontFamily 
   // they let a brand-new window paint the themed background on its very first
   // frame, before this module has even loaded.
   try {
-    window.localStorage.setItem('hermes-boot-background', chromeBg)
-    window.localStorage.setItem('hermes-boot-color-scheme', rendered)
+    window.localStorage.setItem('icebath-boot-background', chromeBg)
+    window.localStorage.setItem('icebath-boot-color-scheme', rendered)
   } catch {
     // Storage may be unavailable (private mode / quota); the inline script
     // falls back to prefers-color-scheme.
@@ -429,7 +429,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark', chatFontFamily 
   // Inject / clear customCSS from the skin (mirrors web/src/themes/context.tsx).
   // A theme carries the optional customCSS field; we inject/remove a single
   // <style> tag to keep the DOM clean and avoid stale rules on switch.
-  const cssId = 'hermes-desktop-custom-css'
+  const cssId = 'icebath-desktop-custom-css'
   let cssEl = document.getElementById(cssId) as HTMLStyleElement | null
   const customCSS = theme.customCSS?.trim()
 

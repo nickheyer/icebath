@@ -65,7 +65,7 @@ func TestDoctorPlatformHintsSqliteUpgradeHintRecreatesDockerContainers(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(hint, "docker pull nousresearch/icebath-agent:latest") || strings.Contains(hint, "icebath update") {
+	if !strings.Contains(hint, "docker pull ghcr.io/nickheyer/icebath:latest") || strings.Contains(hint, "icebath update") {
 		t.Fatalf("hint = %q", hint)
 	}
 }
@@ -78,6 +78,25 @@ func TestDoctorPlatformHintsSqliteUpgradeHintAptStampNamesTermuxExternalUpdate(t
 	}
 	if !strings.Contains(hint, "run `pkg upgrade icebath-agent`") || strings.Contains(hint, "icebath update") {
 		t.Fatalf("hint = %q", hint)
+	}
+}
+
+func TestDoctorPlatformHintsSqliteUpgradeHintPackageManagerStampNamesItsUpgrade(t *testing.T) {
+	d, _ := toolsDoctor(t)
+	for method, want := range map[string]string{"homebrew": "run `brew upgrade --cask icebath`", "chocolatey": "run `choco upgrade icebath`",
+		"pip": "run `pipx upgrade icebath-cli`", "dpkg": "run `sudo apt update && sudo apt install --only-upgrade icebath`"} {
+		hint, err := doctorSQLiteUpgradeHint(context.Background(), d, method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(hint, want) || strings.Contains(hint, "icebath update") {
+			t.Fatalf("%s hint = %q", method, hint)
+		}
+	}
+	for _, method := range []string{"script", "setup-app"} {
+		if hint, err := doctorSQLiteUpgradeHint(context.Background(), d, method); err != nil || !strings.Contains(hint, "run `icebath update`") {
+			t.Fatalf("%s hint = %q %v", method, hint, err)
+		}
 	}
 }
 
@@ -149,7 +168,7 @@ func TestMacOSTCCGrantsSilentWithoutDesktopBundle(t *testing.T) {
 }
 
 func TestMacOSTCCGrantsWarnsOnCdhashPinnedDr(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "com.nousresearch.icebath" and cdhash H"97e692f3890f781fa0ad5ad6cb9d769cfaf42628"`, true, false)
+	d, out := darwinBundle(t, `designated => identifier "ai.icebath" and cdhash H"97e692f3890f781fa0ad5ad6cb9d769cfaf42628"`, true, false)
 	doctorCheckMacosTCCGrants(context.Background(), d)
 	text := out.String()
 	if !strings.Contains(text, "TCC grants will reset after every update") || !strings.Contains(text, "icebath update") || strings.Contains(text, "signing identity is stable") {
@@ -158,21 +177,21 @@ func TestMacOSTCCGrantsWarnsOnCdhashPinnedDr(t *testing.T) {
 }
 
 func TestMacOSTCCGrantsIdentifierDrIsStableWithUpgradeHintAndRepairInfo(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "com.nousresearch.icebath"`, true, false)
+	d, out := darwinBundle(t, `designated => identifier "ai.icebath"`, true, false)
 	doctorCheckMacosTCCGrants(context.Background(), d)
 	text := out.String()
 	if !strings.Contains(text, "TCC signing identity is stable") || !strings.Contains(text, "--setup-tcc-identity") ||
-		!strings.Contains(text, "tccutil reset ScreenCapture com.nousresearch.icebath") {
+		!strings.Contains(text, "tccutil reset ScreenCapture ai.icebath") {
 		t.Fatalf("output:\n%s", text)
 	}
 }
 
 func TestMacOSTCCGrantsCertificateAnchoredDrIsStableWithoutUpgradeHint(t *testing.T) {
-	d, out := darwinBundle(t, `designated => identifier "com.nousresearch.icebath" and certificate root = H"aabbcc"`, true, false)
+	d, out := darwinBundle(t, `designated => identifier "ai.icebath" and certificate root = H"aabbcc"`, true, false)
 	doctorCheckMacosTCCGrants(context.Background(), d)
 	text := out.String()
 	if !strings.Contains(text, "TCC signing identity is stable") || strings.Contains(text, "--setup-tcc-identity") ||
-		!strings.Contains(text, "tccutil reset ScreenCapture com.nousresearch.icebath") {
+		!strings.Contains(text, "tccutil reset ScreenCapture ai.icebath") {
 		t.Fatalf("output:\n%s", text)
 	}
 }
@@ -458,15 +477,20 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 	}
 	for _, tc := range []struct{ method, remedy string }{
 		{"git", "icebath pm repair"}, {"nix", "Nix"}, {"docker", "docker pull"}, {"apt", "pkg upgrade"},
+		{"script", "icebath pm repair"}, {"setup-app", "icebath pm repair"}, {"chocolatey", "choco upgrade icebath"},
+		{"pip", "pipx upgrade icebath-cli"}, {"homebrew", "brew upgrade --cask icebath"}, {"scoop", "scoop update icebath"},
+		{"winget", "winget upgrade --id nickheyer.icebath"}, {"dpkg", "sudo apt install --only-upgrade icebath"},
+		{"rpm", "sudo dnf upgrade icebath"}, {"pacman", "paru -Syu icebath-bin"}, {"apk", "apk upgrade icebath"},
 	} {
 		t.Run(tc.method, func(t *testing.T) {
 			tree := commandInstallTree(t)
 			writeTestFile(t, filepath.Join(tree.project, ".install_method"), tc.method, 0o644)
 			entry := filepath.Join(tree.project, "venv", "bin", "icebath")
 			writeTestFile(t, entry, "#!/bin/sh\nexit 0\n", 0o755)
-			toolsSeam(t, &doctorPackages, []doctorPackage{{"doctor_missing_dependency_probe", "Required dependency", false}})
+			toolsSeam(t, &doctorStagedVenvDir, func(context.Context) string { return "" })
+			toolsSeam(t, &doctorRuntimePython, func(context.Context) (*doctorPython, error) { return nil, errors.New("no interpreter") })
 			findings := &Finding{}
-			for _, check := range []doctorCheckFunc{checkRequiredPackages, checkCommandInstallation} {
+			for _, check := range []doctorCheckFunc{checkPythonEnvironment, checkCommandInstallation} {
 				f, err := check(context.Background(), tree.d, true)
 				if err != nil {
 					t.Fatal(err)
@@ -477,7 +501,7 @@ func TestRemediesAndLauncherRepairsRespectInstallOwner(t *testing.T) {
 			if !strings.Contains(text, tc.remedy) || strings.Contains(text, "pip install") {
 				t.Fatalf("output:\n%s", text)
 			}
-			if tc.method == "git" {
+			if tc.method == "git" || tc.method == "script" || tc.method == "setup-app" {
 				resolved, err := filepath.EvalSymlinks(tree.command)
 				if !isTestSymlink(tree.command) || err != nil || resolved != entry {
 					t.Fatalf("command does not link the entry: %q %v\n%s", resolved, err, text)
@@ -601,5 +625,56 @@ func TestProbeRunsWithoutLazyInstalls(t *testing.T) {
 	}
 	if call.opts.Timeout.Seconds() < 60 {
 		t.Fatalf("timeout = %v", call.opts.Timeout)
+	}
+}
+
+func TestRequiredPackagesListsOptionalCapabilitiesWithHermesRows(t *testing.T) {
+	d, out := toolsDoctor(t)
+	toolsSeam(t, &doctorPackages, []doctorPackage{
+		{"Loaded library", func(context.Context) bool { return true }},
+		{"Absent library", func(context.Context) bool { return false }},
+	})
+	f, err := checkRequiredPackages(context.Background(), d, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Issues) != 0 || len(f.ManualIssues) != 0 {
+		t.Fatalf("issues = %q %q", f.Issues, f.ManualIssues)
+	}
+	text := out.String()
+	if !strings.Contains(text, "✓ Loaded library (optional)") || !strings.Contains(text, "⚠ Absent library (optional, not installed)") {
+		t.Fatalf("output:\n%s", text)
+	}
+}
+
+func TestRequiredPackagesNamesNoPythonLibraryCompiledIntoTheBinary(t *testing.T) {
+	for _, p := range doctorPackages {
+		for _, compiled := range []string{"OpenAI SDK", "Rich", "python-dotenv", "ruamel.yaml", "HTTPX", "Croniter", "python-telegram-bot", "discord.py"} {
+			if strings.Contains(p.Name, compiled) {
+				t.Fatalf("row %q names %q, which the binary carries", p.Name, compiled)
+			}
+		}
+	}
+}
+
+func TestRequiredPackagesProbesTheRuntimeEnvironmentForTheBrowserHarness(t *testing.T) {
+	d, out := toolsDoctor(t)
+	var asked []string
+	toolsSeam(t, &doctorModuleImportable, func(_ context.Context, module string) bool {
+		asked = append(asked, module)
+		return false
+	})
+	var harness []doctorPackage
+	for _, p := range doctorPackages {
+		if strings.HasPrefix(p.Name, "browser-harness") {
+			harness = append(harness, p)
+		}
+	}
+	toolsSeam(t, &doctorPackages, harness)
+	if _, err := checkRequiredPackages(context.Background(), d, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || asked[0] != "browser_harness" || !strings.Contains(out.String(), "⚠ browser-harness (browser_exec) (optional, not installed)") {
+		t.Fatalf("asked %q, output:\n%s", asked, out.String())
 	}
 }

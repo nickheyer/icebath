@@ -13,7 +13,7 @@ var (
 
 // The base classes every params, result and payload model derives from
 var (
-	Params  = pydantic.NewModel("Params", ParamsConfig)
+	Params  = pydantic.NewModel("Params", ParamsConfig).Described("Client→server method params / server→client request params. Unknown keys are rejected.")
 	Result  = pydantic.NewModel("Result", ClosedConfig)
 	Payload = pydantic.NewModel("Payload", ClosedConfig)
 )

@@ -26,7 +26,7 @@ var PromptSubmitParams = pydantic.Extend(SessionParams, "PromptSubmitParams", Pa
 	pydantic.Def("turn_author", pydantic.Nullable(pydantic.Any), nil).Alias("_turn_author").Exclude(),
 	pydantic.Def("hosted_terminal_callback", pydantic.Nullable(pydantic.Any), nil).Alias("_hosted_terminal_callback").Exclude(),
 	pydantic.Def("hosted_images", pydantic.Nullable(pydantic.Any), nil).Alias("_hosted_images").Exclude(),
-)
+).Described("``text`` is normally a string; the relay / hosted paths may hand a structured (parts list)\npayload, and the busy path renders it. Truncation (rewind / edit / regenerate) needs explicit\nconsent: ``confirm_truncate`` plus one durable target (``truncate_before_row_id`` preferred,\n``truncate_before_message_id``, or the legacy ``truncate_before_user_ordinal``).")
 
 var PromptSubmitStatus = pydantic.Enum("PromptSubmitStatus", "streaming", "streaming", "queued", "queued", "steered", "steered", "redirected", "redirected")
 
@@ -39,7 +39,7 @@ var PromptSubmitResult = pydantic.NewModel("PromptSubmitResult", ClosedConfig,
 	pydantic.Def("turn_isolation", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("admission_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("forwarded", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``status`` is absent only on the typed-stop-phrase reply (``voice_stopped``). After a\ntruncation the survivor row ids let the client rebind its cached ``rowId``s (``None`` map\nentries: drop the cached id). ``turn_isolation`` marks a compute-host dispatch.")
 
 var _ = Method("prompt.submit", PromptSubmitParams, PromptSubmitResult, "Send a user turn to a live session; busy sessions queue / steer / redirect instead of refusing.")
 
@@ -58,7 +58,7 @@ var AttachedImageResult = pydantic.Extend(ImageMeta, "AttachedImageResult", Clos
 	pydantic.Def("text", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("bytes", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``methods_prompt.py::_attached_image_result``: the image is queued for the next turn.")
 
 var ClipboardPasteParams = pydantic.Extend(SessionParams, "ClipboardPasteParams", ParamsConfig)
 
@@ -75,7 +75,7 @@ var ImageAttachBytesParams = pydantic.Extend(SessionParams, "ImageAttachBytesPar
 	pydantic.Def("data", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("filename", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("ext", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``content_base64`` (or the ``data`` alias) carries the bytes; ``filename`` / ``ext`` only hint\nthe extension — magic bytes decide.")
 
 var _ = Method("image.attach_bytes", ImageAttachBytesParams, AttachedImageResult, "Queue an image uploaded as base64 (remote client); reply mirrors image.attach.")
 
@@ -86,7 +86,7 @@ var PdfAttachParams = pydantic.Extend(SessionParams, "PdfAttachParams", ParamsCo
 	pydantic.Def("filename", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("first_page", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("last_page", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("Host ``path`` or base64 ``content_base64`` / ``data``; ``first_page`` / ``last_page`` bound the\nrender (per-call page cap enforced server-side).")
 
 var PdfPage = pydantic.Extend(ImageMeta, "PdfPage", ClosedConfig,
 	pydantic.Req("path", pydantic.Str),
@@ -108,14 +108,14 @@ var StagedFileUpload = pydantic.NewModel("StagedFileUpload", ParamsConfig,
 	pydantic.Req("install_id", pydantic.Str),
 	pydantic.Req("path", pydantic.Str),
 	pydantic.Req("profile_home", pydantic.Str),
-)
+).Described("Source identity returned by the browser upload route, checked against the live profile.")
 
 var FileAttachParams = pydantic.Extend(SessionParams, "FileAttachParams", ParamsConfig,
 	pydantic.Def("path", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("data_url", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("staged_upload", pydantic.Nullable(StagedFileUpload), nil),
-)
+).Described("``path`` when the file is gateway-visible, else ``data_url`` carries the bytes; ``name`` labels\nan uploaded file.")
 
 var FileAttachResult = pydantic.NewModel("FileAttachResult", ClosedConfig,
 	pydantic.Req("attached", pydantic.Bool),
@@ -149,7 +149,7 @@ var InputDetectDropResult = pydantic.Extend(ImageMeta, "InputDetectDropResult", 
 	pydantic.Def("path", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("text", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``matched: false`` alone when the text is not a drop; an image drop is queued immediately\n(``is_image`` + ``count``), a file drop only yields the ``text`` to insert.")
 
 var _ = Method("input.detect_drop", InputDetectDropParams, InputDetectDropResult, "Recognise a terminal file drop pasted into the composer and turn it into an attachment.")
 
@@ -159,7 +159,7 @@ var SideAgentParams = pydantic.Extend(SessionParams, "SideAgentParams", ParamsCo
 
 var TaskIdResult = pydantic.NewModel("TaskIdResult", ClosedConfig,
 	pydantic.Req("task_id", pydantic.Str),
-)
+).Described("The side agent runs detached; its answer lands on the parent session as an event carrying\nthis ``task_id``.")
 
 var _ = Method("prompt.background", SideAgentParams, TaskIdResult, "Run a task on a fresh agent in the background; the answer arrives as background.complete.")
 
@@ -185,7 +185,7 @@ var ClarifyLockStatus = pydantic.Enum("ClarifyLockStatus", "ok", "ok", "expired"
 var ClarifyLockResult = pydantic.NewModel("ClarifyLockResult", ClosedConfig,
 	pydantic.Req("status", ClarifyLockStatus),
 	pydantic.Def("remaining", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("``remaining`` lists the qids still unanswered; the lock that empties it resolves the request.\n``expired``: the wait already ended (timeout / cancel) — not an error.")
 
 var _ = Method("clarify.lock", ClarifyLockParams, ClarifyLockResult, "Lock one answer of a batch clarify request (editable until every question is locked).")
 
@@ -223,7 +223,7 @@ var ApprovalRespondParams = pydantic.Extend(SessionParams, "ApprovalRespondParam
 	pydantic.Def("choice", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("all", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("request_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``choice`` is one of the offered ``approval`` choices (once / session / always / deny); ``all``\nresolves every pending approval, ``request_id`` a specific one, neither the oldest.")
 
 var ApprovalRespondResult = pydantic.NewModel("ApprovalRespondResult", ClosedConfig,
 	pydantic.Req("resolved", pydantic.Int),
@@ -247,7 +247,7 @@ var VoiceToggleResult = pydantic.NewModel("VoiceToggleResult", ClosedConfig,
 	pydantic.Def("audio_available", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("stt_available", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("details", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``methods_voice.py::_voice_status_payload`` (+ the requirements probe on ``status``, the spoken\nstop hint on ``on``).")
 
 var _ = Method("voice.toggle", VoiceToggleParams, VoiceToggleResult, "/voice parity: report, flip voice mode on/off, or toggle speech output.")
 
@@ -285,7 +285,7 @@ var WakeStartParams = pydantic.NewModel("WakeStartParams", ParamsConfig,
 	pydantic.Def("client_capture", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``surface`` names the caller (\"tui\" | \"gui\"); ``persist`` is the explicit gesture that also\nflips ``wake_word.enabled`` on; ``client_capture`` asks for PCM streamed via wake.feed.")
 
 var WakeStartResult = pydantic.NewModel("WakeStartResult", ClosedConfig,
 	pydantic.Req("started", pydantic.Bool),
@@ -298,7 +298,7 @@ var WakeStartResult = pydantic.NewModel("WakeStartResult", ClosedConfig,
 	pydantic.Def("capture", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("sample_rate", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("frame_length", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``started: false`` carries ``reason`` (unavailable / disabled / disabled_for_surface / owned);\n``sample_rate`` / ``frame_length`` describe the PCM frames the armed detector expects.")
 
 var _ = Method("wake.start", WakeStartParams, WakeStartResult, "Arm the wake-word listener for the calling surface; refusals explain why.")
 
@@ -348,7 +348,7 @@ var WakeInputDevice = pydantic.NewModel("WakeInputDevice", OpenConfig,
 	pydantic.Def("default_samplerate", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("hostapi_index", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("hostapi", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``tools/wake_word.py::_describe_input_device`` — PortAudio diagnostics for the configured mic.")
 
 var WakeStatusResult = pydantic.NewModel("WakeStatusResult", ClosedConfig,
 	pydantic.Req("listening", pydantic.Bool),
@@ -366,7 +366,7 @@ var WakeStatusResult = pydantic.NewModel("WakeStatusResult", ClosedConfig,
 	pydantic.Req("local_input_available", pydantic.Bool),
 	pydantic.Req("sample_rate", pydantic.Int),
 	pydantic.Req("frame_length", pydantic.Int),
-)
+).Described("``enabled`` is config truth; ``listening`` is this caller's armed detector; ``audio_silent``\nmeans armed but deaf (see ``hint``).")
 
 var _ = Method("wake.status", WakeStatusParams, WakeStatusResult, "Everything a client needs to draw the wake-word state and decide whether to (re)arm.")
 
@@ -375,7 +375,7 @@ var WakeFeedParams = pydantic.NewModel("WakeFeedParams", ParamsConfig,
 	pydantic.Def("pcm_b64", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("sample_rate", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``pcm`` (or the ``pcm_b64`` alias): base64 int16 mono little-endian, 16 kHz only.")
 
 var WakeFeedResult = pydantic.Extend(WakeOwnerResult, "WakeFeedResult", ClosedConfig,
 	pydantic.Req("fed", pydantic.Bool),

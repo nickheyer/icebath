@@ -14,6 +14,7 @@ import (
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/mattn/go-runewidth"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 var widthCond = &runewidth.Condition{EastAsianWidth: false}
@@ -54,10 +55,7 @@ type Console struct {
 
 // Console over a writer, styled and animated only when the writer is a terminal
 func NewConsole(w io.Writer) *Console {
-	tty := false
-	if f, ok := w.(*os.File); ok {
-		tty = xterm.IsTerminal(f.Fd())
-	}
+	tty := pysys.Isatty(w)
 	term := os.Getenv("TERM")
 	color := tty && term != "dumb" && term != "unknown"
 	return &Console{Out: w, Color: color, Width: DetectWidth(), Terminal: tty, NoColor: os.Getenv("NO_COLOR") != ""}

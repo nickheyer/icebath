@@ -28,7 +28,7 @@ vi.mock(import('@/store/terminal-backend-warning'), () => ({
   warnIfTerminalBackendUnavailable: vi.fn(async () => false)
 }))
 
-type WebappWindow = Window & { __HERMES_DASHBOARD_PROFILE__?: string }
+type WebappWindow = Window & { __ICEBATH_DASHBOARD_PROFILE__?: string }
 
 function Harness() {
   useGatewayBoot({
@@ -68,7 +68,7 @@ async function flush() {
 
 /** Boot a Webapp tab at `url` against a gateway launched as `launch`; resolves once boot is done. */
 async function bootWebappTab(url: string, launch = 'default') {
-  ;(window as WebappWindow).__HERMES_DASHBOARD_PROFILE__ = launch
+  ;(window as WebappWindow).__ICEBATH_DASHBOARD_PROFILE__ = launch
   window.history.replaceState(null, '', url)
   seedWebappSession('served-token')
   expect(installBrowserDesktopBridge()).toBe(true)
@@ -147,7 +147,7 @@ afterEach(() => {
   vi.restoreAllMocks()
   ;(globalThis as { WebSocket: unknown }).WebSocket = originalWebSocket
   Reflect.deleteProperty(window, 'hermesDesktop')
-  delete (window as WebappWindow).__HERMES_DASHBOARD_PROFILE__
+  delete (window as WebappWindow).__ICEBATH_DASHBOARD_PROFILE__
   document.documentElement.removeAttribute('data-hermes-desktop-host')
   clearWebappSession()
   window.localStorage.clear()
@@ -184,7 +184,7 @@ it('a bare tab on a gateway launched as a named profile names default when it as
 })
 
 it('a bare tab opens on the saved default the same way, and records it in its address as a switch does', async () => {
-  window.localStorage.setItem('hermes:webapp:default-profile:/', JSON.stringify({ connectionId: 'local', profile: 'research' }))
+  window.localStorage.setItem('icebath:webapp:default-profile:/', JSON.stringify({ connectionId: 'local', profile: 'research' }))
   await bootWebappTab('/#/')
 
   expect($activeGatewayProfile.get()).toBe('research')

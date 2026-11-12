@@ -24,11 +24,12 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
     set -eu; \
     go run ./cmd/icebath-build web; \
     CGO_ENABLED=0 go build -tags webdist -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-        -o /out/icebath ./cmd/icebath
+        -o /out/icebath ./cmd/icebath; \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/icebath-init ./cmd/icebath-init
 
 FROM scratch AS build-release
 ARG TARGETPLATFORM
-COPY ${TARGETPLATFORM}/icebath /out/icebath
+COPY ${TARGETPLATFORM}/icebath ${TARGETPLATFORM}/icebath-init /out/
 
 FROM build-${BINARY_SOURCE} AS binary
 
@@ -53,21 +54,20 @@ RUN if [ "$ICEBATH_BOT_DESKTOP" = "1" ]; then \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
-RUN useradd -u 10000 -m -d /opt/data icebath
+RUN useradd -u 10000 -m -d /opt/data icebath && \
+    mkdir -p /run/s6 /run/service && chown 10000:10000 /run/s6 /run/service
 WORKDIR /opt/icebath
-COPY --from=binary --chmod=0755 /out/icebath /opt/icebath/icebath
+COPY --from=binary --chmod=0755 /out/icebath /out/icebath-init /opt/icebath/
 COPY --chmod=0644 LICENSE README.md cli-config.yaml.example .env.example /opt/icebath/
 COPY --chmod=0644 docker/SOUL.md /opt/icebath/docker/SOUL.md
 
-# The binary is its own init and supervision suite: /init execs the supervisor
-# as s6-svscan, the s6 control verbs and the tini compat shim are the same
-# binary under those names.
+# icebath-init is the init, supervisor, s6 control verbs and tini shim under those names, handing icebath work to the binary beside it
 RUN set -eu; \
     mkdir -p /command; \
-    ln -s /opt/icebath/icebath /init; \
-    ln -s /opt/icebath/icebath /usr/bin/tini; \
+    ln -s /opt/icebath/icebath-init /init; \
+    ln -s /opt/icebath/icebath-init /usr/bin/tini; \
     for verb in s6-svscan s6-svc s6-svstat s6-svwait s6-svscanctl s6-setuidgid with-contenv s6-log; do \
-        ln -s /opt/icebath/icebath "/command/$verb"; \
+        ln -s /opt/icebath/icebath-init "/command/$verb"; \
         ln -s "/command/$verb" "/usr/bin/$verb"; \
     done
 
@@ -115,7 +115,7 @@ COPY --chmod=0644 docker/profile-icebath-path.sh /etc/profile.d/icebath.sh
 VOLUME [ "/opt/data" ]
 EXPOSE 9119
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD [ "/opt/icebath/icebath", "container-health" ]
+    CMD [ "/opt/icebath/icebath-init", "container-health" ]
 
 # /init bootstraps the volume as root (UID/GID remap, ownership, seeding),
 # supervises the dashboard and per-profile gateway services, then runs the

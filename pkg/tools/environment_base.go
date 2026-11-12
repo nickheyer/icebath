@@ -23,7 +23,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -1790,11 +1789,8 @@ func (b *baseEnv) killSpawnedTree(p ProcessHandle) {
 	}
 }
 
-// KillProcessTree kills pid, its process group and every descendant
-func KillProcessTree(pid int) {
-	killProcessGroup(pid)
-	proc.KillTree(pid)
-}
+// KillProcessTree kills pid and every descendant through the shared deadline tree kill
+func KillProcessTree(pid int) { deadlineKillTree(pid, 0) }
 
 // Rewrites sudo for a piped password and applies the macOS open raise ladder
 func (b *baseEnv) prepareCommand(ctx context.Context, command string) (string, *string) {

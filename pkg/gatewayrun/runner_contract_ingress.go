@@ -86,3 +86,13 @@ func (r *GatewayRunner) RefreshFallbackModel(ctx context.Context) []map[string]a
 func (r *GatewayRunner) SystemPromptForChannel(ctx context.Context, platform gateway.Platform, chatID string, threadID, parentID *string) string {
 	return r.getSystemPromptForChannel(ctx, platform, chatID, threadID, parentID)
 }
+
+// Whether the sender of the source passes the full gateway authorization chain
+func (r *GatewayRunner) IsUserAuthorized(ctx context.Context, source *gateway.SessionSource, allowAdapterDelegation bool) (bool, error) {
+	return r.isUserAuthorized(ctx, source, allowAdapterDelegation)
+}
+
+// Unauthorized DM behavior of the platform for the profile, pair, decline or ignore
+func (r *GatewayRunner) GetUnauthorizedDMBehavior(ctx context.Context, platform gateway.Platform, profile *string) string {
+	return r.getUnauthorizedDMBehavior(ctx, platform, profile)
+}

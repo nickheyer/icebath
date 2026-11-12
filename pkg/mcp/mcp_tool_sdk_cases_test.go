@@ -16,36 +16,6 @@ import (
 	"time"
 )
 
-// Closes the mcp gate the way the Python tests patch _MCP_AVAILABLE False, restoring it afterwards
-func closeSDKGate(t *testing.T) {
-	t.Helper()
-	ensureMCPSDK()
-	sdkMu.Lock()
-	prev := mcpAvailable
-	mcpAvailable = false
-	sdkMu.Unlock()
-	t.Cleanup(func() {
-		sdkMu.Lock()
-		mcpAvailable = prev
-		sdkMu.Unlock()
-	})
-}
-
-// Closes the HTTP transport gate the way the Python tests patch _MCP_HTTP_AVAILABLE False
-func closeHTTPGate(t *testing.T) {
-	t.Helper()
-	ensureMCPSDK()
-	sdkMu.Lock()
-	prev := mcpHTTPAvailable
-	mcpHTTPAvailable = false
-	sdkMu.Unlock()
-	t.Cleanup(func() {
-		sdkMu.Lock()
-		mcpHTTPAvailable = prev
-		sdkMu.Unlock()
-	})
-}
-
 // True when the registry holds a live task under name
 func serverSpawned(name string) bool {
 	mcpMu.Lock()
@@ -54,29 +24,9 @@ func serverSpawned(name string) bool {
 	return spawned
 }
 
-// test_mcp_tool.py TestGracefulFallback test_mcp_unavailable_returns_empty
-func TestGracefulFallbackMcpUnavailableReturnsEmpty(t *testing.T) {
-	_, env := managerHome(t)
-	writeServersConfig(t, "  srv:\n    command: fake\n")
-	closeSDKGate(t)
-	names, err := ConnectAll(context.Background(), env, nil)
-	if err != nil || len(names) != 0 || serverSpawned("srv") {
-		t.Fatalf("names %v err %v spawned %v", names, err, serverSpawned("srv"))
-	}
-}
-
-// test_mcp_tool.py TestRegisterMcpServers test_mcp_not_available_returns_empty
-func TestRegisterMcpServersMcpNotAvailableReturnsEmpty(t *testing.T) {
-	_, env := managerHome(t)
-	closeSDKGate(t)
-	names, err := Connect(context.Background(), env, map[string]*Rendered{"srv": {Config: map[string]any{"command": "test"}}})
-	if err != nil || len(names) != 0 || serverSpawned("srv") {
-		t.Fatalf("names %v err %v spawned %v", names, err, serverSpawned("srv"))
-	}
-}
-
 // test_mcp_tool.py TestHTTPConfig test_is_http_with_url
 func TestHTTPConfigIsHttpWithUrl(t *testing.T) {
+	isolateHome(t)
 	s := newServerTask("remote", nil)
 	s.config = map[string]any{"url": "https://example.com/mcp"}
 	if !s.isHTTP() {
@@ -84,36 +34,9 @@ func TestHTTPConfigIsHttpWithUrl(t *testing.T) {
 	}
 }
 
-// test_mcp_tool.py TestHTTPConfig test_http_unavailable_raises
-func TestHTTPConfigHttpUnavailableRaises(t *testing.T) {
-	isolateHome(t)
-	closeHTTPGate(t)
-	s := newServerTask("remote", nil)
-	r := &Rendered{Config: map[string]any{"url": "https://example.com/mcp"}}
-	s.config = r.Config
-	_, err := s.runHTTP(context.Background(), r)
-	var ie *sdkImportError
-	if !errors.As(err, &ie) || errTypeName(err) != "ImportError" || !strings.Contains(err.Error(), "requires HTTP transport") {
-		t.Fatalf("err %T %v", err, err)
-	}
-}
-
-// test_mcp_tool.py TestHTTPConfig test_stdio_unavailable_raises_importerror_not_nameerror
-func TestHTTPConfigStdioUnavailableRaisesImporterrorNotNameerror(t *testing.T) {
-	isolateHome(t)
-	closeSDKGate(t)
-	s := newServerTask("local", nil)
-	r := &Rendered{Config: map[string]any{"command": "python3", "args": []any{"/tmp/echo.py"}}}
-	s.config = r.Config
-	_, err := s.runStdio(context.Background(), r)
-	var ie *sdkImportError
-	if !errors.As(err, &ie) || errTypeName(err) != "ImportError" || !strings.Contains(err.Error(), "requires the 'mcp' Python SDK") {
-		t.Fatalf("err %T %v", err, err)
-	}
-}
-
 // test_mcp_server_log_notifications.py TestLogLevelMap test_all_mcp_levels_mapped
 func TestLogLevelMapAllMcpLevelsMapped(t *testing.T) {
+	isolateHome(t)
 	for _, lvl := range []string{"debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"} {
 		if _, ok := logLevelMap[lvl]; !ok {
 			t.Fatalf("%s unmapped", lvl)
@@ -128,6 +51,7 @@ func logSession(name string) *Session {
 
 // test_mcp_server_log_notifications.py TestLoggingCallback test_routes_to_hermes_logger_with_server_tag
 func TestLoggingCallbackRoutesToHermesLoggerWithServerTag(t *testing.T) {
+	isolateHome(t)
 	logs := captureLogs(t)
 	logSession("log_srv").onServerLog(json.RawMessage(`{"level":"info","data":"server started","logger":null}`))
 	for _, r := range logs.all() {
@@ -140,6 +64,7 @@ func TestLoggingCallbackRoutesToHermesLoggerWithServerTag(t *testing.T) {
 
 // test_mcp_server_log_notifications.py TestLoggingCallback test_includes_sub_logger_name
 func TestLoggingCallbackIncludesSubLoggerName(t *testing.T) {
+	isolateHome(t)
 	logs := captureLogs(t)
 	logSession("log_srv").onServerLog(json.RawMessage(`{"level":"warning","data":"rate limited","logger":"http"}`))
 	for _, r := range logs.all() {
@@ -152,6 +77,7 @@ func TestLoggingCallbackIncludesSubLoggerName(t *testing.T) {
 
 // test_mcp_server_log_notifications.py TestLoggingCallback test_handler_never_raises
 func TestLoggingCallbackHandlerNeverRaises(t *testing.T) {
+	isolateHome(t)
 	captureLogs(t)
 	s := logSession("log_srv")
 	for _, raw := range []string{`{}`, `null`, `[]`, `not json`, `{"level":7,"data":{"k":[1,2]},"logger":["x"]}`} {
@@ -168,15 +94,11 @@ func TestLoggingCallbackHandlerNeverRaises(t *testing.T) {
 
 // test_mcp_server_log_notifications.py TestSDKSupportGate test_current_sdk_supports_logging_callback
 func TestSDKSupportGateCurrentSdkSupportsLoggingCallback(t *testing.T) {
-	ensureMCPSDK()
+	isolateHome(t)
 	logs := captureLogs(t)
 	logSession("gate").onServerLog(json.RawMessage(`{"level":"info","data":"probe"}`))
-	expected := logs.count("MCP server log [gate]: probe") == 1
-	sdkMu.Lock()
-	flag := loggingCallbackSupported
-	sdkMu.Unlock()
-	if flag != expected || flag != clientSessionAccepts("logging_callback") {
-		t.Fatalf("flag %v expected %v accepts %v", flag, expected, clientSessionAccepts("logging_callback"))
+	if got := logs.count("MCP server log [gate]: probe"); got != 1 {
+		t.Fatalf("server log routed %d times", got)
 	}
 }
 
@@ -218,6 +140,7 @@ func toolPage(names []string, next string) map[string]any {
 
 // test_mcp_list_pagination.py TestPaginateFullList test_single_page_no_cursor
 func TestPaginateFullListSinglePageNoCursor(t *testing.T) {
+	isolateHome(t)
 	var mu sync.Mutex
 	var cursors []string
 	sess, tr := pagingSession(t, "srv", func(cursor string, call int) (any, error) {
@@ -239,6 +162,7 @@ func TestPaginateFullListSinglePageNoCursor(t *testing.T) {
 
 // test_mcp_list_pagination.py TestPaginateFullList test_runaway_cursor_capped
 func TestPaginateFullListRunawayCursorCapped(t *testing.T) {
+	isolateHome(t)
 	logs := captureLogs(t)
 	sess, tr := pagingSession(t, "srv", func(cursor string, call int) (any, error) {
 		return toolPage([]string{fmt.Sprintf("t%d", call)}, fmt.Sprintf("c%d", call)), nil
@@ -254,6 +178,7 @@ func TestPaginateFullListRunawayCursorCapped(t *testing.T) {
 
 // test_mcp_list_pagination.py TestDiscoveryUsesPagination test_discover_tools_drains_all_pages
 func TestDiscoveryUsesPaginationDiscoverToolsDrainsAllPages(t *testing.T) {
+	isolateHome(t)
 	pages := map[string]any{"": toolPage([]string{"first"}, "page-2"), "page-2": toolPage([]string{"second"}, "")}
 	srv, _ := handlerServer(t, "pag_srv", func(method string, params map[string]any) (any, error) {
 		if method != methodToolsList {
@@ -278,6 +203,7 @@ func TestDiscoveryUsesPaginationDiscoverToolsDrainsAllPages(t *testing.T) {
 
 // test_mcp_list_pagination.py TestTypeErrorPropagation test_type_error_from_modern_list_call_propagates
 func TestTypeErrorPropagationTypeErrorFromModernListCallPropagates(t *testing.T) {
+	isolateHome(t)
 	sess, tr := pagingSession(t, "srv", func(cursor string, call int) (any, error) {
 		if call == 1 {
 			return toolPage([]string{"first"}, "page-2"), nil
@@ -295,6 +221,7 @@ func TestTypeErrorPropagationTypeErrorFromModernListCallPropagates(t *testing.T)
 
 // test_mcp_list_pagination.py TestTypeErrorPropagation test_legacy_signature_still_uses_cursor_fallback
 func TestTypeErrorPropagationLegacySignatureStillUsesCursorFallback(t *testing.T) {
+	isolateHome(t)
 	sess, tr := pagingSession(t, "srv", func(cursor string, call int) (any, error) {
 		if call == 1 {
 			return toolPage([]string{"first"}, "p2"), nil
@@ -339,6 +266,7 @@ func fakePidProbe(t *testing.T, probe func(pid int) (bool, error)) *atomic.Int32
 
 // test_mcp_stdio_children_dead.py test_live_child_reports_not_dead
 func TestLiveChildReportsNotDead(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(int) (bool, error) { return true, nil })
 	if taskWithPids([]int{60634}, false).stdioChildrenDead() {
 		t.Fatal("an alive tracked pid reported all dead")
@@ -347,6 +275,7 @@ func TestLiveChildReportsNotDead(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_all_children_dead_reports_dead
 func TestAllChildrenDeadReportsDead(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(int) (bool, error) { return false, nil })
 	if !taskWithPids([]int{111, 222}, false).stdioChildrenDead() {
 		t.Fatal("every child gone did not report dead")
@@ -355,6 +284,7 @@ func TestAllChildrenDeadReportsDead(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_mixed_liveness_reports_not_dead
 func TestMixedLivenessReportsNotDead(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(pid int) (bool, error) { return pid != 111, nil })
 	if taskWithPids([]int{111, 222}, false).stdioChildrenDead() {
 		t.Fatal("one live sibling did not keep the verdict alive")
@@ -363,6 +293,7 @@ func TestMixedLivenessReportsNotDead(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_no_captured_pids_stays_fail_open
 func TestNoCapturedPidsStaysFailOpen(t *testing.T) {
+	isolateHome(t)
 	calls := fakePidProbe(t, func(int) (bool, error) { return false, nil })
 	if taskWithPids(nil, false).stdioChildrenDead() || taskWithPids([]int{1}, true).stdioChildrenDead() || calls.Load() != 0 {
 		t.Fatalf("unknown liveness failed fast, probes %d", calls.Load())
@@ -371,6 +302,7 @@ func TestNoCapturedPidsStaysFailOpen(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_psutil_unavailable_stays_fail_open
 func TestPsutilUnavailableStaysFailOpen(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, nil)
 	if taskWithPids([]int{1}, false).stdioChildrenDead() {
 		t.Fatal("missing probe support read as proof of child death")
@@ -379,6 +311,7 @@ func TestPsutilUnavailableStaysFailOpen(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_pid_probe_error_stays_fail_open
 func TestPidProbeErrorStaysFailOpen(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(int) (bool, error) { return false, errors.New("probe failed") })
 	if taskWithPids([]int{1}, false).stdioChildrenDead() {
 		t.Fatal("a failed probe authorized the destructive fast-fail")
@@ -387,6 +320,7 @@ func TestPidProbeErrorStaysFailOpen(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_watcher_does_not_resolve_while_a_child_is_alive
 func TestWatcherDoesNotResolveWhileAChildIsAlive(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(int) (bool, error) { return true, nil })
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -397,6 +331,7 @@ func TestWatcherDoesNotResolveWhileAChildIsAlive(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_watcher_resolves_when_all_children_are_dead
 func TestWatcherResolvesWhenAllChildrenAreDead(t *testing.T) {
+	isolateHome(t)
 	fakePidProbe(t, func(int) (bool, error) { return false, nil })
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -407,6 +342,7 @@ func TestWatcherResolvesWhenAllChildrenAreDead(t *testing.T) {
 
 // test_mcp_stdio_children_dead.py test_fast_fail_probe_never_calls_the_watcher_on_the_plain_path
 func TestFastFailProbeNeverCallsTheWatcherOnThePlainPath(t *testing.T) {
+	isolateHome(t)
 	srv, tr := handlerServer(t, "srv", func(method string, params map[string]any) (any, error) {
 		if method == methodToolsCall {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": "ok"}}}, nil
@@ -520,6 +456,7 @@ func TestTheSessionStreamsAreTheFirstTwoYielded(t *testing.T) {
 
 // test_mcp_streamable_http_arity.py test_the_seeded_protocol_header_matches_the_handshake_the_client_sends
 func TestTheSeededProtocolHeaderMatchesTheHandshakeTheClientSends(t *testing.T) {
+	isolateHome(t)
 	tr, err := StartStreamableHTTP(HTTPOptions{URL: "https://example.com/mcp", SSLVerify: true})
 	if err != nil {
 		t.Fatal(err)

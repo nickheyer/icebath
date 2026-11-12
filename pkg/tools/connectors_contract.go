@@ -13,6 +13,9 @@ const (
 	TargetNotConnected TargetState = "not_connected"
 )
 
+// Every TargetState member in declaration order
+var TargetStates = []TargetState{TargetPending, TargetInitiated, TargetConnected, TargetSkipped, TargetFailed, TargetExpired, TargetNotConnected}
+
 // ConnActor names who may cause a target transition
 type ConnActor string
 
@@ -31,6 +34,9 @@ const (
 	SettleDeadline    SettleReason = "deadline"
 	SettleInterrupt   SettleReason = "interrupt"
 )
+
+// Every SettleReason member in declaration order
+var SettleReasons = []SettleReason{SettleAllResolved, SettleContinue, SettleDeadline, SettleInterrupt}
 
 // ConnectorKinds lists every target kind a connection operation carries
 var ConnectorKinds = []string{"connector", "mcp", "plugin", "skill"}

@@ -71,7 +71,9 @@ func init() {
 		}
 		return "", "", "", false
 	}
-	gatewayrun.IsGatewayKnownCommand = func(name string) bool { return commands.IsGatewayKnownCommand(commands.Default, name) }
+	gatewayrun.IsGatewayKnownCommand = func(name string) bool {
+		return commands.IsGatewayKnownCommand(context.Background(), commands.Default, name)
+	}
 	gatewayrun.GatewayKnownCommand = func(name string) bool { return commands.GatewayKnownCommands()[name] }
 	gatewayrun.ExecuteSlashCommand = func(ctx context.Context, name, surface, args string, options map[string]any) (gatewayrun.SlashCommandReply, error) {
 		reply, err := commands.ExecuteCommand(ctx, name, commands.CommandContext{Surface: surface, Args: args, Options: options})

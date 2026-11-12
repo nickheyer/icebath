@@ -210,7 +210,7 @@ func ticketPrincipal(req *Request) (*pyjson.Object, *string, error) {
 		}
 	}
 	if !req.App().State.Bool("auth_required") {
-		presented := req.Headers().Get(sessionHeaderName)
+		presented := presentedSessionHeader(req.Headers())
 		if presented == "" {
 			presented = strings.TrimPrefix(req.Headers().Get("authorization"), "Bearer ")
 		}
@@ -361,7 +361,7 @@ func webappRouter() *APIRouter {
 			if !haveOrigin || !haveTarget || origin != target {
 				return nil, NewHTTPException(403, "Webapp window handoff requires a same-origin request")
 			}
-			ticket := req.Headers().Get("X-Hermes-Window-Ticket")
+			ticket := req.Headers().Get("X-Icebath-Window-Ticket")
 			webappTicketMu.Lock()
 			tickets := webappWindowTickets(req.App().State)
 			entry, found := tickets[ticket]

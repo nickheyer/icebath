@@ -104,7 +104,7 @@ func TestBuildsCorrectRequest(t *testing.T) {
 	if server.url != "/v1/chat/completions" {
 		t.Fatalf("path = %q", server.url)
 	}
-	if server.headers.Get("Authorization") != "Bearer test-key-123" || server.headers.Get("X-Hermes-Session-Id") != "session-abc" {
+	if server.headers.Get("Authorization") != "Bearer test-key-123" || server.headers.Get("X-Icebath-Session-Id") != "session-abc" {
 		t.Fatalf("headers = %v", server.headers)
 	}
 	want := []any{

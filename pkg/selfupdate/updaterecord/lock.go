@@ -2,6 +2,7 @@ package updaterecord
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -60,16 +61,24 @@ func CheckoutLockPath(installRoot string) (string, error) {
 	return filepath.Join(common, GitCheckoutLockName), nil
 }
 
-// Zombie aware liveness of a positive pid
+// Zombie aware liveness of a positive pid, false with a debug line when the probe cannot run
 func pidAlive(pid int) bool {
-	return pid > 0 && proc.Exists(pid)
+	if pid <= 0 {
+		return false
+	}
+	alive, err := pidRunning(pid)
+	if err != nil {
+		slog.Debug(fmt.Sprintf("Could not probe pid %d: %s", pid, err))
+		return false
+	}
+	return alive
 }
 
-// Creation time of pid in unix seconds on the clock psutil reports, nil when unreadable
+// Creation time of pid in unix seconds on the clock psutil reports, the stdlib probe when that fails
 func ProcessCreateTime(pid int) *float64 {
 	birth, err := proc.Birth(pid)
 	if err != nil {
-		return nil
+		return stdlibCreateTime(pid)
 	}
 	return &birth
 }

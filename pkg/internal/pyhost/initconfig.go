@@ -55,7 +55,7 @@ type strSetting struct {
 	value string
 }
 
-// The isolated embedding profile, venv aware through executable and stdlib located through home
+// The embedding profile, isolated unless Environment honours PYTHON variables, venv aware through executable and home
 func settingsFor(opts Options) initSettings {
 	in := opts.Interpreter
 	s := initSettings{
@@ -72,6 +72,16 @@ func settingsFor(opts Options) initSettings {
 	}
 	if opts.PycachePrefix != "" {
 		s.strs = append(s.strs, strSetting{"pycache_prefix", opts.PycachePrefix})
+	}
+	if opts.Environment {
+		for i, setting := range s.ints {
+			switch setting.name {
+			case "isolated", "safe_path":
+				s.ints[i].value = 0
+			case "use_environment", "user_site_directory":
+				s.ints[i].value = 1
+			}
+		}
 	}
 	if len(s.argv) == 0 {
 		s.argv = []string{in.Executable}

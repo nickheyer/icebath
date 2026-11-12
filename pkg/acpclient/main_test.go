@@ -47,11 +47,24 @@ func runFakeAgent(mode string) int {
 		return req
 	}
 	switch mode {
-	case "server":
+	case "server", "catalog":
+		session, chunk, delay := map[string]any{"sessionId": "s1"}, "done", 400*time.Millisecond
+		if mode == "catalog" {
+			session, chunk, delay = catalogSession(os.Getenv("ACPCLIENT_FAKE_MALFORMED") != ""), "hello", 0
+		}
+		if text := os.Getenv("ACPCLIENT_FAKE_REPLY"); text != "" {
+			chunk = text
+		}
 		for {
 			line, err := in.ReadString('\n')
 			if err != nil {
 				return 0
+			}
+			if logPath := os.Getenv("ACPCLIENT_FAKE_LOG"); logPath != "" {
+				if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+					_, _ = f.WriteString(line)
+					_ = f.Close()
+				}
 			}
 			var req map[string]any
 			_ = json.Unmarshal([]byte(line), &req)
@@ -60,11 +73,11 @@ func runFakeAgent(mode string) int {
 			case "initialize":
 				result = map[string]any{"protocolVersion": 1}
 			case "session/new":
-				result = map[string]any{"sessionId": "s1"}
+				result = session
 			case "session/prompt":
-				time.Sleep(400 * time.Millisecond)
+				time.Sleep(delay)
 				reply(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
-					"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": "done"}}}})
+					"update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"text": chunk}}}})
 				result = map[string]any{"stopReason": "end_turn"}
 			}
 			reply(map[string]any{"jsonrpc": "2.0", "id": req["id"], "result": result})
@@ -104,6 +117,22 @@ func runFakeAgent(mode string) int {
 			"configOptions": []any{map[string]any{"id": "model", "options": []any{map[string]any{"value": "model-sol"}}}}}})
 		_, _ = in.ReadString('\n')
 		return 0
+	case "legacy":
+		fmt.Fprintln(os.Stderr, "legacy build 1.0")
+		return 3
 	}
 	return 1
+}
+
+// Session the catalog agent advertises, three model options or a non list configOptions when malformed
+func catalogSession(malformed bool) map[string]any {
+	options := []any{
+		map[string]any{"value": "open-model"},
+		map[string]any{"value": "policy-blocked", "_meta": map[string]any{"vendorPolicy": "off"}},
+		map[string]any{"value": "copilot-gated", "_meta": map[string]any{"copilotEnablement": "disabled"}},
+	}
+	if malformed {
+		return map[string]any{"sessionId": "s1", "configOptions": 5, "x": []any{map[string]any{"id": "model", "category": "model", "options": options}}}
+	}
+	return map[string]any{"sessionId": "s1", "configOptions": []any{map[string]any{"id": "model", "category": "model", "options": options}}}
 }

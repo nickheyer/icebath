@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -599,7 +600,7 @@ func CaptureRetiredWALGeneration(ctx context.Context, dbPath string, sidecarIden
 			"trigger":                    trigger,
 			"pid":                        os.Getpid(),
 			"captured_at":                time.Now().UTC().Format("2006-01-02T15:04:05Z"),
-			"python":                     runtime.Version(),
+			"go":                         hostinfo.GoVersion(),
 			"sqlite":                     LinkedSQLiteVersion(),
 			"wal":                        walCopy,
 			"shm":                        nil,

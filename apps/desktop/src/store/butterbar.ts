@@ -33,7 +33,7 @@ const $registered = atom<readonly ButterbarItem[]>([])
 const $closedThisRun = atom<readonly string[]>([])
 
 export const $butterbarDismissed = persistentAtom<string[]>(
-  'hermes.desktop.butterbar.dismissed',
+  'icebath.desktop.butterbar.dismissed',
   [],
   Codecs.json<string[]>(sanitizeKeys)
 )

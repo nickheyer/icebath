@@ -10,16 +10,16 @@ import { $activeGatewayProfile } from '@/store/profile'
 // profile (approval mode, model options, the pet, shared metrics, setup checks) can go out before boot
 // adopts the primary, so the renderer must start on the gateway's own profile, not on `default`. The
 // page the gateway serves sets these globals before any module evaluates (web_server_dashboard.py).
-type PageGlobals = { __HERMES_DASHBOARD_PROFILE__?: string; __HERMES_UI_SURFACE__?: string }
+type PageGlobals = { __ICEBATH_DASHBOARD_PROFILE__?: string; __ICEBATH_UI_SURFACE__?: string }
 
 vi.hoisted(() => {
-  Object.assign(window, { __HERMES_DASHBOARD_PROFILE__: 'solo', __HERMES_UI_SURFACE__: 'webapp' })
+  Object.assign(window, { __ICEBATH_DASHBOARD_PROFILE__: 'solo', __ICEBATH_UI_SURFACE__: 'webapp' })
 })
 
 afterAll(() => {
   const page = window as Window & PageGlobals
-  delete page.__HERMES_DASHBOARD_PROFILE__
-  delete page.__HERMES_UI_SURFACE__
+  delete page.__ICEBATH_DASHBOARD_PROFILE__
+  delete page.__ICEBATH_UI_SURFACE__
 })
 
 it('a Webapp tab starts on the profile its gateway runs as, so a boot request names that profile', async () => {

@@ -219,3 +219,37 @@ func TestAdmissionAptTermuxCommandComesFromStewardTable(t *testing.T) {
 		t.Fatalf("command = %q", refused.UpdateCommand)
 	}
 }
+
+func TestAdmissionPackageManagerStampRefusesWithItsUpgradeCommand(t *testing.T) {
+	for method, command := range map[string]string{
+		"chocolatey": "choco upgrade icebath", "pip": "pipx upgrade icebath-cli", "homebrew": "brew upgrade --cask icebath",
+		"scoop": "scoop update icebath", "winget": "winget upgrade --id nickheyer.icebath", "dpkg": "sudo apt install --only-upgrade icebath",
+		"rpm": "sudo dnf upgrade icebath", "pacman": "paru -Syu icebath-bin", "apk": "apk upgrade icebath",
+	} {
+		tmp := t.TempDir()
+		ucMarkerPath(t, filepath.Join(tmp, "absent.json"))
+		if err := os.WriteFile(filepath.Join(tmp, ".install_method"), []byte(method+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		refused := ucAdmission(t, tmp)
+		if refused == nil || refused.Code != method || !strings.Contains(refused.Message, command) || !strings.Contains(refused.UpdateCommand, command) {
+			t.Fatalf("%s refusal = %+v", method, refused)
+		}
+		if refused.Message != StewardUpdateMessage(method) || strings.Contains(refused.Message, "{steward}") {
+			t.Fatalf("%s message %q", method, refused.Message)
+		}
+	}
+}
+
+func TestAdmissionReleaseBinaryStampsAreAdmitted(t *testing.T) {
+	for _, method := range []string{"script", "setup-app", "unknown"} {
+		tmp := t.TempDir()
+		ucMarkerPath(t, filepath.Join(tmp, "absent.json"))
+		if err := os.WriteFile(filepath.Join(tmp, ".install_method"), []byte(method+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if refused := ucAdmission(t, tmp); refused != nil {
+			t.Fatalf("%s refusal = %+v", method, refused)
+		}
+	}
+}

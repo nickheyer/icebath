@@ -9,7 +9,7 @@ import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '
 import { bootRenderer } from './boot'
 import { startUiPreferencesSync, type UiPreferencesBridge } from './sync'
 
-const FAVORITES = 'hermes.desktop.favorite-models'
+const FAVORITES = 'icebath.desktop.favorite-models'
 const dirs: string[] = []
 const tick = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms))
 

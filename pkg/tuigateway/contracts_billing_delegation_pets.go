@@ -25,7 +25,7 @@ var UsageBar = pydantic.NewModel("UsageBar", ClosedConfig,
 	pydantic.Req("spent_display", pydantic.Str),
 	pydantic.Def("pct_used", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Req("fill_fraction", pydantic.Float),
-)
+).Described("``_serialize_usage_bar``: one bar, magnitudes pre-formatted; ``pct_used`` only for ``plan``.")
 
 var UsageModel = pydantic.NewModel("UsageModel", ClosedConfig,
 	pydantic.Def("ok", pydantic.Nullable(pydantic.Bool), nil),
@@ -40,7 +40,7 @@ var UsageModel = pydantic.NewModel("UsageModel", ClosedConfig,
 	pydantic.Def("has_topup", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("plan_bar", pydantic.Nullable(UsageBar), nil),
 	pydantic.Def("topup_bar", pydantic.Nullable(UsageBar), nil),
-)
+).Described("``_serialize_usage_model`` — also embedded as ``usage`` in the billing / subscription states,\nwhere the fail-open form is a bare ``{available: false}`` (no ``ok``).")
 
 var _ = Method("usage.bars", ProfileParams, UsageModel, "Two-bar dollar usage view shared by /usage, /topup and /subscription; fail-open to unavailable.")
 
@@ -62,7 +62,7 @@ var BillingPaymentMethod = pydantic.NewModel("BillingPaymentMethod", ClosedConfi
 	pydantic.Def("email", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("raw_kind", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("resolved_via", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``_serialize_payment_method``: each kind emits only its own fields (a ``card`` never carries\n``email``; ``unknown`` carries what the server called it in ``raw_kind``).")
 
 var BillingMonthlyCap = pydantic.NewModel("BillingMonthlyCap", ClosedConfig,
 	pydantic.Def("limit_usd", pydantic.Nullable(pydantic.Str), nil),
@@ -79,7 +79,7 @@ var BillingAutoReloadCard = pydantic.NewModel("BillingAutoReloadCard", ClosedCon
 	pydantic.Def("payment_method_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("brand", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("last4", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Only ``distinct`` carries the payment-method identity.")
 
 var BillingAutoReload = pydantic.NewModel("BillingAutoReload", ClosedConfig,
 	pydantic.Req("enabled", pydantic.Bool),
@@ -117,7 +117,7 @@ var BillingStateResult = pydantic.NewModel("BillingStateResult", ClosedConfig,
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("usage", pydantic.Nullable(UsageModel), nil),
 	pydantic.Def("plan_usage", pydantic.Nullable(PlanUsage), nil),
-)
+).Described("``_serialize_billing_state`` (money as strings); the ``except`` fallback emits only\n``ok / logged_in / free_tier_account / error``, so everything else is optional.")
 
 var _ = Method("billing.state", ProfileParams, BillingStateResult, "Read-only billing view (no scope); the Nous free tier is answered locally without a portal call.")
 
@@ -162,7 +162,7 @@ var SubscriptionStateResult = pydantic.NewModel("SubscriptionStateResult", Close
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("usage", pydantic.Nullable(UsageModel), nil),
 	pydantic.Def("plan_usage", pydantic.Nullable(PlanUsage), nil),
-)
+).Described("``_serialize_subscription_state``; the view's fallback emits only ``ok / logged_in / error``.")
 
 var _ = Method("subscription.state", ProfileParams, SubscriptionStateResult, "Current plan, tier catalog and usage for the picker; fail-open when logged out.")
 
@@ -182,16 +182,16 @@ var SubscriptionPreviewResult = pydantic.Extend(BillingEnvelope, "SubscriptionPr
 	pydantic.Def("monthly_credits_delta", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("amount_due_now_cents", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("effective_at", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``_serialize_subscription_preview`` on success; ``effect`` drives the confirm copy.")
 
 var _ = Method("subscription.preview", SubscriptionPreviewParams, SubscriptionPreviewResult, "Chargeless quote of what a plan change would do (billing:manage).")
 
 var SubscriptionChangeParams = pydantic.Extend(ProfileParams, "SubscriptionChangeParams", ParamsConfig,
 	pydantic.Def("subscription_type_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("cancel", pydantic.Bool, false),
-)
+).Described("Either a target tier (downgrade / same-price change) or ``cancel`` (period-end cancellation).")
 
-var BillingPendingChangeResult = pydantic.Extend(BillingEnvelope, "BillingPendingChangeResult", ClosedConfig)
+var BillingPendingChangeResult = pydantic.Extend(BillingEnvelope, "BillingPendingChangeResult", ClosedConfig).Described("``_billing_pending_change``: ``message`` + the raw NAS body in ``payload`` on success.")
 
 var _ = Method("subscription.change", SubscriptionChangeParams, BillingPendingChangeResult, "Schedule a downgrade / same-price change or a period-end cancellation.")
 
@@ -208,7 +208,7 @@ var SubscriptionUpgradeResult = pydantic.Extend(BillingEnvelope, "SubscriptionUp
 	pydantic.Def("recovery_url", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("reason", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("idempotency_key", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("The money route: ``status`` separates a completed upgrade from an SCA / decline that must\nfinish in the portal at ``recovery_url``; ``idempotency_key`` is echoed (also on error) so a\nretry reuses it.")
 
 var _ = Method("subscription.upgrade", SubscriptionUpgradeParams, SubscriptionUpgradeResult, "Prorate, charge and flip the plan (billing:manage, idempotent).")
 
@@ -220,7 +220,7 @@ var BillingChargeParams = pydantic.Extend(ProfileParams, "BillingChargeParams", 
 var BillingChargeResult = pydantic.Extend(BillingEnvelope, "BillingChargeResult", ClosedConfig,
 	pydantic.Def("charge_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("idempotency_key", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``202 {chargeId}`` — money is not confirmed yet; poll ``billing.charge_status``.")
 
 var _ = Method("billing.charge", BillingChargeParams, BillingChargeResult, "Start a one-off top-up charge (billing:manage, idempotent).")
 
@@ -233,7 +233,7 @@ var BillingChargeStatusResult = pydantic.Extend(BillingEnvelope, "BillingChargeS
 	pydantic.Def("amount_usd", pydantic.Nullable(pydantic.Union(pydantic.Str, pydantic.Float)), nil),
 	pydantic.Def("settled_at", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("reason", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Single status read (pending | settled | failed); the caller drives the poll cadence.")
 
 var _ = Method("billing.charge_status", BillingChargeStatusParams, BillingChargeStatusResult, "Poll one charge by id.")
 
@@ -243,7 +243,7 @@ var BillingAutoReloadParams = pydantic.Extend(ProfileParams, "BillingAutoReloadP
 	pydantic.Def("top_up_amount", pydantic.Nullable(pydantic.Union(pydantic.Float, pydantic.Str)), nil),
 )
 
-var BillingMutationResult = pydantic.Extend(BillingEnvelope, "BillingMutationResult", ClosedConfig)
+var BillingMutationResult = pydantic.Extend(BillingEnvelope, "BillingMutationResult", ClosedConfig).Described("A write with no success payload beyond ``ok``.")
 
 var _ = Method("billing.auto_reload", BillingAutoReloadParams, BillingMutationResult, "Enable/disable auto top-up with its threshold and reload amount (billing:manage).")
 
@@ -259,7 +259,7 @@ var BillingStepUpParams = pydantic.Extend(ProfileParams, "BillingStepUpParams", 
 
 var BillingStepUpResult = pydantic.Extend(BillingEnvelope, "BillingStepUpResult", ClosedConfig,
 	pydantic.Def("granted", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``granted`` false when the server downscopes (also on every error envelope).")
 
 var _ = Method("billing.step_up", BillingStepUpParams, BillingStepUpResult, "Run the billing:manage device flow; the URL/code arrive via billing.step_up.verification.")
 
@@ -274,7 +274,7 @@ var ActiveSubagent = pydantic.NewModel("ActiveSubagent", OpenConfig,
 	pydantic.Def("status", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("tool_count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("owner_agent_session_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One live child from ``tools/delegate_tool_registry.py::list_active_subagents`` (the record\nis extended by the child runner — ``missed_steer`` etc. — so it stays open).")
 
 var DelegationStatusResult = pydantic.NewModel("DelegationStatusResult", ClosedConfig,
 	pydantic.Req("active", pydantic.List(ActiveSubagent)),
@@ -306,7 +306,7 @@ var SubagentSteerResult = pydantic.NewModel("SubagentSteerResult", ClosedConfig,
 	pydantic.Req("status", SteerStatus),
 	pydantic.Req("subagent_id", pydantic.Str),
 	pydantic.Req("text", pydantic.Str),
-)
+).Described("``queued`` is not ``delivered``: a child past its final tool batch surfaces ``missed_steer``.")
 
 var _ = Method("subagent.steer", SubagentSteerParams, SubagentSteerResult, "Queue steering text into a live delegated child owned by this session.")
 
@@ -327,7 +327,7 @@ var HandoffStateResult = pydantic.NewModel("HandoffStateResult", ClosedConfig,
 	pydantic.Req("state", pydantic.Str),
 	pydantic.Req("platform", pydantic.Str),
 	pydantic.Req("error", pydantic.Str),
-)
+).Described("``state`` is pending | running | completed | failed, or '' when nothing was requested.")
 
 var _ = Method("handoff.state", SessionParams, HandoffStateResult, "Poll the handoff row for this session.")
 
@@ -338,7 +338,7 @@ var HandoffFailParams = pydantic.Extend(SessionParams, "HandoffFailParams", Para
 var HandoffFailResult = pydantic.NewModel("HandoffFailResult", ClosedConfig,
 	pydantic.Req("failed", pydantic.Bool),
 	pydantic.Req("state", pydantic.Str),
-)
+).Described("``failed`` false when the watcher already claimed the row; ``state`` is what it is now.")
 
 var _ = Method("handoff.fail", HandoffFailParams, HandoffFailResult, "Fail a not-yet-claimed handoff (client poll timeout); CAS against the watcher.")
 
@@ -349,7 +349,7 @@ var MessageReactParams = pydantic.Extend(SessionParams, "MessageReactParams", Pa
 	pydantic.Def("newest_role", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("emoji", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("author", pydantic.Nullable(ReactionAuthor), nil),
-)
+).Described("``row_id`` is ``messages.id``; a not-yet-persisted live message names ``newest_role`` instead.\n``emoji`` null clears; the same emoji again retracts.")
 
 var MessageReactResult = pydantic.NewModel("MessageReactResult", ClosedConfig,
 	pydantic.Req("row_id", pydantic.Int),
@@ -372,7 +372,7 @@ var PetGenProvider = pydantic.NewModel("PetGenProvider", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Req("label", pydantic.Str),
 	pydantic.Req("default", pydantic.Bool),
-)
+).Described("``agent/pet/generate/imagegen.py::list_sprite_providers`` row.")
 
 var PetGenerateStatusResult = pydantic.NewModel("PetGenerateStatusResult", ClosedConfig,
 	pydantic.Req("available", pydantic.Bool),
@@ -387,7 +387,7 @@ var PetGenerateParams = pydantic.Extend(ProfileParams, "PetGenerateParams", Para
 	pydantic.Def("count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("style", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("provider", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``prompt`` or a ``referenceImage`` data URL is required (the handler answers 4004 without one).")
 
 var PetDraft = pydantic.NewModel("PetDraft", ClosedConfig,
 	pydantic.Req("index", pydantic.Int),
@@ -435,7 +435,7 @@ var PetHatchResult = pydantic.NewModel("PetHatchResult", ClosedConfig,
 	pydantic.Req("displayName", pydantic.Str),
 	pydantic.Fac("warnings", pydantic.List(pydantic.Any), pydantic.NewList),
 	pydantic.Req("pet", PetSpritePayload),
-)
+).Described("The hatched pet is installed but NOT active (``pet.select`` adopts, ``pet.remove`` discards).")
 
 var _ = Method("pet.hatch", PetHatchParams, PetHatchResult, "Turn a base draft into a full spritesheet pet; progress streams via pet.hatch.progress.")
 
@@ -449,10 +449,10 @@ var ProjectFacts = pydantic.NewModel("ProjectFacts", ClosedConfig,
 	pydantic.Req("packageManagers", pydantic.List(pydantic.Str)),
 	pydantic.Req("verifyCommands", pydantic.List(pydantic.Str)),
 	pydantic.Req("contextFiles", pydantic.List(pydantic.Str)),
-)
+).Described("``agent/coding_context.py::project_facts_for`` — the system prompt's coding-context detection.")
 
 var ProjectFactsResult = pydantic.NewModel("ProjectFactsResult", ClosedConfig,
 	pydantic.Def("facts", pydantic.Nullable(ProjectFacts), nil),
-)
+).Described("``facts`` null outside a workspace (or when detection failed).")
 
 var _ = Method("project.facts", ProjectFactsParams, ProjectFactsResult, "Structured project facts for a cwd so UIs don't re-sniff the workspace.")

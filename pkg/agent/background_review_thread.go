@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"strings"
 
@@ -89,7 +90,7 @@ func reviewToolWhitelist(ctx context.Context, reviewAgent *AIAgent, taskCfg map[
 	}
 	whitelist := map[string]bool{"read_file": true, "search_files": true}
 	for _, def := range tools.Default.ToolDefinitions(ctx, reviewAgent.env, tools.DefinitionOptions{Enabled: toolsets, Quiet: true}) {
-		if fn, ok := def["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(def["function"]); ok {
 			if name, ok := fn["name"].(string); ok {
 				whitelist[name] = true
 			}

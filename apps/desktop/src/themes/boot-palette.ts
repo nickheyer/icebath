@@ -3,7 +3,7 @@
 // background with another's ink, and only when each colour stands alone: a `var()` resolves to
 // nothing without the app's styles. The notice reads the same key with its own copy of this
 // check, so the renderer entry never fetches theme code; boot-palette.test.ts round-trips them.
-const KEY = 'hermes-boot-palette'
+const KEY = 'icebath-boot-palette'
 
 export interface BootPalette {
   background: string

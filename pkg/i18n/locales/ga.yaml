@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Tacair Uirlisí ar Fáil"
     currently_enabled_legend: "(*) = cumasaithe faoi láthair"
     tip_enable_all: "Leid: Úsáid 'all' nó '*' chun gach tacar uirlisí a chumasú"
-    example: "Sampla: python cli.py --toolsets web,terminal"
+    example: "Sampla: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Fo-ordú /usage anaithnid: {args}. Bain triail as /usage nó /usage reset [--force]."

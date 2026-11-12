@@ -42,8 +42,8 @@ func pluginBackendIsRemote(backend string) bool {
 	if backend == "" || envProbeRemoteBackends[backend] || backend == "local" {
 		return false
 	}
-	provider := GetTerminalBackend(backend)
-	return provider != nil && provider.IsRemote()
+	remote, _ := TerminalProviderFlag(context.Background(), backend, "is_remote", false, "").(bool)
+	return remote
 }
 
 // Runs a short subprocess returning the exit code and trimmed output, failures as -1

@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
 // Fresh home with no managed env marker, the shape the managed install tests start from
@@ -180,14 +182,12 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 	if got, _ := DetectInstallMethod(context.Background(), h, code); got != "git" {
 		t.Fatalf("code stamp must win, got %q", got)
 	}
-	prev := runningInContainer
-	t.Cleanup(func() { runningInContainer = prev })
 	bare := t.TempDir()
-	runningInContainer = func() bool { return false }
+	t.Cleanup(hostinfo.PinContainer(false))
 	if got, _ := DetectInstallMethod(context.Background(), h, bare); got != "unknown" {
 		t.Fatalf("a home docker stamp outside a container is ignored, got %q", got)
 	}
-	runningInContainer = func() bool { return true }
+	t.Cleanup(hostinfo.PinContainer(true))
 	if got, _ := DetectInstallMethod(context.Background(), h, bare); got != "docker" {
 		t.Fatalf("a home docker stamp inside a container counts, got %q", got)
 	}
@@ -203,7 +203,7 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 	if got, _ := DetectInstallMethod(context.Background(), h, worktree); got != "git" {
 		t.Fatalf("a gitdir pointer file is a checkout, got %q", got)
 	}
-	write(filepath.Join(worktree, ".install_method"), "pip\n")
+	write(filepath.Join(worktree, ".install_method"), "uv-tool\n")
 	if got, _ := DetectInstallMethod(context.Background(), h, worktree); got != "git" {
 		t.Fatalf("an unsupported stamp is ignored, got %q", got)
 	}
@@ -230,8 +230,12 @@ func TestDetectInstallMethodOrder(t *testing.T) {
 
 func TestUpdateCommandsByMethod(t *testing.T) {
 	for method, want := range map[string]string{
-		"docker": "docker pull nousresearch/icebath-agent:latest", "apt": "pkg upgrade icebath-agent",
+		"docker": "docker pull ghcr.io/nickheyer/icebath:latest", "apt": "pkg upgrade icebath-agent",
 		"nix": nixUpdateMsg, "nixos": nixUpdateMsg, "home-manager": nixUpdateMsg, "git": "icebath update", "unknown": "icebath update",
+		"script": "icebath update", "setup-app": "icebath update", "chocolatey": "choco upgrade icebath", "pip": "pipx upgrade icebath-cli",
+		"homebrew": "brew upgrade --cask icebath", "scoop": "scoop update icebath", "winget": "winget upgrade --id nickheyer.icebath",
+		"dpkg": "sudo apt update && sudo apt install --only-upgrade icebath", "rpm": "sudo dnf upgrade icebath",
+		"pacman": "paru -Syu icebath-bin", "apk": "apk upgrade icebath",
 	} {
 		if got := RecommendedUpdateCommandForMethod(method); got != want {
 			t.Fatalf("%s: got %q", method, got)
@@ -241,8 +245,8 @@ func TestUpdateCommandsByMethod(t *testing.T) {
 		t.Fatal("nix ownership")
 	}
 	msg := FormatDockerUpdateMessage()
-	for _, want := range []string{"``icebath update`` doesn't apply inside the Docker container", "docker pull nousresearch/icebath-agent:latest",
-		"docker compose up -d --force-recreate icebath-agent", "$ICEBATH_HOME", "-desktop"} {
+	for _, want := range []string{"``icebath update`` doesn't apply inside the Docker container", "docker pull ghcr.io/nickheyer/icebath:latest",
+		"docker compose up -d --force-recreate gateway dashboard", "$ICEBATH_HOME", "ICEBATH_BOT_DESKTOP=1"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("docker message lacks %q", want)
 		}
@@ -468,5 +472,51 @@ func TestPlatformRootUnderAFileIsSkipped(t *testing.T) {
 	names, complete, err := PlatformManifestSecretScan(h)
 	if err != nil || !complete || len(names) != 0 {
 		t.Fatalf("a plugins path that is a file is no plugin root, got %v %v %v", names, complete, err)
+	}
+}
+
+func TestEveryPackagingStampIsAnInstallMethod(t *testing.T) {
+	h := installHome(t)
+	for _, method := range []string{"script", "setup-app", "chocolatey", "pip", "homebrew", "scoop", "winget", "dpkg", "rpm", "pacman", "apk", "docker", "nix", "git"} {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, ".install_method"), []byte(method+"\r\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := DetectInstallMethod(context.Background(), h, root); err != nil || got != method {
+			t.Fatalf("%s stamp detected as %q %v", method, got, err)
+		}
+	}
+	managed := map[string]bool{"chocolatey": true, "pip": true, "homebrew": true, "scoop": true, "winget": true, "dpkg": true, "rpm": true, "pacman": true, "apk": true, "apt": true}
+	for _, method := range []string{"chocolatey", "pip", "homebrew", "scoop", "winget", "dpkg", "rpm", "pacman", "apk", "apt", "docker", "nix", "git", "script", "setup-app", "unknown"} {
+		if IsPackageManagerInstallMethod(method) != managed[method] {
+			t.Fatalf("%s package manager ownership", method)
+		}
+		if IsReleaseBinaryInstallMethod(method) != (method == "script" || method == "setup-app" || method == "unknown") {
+			t.Fatalf("%s release binary ownership", method)
+		}
+	}
+}
+
+func TestUnstampedPackageManagerLayoutsNameTheirManager(t *testing.T) {
+	h := installHome(t)
+	t.Setenv("SCOOP", "")
+	t.Setenv("SCOOP_GLOBAL", "")
+	t.Setenv("ChocolateyInstall", "")
+	base := t.TempDir()
+	for rel, want := range map[string]string{
+		"opt/homebrew/Caskroom/icebath/1.0":                         "homebrew",
+		"AppData/Local/Microsoft/WinGet/Packages/nickheyer.icebath": "winget",
+		"scoop/apps/icebath/current":                                "scoop",
+		"ProgramData/chocolatey/lib/icebath/tools":                  "chocolatey",
+		"home/me/.local/share/pipx/venvs/icebath-cli/bin":           "pip",
+		"home/me/.local/bin":                                        "unknown",
+	} {
+		root := filepath.Join(base, filepath.FromSlash(rel))
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := DetectInstallMethod(context.Background(), h, root); err != nil || got != want {
+			t.Fatalf("%s detected as %q %v", rel, got, err)
+		}
 	}
 }

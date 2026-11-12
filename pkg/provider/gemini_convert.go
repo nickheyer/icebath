@@ -276,7 +276,7 @@ func geminiWrap(key string, v any) *pyjson.Object {
 
 // functionCall part with its replayed signature or the skip sentinel
 func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]any {
-	fn, _ := tc["function"].(map[string]any)
+	fn, _ := pyjson.Dict(tc["function"])
 	var args any = pyjson.NewObject()
 	if raw, ok := fn["arguments"].(string); ok && raw != "" {
 		if parsed, err := geminiRequestJSONLoads(raw); err == nil {
@@ -443,11 +443,11 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 		parts := extractGeminiMultimodalParts(msg["content"])
 		if calls, ok := msg["tool_calls"].([]any); ok {
 			for _, rc := range calls {
-				tc, ok := rc.(map[string]any)
+				tc, ok := pyjson.Dict(rc)
 				if !ok {
 					continue
 				}
-				fn, _ := tc["function"].(map[string]any)
+				fn, _ := pyjson.Dict(tc["function"])
 				toolName := pyOrStr(fn["name"])
 				if id := geminiToolCallID(tc); id != "" && toolName != "" {
 					nameByCallID[id] = toolName
@@ -493,7 +493,7 @@ func geminiFunctionDeclaration(tool any, jsonSchema bool) map[string]any {
 	if !ok {
 		return nil
 	}
-	fn, ok := t["function"].(map[string]any)
+	fn, ok := pyjson.Dict(t["function"])
 	if !ok {
 		return nil
 	}
@@ -547,7 +547,7 @@ func translateToolChoiceToGemini(toolChoice any) map[string]any {
 	if !ok {
 		return nil
 	}
-	fn, _ := tc["function"].(map[string]any)
+	fn, _ := pyjson.Dict(tc["function"])
 	if name, ok := fn["name"].(string); ok && name != "" {
 		return map[string]any{"functionCallingConfig": map[string]any{"mode": "ANY", "allowedFunctionNames": []any{name}}}
 	}

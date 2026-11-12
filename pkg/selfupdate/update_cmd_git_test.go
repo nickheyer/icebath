@@ -82,7 +82,9 @@ func ugStillDirtyAfterCleanup(t *testing.T, repo string, dirty ...string) []stri
 	for _, rel := range dirty {
 		ugWrite(t, filepath.Join(repo, filepath.FromSlash(rel)), "dirty\n")
 	}
-	discardLockfileChurn(context.Background(), io.Discard, []string{"git"}, repo, nil)
+	if err := discardLockfileChurn(context.Background(), io.Discard, []string{"git"}, repo, nil); err != nil {
+		t.Fatal(err)
+	}
 	left := strings.Fields(ugGit(t, repo, "diff", "--name-only"))
 	slices.Sort(left)
 	return left

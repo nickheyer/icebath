@@ -26,9 +26,6 @@ func readFile(blobpath string) ([]byte, error) {
 	if !strings.Contains(blobpath, "://") {
 		return os.ReadFile(blobpath)
 	}
-	if !strings.HasPrefix(blobpath, "http://") && !strings.HasPrefix(blobpath, "https://") {
-		return nil, errors.New("ImportError: blobfile is not installed. Please install it by running `pip install blobfile`.")
-	}
 	req, err := http.NewRequest(http.MethodGet, blobpath, nil)
 	if err != nil {
 		return nil, err

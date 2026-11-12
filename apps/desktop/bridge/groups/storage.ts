@@ -1,0 +1,26 @@
+// storage group bridge, its Go service StorageService lands with the storage lane
+import * as StorageService from '../bindings/github.com/nickheyer/icebath/apps/desktop/storageservice.js'
+import { fire } from '../runtime'
+
+export const uiPreferencesRead = () => StorageService.UiPreferencesRead()
+export const uiPreferencesWrite = (payload) => StorageService.UiPreferencesWrite(payload)
+export const readFileDataUrl = (filePath) => StorageService.ReadFileDataUrl(filePath)
+export const readFileDataUrlForAttach = (filePath) => StorageService.ReadFileDataUrlForAttach(filePath)
+export const dataUrlReadMaxGet = () => StorageService.DataUrlReadMaxGet()
+export const dataUrlReadMaxSet = (maxMb) => StorageService.DataUrlReadMaxSet(maxMb)
+export const readFileText = (filePath) => StorageService.ReadFileText(filePath)
+export const readPluginSource = (filePath) => StorageService.ReadPluginSource(filePath)
+export const saveGatewayFile = (payload) => StorageService.SaveGatewayFile(payload)
+export const saveImageFromUrl = (url) => StorageService.SaveImageFromUrl(url)
+export const saveImageBuffer = (data, ext, name) => StorageService.SaveImageBuffer(data, ext, name)
+export const savePastedText = (text) => StorageService.SavePastedText(text)
+export const settingsGetDefaultProjectDir = () => StorageService.SettingsGetDefaultProjectDir()
+export const settingsSetDefaultProjectDir = (dir) => StorageService.SettingsSetDefaultProjectDir(dir)
+export const settingsPickDefaultProjectDir = () => StorageService.SettingsPickDefaultProjectDir()
+export const preparedSubmissionsRead = () => StorageService.PreparedSubmissionsRead()
+export const preparedSubmissionsUpdate = (key, entry) => StorageService.PreparedSubmissionsUpdate(key, entry)
+export const preparedSubmissionsCompareAndSet = (key, expected, entry) => StorageService.PreparedSubmissionsCompareAndSet(key, expected, entry)
+export const revealLogs = () => StorageService.RevealLogs()
+export const getRecentLogs = () => StorageService.GetRecentLogs()
+export const reportRendererError = (report) => fire(StorageService.ReportRendererError(report))
+export const logLine = (line) => fire(StorageService.LogLine(line))

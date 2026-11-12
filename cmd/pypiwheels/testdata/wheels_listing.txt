@@ -1,0 +1,256 @@
+out/icebath_cli-1.2.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.musllinux_1_1_x86_64.whl
+out/icebath_cli-1.2.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl
+out/icebath_cli-1.2.3-py3-none-macosx_13_0_x86_64.whl
+out/icebath_cli-1.2.3-py3-none-macosx_13_0_arm64.whl
+out/icebath_cli-1.2.3-py3-none-win_amd64.whl
+out/icebath_cli-1.2.3-py3-none-win_arm64.whl
+wheel icebath_cli-1.2.3-py3-none-macosx_13_0_arm64.whl
+member icebath_cli-1.2.3.data/scripts/icebath creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=776ce5db size=20
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=515e2e57 size=93
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=1f313929 size=509
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 4
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-macosx_13_0_arm64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath,sha256=xaCFdCT5MXyXpBItyS5fbWj9-v-EH8ThD40p1bRjtZE,20
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=ndPLTshY8BRw_tg0xml957-do3S1LG0usb3iRe7Ovrs,93
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,
+wheel icebath_cli-1.2.3-py3-none-macosx_13_0_x86_64.whl
+member icebath_cli-1.2.3.data/scripts/icebath creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=e8d4aa02 size=20
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=d0a0e5bd size=94
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=69c0829d size=509
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 4
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-macosx_13_0_x86_64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath,sha256=lIe8dpv-ONoRp2mOLNdV07Ibm_K50u7Sgu1HI0Mg81o,20
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=IW66T3Pd65X5H_f6H-pWTl3gb49ee2cH0w6PRWmcoSE,94
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,
+wheel icebath_cli-1.2.3-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.musllinux_1_1_aarch64.whl
+member icebath_cli-1.2.3.data/scripts/icebath creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=17b111cd size=19
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=32db1a75 size=170
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c154606f size=510
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 6
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-manylinux_2_17_aarch64
+Tag: py3-none-manylinux2014_aarch64
+Tag: py3-none-musllinux_1_1_aarch64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath,sha256=8ztTgpdFzq2LxVZ99-bn2ynWBNIwpRfg54HPFsvmJBQ,19
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=_d02gNSG5dFcqikS1iH-I48EIWKcK0yl3G9NAQF8E7Y,170
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,
+wheel icebath_cli-1.2.3-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.musllinux_1_1_x86_64.whl
+member icebath_cli-1.2.3.data/scripts/icebath creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=88095e14 size=19
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=20812934 size=167
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=3a000d46 size=510
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 6
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-manylinux_2_17_x86_64
+Tag: py3-none-manylinux2014_x86_64
+Tag: py3-none-musllinux_1_1_x86_64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath,sha256=Jl0VCBPC9_Q77LKczhTPcLWY5uS_98DzrTflos7lssI,19
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=UcFWBT5o-0KaJ2xFzoIMQwUM0pvuoR_5WSkolMFg8Nk,167
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,
+wheel icebath_cli-1.2.3-py3-none-win_amd64.whl
+member icebath_cli-1.2.3.data/scripts/icebath.exe creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=cfd8dfcd size=21
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=a02e3f73 size=85
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=3a5dead2 size=513
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 4
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-win_amd64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath.exe,sha256=QsNF0MHcGhPBzca6aiLJkxocO-8kwYH4bLfSoHK63FI,21
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=Ba-NaQWDKQgwB1PEfVooTGy_AkpYT54WAToNj_Ey5Lk,85
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,
+wheel icebath_cli-1.2.3-py3-none-win_arm64.whl
+member icebath_cli-1.2.3.data/scripts/icebath.exe creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20173200000 internal=0 extra= comment= crc=50609014 size=21
+member icebath_cli-1.2.3.data/scripts/.install_method creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=c2971fc7 size=4
+member icebath_cli-1.2.3.dist-info/METADATA creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=be5f14fe size=546
+member icebath_cli-1.2.3.dist-info/WHEEL creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=3f9670aa size=85
+member icebath_cli-1.2.3.dist-info/licenses/LICENSE creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=ca570a66 size=50
+member icebath_cli-1.2.3.dist-info/RECORD creator=788 reader=20 flags=0 method=8 date=1980-1-1 time=0:0:0 external=20151000000 internal=0 extra= comment= crc=a7ca8e14 size=513
+content icebath_cli-1.2.3.dist-info/METADATA 21
+Metadata-Version: 2.4
+Name: icebath-cli
+Version: 1.2.3
+Summary: Tiling agentic harness and netrunner toolkit
+Author-email: Nicholas W. Heyer <nick@heyer.app>
+License-Expression: MIT
+License-File: LICENSE
+Project-URL: Homepage, https://icebath.app
+Project-URL: Source, https://github.com/nickheyer/icebath
+Description-Content-Type: text/markdown
+
+# icebath
+
+A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
+
+```sh
+pipx install icebath-cli
+icebath
+```
+
+See https://icebath.app for every other way to install it.
+content icebath_cli-1.2.3.dist-info/WHEEL 4
+Wheel-Version: 1.0
+Generator: icebath
+Root-Is-Purelib: false
+Tag: py3-none-win_arm64
+content icebath_cli-1.2.3.dist-info/RECORD 6
+icebath_cli-1.2.3.data/scripts/icebath.exe,sha256=wcMcLy1lL4H_Tfpiz_6OwIIEQyRHuzoq1somNSlH05c,21
+icebath_cli-1.2.3.data/scripts/.install_method,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+icebath_cli-1.2.3.dist-info/METADATA,sha256=1KNS_2OS4oS-WbdDEGQJmK69UyZLMRjKWi-393WMoJE,546
+icebath_cli-1.2.3.dist-info/WHEEL,sha256=8JnibBgIwI4K_jWQrjBfnzT0lBg1rDmA8VKulXHuzYs,85
+icebath_cli-1.2.3.dist-info/licenses/LICENSE,sha256=NW11fVBvgZf2B-2rfeAUNStK0tSXT5vfFyezd_rmrn4,50
+icebath_cli-1.2.3.dist-info/RECORD,,

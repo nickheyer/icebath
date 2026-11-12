@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { atom, computed } from 'nanostores'
+
+import { invoke, listen, type UnlistenFn } from './lib/ipc'
 
 /*
  * Bootstrap state store — single source of truth for installer screens.
@@ -15,7 +15,7 @@ import { atom, computed } from 'nanostores'
  */
 
 // ---------------------------------------------------------------------------
-// Types — mirror src-tauri/src/events.rs
+// Types — mirror pkg/install/events.go
 // ---------------------------------------------------------------------------
 
 export interface StageInfo {
@@ -66,7 +66,7 @@ const INITIAL: BootstrapStateModel = {
 
 export type Route = 'welcome' | 'progress' | 'success' | 'failure'
 
-/// How the installer was launched, mirrored from src-tauri AppMode.
+/// How the installer was launched, mirrored from pkg/install AppMode.
 /// 'install' = first-run onboarding (bare launch). 'update' = driven by the
 /// desktop app handing off via `Hermes-Setup.exe --update`.
 export type AppMode = 'install' | 'update'
@@ -123,7 +123,7 @@ function withStageState(
 }
 
 // ---------------------------------------------------------------------------
-// Tauri event subscription
+// Backend event subscription
 // ---------------------------------------------------------------------------
 
 interface BootstrapManifestEvent {
@@ -172,7 +172,7 @@ export async function initialize(): Promise<void> {
   if (unlisten) {return}
 
   // Dev-only isolated preview (see runFakeBoot): drive the screens in a plain
-  // browser, no Tauri backend, no real install.
+  // browser, no Go backend, no real install.
   const fake = fakeMode()
 
   if (fake) {
@@ -368,7 +368,7 @@ export async function openLogDir(): Promise<void> {
 //   ?fake=install   welcome → [ INSTALL ] → success
 //   ?fake=update    auto-runs the granular update flow
 //   ?fake=failure   install that fails partway
-// Gated on import.meta.env.DEV → stripped from the shipped Tauri bundle.
+// Gated on import.meta.env.DEV → stripped from the shipped Wails bundle.
 // ---------------------------------------------------------------------------
 
 type FakeMode = 'install' | 'update' | 'failure'

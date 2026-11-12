@@ -137,8 +137,8 @@ describe('runExportProfileFlow', () => {
 })
 
 describe('importProfileBundle', () => {
-  const folderKey = (profile: string) => `hermes:browser:default-project-dir:${JSON.stringify(['/hermes', profile])}`
-  const startupKey = 'hermes:webapp:default-profile:/hermes'
+  const folderKey = (profile: string) => `icebath:browser:default-project-dir:${JSON.stringify(['/hermes', profile])}`
+  const startupKey = 'icebath:webapp:default-profile:/hermes'
 
   function seedLeftovers() {
     window.localStorage.setItem(folderKey('imported'), '/srv/deleted-imported')
@@ -148,7 +148,7 @@ describe('importProfileBundle', () => {
 
   afterEach(() => {
     document.documentElement.removeAttribute('data-hermes-desktop-host')
-    Reflect.deleteProperty(window, '__HERMES_BASE_PATH__')
+    Reflect.deleteProperty(window, '__ICEBATH_BASE_PATH__')
   })
 
   // An import never lands on a live profile's name, so prefs stored under it were left by a deleted one.
@@ -156,7 +156,7 @@ describe('importProfileBundle', () => {
     const { importProfileBundle } = await import('./profile-share')
     const { importProfileArchive } = await import('@/hermes')
     document.documentElement.dataset.hermesDesktopHost = 'browser'
-    Object.assign(window, { __HERMES_BASE_PATH__: '/hermes' })
+    Object.assign(window, { __ICEBATH_BASE_PATH__: '/hermes' })
     seedLeftovers()
     vi.mocked(importProfileArchive).mockRejectedValueOnce(new Error('bad archive'))
 
@@ -172,7 +172,7 @@ describe('importProfileBundle', () => {
 
   it('keeps browser prefs in native Desktop', async () => {
     const { importProfileBundle } = await import('./profile-share')
-    Object.assign(window, { __HERMES_BASE_PATH__: '/hermes' })
+    Object.assign(window, { __ICEBATH_BASE_PATH__: '/hermes' })
     seedLeftovers()
 
     await expect(importProfileBundle('/tmp/in.tar.gz')).resolves.toBe('imported')

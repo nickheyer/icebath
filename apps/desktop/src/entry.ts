@@ -3,6 +3,7 @@
 // read a shared preference before this machine's store hydrated it (#145213),
 // in the production chunk graph and in dev's unbundled ESM alike. Keep this
 // file's static imports free of app modules.
+import './lib/storage-migration-boot'
 import { showBootFailure } from './lib/boot-failure'
 import { bootRenderer } from './lib/ui-preferences/boot'
 

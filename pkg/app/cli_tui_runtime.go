@@ -118,7 +118,7 @@ func (c *CLI) tuiProcessOneInput(queued any) {
 		return
 	}
 	notification, isNotification := userInput.(tools.TimelineNotification)
-	c.statusBarSuppressedAfterResize = false
+	c.statusBarSuppressedAfterResize.Store(false)
 	var submitImages []string
 	if in, ok := userInput.(submittedInput); ok {
 		userInput, submitImages = in.Text, append([]string{}, in.Images...)
@@ -450,12 +450,13 @@ func (c *CLI) tuiInstallSignalHandlers() func() {
 	}
 }
 
-// Reports whether standard input can be read, printing why when it cannot
+// Validates standard input before the prompt starts, on macOS polling it with select when kqueue cannot watch it
 func (c *CLI) tuiStdinUsable() bool {
-	if _, err := os.Stdin.Stat(); err != nil {
+	if _, err := tuiStdin().Stat(); err != nil {
 		fmt.Fprintln(console().Out, c.t("cli.tui.stdin_unavailable", nil))
 		return false
 	}
+	tuiStdinSelectFallback()
 	return true
 }
 
@@ -535,7 +536,7 @@ func (c *CLI) tuiShutdown() {
 		})
 	}
 	runCleanup(c.ctx, c.env, true)
-	c.printExitSummary(false)
+	c.printExitSummary(true)
 	c.releaseActiveSession()
 }
 

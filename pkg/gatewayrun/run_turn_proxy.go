@@ -202,7 +202,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 		req.Header.Set("Authorization", "Bearer "+proxyKey)
 	}
 	if sessionID != "" {
-		req.Header.Set("X-Hermes-Session-Id", sessionID)
+		req.Header.Set("X-Icebath-Session-Id", sessionID)
 	}
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{Timeout: proxySockConnect}).DialContext}}

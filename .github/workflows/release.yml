@@ -154,12 +154,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
       - run: |
           gh release download "$GITHUB_REF_NAME" -D "$RUNNER_TEMP/bin" \
             -p icebath-linux-amd64 -p icebath-linux-arm64 \
             -p icebath-darwin-amd64 -p icebath-darwin-arm64 \
             -p icebath-windows-amd64.exe -p icebath-windows-arm64.exe
-          python3 -I packaging/pypi/wheels.py "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/wheels" LICENSE
+          go run ./cmd/pypiwheels "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/bin" "$RUNNER_TEMP/wheels" LICENSE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: pypa/gh-action-pypi-publish@v1.14.3

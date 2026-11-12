@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -411,16 +412,55 @@ func pyIntOf(v any) (int, bool) {
 	case float32:
 		return pyIntOf(float64(x))
 	case string:
-		n, err := strconv.ParseInt(strings.ReplaceAll(strings.TrimSpace(x), "_", ""), 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		return int(n), true
+		return pyIntString(x)
 	}
 	if n, ok := pyrepr.Int(v); ok && n.IsInt64() {
 		return int(n.Int64()), true
 	}
 	return 0, false
+}
+
+// Python int of a base ten string with Unicode digits and single underscores between digits, clamped to int
+func pyIntString(s string) (int, bool) {
+	s = pystr.Strip(s)
+	neg := false
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		neg, s = s[0] == '-', s[1:]
+	}
+	if s == "" {
+		return 0, false
+	}
+	digits := make([]byte, 0, len(s))
+	afterUnderscore := true
+	for _, r := range s {
+		if r == '_' {
+			if afterUnderscore {
+				return 0, false
+			}
+			afterUnderscore = true
+			continue
+		}
+		d, ok := pystr.DecimalValue(r)
+		if !ok {
+			return 0, false
+		}
+		digits = append(digits, byte('0'+d))
+		afterUnderscore = false
+	}
+	if afterUnderscore {
+		return 0, false
+	}
+	n, _ := new(big.Int).SetString(string(digits), 10)
+	if neg {
+		n.Neg(n)
+	}
+	switch {
+	case n.IsInt64():
+		return int(n.Int64()), true
+	case neg:
+		return math.MinInt, true
+	}
+	return math.MaxInt, true
 }
 
 // Python int of the value, or def when it does not parse

@@ -96,6 +96,8 @@ type Model struct {
 	Fields []Field
 	Root   Type
 	After  func(*Instance) error
+	// Class docstring after inspect.cleandoc, the description of the JSON schema
+	Doc string
 }
 
 // Model class with its config and fields
@@ -129,6 +131,12 @@ func NewRootModel(name string, root Type) *Model {
 // The model with a model_validator mode after, its error becoming a value_error
 func (m *Model) WithAfter(fn func(*Instance) error) *Model {
 	m.After = fn
+	return m
+}
+
+// The model with its class docstring set
+func (m *Model) Described(doc string) *Model {
+	m.Doc = doc
 	return m
 }
 

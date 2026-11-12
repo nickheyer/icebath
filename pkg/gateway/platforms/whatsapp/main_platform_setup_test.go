@@ -14,6 +14,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if role := os.Getenv("ICEBATH_WA_TEST_ROLE"); role != "" {
+		os.Exit(runHelperRole(role))
+	}
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	os.Exit(m.Run())
@@ -53,45 +56,22 @@ func dotenvValue(h, key string) (string, bool) {
 	return "", false
 }
 
-// Wizard over scripted input with a package manager that has nothing installed and prepares nothing runnable
-func scriptedWizard(t *testing.T, h, input string, bridge string) (*whatsAppWizard, *bytes.Buffer) {
+// Wizard reading scripted answers, failing the case when it pairs
+func scriptedWizard(t *testing.T, h, input string) (*whatsAppWizard, *bytes.Buffer) {
 	t.Helper()
 	out := &bytes.Buffer{}
 	wz := newWhatsAppWizard(context.Background(), h, out)
 	wz.console = &cliui.Console{In: strings.NewReader(input), Out: out, StdinTTY: func() bool { return false }, StdoutTTY: func() bool { return false }}
-	wz.findNode = func(command string) (string, error) { return "", nil }
-	wz.nodeEnv = func() map[string]string { return map[string]string{} }
-	wz.ensure = func(name string) (map[string]string, error) { return map[string]string{}, nil }
-	wz.installed = func(name string) (*pm.InstalledPackage, error) { return nil, nil }
-	wz.run = func(argv []string, dir string, env map[string]string, captureStderr bool) (bridgeRun, error) {
-		t.Fatalf("spawned %v", argv)
-		return bridgeRun{}, nil
+	wz.pair = func(session, mode string) int {
+		t.Fatalf("paired %s in %s mode", session, mode)
+		return 0
 	}
-	wz.bridgeDir = func() string { return bridge }
 	return wz, out
-}
-
-// Bridge directory holding its script, with its dependencies installed when asked
-func seededBridge(t *testing.T, withModules bool) string {
-	t.Helper()
-	bridge := filepath.Join(t.TempDir(), "bridge")
-	if err := os.MkdirAll(bridge, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bridge, "bridge.js"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if withModules {
-		if err := os.MkdirAll(filepath.Join(bridge, "node_modules"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return bridge
 }
 
 func TestAbortedSetupDoesNotEnableWhatsapp(t *testing.T) {
 	h := isolatedWhatsAppHome(t)
-	wz, _ := scriptedWizard(t, h, "1\n", filepath.Join(t.TempDir(), "absent"))
+	wz, _ := scriptedWizard(t, h, "1\n")
 	err := wz.setup()
 	if err != nil && !promptCancelled(err) {
 		t.Fatal(err)
@@ -112,7 +92,7 @@ func TestExistingPairingSkipBranchEnablesWhatsapp(t *testing.T) {
 	}
 	t.Setenv("WHATSAPP_MODE", "bot")
 	t.Setenv("WHATSAPP_ALLOWED_USERS", "15551234567")
-	wz, _ := scriptedWizard(t, h, "n\nn\n", seededBridge(t, true))
+	wz, _ := scriptedWizard(t, h, "n\nn\n")
 	if err := wz.setup(); err != nil {
 		t.Fatal(err)
 	}
@@ -121,29 +101,24 @@ func TestExistingPairingSkipBranchEnablesWhatsapp(t *testing.T) {
 	}
 }
 
-func TestCLIReportsPreparedBridgeBinaryMissing(t *testing.T) {
-	for _, executable := range []string{"npm", "node"} {
-		h := isolatedWhatsAppHome(t)
-		var out *bytes.Buffer
-		if executable == "npm" {
-			var wz *whatsAppWizard
-			wz, out = scriptedWizard(t, h, "", seededBridge(t, false))
-			if ok, err := wz.whatsappInstallBridge(wz.bridgeDir()); err != nil || ok {
-				t.Fatalf("CLI continued despite missing npm binary: %v %v", ok, err)
-			}
-		} else {
-			t.Setenv("WHATSAPP_MODE", "bot")
-			t.Setenv("WHATSAPP_ALLOWED_USERS", "15551234567")
-			var wz *whatsAppWizard
-			wz, out = scriptedWizard(t, h, "n\n", seededBridge(t, true))
-			if err := wz.setup(); err != nil {
-				t.Fatalf("setup %v", err)
-			}
-		}
-		text := out.String()
-		if !strings.Contains(text, executable) || !strings.Contains(text, "binary") {
-			t.Fatalf("%s: CLI did not report the missing binary: %q", executable, text)
-		}
+func TestCLIReportsIncompletePairing(t *testing.T) {
+	h := isolatedWhatsAppHome(t)
+	t.Setenv("WHATSAPP_MODE", "bot")
+	t.Setenv("WHATSAPP_ALLOWED_USERS", "15551234567")
+	wz, out := scriptedWizard(t, h, "n\n")
+	paired := ""
+	wz.pair = func(session, mode string) int {
+		paired = mode
+		return 1
+	}
+	if err := wz.setup(); err != nil {
+		t.Fatalf("setup %v", err)
+	}
+	if paired != "bot" || !strings.Contains(out.String(), "Pairing may not have completed. Run 'icebath whatsapp' to try again.") {
+		t.Fatalf("paired %q: %q", paired, out.String())
+	}
+	if value, ok := dotenvValue(h, "WHATSAPP_ENABLED"); ok {
+		t.Fatalf("incomplete pairing enabled WhatsApp: %q", value)
 	}
 }
 

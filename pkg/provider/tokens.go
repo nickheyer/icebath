@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"math/big"
 	"reflect"
@@ -369,7 +370,7 @@ func toolNameForCache(tool map[string]any) string {
 	if tool == nil {
 		return ""
 	}
-	if fn, ok := tool["function"].(map[string]any); ok {
+	if fn, ok := pyjson.Dict(tool["function"]); ok {
 		if name, isStr := fn["name"].(string); isStr {
 			return name
 		}
@@ -408,7 +409,7 @@ func EstimateToolsTokens(tools []map[string]any) int {
 			continue
 		}
 		src := tool
-		if fn, ok := tool["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(tool["function"]); ok {
 			src = fn
 		}
 		for _, field := range []string{"name", "description"} {

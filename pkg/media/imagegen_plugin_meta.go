@@ -66,9 +66,9 @@ func (p *metaImageGenProvider) ListModels() []map[string]any {
 	return catalogRows(metaImageModels, p.catalogFields, p.price)
 }
 
-// Available with any auth alias set and the client linked
+// Available with any auth alias set
 func (p *metaImageGenProvider) IsAvailable() bool {
-	return resolveMetaAPIKey(context.Background()) != "" && openAIImportable()
+	return resolveMetaAPIKey(context.Background()) != ""
 }
 
 // Text to image only until image to image is verified against Meta
@@ -91,10 +91,7 @@ func (p *metaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 		return errorFactory("meta-ai", aspect, "", "")(metaAPIKeyEnv+" not set. Run `icebath tools` -> Image "+
 			"Generation -> Meta Model API to configure.", "auth_required"), nil
 	}
-	newClient, failure := importOpenAI("meta-ai", aspect)
-	if failure != nil {
-		return failure, nil
-	}
+	newClient := newOpenAIClientHook
 	callerModel, _ := req.Kwargs["model"].(string)
 	modelID, _ := resolveMetaImageModel(env, callerModel)
 	size := sizeFor(aspect)

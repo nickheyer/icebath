@@ -96,3 +96,20 @@ func AsObject(v any) (*Object, bool) {
 	}
 	return nil, false
 }
+
+// Read view of a dict value, a plain map itself or the value map of an Object, false for anything else
+func Dict(v any) (map[string]any, bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		return t, true
+	case *Object:
+		if t == nil {
+			return nil, false
+		}
+		if t.Vals == nil {
+			return map[string]any{}, true
+		}
+		return t.Vals, true
+	}
+	return nil, false
+}

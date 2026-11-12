@@ -629,9 +629,6 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	if !ok {
 		return videoFalError(falNoBackendMsg, "auth_required", req.Prompt, "", ""), nil
 	}
-	if loadVideoFalClient() == nil {
-		return videoFalError("fal_client Python package not installed (pip install fal-client)", "missing_dependency", req.Prompt, "", ""), nil
-	}
 	prompt := strings.TrimSpace(req.Prompt)
 	familyID, family, err := falResolveFamily(envContext(ctx, env), env, req.Model)
 	if err != nil {

@@ -19,6 +19,11 @@ var acpPromptPreamble = []string{
 	"If no tool is needed, answer normally.",
 }
 
+// Prompt an ACP client sends for OpenAI chat messages, tools and tool choice
+func ACPFormatMessagesAsPrompt(messages []any, tools []any, toolChoice any) (string, error) {
+	return acpFormatMessagesAsPrompt(messages, tools, toolChoice)
+}
+
 // Single ACP prompt carrying the preamble, the forwarded tools, the transcript and the continue instruction
 func acpFormatMessagesAsPrompt(messages []any, tools []any, toolChoice any) (string, error) {
 	bridge, err := RenderToolBridgeSections(tools, toolChoice, nil)

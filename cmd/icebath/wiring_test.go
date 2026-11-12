@@ -64,7 +64,7 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"dashboard.RestoreUserProxyEnv":     dashboard.RestoreUserProxyEnv != nil,
 		"gatewayrun.CheckRuntime":           gatewayrun.CheckRuntime != nil, "gatewayrun.MaybeRunBootBootstrap": gatewayrun.MaybeRunBootBootstrap != nil,
 		"gatewayrun.ConfigureWindowsStdio": gatewayrun.ConfigureWindowsStdio != nil,
-		"slack.SubcommandMap":              slack.SubcommandMap != nil, "telegram.InlineCommands": telegram.InlineCommands != nil,
+		"slack.SubcommandMap":              slack.SubcommandMap != nil, "slack.NativeSlashNames": slack.NativeSlashNames != nil, "slack.ResolveCommandBusy": slack.ResolveCommandBusy != nil, "telegram.InlineCommands": telegram.InlineCommands != nil,
 		"codeexec.BotDesktopEnv": codeexec.BotDesktopEnv != nil, "codeexec.BotDesktopToolPlacement": codeexec.BotDesktopToolPlacement != nil,
 		"codeexec.BotDesktopPlacementWhere": codeexec.BotDesktopPlacementWhere != nil, "codeexec.BotDesktopPublishedEnv": codeexec.BotDesktopPublishedEnv != nil,
 		"codeexec.BotDesktopSandboxEnv": codeexec.BotDesktopSandboxEnv != nil, "codeexec.BotDesktopProfileName": codeexec.BotDesktopProfileName != nil,

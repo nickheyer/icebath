@@ -58,6 +58,18 @@ var (
 	completionTerminalReceipt = readTerminalReceipt
 )
 
+// Parent pipe that answers isatty with the parent terminal's answer and forwards every other lookup
+type forwardedOutput struct {
+	stream   io.Writer
+	terminal bool
+}
+
+func (f *forwardedOutput) Write(p []byte) (int, error) { return f.stream.Write(p) }
+
+func (f *forwardedOutput) IsATTY() bool { return f.terminal }
+
+func (f *forwardedOutput) Unwrap() io.Writer { return f.stream }
+
 // Writes JSON through a sibling with a tmp suffix and replaces the target
 func writeCompletionJSON(path string, data any) error {
 	text, err := pyjson.Dumps(data)
@@ -957,6 +969,7 @@ func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writ
 	}
 	isatty := pyrepr.Truthy(request["stdout_isatty"])
 	cliui.Default().StdoutTTY = func() bool { return isatty }
+	stdout = &forwardedOutput{stream: stdout, terminal: isatty}
 	if slices.Contains(args[2:], "--prepared") {
 		if err := pm.ActivateDependencies(ctx, resolvedSource); err != nil {
 			return 0, err

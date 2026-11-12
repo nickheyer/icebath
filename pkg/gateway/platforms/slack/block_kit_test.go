@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-func asMap(v any) map[string]any { m, _ := v.(map[string]any); return m }
-
-func asList(v any) []any { l, _ := v.([]any); return l }
-
 func textOf(e map[string]any) string { s, _ := e["text"].(string); return s }
 
 func styleFlag(e map[string]any, key string) bool { return asMap(e["style"])[key] == true }

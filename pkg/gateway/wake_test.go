@@ -74,7 +74,7 @@ func TestDeliverWakeNonPushSelfPostsRawSessionID(t *testing.T) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()
-		seen["session_id"], seen["auth"], seen["body"] = r.Header.Get("X-Hermes-Session-Id"), r.Header.Get("Authorization"), body
+		seen["session_id"], seen["auth"], seen["body"] = r.Header.Get("X-Icebath-Session-Id"), r.Header.Get("Authorization"), body
 		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "ok"}}}})
 	})
@@ -122,6 +122,7 @@ func TestDeliverWakeRetries429ThenSucceeds(t *testing.T) {
 }
 
 func TestPersistDelegationDeliveryAppendsDeliveryRow(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, filepath.Join(t.TempDir(), "state.db"), false)
 	if err != nil {

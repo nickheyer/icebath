@@ -70,25 +70,7 @@ func registryEntry(ctx context.Context, platform gateway.Platform) *gateway.Plat
 
 // Allowlist entries of a YAML list, a JSON list literal or a comma separated scalar
 func coerceAllowSet(raw any) map[string]bool {
-	out := map[string]bool{}
-	if raw == nil {
-		return out
-	}
-	raw = gateway.DecodeJSONListLiteral(raw)
-	if items, ok := raw.([]any); ok {
-		for _, item := range items {
-			if part := pystr.Strip(pyrepr.Str(item)); part != "" {
-				out[part] = true
-			}
-		}
-		return out
-	}
-	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-		if part = pystr.Strip(part); part != "" {
-			out[part] = true
-		}
-	}
-	return out
+	return gateway.CoerceAllowSet(raw)
 }
 
 // Whether the allowlist is a wildcard or holds the candidate

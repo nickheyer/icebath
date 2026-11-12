@@ -5,7 +5,7 @@ import { BROWSER_UPLOAD_MAX_BYTES } from '@/lib/browser-uploads'
 import { triggerHaptic } from '@/lib/haptics'
 import { notify, notifyError } from '@/store/notifications'
 
-const ICEBATH_PATHS_MIME = 'application/x-hermes-paths'
+const ICEBATH_PATHS_MIME = 'application/x-icebath-paths'
 
 /** A host path, or an OS file with no path the browser must upload to get one. */
 type DroppedEntry = File | string

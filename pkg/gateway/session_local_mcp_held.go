@@ -198,7 +198,7 @@ func disconnectEditorMCP(ctx context.Context, held *editorHeld, scope string) {
 
 // Runs body with the schemas and connected indexes of the scope's servers, reusing a held connection
 func borrowEditorMCP(ctx context.Context, a *SessionAuthority, scope string, specs []map[string]any, names map[int]string, cwd string, partial bool,
-	body func(schemas map[string]any, connected []int) error) error {
+	body func(ctx context.Context, schemas map[string]any, connected []int) error) error {
 	held := heldEditorMCP(a, scope)
 	list := make([]any, len(specs))
 	for i, spec := range specs {
@@ -254,7 +254,7 @@ func borrowEditorMCP(ctx context.Context, a *SessionAuthority, scope string, spe
 	if err != nil {
 		return err
 	}
-	return body(plain.(map[string]any), connected)
+	return body(scoped, plain.(map[string]any), connected)
 }
 
 // Closes the held editor connections of sessions whose last viewer left, leaving one an execution still borrows
@@ -315,7 +315,7 @@ func rebindEditorMCP(ctx context.Context, a *SessionAuthority, sid string, polic
 		names := editorServerNames(scope, specs)
 		var schemas map[string]any
 		var connected []int
-		err := borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, true, func(s map[string]any, c []int) error {
+		err := borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, true, func(_ context.Context, s map[string]any, c []int) error {
 			schemas, connected = s, c
 			missing := map[int]bool{}
 			for i := range names {
@@ -528,13 +528,13 @@ func prepareEditorMCP(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Runs body inside the policy's editor scope, refusing schemas that drifted from its frozen manifest
-func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, body func() error) error {
+func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, body func(ctx context.Context) error) error {
 	data, err := policyEditorManifest(policy)
 	if err != nil {
 		return err
 	}
 	if policy.EditorMCPJSON == nil || *policy.EditorMCPJSON == "" {
-		return body()
+		return body(ctx)
 	}
 	scope := pyrepr.Str(data["scope"])
 	if a == nil {
@@ -549,11 +549,11 @@ func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 	if err != nil {
 		return err
 	}
-	return borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, false, func(schemas map[string]any, _ []int) error {
+	return borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, false, func(scoped context.Context, schemas map[string]any, _ []int) error {
 		if !pyjson.Equal(schemas, pyjson.Plain(data["schemas"])) {
 			return runtimeRefusal("acp_mcp_schema_changed")
 		}
-		return body()
+		return body(scoped)
 	})
 }
 

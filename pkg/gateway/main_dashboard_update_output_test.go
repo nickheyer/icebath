@@ -86,3 +86,44 @@ func TestFinalizeUpdateOutputSkippedInstallLeavesStdioAlone(t *testing.T) {
 		t.Fatal("an uninstalled state had its streams replaced")
 	}
 }
+
+func TestUpdateOutputStreamDefersFilenoAndAttributesToOriginal(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var log bytes.Buffer
+	stream := NewUpdateOutputStream(f, &log)
+	if stream.Fd() != f.Fd() {
+		t.Fatalf("fd = %d, want %d", stream.Fd(), f.Fd())
+	}
+	if stream.Unwrap() != f {
+		t.Fatal("attributes do not resolve on the original")
+	}
+	if stream.IsATTY() {
+		t.Fatal("a regular file is no terminal")
+	}
+	unbacked := NewUpdateOutputStream(&bytes.Buffer{}, &log)
+	if unbacked.Fd() != ^uintptr(0) {
+		t.Fatalf("fd without a descriptor = %d", unbacked.Fd())
+	}
+	nested := NewUpdateOutputStream(NewUpdateOutputStream(f, nil), &log)
+	if nested.Fd() != f.Fd() {
+		t.Fatal("nested mirror does not reach the descriptor")
+	}
+}
+
+func TestUpdateOutputStreamFlushReportsNothingAndMarksBroken(t *testing.T) {
+	var log bytes.Buffer
+	stream := NewUpdateOutputStream(brokenStream{}, &log)
+	if err := stream.Flush(); err != nil {
+		t.Fatalf("flush = %v", err)
+	}
+	if !stream.OriginalBroken() {
+		t.Fatal("failing flush did not mark the original broken")
+	}
+	if stream.IsATTY() {
+		t.Fatal("a broken original is no terminal")
+	}
+}

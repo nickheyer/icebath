@@ -87,7 +87,7 @@ func relayToolsTurn(t *testing.T) (*relayToolsFake, context.Context, *Conversati
 	return f, ctx, lease
 }
 
-func TestRelayToolAdapterBypassesRelayWithoutAnActiveConsumer(t *testing.T) {
+func TestToolAdapterBypassesRelayWithoutAnActiveConsumer(t *testing.T) {
 	f, ctx, _ := relayToolsTurn(t)
 	runtime := GetRelayRuntime(ctx, true, CurrentRelayProfileKey(ctx))
 	if runtime == nil {
@@ -109,7 +109,7 @@ func TestRelayToolAdapterBypassesRelayWithoutAnActiveConsumer(t *testing.T) {
 	}
 }
 
-func TestRelayRequestRewriteReachesAuthorizedCallbackOnce(t *testing.T) {
+func TestRequestRewriteReachesAuthorizedCallbackOnce(t *testing.T) {
 	f, ctx, _ := relayToolsTurn(t)
 	var callbackArgs []map[string]any
 	f.requests = append(f.requests, func(_ string, args map[string]any) map[string]any {
@@ -157,7 +157,7 @@ func TestRelayRequestRewriteReachesAuthorizedCallbackOnce(t *testing.T) {
 	}
 }
 
-func TestRelayToolCallIDUsesCanonicalRelayArgument(t *testing.T) {
+func TestToolCallIdUsesCanonicalRelayArgument(t *testing.T) {
 	f, ctx, _ := relayToolsTurn(t)
 	captured := map[string]any{}
 	f.relay.Tools.Execute = func(_ context.Context, _ string, args any, callback RelayProviderCallback, kwargs map[string]any) (any, error) {
@@ -185,7 +185,7 @@ func TestRelayToolCallIDUsesCanonicalRelayArgument(t *testing.T) {
 	}
 }
 
-func TestRelayToolErrorIsPreservedFromRelayWrapperSuffix(t *testing.T) {
+func TestToolErrorIsPreservedFromRelayWrapperSuffix(t *testing.T) {
 	f, ctx, _ := relayToolsTurn(t)
 	toolErr := &relayToolsTestError{msg: "dispatch failed"}
 	f.relay.Tools.Execute = func(_ context.Context, _ string, args any, callback RelayProviderCallback, _ map[string]any) (any, error) {

@@ -3731,7 +3731,7 @@ cli:
     header: "(^_^)b Elérhető eszközkészletek"
     currently_enabled_legend: "(*) = jelenleg bekapcsolva"
     tip_enable_all: "Tipp: az 'all' vagy a '*' minden eszközkészletet bekapcsol"
-    example: "Példa: python cli.py --toolsets web,terminal"
+    example: "Példa: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Ismeretlen /usage alparancs: {args}. Próbáld a /usage vagy a /usage reset [--force] parancsot."

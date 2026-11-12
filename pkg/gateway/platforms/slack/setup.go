@@ -91,7 +91,7 @@ func slashCommandEntries(ctx context.Context) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := commands.SlackAppManifest(commands.Default, cfg, "")["features"].(map[string]any)["slash_commands"].([]map[string]any)
+	raw, _ := commands.SlackAppManifest(ctx, commands.Default, cfg, "")["features"].(map[string]any)["slash_commands"].([]map[string]any)
 	slashes := make([]any, 0, len(raw))
 	for _, e := range raw {
 		entry := pyjson.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])

@@ -171,6 +171,11 @@ func botScreenHint(env *tools.Env) string {
 // Remote backend probe, the seam tests replace to skip a live sandbox
 var probeRemoteBackendFn = tools.ProbeRemoteBackend
 
+// Attribute of a plugin registered terminal backend, def for an unknown backend or a panicking plugin
+func pluginBackendAttr(ctx context.Context, backend, attr string, def any) any {
+	return tools.TerminalProviderFlag(ctx, backend, attr, def, "")
+}
+
 // Backend only block for remote and sandbox backends, the live probe state or a fallback description
 func remoteBackendHint(ctx context.Context, env *tools.Env, backend string) (string, error) {
 	lead := fmt.Sprintf("Terminal backend: %s. Your `terminal`, `read_file`, `write_file`, `patch`, and "+
@@ -187,9 +192,7 @@ func remoteBackendHint(ctx context.Context, env *tools.Env, backend string) (str
 	}
 	description := backendFallbackDescriptions[backend]
 	if description == "" {
-		if p := tools.GetTerminalBackend(backend); p != nil {
-			description = p.EnvDescription()
-		}
+		description, _ = pluginBackendAttr(ctx, backend, "env_description", nil).(string)
 	}
 	if description == "" {
 		description = fmt.Sprintf("a %s environment (likely Linux)", backend)

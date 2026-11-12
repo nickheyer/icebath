@@ -760,8 +760,8 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 				}
 			}
 			for _, raw := range calls {
-				tc, _ := raw.(map[string]any)
-				fn, _ := tc["function"].(map[string]any)
+				tc, _ := pyjson.Dict(raw)
+				fn, _ := pyjson.Dict(tc["function"])
 				name := "unknown"
 				if n, ok := fn["name"]; ok {
 					name = pyrepr.Str(n)

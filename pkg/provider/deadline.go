@@ -26,7 +26,13 @@ var MaxSafeTimeout = func() time.Duration {
 }()
 
 // Grace after a deadline fires before the blocked worker is reported
-const loopBlockedDumpGrace = 5 * time.Second
+var LoopBlockedDumpGrace = 5 * time.Second
+
+// Diagnostics dump of a dispatch goroutine that never processed its expiry, the stack dumper in production
+var DumpBlockedLoop = dumpBlockedLoopDiagnostics
+
+// Hands an expiry callback to the waiting dispatch goroutine, run at once in production where the waiter selects on it
+var PostToDispatch = func(fn func()) { fn() }
 
 // Slice of a bounded wait so an interrupt is observed promptly
 const boundedWaitSlice = 200 * time.Millisecond
@@ -100,7 +106,7 @@ func dumpAllStacks() error {
 
 // Warns that an expiry went unprocessed past the grace window and dumps every goroutine stack
 func dumpBlockedLoopDiagnostics(label string, timeout time.Duration) {
-	slog.Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", pyrepr.StrRepr(label), timeout.Seconds(), loopBlockedDumpGrace.Seconds()))
+	slog.Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", pyrepr.StrRepr(label), timeout.Seconds(), LoopBlockedDumpGrace.Seconds()))
 	if err := dumpAllStacks(); err != nil {
 		slog.Debug(fmt.Sprintf("faulthandler traceback dump failed: %v", err))
 	}
@@ -308,11 +314,12 @@ func RunBoundedAsync(ctx context.Context, fn func(ctx context.Context) (any, err
 	done := startBounded(taskCtx, fn, label)
 	expired := make(chan struct{})
 	var processed atomic.Bool
-	timers := []*time.Timer{time.AfterFunc(timeout, func() { close(expired) })}
+	timers := []*time.Timer{time.AfterFunc(timeout, func() { PostToDispatch(func() { close(expired) }) })}
 	if dumpOnBlockedLoop {
-		timers = append(timers, time.AfterFunc(timeout+loopBlockedDumpGrace, func() {
+		dump, grace := DumpBlockedLoop, LoopBlockedDumpGrace
+		timers = append(timers, time.AfterFunc(timeout+grace, func() {
 			if !processed.Load() {
-				dumpBlockedLoopDiagnostics(label, timeout)
+				dump(label, timeout)
 			}
 		}))
 	}

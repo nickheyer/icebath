@@ -93,6 +93,9 @@ type migrationRun struct {
 	configOnly bool
 }
 
+// Reports whether the running step may change files other than the config document
+func (r *migrationRun) localFilesAllowed() bool { return !r.configOnly }
+
 type migrationStep struct {
 	target int
 	run    func(r *migrationRun) error
@@ -535,7 +538,7 @@ func migrateTo12(r *migrationRun) error {
 
 // Clears the dead LLM_MODEL and OPENAI_MODEL entries from the home env file
 func migrateTo13(r *migrationRun) error {
-	if r.configOnly {
+	if !r.localFilesAllowed() {
 		return nil
 	}
 	for _, dead := range []string{"LLM_MODEL", "OPENAI_MODEL"} {
@@ -786,7 +789,7 @@ func seedMissing(section, defaults map[string]any, order []string) []string {
 // Seeds unset curator defaults into the config and creates the curator log directory
 func migrateTo23(r *migrationRun) error {
 	defaults := Defaults()
-	if !r.configOnly {
+	if r.localFilesAllowed() {
 		dir := filepath.Join(home.LogsDir(r.h), "curator")
 		if err := os.MkdirAll(dir, 0o777); err != nil {
 			r.res.Warnings = append(r.res.Warnings, fmt.Sprintf("Could not create %s: %s", dir, pyOSErrorString(err)))
@@ -1016,7 +1019,7 @@ func migrateTo39(r *migrationRun) error {
 
 // Removes the plugin era messaging section from every roster profile SOUL.md
 func migrateTo41(r *migrationRun) error {
-	if r.configOnly {
+	if !r.localFilesAllowed() {
 		return nil
 	}
 	var cleaned []string
@@ -1181,7 +1184,7 @@ func migrateTo49(r *migrationRun) error {
 		added:   fmt.Sprintf("terminal.vercel_runtime unset (fresh sandboxes use terminal.vercel_image, %s)", DefaultVercelImage),
 		message: fmt.Sprintf("  \u2713 terminal.vercel_runtime: was the old default; fresh sandboxes now use the managed image (%s)", DefaultVercelImage),
 	})(r)
-	if err != nil || r.configOnly {
+	if err != nil || !r.localFilesAllowed() {
 		return err
 	}
 	if strings.TrimFunc(r.src.GetEnvValuePreferDotenv("TERMINAL_VERCEL_RUNTIME"), unicode.IsSpace) == LegacyVercelRuntime {

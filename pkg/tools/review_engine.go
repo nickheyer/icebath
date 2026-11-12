@@ -123,11 +123,11 @@ func CollectParentLoadedSkills(parent any, messages []map[string]any, limit int)
 		}
 		calls, _ := message["tool_calls"].([]any)
 		for _, call := range calls {
-			callMap, ok := call.(map[string]any)
+			callMap, ok := pyjson.Dict(call)
 			if !ok {
 				continue
 			}
-			fn, _ := callMap["function"].(map[string]any)
+			fn, _ := pyjson.Dict(callMap["function"])
 			if fn["name"] != "skill_view" {
 				continue
 			}

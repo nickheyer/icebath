@@ -32,13 +32,13 @@ import { api } from "@/lib/api";
 
 /** LocalStorage key — pre-applied before the React tree mounts to avoid
  *  a visible flash of the default palette on theme-overridden installs. */
-const STORAGE_KEY = "hermes-dashboard-theme";
+const STORAGE_KEY = "icebath-dashboard-theme";
 
 /** LocalStorage key for the font override (independent of theme). Holds a
  *  font id from the catalog in `fonts.ts`, or the `THEME_DEFAULT_FONT_ID`
  *  sentinel / absent = "use the active theme's font". Pre-applied before
  *  the React tree mounts (see `main.tsx`) to avoid a font flash. */
-const FONT_STORAGE_KEY = "hermes-dashboard-font";
+const FONT_STORAGE_KEY = "icebath-dashboard-font";
 
 /** Renames of built-in theme keys we've shipped previously. Without this,
  *  users who saved one of the old names in localStorage (or had it

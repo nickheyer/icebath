@@ -121,7 +121,7 @@ interface GatewayRegistryState {
   $activeProfile: ReturnType<typeof atom<string>>
 }
 
-const STATE_KEY = Symbol.for('hermes.desktop.gatewayRegistryState')
+const STATE_KEY = Symbol.for('icebath.desktop.gatewayRegistryState')
 
 function createRegistryState(): GatewayRegistryState {
   return {

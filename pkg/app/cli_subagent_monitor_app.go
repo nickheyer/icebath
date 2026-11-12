@@ -27,7 +27,7 @@ type monitorApp struct {
 	style   *ptMergedStyle
 	in      io.Reader
 	out     io.Writer
-	program *tea.Program
+	program atomic.Pointer[tea.Program]
 	done    atomic.Bool
 
 	mu        sync.Mutex
@@ -184,7 +184,7 @@ func (a *monitorApp) runControl(action string, message any, target any) {
 					err = errorFromPanic(r)
 				}
 			}()
-			return a.monitor.control(action, message, target)
+			return monitorControl(a.monitor, action, message, target)
 		}()
 		if err != nil {
 			result = map[string]any{"error": err.Error()}
@@ -204,6 +204,9 @@ func (a *monitorApp) runControl(action string, message any, target any) {
 		a.invalidate()
 	}()
 }
+
+// Steer or stop call the monitor sends off the UI loop
+var monitorControl = (*subagentMonitor).control
 
 // Error of a recovered panic value
 func errorFromPanic(r any) error {
@@ -246,10 +249,11 @@ func (a *monitorApp) updateTail() {
 
 // Repaints the monitor from any goroutine
 func (a *monitorApp) invalidate() {
-	if a.done.Load() || a.program == nil {
+	p := a.program.Load()
+	if a.done.Load() || p == nil {
 		return
 	}
-	go a.program.Send(monitorRepaintMsg{})
+	go p.Send(monitorRepaintMsg{})
 }
 
 // Ends the monitor application
@@ -257,8 +261,8 @@ func (a *monitorApp) exit() {
 	if a.done.Swap(true) {
 		return
 	}
-	if a.program != nil {
-		go a.program.Quit()
+	if p := a.program.Load(); p != nil {
+		go p.Quit()
 	}
 }
 
@@ -266,7 +270,7 @@ func (a *monitorApp) exit() {
 func (a *monitorApp) run() {
 	p := tea.NewProgram(&monitorModel{app: a}, tea.WithInput(guardedInput(a.in)), tea.WithOutput(a.out), tea.WithoutSignalHandler(),
 		tea.WithWindowSize(a.cols, a.rows))
-	a.program = p
+	a.program.Store(p)
 	if a.done.Load() {
 		return
 	}
@@ -426,20 +430,20 @@ func (a *monitorApp) footer(cols int, confirm, steering, detail, process bool) s
 	return t("cli.subagents.footer_roster", map[string]any{"steer": steer})
 }
 
-// Roster rows scrolled to keep the selection visible, with the selection's screen row
-func (a *monitorApp) paintRoster(cols, height int) ([]string, int) {
+// Roster fragments one row each with its newline, the empty notice without rows, and the selection's row
+func (a *monitorApp) rosterText(cols int) ([]styledFragment, int) {
 	m := a.monitor
 	t := m.cli.t
 	m.mu.Lock()
 	roster := m.rosterLocked()
 	selectedID := m.selectedID
 	m.mu.Unlock()
-	var content [][]styledFragment
-	cursor := 0
+	var rows []styledFragment
+	cursor, found := 0, false
 	for i, row := range roster {
 		selected := dockRowKey(row) == selectedID
-		if selected {
-			cursor = i
+		if selected && !found {
+			cursor, found = i, true
 		}
 		var prefix, activity, subject string
 		if row["kind"] == "process" {
@@ -464,11 +468,22 @@ func (a *monitorApp) paintRoster(cols, height int) ([]string, int) {
 		if selected {
 			style = "class:subagent-dock.selected"
 		}
-		content = append(content, []styledFragment{{Style: style, Text: text}})
+		rows = append(rows, styledFragment{Style: style, Text: text + "\n"})
 	}
-	if len(roster) == 0 {
-		content = [][]styledFragment{{{Text: t("cli.subagents.roster_empty", nil)}}}
-	} else {
+	if len(rows) == 0 {
+		return []styledFragment{{Text: t("cli.subagents.roster_empty", nil)}}, cursor
+	}
+	return rows, cursor
+}
+
+// Roster rows scrolled to keep the selection visible, with the selection's screen row
+func (a *monitorApp) paintRoster(cols, height int) ([]string, int) {
+	frags, cursor := a.rosterText(cols)
+	var content [][]styledFragment
+	for _, f := range frags {
+		content = append(content, []styledFragment{{Style: f.Style, Text: strings.TrimSuffix(f.Text, "\n")}})
+	}
+	if strings.HasSuffix(frags[len(frags)-1].Text, "\n") {
 		content = append(content, nil)
 	}
 	a.rosterTop = ptDoScroll(a.rosterTop, cursor, height, len(content))

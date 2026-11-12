@@ -1935,7 +1935,7 @@ export interface Translations extends NoticeTranslations {
         serverStates: {
           connected: string
           app_not_running: string
-          hermes_not_connected: string
+          icebath_not_connected: string
           endpoint_unavailable: string
           no_interactive_session: string
           version_too_old: string

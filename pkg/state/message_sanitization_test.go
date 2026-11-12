@@ -1,7 +1,9 @@
 package state
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -60,13 +62,17 @@ func TestToolCallSetAndExtraRead(t *testing.T) {
 func TestMessageDictRoundTrip(t *testing.T) {
 	d := map[string]any{
 		"role": "assistant", "content": "hi", "tool_call_id": "",
-		"tool_calls":        []any{map[string]any{"id": "c1", "call_id": "c1", "function": map[string]any{"name": "f", "arguments": "{}"}}},
+		"tool_calls": []any{pyjson.ObjectOf("call_id", "c1", "id", "c1", "function", pyjson.ObjectOf("arguments", "{}", "name", "f")),
+			pyjson.ObjectOf("id", "c2", "type", "function", "function", pyjson.ObjectOf("name", "g", "arguments", "{}"))},
 		"reasoning_details": []any{map[string]any{"type": "t"}},
 		"_withheld_prompt":  "w", "data_use": []any{"x"}, "timestamp": 1.5, "id": int64(7), DBPersistedMarker: true,
 	}
 	m := MessageFromDict(d)
-	if m.Role != "assistant" || m.RowID != 7 || !m.Persisted || len(m.ToolCalls) != 1 || m.ToolCalls[0].Extra["call_id"] != "c1" || m.Extra["_withheld_prompt"] != "w" {
+	if m.Role != "assistant" || m.RowID != 7 || !m.Persisted || len(m.ToolCalls) != 2 || m.ToolCalls[0].Extra["call_id"] != "c1" || m.Extra["_withheld_prompt"] != "w" {
 		t.Fatalf("struct %#v", m)
+	}
+	if !slices.Equal(m.ToolCalls[0].Keys, []string{"call_id", "id", "function"}) || !slices.Equal(m.ToolCalls[0].Function.Keys, []string{"arguments", "name"}) || m.ToolCalls[1].Keys != nil || m.ToolCalls[1].Function.Keys != nil {
+		t.Fatalf("recorded key order %q %q %q %q", m.ToolCalls[0].Keys, m.ToolCalls[0].Function.Keys, m.ToolCalls[1].Keys, m.ToolCalls[1].Function.Keys)
 	}
 	if back := MessageToDict(m); !reflect.DeepEqual(back, d) {
 		t.Fatalf("round trip %#v", back)

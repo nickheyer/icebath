@@ -640,7 +640,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 			if err != nil {
 				return nil, err
 			}
-			msg["tool_calls"] = plainDictTree(calls)
+			msg["tool_calls"] = orderedDictTree(calls)
 		}
 		if pyTruthy(row["platform_message_id"]) {
 			msg["message_id"] = row["platform_message_id"]

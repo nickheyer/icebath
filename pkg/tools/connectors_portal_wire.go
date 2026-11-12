@@ -78,7 +78,8 @@ type ConnectorPolicyWriteResponse struct {
 	Effective ConnectorPolicyEffective
 }
 
-var portalFacets = []string{"read", "write", "destructive", "unclassified"}
+// Facet values a portal tool row may carry, the ConnectorTool facet Literal
+var PortalFacets = []string{"read", "write", "destructive", "unclassified"}
 
 // Value of a field read by its alias first and then by its name, as populate_by_name allows
 func wireField(o *pyjson.Object, alias, name string) (any, bool) {
@@ -194,7 +195,7 @@ func wireConnectorTool(o *pyjson.Object) (ConnectorTool, error) {
 		return t, &wireError{"facet: Input should be 'read', 'write', 'destructive' or 'unclassified'"}
 	}
 	t.Facet = "unclassified"
-	if slices.Contains(portalFacets, s) {
+	if slices.Contains(PortalFacets, s) {
 		t.Facet = s
 	}
 	if t.Hints, err = wireReqStrList(o, "hints", "hints"); err != nil {

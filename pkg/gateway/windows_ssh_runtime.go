@@ -714,7 +714,7 @@ func sshProbe() (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("os", "Windows", "arch", pyplatform.Machine(), "hermesHome", home.Root(), "python", exe), nil
+	return pyjson.ObjectOf("os", "Windows", "arch", pyplatform.Machine(), "hermesHome", home.Root(), "executable", exe), nil
 }
 
 // Valid install id of an id file, nil when the file is missing, unreadable or malformed

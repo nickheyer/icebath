@@ -47,7 +47,7 @@ func historyRows(value any) []map[string]any {
 	case []any:
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			if m, ok := row.(map[string]any); ok {
+			if m, ok := pyjson.Dict(row); ok {
 				out = append(out, m)
 			}
 		}
@@ -71,7 +71,7 @@ func TodoStateFromHistory(history []map[string]any) *pyjson.Object {
 			if !reflect.TypeOf(id).Comparable() {
 				return nil
 			}
-			fn, _ := call["function"].(map[string]any)
+			fn, _ := pyjson.Dict(call["function"])
 			name, _ := fn["name"].(string)
 			if tools.IsTodoToolCall(name, fn["arguments"]) {
 				todoCallIDs[id] = true

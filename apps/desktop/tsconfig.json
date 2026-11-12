@@ -18,6 +18,7 @@
     "noEmit": true,
     "paths": {
       "@/*": ["./src/*"],
+      "@icebath/plugin-sdk": ["./src/sdk/index.ts"],
       "@hermes/plugin-sdk": ["./src/sdk/index.ts"],
       "@icebath/shared/ansi": ["../shared/src/ansi.ts"],
       "@icebath/shared/billing": ["../shared/src/billing-types.ts"],

@@ -97,6 +97,13 @@ func cmdUpdateCheck(ctx context.Context, w io.Writer, branch string, branchExpli
 		return &pm.SystemExit{Code: 2}
 	}
 	if !existsFollow(filepath.Join(root, ".git")) {
+		release, err := releaseBinaryInstall(ctx, root)
+		if err != nil {
+			return err
+		}
+		if release {
+			return checkReleaseUpdate(ctx, w, branch, branchExplicit, channel)
+		}
 		fmt.Fprintln(w, "✗ Not a git repository — cannot check for updates.")
 		return &pm.SystemExit{Code: 1}
 	}
@@ -320,6 +327,11 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 	PublishStage("Updating dependencies")
 	if current := updaterecord.CurrentReceipt(ctx); current != nil {
 		request["receipt"] = pyjson.Clone(current.Data)
+	}
+	if source, present := request["source"]; present {
+		if err := rebuildSourceCheckout(ctx, w, pyrepr.Str(source)); err != nil {
+			return err
+		}
 	}
 	var expectedSHA string
 	if pyrepr.Truthy(request["expected_sha"]) {

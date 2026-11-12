@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	SessionATCookie       = "hermes_session_at"
-	SessionRTCookie       = "hermes_session_rt"
-	SessionProviderCookie = "hermes_session_provider"
-	PKCECookie            = "hermes_session_pkce"
-	SSOAttemptCookie      = "hermes_sso_attempt"
-	WebappSigninCookie    = "hermes_webapp_signin"
+	SessionATCookie       = "icebath_session_at"
+	SessionRTCookie       = "icebath_session_rt"
+	SessionProviderCookie = "icebath_session_provider"
+	PKCECookie            = "icebath_session_pkce"
+	SSOAttemptCookie      = "icebath_sso_attempt"
+	WebappSigninCookie    = "icebath_webapp_signin"
 	rtCookieMaxAge        = 30 * 24 * 60 * 60
 	pkceCookieMaxAge      = 10 * 60
 	ssoAttemptMaxAge      = 60
@@ -113,6 +113,7 @@ func clearSessionCookies(resp ASGIResponse, prefix, gateway string) {
 	bareAttrs := commonCookieAttrs(false, prefix)
 	for _, name := range []string{SessionATCookie, SessionRTCookie, SessionProviderCookie} {
 		clearCookieVariants(resp, gatewayCookieName(name, gateway), prefix, "lax", bareAttrs)
+		clearCookieVariants(resp, legacyCookieName(gatewayCookieName(name, gateway)), prefix, "lax", bareAttrs)
 	}
 }
 
@@ -140,12 +141,17 @@ func clearPKCECookie(resp ASGIResponse, useHTTPS bool, prefix, gateway string) {
 	clearCookieVariants(resp, gatewayCookieName(PKCECookie, gateway), prefix, "none", pkceCookieAttrs(useHTTPS, prefix))
 }
 
-// First cookie value across the name variants and whether one was present
+// Name a hermes dashboard gave the same cookie, read until the next write replaces it
+func legacyCookieName(bare string) string { return strings.Replace(bare, "icebath_", "hermes_", 1) }
+
+// First cookie value across the name variants, the icebath name before its hermes name, and whether one was present
 func readCookieWithFallback(conn *HTTPConnection, bareName string) (string, bool) {
 	cookies := conn.Cookies()
-	for _, p := range cookieNameVariants {
-		if v, ok := cookies[p+bareName]; ok {
-			return v, true
+	for _, name := range []string{bareName, legacyCookieName(bareName)} {
+		for _, p := range cookieNameVariants {
+			if v, ok := cookies[p+name]; ok {
+				return v, true
+			}
 		}
 	}
 	return "", false

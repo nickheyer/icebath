@@ -7,7 +7,7 @@ import { canonicalizeCombo } from '@/lib/keybinds/combo'
 import { persistStore } from '@/lib/persist-store'
 import { arraysEqual, persistString, storedString, type WriteOptions } from '@/lib/storage'
 
-const STORAGE_KEY = 'hermes.desktop.keybinds'
+const STORAGE_KEY = 'icebath.desktop.keybinds'
 
 // The user's raw stored overrides. Kept verbatim so an action CONTRIBUTED
 // after module init (plugins register late) still resolves its saved rebind —

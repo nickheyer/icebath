@@ -29,6 +29,7 @@ func ddgsXPathRendered(t *testing.T, tree *lxmlTree, ctx *html.Node, expr string
 
 // Every engine and function fixture evaluates to the strings lxml returned for the same item and expression
 func TestDDGSXPathMatchesLxml(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, f := range ddgsXPathRecorded {
 		tree, err := lxmlFromString(f.html)
 		if err != nil {
@@ -67,9 +68,7 @@ func swapDDGS[T any](t *testing.T, p *T, v T) {
 // Installs a fake ddgs package whose text search yields the given rows, the importable latch set
 func fakeDDGSPackage(t *testing.T, rows [][3]string, fail error) {
 	t.Helper()
-	was := ddgsImported.Load()
-	ddgsImported.Store(true)
-	t.Cleanup(func() { ddgsImported.Store(was) })
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
 	swapDDGS(t, &ddgsText, func(_ context.Context, _ string, _ int) ([]*ddgsTextResult, error) {
 		if fail != nil {
 			return nil, fail
@@ -119,6 +118,7 @@ func assertDDGSWorkerReaped(t *testing.T) {
 func ddgsP() *ddgsProvider { return webProvider(nil, "ddgs").(*ddgsProvider) }
 
 func TestDDGSProviderIsConfiguredWhenPackageImportable(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, nil, nil)
 	if !ddgsP().Available(httpxProviderEnv(t, "", nil)) {
 		t.Fatal("ddgs not available with the package importable")
@@ -126,6 +126,7 @@ func TestDDGSProviderIsConfiguredWhenPackageImportable(t *testing.T) {
 }
 
 func TestDDGSHappyPathNormalizesResults(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, [][3]string{{"A", "https://a.example.com", "desc A"}, {"B", "https://b.example.com", "desc B"}, {"C", "https://c.example.com", "desc C"}}, nil)
 	forceInprocessDDGS(t)
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "q", 5)
@@ -139,6 +140,7 @@ func TestDDGSHappyPathNormalizesResults(t *testing.T) {
 }
 
 func TestDDGSEmptyResults(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, nil, nil)
 	forceInprocessDDGS(t)
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "nothing", 5)
@@ -149,6 +151,7 @@ func TestDDGSEmptyResults(t *testing.T) {
 }
 
 func TestDDGSHungSearchTimesOutAndReturnsFailure(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ddgsWorkerKnobs(t, "sleep", 0.4, func(context.Context) bool { return false })
 	start := time.Now()
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "hangs forever", 5)
@@ -165,6 +168,7 @@ func TestDDGSHungSearchTimesOutAndReturnsFailure(t *testing.T) {
 }
 
 func TestDDGSFastSearchNotAffectedByTimeoutWrapper(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, [][3]string{{"T", "https://e.com", "B"}}, nil)
 	forceInprocessDDGS(t)
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "q", 5)
@@ -174,6 +178,7 @@ func TestDDGSFastSearchNotAffectedByTimeoutWrapper(t *testing.T) {
 }
 
 func TestDDGSGILHoldingWorkerTimesOutAndIsReaped(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ddgsWorkerKnobs(t, "gil", 0.5, func(context.Context) bool { return false })
 	start := time.Now()
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "gil hold", 5)
@@ -187,6 +192,7 @@ func TestDDGSGILHoldingWorkerTimesOutAndIsReaped(t *testing.T) {
 }
 
 func TestDDGSInterruptTerminatesWorkerPromptly(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	calls := 0
 	ddgsWorkerKnobs(t, "sleep", 30, func(context.Context) bool { calls++; return calls >= 2 })
 	start := time.Now()
@@ -201,6 +207,7 @@ func TestDDGSInterruptTerminatesWorkerPromptly(t *testing.T) {
 }
 
 func TestDDGSNoOrphanAfterSuccessfulSearch(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ddgsWorkerKnobs(t, "empty", 30, func(context.Context) bool { return false })
 	res, _ := ddgsP().Search(context.Background(), httpxProviderEnv(t, "", nil), "q", 5)
 	if !res.Success || len(res.Data.Web) != 0 {
@@ -210,7 +217,8 @@ func TestDDGSNoOrphanAfterSuccessfulSearch(t *testing.T) {
 }
 
 func TestDDGSBackendWiring(t *testing.T) {
-	swapDDGS(t, &ddgsPackageImportable, func(context.Context) bool { return true })
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
 	env := httpxProviderEnv(t, "", nil)
 	if !isWebBackendAvailable(env, "ddgs") {
 		t.Fatal("ddgs backend unavailable with the package importable")
@@ -227,7 +235,9 @@ func TestDDGSBackendWiring(t *testing.T) {
 }
 
 func TestDDGSWebExtractReturnsSearchOnlyError(t *testing.T) {
-	swapDDGS(t, &ddgsPackageImportable, func(context.Context) bool { return true })
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return true })
+	swapDDGS(t, &webExtractURLSafe, func(*Env, string) bool { return true })
 	out := mustJSONMap(WebExtractTool(context.Background(), httpxProviderEnv(t, "", map[string]any{"web.backend": "ddgs"}), []any{"https://example.com"}, "", nil))
 	msg := strings.ToLower(asStr(out["error"]))
 	if out["success"] != false || !strings.Contains(msg, "search-only") || !(strings.Contains(msg, "duckduckgo") || strings.Contains(msg, "ddgs")) {
@@ -237,6 +247,7 @@ func TestDDGSWebExtractReturnsSearchOnlyError(t *testing.T) {
 
 // Every malformed envelope raises the RuntimeError text _parse_envelope gives
 func TestDDGSParseEnvelope(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	p := &ddgsWorkerProc{exited: make(chan struct{})}
 	close(p.exited)
 	cases := []struct{ raw, want string }{
@@ -265,6 +276,7 @@ func TestDDGSParseEnvelope(t *testing.T) {
 
 // The worker writes one envelope and exits 0, 1, 2 or 3 exactly like _search_worker.main
 func TestDDGSWorkerMainExitCodes(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fakeDDGSPackage(t, [][3]string{{"<b>T</b>", "https://e.com/a%20b", "B"}, {"T2", "https://f.com", "B2"}}, nil)
 	allow := func(k string) string {
 		if k == "ICEBATH_DDGS_ALLOW_TEST_HOOKS" {
@@ -304,6 +316,7 @@ func TestDDGSWorkerMainExitCodes(t *testing.T) {
 
 // Normalizers strip tags, unescape, drop control and format runes, collapse whitespace and unquote URLs
 func TestDDGSNormalizers(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	text := []struct {
 		in   any
 		want any
@@ -328,9 +341,24 @@ func TestDDGSNormalizers(t *testing.T) {
 
 // A page with no element raises the lxml ParserError ddgs reports
 func TestDDGSLxmlDocumentIsEmpty(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, in := range []string{"", "  \n", "<!-- c -->"} {
 		if _, err := lxmlFromString(in); err == nil || err.Error() != "ParserError: Document is empty" {
 			t.Errorf("%q -> %v", in, err)
 		}
+	}
+}
+
+func TestDDGSProviderNeedsNoPythonPackageOrSetup(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	if !ddgsP().Available(httpxProviderEnv(t, "", nil)) {
+		t.Fatal("the compiled in DuckDuckGo client read as unavailable")
+	}
+	schema := ddgsP().SetupSchema()
+	if _, ok := schema["post_setup"]; ok || strings.Contains(asStr(schema["tag"]), "Python") {
+		t.Fatalf("schema %v", schema)
+	}
+	if _, ok := pythonPostSetupHooks["ddgs"]; ok {
+		t.Fatal("ddgs still installs a Python extra")
 	}
 }

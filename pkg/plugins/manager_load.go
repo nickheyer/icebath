@@ -630,6 +630,37 @@ func (m *Manager) ContextEngine() any {
 	return m.contextEngine
 }
 
+// Gives a command name absent from the table the next insertion rank, caller holding the lock
+func (m *Manager) notePluginCommandOrderLocked(name string) {
+	if _, present := m.pluginCommands[name]; present {
+		return
+	}
+	m.pluginCommandSeq[name] = m.nextPluginCommandSeq
+	m.nextPluginCommandSeq++
+}
+
+// Registered plugin command names in insertion order, a name replaced in place keeping its rank
+func (m *Manager) PluginCommandOrder() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]string, 0, len(m.pluginCommands))
+	for k := range m.pluginCommands {
+		out = append(out, k)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		si, iok := m.pluginCommandSeq[out[i]]
+		sj, jok := m.pluginCommandSeq[out[j]]
+		if iok != jok {
+			return iok
+		}
+		if si != sj {
+			return si < sj
+		}
+		return out[i] < out[j]
+	})
+	return out
+}
+
 // Plugin slash commands by name
 func (m *Manager) PluginCommands() map[string]*PluginCommand {
 	m.mu.RLock()
@@ -678,6 +709,7 @@ func (m *Manager) SetCLIRef(cli CLIHost) {
 func (m *Manager) resetContextRegistriesLocked() {
 	clear(m.cliCommands)
 	clear(m.pluginCommands)
+	clear(m.pluginCommandSeq)
 	clear(m.pluginSkills)
 	clear(m.automationBlueprints)
 	clear(m.portableMCPServers)

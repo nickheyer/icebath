@@ -16,7 +16,7 @@ import { atom } from 'nanostores'
 import { persistStore } from '@/lib/persist-store'
 import { persistBoolean, storedBoolean } from '@/lib/storage'
 
-const KEY = 'hermes.desktop.alwaysExternalLinks.v1'
+const KEY = 'icebath.desktop.alwaysExternalLinks.v1'
 
 export const $alwaysExternalLinks = atom<boolean>(typeof window === 'undefined' ? false : storedBoolean(KEY, false))
 

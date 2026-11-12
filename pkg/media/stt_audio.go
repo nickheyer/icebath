@@ -47,7 +47,10 @@ var sttFindBinary = func(name string) string {
 	return ""
 }
 
-func findFFmpegBinary() string  { return sttFindBinary("ffmpeg") }
+func findFFmpegBinary() string { return sttFindBinary("ffmpeg") }
+
+// Shared ffmpeg discovery over PATH and the Homebrew and local prefixes, empty when absent
+func FindFFmpegBinary() string  { return findFFmpegBinary() }
 func findFFprobeBinary() string { return sttFindBinary("ffprobe") }
 func findWhisperBinary() string { return sttFindBinary("whisper") }
 

@@ -20,13 +20,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -881,7 +881,8 @@ func (s *Store) TickerHeartbeatWriterAlive() bool {
 	if !ok || !pid.IsInt64() || pid.Int64() > math.MaxInt32 || pid.Int64() < math.MinInt32 {
 		return false
 	}
-	return proc.Exists(int(pid.Int64()))
+	alive, err := tools.PidExistsStdlib(int(pid.Int64()))
+	return err == nil && alive
 }
 
 // TickerHeartbeatAge is the seconds since the loop last iterated, false when unknown

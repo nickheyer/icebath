@@ -10,6 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
+	"testing/iotest"
+
+	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
 func agentCmdsHome(t *testing.T) (context.Context, string) {
@@ -181,5 +184,26 @@ func TestMemoryResetTargetsConfirmationAndNothingToReset(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(mem, f)); !os.IsNotExist(err) {
 			t.Fatalf("%s survived the reset", f)
 		}
+	}
+}
+
+func TestMemoryResetCancelsOnInterruptAtThePrompt(t *testing.T) {
+	ctx, h := agentCmdsHome(t)
+	mem := filepath.Join(h, "memories")
+	if err := os.MkdirAll(mem, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mem, "USER.md"), []byte("u"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := MemoryReset(ctx, &out, iotest.ErrReader(cliui.ErrInterrupt), "all", false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(out.String(), "\n  Type 'yes' to confirm: \n  Cancelled.\n\n") {
+		t.Fatalf("output %q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(mem, "USER.md")); err != nil {
+		t.Fatalf("USER.md removed after an interrupt %v", err)
 	}
 }

@@ -94,7 +94,7 @@ func (c *ContextCompressor) computeSummaryBudget(turns []map[string]any) int {
 
 // Indented name and redacted arguments line, object shaped calls rendering as name and dots
 func renderToolCallForSummary(tc any) string {
-	call, ok := tc.(map[string]any)
+	call, ok := pyjson.Dict(tc)
 	if !ok {
 		fn := tcGet(tc, "function", nil)
 		if fn == nil {
@@ -102,7 +102,7 @@ func renderToolCallForSummary(tc any) string {
 		}
 		return "  " + pyStrOf(tcGet(fn, "name", "?")) + "(...)"
 	}
-	fn, _ := call["function"].(map[string]any)
+	fn, _ := pyjson.Dict(call["function"])
 	var rawArgs any = ""
 	var name any = "?"
 	if fn != nil {

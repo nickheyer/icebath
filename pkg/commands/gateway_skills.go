@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -81,9 +82,9 @@ func HomeSkillSource(h string, cfg config.Tree) SkillSource {
 }
 
 // GatewaySkillEntries is the exported collectGatewaySkillEntries, names and descriptions with the hidden count
-func GatewaySkillEntries(r *Registry, platform string, source SkillSource, maxSlots int, reserved map[string]bool,
+func GatewaySkillEntries(ctx context.Context, r *Registry, platform string, source SkillSource, maxSlots int, reserved map[string]bool,
 	descLimit int, sanitize func(string) string) ([]NameDesc, int) {
-	entries, hidden := collectGatewaySkillEntries(r, platform, source, maxSlots, reserved, descLimit, sanitize)
+	entries, hidden := collectGatewaySkillEntries(ctx, r, platform, source, maxSlots, reserved, descLimit, sanitize)
 	out := make([]NameDesc, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, NameDesc{Name: e.name, Description: e.desc})

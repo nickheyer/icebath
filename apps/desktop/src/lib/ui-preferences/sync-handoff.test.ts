@@ -11,11 +11,11 @@ import type { UiPreferencesBridge } from './sync'
 // Hand-offs between clients and page loads, against the real native writer on
 // a real file (#145536 re-review): an upgraded browser's old defaults, a closed
 // tab's unsent edit, a first snapshot that lands after the app read its cache.
-const KEYBINDS = 'hermes.desktop.keybinds'
-const HAPTICS = 'hermes.desktop.hapticsMuted'
-const MODE = 'hermes-desktop-mode-v1'
-const FAVORITES = 'hermes.desktop.favorite-models'
-const OUTBOX_PREFIX = 'hermes:ui-preferences:outbox:'
+const KEYBINDS = 'icebath.desktop.keybinds'
+const HAPTICS = 'icebath.desktop.hapticsMuted'
+const MODE = 'icebath-desktop-mode-v1'
+const FAVORITES = 'icebath.desktop.favorite-models'
+const OUTBOX_PREFIX = 'icebath:ui-preferences:outbox:'
 const CUSTOM_KEYBINDS = '{"composer.dictate":["mod+shift+d"]}'
 
 // Every store that writes its value the moment its module evaluates.
@@ -111,7 +111,7 @@ it('a browser upgraded from a build that stored every default at load never seed
 
   const oldDefaults = Object.fromEntries(
     Array.from({ length: window.localStorage.length }, (_, index) => window.localStorage.key(index) ?? '')
-      .filter(key => key.startsWith('hermes.desktop.') || key.startsWith('hermes-desktop-'))
+      .filter(key => key.startsWith('icebath.desktop.') || key.startsWith('icebath-desktop-'))
       .map(key => [key, window.localStorage.getItem(key) ?? ''])
   )
 

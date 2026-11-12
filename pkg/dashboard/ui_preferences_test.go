@@ -64,22 +64,22 @@ func TestTheSeedImportOnlyAddsKeysAndNeverCreatesAnEmptyStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := writePreferences(ctx, prefChanges("hermes.desktop.sessionListDensity", "detailed"), true, path)
+	first, err := writePreferences(ctx, prefChanges("icebath.desktop.sessionListDensity", "detailed"), true, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := writePreferences(ctx, prefChanges("hermes.desktop.sessionListDensity", "compact",
-		"hermes-desktop-mode-v1", "dark"), true, path)
+	second, err := writePreferences(ctx, prefChanges("icebath.desktop.sessionListDensity", "compact",
+		"icebath-desktop-mode-v1", "dark"), true, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !pyjson.Equal(empty, pyjson.ObjectOf("exists", false, "revision", 0, "values", pyjson.NewObject())) {
 		t.Fatalf("empty %v", empty)
 	}
-	if !pyjson.Equal(first.Vals["values"], prefChanges("hermes.desktop.sessionListDensity", "detailed")) {
+	if !pyjson.Equal(first.Vals["values"], prefChanges("icebath.desktop.sessionListDensity", "detailed")) {
 		t.Fatalf("first %v", first)
 	}
-	wantSecond := prefChanges("hermes.desktop.sessionListDensity", "detailed", "hermes-desktop-mode-v1", "dark")
+	wantSecond := prefChanges("icebath.desktop.sessionListDensity", "detailed", "icebath-desktop-mode-v1", "dark")
 	if !pyjson.Equal(second.Vals["values"], wantSecond) || second.Vals["generation"] != first.Vals["generation"] {
 		t.Fatalf("second %v first %v", second, first)
 	}
@@ -98,7 +98,7 @@ func TestAnUnreadableOrCorruptStoreIsNeverMergedOver(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ui-preferences.json")
-	kept, err := writePreferences(ctx, prefChanges("hermes-desktop-theme-v2", "nous", "hermes.desktop.keybinds", "{}"), false, path)
+	kept, err := writePreferences(ctx, prefChanges("icebath-desktop-theme-v2", "nous", "icebath.desktop.keybinds", "{}"), false, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestAnUnreadableOrCorruptStoreIsNeverMergedOver(t *testing.T) {
 		_ = os.Chmod(path, 0o600)
 		t.Skip("running as a user that reads mode-000 files (root)")
 	}
-	_, err = writePreferences(ctx, prefChanges("hermes-desktop-mode-v1", "dark"), false, path)
+	_, err = writePreferences(ctx, prefChanges("icebath-desktop-mode-v1", "dark"), false, path)
 	_ = os.Chmod(path, 0o600)
 	var busy *preferencesBusy
 	if !errors.As(err, &busy) {
@@ -128,7 +128,7 @@ func TestAnUnreadableOrCorruptStoreIsNeverMergedOver(t *testing.T) {
 	if err != nil || snap.Vals["exists"] != false {
 		t.Fatalf("snap %v err %v", snap, err)
 	}
-	after, err := writePreferences(ctx, prefChanges("hermes-desktop-mode-v1", "dark"), false, path)
+	after, err := writePreferences(ctx, prefChanges("icebath-desktop-mode-v1", "dark"), false, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestAnUnreadableOrCorruptStoreIsNeverMergedOver(t *testing.T) {
 	if b, _ := os.ReadFile(backups[0]); !bytes.Equal(b, torn) {
 		t.Fatalf("backup %q", b)
 	}
-	if !pyjson.Equal(after.Vals["values"], prefChanges("hermes-desktop-mode-v1", "dark")) || after.Vals["generation"] == kept.Vals["generation"] {
+	if !pyjson.Equal(after.Vals["values"], prefChanges("icebath-desktop-mode-v1", "dark")) || after.Vals["generation"] == kept.Vals["generation"] {
 		t.Fatalf("after %v kept %v", after, kept)
 	}
 }
@@ -159,13 +159,13 @@ func TestWritesMergePerKeyAndConcurrentWritersKeepEachOthersKeys(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "ui-preferences.json")
-	if _, err := writePreferences(ctx, prefChanges("hermes-desktop-mode-v1", "dark", "hermes.desktop.panesFlipped", "true"), false, path); err != nil {
+	if _, err := writePreferences(ctx, prefChanges("icebath-desktop-mode-v1", "dark", "icebath.desktop.panesFlipped", "true"), false, path); err != nil {
 		t.Fatal(err)
 	}
 	var keys []string
 	var writers []*exec.Cmd
 	for n := range 8 {
-		key := fmt.Sprintf("hermes.desktop.k%d", n)
+		key := fmt.Sprintf("icebath.desktop.k%d", n)
 		keys = append(keys, key)
 		cmd := exec.Command(os.Args[0], "-test.run=^TestUIPreferencesWriterChild$", "-test.count=1")
 		cmd.Env = append(os.Environ(), "UI_PREFS_CHILD_KEY="+key, "UI_PREFS_CHILD_PATH="+path)
@@ -179,11 +179,11 @@ func TestWritesMergePerKeyAndConcurrentWritersKeepEachOthersKeys(t *testing.T) {
 			t.Fatalf("writer %d: %v", i, err)
 		}
 	}
-	after, err := writePreferences(ctx, prefChanges("hermes.desktop.panesFlipped", nil), false, path)
+	after, err := writePreferences(ctx, prefChanges("icebath.desktop.panesFlipped", nil), false, path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := prefChanges("hermes-desktop-mode-v1", "dark")
+	want := prefChanges("icebath-desktop-mode-v1", "dark")
 	for _, k := range keys {
 		want.Set(k, "1")
 	}
@@ -197,7 +197,7 @@ func TestWritesMergePerKeyAndConcurrentWritersKeepEachOthersKeys(t *testing.T) {
 
 func TestOnlyDesktopStringKeysAreStored(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, changes := range []*pyjson.Object{prefChanges("hermes.agent.secret", "x"), prefChanges("hermes.desktop.n", int64(3)), prefChanges("", "x")} {
+	for _, changes := range []*pyjson.Object{prefChanges("hermes.agent.secret", "x"), prefChanges("icebath.desktop.n", int64(3)), prefChanges("", "x")} {
 		path := filepath.Join(t.TempDir(), "ui-preferences.json")
 		_, err := writePreferences(context.Background(), changes, false, path)
 		var pe *preferencesError

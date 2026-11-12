@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"time"
 
@@ -193,8 +194,8 @@ func toolCallsSummary(c *CLI, toolCalls []any) string {
 	var names []string
 	for _, tc := range toolCalls {
 		name := "unknown"
-		if m, ok := tc.(map[string]any); ok {
-			if fn, ok := m["function"].(map[string]any); ok {
+		if m, ok := pyjson.Dict(tc); ok {
+			if fn, ok := pyjson.Dict(m["function"]); ok {
 				name = cliStr(fn["name"], "unknown")
 			}
 		}
@@ -325,8 +326,11 @@ func resumePanelColors(c *CLI) [4]string {
 	return out
 }
 
-// Drops the agent so the next turn rebuilds it, the gateway keeping the session's clients
+// Drops the agent so the next turn rebuilds it, releasing the LLM clients of an agent that holds its own first
 func retireAgent(c *CLI) {
+	if holder, ok := c.agent.(interface{ ReleaseClients(context.Context) }); ok {
+		holder.ReleaseClients(c.ctx)
+	}
 	c.agent = nil
 }
 

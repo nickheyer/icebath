@@ -16,6 +16,17 @@ type fakeInlineCommands struct {
 	maxSlots, descLim  int
 	reserved           map[string]bool
 	sanitizedViaSource string
+	menu               []CatalogItem
+	menuHidden         int
+	menuMax            int
+	menuCalls          []int
+}
+
+func (f *fakeInlineCommands) TelegramMenuMaxCommands(context.Context) int { return f.menuMax }
+
+func (f *fakeInlineCommands) TelegramMenuCommands(_ context.Context, maxCommands int) ([]CatalogItem, int, error) {
+	f.menuCalls = append(f.menuCalls, maxCommands)
+	return f.menu, f.menuHidden, nil
 }
 
 func (f *fakeInlineCommands) TelegramBotCommands(context.Context) ([]CatalogItem, error) {

@@ -13,7 +13,7 @@ func TestMigrationCreatesPlatformsEntries(t *testing.T) {
 	path := filepath.Join(h, "config.yaml")
 	text, err := SafeDump(map[string]any{
 		"_config_version": 15,
-		"display": map[string]any{"tool_progress_overrides": map[string]any{"signal": "off", "telegram": "all"}},
+		"display":         map[string]any{"tool_progress_overrides": map[string]any{"signal": "off", "telegram": "all"}},
 	})
 	if err != nil {
 		t.Fatal(err)

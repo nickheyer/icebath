@@ -70,7 +70,7 @@ func autodetectWebBackend(env *Env) string {
 		{"parallel", webHasEnv(env, "PARALLEL_API_KEY")}, {"keenable", webHasEnv(env, "KEENABLE_API_KEY")},
 		{"firecrawl", webHasEnv(env, "FIRECRAWL_API_KEY") || webHasEnv(env, "FIRECRAWL_API_URL")},
 		{"firecrawl", firecrawlGatewayReady(env)}, {"searxng", webHasEnv(env, "SEARXNG_URL")},
-		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsPackageImportable(context.Background())},
+		{"brave-free", webHasEnv(env, "BRAVE_SEARCH_API_KEY")}, {"ddgs", ddgsClientAvailable(context.Background())},
 	}
 	for _, c := range candidates {
 		if c.available {
@@ -196,7 +196,7 @@ var builtinWebAvailability = map[string]func(env *Env) bool{
 	"perplexity": func(env *Env) bool { return webHasEnv(env, "PERPLEXITY_API_KEY") || managedWebSearch(env) },
 	"searxng":    func(env *Env) bool { return webHasEnv(env, "SEARXNG_URL") },
 	"brave-free": func(env *Env) bool { return webHasEnv(env, "BRAVE_SEARCH_API_KEY") },
-	"ddgs":       func(env *Env) bool { return ddgsPackageImportable(context.Background()) },
+	"ddgs":       func(env *Env) bool { return ddgsClientAvailable(context.Background()) },
 	"xai":        func(env *Env) bool { return hasXAICredentials(env) },
 }
 
@@ -787,7 +787,7 @@ func WebExtractTool(ctx context.Context, env *Env, items []any, format string, c
 	ssrfBlocked := map[int]*WebPage{}
 	for i, u := range validated.urls {
 		index := validated.indices[i]
-		if isSafeURL(env, u) {
+		if webExtractURLSafe(env, u) {
 			safeURLs = append(safeURLs, u)
 			safeIndices = append(safeIndices, index)
 		} else {
@@ -899,3 +899,6 @@ func ensureWebPluginsLoaded(ctx context.Context, env *Env) {
 		envLog(env).Warn("Web plugin discovery failed (non-fatal): " + err.Error())
 	}
 }
+
+// SSRF verdict web_extract asks per url, the seam tests replace like async_is_safe_url
+var webExtractURLSafe = isSafeURL

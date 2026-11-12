@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import { persistStore } from '@/lib/persist-store'
 import { persistString, storedString } from '@/lib/storage'
 
-const STORAGE_KEY = 'hermes.desktop.completionSoundVariantId'
+const STORAGE_KEY = 'icebath.desktop.completionSoundVariantId'
 
 export const DEFAULT_COMPLETION_SOUND_VARIANT_ID = 1
 

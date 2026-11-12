@@ -20,7 +20,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 // dropdown threshold. The host is fixed per page load, so each case loads a
 // fresh module graph after declaring its host.
 
-type SurfaceWindow = Window & { __HERMES_UI_SURFACE__?: string }
+type SurfaceWindow = Window & { __ICEBATH_UI_SURFACE__?: string }
 
 const noop = () => {}
 
@@ -33,7 +33,7 @@ afterEach(() => {
 
 async function importHost(webapp: boolean) {
   if (webapp) {
-    ;(window as SurfaceWindow).__HERMES_UI_SURFACE__ = 'webapp'
+    ;(window as SurfaceWindow).__ICEBATH_UI_SURFACE__ = 'webapp'
   }
 
   vi.resetModules()
@@ -119,7 +119,7 @@ describe.each([
   })
 
   afterAll(() => {
-    delete (window as SurfaceWindow).__HERMES_UI_SURFACE__
+    delete (window as SurfaceWindow).__ICEBATH_UI_SURFACE__
     vi.resetModules()
   })
 

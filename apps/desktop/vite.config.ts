@@ -235,6 +235,7 @@ export default defineConfig(({ command }) => ({
     alias: {
       '@/debug/dev-only': debugEntry(command, process.env as Record<string, string>),
       '@': path.resolve(__dirname, './src'),
+      '@icebath/plugin-sdk': path.resolve(__dirname, './src/sdk/index.ts'),
       '@hermes/plugin-sdk': path.resolve(__dirname, './src/sdk/index.ts'),
       '@icebath/shared/billing': path.resolve(__dirname, '../shared/src/billing-types.ts'),
       '@icebath/shared/color': path.resolve(__dirname, '../shared/src/color.ts'),

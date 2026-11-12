@@ -68,8 +68,8 @@ describe("AuthWidget integration (real getAuthMe)", () => {
 
   function setupWindow(overrides: Partial<Window> = {}) {
     vi.stubGlobal("window", {
-      __HERMES_SESSION_TOKEN__: undefined,
-      __HERMES_BASE_PATH__: "",
+      __ICEBATH_SESSION_TOKEN__: undefined,
+      __ICEBATH_BASE_PATH__: "",
       location: { assign: vi.fn(), pathname: "/", search: "" },
       ...overrides,
     });
@@ -85,7 +85,7 @@ describe("AuthWidget integration (real getAuthMe)", () => {
   }
 
   it("hides itself when /api/auth/me returns a loopback identity", async () => {
-    setupWindow({ __HERMES_SESSION_TOKEN__: "loopback-token" });
+    setupWindow({ __ICEBATH_SESSION_TOKEN__: "loopback-token" });
     const identity = {
       display_name: "Local",
       email: "",
@@ -111,13 +111,13 @@ describe("AuthWidget integration (real getAuthMe)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/auth/me");
-    expect((init!.headers as Headers).get("X-Hermes-Session-Token")).toBe(
+    expect((init!.headers as Headers).get("X-Icebath-Session-Token")).toBe(
       "loopback-token",
     );
   });
 
   it("renders user info when /api/auth/me returns a non-loopback identity", async () => {
-    setupWindow({ __HERMES_SESSION_TOKEN__: "portal-token" });
+    setupWindow({ __ICEBATH_SESSION_TOKEN__: "portal-token" });
     const identity = {
       display_name: "Ada",
       email: "ada@example.com",
@@ -140,7 +140,7 @@ describe("AuthWidget integration (real getAuthMe)", () => {
   });
 
   it("hides on 401 (missing/invalid token in loopback mode)", async () => {
-    setupWindow({ __HERMES_SESSION_TOKEN__: "bad-token" });
+    setupWindow({ __ICEBATH_SESSION_TOKEN__: "bad-token" });
     // fetchJSON throws "401: Unauthorized" for non-OK without envelope.
     const fetchMock = vi.fn<typeof fetch>(
       async () =>

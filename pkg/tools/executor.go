@@ -1487,7 +1487,8 @@ func (b *concurrentBatch) dispatchWorker(ctx context.Context, index int, ref *To
 	var result string
 	in := ref.middlewareKwargs()
 	in.execute = func(ctx context.Context, next map[string]any) (string, error) {
-		return e.invokeTool(ctx, ref.Name, next, ref.RawArgs, ref.TaskID, ref.CallID, b.messages, ref.Trace)
+		return e.invokeTool(ctx, ref.Name, next, ref.RawArgs, ref.TaskID, ref.CallID, InvokeToolOptions{Messages: b.messages,
+			PreToolBlockChecked: true, SkipToolRequestMiddleware: true, SkipToolExecutionMiddleware: true, ToolRequestMiddlewareTrace: ref.Trace})
 	}
 	in.scopeBlock, in.displayIndex, in.beginExecution, in.gate = scopeBlock, index+1, startGate.advance, b.authGate
 	managed, err := e.runToolExecutionMiddleware(ctx, in)
@@ -1943,7 +1944,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 			errorLog: "memory manager handle_tool_call raised", finishSpinner: true, finishInFinally: true}
 	}
 	execute := func(ctx context.Context, next map[string]any) (string, error) {
-		return e.dispatchRegistry(ctx, name, next, rawArgs, taskID, callID, trace), nil
+		return e.dispatchRegistry(ctx, name, next, rawArgs, taskID, callID, trace, false, true), nil
 	}
 	var spinner Spinner
 	if host.QuietMode() {
@@ -1954,8 +1955,8 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		errorLog:    "handle_function_call raised", handlesKeyboardInterrupt: true, finishSpinner: host.QuietMode(), finishInFinally: true, transformApplied: true}
 }
 
-// Registry tools go through the dispatcher with the inner observer suppressed
-func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, trace []map[string]any) string {
+// Registry tools through the dispatcher, its post event emitted only when the caller does not own it
+func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, trace []map[string]any, innerObserver, skipToolExecutionMiddleware bool) string {
 	host := e.Host
 	var enabledTools []string
 	if valid := host.ValidToolNames(); len(valid) > 0 {
@@ -1964,16 +1965,67 @@ func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[s
 	call := &Call{Name: name, Args: args, RawArgs: rawArgs, ToolCallID: toolCallID, TaskID: taskID, SessionID: host.SessionID(), TurnID: host.TurnID(),
 		APIRequestID: host.APIRequestID(), Env: host.Env()}
 	return e.Dispatcher.DispatchWith(ctx, call, DispatchOptions{SkipPreToolCallHook: true, SkipToolRequestMiddleware: true,
-		SkipToolExecutionMiddleware: true, SuppressPostToolCallHook: true, Trace: append([]map[string]any(nil), trace...),
+		SkipToolExecutionMiddleware: skipToolExecutionMiddleware, SuppressPostToolCallHook: !innerObserver, Trace: append([]map[string]any(nil), trace...),
 		EnabledTools: enabledTools, EnabledToolsets: host.EnabledToolsets(), DisabledToolsets: host.DisabledToolsets()})
 }
 
-// Resolves inline agent level tools then the registry for the concurrent path
-func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, messages *[]*state.Message, trace []map[string]any) (string, error) {
-	if inline := e.resolveInvokeToolExecutor(name); inline != nil {
-		return inline(ctx, e.Host, args, InlineToolContext{TaskID: taskID, ToolCallID: toolCallID, Messages: messages})
+// Messages an inline tool reads and each pipeline step the caller already ran for one invoke
+type InvokeToolOptions struct {
+	Messages                    *[]*state.Message
+	PreToolBlockChecked         bool
+	SkipToolRequestMiddleware   bool
+	ToolRequestMiddlewareTrace  []map[string]any
+	SkipToolExecutionMiddleware bool
+}
+
+// Runs one inline or registry tool through request middleware, plugin block and execution middleware unless skipped
+func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, opts InvokeToolOptions) (string, error) {
+	if args == nil {
+		args = map[string]any{}
 	}
-	return e.dispatchRegistry(ctx, name, args, rawArgs, taskID, toolCallID, trace), nil
+	env := e.Host.Env()
+	ids := e.hookIDs(taskID, toolCallID)
+	trace := append([]map[string]any{}, opts.ToolRequestMiddlewareTrace...)
+	if !opts.SkipToolRequestMiddleware {
+		args, _, trace = e.Dispatcher.applyRequestMiddleware(ctx, env, name, args, ids, trace)
+	}
+	if !opts.PreToolBlockChecked {
+		var block string
+		block, args = e.preToolBlock(ctx, &ToolCallRef{Name: name, Args: args, TaskID: taskID, CallID: toolCallID, Trace: trace})
+		if block != "" {
+			result := dumpsUnicode(map[string]any{"error": block})
+			e.emitPost(ctx, &ToolCallRef{Name: name, Args: args, TaskID: taskID, CallID: toolCallID}, result, 0, "blocked", "plugin_block", block, trace)
+			return result, nil
+		}
+	}
+	start := time.Now()
+	execute := func(next map[string]any) (string, error) {
+		return e.dispatchRegistry(ctx, name, next, rawArgs, taskID, toolCallID, trace, true, opts.SkipToolExecutionMiddleware), nil
+	}
+	if inline := e.resolveInvokeToolExecutor(name); inline != nil {
+		execute = func(next map[string]any) (string, error) {
+			result, err := inline(ctx, e.Host, next, InlineToolContext{TaskID: taskID, ToolCallID: toolCallID, Messages: opts.Messages})
+			if err != nil {
+				return "", err
+			}
+			callArgs := next
+			if callArgs == nil {
+				callArgs = args
+			}
+			durationMS := int(time.Since(start).Milliseconds())
+			e.emitPost(ctx, &ToolCallRef{Name: name, Args: callArgs, TaskID: taskID, CallID: toolCallID}, result, durationMS, "", "", "", trace)
+			return e.Dispatcher.ApplyTransformToolResult(ctx, env, PostToolCallEvent{ToolName: name, Args: callArgs, Result: result, IDs: ids, DurationMS: durationMS}), nil
+		}
+	}
+	if opts.SkipToolExecutionMiddleware {
+		return execute(args)
+	}
+	return e.Dispatcher.RunToolExecutionMiddleware(ctx, env, name, args, args, ids, func(next map[string]any) (string, error) {
+		if next == nil {
+			next = args
+		}
+		return execute(next)
+	})
 }
 
 // Waits for the worker in interrupt poll slices extending the deadline by human approval wait

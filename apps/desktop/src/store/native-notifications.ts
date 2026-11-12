@@ -44,7 +44,7 @@ export interface NativeNotificationPrefs {
   kinds: Record<NativeNotificationKind, boolean>
 }
 
-const STORAGE_KEY = 'hermes:native-notifications'
+const STORAGE_KEY = 'icebath:native-notifications'
 
 const DEFAULT_PREFS: NativeNotificationPrefs = {
   enabled: true,

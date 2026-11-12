@@ -85,6 +85,7 @@ func TestWebSearchRegistryNoConfigNoCredentials(t *testing.T) {
 
 // The scrape request carries the 60000 ms server deadline matching the client wait
 func TestFirecrawlExtractPassesTimeoutMsToScrape(t *testing.T) {
+	stubPublicHosts(t)
 	var scrapes []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)

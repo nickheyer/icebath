@@ -1002,8 +1002,8 @@ func canonicalizeAPIToolCalls(apiMessages []any) {
 		}
 		newTCs := make([]any, 0, len(tcs))
 		for _, raw := range tcs {
-			tc, isMap := raw.(map[string]any)
-			fn, hasFn := tc["function"].(map[string]any)
+			tc, isMap := pyjson.Dict(raw)
+			fn, hasFn := pyjson.Dict(tc["function"])
 			if !isMap || !hasFn {
 				newTCs = append(newTCs, raw)
 				continue

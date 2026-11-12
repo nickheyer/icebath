@@ -1429,9 +1429,9 @@ export default function SessionsPage() {
         const res = await fetch(api.exportSessionUrl(id, rowProfile(id)), {
           credentials: "include",
           headers: {
-            "X-Hermes-Session-Token":
-              (window as unknown as { __HERMES_SESSION_TOKEN__?: string })
-                .__HERMES_SESSION_TOKEN__ ?? "",
+            "X-Icebath-Session-Token":
+              (window as unknown as { __ICEBATH_SESSION_TOKEN__?: string })
+                .__ICEBATH_SESSION_TOKEN__ ?? "",
           },
         });
         if (!res.ok) {

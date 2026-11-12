@@ -306,8 +306,6 @@ func pyOSErrorName(err error) string {
 		return "ConnectionError"
 	case *probeTimeoutError:
 		return "TimeoutError"
-	case *sdkImportError:
-		return "ImportError"
 	case *fs.PathError, *os.SyscallError, *os.LinkError, *exec.Error, syscall.Errno:
 	default:
 		switch {

@@ -240,12 +240,12 @@ beforeEach(() => {
     configurable: true,
     value: { addEventListener() {}, removeEventListener() {}, width: 1280 },
   });
-  Object.defineProperty(window, "__HERMES_SESSION_TOKEN__", {
+  Object.defineProperty(window, "__ICEBATH_SESSION_TOKEN__", {
     configurable: true,
     value: "stale-token",
     writable: true,
   });
-  Object.defineProperty(window, "__HERMES_AUTH_REQUIRED__", {
+  Object.defineProperty(window, "__ICEBATH_AUTH_REQUIRED__", {
     configurable: true,
     value: false,
     writable: true,
@@ -292,7 +292,7 @@ describe("ChatPage composer screen-reader accessibility (#36784)", () => {
     );
 
     await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
-    const host = container.querySelector(".hermes-chat-xterm-host");
+    const host = container.querySelector(".icebath-chat-xterm-host");
     expect(host).not.toBeNull();
     expect(host!.getAttribute("role")).toBe("region");
     expect(host!.getAttribute("aria-label")).toBeTruthy();

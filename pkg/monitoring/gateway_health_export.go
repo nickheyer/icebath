@@ -48,8 +48,6 @@ var (
 	AsyncDelegationActiveTaskCount func() int
 	AsyncDelegationActiveCount     func() int
 	ProcessRegistryCountRunning    func() int
-
-	requireGatewayHealthSDK = func() (*gatewayHealthSDK, error) { return builtinGatewayHealthSDK, nil }
 )
 
 // OTLP SDK constructors the export builds its metric and log pipelines with
@@ -491,12 +489,7 @@ func StartGatewayHealthExport(cfg map[string]any) *GatewayHealthExportRuntime {
 	runtime := &GatewayHealthExportRuntime{Enabled: true, Reason: "enabled"}
 	var sdk *gatewayHealthSDK
 	if metricsOn || diagnosticsOn {
-		loaded, err := requireGatewayHealthSDK()
-		if err != nil {
-			healthExportLog().Warn("monitoring.gateway_health_export.enabled but OTLP SDK is unavailable; install 'icebath-agent[otlp]': " + err.Error())
-			return &GatewayHealthExportRuntime{Enabled: false, Reason: "otlp_unavailable"}
-		}
-		sdk = loaded
+		sdk = builtinGatewayHealthSDK
 	}
 	if metricsOn && sdk != nil {
 		provider, err := startMetricProvider(cfg, sdk)

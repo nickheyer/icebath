@@ -246,7 +246,11 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 	if !ok {
 		return 0, fmt.Errorf("the takeover request %s is not an object", contextPath)
 	}
-	root := pyrepr.Str(request.GetOr("root", nil))
+	rootValue, hasRoot := request.Get("root")
+	if !hasRoot {
+		return 0, fmt.Errorf("KeyError: %s", pyrepr.Repr("root"))
+	}
+	root := pyrepr.Str(rootValue)
 	if _, stopped := request.Get("stopped_serves"); stopped {
 		python := pm.ResolveInstallBinary(root)
 		if python == "" {

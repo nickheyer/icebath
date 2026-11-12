@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,7 +132,7 @@ func tniSourceCheckout(t *testing.T) (string, *[]string) {
 		"esbuild: process.env.ESBUILD_BINARY_PATH, "+
 		"npmrc: process.env.NPM_CONFIG_USERCONFIG}) + '\\n');\n")
 	tniRun(t, root, npm, "install", "--package-lock-only", "--ignore-scripts", "--offline", "--no-audit", "--no-fund")
-	for _, name := range []string{"node-deps.mjs", "electron-runtime.mjs", "freshness.mjs", "frontend-common.mjs"} {
+	for _, name := range []string{"freshness.mjs", "frontend-common.mjs"} {
 		raw, err := os.ReadFile(filepath.Join(tniHermesScripts, name))
 		if err != nil {
 			t.Fatal(err)
@@ -164,8 +165,7 @@ func tniSourceProducts(t *testing.T) (string, *[]string) {
 			"    recordProduct({source: root, product: step, out, inputs: buildInputs(root, step)});\n"+
 			"  }\n"+
 			"}\n")
-	for _, row := range [][3]string{{"generate-icons.mjs", "icons", "never-rendered-at-install"},
-		{"build/tui.mjs", "tui", "ui-tui/dist/entry.js"}, {"build/web.mjs", "web", "cmd/icebath/web_dist/index.html"}} {
+	for _, row := range [][3]string{{"generate-icons.mjs", "icons", "never-rendered-at-install"}} {
 		relative := "../"
 		if strings.HasPrefix(row[0], "build/") {
 			relative = "../../"
@@ -179,8 +179,28 @@ func tniSourceProducts(t *testing.T) (string, *[]string) {
 		"build('desktop', relative('../..', staging) + '/linux-unpacked/icebath');\n")
 	tniWrite(t, filepath.Join(root, "scripts/build/build-desktop.mjs"), "if (!process.argv.includes('--icons')) await import('../generate-icons.mjs');\n")
 	tniWrite(t, filepath.Join(root, "web/public/favicon.ico"), "committed icon")
+	node, _ := exec.LookPath("node")
+	product, _ := json.Marshal("file://" + filepath.ToSlash(filepath.Join(root, "product.mjs")))
+	fixture := func(ctx context.Context, source string, env map[string]string, step, output string) error {
+		cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e",
+			"import { build } from "+string(product)+"; build('"+step+"', '"+output+"');")
+		cmd.Dir, cmd.Env = source, pm.EnvList(env)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("%w: %w: %s", tniFixtureFailure, err, out)
+		}
+		return nil
+	}
+	t.Cleanup(selfupdate.SwapWebCompilerForTests(func(ctx context.Context, source, _, _ string, env map[string]string) error {
+		return fixture(ctx, source, env, "web", "cmd/icebath/web_dist/index.html")
+	}))
+	t.Cleanup(selfupdate.SwapTUICompilerForTests(func(ctx context.Context, source string, env map[string]string) error {
+		return fixture(ctx, source, env, "tui", "ui-tui/dist/entry.js")
+	}))
 	return root, acquired
 }
+
+// Failure a fixture product compiler reports when its checkout asks it to fail
+var tniFixtureFailure = errors.New("fixture product compiler failed")
 
 func tniStampProduct(t *testing.T, root, product, out string) {
 	node, _ := exec.LookPath("node")
@@ -271,8 +291,7 @@ func TestSourceCompileFailureStopsLaunchWithoutReinstall(t *testing.T) {
 	root, acquired := tniTUISource(t)
 	tniWrite(t, filepath.Join(root, "fail-tui"), "")
 	_, _, err := tniArgv(t, filepath.Join(root, "ui-tui"), false)
-	var called *pm.CalledProcessError
-	if !errors.As(err, &called) {
+	if !errors.Is(err, tniFixtureFailure) {
 		t.Fatalf("err %v", err)
 	}
 	if got := tniSteps(t, root); !reflect.DeepEqual(got, []string{"deps", "tui"}) {

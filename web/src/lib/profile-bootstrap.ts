@@ -1,13 +1,13 @@
 declare global {
   interface Window {
-    __HERMES_DASHBOARD_PROFILE__?: string;
-    __HERMES_INITIAL_PROFILE__?: string;
+    __ICEBATH_DASHBOARD_PROFILE__?: string;
+    __ICEBATH_INITIAL_PROFILE__?: string;
   }
 }
 
 export function dashboardInitialProfile(): string {
   if (typeof window === "undefined") return "";
-  return window.__HERMES_INITIAL_PROFILE__ ?? "";
+  return window.__ICEBATH_INITIAL_PROFILE__ ?? "";
 }
 
 /**
@@ -22,7 +22,7 @@ export function dashboardInitialProfile(): string {
  */
 export function dashboardServingProfile(): string {
   if (typeof window === "undefined") return "";
-  return window.__HERMES_DASHBOARD_PROFILE__ ?? "";
+  return window.__ICEBATH_DASHBOARD_PROFILE__ ?? "";
 }
 
 export function initialProfileScope(

@@ -43,7 +43,7 @@ var ConnectorsConnectParams = pydantic.Extend(ProfileParams, "ConnectorsConnectP
 var ConnectorsConnectResult = pydantic.Extend(ConnectionOperationStatus, "ConnectorsConnectResult", ClosedConfig,
 	pydantic.Def("status", pydantic.Nullable(pydantic.Literal("initiated", "settled")), nil),
 	pydantic.Def("note", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``methods_connectors._reissue`` / ``managed._off_desktop_result``: the operation the connect opened; ``status``/``note`` ride along from the tool result.")
 
 var _ = Method("connectors.connect", ConnectorsConnectParams, ConnectorsConnectResult, "Start or re-initiate authorization for named connectors on a session or account operation.")
 

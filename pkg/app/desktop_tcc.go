@@ -156,6 +156,6 @@ func desktopMacosSetupTCCIdentity(ctx context.Context, w io.Writer, identity str
 	}
 	fmt.Fprintln(w, "\n  Note: macOS will re-prompt for permissions ONE final time (the identity "+
 		"changed). Grant them and they persist from then on. If a permission gets "+
-		"stuck, reset it with:  tccutil reset All com.nousresearch.icebath")
+		"stuck, reset it with:  tccutil reset All ai.icebath")
 	return true, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 
@@ -179,33 +180,32 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 			}
 			rewritten := make([]any, 0, len(calls))
 			for _, call := range calls {
-				tc, isMap := call.(map[string]any)
+				tc, isMap := pyjson.AsObject(call)
 				if !isMap {
 					rewritten = append(rewritten, call)
 					continue
 				}
-				fn := map[string]any{}
-				if fnRaw := tc["function"]; pyrepr.Truthy(fnRaw) {
-					if fn, isMap = fnRaw.(map[string]any); !isMap {
+				fn := pyjson.NewObject()
+				if fnRaw := tc.Vals["function"]; pyrepr.Truthy(fnRaw) {
+					if fn, isMap = pyjson.AsObject(fnRaw); !isMap {
 						return nil, "", nil, &auxAttributeError{typeName: pyrepr.TypeName(fnRaw), attr: "get"}
 					}
 				}
-				name, isStr := fn["name"].(string)
+				name, isStr := fn.Vals["name"].(string)
 				alias, hit := renamed[name]
 				if !isStr || !hit {
-					rewritten = append(rewritten, tc)
+					rewritten = append(rewritten, call)
 					continue
 				}
-				fnCopy := make(map[string]any, len(fn))
-				for k, v := range fn {
-					fnCopy[k] = v
+				fnCopy := fn.Copy()
+				fnCopy.Set("name", alias)
+				tcCopy := tc.Copy()
+				if _, plain := call.(map[string]any); plain {
+					tcCopy.Set("function", fnCopy.Vals)
+					rewritten = append(rewritten, tcCopy.Vals)
+					continue
 				}
-				fnCopy["name"] = alias
-				tcCopy := make(map[string]any, len(tc))
-				for k, v := range tc {
-					tcCopy[k] = v
-				}
-				tcCopy["function"] = fnCopy
+				tcCopy.Set("function", fnCopy)
 				rewritten = append(rewritten, tcCopy)
 			}
 			msgCopy := make(map[string]any, len(msg))

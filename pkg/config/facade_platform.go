@@ -275,7 +275,7 @@ func pyUpper(s string) string {
 var ErrCoreEnvNamesUnregistered = errors.New("config: the provider bridge must register CoreDeclaredEnvNames before platform secrets are listed")
 
 // Every env name core declares, the static table plus provider profile names, from the provider bridge
-func coreDeclaredEnvNames() (map[string]bool, error) {
+func CoreDeclaredEnvNames() (map[string]bool, error) {
 	fn := hooks().CoreDeclaredEnvNames
 	if fn == nil {
 		return nil, ErrCoreEnvNamesUnregistered
@@ -303,7 +303,7 @@ func manifestSecretEnvs(manifests []NamedPlatformManifest, core map[string]bool)
 	}
 	if core == nil {
 		var err error
-		if core, err = coreDeclaredEnvNames(); err != nil {
+		if core, err = CoreDeclaredEnvNames(); err != nil {
 			return nil, err
 		}
 	}
@@ -316,7 +316,7 @@ func manifestSecretEnvs(manifests []NamedPlatformManifest, core map[string]bool)
 // Secret env names one source's platform manifests declare, the bundled set read once at startup minus core names
 func PlatformManifestSecretEnvs(h, source string, strict bool) (map[string]bool, error) {
 	if source == PlatformSourceBundled && bundledPlatformSecretEnvs != nil {
-		core, err := coreDeclaredEnvNames()
+		core, err := CoreDeclaredEnvNames()
 		if err != nil {
 			return nil, err
 		}

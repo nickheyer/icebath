@@ -8,7 +8,7 @@ type BootPalette = Record<'accent' | 'accentForeground' | 'background' | 'foregr
  *  imported, so the renderer entry never needs another chunk before it can show this notice. */
 export function readBootPalette(): BootPalette | null {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem('hermes-boot-palette') ?? 'null')
+    const value: unknown = JSON.parse(localStorage.getItem('icebath-boot-palette') ?? 'null')
     const fields = ['accent', 'accentForeground', 'background', 'foreground'] as const
 
     const standalone = (field: (typeof fields)[number]) => {

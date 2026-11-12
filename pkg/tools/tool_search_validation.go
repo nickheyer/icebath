@@ -213,7 +213,7 @@ func ValidateDeferredCallArgs(ctx context.Context, env *Env, name string, args m
 	schema := def.Schema
 	fn := schema
 	if t, _ := schema["type"].(string); t == "function" {
-		fn, _ = schema["function"].(map[string]any)
+		fn, _ = pyjson.Dict(schema["function"])
 	}
 	params, _ := fn["parameters"].(map[string]any)
 	if params == nil {

@@ -169,11 +169,13 @@ func ReadPauseRecord(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("cannot read the paused-gateway record %s: %s", path, pypath.OSErrorText(err))}
 	}
+	text, err := pystr.DecodeUTF8Sig(raw)
+	if err != nil {
+		return nil, err
+	}
 	var body map[string]any
-	if text, err := pystr.DecodeUTF8Sig(raw); err == nil {
-		if v, err := pyjson.Loads(text); err == nil {
-			body, _ = pyjson.Plain(v).(map[string]any)
-		}
+	if v, err := pyjson.Loads(text); err == nil {
+		body, _ = pyjson.Plain(v).(map[string]any)
 	}
 	if _, ok := body["token"].(map[string]any); body == nil || !ok {
 		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("the paused-gateway record %s is malformed; fix or remove it to resume", path)}

@@ -44,7 +44,7 @@ function sanitizeGrants(value: unknown): PreviewScriptGrants {
   return grants
 }
 
-const GRANTS_KEY = 'hermes.desktop.pluginPreviewScriptGrants.v1'
+const GRANTS_KEY = 'icebath.desktop.pluginPreviewScriptGrants.v1'
 
 // Every window that runs plugins shares this localStorage record, so it — not
 // a window's atom — is the source of truth: each check and each change reads

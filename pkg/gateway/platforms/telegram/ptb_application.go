@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-telegram/bot/models"
 	"log/slog"
 	"slices"
 	"sync"
@@ -23,6 +24,7 @@ type Chat struct {
 type Update struct {
 	UpdateID int64
 	Chat     *Chat
+	Raw      *models.Update
 }
 
 // Chat of the update, the PTB effective_chat
@@ -256,6 +258,8 @@ type Application struct {
 	handlers        map[int][]Handler
 	errorHandlers   []errorHandlerEntry
 	impl            applicationImpl
+	running         bool
+	createdTasks    map[*gateway.AdapterTask]struct{}
 }
 
 // Application of the bot dispatching through the processor, the PTB default one update at a time
@@ -441,7 +445,8 @@ func (a *Application) createTask(ctx context.Context, fn func(ctx context.Contex
 
 // Spawns the task wrapper routing a failure to the error handlers, then runs done with whether it was cancelled
 func (a *Application) spawnTask(ctx context.Context, fn func(ctx context.Context) error, update any, isErrorHandler bool, done func(ctx context.Context, cancelled bool)) *gateway.AdapterTask {
-	return gateway.SpawnAdapterTask(ctx, func(tctx context.Context) (err error) {
+	task := gateway.SpawnAdapterTask(ctx, func(tctx context.Context) (err error) {
+		defer a.forgetTask(gateway.CurrentAdapterTask(tctx))
 		if done != nil {
 			defer func() { done(tctx, errors.Is(err, context.Canceled)) }()
 		}
@@ -464,4 +469,65 @@ func (a *Application) spawnTask(ctx context.Context, fn func(ctx context.Context
 		}
 		return err
 	})
+	a.mu.Lock()
+	if a.createdTasks == nil {
+		a.createdTasks = map[*gateway.AdapterTask]struct{}{}
+	}
+	for t := range a.createdTasks {
+		if t.Done() {
+			delete(a.createdTasks, t)
+		}
+	}
+	if !task.Done() {
+		a.createdTasks[task] = struct{}{}
+	}
+	a.mu.Unlock()
+	return task
+}
+
+// Drops a finished task from the set Stop waits for
+func (a *Application) forgetTask(task *gateway.AdapterTask) {
+	a.mu.Lock()
+	delete(a.createdTasks, task)
+	a.mu.Unlock()
+}
+
+// Marks the application running, the PTB start after initialize
+func (a *Application) Start() {
+	a.mu.Lock()
+	a.running = true
+	a.mu.Unlock()
+}
+
+// Whether the application was started and not yet stopped
+func (a *Application) Running() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.running
+}
+
+// Stops the application and waits for every task its handlers created, the PTB stop
+func (a *Application) Stop(ctx context.Context) error {
+	a.mu.Lock()
+	if !a.running {
+		a.mu.Unlock()
+		return &runtimeError{msg: "This Application is not running!"}
+	}
+	a.running = false
+	tasks := make([]*gateway.AdapterTask, 0, len(a.createdTasks))
+	for t := range a.createdTasks {
+		tasks = append(tasks, t)
+	}
+	a.mu.Unlock()
+	slog.Info("Application is stopping. This might take a moment.")
+	if len(tasks) > 0 {
+		slog.Debug("Waiting for `create_task` calls to be processed")
+		for _, t := range tasks {
+			if err := t.Wait(ctx); err != nil && ctx.Err() != nil {
+				return ctx.Err()
+			}
+		}
+	}
+	slog.Info("Application.stop() complete")
+	return nil
 }

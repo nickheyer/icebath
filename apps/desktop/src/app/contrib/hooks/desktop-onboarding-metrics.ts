@@ -1,5 +1,5 @@
 /**
- * First-run funnel telemetry (hermes.desktop.onboarding). Observes the
+ * First-run funnel telemetry (icebath.desktop.onboarding). Observes the
  * onboarding stores' own transitions — the provider picker, first-run
  * onboarding, free-tier sign-in — and maps them onto the closed step set; nothing here
  * changes onboarding behavior. Manual (Settings "add provider") flows are not

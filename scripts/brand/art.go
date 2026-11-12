@@ -41,7 +41,6 @@ type sources struct {
 	tubTile   image.Rectangle
 	banner    *image.NRGBA
 	textWhite *image.NRGBA
-	textBlack *image.NRGBA
 	textBox   image.Rectangle
 	letter    color.NRGBA
 	red       color.NRGBA
@@ -96,18 +95,19 @@ func loadSources(root string) (*sources, error) {
 		}
 		imgs[name] = img
 	}
-	s := &sources{logo: imgs[logoFile], banner: imgs[bannerFile], textWhite: imgs[textWhiteFile], textBlack: imgs[textBlackFile]}
+	s := &sources{logo: imgs[logoFile], banner: imgs[bannerFile], textWhite: imgs[textWhiteFile]}
 	logoBox := inkBox(s.logo)
-	whiteBox, blackBox := inkBox(s.textWhite), inkBox(s.textBlack)
+	textBlack := imgs[textBlackFile]
+	whiteBox, blackBox := inkBox(s.textWhite), inkBox(textBlack)
 	if logoBox.Empty() || whiteBox.Empty() || blackBox.Empty() {
 		return nil, fmt.Errorf("source art without ink: logo %v, white text %v, black text %v", logoBox, whiteBox, blackBox)
 	}
-	s.textBox = whiteBox.Union(blackBox)
+	s.textBox = whiteBox
 	var err error
 	if s.letter, s.red, err = inkPalette(s.textWhite); err != nil {
 		return nil, fmt.Errorf("%s: %w", textWhiteFile, err)
 	}
-	inkBlack, blueBlack, err := inkPalette(s.textBlack)
+	inkBlack, blueBlack, err := inkPalette(textBlack)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", textBlackFile, err)
 	}
@@ -211,7 +211,7 @@ func less(a, b [3]uint8) bool {
 	return false
 }
 
-// Crops the logo with a margin, keeps it as the white mark, maps it onto the black text palette and records accent weight
+// Crops the logo as the white mark, recolours it onto the black text palette and records accent weight
 func splitMark(logo *image.NRGBA, box image.Rectangle, letter, red, ink, blue color.NRGBA) (*image.NRGBA, *image.NRGBA, *image.Alpha) {
 	r := box.Inset(-markMargin).Intersect(logo.Bounds())
 	w, h := box.Dx()+2*markMargin, box.Dy()+2*markMargin

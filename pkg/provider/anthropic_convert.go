@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/url"
 	"os"
 	"os/exec"
@@ -770,11 +771,11 @@ func replayOrderedBlocks(m map[string]any, ordered []any) []any {
 	redactedInput := map[string]any{}
 	if calls, ok := asList(m["tool_calls"]); ok {
 		for _, tc := range calls {
-			tcm, ok := asMap(tc)
+			tcm, ok := pyjson.Dict(tc)
 			if !ok {
 				continue
 			}
-			fn, _ := asMap(tcm["function"])
+			fn, _ := pyjson.Dict(tcm["function"])
 			args := fn["arguments"]
 			if args == nil {
 				args = "{}"
@@ -852,11 +853,11 @@ func convertAssistantMessage(m map[string]any, opts convertOptions) map[string]a
 	}
 	if calls, ok := asList(m["tool_calls"]); ok {
 		for _, tc := range calls {
-			tcm, ok := asMap(tc)
+			tcm, ok := pyjson.Dict(tc)
 			if !ok || len(tcm) == 0 {
 				continue
 			}
-			fn, _ := asMap(tcm["function"])
+			fn, _ := pyjson.Dict(tcm["function"])
 			args := fn["arguments"]
 			if args == nil {
 				args = "{}"

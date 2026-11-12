@@ -17,6 +17,8 @@ type ToolCall struct {
 	Function ToolCallFunction `json:"function"`
 	// Dict keys the struct has no field for, kept for lossless dict round trips
 	Extra map[string]any `json:"-"`
+	// Dict key order of the source when it differs from the order the agent builds tool calls in
+	Keys []string `json:"-"`
 }
 
 // Function part of a tool call
@@ -25,6 +27,8 @@ type ToolCallFunction struct {
 	Arguments string `json:"arguments"`
 	// Dict keys the struct has no field for, kept for lossless dict round trips
 	Extra map[string]any `json:"-"`
+	// Dict key order of the source when it differs from name, arguments, thought_signature
+	Keys []string `json:"-"`
 }
 
 // One transcript row in provider message shape

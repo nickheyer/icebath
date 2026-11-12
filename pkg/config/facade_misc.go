@@ -11,29 +11,92 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
-// Source tree of a build that kept its paths, else the directory holding the running binary
+// Source tree the running code was built from, else the directory holding the running binary
 func GetProjectRoot() string {
-	if _, file, _, ok := runtime.Caller(0); ok && filepath.IsAbs(file) {
+	_, file, _, ok := runtime.Caller(0)
+	if ok && filepath.IsAbs(file) {
 		root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
 		if resolved, err := filepath.EvalSymlinks(root); err == nil {
 			return resolved
 		}
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		wd, _ := os.Getwd()
+	exe, exeErr := os.Executable()
+	if exeErr == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = resolved
+		}
+	}
+	wd, _ := os.Getwd()
+	if ok && !filepath.IsAbs(file) {
+		var starts []string
+		if exeErr == nil {
+			starts = append(starts, filepath.Dir(exe))
+		}
+		if wd != "" {
+			starts = append(starts, wd)
+		}
+		for _, start := range starts {
+			if root, found := trimmedSourceRoot(start, filepath.ToSlash(file)); found {
+				return root
+			}
+		}
+	}
+	if exeErr != nil {
 		return wd
 	}
-	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		exe = resolved
-	}
 	return filepath.Dir(exe)
+}
+
+// Nearest ancestor whose go.mod module joined with the trimmed path names an existing source file
+func trimmedSourceRoot(start, trimmed string) (string, bool) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+	for {
+		if module := goModModulePath(filepath.Join(dir, "go.mod")); module != "" && strings.HasPrefix(trimmed, module+"/") {
+			source := filepath.Join(dir, filepath.FromSlash(strings.TrimPrefix(trimmed, module+"/")))
+			if info, err := os.Stat(source); err == nil && info.Mode().IsRegular() {
+				return dir, true
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// Module path a go.mod file declares, empty when the file is unreadable or declares none
+func goModModulePath(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if i := strings.Index(line, "//"); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[0] == "module" {
+			if unquoted, err := strconv.Unquote(fields[1]); err == nil {
+				return unquoted
+			}
+			return fields[1]
+		}
+	}
+	return ""
 }
 
 // Container mode metadata the NixOS activation wrote, nil when off, inside the container or in dev mode

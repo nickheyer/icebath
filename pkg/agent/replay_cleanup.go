@@ -85,7 +85,7 @@ func IsInterruptedToolResult(content any) bool {
 }
 
 func replayCallName(call map[string]any) string {
-	fn, _ := call["function"].(map[string]any)
+	fn, _ := pyjson.Dict(call["function"])
 	if name := fn["name"]; pyrepr.Truthy(name) {
 		return pyrepr.Str(name)
 	}
@@ -107,7 +107,7 @@ func replayCalls(v any) []map[string]any {
 	list, _ := listOfAny(v)
 	out := make([]map[string]any, 0, len(list))
 	for _, c := range list {
-		if m, ok := c.(map[string]any); ok {
+		if m, ok := pyjson.Dict(c); ok {
 			out = append(out, m)
 		}
 	}

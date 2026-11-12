@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -18,6 +19,9 @@ func prOwedIDs(t *testing.T) []string {
 	t.Helper()
 	found, err := PauseOrphans(context.Background(), "")
 	if err != nil {
+		if !isOSError(err) {
+			t.Fatal(err)
+		}
 		return nil
 	}
 	var ids []string
@@ -31,6 +35,9 @@ func prOwedProfiles(t *testing.T) []map[string]any {
 	t.Helper()
 	found, err := PauseOrphans(context.Background(), "")
 	if err != nil {
+		if !isOSError(err) {
+			t.Fatal(err)
+		}
 		return nil
 	}
 	var out []map[string]any
@@ -95,7 +102,7 @@ func TestPauseHostWithoutPsutilRecordsAnIdentityTheLivenessRuleCanProve(t *testi
 	}
 }
 
-func TestPauseUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) {
+func TestAnUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) {
 	prSkipRoot(t)
 	psHome(t)
 	ctx := context.Background()
@@ -108,8 +115,8 @@ func TestPauseUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) 
 	if err := pauseAtomicWrite(retired, map[string]any{"schema": 1, "ids": []any{done}}); err != nil {
 		t.Fatal(err)
 	}
-	if ids := prOwedIDs(t); len(ids) != 0 {
-		t.Fatalf("owed %v", ids)
+	if found, err := PauseOrphans(ctx, ""); err != nil || len(found) != 0 {
+		t.Fatalf("a completed obligation is owed %v %v", found, err)
 	}
 	other := filepath.Join(filepath.Dir(src), filepath.Base(src)+".999.deadbeef.claim")
 	if err := pauseAtomicWrite(other, map[string]any{"install_root": PauseInstallRoot(), "claimer": PauseUnowned(),
@@ -129,7 +136,7 @@ func TestPauseUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) 
 		if _, _, ok, err := ClaimPause(ctx, src); ok || err != nil {
 			t.Fatalf("a completed obligation was claimed again %v", err)
 		}
-		mctx, release, err := PauseMutex(ctx, PauseMutexWaitSeconds)
+		mctx, release, err := PauseMutex(ctx, PauseMutexWaitSeconds*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -156,7 +163,7 @@ func TestPauseUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) 
 	}
 }
 
-func TestPauseUnreadableNewerCarrierNeverLetsItsOlderCopyExecute(t *testing.T) {
+func TestAnUnreadableNewerCarrierNeverLetsItsOlderCopyExecute(t *testing.T) {
 	prSkipRoot(t)
 	for _, how := range []string{"refused", "malformed"} {
 		t.Run(how, func(t *testing.T) {
@@ -180,7 +187,7 @@ func TestPauseUnreadableNewerCarrierNeverLetsItsOlderCopyExecute(t *testing.T) {
 			func() {
 				defer os.Chmod(newer, 0o644)
 				for _, p := range prOwedProfiles(t) {
-					if len(p) == 2 {
+					if reflect.DeepEqual(p, map[string]any{"alpha": int64(11), "beta": int64(12)}) {
 						t.Fatal("completed alpha would be restarted again")
 					}
 				}
@@ -195,7 +202,7 @@ func TestPauseUnreadableNewerCarrierNeverLetsItsOlderCopyExecute(t *testing.T) {
 	}
 }
 
-func TestPauseUnreadableOrphanIsNeverOverwrittenByANewPause(t *testing.T) {
+func TestAnUnreadableOrphanIsNeverOverwrittenByANewPause(t *testing.T) {
 	prSkipRoot(t)
 	for _, how := range []string{"refused", "malformed"} {
 		t.Run(how, func(t *testing.T) {
@@ -250,7 +257,7 @@ func TestPauseRefusedPublishLeavesNoTempBesideTheRecord(t *testing.T) {
 	}
 }
 
-func TestPauseMalformedRetiredListIsSetAsideOnlyWhenNothingRefersToIt(t *testing.T) {
+func TestAMalformedRetiredListIsSetAsideOnlyWhenNothingRefersToIt(t *testing.T) {
 	psHome(t)
 	ctx := context.Background()
 	retired := pauseRetiredPath(PauseRecordPath())

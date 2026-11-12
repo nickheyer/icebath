@@ -353,9 +353,14 @@ func InitSkinFromConfig(ctx context.Context, cfg map[string]any) {
 	SetActiveSkin(ctx, name)
 }
 
+// Branding value of the active skin under key, the fallback when the skin lacks it
+func activeBranding(ctx context.Context, key, fallback string) string {
+	return GetActiveSkin(ctx).GetBranding(key, fallback)
+}
+
 // Prompt symbol of the active skin trimmed and followed by one space
 func GetActivePromptSymbol(ctx context.Context, fallback string) string {
-	symbol := GetActiveSkin(ctx).GetBranding("prompt_symbol", fallback)
+	symbol := activeBranding(ctx, "prompt_symbol", fallback)
 	if symbol == "" {
 		symbol = fallback
 	}
@@ -366,11 +371,11 @@ func GetActivePromptSymbol(ctx context.Context, fallback string) string {
 }
 
 func GetActiveHelpHeader(ctx context.Context, fallback string) string {
-	return GetActiveSkin(ctx).GetBranding("help_header", fallback)
+	return activeBranding(ctx, "help_header", fallback)
 }
 
 func GetActiveGoodbye(ctx context.Context, fallback string) string {
-	return GetActiveSkin(ctx).GetBranding("goodbye", fallback)
+	return activeBranding(ctx, "goodbye", fallback)
 }
 
 var skinTemplateField = regexp.MustCompile(`\{[a-z_]+\}`)

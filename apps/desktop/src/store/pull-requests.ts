@@ -24,7 +24,7 @@ export const $pullRequestsByBranch = atom<Record<string, HermesBranchPullRequest
  *  lookup key, not the PR, so state stays live through the same refresh as
  *  everything else. */
 export const $prBranchBySession = persistentAtom<Record<string, string>>(
-  'hermes.desktop.prBranchBySession',
+  'icebath.desktop.prBranchBySession',
   {},
   Codecs.stringRecord
 )
@@ -32,7 +32,7 @@ export const $prBranchBySession = persistentAtom<Record<string, string>>(
 /** Sessions already scanned for a PR url. A transcript doesn't grow a new PR,
  *  so a miss is permanent and a hit is already in {@link $prBranchBySession} —
  *  either way the session is never scanned again. */
-const $prScannedSessions = persistentAtom<string[]>('hermes.desktop.prScannedSessions', [], Codecs.stringArray)
+const $prScannedSessions = persistentAtom<string[]>('icebath.desktop.prScannedSessions', [], Codecs.stringArray)
 
 const fetchedAt = new Map<string, number>()
 const inFlight = new Set<string>()

@@ -149,16 +149,6 @@ func TestOpenAIAvailabilityFollowsKey(t *testing.T) {
 	if !newOpenAIImageGenProvider().IsAvailable() {
 		t.Fatal("unavailable with a key")
 	}
-	prev := newOpenAIClientHook
-	newOpenAIClientHook = nil
-	defer func() { newOpenAIClientHook = prev }()
-	if newOpenAIImageGenProvider().IsAvailable() {
-		t.Fatal("available without the client")
-	}
-	res, _ := newOpenAIImageGenProvider().Generate(context.Background(), nil, ImageGenRequest{Prompt: "a cat"})
-	if res["error_type"] != "missing_dependency" || res["error"] != openAIMissing {
-		t.Fatal(res)
-	}
 }
 
 func TestOpenAIModelResolution(t *testing.T) {

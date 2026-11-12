@@ -30,11 +30,11 @@ const BACKEND = process.env.ICEBATH_DASHBOARD_URL ?? "http://127.0.0.1:9119";
  * production builds.
  */
 function hermesDevToken(): Plugin {
-  const TOKEN_RE = /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/;
+  const TOKEN_RE = /window\.__ICEBATH_SESSION_TOKEN__\s*=\s*"([^"]+)"/;
   const EMBEDDED_RE =
-    /window\.__HERMES_DASHBOARD_EMBEDDED_CHAT__\s*=\s*(true|false)/;
+    /window\.__ICEBATH_DASHBOARD_EMBEDDED_CHAT__\s*=\s*(true|false)/;
   const INITIAL_PROFILE_RE =
-    /window\.__HERMES_INITIAL_PROFILE__\s*=\s*("(?:\\.|[^"\\])*")/;
+    /window\.__ICEBATH_INITIAL_PROFILE__\s*=\s*("(?:\\.|[^"\\])*")/;
 
   return {
     name: "hermes:dev-session-token",
@@ -60,9 +60,9 @@ function hermesDevToken(): Plugin {
             tag: "script",
             injectTo: "head",
             children:
-              `window.__HERMES_SESSION_TOKEN__="${match[1]}";` +
-              `window.__HERMES_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};` +
-              `window.__HERMES_INITIAL_PROFILE__=${initialProfileJs};`,
+              `window.__ICEBATH_SESSION_TOKEN__="${match[1]}";` +
+              `window.__ICEBATH_DASHBOARD_EMBEDDED_CHAT__=${embeddedJs};` +
+              `window.__ICEBATH_INITIAL_PROFILE__=${initialProfileJs};`,
           },
         ];
       } catch (err) {

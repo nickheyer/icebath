@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -200,6 +201,14 @@ func recoveryHostStateDir() string {
 	return filepath.Join(stateHome, "icebath", "gateway-locks")
 }
 
+// Liveness of pid by the psutil probe, else the signal zero probe that Windows never trusts
+func recoveryPidIsLive(pid int) bool {
+	if live, err := proc.PidExists(pid); err == nil {
+		return live
+	}
+	return proc.SignalProbeLive(pid)
+}
+
 // Profiles the one live host gateway multiplexes per its rendezvous record, empty when unprovable
 func hostServedProfiles() map[string]bool {
 	served := map[string]bool{}
@@ -221,7 +230,7 @@ func hostServedProfiles() map[string]bool {
 	}
 	pid, isInt := pyIntValue(record.GetOr("pid", nil))
 	profiles, isList := record.GetOr("profiles", nil).([]any)
-	if !isInt || pid <= 0 || !isList || !proc.Exists(int(pid)) {
+	if !isInt || pid <= 0 || !isList || !recoveryPidIsLive(int(pid)) {
 		return served
 	}
 	for _, name := range profiles {
@@ -451,13 +460,13 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 	}
 	rawProfiles, ok := payload.GetOr("profiles", nil).([]any)
 	if !ok {
-		return nil, nil, false, nil, errors.New("recovery payload must contain a profiles list")
+		return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
 	}
 	profiles := make([]string, 0, len(rawProfiles))
 	for _, p := range rawProfiles {
 		name, isStr := p.(string)
 		if !isStr || !home.ProfileIDRe.MatchString(name) {
-			return nil, nil, false, nil, errors.New("recovery profiles contain an invalid profile id")
+			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery profiles contain an invalid profile id"}
 		}
 		profiles = append(profiles, name)
 	}
@@ -465,12 +474,12 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 	if raw := payload.GetOr("supervisors", nil); raw != nil {
 		obj, isObj := raw.(*pyjson.Object)
 		if !isObj {
-			return nil, nil, false, nil, errors.New("recovery supervisors map is invalid")
+			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 		}
 		for _, profile := range obj.Keys {
 			supervisor, isStr := obj.Vals[profile].(string)
 			if !isStr || !home.ProfileIDRe.MatchString(profile) || !recoverySupervisorRe.MatchString(supervisor) {
-				return nil, nil, false, nil, errors.New("recovery supervisors map is invalid")
+				return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 			}
 			supervisors[profile] = supervisor
 		}
@@ -480,7 +489,7 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 	if raw := payload.GetOr("serve_units", nil); raw != nil {
 		block, isObj := raw.(*pyjson.Object)
 		if !isObj {
-			return nil, nil, false, nil, errors.New("recovery serve_units block is invalid")
+			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units block is invalid"}
 		}
 		recoverServe = pyrepr.Truthy(block.GetOr("recover", nil))
 		rawSkip := block.GetOr("skip", nil)
@@ -489,12 +498,12 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 		}
 		skips, isList := rawSkip.([]any)
 		if !isList {
-			return nil, nil, false, nil, errors.New("recovery serve_units skip list is invalid")
+			return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
 		}
 		for _, entry := range skips {
 			if _, isStr := entry.(string); !isStr {
 				if _, isObj := entry.(*pyjson.Object); !isObj {
-					return nil, nil, false, nil, errors.New("recovery serve_units skip list is invalid")
+					return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
 				}
 			}
 		}
@@ -502,7 +511,7 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, bool, []any
 			if obj, isObj := entry.(*pyjson.Object); isObj {
 				unit, unitIsStr := obj.GetOr("unit", nil).(string)
 				if !unitIsStr {
-					return nil, nil, false, nil, errors.New("recovery serve_units skip list is invalid")
+					return nil, nil, false, nil, &pm.PyError{Class: "ValueError", Message: "recovery serve_units skip list is invalid"}
 				}
 				if _, scopeIsStr := obj.GetOr("scope", nil).(string); !scopeIsStr {
 					entry = pyjson.ObjectOf("unit", unit)
@@ -552,7 +561,7 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
 		return 1
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := pystr.DecodeUTF8(raw)
 	var result *pyjson.Object
 	var profiles []string
 	var supervisors map[string]string

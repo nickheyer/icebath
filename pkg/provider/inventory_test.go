@@ -165,19 +165,33 @@ func TestExplicitOnlyFiltersAmbientCredentialsButKeepsCurrentAndCustomRows(t *te
 	}
 }
 
-func TestExplicitOnlyAnthropicRowFollowsOAuthCredentials(t *testing.T) {
-	for _, present := range []bool{true, false} {
-		invTestHome(t)
-		invListReturning([]map[string]any{
-			invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "hermes"),
-			invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "hermes"),
-		})
-		inventoryExplicitFn = func(PoolEnv, string) bool { return false }
-		inventoryAnthropicOAuthFn = func(context.Context) bool { return present }
-		got := invSlugs(invPayload(t, invCtx("opencode-go", "glm-5.3", "orig-url"), ModelsPayloadOptions{ExplicitOnly: true}))
-		if slices.Contains(got, "anthropic") != present || slices.Contains(got, "copilot") {
-			t.Fatalf("oauth %v slugs %v", present, got)
-		}
+func TestExplicitOnlyKeepsAnthropicRowWithOAuthCredentials(t *testing.T) {
+	invTestHome(t)
+	invListReturning([]map[string]any{
+		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "hermes"),
+		invRow("copilot", "Copilot", []any{"gpt-5.4"}, false, false, "hermes"),
+	})
+	inventoryExplicitFn = func(PoolEnv, string) bool { return false }
+	inventoryAnthropicOAuthFn = func(context.Context) bool { return true }
+	got := invSlugs(invPayload(t, invCtx("opencode-go", "glm-5.3", "orig-url"), ModelsPayloadOptions{ExplicitOnly: true}))
+	if !slices.Contains(got, "anthropic") {
+		t.Fatalf("Anthropic OAuth login must survive the explicit-only filter, slugs %v", got)
+	}
+	if slices.Contains(got, "copilot") {
+		t.Fatalf("ambient credential discovery must stay filtered, slugs %v", got)
+	}
+}
+
+func TestExplicitOnlyDropsAnthropicRowWithoutOAuthCredentials(t *testing.T) {
+	invTestHome(t)
+	invListReturning([]map[string]any{
+		invRow("anthropic", "Anthropic", []any{"claude-sonnet-5"}, false, false, "hermes"),
+	})
+	inventoryExplicitFn = func(PoolEnv, string) bool { return false }
+	inventoryAnthropicOAuthFn = func(context.Context) bool { return false }
+	got := invSlugs(invPayload(t, invCtx("opencode-go", "glm-5.3", "orig-url"), ModelsPayloadOptions{ExplicitOnly: true}))
+	if slices.Contains(got, "anthropic") {
+		t.Fatalf("slugs %v", got)
 	}
 }
 

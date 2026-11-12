@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"math"
 	"strings"
@@ -73,7 +74,7 @@ func auxAnthropicToolChoice(choice any) any {
 	case map[string]any:
 		choiceType := strings.ToLower(pyStr(c["type"]))
 		if choiceType == "function" {
-			fn, _ := c["function"].(map[string]any)
+			fn, _ := pyjson.Dict(c["function"])
 			return fn["name"]
 		}
 		if choiceType == "auto" || choiceType == "required" || choiceType == "none" {

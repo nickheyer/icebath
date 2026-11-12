@@ -21,7 +21,7 @@ func TestRuntimePMRuntimeDiscoversPluginsWithoutApplicationDependencies(t *testi
 	peWrite(t, filepath.Join(homeDir, "config.yaml"), "plugins:\n  enabled: []\n")
 	ctx := context.Background()
 	runtimeRoot := filepath.Join(tmp, "runtime")
-	opts := RuntimeOptions{Project: filepath.Join(peReferences, "pm"), Imports: PMRuntimeImports}
+	opts := RuntimeOptions{Project: filepath.Join(peReferences(t, "pm/"), "pm"), Imports: PMRuntimeImports}
 	prepared, err := PrepareRuntime(ctx, uv, python, runtimeRoot, opts)
 	if err != nil {
 		t.Fatal(err)

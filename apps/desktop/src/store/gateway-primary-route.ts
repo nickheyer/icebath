@@ -10,7 +10,7 @@ export interface PrimaryGatewayRoute {
   mode: 'local' | 'remote' | null
 }
 
-const ROUTE_KEY = Symbol.for('hermes.desktop.primaryGatewayRoute')
+const ROUTE_KEY = Symbol.for('icebath.desktop.primaryGatewayRoute')
 
 // Same dev-HMR rule as the gateway registry state: a re-evaluated module must
 // hand back the SAME atom, or existing subscribers are orphaned. Production has

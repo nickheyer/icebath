@@ -3,16 +3,16 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
-// Icebath Setup — Tauri-targeted Vite config.
+// Icebath Setup — Vite config for the Wails v3 installer window.
 //
 // Port 5175 keeps us out of the way of:
 //   web       (vite default 5173)
 //   apps/desktop dev     (5174 per its package.json)
 //
-// `clearScreen: false` is the Tauri convention — they spawn vite as a child
-// process and want our errors to stay visible.
+// `clearScreen: false` keeps errors visible when `wails3 dev` spawns vite as a
+// child process.
 
-const host = process.env.TAURI_DEV_HOST
+const host = process.env.WAILS_VITE_HOST
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -34,8 +34,8 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      // Don't watch the Rust side — tauri-cli handles it.
-      ignored: ['**/src-tauri/**']
+      // Don't watch the Go side or the packaging assets — wails3 dev handles them.
+      ignored: ['**/*.go', '**/build/**', '**/bin/**']
     }
   },
   build: {

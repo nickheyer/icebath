@@ -460,7 +460,7 @@ func TestPythonPackageStablySignsMacosRuntime(t *testing.T) {
 	binary = python.Binary(staged, target)
 	ieCodesign(t, "--verify", "--deep", "--strict", binary)
 	identity := ieCodesign(t, "-d", "-r-", binary)
-	if !strings.Contains(identity, `designated => identifier "com.nousresearch.icebath.managed-python"`) {
+	if !strings.Contains(identity, `designated => identifier "ai.icebath.managed-python"`) {
 		t.Fatalf("identity %s", identity)
 	}
 }

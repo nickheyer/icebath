@@ -26,7 +26,7 @@ const (
 	// Flag GetMachineTypeAttributes sets for a machine type user mode code can run
 	machineAttributeUserEnabled = 0x00000001
 	// Linux desktop entry of the app id and the entry name it replaced
-	desktopEntryName       = "com.nousresearch.icebath.desktop"
+	desktopEntryName       = "ai.icebath.desktop"
 	legacyDesktopEntryName = "icebath.desktop"
 )
 

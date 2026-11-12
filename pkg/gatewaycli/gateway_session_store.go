@@ -136,6 +136,16 @@ func (s *GatewaySessionStore) Refused(name string) error {
 	return gatewayClientError(fmt.Sprintf("%s is not on the gateway session yet; nothing was written", name))
 }
 
+// Refuses marking a handoff, a write the gateway session does not carry
+func (s *GatewaySessionStore) RequestHandoff(context.Context, string, string) (bool, error) {
+	return false, s.Refused("request_handoff")
+}
+
+// Refuses failing a handoff, a write the gateway session does not carry
+func (s *GatewaySessionStore) FailHandoff(context.Context, string, string, []string) (bool, error) {
+	return false, s.Refused("fail_handoff")
+}
+
 // One gateway request on this store's connection
 func (s *GatewaySessionStore) Call(ctx context.Context, method string, params map[string]any) (any, error) {
 	return s.Connection.Call(ctx, method, params)

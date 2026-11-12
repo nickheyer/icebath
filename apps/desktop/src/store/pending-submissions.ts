@@ -6,9 +6,9 @@ import { $sessions, resolveComposerSessionKey } from './session'
 // storage with last-writer-wins per KEY, so a single journal blob let one window's
 // read-modify-write silently drop an entry another window had just tracked. Per-entry keys make
 // each write touch only the record it owns.
-const ENTRY_PREFIX = 'hermes.desktop.pendingSubmissions.v2:'
+const ENTRY_PREFIX = 'icebath.desktop.pendingSubmissions.v2:'
 // The pre-v2 single blob, read for upgrade and drained per session as entries are rewritten.
-const LEGACY_KEY = 'hermes.desktop.pendingSubmissions.v1'
+const LEGACY_KEY = 'icebath.desktop.pendingSubmissions.v1'
 interface PendingSubmission {
   id: string
   text: string

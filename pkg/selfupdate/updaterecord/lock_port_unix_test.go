@@ -104,7 +104,7 @@ func TestLockAReaderReportsTheLiveClaimThatReplacedItsStaleSnapshot(t *testing.T
 	}
 }
 
-func TestLockAnOrphanedDelegateRemovesItsKilledOwnersMarker(t *testing.T) {
+func TestAnOrphanedDelegateRemovesItsKilledOwnersMarker(t *testing.T) {
 	tmp := t.TempDir()
 	owner := pcStart(t, "lock_handoff_owner", tmp)
 	child := lkWaitPID(t, filepath.Join(tmp, "delegate-written"), owner)
@@ -253,7 +253,7 @@ func TestLockCheckoutCustodyNeverBorrowsALocalReadersDescriptor(t *testing.T) {
 	}
 }
 
-func TestLockExecChildReentersTheLockItExplicitlyInherited(t *testing.T) {
+func TestExecChildReentersTheLockItExplicitlyInherited(t *testing.T) {
 	tmp := t.TempDir()
 	root := lkMkdir(t, filepath.Join(tmp, "checkout"))
 	owner := NewUpdateLock(filepath.Join(tmp, "parent-marker"), root, true)
@@ -284,6 +284,9 @@ func TestLockExecChildReentersTheLockItExplicitlyInherited(t *testing.T) {
 		t.Fatal(line)
 	}
 	owner.Release(context.Background())
+	if !pidAlive(child.Process.Pid) {
+		t.Fatal("the child exited with its owner's release")
+	}
 	if lcAcquire(t, contender) {
 		t.Fatal("the inherited descriptor must outlive the original owner")
 	}

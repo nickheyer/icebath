@@ -10,7 +10,7 @@ var RoomMember = pydantic.NewModel("RoomMember", OpenConfig,
 	pydantic.Def("handle", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("display_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("target", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("One roster row (``hosted_room_discussion.validate_roster``); legacy rooms may carry\npre-normalisation rows, so the set stays open.")
 
 var RoomActor = pydantic.NewModel("RoomActor", ClosedConfig,
 	pydantic.Req("kind", pydantic.Str),
@@ -18,7 +18,7 @@ var RoomActor = pydantic.NewModel("RoomActor", ClosedConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("display_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("connection_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``hosted_rooms._ACTOR_FIELDS``; member replies carry ``profile`` plus, when known,\n``display_name`` and the peer ``connection_id`` (``hosted_room_discussion._member_actor``).")
 
 var RoomEvent = pydantic.NewModel("RoomEvent", ClosedConfig,
 	pydantic.Req("room_id", pydantic.Str),
@@ -30,7 +30,7 @@ var RoomEvent = pydantic.NewModel("RoomEvent", ClosedConfig,
 	pydantic.Req("payload", pydantic.Dict(pydantic.Any)),
 	pydantic.Req("created_at", pydantic.Float),
 	pydantic.Def("idempotent", pydantic.Bool, false),
-)
+).Described("``gateway/hosted_rooms.py::_event_from_row``.")
 
 var Room = pydantic.NewModel("Room", ClosedConfig,
 	pydantic.Req("room_id", pydantic.Str),
@@ -48,7 +48,7 @@ var Room = pydantic.NewModel("Room", ClosedConfig,
 	pydantic.Def("claim_event", pydantic.Nullable(RoomEvent), nil),
 	pydantic.Def("authority_claim", pydantic.Nullable(RoomEvent), nil),
 	pydantic.Def("event", pydantic.Nullable(RoomEvent), nil),
-)
+).Described("``gateway/hosted_rooms.py::_room_from_row`` plus the branch-only keys ``create`` (legacy\nadoption), ``state`` (``authority_claim``) and ``rename`` (``event``) add.")
 
 var RoomAuthority = pydantic.NewModel("RoomAuthority", ClosedConfig,
 	pydantic.Req("gateway_id", pydantic.Str),
@@ -61,7 +61,7 @@ var RoomMemberInput = pydantic.NewModel("RoomMemberInput", OpenParamsConfig,
 	pydantic.Def("handle", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("display_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("target", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("A roster row as the client proposes it; ``validate_roster`` owns the exact rules.")
 
 var RoomParams = pydantic.Extend(ProfileParams, "RoomParams", ParamsConfig,
 	pydantic.Req("room_id", pydantic.Str),
@@ -74,14 +74,14 @@ var RoomExecutionPolicy = pydantic.NewModel("RoomExecutionPolicy", ClosedConfig,
 	pydantic.Req("approval_mode", pydantic.Str),
 	pydantic.Req("max_iterations", pydantic.Int),
 	pydantic.Req("policy_digest", pydantic.Str),
-)
+).Described("``gateway/hosted_room_execution_policy.py::execution_policy_mapping``.")
 
 var RoomLinkEndpoint = pydantic.NewModel("RoomLinkEndpoint", ClosedConfig,
 	pydantic.Req("available", pydantic.Bool),
 	pydantic.Def("url", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("transport_security", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("reason", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``GatewayRoomCatalog.endpoint_mapping``: ``url``/``transport_security`` when available,\n``reason`` when not.")
 
 var RoomLinkCatalog = pydantic.NewModel("RoomLinkCatalog", ClosedConfig,
 	pydantic.Req("installation_id", pydantic.Str),
@@ -93,7 +93,7 @@ var RoomLinkCatalog = pydantic.NewModel("RoomLinkCatalog", ClosedConfig,
 	pydantic.Req("execution_policy", RoomExecutionPolicy),
 	pydantic.Req("catalog_digest", pydantic.Str),
 	pydantic.Def("endpoint", pydantic.Nullable(RoomLinkEndpoint), nil),
-)
+).Described("``gateway/hosted_room_peer.py::GatewayRoomCatalog.as_mapping``.")
 
 var RoomLinkStatus = pydantic.NewModel("RoomLinkStatus", ClosedConfig,
 	pydantic.Req("enabled", pydantic.Bool),
@@ -101,7 +101,7 @@ var RoomLinkStatus = pydantic.NewModel("RoomLinkStatus", ClosedConfig,
 	pydantic.Def("catalog", pydantic.Nullable(RoomLinkCatalog), nil),
 	pydantic.Def("endpoint", pydantic.Nullable(RoomLinkEndpoint), nil),
 	pydantic.Def("reason", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``enabled`` with ``profile``/``catalog``/``endpoint``, or disabled with a ``reason``.")
 
 var GroupsCapabilitiesParams = pydantic.Extend(ProfileParams, "GroupsCapabilitiesParams", ParamsConfig)
 
@@ -158,7 +158,7 @@ var PeerRouteStatus = pydantic.NewModel("PeerRouteStatus", ClosedConfig,
 var RoomMemberActivity = pydantic.NewModel("RoomMemberActivity", ClosedConfig,
 	pydantic.Req("member_id", pydantic.Str),
 	pydantic.Req("status", pydantic.Str),
-)
+).Described("One live room task: ``status`` is ``queued``, ``running`` or ``stopping``.")
 
 var RoomDriverStatus = pydantic.NewModel("RoomDriverStatus", ClosedConfig,
 	pydantic.Req("running", pydantic.Bool),
@@ -169,7 +169,7 @@ var RoomDriverStatus = pydantic.NewModel("RoomDriverStatus", ClosedConfig,
 	pydantic.Fac("member_activity", pydantic.List(RoomMemberActivity), pydantic.NewList),
 	pydantic.Def("last_error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Req("peer_routes", pydantic.List(PeerRouteStatus)),
-)
+).Described("``HostedRoomService.status(room_id)``; ``pending_actions`` rows are the exact attempt\n(``hosted_room_service.attempt_action``: ``kind`` + ``member_id``/``task_id``/``execution_generation``)\nor the driver's approval action (``kind: approval`` + run/session/approval context), or a stalled\nroom preparation's Retry (``task_id`` ``prepare:<room_id>``, ``member_id`` the members not woken).\n``member_activity`` lists live tasks in admission order (absent from older gateways).\n``last_error`` is this room's last preparation failure, null once one succeeds.")
 
 var GroupsStateResult = pydantic.NewModel("GroupsStateResult", ClosedConfig,
 	pydantic.Req("room", Room),
@@ -215,7 +215,7 @@ var GroupsLogResult = pydantic.NewModel("GroupsLogResult", ClosedConfig,
 	pydantic.Req("latest_seq", pydantic.Int),
 	pydantic.Req("has_more", pydantic.Bool),
 	pydantic.Req("authority", RoomAuthority),
-)
+).Described("``gateway/hosted_rooms.py::read_events`` page — also the ``page`` ``groups.replicate`` ingests.")
 
 var _ = Method("groups.log", GroupsLogParams, GroupsLogResult, "A monotonic room-log delta after since_seq, bounded by count and page bytes.")
 
@@ -258,7 +258,7 @@ var GroupsApproveParams = pydantic.Extend(RoomParams, "GroupsApproveParams", Par
 var GroupsApproveResult = pydantic.NewModel("GroupsApproveResult", ClosedConfig,
 	pydantic.Def("approved", pydantic.Bool, true),
 	pydantic.Req("result", pydantic.Dict(pydantic.Any)),
-)
+).Described("``result`` is the local ``approval.respond`` answer or the peer's run-action receipt.")
 
 var _ = Method("groups.approve", GroupsApproveParams, GroupsApproveResult, "Resolve one exact pending approval raised by a local or peer room member.")
 
@@ -405,7 +405,7 @@ var RelayAgentRow = pydantic.NewModel("RelayAgentRow", OpenParamsConfig,
 	pydantic.Def("title", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("description", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("online", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("A roster row the Desktop pushes (``tools/bot_relay.py::_normalize_roster_row``); invalid\nrows are dropped server-side, so the shape stays open.")
 
 var BotRelayRosterSyncParams = pydantic.Extend(ProfileParams, "BotRelayRosterSyncParams", ParamsConfig,
 	pydantic.Def("agents", pydantic.Nullable(pydantic.List(RelayAgentRow)), nil),
@@ -428,7 +428,7 @@ var RelayEnvelope = pydantic.NewModel("RelayEnvelope", OpenConfig,
 	pydantic.Req("target_profile", pydantic.Str),
 	pydantic.Req("target_handle", pydantic.Str),
 	pydantic.Req("message", pydantic.Str),
-)
+).Described("``tools/bot_relay.py::enqueue_envelope``.")
 
 var BotRelayOutboxDrainResult = pydantic.NewModel("BotRelayOutboxDrainResult", ClosedConfig,
 	pydantic.Req("envelopes", pydantic.List(RelayEnvelope)),
@@ -442,7 +442,7 @@ var BotRelayDeliverParams = pydantic.NewModel("BotRelayDeliverParams", ParamsCon
 	pydantic.Def("from_profile", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("from_handle", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("from_connection", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``profile`` here is the TARGET profile on this gateway (also what the desktop route wrapper adds).")
 
 var BotRelayDeliverResult = pydantic.NewModel("BotRelayDeliverResult", ClosedConfig,
 	pydantic.Req("reply", pydantic.Str),

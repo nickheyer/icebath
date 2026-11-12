@@ -56,7 +56,11 @@ func writePrivateText(path, text string) error {
 	return os.Rename(tmp, path)
 }
 
-var hostSignalInstalled bool
+var (
+	hostSignalInstalled bool
+	hostSignalCh        chan os.Signal
+	hostSignalQuit      chan struct{}
+)
 
 // Clears every registered role on SIGTERM, then lets the default disposition or other listeners take the signal
 func installHostSignalCleanup() {
@@ -66,9 +70,15 @@ func installHostSignalCleanup() {
 	hostSignalInstalled = true
 	ignored := signal.Ignored(syscall.SIGTERM)
 	ch := make(chan os.Signal, 1)
+	quit := make(chan struct{})
+	hostSignalCh, hostSignalQuit = ch, quit
 	signal.Notify(ch, syscall.SIGTERM)
 	go func() {
-		<-ch
+		select {
+		case <-quit:
+			return
+		case <-ch:
+		}
 		HostRendezvousAtExit()
 		signal.Stop(ch)
 		if ignored {
@@ -79,4 +89,16 @@ func installHostSignalCleanup() {
 			os.Exit(128 + int(syscall.SIGTERM))
 		}
 	}()
+}
+
+// Drops the SIGTERM cleanup once the gateway loop owns the signal, the way its later handler replaces the earlier one
+func SupersedeHostSignalCleanup() {
+	hostCleanupMu.Lock()
+	defer hostCleanupMu.Unlock()
+	if hostSignalCh == nil {
+		return
+	}
+	signal.Stop(hostSignalCh)
+	close(hostSignalQuit)
+	hostSignalCh, hostSignalQuit = nil, nil
 }

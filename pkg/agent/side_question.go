@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"strings"
@@ -49,11 +50,11 @@ func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) stri
 		if calls, ok := msg["tool_calls"].([]any); role == "assistant" && ok && len(calls) > 0 {
 			var names []string
 			for _, tc := range calls {
-				call, ok := tc.(map[string]any)
+				call, ok := pyjson.Dict(tc)
 				if !ok {
 					continue
 				}
-				fn, _ := call["function"].(map[string]any)
+				fn, _ := pyjson.Dict(call["function"])
 				name := "?"
 				if v, ok := fn["name"]; ok {
 					name = pyrepr.Str(v)

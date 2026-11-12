@@ -185,6 +185,44 @@ func (b *BasePlatformAdapter) PendingTextBatchTaskCount() int {
 	return len(b.pendingTextBatchTasks)
 }
 
+// Waits up to timeout for the pending flush tasks, cancels the stragglers, then clears both batch maps
+func (b *BasePlatformAdapter) AwaitPendingTextBatches(ctx context.Context, timeout time.Duration) (timedOut bool) {
+	b.mu.Lock()
+	tasks := make([]*adapterTask, 0, len(b.pendingTextBatchTasks))
+	for _, t := range b.pendingTextBatchTasks {
+		tasks = append(tasks, t)
+	}
+	b.mu.Unlock()
+	if len(tasks) > 0 {
+		deadline := time.NewTimer(timeout)
+		defer deadline.Stop()
+	wait:
+		for _, t := range tasks {
+			select {
+			case <-t.done:
+			case <-deadline.C:
+				timedOut = true
+				break wait
+			case <-ctx.Done():
+				timedOut = true
+				break wait
+			}
+		}
+		if timedOut {
+			for _, t := range tasks {
+				if !t.finished() {
+					t.cancel()
+				}
+			}
+		}
+	}
+	b.mu.Lock()
+	clear(b.pendingTextBatchTasks)
+	clear(b.pendingTextBatches)
+	b.mu.Unlock()
+	return timedOut
+}
+
 // Waits until every pending flush task has finished or the context ends
 func (b *BasePlatformAdapter) WaitTextBatches(ctx context.Context) error {
 	for {

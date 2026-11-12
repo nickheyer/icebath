@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
@@ -38,6 +39,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -55,7 +57,9 @@ var (
 
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
 func installProcessWiring() {
+	installSlashRegistryWiring()
 	registerCommandArgv()
+	tools.RegisterNemoRelayBinding(relayhost.Load)
 	commands.BannerVersionLabel = app.FormatBannerVersionLabel
 	gatewayrun.ResolveEphemeralSystemPromptFromConfig = commands.ResolveEphemeralSystemPrompt
 	gatewayrun.ParseServiceTierConfig = app.ParseServiceTierConfig
@@ -118,7 +122,9 @@ func installProcessWiring() {
 		}
 		return "", "", "", false
 	}
-	gatewayrun.IsGatewayKnownCommand = func(name string) bool { return commands.IsGatewayKnownCommand(commands.Default, name) }
+	gatewayrun.IsGatewayKnownCommand = func(name string) bool {
+		return commands.IsGatewayKnownCommand(context.Background(), commands.Default, name)
+	}
 	gatewayrun.GatewayKnownCommand = func(name string) bool { return commands.GatewayKnownCommands()[name] }
 	gatewayrun.ExecuteSlashCommand = func(ctx context.Context, name, surface, args string, options map[string]any) (gatewayrun.SlashCommandReply, error) {
 		reply, err := commands.ExecuteCommand(ctx, name, commands.CommandContext{Surface: surface, Args: args, Options: options})
@@ -273,6 +279,7 @@ func installProcessWiring() {
 	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
 	tools.ApprovalHookInvoker = approvalHookInvoker
 	tools.LoadCLIConfig = app.CLIConfig
+	commands.LoadCLIConfig = app.LoadCLIConfig
 	tools.TerminalOutputTransformHook = terminalOutputTransform
 	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
 	state.SecretEnvName = codeexec.IsSecretEnvName
@@ -338,10 +345,24 @@ func installProcessWiring() {
 		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
 	}
 	slack.SubcommandMap = func(ctx context.Context) map[string]string {
-		return commands.SlackSubcommandMap(commands.Default, rawConfigTree(ctx))
+		return commands.SlackSubcommandMap(ctx, commands.Default, rawConfigTree(ctx))
 	}
 	gateway.RelaySlackSubcommandMap = slack.SubcommandMap
+	slack.NativeSlashNames = func(ctx context.Context) []string {
+		var names []string
+		for _, s := range commands.SlackNativeSlashes(ctx, commands.Default, rawConfigTree(ctx)) {
+			names = append(names, s.Name)
+		}
+		return names
+	}
+	slack.ResolveCommandBusy = func(name string) (string, string, bool) {
+		if d := commands.Resolve(name); d != nil {
+			return d.Name, string(d.BusyPolicy), true
+		}
+		return "", "", false
+	}
 	telegram.InlineCommands = telegramInlineCommands{}
+	telegram.SendTelegramREST = messagetools.SendTelegram
 	codeexec.BotDesktopEnv = botdesktop.DesktopEnv
 	codeexec.BotDesktopToolPlacement = botdesktop.ToolPlacement
 	codeexec.BotDesktopPlacementWhere = botDesktopPlacementWhere
@@ -415,7 +436,7 @@ type telegramInlineCommands struct{}
 
 func (telegramInlineCommands) TelegramBotCommands(ctx context.Context) ([]telegram.CatalogItem, error) {
 	var out []telegram.CatalogItem
-	for _, e := range commands.TelegramBotCommands(commands.Default, rawConfigTree(ctx), true) {
+	for _, e := range commands.TelegramBotCommands(ctx, commands.Default, rawConfigTree(ctx), true) {
 		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
 	}
 	return out, nil
@@ -424,12 +445,26 @@ func (telegramInlineCommands) TelegramBotCommands(ctx context.Context) ([]telegr
 func (telegramInlineCommands) GatewaySkillEntries(ctx context.Context, platform string, maxSlots int, reserved map[string]bool,
 	descLimit int, sanitize func(string) string) ([]telegram.CatalogItem, error) {
 	cfg := rawConfigTree(ctx)
-	entries, _ := commands.GatewaySkillEntries(commands.Default, platform, commands.HomeSkillSource(home.Dir(ctx), cfg), maxSlots, reserved, descLimit, sanitize)
+	entries, _ := commands.GatewaySkillEntries(ctx, commands.Default, platform, commands.HomeSkillSource(home.Dir(ctx), cfg), maxSlots, reserved, descLimit, sanitize)
 	var out []telegram.CatalogItem
 	for _, e := range entries {
 		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
 	}
 	return out, nil
+}
+
+func (telegramInlineCommands) TelegramMenuMaxCommands(ctx context.Context) int {
+	return commands.TelegramMenuMaxCommands(rawConfigTree(ctx))
+}
+
+func (telegramInlineCommands) TelegramMenuCommands(ctx context.Context, maxCommands int) ([]telegram.CatalogItem, int, error) {
+	cfg := rawConfigTree(ctx)
+	menu, hidden := commands.TelegramMenuCommands(ctx, commands.Default, cfg, commands.HomeSkillSource(home.Dir(ctx), cfg), maxCommands)
+	out := make([]telegram.CatalogItem, 0, len(menu))
+	for _, e := range menu {
+		out = append(out, telegram.CatalogItem{Name: e.Name, Description: e.Description})
+	}
+	return out, hidden, nil
 }
 
 func (telegramInlineCommands) SanitizeTelegramName(raw string) string {
@@ -473,7 +508,7 @@ func pluginServices() *plugins.Services {
 			"transcription_provider":        media.TranscriptionScopedRegistry(),
 			"web_search_provider":           agent.WebSearchScopedRegistry(),
 			"browser_provider":              browser.BrowserProviderRegistry.Scoped(),
-			"browser_page_backend":          browser.BrowserPageBackendRegistry.Scoped(),
+			"browser_page_backend":          browser.BrowserPageBackendScopedRegistry(),
 			"terminal_environment_provider": agent.TerminalEnvScopedRegistry(),
 			"secret_source":                 provider.SecretSourceScopedRegistry(),
 			"delegation_provider":           agent.DelegationScopedRegistry(),
@@ -552,6 +587,12 @@ func homeToolsEnv(ctx context.Context, h string) *tools.Env {
 
 // Serves the plugin SDK ops, the cron ops first and the media, provider and gateway ops after
 func pluginSDK(ctx context.Context, h, op string, args []any, kwargs map[string]any) (any, error) {
+	if op == "moved_command_hint" {
+		if len(args) != 2 {
+			return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("moved_command_hint() takes 2 positional arguments but %d were given", len(args))}
+		}
+		return provider.MovedCommandHint(ctx, config.PyStr(args[0]), config.PyStr(args[1]), ""), nil
+	}
 	if result, handled, err := cron.ServePluginSDK(ctx, h, op, args, kwargs); handled || err != nil {
 		return result, err
 	}
@@ -706,4 +747,49 @@ func bindProjectBoardWorkdir(ctx context.Context, board, primaryPath string) err
 	}
 	_, err = kanban.WriteBoardMetadata(ctx, &slug, kanban.BoardMetadataUpdate{DefaultWorkdir: &primaryPath})
 	return err
+}
+
+// Hands the platform adapters the command registry, plugin commands, skill catalog and profile adapter maps
+func installSlashRegistryWiring() {
+	gateway.GatewayRegistryCommands = func(ctx context.Context) ([]gateway.SlashCommandEntry, error) {
+		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
+		if err != nil {
+			return nil, err
+		}
+		gates := commands.ResolveConfigGates(cfg)
+		var out []gateway.SlashCommandEntry
+		for n := range commands.Builtin {
+			if d := &commands.Builtin[n]; commands.GatewayAvailable(d, gates) {
+				out = append(out, gateway.SlashCommandEntry{Name: d.Name, Description: d.Description, ArgsHint: d.ArgsHint})
+			}
+		}
+		return out, nil
+	}
+	gateway.PluginSlashCommandEntries = func(ctx context.Context) ([]gateway.SlashCommandEntry, error) {
+		var out []gateway.SlashCommandEntry
+		for _, e := range commands.IterPluginCommandEntries(ctx, commands.Default) {
+			out = append(out, gateway.SlashCommandEntry{Name: e.Name, Description: e.Description, ArgsHint: e.ArgsHint})
+		}
+		return out, nil
+	}
+	gateway.DiscordSkillCommandsByCategory = func(ctx context.Context, reserved map[string]bool) ([][]gateway.SkillCommandEntry, []gateway.SkillCommandEntry, int, error) {
+		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		categories, uncategorized, collisions := commands.DiscordSkillCommandsByCategory(commands.HomeSkillSource(home.Dir(ctx), cfg), reserved)
+		rows := func(in []commands.DiscordSkillEntry) []gateway.SkillCommandEntry {
+			out := make([]gateway.SkillCommandEntry, len(in))
+			for n, e := range in {
+				out[n] = gateway.SkillCommandEntry{Name: e.Name, Description: e.Description, CmdKey: e.CmdKey}
+			}
+			return out
+		}
+		grouped := make([][]gateway.SkillCommandEntry, len(categories))
+		for n, c := range categories {
+			grouped[n] = rows(c.Entries)
+		}
+		return grouped, rows(uncategorized), len(collisions), nil
+	}
+	gateway.ProfileAdaptersAndConfig = gatewayrun.ProfileAdaptersAndConfig
 }

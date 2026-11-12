@@ -1,19 +1,19 @@
 package memory
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -75,13 +75,15 @@ func MemoryReset(ctx context.Context, out io.Writer, in io.Reader, target string
 		fmt.Fprintf(out, "    ◆ %s (%s) — %s bytes\n", f[0], f[1], size)
 	}
 	if !yes {
-		fmt.Fprint(out, "\n  Type 'yes' to confirm: ")
-		line, err := bufio.NewReader(in).ReadString('\n')
-		if err != nil && (!errors.Is(err, io.EOF) || line == "") {
+		line, err := (&cliui.Console{In: in, Out: out}).Input("\n  Type 'yes' to confirm: ")
+		if errors.Is(err, cliui.ErrEOF) || errors.Is(err, cliui.ErrInterrupt) {
 			fmt.Fprint(out, "\n  Cancelled.\n\n")
 			return nil
 		}
-		if strings.ToLower(strings.TrimSpace(strings.TrimSuffix(line, "\n"))) != "yes" {
+		if err != nil {
+			return err
+		}
+		if pystr.Lower(pystr.Strip(line)) != "yes" {
 			fmt.Fprint(out, "  Cancelled.\n\n")
 			return nil
 		}

@@ -504,7 +504,7 @@ func toolSearchClipDescription(text string, cap int) string {
 // One record for the shared tools map carrying required names for trivial calls
 func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
 	required := []any{}
-	if fn, ok := entry.Schema["function"].(map[string]any); ok {
+	if fn, ok := pyjson.Dict(entry.Schema["function"]); ok {
 		if params, ok := fn["parameters"].(map[string]any); ok {
 			if list, ok := params["required"].([]any); ok {
 				for _, r := range list {

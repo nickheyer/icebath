@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -44,7 +45,7 @@ func TestExternalDirSkillsIncludedInTelegramMenu(t *testing.T) {
 	scope := skills.NewScope(h, cfg)
 	scope.Cwd = root
 	source := func(platform string) []GatewaySkill { return IterGatewaySkills(scope, platform) }
-	menu, _ := TelegramMenuCommands(Default, cfg, source, 100)
+	menu, _ := TelegramMenuCommands(context.Background(), Default, cfg, source, 100)
 	names := map[string]bool{}
 	for _, e := range menu {
 		names[e.Name] = true
@@ -72,7 +73,7 @@ func TestGatewaySkillEntriesExportMatchesTheCollector(t *testing.T) {
 	source := func(platform string) []GatewaySkill {
 		return []GatewaySkill{{Key: "/alpha", Description: "A"}, {Key: "/beta", Description: "B"}}
 	}
-	entries, hidden := GatewaySkillEntries(NewRegistry(), "telegram", source, 1, map[string]bool{}, 40, SanitizeTelegramName)
+	entries, hidden := GatewaySkillEntries(context.Background(), NewRegistry(), "telegram", source, 1, map[string]bool{}, 40, SanitizeTelegramName)
 	if hidden != 1 || len(entries) != 1 || entries[0].Name != "alpha" || entries[0].Description != "A" {
 		t.Fatalf("entries %v hidden %d", entries, hidden)
 	}

@@ -237,7 +237,7 @@ func ProjectPython(ctx context.Context, projectRoot string) (string, error) {
 	return VenvPython(venv), nil
 }
 
-// Sealed payload interpreter that enters venvs through the venv entry script, empty for Termux and other trees
+// Sealed payload interpreter its venvs start on, empty for Termux and other trees
 func payloadStorePython(root string) (string, error) {
 	manifest, payloadRoot, ok, err := payloadManifest(root)
 	if err != nil || !ok {
@@ -258,20 +258,21 @@ func payloadStorePython(root string) (string, error) {
 	return payloadPath(payloadRoot, relative, "interpreter")
 }
 
-// Argv prefix running Python inside a venv, a sealed payload attaching the venv to its own interpreter
+// Argv prefix running Python inside a venv, a sealed payload's venv first healed onto the payload's store interpreter
 func VenvCommand(ctx context.Context, projectRoot, venv string, options []string) ([]string, error) {
 	storePython, err := payloadStorePython(resolvePath(projectRoot))
 	if err != nil {
 		return nil, err
 	}
-	if storePython == "" {
-		return append([]string{VenvPython(venv)}, options...), nil
+	if storePython != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := healVenvInterpreter(venv, storePython); err != nil {
+			return nil, err
+		}
 	}
-	site, err := SitePackages(venv)
-	if err != nil {
-		return nil, err
-	}
-	return VenvEntryCommand(ctx, storePython, options, site)
+	return append([]string{VenvPython(venv)}, options...), nil
 }
 
 // Decimal text Python int gives a digit string, a ValueError for digit forms int refuses
@@ -386,6 +387,30 @@ func importPathEntries() []string {
 
 // ImportPathEntries exports importPathEntries
 func ImportPathEntries() []string { return importPathEntries() }
+
+// Puts the running tree first on the import path, dropping entries that resolve to the same tree
+func EnsureProjectRootOnPath() {
+	root := RepoRoot()
+	normalized := pypath.Normcase(realpathOrSelf(root))
+	importPath.Lock()
+	defer importPath.Unlock()
+	kept := []string{root}
+	for _, entry := range importPath.entries {
+		if entry == "" || pypath.Normcase(realpathOrSelf(entry)) != normalized {
+			kept = append(kept, entry)
+		}
+	}
+	importPath.entries = kept
+}
+
+// Resolved path, or the path as given when resolving raises, as a relative path does under a deleted cwd
+func realpathOrSelf(path string) string {
+	resolved, err := pypath.Realpath(path, pypath.Lax)
+	if err != nil {
+		return path
+	}
+	return resolved
+}
 
 // Directory of the resolved running executable, what this process runs from
 var processPrefix = func() (string, error) {
@@ -1349,4 +1374,9 @@ func CollectSupersededGenerations(ctx context.Context, projectRoot string) error
 		slog.Info(fmt.Sprintf("collected %d unused dependency generations", len(removed)))
 	}
 	return nil
+}
+
+// Removes unselected lease managed generations older than minAge whose readers have exited
+func CollectGenerations(ctx context.Context, project string, minAge time.Duration) ([]string, error) {
+	return collectGenerations(ctx, project, minAge)
 }

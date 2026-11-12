@@ -266,7 +266,7 @@ it('tracking a submission reads its own record without enumerating other session
     trackPendingSubmission(`other-${index}`, { id: `a-${index}`, text: 'elsewhere', status: 'queued' })
   }
 
-  window.localStorage.setItem('hermes.desktop.pendingSubmissions.v1', JSON.stringify({ solo: { old: { id: 'old', text: 'legacy', displayText: '/old' } } }))
+  window.localStorage.setItem('icebath.desktop.pendingSubmissions.v1', JSON.stringify({ solo: { old: { id: 'old', text: 'legacy', displayText: '/old' } } }))
   const enumerate = vi.spyOn(window.localStorage, 'key')
 
   try {

@@ -136,10 +136,7 @@ func BindWorkerPolicy(frame *pyjson.Object) error {
 	if err != nil {
 		return err
 	}
-	cfg, ok := pyjson.Plain(decoded).(map[string]any)
-	if !ok {
-		return &workerStoreError{"TypeError", fmt.Sprintf("worker config is a %s, not a dict", pyrepr.TypeName(decoded))}
-	}
+	cfg, _ := config.ConfigFromJSON(decoded).(map[string]any)
 	if ignore, _ := frame.Vals["ignore_user_config"].(bool); !ignore {
 		_, err := config.BindWorkerConfig(cfg)
 		return err

@@ -13,13 +13,13 @@ var DisplayLease = pydantic.NewModel("DisplayLease", ClosedConfig,
 	pydantic.Req("since", pydantic.Float),
 	pydantic.Req("epoch", pydantic.Int),
 	pydantic.Def("reason", pydantic.Str, ""),
-)
+).Described("``tools/bot_desktop/lease.py::Lease`` as clients may see it: the holder's viewer id is a\ncapability and never leaves the gateway; ``viewer_hash`` lets the holder recognise itself.")
 
 var DisplayImageSwitch = pydantic.NewModel("DisplayImageSwitch", ClosedConfig,
 	pydantic.Req("current_image", pydantic.Str),
 	pydantic.Req("target_image", pydantic.Str),
 	pydantic.Req("containers", pydantic.Int),
-)
+).Described("A persisted Docker sandbox kept on the previous default image; the user decides the switch.")
 
 var DisplayStatus = pydantic.NewModel("DisplayStatus", ClosedConfig,
 	pydantic.Req("profile", pydantic.Str),
@@ -40,14 +40,14 @@ var DisplayStatus = pydantic.NewModel("DisplayStatus", ClosedConfig,
 	pydantic.Def("image_switch", pydantic.Nullable(DisplayImageSwitch), nil),
 	pydantic.Req("lease", DisplayLease),
 	pydantic.Req("profile_key", pydantic.Str),
-)
+).Described("``tools/bot_desktop/runtime.py::DesktopStatus`` plus the lease and the profile it speaks for.")
 
 var _ = Method("display.status", ProfileParams, DisplayStatus, "Runtime + lease snapshot for this profile's screen.")
 
 var DisplayThumbnailResult = pydantic.NewModel("DisplayThumbnailResult", ClosedConfig,
 	pydantic.Def("data_url", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("suppressed", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``data_url`` is null while the screen is stopped or while a human holds the lease\n(``suppressed``): the frame may show what they are typing.")
 
 var _ = Method("display.thumbnail", ProfileParams, DisplayThumbnailResult, "One JPEG grab of the bot's screen; read-only, never changes the lease.")
 
@@ -138,7 +138,7 @@ var DisplayStatusPayload = pydantic.NewModel("DisplayStatusPayload", ClosedConfi
 	pydantic.Req("profile_key", pydantic.Str),
 )
 
-var _ = Event("display.status", DisplayStatusPayload, "This profile's screen started or stopped (also for transitions made outside hermes serve).")
+var _ = Event("display.status", DisplayStatusPayload, "This profile's screen started or stopped (also for transitions made outside icebath serve).")
 
 var DisplayLeasePayload = pydantic.NewModel("DisplayLeasePayload", ClosedConfig,
 	pydantic.Req("profile_key", pydantic.Str),

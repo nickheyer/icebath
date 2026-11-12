@@ -273,7 +273,7 @@ func unsupportedReason(ctx context.Context, stamp *pyjson.Object, root, h string
 	payload := stampGet(stamp, "payload")
 	bundled := payload == "bundled" || payload == "light" || payload == "runtime"
 	if !bundled && !explicitRoot {
-		if method, err := config.DetectInstallMethod(ctx, h, root); err == nil && (method == "docker" || method == "apt") {
+		if method, err := config.DetectInstallMethod(ctx, h, root); err == nil && (method == "docker" || config.IsPackageManagerInstallMethod(method)) {
 			bundled = true
 		}
 	}
@@ -736,6 +736,9 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		homePath = home.Dir(ctx)
 	}
 	h := resolvedPath(homePath)
+	if embedded == "" && opts.InstallRoot == "" {
+		embedded = releaseRevision(ctx, root)
+	}
 	result := pyjson.ObjectOf("supported", false, "icebathRoot", root, "behind", nil, "commits", []any{})
 	if unsupported := unsupportedReason(ctx, pm.ReadInstallStamp(root), root, h, opts.InstallRoot != "", embedded); unsupported != nil {
 		merged := result.Copy()

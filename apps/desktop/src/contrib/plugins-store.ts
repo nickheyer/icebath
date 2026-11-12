@@ -35,8 +35,8 @@ export interface PluginRecord {
 // Explicit user enable/disable choices, id -> boolean. ABSENCE means "no
 // choice" — the plugin falls back to its own `defaultEnabled`. This is what
 // lets an opt-in plugin ship off-by-default: absence ≠ enabled anymore.
-const DECISIONS_KEY = 'hermes.desktop.pluginDecisions.v2'
-const LEGACY_DISABLED_KEY = 'hermes.desktop.disabledPlugins.v1'
+const DECISIONS_KEY = 'icebath.desktop.pluginDecisions.v2'
+const LEGACY_DISABLED_KEY = 'icebath.desktop.disabledPlugins.v1'
 
 function loadDecisions(): Record<string, boolean> {
   try {

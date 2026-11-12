@@ -131,8 +131,12 @@ func TestCanonicalAPIMode(t *testing.T) {
 // ---- provider env entries ----
 
 func TestEveryAPIKeyProviderVarIsDeclaredInCore(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	FillProviderEnvVars()
-	core := CoreDeclaredEnvNames()
+	core, err := config.CoreDeclaredEnvNames()
+	if err != nil {
+		t.Fatal(err)
+	}
 	count := 0
 	for _, p := range ListProviders(context.Background()) {
 		if p.AuthType != AuthTypeAPIKey {
@@ -326,6 +330,7 @@ func TestIsEnvSettingKey(t *testing.T) {
 
 func TestEnvSettingRoundTripDropsConfigYAMLCopies(t *testing.T) {
 	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  default: test/model\nDISCORD_ALLOWED_USERS: '111'\nWHATSAPP_MODE: web\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -372,6 +377,7 @@ func TestEnvSettingRoundTripDropsConfigYAMLCopies(t *testing.T) {
 // ---- provider catalog ----
 
 func TestProfilelessProvidersStillPresent(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	by := ProviderCatalogBySlug()
 	for _, slug := range []string{"openai-api", "tencent-tokenplan", "xai-oauth"} {
 		d, ok := by[slug]
@@ -388,6 +394,7 @@ func TestProfilelessProvidersStillPresent(t *testing.T) {
 }
 
 func TestAPIKeyProvidersExposeACredentialEnvVar(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, d := range ProviderCatalog() {
 		if d.AuthType == AuthTypeAPIKey && d.Slug != "custom" && len(d.APIKeyEnvVars) == 0 {
 			t.Errorf("%s is api_key but exposes no env var", d.Slug)

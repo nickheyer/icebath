@@ -133,7 +133,7 @@ func BuildUpdateProducts(ctx context.Context, projectRoot string, desktop bool) 
 			fmt.Fprintf(out, "  Desktop app build owed: %s failed\n", desktopReason)
 		}
 	}
-	if info, err := os.Stat(filepath.Join(projectRoot, "apps", "desktop", "scripts", "build-webapp.mjs")); err == nil && info.Mode().IsRegular() {
+	if info, err := os.Stat(filepath.Join(projectRoot, "apps", "desktop", "vite.config.ts")); err == nil && info.Mode().IsRegular() {
 		attempt("Webapp build", func() error { return rebuildServedWebapp(ctx, projectRoot) })
 	}
 	say := func(message string) { fmt.Fprintln(out, message) }

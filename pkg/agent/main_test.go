@@ -9,7 +9,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/relayhost"
+	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -17,12 +20,15 @@ import (
 var testSecretEnvSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
 	"WEBHOOK", "CREDS", "BEARER", "APIKEY", "COOKIE"}
 
-// Dispatches the child modes, installs the secret env doubles, then runs the suite
+// Dispatches the child modes, installs the secret env doubles, then runs the suite in a sandbox home
 func TestMain(m *testing.M) {
+	relayhost.DispatchRelayHostEntry(context.Background())
+	relaytest.Provision()
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	dispatchLoopbackOwnerChild()
 	home.DispatchScratchPruneEntry(context.Background())
+	pluginhost.DispatchPluginHostEntry(context.Background())
 	dispatchTrajectoryChild()
 	dispatchLifecycleChild()
 	dispatchVerifyRunChild()
@@ -69,7 +75,15 @@ func TestMain(m *testing.M) {
 	dispatchAsyncOwnerDeathChild()
 	dispatchPluginResumeChild()
 	DispatchManagedWorkerEntry(os.Exit)
-	os.Exit(m.Run())
+	// Sandbox home for the whole run so a case that sets none never resolves the real default home
+	dir, err := os.MkdirTemp("", "agent-home-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("ICEBATH_HOME", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // Real logging setup, kept so a test that drives the agent file handlers can opt back in

@@ -181,7 +181,10 @@ type SwitchModelOptions struct {
 }
 
 // SwitchModel routes, resolves credentials for and validates a model switch shared by the CLI and gateway
-func SwitchModel(ctx context.Context, opts SwitchModelOptions) (ModelSwitchResult, error) {
+var SwitchModel = switchModel
+
+// Model switch pipeline the module level SwitchModel holds in production
+func switchModel(ctx context.Context, opts SwitchModelOptions) (ModelSwitchResult, error) {
 	st := &modelSwitch{
 		SwitchRoute: SwitchRoute{NewModel: pyStripSpace(opts.RawInput), TargetProvider: opts.CurrentProvider, ValidationHeaders: map[string]string{}},
 		RawInput:    opts.RawInput, CurrentProvider: opts.CurrentProvider, CurrentBaseURL: opts.CurrentBaseURL,

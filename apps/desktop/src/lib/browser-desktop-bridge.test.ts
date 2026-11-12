@@ -12,9 +12,9 @@ import { resolveDesktopGatewayWsUrl } from './gateway-ws-url'
 import { downloadGatewayMediaFile, resolveMediaPlaybackSrc } from './media'
 
 type MutableWindow = Window & {
-  __HERMES_AUTH_REQUIRED__?: boolean
-  __HERMES_BASE_PATH__?: string
-  __HERMES_DASHBOARD_PROFILE__?: string
+  __ICEBATH_AUTH_REQUIRED__?: boolean
+  __ICEBATH_BASE_PATH__?: string
+  __ICEBATH_DASHBOARD_PROFILE__?: string
   hermesDesktop?: Window['hermesDesktop']
 }
 
@@ -22,9 +22,9 @@ const mutableWindow = () => window as unknown as MutableWindow
 
 afterEach(() => {
   const win = mutableWindow()
-  delete win.__HERMES_AUTH_REQUIRED__
-  delete win.__HERMES_BASE_PATH__
-  delete win.__HERMES_DASHBOARD_PROFILE__
+  delete win.__ICEBATH_AUTH_REQUIRED__
+  delete win.__ICEBATH_BASE_PATH__
+  delete win.__ICEBATH_DASHBOARD_PROFILE__
   clearWebappSession()
   Reflect.deleteProperty(win, 'hermesDesktop')
   document.documentElement.removeAttribute('data-hermes-desktop-host')
@@ -87,8 +87,8 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('installs behind the authenticated non-loopback server gate without exposing a token', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
 
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), {
@@ -105,7 +105,7 @@ describe('browser-hosted Desktop bridge', () => {
     const [requestUrl, init] = fetchMock.mock.calls[0] as [URL, RequestInit]
     expect(requestUrl.pathname).toBe('/hermes/api/status')
     expect(init.credentials).toBe('same-origin')
-    expect(new Headers(init.headers).has('X-Hermes-Session-Token')).toBe(false)
+    expect(new Headers(init.headers).has('X-Icebath-Session-Token')).toBe(false)
 
     const connection = await win.hermesDesktop!.getConnection()
     // The gateway store routes this connection's requests onto the window's socket by its id.
@@ -124,8 +124,8 @@ describe('browser-hosted Desktop bridge', () => {
   // serving host's release, never a host-kind label.
   it('reports the serving host version, unknown when the host cannot say', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
 
     const fetchMock = vi
       .fn()
@@ -143,8 +143,8 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('mints a fresh gateway ticket for each WebSocket dial', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
 
     const fetchMock = vi
       .fn()
@@ -182,11 +182,11 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('returns an actionable reauth result when the gated cookie expires', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     let loginUrl = ''
     window.addEventListener(
-      'hermes:browser-reauth-required',
+      'icebath:browser-reauth-required',
       event => {
         event.preventDefault()
         loginUrl = String((event as CustomEvent<{ loginUrl?: string }>).detail.loginUrl || '')
@@ -218,11 +218,11 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('signs out through the server before navigating to the gated login page', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     let loginUrl = ''
     window.addEventListener(
-      'hermes:browser-reauth-required',
+      'icebath:browser-reauth-required',
       event => {
         event.preventDefault()
         loginUrl = String((event as CustomEvent<{ loginUrl?: string }>).detail.loginUrl || '')
@@ -328,7 +328,7 @@ describe('browser-hosted Desktop bridge', () => {
   it('opens session windows on the owning profile HashRouter route with spectator flags before the hash', async () => {
     const win = mutableWindow()
     // A gated host opens the window directly; a launch-link tab hands it a session first.
-    win.__HERMES_AUTH_REQUIRED__ = true
+    win.__ICEBATH_AUTH_REQUIRED__ = true
     window.history.replaceState(null, '', '/?profile=work#/existing')
     const { open } = browserOpensWebappWindows()
 
@@ -394,7 +394,7 @@ describe('browser-hosted Desktop bridge', () => {
   ])('resolves a $name session-window profile against the ambient launch URL', async ({ expectedProfile, opts }) => {
     const win = mutableWindow()
     // A gated host opens the window directly; a launch-link tab hands it a session first.
-    win.__HERMES_AUTH_REQUIRED__ = true
+    win.__ICEBATH_AUTH_REQUIRED__ = true
     window.history.replaceState(null, '', '/?profile=work#/existing')
     const { open } = browserOpensWebappWindows()
 
@@ -407,7 +407,7 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('exposes one same-origin registry source for Bot profile routing', async () => {
     const win = mutableWindow()
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     seedWebappSession('served-token')
     vi.stubGlobal(
       'fetch',
@@ -457,7 +457,7 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('maps REST requests to the loopback API with token and profile scoping', async () => {
     const win = mutableWindow()
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     seedWebappSession('served-token')
 
     const fetchMock = vi.fn().mockResolvedValue(
@@ -480,12 +480,12 @@ describe('browser-hosted Desktop bridge', () => {
     expect(requestUrl.pathname).toBe('/hermes/api/config')
     expect(requestUrl.searchParams.get('view')).toBe('desktop')
     expect(requestUrl.searchParams.get('profile')).toBe('worker-a')
-    expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe('served-token')
+    expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe('served-token')
   })
 
   it('routes Git through the browser transport and resolves the profile at call time', async () => {
     const win = mutableWindow()
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     seedWebappSession('served-token')
     $connection.set({ profile: 'launch-profile' } as never)
 
@@ -506,7 +506,7 @@ describe('browser-hosted Desktop bridge', () => {
     expect(listUrl.pathname).toBe('/hermes/api/git/worktrees')
     expect(listUrl.searchParams.get('path')).toBe('/srv/my repo')
     expect(listUrl.searchParams.get('profile')).toBe('launch-profile')
-    expect(new Headers(listInit.headers).get('X-Hermes-Session-Token')).toBe('served-token')
+    expect(new Headers(listInit.headers).get('X-Icebath-Session-Token')).toBe('served-token')
 
     $connection.set({ profile: 'active-profile' } as never)
     await expect(git.review.diff('/srv/my repo', 'a b.txt', 'uncommitted', null, false)).resolves.toBe(
@@ -551,7 +551,7 @@ describe('browser-hosted Desktop bridge', () => {
     expect(requestUrl.pathname).toBe('/api/fs/read-text')
     expect(requestUrl.searchParams.get('path')).toBe('/tmp/example.txt')
     expect(requestUrl.searchParams.get('profile')).toBe('active-files')
-    expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe('served-token')
+    expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe('served-token')
   })
 
   // Downloads and media elements cannot send the session header, and the
@@ -585,10 +585,10 @@ describe('browser-hosted Desktop bridge', () => {
   it.each(['token', 'cookie'])('downloads browser files with %s auth on the original profile', async auth => {
     const win = mutableWindow()
     const token = auth === 'token' ? 'served / token' : ''
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
 
     if (auth === 'cookie') {
-      win.__HERMES_AUTH_REQUIRED__ = true
+      win.__ICEBATH_AUTH_REQUIRED__ = true
     } else {
       seedWebappSession(token)
     }
@@ -619,7 +619,7 @@ describe('browser-hosted Desktop bridge', () => {
     expect(requestUrl.searchParams.get('session_id')).toBe('origin-session')
     expect(init.method).toBe('HEAD')
     expect(init.credentials).toBe('same-origin')
-    expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe(token || null)
+    expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe(token || null)
     expect(downloads).toHaveLength(1)
     const url = new URL(downloads[0].href)
     expect(url.origin).toBe(window.location.origin)
@@ -643,10 +643,10 @@ describe('browser-hosted Desktop bridge', () => {
   it.each(['token', 'cookie'])('streams browser audio/video over HTTP with %s auth', async auth => {
     const win = mutableWindow()
     const token = auth === 'token' ? 'served / token' : ''
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
 
     if (auth === 'cookie') {
-      win.__HERMES_AUTH_REQUIRED__ = true
+      win.__ICEBATH_AUTH_REQUIRED__ = true
     } else {
       seedWebappSession(token)
     }
@@ -679,7 +679,7 @@ describe('browser-hosted Desktop bridge', () => {
 
     for (const [input, init] of fetchMock.mock.calls as [URL, RequestInit][]) {
       expect(input.pathname).toBe('/hermes/api/files/ticket')
-      expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe(token)
+      expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe(token)
     }
 
     expect(fetchMock).toHaveBeenCalledTimes(token ? 5 : 0)
@@ -749,7 +749,7 @@ describe('browser-hosted Desktop bridge', () => {
     expect(requestUrl.searchParams.get('profile')).toBe('explicit-file-profile')
     expect(init.method).toBe('POST')
     expect(init.credentials).toBe('same-origin')
-    expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe('served-token')
+    expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe('served-token')
     expect((init.body as FormData).get('file')).toBeInstanceOf(File)
     expect(document.querySelector('input[type="file"]')).toBeNull()
   })
@@ -948,7 +948,7 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('rejects API paths that escape the configured base path', async () => {
     const win = mutableWindow()
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     seedWebappSession('served-token')
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
@@ -963,7 +963,7 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('maps the browser-hosted terminal rail onto an authenticated host-shell PTY socket', async () => {
     const win = mutableWindow()
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     seedWebappSession('served-token')
     $connection.set({ profile: 'active-terminal' } as never)
 
@@ -1062,7 +1062,7 @@ describe('browser-hosted Desktop bridge', () => {
 
   it('opens the host shell of a signed-in browser with a terminal ticket from its cookie session', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
+    win.__ICEBATH_AUTH_REQUIRED__ = true
     const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ ticket: 'shell-ticket' })))
     vi.stubGlobal('fetch', fetchMock)
     const dialed: string[] = []
@@ -1097,7 +1097,7 @@ describe('browser-hosted Desktop bridge', () => {
     expect(mint.searchParams.get('socket')).toBe('host-terminal')
     expect(init.method).toBe('POST')
     expect(init.credentials).toBe('same-origin')
-    expect(new Headers(init.headers).has('X-Hermes-Session-Token')).toBe(false)
+    expect(new Headers(init.headers).has('X-Icebath-Session-Token')).toBe(false)
     expect(new URL(dialed[0]).searchParams.get('ticket')).toBe('shell-ticket')
   })
 
@@ -1170,7 +1170,7 @@ describe('browser-hosted Desktop bridge', () => {
     { launch: 'work', other: 'default' }
   ])("keeps the $launch launch profile as the tab's own connection on ?profile=$other", async ({ launch, other }) => {
     const win = mutableWindow()
-    win.__HERMES_DASHBOARD_PROFILE__ = launch
+    win.__ICEBATH_DASHBOARD_PROFILE__ = launch
     seedWebappSession('served-token')
     window.history.replaceState(null, '', `/?profile=${other}#/`)
     const fetchMock = vi.fn(async (_url: URL) => new Response(JSON.stringify({ ticket: 'one-use' }), { status: 200 }))

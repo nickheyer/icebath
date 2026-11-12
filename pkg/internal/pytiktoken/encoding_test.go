@@ -169,7 +169,7 @@ func TestReadFileLocalSchemesAndStatus(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(ranks, map[string]int{"a": 0, "b": 1, "ab": 2}) {
 		t.Fatalf("%v %v", ranks, err)
 	}
-	if _, err := readFile("gs://bucket/x"); err == nil || !strings.Contains(err.Error(), "blobfile is not installed") {
+	if _, err := readFile("gs://bucket/x"); err == nil || strings.Contains(err.Error(), "blobfile") {
 		t.Fatalf("%v", err)
 	}
 	srv := httptest.NewServer(http.NotFoundHandler())

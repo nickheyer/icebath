@@ -6,21 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-func TestMain(m *testing.M) {
-	hermetic.BlockExternalHTTP()
-	hermetic.BlockExternalDNS()
-	os.Exit(m.Run())
-}
 
 // Records of a scripted wizard run, the env saves and removals its fakes saw
 type setupIO struct {

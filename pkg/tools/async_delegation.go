@@ -391,7 +391,7 @@ func captureRoutingOrigin(env *Env) map[string]any {
 
 // Writes the running row of a fresh dispatch, then bounds the terminal history
 func persistDispatch(env *Env, record map[string]any) error {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return err
 	}
@@ -488,7 +488,7 @@ func pruneDurableRecords(env *Env) error {
 func persistCompletion(env *Env, event, result map[string]any) error {
 	event = asyncMap(RedactCompletionEvent(env, event, true))
 	result = asyncMap(RedactChildResult(env, result, nil, true))
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return err
 	}
@@ -524,7 +524,7 @@ func persistCompletion(env *Env, event, result map[string]any) error {
 // Durably records one finished child of a running multi child unit so a crash loses only unfinished children
 func RecordUnitChild(env *Env, delegationID string, entry map[string]any) error {
 	entry = asyncMap(RedactChildResult(env, entry, nil, true))
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return err
 	}
@@ -1050,7 +1050,7 @@ func asyncRemoteBool(v any, err error) (bool, error) {
 
 // Claims one pending completion across competing consumers and processes
 func ClaimCompletionDelivery(env *Env, delegationID, claimID string) (bool, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return false, err
 	}
@@ -1106,7 +1106,7 @@ func ClaimEventDelivery(env *Env, evt map[string]any, consumer string) (string, 
 
 // Releases a failed claim for retry, converging to dropped once the attempt budget is spent
 func ReleaseCompletionDelivery(env *Env, delegationID, claimID string) (bool, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return false, err
 	}
@@ -1141,7 +1141,7 @@ func ReleaseCompletionDelivery(env *Env, delegationID, claimID string) (bool, er
 
 // Returns an unadmitted completion to pending without spending a delivery attempt
 func DeferCompletionDelivery(env *Env, delegationID, claimID string) (bool, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return false, err
 	}
@@ -1156,7 +1156,7 @@ func DeferCompletionDelivery(env *Env, delegationID, claimID string) (bool, erro
 
 // Terminally drops a claimed completion whose target session is permanently gone
 func DropCompletionDelivery(env *Env, delegationID, claimID string) (bool, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return false, err
 	}
@@ -1172,7 +1172,7 @@ func DropCompletionDelivery(env *Env, delegationID, claimID string) (bool, error
 
 // Acknowledges acceptance for the consumer holding the claim
 func CompleteCompletionDelivery(env *Env, delegationID, claimID string) (bool, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return false, err
 	}
@@ -1263,7 +1263,7 @@ func eventDelivery(env *Env, fn func(env *Env, delegationID, claimID string) (bo
 
 // Durable row of a delegation with its result redacted, nil when unknown
 func GetDurableDelegation(env *Env, delegationID string) (map[string]any, error) {
-	remote, err := workerLedger()
+	remote, err := WorkerLedger()
 	if err != nil {
 		return nil, err
 	}
@@ -1649,7 +1649,7 @@ var asyncGetExecutorFn = asyncGetExecutor
 
 // Shared dispatch core, the capacity check and record insert under one lock hold so the cap is never exceeded
 func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[string]any, error) {
-	if _, err := workerLedger(); err != nil {
+	if _, err := WorkerLedger(); err != nil {
 		return nil, err
 	}
 	label := ""
@@ -1793,7 +1793,7 @@ func asyncDispatchAdmitted(ctx context.Context, env *Env, d AsyncDispatch) (map[
 		asyncRecordsMu.Lock()
 		asyncDeleteRecordLocked(delegationID)
 		asyncRecordsMu.Unlock()
-		remote, rerr := workerLedger()
+		remote, rerr := WorkerLedger()
 		if rerr != nil {
 			return nil, rerr
 		}

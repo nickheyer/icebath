@@ -56,7 +56,7 @@ func groupedTools(ctx context.Context, defs []map[string]any) *pyjson.Object {
 	grouped := pyjson.NewObject()
 	scope := tools.ScopeKey(home.Dir(ctx))
 	for _, def := range defs {
-		function, _ := def["function"].(map[string]any)
+		function, _ := pyjson.Dict(def["function"])
 		name, _ := function["name"].(string)
 		toolset := tools.Default.ToolsetForTool(ctx, scope, name)
 		if toolset == "" {
@@ -92,7 +92,7 @@ func policyTools(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	drops := tools.SessionPlatformToolDrops(policy.Platform)
 	kept := []map[string]any{}
 	for _, def := range defs {
-		function, _ := def["function"].(map[string]any)
+		function, _ := pyjson.Dict(def["function"])
 		if name, _ := function["name"].(string); !drops[name] {
 			kept = append(kept, def)
 		}

@@ -1,6 +1,6 @@
 /*
  * Duration formatters for the stage list. Pure functions, no React — kept out
- * of progress.tsx so tests-js can exercise them without dragging in the Tauri
+ * of progress.tsx so tests-js can exercise them without dragging in the Wails
  * renderer.
  */
 

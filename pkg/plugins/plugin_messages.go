@@ -325,3 +325,46 @@ func postMessage(ctx context.Context, c *Context, text string) *PluginMessage {
 	}
 	return handle
 }
+
+// Python type name a hosted plugin sees for the handle
+func (h *PluginMessage) PyTypeName() string { return "PluginMessage" }
+
+// Repr a hosted plugin sees for the handle
+func (h *PluginMessage) PyRepr() string { return h.String() }
+
+// Attribute of the handle a hosted plugin reads, edit and the async aedit as methods
+func (h *PluginMessage) HostAttr(_ context.Context, name string) (any, bool, bool, error) {
+	switch name {
+	case "ok":
+		return h.OK(), false, false, nil
+	case "error":
+		return h.ErrorCode(), false, false, nil
+	case "pending":
+		return h.Pending(), false, false, nil
+	case "message_id":
+		return h.MessageID(), false, false, nil
+	case "result":
+		return h.Result(), false, false, nil
+	case "edit":
+		return nil, true, false, nil
+	case "aedit":
+		return nil, true, true, nil
+	}
+	return nil, false, false, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginMessage' object has no attribute %s", pyrepr.Repr(name))}
+}
+
+// Runs edit or aedit for a hosted plugin with the text argument bound as Python binds it
+func (h *PluginMessage) HostCall(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
+	a, _, err := bindPyOn("PluginMessage", method, []pyParam{req("text")}, args, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	text := pyrepr.Str(a["text"])
+	switch method {
+	case "edit":
+		return h.Edit(ctx, text), nil
+	case "aedit":
+		return h.AEdit(ctx, text)
+	}
+	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'PluginMessage' object has no attribute %s", pyrepr.Repr(method))}
+}

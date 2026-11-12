@@ -1,14 +1,12 @@
 package config
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Runtime components whose start forbids binding a worker policy afterwards
@@ -59,7 +57,7 @@ func runtimeImported() bool {
 // Binds a troubleshooting worker bypass that always ignores user config, refusing ordinary execution
 func BindSafeWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*SafeWorkerPolicy, error) {
 	if !safeMode && !ignoreUserConfig {
-		return nil, errors.New("ordinary execution binds its config with BindWorkerConfig")
+		return nil, &WorkerPolicyError{"ValueError", "ordinary execution binds its config with _bind_worker_config"}
 	}
 	return bindWorkerPolicy(safeMode, true, cfg)
 }
@@ -69,26 +67,80 @@ func BindWorkerConfig(cfg map[string]any) (*SafeWorkerPolicy, error) {
 	return bindWorkerPolicy(false, false, cfg)
 }
 
+// TypeError, ValueError or RuntimeError a worker policy bind raises
+type WorkerPolicyError struct{ Kind, Msg string }
+
+func (e *WorkerPolicyError) Error() string { return e.Msg }
+
+// Python exception class the error stands for
+func (e *WorkerPolicyError) PyTypeName() string { return e.Kind }
+
 // Publishes the one policy of this process before any runtime component starts
 func bindWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*SafeWorkerPolicy, error) {
 	if cfg == nil {
-		return nil, errors.New("worker config must be a JSON object")
+		return nil, &WorkerPolicyError{"TypeError", "worker config must be a JSON object"}
 	}
-	serialized, err := json.Marshal(cfg)
+	serialized, err := pyjson.Dumps(orderedConfigJSON(cfg), pyjson.AllowNaN(false))
+	if errors.Is(err, pyjson.ErrOutOfRange) || errors.Is(err, pyjson.ErrCircular) {
+		return nil, &WorkerPolicyError{"ValueError", err.Error()}
+	}
 	if err != nil {
 		return nil, err
 	}
 	workerPolicyBind.Lock()
 	defer workerPolicyBind.Unlock()
 	if workerPolicy.Load() != nil {
-		return nil, errors.New("worker policy is already bound")
+		return nil, &WorkerPolicyError{"RuntimeError", "worker policy is already bound"}
 	}
 	if runtimeImported() {
-		return nil, errors.New("worker policy must bind before runtime imports")
+		return nil, &WorkerPolicyError{"RuntimeError", "worker policy must bind before runtime imports"}
 	}
-	policy := &SafeWorkerPolicy{pid: os.Getpid(), safeMode: safeMode, ignoreUserConfig: ignoreUserConfig, configJSON: string(serialized)}
+	policy := &SafeWorkerPolicy{pid: os.Getpid(), safeMode: safeMode, ignoreUserConfig: ignoreUserConfig, configJSON: serialized}
 	workerPolicy.Store(policy)
 	return policy, nil
+}
+
+// Config tree as pyjson values with every mapping kept in its recorded key order
+func orderedConfigJSON(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		obj := pyjson.NewObject()
+		for _, k := range MappingKeys(t) {
+			obj.Set(k, orderedConfigJSON(t[k]))
+		}
+		return obj
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = orderedConfigJSON(item)
+		}
+		return out
+	}
+	return v
+}
+
+// Decoded JSON as config mappings in document key order with integers as Go ints
+func ConfigFromJSON(v any) any {
+	switch t := v.(type) {
+	case *pyjson.Object:
+		out := make(map[string]any, len(t.Keys))
+		for _, k := range t.Keys {
+			out[k] = ConfigFromJSON(t.Vals[k])
+		}
+		SetMappingKeys(out, t.Keys)
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = ConfigFromJSON(item)
+		}
+		return out
+	case int64:
+		if int64(int(t)) == t {
+			return int(t)
+		}
+	}
+	return v
 }
 
 // Clears the process worker policy and runtime marks, the seam hermes tests reach by replacing _policy
@@ -103,7 +155,7 @@ func ResetWorkerPolicyForTests() {
 func currentSafeWorkerPolicy() *SafeWorkerPolicy {
 	policy := workerPolicy.Load()
 	if policy != nil && policy.pid != os.Getpid() {
-		panic("worker policy cannot cross a fork; use a fresh exec")
+		panic(&WorkerPolicyError{"RuntimeError", "worker policy cannot cross a fork; use a fresh exec"})
 	}
 	return policy
 }
@@ -123,35 +175,9 @@ func WorkerConfigSnapshot() map[string]any {
 	if policy == nil {
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader([]byte(policy.configJSON)))
-	dec.UseNumber()
-	var out map[string]any
-	if err := dec.Decode(&out); err != nil {
+	decoded, err := pyjson.Loads(policy.configJSON)
+	if err != nil {
 		panic("worker config snapshot does not decode: " + err.Error())
 	}
-	return pyJSONNumbers(out).(map[string]any)
-}
-
-// Value with JSON numbers as Python json gives them, int for integral literals and float otherwise
-func pyJSONNumbers(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		for k, val := range x {
-			x[k] = pyJSONNumbers(val)
-		}
-	case []any:
-		for i, val := range x {
-			x[i] = pyJSONNumbers(val)
-		}
-	case json.Number:
-		s := x.String()
-		if !strings.ContainsAny(s, ".eE") {
-			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-				return int(n)
-			}
-		}
-		f, _ := strconv.ParseFloat(s, 64)
-		return f
-	}
-	return v
+	return ConfigFromJSON(decoded).(map[string]any)
 }

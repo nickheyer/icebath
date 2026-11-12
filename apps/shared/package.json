@@ -11,6 +11,7 @@
     "./charge-settlement": "./src/charge-settlement.ts",
     "./color": "./src/color.ts",
     "./format": "./src/format.ts",
+    "./storage-migration": "./src/storage-migration.ts",
     "./fuzzy": "./src/fuzzy.ts",
     "./gateway-events": "./src/gateway-events.ts",
     "./i18n": "./src/i18n.ts",

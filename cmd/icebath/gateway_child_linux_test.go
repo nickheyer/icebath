@@ -54,7 +54,7 @@ func gatewayChildEnv(h, user string, extra ...string) []string {
 	return append(env, extra...)
 }
 
-// Starts the test binary with the arguments, output merged into a file, interrupted at cleanup when still running
+// Starts the test binary named icebath with the arguments so its command line reads as a gateway, interrupted at cleanup
 func startGatewayChild(t *testing.T, logPath string, env []string, args ...string) *gatewayChild {
 	t.Helper()
 	logFile, err := os.Create(logPath)
@@ -62,7 +62,7 @@ func startGatewayChild(t *testing.T, logPath string, env []string, args ...strin
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { logFile.Close() })
-	child := &gatewayChild{process: exec.Command(os.Args[0], args...), exited: make(chan error, 1), logPath: logPath}
+	child := &gatewayChild{process: exec.Command(cliProgramBinary(t), args...), exited: make(chan error, 1), logPath: logPath}
 	child.process.Env = env
 	child.process.Stdout, child.process.Stderr = logFile, logFile
 	if err := child.process.Start(); err != nil {

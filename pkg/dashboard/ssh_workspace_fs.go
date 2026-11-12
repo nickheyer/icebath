@@ -201,7 +201,7 @@ func (f *SshWorkspaceFs) execute(command string, stdinData *string, timeout int)
 
 // Error code of the first marker line in remote output, fallback when none
 func sshFsErrorCode(output, fallback string) string {
-	const marker = "__HERMES_FS_ERROR__:"
+	const marker = "__ICEBATH_FS_ERROR__:"
 	for _, line := range pystr.Splitlines(output, false) {
 		if strings.HasPrefix(line, marker) {
 			if code := pystr.Strip(line[len(marker):]); code != "" {
@@ -220,9 +220,9 @@ func (f *SshWorkspaceFs) ListDir(path string, hiddenNames map[string]bool) (map[
 		return nil, err
 	}
 	command := "\np=" + pyshlex.Quote(target) + `
-if [ ! -e "$p" ] && [ ! -L "$p" ]; then printf '__HERMES_FS_ERROR__:ENOENT\n'; exit 44; fi
-if [ ! -d "$p" ]; then printf '__HERMES_FS_ERROR__:ENOTDIR\n'; exit 45; fi
-if [ ! -r "$p" ]; then printf '__HERMES_FS_ERROR__:EACCES\n'; exit 46; fi
+if [ ! -e "$p" ] && [ ! -L "$p" ]; then printf '__ICEBATH_FS_ERROR__:ENOENT\n'; exit 44; fi
+if [ ! -d "$p" ]; then printf '__ICEBATH_FS_ERROR__:ENOTDIR\n'; exit 45; fi
+if [ ! -r "$p" ]; then printf '__ICEBATH_FS_ERROR__:EACCES\n'; exit 46; fi
 for child in "$p"/* "$p"/.[!.]* "$p"/..?*; do
   [ -e "$child" ] || [ -L "$child" ] || continue
   name=${child##*/}
@@ -298,12 +298,12 @@ func (f *SshWorkspaceFs) ReadBytes(path string, maxBytes int64, readLimit *int64
 		readCommand = fmt.Sprintf(`set -o pipefail; head -c %d < "$p" | base64`, *readLimit)
 	}
 	command := "\np=" + pyshlex.Quote(target) + `
-if [ ! -e "$p" ] && [ ! -L "$p" ]; then printf '__HERMES_FS_ERROR__:ENOENT\n'; exit 44; fi
-if [ ! -f "$p" ]; then printf '__HERMES_FS_ERROR__:ENOTREG\n'; exit 45; fi
-size=$(stat -c %s "$p" 2>/dev/null || stat -f %z "$p" 2>/dev/null) || { printf '__HERMES_FS_ERROR__:EACCES\n'; exit 46; }
-if [ "$size" -gt ` + strconv.FormatInt(maxBytes, 10) + ` ]; then printf '__HERMES_FS_ERROR__:EFBIG\n'; exit 47; fi
-printf '__HERMES_FS_SIZE__:%s\n' "$size"
-{ ` + readCommand + `; } || { printf '__HERMES_FS_ERROR__:EACCES\n'; exit 46; }
+if [ ! -e "$p" ] && [ ! -L "$p" ]; then printf '__ICEBATH_FS_ERROR__:ENOENT\n'; exit 44; fi
+if [ ! -f "$p" ]; then printf '__ICEBATH_FS_ERROR__:ENOTREG\n'; exit 45; fi
+size=$(stat -c %s "$p" 2>/dev/null || stat -f %z "$p" 2>/dev/null) || { printf '__ICEBATH_FS_ERROR__:EACCES\n'; exit 46; }
+if [ "$size" -gt ` + strconv.FormatInt(maxBytes, 10) + ` ]; then printf '__ICEBATH_FS_ERROR__:EFBIG\n'; exit 47; fi
+printf '__ICEBATH_FS_SIZE__:%s\n' "$size"
+{ ` + readCommand + `; } || { printf '__ICEBATH_FS_ERROR__:EACCES\n'; exit 46; }
 `
 	result, err := f.execute(command, nil, 0)
 	if err != nil {
@@ -313,7 +313,7 @@ printf '__HERMES_FS_SIZE__:%s\n' "$size"
 		return nil, 0, "", &SshWorkspaceFsError{Code: sshFsErrorCode(result.Output, "EIO")}
 	}
 	lines := pystr.Splitlines(result.Output, false)
-	if len(lines) == 0 || !strings.HasPrefix(lines[0], "__HERMES_FS_SIZE__:") {
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "__ICEBATH_FS_SIZE__:") {
 		return nil, 0, "", &SshWorkspaceFsError{Code: "EIO", Msg: "SSH filesystem did not return a file size"}
 	}
 	size, err := sshFsInt(strings.SplitN(lines[0], ":", 2)[1])
@@ -343,11 +343,11 @@ func (f *SshWorkspaceFs) InspectFile(path string) (string, int64, error) {
 		return "", 0, err
 	}
 	command := "\np=" + pyshlex.Quote(target) + `
-target=$(realpath "$p" 2>/dev/null || readlink -f "$p" 2>/dev/null) || { printf '__HERMES_FS_ERROR__:ENOENT\n'; exit 44; }
-if [ ! -f "$target" ]; then printf '__HERMES_FS_ERROR__:ENOTREG\n'; exit 45; fi
-size=$(stat -c %s "$target" 2>/dev/null || stat -f %z "$target" 2>/dev/null) || { printf '__HERMES_FS_ERROR__:EACCES\n'; exit 46; }
-printf '__HERMES_FS_TARGET__:%s\n' "$(printf '%s' "$target" | base64 | tr -d '\r\n')"
-printf '__HERMES_FS_SIZE__:%s\n' "$size"
+target=$(realpath "$p" 2>/dev/null || readlink -f "$p" 2>/dev/null) || { printf '__ICEBATH_FS_ERROR__:ENOENT\n'; exit 44; }
+if [ ! -f "$target" ]; then printf '__ICEBATH_FS_ERROR__:ENOTREG\n'; exit 45; fi
+size=$(stat -c %s "$target" 2>/dev/null || stat -f %z "$target" 2>/dev/null) || { printf '__ICEBATH_FS_ERROR__:EACCES\n'; exit 46; }
+printf '__ICEBATH_FS_TARGET__:%s\n' "$(printf '%s' "$target" | base64 | tr -d '\r\n')"
+printf '__ICEBATH_FS_SIZE__:%s\n' "$size"
 `
 	result, err := f.execute(command, nil, 0)
 	if err != nil {
@@ -358,10 +358,10 @@ printf '__HERMES_FS_SIZE__:%s\n' "$size"
 	}
 	targetLine, sizeLine := "", ""
 	for _, line := range pystr.Splitlines(result.Output, false) {
-		if targetLine == "" && strings.HasPrefix(line, "__HERMES_FS_TARGET__:") {
+		if targetLine == "" && strings.HasPrefix(line, "__ICEBATH_FS_TARGET__:") {
 			targetLine = line
 		}
-		if sizeLine == "" && strings.HasPrefix(line, "__HERMES_FS_SIZE__:") {
+		if sizeLine == "" && strings.HasPrefix(line, "__ICEBATH_FS_SIZE__:") {
 			sizeLine = line
 		}
 	}
@@ -452,8 +452,8 @@ func (f *SshWorkspaceFs) WriteText(path, content string, maxBytes int64) (string
 	_, _ = rand.Read(suffix)
 	tempPath := pypath.PosixJoin(parent, "."+pypath.PosixBasename(target)+".hermes-tmp-"+hex.EncodeToString(suffix)[:12])
 	command := "\ntarget=" + pyshlex.Quote(target) + "\nparent=" + pyshlex.Quote(parent) + "\ntmp=" + pyshlex.Quote(tempPath) + `
-if [ ! -d "$parent" ]; then printf '__HERMES_FS_ERROR__:ENOENT\n'; exit 44; fi
-if [ -e "$target" ] && [ ! -f "$target" ]; then printf '__HERMES_FS_ERROR__:ENOTREG\n'; exit 45; fi
+if [ ! -d "$parent" ]; then printf '__ICEBATH_FS_ERROR__:ENOENT\n'; exit 44; fi
+if [ -e "$target" ] && [ ! -f "$target" ]; then printf '__ICEBATH_FS_ERROR__:ENOTREG\n'; exit 45; fi
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 cat > "$tmp" && mv -f "$tmp" "$target"
 `

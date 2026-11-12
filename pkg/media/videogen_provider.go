@@ -322,9 +322,6 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 		return videoErrorResponse(p.envKey+" is not set", "missing_credentials", name, "", "", ""), nil
 	}
 	newClient := newOpenAIClientHook
-	if newClient == nil {
-		return videoErrorResponse("openai Python package not installed. Run: icebath pm repair", "missing_dependency", name, "", "", ""), nil
-	}
 	modelID := req.Model
 	if modelID == "" {
 		modelID = p.DefaultModel()

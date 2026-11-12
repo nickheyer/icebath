@@ -13,8 +13,8 @@ import { resolveSpeakStreamUrl } from './voice-playback'
 // sent streaming voice to its whole-reply fallback every time.
 
 type MutableWindow = Window & {
-  __HERMES_AUTH_REQUIRED__?: boolean
-  __HERMES_BASE_PATH__?: string
+  __ICEBATH_AUTH_REQUIRED__?: boolean
+  __ICEBATH_BASE_PATH__?: string
   hermesDesktop?: Window['hermesDesktop']
 }
 
@@ -42,8 +42,8 @@ const minted = (fetchMock: ReturnType<typeof serveTickets>) =>
 
 afterEach(() => {
   const win = mutableWindow()
-  delete win.__HERMES_AUTH_REQUIRED__
-  delete win.__HERMES_BASE_PATH__
+  delete win.__ICEBATH_AUTH_REQUIRED__
+  delete win.__ICEBATH_BASE_PATH__
   clearWebappSession()
   Reflect.deleteProperty(win, 'hermesDesktop')
   document.documentElement.removeAttribute('data-hermes-desktop-host')
@@ -56,8 +56,8 @@ afterEach(() => {
 describe('browser-hosted Desktop voice streams', () => {
   it('speaks on a ticket minted for the speech stream, never the gateway ticket', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_AUTH_REQUIRED__ = true
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     const fetchMock = serveTickets()
     expect(installBrowserDesktopBridge()).toBe(true)
     setApiRequestProfile('worker-a')
@@ -93,12 +93,12 @@ describe('browser-hosted Desktop voice streams', () => {
     expect(others).toEqual([])
     expect(mint.url.pathname).toBe('/api/webapp/socket-ticket')
     expect(mint.url.searchParams.get('socket')).toBe('transcribe-stream')
-    expect(new Headers(mint.init?.headers).get('X-Hermes-Session-Token')).toBe('served-token')
+    expect(new Headers(mint.init?.headers).get('X-Icebath-Session-Token')).toBe('served-token')
   })
 
   it('leaves the gateway socket on its own ticket', async () => {
     const win = mutableWindow()
-    win.__HERMES_AUTH_REQUIRED__ = true
+    win.__ICEBATH_AUTH_REQUIRED__ = true
     const fetchMock = serveTickets()
     expect(installBrowserDesktopBridge()).toBe(true)
 

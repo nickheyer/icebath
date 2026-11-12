@@ -240,7 +240,7 @@ rm "$HOME/.icebath/icebath-agent/.icebath-bootstrap-complete"
 # Rebuild a broken Python venv
 rm -rf "$HOME/.icebath/icebath-agent/venv"
 # Reset a stuck macOS microphone prompt (macOS only)
-tccutil reset Microphone com.nousresearch.hermes
+tccutil reset Microphone ai.icebath
 ```
 
 **Windows (PowerShell):**

@@ -350,7 +350,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		req.Header.Set("X-Hermes-Session-Id", sessionID)
+		req.Header.Set("X-Icebath-Session-Id", sessionID)
 		resp, err := client.Do(req)
 		if err != nil {
 			var netErr net.Error

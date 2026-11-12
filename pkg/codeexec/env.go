@@ -279,25 +279,43 @@ var runtimeInterpreter = resolveRuntimeInterpreter
 
 // Selected managed venv python, else the pinned toolchain python with its probed prefix
 func resolveRuntimeInterpreter(ctx context.Context, env *tools.Env) (interpreter, error) {
-	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
+	python, venv, err := runtimePython(ctx)
 	if err != nil {
 		return interpreter{}, err
 	}
-	if python := pm.VenvPython(venv); isRegularFile(python) {
+	if venv != "" {
 		prefix, err := pypath.Realpath(venv, pypath.Lax)
 		if err != nil {
 			return interpreter{}, err
 		}
 		return interpreter{Python: python, Prefix: prefix}, nil
 	}
+	return interpreter{Python: python, Prefix: pythonEnvironmentPrefix(env, python)}, nil
+}
+
+// Interpreter execute_code runs with the venv holding it, empty venv for the pinned toolchain python
+func runtimePython(ctx context.Context) (string, string, error) {
+	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
+	if err != nil {
+		return "", "", err
+	}
+	if python := pm.VenvPython(venv); isRegularFile(python) {
+		return python, venv, nil
+	}
 	_, pinned, found, err := pm.Toolchain(ctx, false, false)
 	if err != nil {
-		return interpreter{}, err
+		return "", "", err
 	}
 	if !found {
-		return interpreter{}, errors.New("no Python interpreter is installed for execute_code")
+		return "", "", errors.New("no Python interpreter is installed for execute_code")
 	}
-	return interpreter{Python: pinned, Prefix: pythonEnvironmentPrefix(env, pinned)}, nil
+	return pinned, "", nil
+}
+
+// Path of the managed Python interpreter execute_code runs, an error when none is installed
+func RuntimePython(ctx context.Context) (string, error) {
+	python, _, err := runtimePython(ctx)
+	return python, err
 }
 
 func isRegularFile(p string) bool {

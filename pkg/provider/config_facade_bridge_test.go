@@ -73,7 +73,10 @@ func TestGetEnvValueScope(t *testing.T) {
 }
 
 func TestCoreDeclaredEnvNamesExcludePlatformInjection(t *testing.T) {
-	core := configFacadeCoreDeclaredEnvNames()
+	core, err := config.CoreDeclaredEnvNames()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name := range config.StaticCoreEnvNames() {
 		if !core[name] {
 			t.Fatalf("static name %s missing", name)

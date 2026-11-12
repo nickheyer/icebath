@@ -220,7 +220,7 @@ describe('startUnrestoredTileTitleBackfill retires dead tiles (#125678)', () => 
 
     await vi.waitFor(() => expect($sessionTiles.get()).toEqual([]))
     expect(get.mock.calls.map(call => call[1])).toEqual(['default', 'writer'])
-    expect(window.localStorage.getItem('hermes.desktop.sessionTiles.v2') ?? '').not.toContain('dead-chat')
+    expect(window.localStorage.getItem('icebath.desktop.sessionTiles.v2') ?? '').not.toContain('dead-chat')
     reopenLastClosedTile()
     expect($sessionTiles.get()).toEqual([])
   })

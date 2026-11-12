@@ -11,6 +11,7 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // ErrInterrupt is the KeyboardInterrupt of a prompt or menu
@@ -69,10 +70,8 @@ func (c *Console) getenv(name string) (string, bool) {
 	return os.LookupEnv(name)
 }
 
-func fileIsTerminal(v any) bool {
-	f, ok := v.(*os.File)
-	return ok && xterm.IsTerminal(f.Fd())
-}
+// Reports isatty of a stream, the mirror wrapping a terminal included
+func fileIsTerminal(v any) bool { return pysys.Isatty(v) }
 
 func (c *Console) stdinTTY() bool {
 	if c.StdinTTY != nil {
@@ -101,11 +100,11 @@ func (c *Console) termSize() (int, int, error) {
 	if c.TermSize != nil {
 		return c.TermSize()
 	}
-	f, ok := c.Out.(*os.File)
+	fd, ok := pysys.Fileno(c.Out)
 	if !ok {
 		return 0, 0, errors.New("output is not a terminal")
 	}
-	w, h, err := xterm.GetSize(f.Fd())
+	w, h, err := xterm.GetSize(fd)
 	return h, w, err
 }
 

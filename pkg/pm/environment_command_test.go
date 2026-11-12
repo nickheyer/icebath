@@ -31,7 +31,8 @@ func ecMain(args EnvironmentArgs) (int, error) {
 func ecProject(t *testing.T) {
 	t.Helper()
 	isolateHome(t)
-	peSwap(t, &repoRoot, func() string { return peReferences })
+	references := peReferences(t, "pyproject.toml")
+	peSwap(t, &repoRoot, func() string { return references })
 }
 
 func TestStdoutIsOnlyTheInterpreterForCommandSubstitution(t *testing.T) {

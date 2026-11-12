@@ -52,7 +52,7 @@ func (c *CLI) run() {
 
 	if !c.tuiStdinUsable() {
 		runCleanup(c.ctx, c.env, true)
-		c.printExitSummary(false)
+		c.printExitSummary(true)
 		return
 	}
 	func() {

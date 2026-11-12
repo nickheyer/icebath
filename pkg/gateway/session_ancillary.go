@@ -207,7 +207,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		names := make([]string, 0, len(defs))
 		byName := map[string]map[string]any{}
 		for _, def := range defs {
-			function, _ := def["function"].(map[string]any)
+			function, _ := pyjson.Dict(def["function"])
 			name, _ := function["name"].(string)
 			names = append(names, name)
 			byName[name] = function

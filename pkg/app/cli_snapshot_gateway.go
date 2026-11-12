@@ -25,7 +25,7 @@ func pauseSnapshotOwner(h, controlHome string, identity *pyjson.Object) (bool, e
 	name := filepath.Base(h)
 	if satellite {
 		marker := profiles.ParkedMarkerPath(h)
-		if f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644); err == nil {
+		if f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o666); err == nil {
 			f.Close()
 			ours = true
 		} else if !errors.Is(err, os.ErrExist) {

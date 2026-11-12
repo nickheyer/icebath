@@ -68,7 +68,7 @@ func snapshotText(snapshot map[string]any, key string) string {
 }
 
 // Route a resumed session runs on, false when the stored model is absent or already current
-func storedSessionRoute(c *CLI, sessionMeta map[string]any, currentModel, currentProvider string) (model, prov, baseURL, apiMode string, providerChanged, ok bool) {
+func storedSessionRoute(ctx context.Context, sessionMeta map[string]any, currentModel, currentProvider string) (model, prov, baseURL, apiMode string, providerChanged, ok bool) {
 	stored := pystr.Strip(cliStr(sessionMeta["model"], ""))
 	if stored == "" {
 		return "", "", "", "", false, false
@@ -77,7 +77,7 @@ func storedSessionRoute(c *CLI, sessionMeta map[string]any, currentModel, curren
 	baseURL = cliStr(runtime.GetOr("base_url", ""), "")
 	apiMode = cliStr(runtime.GetOr("api_mode", ""), "")
 	storedProvider := cliStr(runtime.GetOr("provider", ""), "")
-	prov = healBareCustomProvider(c, storedProvider, baseURL, stored)
+	prov = healBareCustomProvider(ctx, storedProvider, baseURL, stored)
 	if prov != storedProvider {
 		baseURL = ""
 		if prov == "" {
@@ -91,7 +91,7 @@ func storedSessionRoute(c *CLI, sessionMeta map[string]any, currentModel, curren
 	if provider.IsForeignProviderEndpoint(prov, baseURL) {
 		baseURL, apiMode = "", ""
 	}
-	if derived, ok := provider.ModelDerivedAPIMode(c.ctx, prov, stored, ""); ok {
+	if derived, ok := provider.ModelDerivedAPIMode(ctx, prov, stored, ""); ok {
 		apiMode = derived
 		baseURL = provider.NormalizeOpenCodeBaseURL(prov, provider.APIMode(apiMode), baseURL)
 	}
@@ -99,7 +99,7 @@ func storedSessionRoute(c *CLI, sessionMeta map[string]any, currentModel, curren
 }
 
 // Durable custom identity of a bare custom provider, empty when nothing heals it
-func healBareCustomProvider(c *CLI, prov, baseURL, model string) (healed string) {
+func healBareCustomProvider(ctx context.Context, prov, baseURL, model string) (healed string) {
 	if strings.ToLower(pystr.Strip(prov)) != "custom" {
 		return prov
 	}
@@ -108,7 +108,7 @@ func healBareCustomProvider(c *CLI, prov, baseURL, model string) (healed string)
 			healed = ""
 		}
 	}()
-	return provider.CanonicalCustomIdentity(c.ctx, baseURL, "", model, "")
+	return provider.CanonicalCustomIdentity(ctx, baseURL, "", model, "")
 }
 
 // Restores the model and provider recorded on the session row unless the launch named an explicit model
@@ -116,7 +116,7 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 	if !cliTruthy(sessionMeta["model"]) || c.explicitModelOverride {
 		return
 	}
-	storedModel, storedProvider, storedBaseURL, storedAPIMode, providerChanged, ok := storedSessionRoute(c, sessionMeta, c.model, c.provider)
+	storedModel, storedProvider, storedBaseURL, storedAPIMode, providerChanged, ok := storedSessionRoute(c.ctx, sessionMeta, c.model, c.provider)
 	if !ok {
 		return
 	}
@@ -408,7 +408,7 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 			providers = append(providers, m)
 		}
 	}
-	mergeGatewayPreflightWarning(c.ctx, agentGateway(c.agent), result, append([]map[string]any(nil), c.conversationHistory...), providers, c.agent.ConfigContextLength())
+	mergeGatewayPreflightWarning(c.ctx, agentGateway(c.agent), result, append([]map[string]any{}, c.conversationHistory...), providers, c.agent.ConfigContextLength())
 }
 
 // Stages a switch onto the CLI fields then swaps the live agent, rolling the CLI back when the swap fails
@@ -611,7 +611,7 @@ func persistModelSwitch(c *CLI, db modelSwitchWriter, result *provider.ModelSwit
 
 // Model config patch of a session scoped switch, the route nested and top level with stale keys set to None
 func modelSwitchSessionPatch(c *CLI, result *provider.ModelSwitchResult) map[string]any {
-	route := map[string]any{"provider": noneIfEmpty(healBareCustomProvider(c, result.TargetProvider, result.BaseURL, result.NewModel)),
+	route := map[string]any{"provider": noneIfEmpty(healBareCustomProvider(c.ctx, result.TargetProvider, result.BaseURL, result.NewModel)),
 		"base_url": noneIfEmpty(result.BaseURL), "api_mode": noneIfEmpty(result.APIMode)}
 	patch := map[string]any{"gateway_runtime": route}
 	for k, v := range route {

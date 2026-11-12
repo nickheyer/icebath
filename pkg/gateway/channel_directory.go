@@ -205,6 +205,11 @@ func directoryChannels(ctx context.Context, platformName string, iterateFalsy bo
 	return out, nil
 }
 
+// Channel type of a chat id in the directory, nil when unknown
+func LookupChannelType(ctx context.Context, platformName, chatID string) (any, error) {
+	return lookupChannelType(ctx, platformName, chatID)
+}
+
 // Channel type of a chat id in the directory, empty when unknown
 func lookupChannelType(ctx context.Context, platformName, chatID string) (any, error) {
 	channels, err := directoryChannels(ctx, platformName, true)

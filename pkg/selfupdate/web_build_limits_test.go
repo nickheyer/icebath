@@ -106,12 +106,12 @@ func TestWebBuildLimitsLightModeTightensCaps(t *testing.T) {
 
 func TestBuildSourceWebAppliesLimits(t *testing.T) {
 	captured := map[string]any{}
-	prev := runSourceScript
-	runSourceScript = func(_ context.Context, _, _ string, _ []string, env map[string]string, label string) error {
-		captured["env"], captured["label"] = env, label
+	prev := compileSourceWeb
+	compileSourceWeb = func(_ context.Context, st *frontendStep, _, _, _ string, env map[string]string) error {
+		captured["env"], captured["label"] = env, st.label
 		return nil
 	}
-	t.Cleanup(func() { runSourceScript = prev })
+	t.Cleanup(func() { compileSourceWeb = prev })
 	wblClearEnv(t, "NODE_OPTIONS", "RAYON_NUM_THREADS")
 	if err := BuildSourceWeb(context.Background(), t.TempDir(), map[string]string{"PATH": "/bin"}, ""); err != nil {
 		t.Fatal(err)

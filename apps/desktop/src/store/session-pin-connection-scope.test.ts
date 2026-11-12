@@ -20,7 +20,7 @@ import { $sessions, setConnection } from '@/store/session'
 
 import { resetSessionPinMirror, watchSessionPins } from './session-pin-sync'
 
-const PIN_KEY = 'hermes.desktop.pinnedSessions'
+const PIN_KEY = 'icebath.desktop.pinnedSessions'
 
 const remote = (profile: string, baseUrl = 'https://gw.example:8443'): HermesConnection =>
   ({

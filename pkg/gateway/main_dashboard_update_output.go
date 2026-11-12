@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Root home whose logs directory holds update.log, swapped by tests
@@ -43,40 +43,42 @@ func (s *UpdateOutputStream) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-// Flushes the log and the original, a failing original marked broken
-func (s *UpdateOutputStream) Flush() {
+// Flushes the log and the original, a failing original marked broken and never reported
+func (s *UpdateOutputStream) Flush() error {
 	if f, ok := s.log.(interface{ Sync() error }); ok {
 		_ = f.Sync()
-	} else if f, ok := s.log.(interface{ Flush() error }); ok {
+	} else if f, ok := pysys.Attr[interface{ Flush() error }](s.log); ok {
 		_ = f.Flush()
 	}
 	if s.originalBroken {
-		return
+		return nil
 	}
-	if f, ok := s.original.(interface{ Flush() error }); ok {
+	if f, ok := pysys.Attr[interface{ Flush() error }](s.original); ok {
 		if err := f.Flush(); err != nil {
 			s.originalBroken = true
 		}
 	}
+	return nil
 }
 
-// True when the original is still usable and is a terminal
+// True when the original is still usable and reports itself a terminal
 func (s *UpdateOutputStream) IsATTY() bool {
 	if s.originalBroken {
 		return false
 	}
-	fd, ok := s.Fd()
-	return ok && xterm.IsTerminal(fd)
+	return pysys.Isatty(s.original)
 }
 
-// File descriptor of the original stream, false when it has none
-func (s *UpdateOutputStream) Fd() (uintptr, bool) {
-	f, ok := s.original.(interface{ Fd() uintptr })
-	if !ok {
-		return 0, false
+// Descriptor of the original stream, the invalid descriptor when the original has none
+func (s *UpdateOutputStream) Fd() uintptr {
+	if fd, ok := pysys.Fileno(s.original); ok {
+		return fd
 	}
-	return f.Fd(), true
+	return ^uintptr(0)
 }
+
+// Original stream every capability the mirror does not define itself resolves on
+func (s *UpdateOutputStream) Unwrap() io.Writer { return s.original }
 
 // True once a write or flush to the original failed
 func (s *UpdateOutputStream) OriginalBroken() bool { return s.originalBroken }

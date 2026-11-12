@@ -272,13 +272,16 @@ func extractProfiles(ctx context.Context, pluginDir, moduleName, python string) 
 	}
 	env["HOME"], env["USERPROFILE"], env["ICEBATH_HOME"], env["PYTHONPATH"], env[HostProcessEnv] = userHome, userHome, h, pythonPath, "1"
 	if networkDenied(ctx) {
-		env[hostDenyNetworkEnv] = "1"
+		env[HostDenyNetworkEnv] = "1"
 	}
 	launcher, err := hostLauncher(h)
 	if err != nil {
 		return map[string]any{"error": fmt.Sprintf("profile extraction failed: %v", err)}
 	}
-	argv := append(append([]string{}, launcher...), python, "-P", "-m", hostChildModule, "--extract-profiles", pluginDir, moduleName)
+	argv, err := hostChildArgv(launcher, python, "--extract-profiles", pluginDir, moduleName)
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf("profile extraction failed: %v", err)}
+	}
 	runCtx, cancel := context.WithTimeout(context.Background(), hostExtractTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)

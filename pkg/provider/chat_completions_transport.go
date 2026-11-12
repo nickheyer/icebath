@@ -136,10 +136,11 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 		strip["tool_calls"] = true
 	} else if isList {
 		for idx, tc := range list {
-			tcm, ok := tc.(map[string]any)
+			tco, ok := pyjson.AsObject(tc)
 			if !ok {
 				continue
 			}
+			tcm := tco.Vals
 			drop := map[string]bool{}
 			for _, k := range ccStripTCKeys {
 				if _, ok := tcm[k]; ok {
@@ -163,16 +164,20 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 			if copied == nil {
 				copied = append([]any(nil), list...)
 			}
-			next := make(map[string]any, len(tcm))
-			for k, v := range tcm {
+			next := pyjson.NewObject()
+			for _, k := range tco.Keys {
 				if !drop[k] {
-					next[k] = v
+					next.Set(k, tcm[k])
 				}
 			}
 			if key != "" {
-				next["id"] = mapped
+				next.Set("id", mapped)
 			}
-			copied[idx] = next
+			if _, plain := tc.(map[string]any); plain {
+				copied[idx] = next.Vals
+			} else {
+				copied[idx] = next
+			}
 		}
 		if copied != nil {
 			if _, typed := raw.([]map[string]any); typed {

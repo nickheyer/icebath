@@ -288,6 +288,7 @@ func HostCallable(fn func(ctx context.Context, args []any, kwargs map[string]any
 // Registered parent callable and the child generation that holds it
 type parentCallableSlot struct {
 	fn         *hostCallable
+	obj        HostObjectFacade
 	event      weak.Pointer[HostEvent]
 	generation int
 }
@@ -298,7 +299,8 @@ func (h *PluginHost) parentRef(obj any) map[string]any {
 		return h.eventRef(e)
 	}
 	f, ok := obj.(*hostCallable)
-	if !ok || f == nil {
+	live, isObject := obj.(HostObjectFacade)
+	if (!ok || f == nil) && (!isObject || live == nil) {
 		return nil
 	}
 	h.mu.Lock()
@@ -307,9 +309,14 @@ func (h *PluginHost) parentRef(obj any) map[string]any {
 	h.stateMu.Lock()
 	h.parentIDs++
 	id := h.parentIDs
-	h.parents[id] = parentCallableSlot{fn: f, generation: generation}
+	if ok && f != nil {
+		h.parents[id] = parentCallableSlot{fn: f, generation: generation}
+		h.stateMu.Unlock()
+		return map[string]any{"__parent_callable__": id}
+	}
+	h.parents[id] = parentCallableSlot{obj: live, generation: generation}
 	h.stateMu.Unlock()
-	return map[string]any{"__parent_callable__": id}
+	return map[string]any{"__parent_object__": id, "type": live.PyTypeName()}
 }
 
 // Wire form of call arguments with parent callables registered for the child
@@ -345,7 +352,7 @@ func (h *PluginHost) releaseParentCallables(ids []any) {
 	h.stateMu.Lock()
 	defer h.stateMu.Unlock()
 	for _, raw := range ids {
-		if id, ok := wireInt(raw); ok && h.parents[id].fn != nil {
+		if id, ok := wireInt(raw); ok && (h.parents[id].fn != nil || h.parents[id].obj != nil) {
 			delete(h.parents, id)
 		}
 	}

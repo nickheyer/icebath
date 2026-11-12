@@ -38,7 +38,7 @@ export function onThemeRepaint(fn: () => void): () => void {
       // applyTheme also writes these attributes when only customCSS changes.
       // Even same-value attribute writes must still publish that repaint.
       // Authored CSS can derive colors/fonts from geometry variables too.
-      const customCSS = document.getElementById('hermes-desktop-custom-css')?.textContent
+      const customCSS = document.getElementById('icebath-desktop-custom-css')?.textContent
 
       const repaint =
         Boolean(customCSS) || nextStyle !== previousStyle || records.some(record => record.attributeName !== 'style')

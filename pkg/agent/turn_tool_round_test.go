@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -61,7 +63,11 @@ func TestFinalStagedBatchNeverReachesWireAllProviderPrefixed(t *testing.T) {
 			wire := converted.([]map[string]any)
 			var ids []string
 			for _, c := range wire[0]["tool_calls"].([]any) {
-				ids = append(ids, c.(map[string]any)["id"].(string))
+				call, ok := c.(*pyjson.Object)
+				if !ok || !slices.Equal(call.Keys, []string{"id", "type", "function"}) {
+					t.Fatalf("wire tool call %#v", c)
+				}
+				ids = append(ids, call.Vals["id"].(string))
 			}
 			if len(ids) != 2 {
 				t.Fatalf("ids %v", ids)
@@ -154,10 +160,13 @@ func mintRows(t *testing.T, a *AIAgent, resp *provider.Response) []map[string]an
 	var stored []map[string]any
 	for i, tc := range resp.Message.ToolCalls {
 		row := a.assistantToolCallDict(tc, i)
-		if row["id"] != state.CoalesceToolCallID(tc) {
-			t.Fatalf("row id %v, result id %v", row["id"], state.CoalesceToolCallID(tc))
+		if row.Vals["id"] != state.CoalesceToolCallID(tc) {
+			t.Fatalf("row id %v, result id %v", row.Vals["id"], state.CoalesceToolCallID(tc))
 		}
-		stored = append(stored, row)
+		if !slices.Equal(row.Keys[:5], []string{"id", "call_id", "response_item_id", "type", "function"}) {
+			t.Fatalf("row key order %q", row.Keys)
+		}
+		stored = append(stored, row.Vals)
 	}
 	return stored
 }

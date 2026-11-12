@@ -197,7 +197,7 @@ func probeCompressionModelFeasibility(ctx context.Context, a *AIAgent) error {
 		auxProvider = cfgProvider
 	}
 	var auxContext int
-	if a.auxCompressionContextLengthConfig == 0 && auxInheritsMainRoute(a, auxModel, auxBaseURL) {
+	if a.auxCompressionContextLengthConfig == nil && auxInheritsMainRoute(a, auxModel, auxBaseURL) {
 		auxContext = engineContextLength(a.contextCompressor)
 	} else {
 		var custom []map[string]any
@@ -206,9 +206,13 @@ func probeCompressionModelFeasibility(ctx context.Context, a *AIAgent) error {
 				custom = append(custom, m)
 			}
 		}
+		cfgCtx := 0
+		if a.auxCompressionContextLengthConfig != nil {
+			cfgCtx = *a.auxCompressionContextLengthConfig
+		}
 		auxContext = feasibilityContextLength(ctx, provider.ContextLengthRequest{
 			Model: auxModel, BaseURL: auxBaseURL, APIKey: auxAPIKey, Provider: auxProvider,
-			ConfigContextLength: a.auxCompressionContextLengthConfig, CustomProviders: custom,
+			ConfigContextLength: cfgCtx, CustomProviders: custom,
 		})
 	}
 	if auxContext != 0 && auxContext < provider.MinimumContextLength {

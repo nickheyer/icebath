@@ -12,9 +12,9 @@ export interface BrowserBootstrap {
   token: string
 }
 
-const SESSION_HEADER = 'X-Hermes-Session-Token'
+const SESSION_HEADER = 'X-Icebath-Session-Token'
 const DEFAULT_TIMEOUT_MS = 30_000
-const REAUTH_EVENT = 'hermes:browser-reauth-required'
+const REAUTH_EVENT = 'icebath:browser-reauth-required'
 
 export class BrowserReauthRequiredError extends Error {
   readonly loginUrl: string
@@ -31,9 +31,9 @@ export function browserBootstrap(): BrowserBootstrap | null {
   if (!hasBrowserHostBootstrap()) {return null}
 
   const win = window as Window & BrowserHostGlobals
-  const authRequired = win.__HERMES_AUTH_REQUIRED__ === true
-  const basePath = normalizeBasePath(win.__HERMES_BASE_PATH__)
-  const privateSession = !authRequired && win.__HERMES_UI_SURFACE__ === 'webapp'
+  const authRequired = win.__ICEBATH_AUTH_REQUIRED__ === true
+  const basePath = normalizeBasePath(win.__ICEBATH_BASE_PATH__)
+  const privateSession = !authRequired && win.__ICEBATH_UI_SURFACE__ === 'webapp'
   const token = privateSession ? readWebappSession(basePath) : ''
 
   return {

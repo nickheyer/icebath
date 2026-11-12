@@ -272,7 +272,7 @@ func microCompactAfterTurn(ctx context.Context, a *AIAgent, messages *[]*state.M
 	}
 	before := len(*messages)
 	rows := messagesToRows(*messages)
-	compacted, err := c.microCompact(rows, a.inflightTurnSessionID)
+	compacted, err := c.microCompact(rows, compactionTurnSessionID(a))
 	if err != nil {
 		conversationLoopLog().Info(fmt.Sprintf("Micro-compaction failed: %v", err))
 		return

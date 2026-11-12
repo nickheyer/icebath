@@ -57,6 +57,7 @@ func bindHostCommands(cli *commands.CLI) {
 		"fallback":                fallbackGroup,
 		"gateway":                 gatewayGroup,
 		"import":                  importGroup,
+		"install-self":            installSelfGroup,
 		"journey":                 journeyGroup,
 		"kanban":                  kanbanGroup,
 		"logs":                    logsGroup,
@@ -341,7 +342,7 @@ func modelGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path
 }
 
 func monitoringGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {
-	return monitoring.CmdMonitoring(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout())
+	return monitoring.CmdMonitoring(ctx, home.Dir(ctx), namespace(cli, cmd, path, args), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 func pairingGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

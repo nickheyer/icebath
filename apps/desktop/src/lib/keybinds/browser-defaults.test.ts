@@ -129,7 +129,7 @@ describe('browser-hosted shortcut defaults', () => {
         } else {
           vi.stubGlobal('hermesDesktop', undefined)
           vi.stubGlobal(
-            host === 'webapp' ? '__HERMES_UI_SURFACE__' : '__HERMES_AUTH_REQUIRED__',
+            host === 'webapp' ? '__ICEBATH_UI_SURFACE__' : '__ICEBATH_AUTH_REQUIRED__',
             host === 'webapp' ? 'webapp' : true
           )
         }
@@ -170,7 +170,7 @@ describe('browser-hosted shortcut defaults', () => {
     setPlatform('Win32')
     window.document.documentElement.dataset.hermesDesktopHost = 'browser'
     localStorage.setItem(
-      'hermes.desktop.keybinds',
+      'icebath.desktop.keybinds',
       JSON.stringify({
         'session.new': ['mod+shift+f6'],
         'session.newTab': [],
@@ -184,6 +184,6 @@ describe('browser-hosted shortcut defaults', () => {
     expect(bindingsFor('view.closeTab')).toEqual(['mod+w'])
     resetAllBindings()
     expect(bindingsFor('session.new')).toEqual(['alt+n'])
-    expect(JSON.parse(localStorage.getItem('hermes.desktop.keybinds')!)).toEqual({})
+    expect(JSON.parse(localStorage.getItem('icebath.desktop.keybinds')!)).toEqual({})
   })
 })

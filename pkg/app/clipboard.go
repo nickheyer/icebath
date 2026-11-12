@@ -54,7 +54,7 @@ func runClipText(argv []string, timeoutSeconds int) (clipResult, error) {
 	if err != nil {
 		return clipResult{}, err
 	}
-	return clipResult{code: res.Returncode, stdout: strings.ToValidUTF8(string(res.Stdout), "�")}, nil
+	return clipResult{code: res.Returncode, stdout: pystr.DecodeUTF8Replace(res.Stdout)}, nil
 }
 
 // Reports a missing executable the way Python raises FileNotFoundError

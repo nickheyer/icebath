@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +15,7 @@ func TestWorkerPersistenceExplicitlyBypassesProxy(t *testing.T) {
 	owner := startLoopbackOwner(t, home, "reply-close", 2)
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	t.Setenv("NO_PROXY", "")
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	ctx := context.Background()
 	for i := range 2 {
@@ -34,5 +36,30 @@ func TestWorkerPersistenceExplicitlyBypassesProxy(t *testing.T) {
 	}
 	if connects := owner.eventsOf(t, "connect"); len(connects) != 2 {
 		t.Fatalf("owner saw %d connections, want 2", len(connects))
+	}
+}
+
+func mustNewWorkerRPC(t *testing.T, home string) *WorkerRPC {
+	t.Helper()
+	rpc, err := NewWorkerRPC(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rpc
+}
+
+func TestWorkerRPCHomeResolvesLikePathResolveWhenMissing(t *testing.T) {
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	resolvedReal, _ := filepath.EvalSymlinks(real)
+	rpc := mustNewWorkerRPC(t, filepath.Join(link, "missing", "..", "home"))
+	if want := filepath.Join(resolvedReal, "home"); rpc.home != want {
+		t.Fatalf("home %q want %q", rpc.home, want)
+	}
+	if _, err := NewWorkerRPC("bad\x00home"); err == nil {
+		t.Fatal("embedded null accepted")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -346,12 +347,13 @@ func (s *RuntimeSessionStore) RetryPending(ctx context.Context) ([]any, error) {
 }
 
 func (s *RuntimeSessionStore) retryPendingLocked(ctx context.Context) ([]any, error) {
-	var results []any
+	results := []any{}
 	fail := func(err error) ([]any, error) {
 		failure := err.Error()
 		s.failure = &failure
 		return nil, err
 	}
+	callee := fmt.Sprintf("<agent.runtime_session_store.WorkerRPC object at 0x%x>", reflect.ValueOf(s.rpc).Pointer())
 	for {
 		pending, err := journalPending(s.journal)
 		if err != nil {
@@ -362,12 +364,12 @@ func (s *RuntimeSessionStore) retryPendingLocked(ctx context.Context) ([]any, er
 		}
 		entry, ok := pending[0].(*pyjson.Object)
 		if !ok {
-			return fail(&workerStoreError{"TypeError", fmt.Sprintf("argument after ** must be a mapping, not %s", pyrepr.TypeName(pending[0]))})
+			return fail(&workerStoreError{"TypeError", fmt.Sprintf("%s argument after ** must be a mapping, not %s", callee, pyrepr.TypeName(pending[0]))})
 		}
 		params := s.scope.Copy()
 		for _, k := range entry.Keys {
 			if _, dup := params.Get(k); dup {
-				return fail(&workerStoreError{"TypeError", fmt.Sprintf("keyword argument repeated: %s", k)})
+				return fail(&workerStoreError{"TypeError", fmt.Sprintf("%s got multiple values for keyword argument '%s'", callee, k)})
 			}
 			params.Set(k, entry.Vals[k])
 		}

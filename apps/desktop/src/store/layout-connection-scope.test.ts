@@ -85,11 +85,11 @@ describe('connection-scoped sidebar lists (#77318)', () => {
     pinSession('a-1')
 
     // The bare key still belongs to the local connection.
-    expect(readKey('hermes.desktop.pinnedSessions')).toBe(JSON.stringify(['local-1']))
+    expect(readKey('icebath.desktop.pinnedSessions')).toBe(JSON.stringify(['local-1']))
 
     // The remote pin landed under its own gateway scope, not the shared key
     // and not a per-profile fragment.
-    const scoped = readKey(`hermes.desktop.pinnedSessions.remote.${encodeURIComponent('https://vps-a.example:8443')}`)
+    const scoped = readKey(`icebath.desktop.pinnedSessions.remote.${encodeURIComponent('https://vps-a.example:8443')}`)
 
     expect(scoped).toBe(JSON.stringify(['a-1']))
   })

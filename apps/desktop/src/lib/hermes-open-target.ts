@@ -14,7 +14,9 @@
 
 export type HermesOpenTarget = string | { href: string } | { path: string; params?: Record<string, string> }
 
-const ICEBATH_PROTOCOL = 'hermes:'
+const ICEBATH_PROTOCOL = 'icebath:'
+// Links written for hermes keep opening, the hermes scheme is registered beside the icebath one.
+const LEGACY_PROTOCOL = 'hermes:'
 
 /** Hostnames owned by core deep-link handlers — never treated as plugin routes. */
 const RESERVED_DEEP_LINK_KINDS = new Set([
@@ -73,7 +75,7 @@ export function normalizeHermesOpenString(raw: string): string | null {
     return null
   }
 
-  if (trimmed.startsWith('hermes://') || trimmed.startsWith(`${ICEBATH_PROTOCOL}//`)) {
+  if (trimmed.startsWith(`${ICEBATH_PROTOCOL}//`) || trimmed.startsWith(`${LEGACY_PROTOCOL}//`)) {
     try {
       const url = new URL(trimmed)
       const host = url.hostname || ''

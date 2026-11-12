@@ -60,7 +60,7 @@ var hostSDKOps = map[string]hostSDKOp{
 var hostSDKServiceOps = map[string]bool{
 	"provider_media.save_url": true, "read_credential_pool": true, "open_credentialed_url": true,
 	"chat_catalog_ids": true, "format_secret_source_suffix": true, "get_version_info": true,
-	"cron.recover_interrupted": true, "cron.claim_fire": true, "cron.fire_claimed": true,
+	"cron.recover_interrupted": true, "cron.claim_fire": true, "cron.fire_claimed": true, "moved_command_hint": true,
 }
 
 // Runs one plugin SDK call the child sent and encodes its result for the child

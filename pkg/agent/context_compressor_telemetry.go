@@ -167,9 +167,8 @@ func (t *CompressionTelemetry) RecordAuxCall(ctx context.Context, c AuxCompressi
 	if telemetry == nil {
 		return
 	}
-	prompt := rowsToMessages(c.PromptMessages)
-	telemetry.Set("aux_prompt_tokens", compactionEstimateRough(ctx, prompt))
-	provider.ForgetMessageTokenMemo(prompt, nil)
+	telemetry.Set("aux_prompt_tokens", estimateRowsRough(ctx, c.PromptMessages))
+	provider.ForgetMessageTokenMemo(c.PromptMessages, nil)
 	telemetry.Set("aux_output_reservation", telemetrySafeInt(c.MaxTokens))
 	if c.AuxProvider != "" {
 		telemetry.Set("aux_provider", c.AuxProvider)

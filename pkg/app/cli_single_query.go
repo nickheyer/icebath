@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/goals"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -51,10 +52,11 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any,
 	rawRunID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
 	var workerRunID *int64
 	if rawRunID != "" {
-		if n, err := strconv.ParseInt(rawRunID, 10, 64); err == nil {
-			workerRunID = &n
+		if n, ok := pyIntOf(rawRunID); ok {
+			id := int64(n)
+			workerRunID = &id
 		} else {
-			cliLogger.Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%q", rawRunID))
+			cliLogger.Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%s", pyrepr.Repr(rawRunID)))
 		}
 	}
 	var task *kanban.Task

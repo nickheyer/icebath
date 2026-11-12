@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -41,13 +42,19 @@ type managedEntry struct {
 	value any
 }
 
+// Reports a test run so the system managed dir cannot leak policy into the suite
+func underPytest() bool {
+	_, ok := os.LookupEnv("PYTEST_CURRENT_TEST")
+	return ok || testing.Testing()
+}
+
 // ManagedDir resolves the managed scope directory, empty when no scope is present
 func ManagedDir() string {
-	override := strings.TrimSpace(os.Getenv(EnvManagedDir))
+	override := pystr.Strip(os.Getenv(EnvManagedDir))
 	dir := defaultManagedDir
 	if override != "" {
 		dir = override
-	} else if os.Getenv("ICEBATH_UNDER_TEST") != "" {
+	} else if underPytest() {
 		return ""
 	}
 	st, err := os.Stat(dir)
@@ -149,19 +156,21 @@ func readManagedText(path string) (string, error) {
 	return string(data), nil
 }
 
+// Assignments of the managed dotenv through the shared tokenizer, a file that does not decode failing loud first
+func parseManagedEnv(path string) (any, error) {
+	if _, err := readManagedText(path); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	for k, v := range LoadEnvFile(path) {
+		out[k] = v
+	}
+	return out, nil
+}
+
 // LoadManagedEnv is the parsed managed .env, empty when absent
 func LoadManagedEnv() map[string]string {
-	raw := loadManagedFile(".env", managedEnvCache, func(path string) (any, error) {
-		text, err := readManagedText(path)
-		if err != nil {
-			return nil, err
-		}
-		out := map[string]any{}
-		for k, v := range ParseEnv(text) {
-			out[k] = v
-		}
-		return out, nil
-	})
+	raw := loadManagedFile(".env", managedEnvCache, parseManagedEnv)
 	out := make(map[string]string, len(raw))
 	for k, v := range raw {
 		if s, ok := v.(string); ok {

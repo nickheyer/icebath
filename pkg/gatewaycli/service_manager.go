@@ -27,14 +27,19 @@ const (
 	S6ServicePrefix  = "gateway-"
 	maxProfileLen    = 251
 	s6BinDir         = "/command"
-	icebathUID       = 10000
-	icebathGID       = 10000
+)
+
+// Service account ids the container slots are handed to, vars so tests can use their own ids
+var (
+	icebathUID = 10000
+	icebathGID = 10000
 )
 
 var (
 	validServiceProfileRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*`)
 	s6ProcRoot            = "/proc/1/comm"
 	s6BaseDir             = "/run/s6/basedir"
+	s6SvscanPIDFile       = "/run/s6/basedir/svscan.pid"
 	s6Run                 = runS6
 	serviceSleep          = time.Sleep
 	writePlannedStop      = gateway.WritePlannedStopMarker
@@ -84,13 +89,24 @@ func DetectServiceManager() (string, error) {
 	return "none", nil
 }
 
-// Whether s6-svscan is PID 1 with its base directory present
+// Whether s6-svscan runs as PID 1 or as the subreaper its pid file names, with its base directory present
 func s6Running() bool {
-	raw, err := os.ReadFile(s6ProcRoot)
+	if !isDirPath(s6BaseDir) {
+		return false
+	}
+	comm := func(path string) bool {
+		raw, err := os.ReadFile(path)
+		return err == nil && strings.TrimSpace(strings.ToValidUTF8(string(raw), "�")) == "s6-svscan"
+	}
+	if comm(s6ProcRoot) {
+		return true
+	}
+	raw, err := os.ReadFile(s6SvscanPIDFile)
 	if err != nil {
 		return false
 	}
-	return strings.TrimSpace(strings.ToValidUTF8(string(raw), "�")) == "s6-svscan" && isDirPath(s6BaseDir)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	return err == nil && pid > 1 && comm(filepath.Join("/proc", strconv.Itoa(pid), "comm"))
 }
 
 // S6Running reports whether s6-svscan is PID 1 with its base directory present

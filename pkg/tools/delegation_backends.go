@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"slices"
 	"sync"
 	"unsafe"
@@ -87,7 +88,7 @@ func SavedDelegationBackend(ctx context.Context) string {
 
 func delegateDefinition(tools []map[string]any) map[string]any {
 	for _, t := range tools {
-		if fn, _ := t["function"].(map[string]any); fn["name"] == "delegate_task" {
+		if fn, _ := pyjson.Dict(t["function"]); fn["name"] == "delegate_task" {
 			return t
 		}
 	}

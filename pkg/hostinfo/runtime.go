@@ -2,9 +2,37 @@ package hostinfo
 
 import (
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 )
+
+// Go release that built this binary without the go prefix, a devel build keeping its marker
+func GoVersion() string {
+	fields := strings.Fields(runtime.Version())
+	if len(fields) > 1 && fields[0] == "devel" {
+		return "devel " + strings.TrimPrefix(fields[1], "go")
+	}
+	return strings.TrimPrefix(fields[0], "go")
+}
+
+// Version of a module linked into this binary from its build info, empty when the build lists no such module
+func ModuleVersion(path string) string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == path {
+			if dep.Replace != nil {
+				return dep.Replace.Version
+			}
+			return dep.Version
+		}
+	}
+	return ""
+}
 
 // IsTermux reports whether this process runs inside Termux
 func IsTermux() bool {

@@ -791,7 +791,7 @@ func (a *HermesACPAgent) refreshToolSurface(ctx context.Context, st *SessionStat
 	defs := getToolDefinitions(ctx, view, enabled, disabled)
 	names := map[string]bool{}
 	for _, def := range defs {
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		names[pyStr(fn["name"])] = true
 	}
 	defs, names, _ = memory.InjectMemoryProviderTools(ctx, view, agentMemoryManager(ag), defs, names)

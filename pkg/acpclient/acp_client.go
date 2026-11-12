@@ -144,7 +144,7 @@ func jsonrpcError(messageID any, code int, message string) *pyjson.Object {
 }
 
 // Model entry filter that rejects nothing
-func neverDisabled(any) bool { return false }
+func neverDisabled(any) (bool, error) { return false, nil }
 
 // Whether a value is a decoded JSON object or a Go string keyed map
 func isDict(v any) bool {
@@ -241,11 +241,18 @@ func iterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array {
+		out := make([]any, rv.Len())
+		for i := range out {
+			out[i] = rv.Index(i).Interface()
+		}
+		return out, nil
+	}
 	return nil, pyErr("TypeError", "'%s' object is not iterable", pyrepr.TypeName(v))
 }
 
 // Ordered unique ids of the entries the filter does not reject
-func enabledIDList(entries any, key string, disabled func(any) bool) ([]string, error) {
+func enabledIDList(entries any, key string, disabled func(any) (bool, error)) ([]string, error) {
 	items, err := iterate(or(entries, []any{}))
 	if err != nil {
 		return nil, err
@@ -257,7 +264,14 @@ func enabledIDList(entries any, key string, disabled func(any) bool) ([]string, 
 			continue
 		}
 		value := strField(dictGet(entry, key))
-		if value == "" || seen[value] || disabled(entry) {
+		if value == "" || seen[value] {
+			continue
+		}
+		off, err := disabled(entry)
+		if err != nil {
+			return nil, err
+		}
+		if off {
 			continue
 		}
 		seen[value] = true
@@ -284,7 +298,7 @@ func modelConfigOption(session any) (any, error) {
 }
 
 // Account authorized model ids session/new advertises in ACP v1 or its legacy extension
-func sessionModelIDs(session any, disabled func(any) bool) ([]string, error) {
+func sessionModelIDs(session any, disabled func(any) (bool, error)) ([]string, error) {
 	option, err := modelConfigOption(session)
 	if err != nil {
 		return nil, err
@@ -296,7 +310,7 @@ func sessionModelIDs(session any, disabled func(any) bool) ([]string, error) {
 }
 
 // Model ids of the pre stabilization availableModels extension
-func legacySessionModelIDs(session any, disabled func(any) bool) ([]string, error) {
+func legacySessionModelIDs(session any, disabled func(any) (bool, error)) ([]string, error) {
 	available, err := attrGet(or(dictGet(session, "models"), pyjson.NewObject()), "availableModels")
 	if err != nil {
 		return nil, err
@@ -305,7 +319,7 @@ func legacySessionModelIDs(session any, disabled func(any) bool) ([]string, erro
 }
 
 // ACP request selecting the model for the session, false for unknown, disabled or session default ids
-func modelSelectionRequest(session any, requestedModel, placeholder string, disabled func(any) bool) (string, *pyjson.Object, bool, error) {
+func modelSelectionRequest(session any, requestedModel, placeholder string, disabled func(any) (bool, error)) (string, *pyjson.Object, bool, error) {
 	sessionID := strField(dictGet(session, "sessionId"))
 	requestedModel = pystr.Strip(requestedModel)
 	if sessionID == "" || requestedModel == "" || requestedModel == placeholder {
@@ -338,38 +352,6 @@ func modelSelectionRequest(session any, requestedModel, placeholder string, disa
 	}
 	params.Set("modelId", requestedModel)
 	return "session/set_model", params, true, nil
-}
-
-// Visible text of one message content value for the prompt transcript
-func renderMessageContent(content any) (string, error) {
-	switch c := content.(type) {
-	case nil:
-		return "", nil
-	case string:
-		return pystr.Strip(c), nil
-	case []any:
-		var parts []string
-		for _, item := range c {
-			if s, ok := item.(string); ok {
-				parts = append(parts, s)
-				continue
-			}
-			if text, ok := dictGet(item, "text").(string); ok && isDict(item) && pystr.Strip(text) != "" {
-				parts = append(parts, pystr.Strip(text))
-			}
-		}
-		return pystr.Strip(strings.Join(parts, "\n")), nil
-	}
-	if isDict(content) {
-		if dictHas(content, "text") {
-			return strField(dictGet(content, "text")), nil
-		}
-		if s, ok := dictGet(content, "content").(string); ok {
-			return pystr.Strip(s), nil
-		}
-		return pyjson.Dumps(content)
-	}
-	return pystr.Strip(pyrepr.Str(content)), nil
 }
 
 // Resolved path confined to the resolved session cwd, refusing namespace, relative and escaping paths
@@ -568,14 +550,23 @@ func fsWriteTextFile(env *tools.Env, params any, cwd string) (any, error) {
 		return nil, err
 	}
 	content, _ := paramString(params, "content")
-	if pos, bad := firstSurrogate(content); bad {
-		return nil, pyErr("UnicodeEncodeError", "'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", surrogateAt(content, pos), pos)
-	}
 	if runtime.GOOS == "windows" {
 		content = strings.ReplaceAll(content, "\n", "\r\n")
 	}
-	if err := os.WriteFile(path, []byte(content), 0o666); err != nil {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
+	if err != nil {
 		return nil, err
+	}
+	if pos, bad := firstSurrogate(content); bad {
+		_ = f.Close()
+		return nil, pyErr("UnicodeEncodeError", "'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", surrogateAt(content, pos), pos)
+	}
+	_, werr := f.WriteString(content)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return nil, werr
 	}
 	return nil, nil
 }

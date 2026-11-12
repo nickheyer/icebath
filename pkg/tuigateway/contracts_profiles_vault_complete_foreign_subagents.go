@@ -9,7 +9,7 @@ var CompletionItem = pydantic.NewModel("CompletionItem", ClosedConfig,
 	pydantic.Def("display", pydantic.Str, ""),
 	pydantic.Def("meta", pydantic.Str, ""),
 	pydantic.Def("kind", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One popover row; ``kind`` rides only on slash completions (command vs skill).")
 
 var CompletionItemsResult = pydantic.NewModel("CompletionItemsResult", ClosedConfig,
 	pydantic.Fac("items", pydantic.List(CompletionItem), pydantic.NewList),
@@ -19,7 +19,7 @@ var CompletePathParams = pydantic.Extend(ProfileParams, "CompletePathParams", Pa
 	pydantic.Def("word", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``word`` is the token under the cursor (``@`` prefix = context reference); ``cwd`` /\n``session_id`` pick the directory the listing resolves against.")
 
 var _ = Method("complete.path", CompletePathParams, CompletionItemsResult, "Path / @-reference completions for the composer (files, folders, profiles, plugin providers).")
 
@@ -27,12 +27,12 @@ var CompleteSlashParams = pydantic.NewModel("CompleteSlashParams", ParamsConfig,
 	pydantic.Def("text", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``session_id`` binds skill completions to that session's profile and workspace (project skills);\n``profile`` scopes a session-less request (a new-chat draft).")
 
 var CompleteSlashResult = pydantic.NewModel("CompleteSlashResult", ClosedConfig,
 	pydantic.Fac("items", pydantic.List(CompletionItem), pydantic.NewList),
 	pydantic.Def("replace_from", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``replace_from`` is the column the accepted item replaces from.")
 
 var _ = Method("complete.slash", CompleteSlashParams, CompleteSlashResult, "Ranked slash-command / skill completions for a ``/`` token.")
 
@@ -81,14 +81,14 @@ var ProfileSessionPreview = pydantic.NewModel("ProfileSessionPreview", ClosedCon
 	pydantic.Def("last_active", pydantic.Union(pydantic.Float, pydantic.Int), 0),
 	pydantic.Def("message_count", pydantic.Int, 0),
 	pydantic.Def("live_message_count", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("Newest human-facing session of a profile (``_latest_profile_session_rows``).")
 
 var ProfileWorkerSession = pydantic.NewModel("ProfileWorkerSession", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
 	pydantic.Def("source", pydantic.Str, ""),
 	pydantic.Def("title", pydantic.Str, ""),
 	pydantic.Def("last_active", pydantic.Union(pydantic.Float, pydantic.Int), 0),
-)
+).Described("Newest kanban/tool worker row, so rosters can show a profile as working.")
 
 var ProfileCanonicalSession = pydantic.NewModel("ProfileCanonicalSession", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -100,7 +100,7 @@ var ProfileCanonicalSession = pydantic.NewModel("ProfileCanonicalSession", Close
 	pydantic.Def("last_active", pydantic.Union(pydantic.Float, pydantic.Int), 0),
 	pydantic.Def("message_count", pydantic.Int, 0),
 	pydantic.Def("live_message_count", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("The profile's \"Bot Chat\" registry row; ``resolved_id`` is the live compression tip.")
 
 var ProfileRow = pydantic.NewModel("ProfileRow", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -118,7 +118,7 @@ var ProfileRow = pydantic.NewModel("ProfileRow", ClosedConfig,
 	pydantic.Fac("ui_meta_revisions", pydantic.Dict(pydantic.Int), pydantic.NewDict),
 	pydantic.Def("ui_meta", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("has_avatar", pydantic.Bool, false),
-)
+).Described("One roster row; the session fields are present only with ``include_sessions``.")
 
 var ProfilesListParams = pydantic.Extend(ProfileParams, "ProfilesListParams", ParamsConfig,
 	pydantic.Def("include_sessions", pydantic.Nullable(pydantic.Union(pydantic.Bool, pydantic.Str)), nil),
@@ -128,7 +128,7 @@ var ProfilesListResult = pydantic.NewModel("ProfilesListResult", ClosedConfig,
 	pydantic.Fac("profiles", pydantic.List(ProfileRow), pydantic.NewList),
 	pydantic.Def("bot_mode_protocol", pydantic.Bool, true),
 	pydantic.Def("install_id", pydantic.Str, ""),
-)
+).Described("``bot_mode_protocol`` tells clients this backend injects the teammate protocol itself;\n``install_id`` (as on ``/api/status``) names the machine that answered.")
 
 var _ = Method("profiles.list", ProfilesListParams, ProfilesListResult, "Roster of profiles with previews so a client paints without N follow-up calls.")
 
@@ -145,14 +145,14 @@ var ProfilesCreateParams = pydantic.Extend(ProfileParams, "ProfilesCreateParams"
 	pydantic.Def("provider", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("share_auth", pydantic.Nullable(pydantic.Union(pydantic.Bool, pydantic.Str)), nil),
 	pydantic.Def("mirror_credentials", pydantic.Nullable(pydantic.Union(pydantic.Bool, pydantic.Str)), nil),
-)
+).Described("``clone_from`` omitted = fresh profile + bundled skills; ``mirror_credentials`` defaults on\nso a headless bot has a provider.")
 
 var ProfileMirrored = pydantic.NewModel("ProfileMirrored", ClosedConfig,
 	pydantic.Def("env", pydantic.Bool, false),
 	pydantic.Def("auth", pydantic.Union(pydantic.Bool, pydantic.Literal("shared")), false),
 	pydantic.Def("model_inherited", pydantic.Bool, false),
 	pydantic.Def("voice", pydantic.Bool, false),
-)
+).Described("What was copied from the launch profile; ``auth`` is ``\"shared\"`` under ``share_auth``.")
 
 var ProfilesCreateResult = pydantic.NewModel("ProfilesCreateResult", ClosedConfig,
 	pydantic.Def("ok", pydantic.Bool, true),
@@ -198,7 +198,7 @@ var ProfilesDescribeResult = pydantic.NewModel("ProfilesDescribeResult", ClosedC
 	pydantic.Fac("toolsets", pydantic.List(ToolsetEntry), pydantic.NewList),
 	pydantic.Def("toolsets_pinned", pydantic.Bool, false),
 	pydantic.Fac("mcp_servers", pydantic.List(McpServerEntry), pydantic.NewList),
-)
+).Described("Editor snapshot; ``toolsets_pinned`` says whether ``tools.enabled_toolsets`` is explicit.")
 
 var _ = Method("profiles.describe", ProfileNameParams, ProfilesDescribeResult, "Everything the profile editor shows: soul, model pin, skills, toolsets, MCP servers.")
 
@@ -214,7 +214,7 @@ var ProfilesConfigureParams = pydantic.Extend(ProfileParams, "ProfilesConfigureP
 	pydantic.Def("disabled_skills", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("enabled_toolsets", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("enabled_mcp_servers", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("Sections are independent; ``ui_meta_expected_revisions`` is a per-key compare-and-swap.")
 
 var UiMetaConflict = pydantic.NewModel("UiMetaConflict", ClosedConfig,
 	pydantic.Def("expected", pydantic.Any, nil),
@@ -231,14 +231,14 @@ var ProfilesConfigureApplied = pydantic.NewModel("ProfilesConfigureApplied", Clo
 	pydantic.Def("skills", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("toolsets", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("mcp_servers", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("Per-section outcome; only the sections the request carried are present.")
 
 var ProfilesConfigureResult = pydantic.NewModel("ProfilesConfigureResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),
 	pydantic.Req("applied", ProfilesConfigureApplied),
 	pydantic.Def("confirm_required", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("confirm_message", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``confirm_required`` mirrors ``config.set``: a guarded model pick wrote nothing yet.")
 
 var _ = Method("profiles.configure", ProfilesConfigureParams, ProfilesConfigureResult, "Editor Save: apply any subset of a profile's sections and report each one.")
 
@@ -247,7 +247,7 @@ var ProfilesSetAssetParams = pydantic.Extend(ProfileParams, "ProfilesSetAssetPar
 	pydantic.Def("asset", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("data", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("clear", pydantic.Nullable(pydantic.Union(pydantic.Bool, pydantic.Str)), nil),
-)
+).Described("``data`` is a data URL or bare base64 (PNG/JPEG/WebP, sniffed); ``clear`` deletes instead.")
 
 var ProfilesSetAssetResult = pydantic.NewModel("ProfilesSetAssetResult", ClosedConfig,
 	pydantic.Def("ok", pydantic.Bool, true),
@@ -268,27 +268,27 @@ var ProfilesGetAssetResult = pydantic.NewModel("ProfilesGetAssetResult", ClosedC
 	pydantic.Def("mime", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("size", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("data", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Absent is ``found: false``, not an error.")
 
 var _ = Method("profiles.get_asset", ProfilesGetAssetParams, ProfilesGetAssetResult, "A profile asset as a data URL.")
 
 var OnboardingStateParams = pydantic.NewModel("OnboardingStateParams", ParamsConfig,
 	pydantic.Def("assume_fresh", pydantic.Bool, false),
-)
+).Described("``assume_fresh``: the unpackaged desktop's ``--fresh-install`` launch; the backend treats this\nmachine as one that never used Icebath. Packaged builds never send it.")
 
 var OnboardingRunStateResult = pydantic.NewModel("OnboardingRunStateResult", ClosedConfig,
 	pydantic.Req("run", pydantic.Bool),
 	pydantic.Req("eligible", pydantic.Bool),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("run_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``run``: onboarding opens on this launch (root config ``onboarding.run``, else a machine that\nnever used Icebath). ``eligible``: this is the desktop's local backend and the welcome trial or a\nconfigured provider can carry the first chat.\n``session_id``: the stored id of the onboarding chat still in progress, so a relaunch reopens it;\n``run_id``: that run's id, which ``onboarding.ended`` names.")
 
 var _ = Method("onboarding.state", OnboardingStateParams, OnboardingRunStateResult, "Whether desktop first-run onboarding is due, and the chat in progress; reads the root profile's config.")
 
 var OnboardingSetRunParams = pydantic.NewModel("OnboardingSetRunParams", ParamsConfig,
 	pydantic.Req("run", pydantic.Bool),
 	pydantic.Def("mark_profile_offered", pydantic.Bool, false),
-)
+).Described("``mark_profile_offered`` also latches ``onboarding.seen.profile_build_offered`` in the root config,\nso the first chat after onboarding gets the plain intro instead of the profile offer.")
 
 var _ = Method("onboarding.set_run", OnboardingSetRunParams, OnboardingRunStateResult, "Write onboarding.run in the root profile's config.yaml; answers the new state.")
 
@@ -300,14 +300,14 @@ var OnboardingStartParams = pydantic.NewModel("OnboardingStartParams", ParamsCon
 	pydantic.Def("assume_fresh", pydantic.Bool, false),
 	pydantic.Def("facts_source", OnboardingFactsSource, "local"),
 	pydantic.Def("locale", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``rerun``: start a new onboarding chat even when one is in progress (Settings, Run onboarding\nagain; it never claims the welcome trial). ``fresh_launch``: the app's once-per-launch start; a run\nthe app was closed on does not count, so its chat is deleted and the run starts over.\n``facts_source``: whether the backend runs on the user's own computer. ``locale``: the desktop's UI\nlanguage, preferred over the backend OS locale. ``assume_fresh``: as on ``onboarding.state``. A new\nrun on a first install claims the welcome trial before its chat exists; a failed claim is error\n5079 and leaves no guest and no chat. A claim that is blocked (another install took the trial) with\nno trial or provider to run on is error 5080 and opens no chat.")
 
 var OnboardingStartResult = pydantic.NewModel("OnboardingStartResult", ClosedConfig,
 	pydantic.Req("session_id", pydantic.Str),
 	pydantic.Req("stored_session_id", pydantic.Str),
 	pydantic.Req("resumed", pydantic.Bool),
 	pydantic.Req("run_id", pydantic.Str),
-)
+).Described("``session_id`` is the runtime id the client attaches to; ``resumed`` is true when an onboarding\nchat already in progress was reopened instead of a new one started. ``run_id`` names the run in\n``onboarding.ended``.")
 
 var _ = Method("onboarding.start", OnboardingStartParams, OnboardingStartResult, "Open the onboarding chat in the default profile: create it, write its run record and play the opening.")
 
@@ -331,7 +331,7 @@ var VaultItem = pydantic.NewModel("VaultItem", ClosedConfig,
 	pydantic.Def("identifier_type", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("has_otp", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Req("backend", pydantic.Str),
-)
+).Described("Metadata-only view (``VaultItemMeta.to_dict`` + ``backend``); never a secret.")
 
 var VaultListResult = pydantic.NewModel("VaultListResult", ClosedConfig,
 	pydantic.Fac("items", pydantic.List(VaultItem), pydantic.NewList),
@@ -369,7 +369,7 @@ var _ = Method("vault.source.set", VaultSourceSetParams, VaultSourceSetResult, "
 var VaultUnlockParams = pydantic.Extend(ProfileParams, "VaultUnlockParams", ParamsConfig,
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("password", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("The master password is consumed by the manager CLI and never stored or logged.")
 
 var VaultUnlockResult = pydantic.NewModel("VaultUnlockResult", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -393,7 +393,7 @@ var VaultAddParams = pydantic.Extend(ProfileParams, "VaultAddParams", ParamsConf
 	pydantic.Def("label", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("origin", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("secret", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("``secret`` goes straight into the encrypted store; the result carries only the new id.")
 
 var VaultAddResult = pydantic.NewModel("VaultAddResult", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -422,7 +422,7 @@ var ForeignSessionRow = pydantic.NewModel("ForeignSessionRow", ClosedConfig,
 	pydantic.Req("mtime", pydantic.Float),
 	pydantic.Def("turn_count", pydantic.Int, 0),
 	pydantic.Def("excerpt", pydantic.Str, ""),
-)
+).Described("``hermes_cli/foreign_sessions_browser.py::list_foreign_sessions`` — ``id`` is an opaque\nhandle, never a path.")
 
 var SessionForeignListParams = pydantic.Extend(ProfileParams, "SessionForeignListParams", ParamsConfig,
 	pydantic.Def("source", pydantic.Nullable(ForeignSource), nil),
@@ -435,7 +435,7 @@ var SessionForeignListResult = pydantic.NewModel("SessionForeignListResult", Clo
 	pydantic.Def("next_offset", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Req("host", pydantic.Str),
 	pydantic.Def("unreadable", pydantic.Int, 0),
-)
+).Described("``unreadable`` counts logs on this page that failed to parse.")
 
 var _ = Method("session.foreign.list", SessionForeignListParams, SessionForeignListResult, "One page of Claude Code / Codex sessions found on the serving backend.")
 
@@ -454,7 +454,7 @@ var SessionForeignPreviewResult = pydantic.NewModel("SessionForeignPreviewResult
 	pydantic.Def("truncated", pydantic.Bool, false),
 	pydantic.Def("already_imported", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Bounded to the last 40 turns / 8000 chars each; ``already_imported`` is the local id.")
 
 var _ = Method("session.foreign.preview", SessionForeignIdParams, SessionForeignPreviewResult, "Preview a foreign session's tail before importing it.")
 
@@ -477,7 +477,7 @@ var SubagentSnapshot = pydantic.NewModel("SubagentSnapshot", ClosedConfig,
 	pydantic.Def("tool_count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("last_tool", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("accepting_steer", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``methods_subagents._SUBAGENT_SNAPSHOT_FIELDS`` projection of one live child record.")
 
 var FailedDelegation = pydantic.NewModel("FailedDelegation", ClosedConfig,
 	pydantic.Req("delegation_id", pydantic.Str),
@@ -487,12 +487,12 @@ var FailedDelegation = pydantic.NewModel("FailedDelegation", ClosedConfig,
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("dispatched_at", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("completed_at", pydantic.Nullable(pydantic.Float), nil),
-)
+).Described("``async_delegation.failed_delegations_for_session`` row: one failed task of an async delegation.")
 
 var SubagentListResult = pydantic.NewModel("SubagentListResult", ClosedConfig,
 	pydantic.Fac("subagents", pydantic.List(SubagentSnapshot), pydantic.NewList),
 	pydantic.Fac("delegations", pydantic.List(FailedDelegation), pydantic.NewList),
-)
+).Described("``delegations``: recently failed async delegation tasks for the session (durable store), newest first.")
 
 var _ = Method("subagent.list", SessionParams, SubagentListResult, "Live children owned by this session (other sessions' children never leak).")
 
@@ -524,6 +524,6 @@ var SubagentTailResult = pydantic.NewModel("SubagentTailResult", ClosedConfig,
 	pydantic.Def("available", pydantic.Bool, false),
 	pydantic.Def("text", pydantic.Str, ""),
 	pydantic.Def("truncated", pydantic.Bool, false),
-)
+).Described("``available`` is false while the child has no live transcript yet (or it was cleaned up).")
 
 var _ = Method("subagent.tail", SubagentIdParams, SubagentTailResult, "Last 16KB of an owned child's live transcript.")

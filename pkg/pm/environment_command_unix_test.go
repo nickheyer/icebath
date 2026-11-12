@@ -10,6 +10,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Descriptor 2 as a file that lives for the whole run, since go test -json points os.Stderr at stdout
+var ecStderrFD = os.NewFile(2, "/dev/stderr")
+
 // Captures what descriptors 1 and 2 receive while run executes, the counterpart of pytest capfd
 func ecCaptureFDs(t *testing.T, run func()) (string, string) {
 	t.Helper()
@@ -36,8 +39,11 @@ func ecCaptureFDs(t *testing.T, run func()) (string, string) {
 	if err := unix.Dup2(int(errFile.Fd()), 2); err != nil {
 		t.Fatal(err)
 	}
+	stderr := os.Stderr
+	os.Stderr = ecStderrFD
 	func() {
 		defer func() {
+			os.Stderr = stderr
 			_ = unix.Dup2(savedOut, 1)
 			_ = unix.Dup2(savedErr, 2)
 			_ = unix.Close(savedOut)

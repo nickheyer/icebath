@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -549,7 +548,7 @@ func sendMatrixViaAdapter(ctx context.Context, pconfig *gateway.PlatformConfig, 
 	}
 	entry := gateway.Registry.Get(ctx, string(gateway.PlatformMatrix))
 	if entry == nil || entry.AdapterFactory == nil {
-		return map[string]any{"error": "Matrix dependencies not installed. Run: " + pm.InstallHint("matrix")}, nil
+		return map[string]any{"error": "Matrix platform adapter is not registered in this icebath build"}, nil
 	}
 	built, err := entry.AdapterFactory(ctx, pconfig)
 	if err != nil {
@@ -634,4 +633,10 @@ func callAdapterMedia(ctx context.Context, adapter gateway.PlatformAdapter, meth
 		return adapter.SendVoice(ctx, chatID, path, caption, replyTo, metadata, nil)
 	}
 	return adapter.SendDocument(ctx, chatID, path, caption, "", replyTo, metadata, nil)
+}
+
+// Telegram REST delivery used by the standalone sender outside the gateway
+func SendTelegram(ctx context.Context, token any, chatID, message string, mediaFiles []gateway.MediaRef, threadID *string,
+	disableLinkPreviews, forceDocument bool) (map[string]any, error) {
+	return sendTelegram(ctx, token, chatID, message, mediaFiles, threadID, disableLinkPreviews, forceDocument)
 }

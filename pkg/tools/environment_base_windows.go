@@ -105,6 +105,3 @@ func readChunkTimeout(f *os.File, buf []byte, timeout time.Duration) (int, bool,
 	}
 	return 0, false, err
 }
-
-// Windows has no process groups to signal, the tree walk covers the children
-func killProcessGroup(pid int) {}

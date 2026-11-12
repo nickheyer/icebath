@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"strings"
 	"sync"
@@ -286,7 +287,7 @@ func inheritParentToolSurface(reviewAgent, a *AIAgent) error {
 	names := map[string]bool{}
 	for _, tool := range tools {
 		entry, _ := tool.(map[string]any)
-		fn, ok := entry["function"].(map[string]any)
+		fn, ok := pyjson.Dict(entry["function"])
 		if !ok {
 			return fmt.Errorf("KeyError: 'function'")
 		}

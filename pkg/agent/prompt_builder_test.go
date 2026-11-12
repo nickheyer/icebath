@@ -256,23 +256,27 @@ func TestEmptySoulMDAddsNothing(t *testing.T) {
 
 func TestSkipsAgentsMDInInstallTreeOnFallback(t *testing.T) {
 	env := promptTestEnv(t)
-	root := tools.RunningSourceRoot()
-	if root == "" {
-		t.Fatal("test binary has no running source root")
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Chdir(filepath.Join(root, "pkg", "skills", "bundled"))
+	prevRoot := tools.PackageRoot
+	tools.PackageRoot = root
+	t.Cleanup(func() { tools.PackageRoot = prevRoot })
+	writeFile(t, filepath.Join(root, "AGENTS.md"), "Never give up on the right solution.")
+	t.Chdir(root)
 	allowed, err := BuildContextFilesPrompt(context.Background(), env, ContextFilesOptions{SkipSoul: true, AllowInstallTreeFallback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(allowed, "Project Context") {
+	if !strings.Contains(allowed, "Never give up") {
 		t.Fatalf("install tree holds no context file to suppress %q", allowed)
 	}
 	out, err := BuildContextFilesPrompt(context.Background(), env, ContextFilesOptions{SkipSoul: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != "" {
+	if strings.Contains(out, "Never give up") || out != "" {
 		t.Fatalf("install tree fallback prompt %q", out)
 	}
 }

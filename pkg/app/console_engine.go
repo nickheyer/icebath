@@ -443,7 +443,7 @@ func consolePaths(spec string) []consolePath {
 		name := strings.TrimLeft(item, "*")
 		var path []string
 		if name != "." {
-			path = strings.Split(name, " ")
+			path = pystr.SplitWhitespace(name, -1)
 		}
 		out = append(out, consolePath{path: path, mutating: strings.HasPrefix(item, "*")})
 	}

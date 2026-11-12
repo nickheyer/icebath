@@ -191,7 +191,6 @@ func relayTestRuntime(t *testing.T, f *relayFake) *RelayRuntime {
 
 func relayAcquire(c *RelaySessionCoordinator, rt *RelayRuntime, sessionID string, sessionCwd, turnCwd *string) *ConversationLease {
 	c.Registry = relayStubRegistry{host: rt}
-	c.prepareSession = func(context.Context, *RelayRuntime, map[string]any) {}
 	return c.AcquireConversation(context.Background(), RelayConversation{ProfileKey: rt.ProfileKey, SessionID: sessionID,
 		Platform: "test", SessionCwd: sessionCwd, TurnCwd: turnCwd})
 }
@@ -498,7 +497,7 @@ func TestTurnMetadataIncludesRequestMetadataWithoutOverridingRuntimeFields(t *te
 	c.EndTurn(ctx, turn, "success")
 }
 
-func TestDefaultsNeverRotateAcrossManyTurnsAndCompactions(t *testing.T) {
+func TestDefaultsNeverRotateNoRotationAcrossManyTurnsAndCompactions(t *testing.T) {
 	relayTestEnv(t, nil)
 	c := NewRelaySessionCoordinator(RelayHosts)
 	f := newRelayFake(nil, nil)
@@ -658,7 +657,7 @@ func TestRotatingCompactionNoopWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestMaxTurnsRotatesAfterCap(t *testing.T) {
+func TestMaxTurnsRotationRotatesAfterCap(t *testing.T) {
 	relayTestEnv(t, map[string]any{"on_compaction": false, "max_turns": 2})
 	c := NewRelaySessionCoordinator(RelayHosts)
 	f := newRelayFake(nil, nil)

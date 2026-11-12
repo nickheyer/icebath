@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -78,6 +79,32 @@ func TestProfileScopedResolution(t *testing.T) {
 	got, _ = ResolvePassthroughValue(env, "TERMINAL_CWD", &explicit)
 	if got == nil || *got != "/explicit" {
 		t.Fatal("global override")
+	}
+}
+
+func TestAdapterSecretEnvKeepsOnlyCoreDeclaredMessagingSecrets(t *testing.T) {
+	passthroughEnv(t, nil)
+	config.OptionalEnvVars.Set("CHATX_INJECTED_SIGNING_SECRET", config.EnvVar{Password: true, Category: "messaging"})
+	t.Cleanup(func() { config.OptionalEnvVars.Delete("CHATX_INJECTED_SIGNING_SECRET") })
+	names := buildAdapterSecretEnv()
+	if names["CHATX_INJECTED_SIGNING_SECRET"] {
+		t.Fatal("a manifest injected messaging secret joined the process wide adapter secrets")
+	}
+	core, err := config.CoreDeclaredEnvNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range config.OptionalEnvVars.Items() {
+		if core[item.Name] && item.Entry.Category == "messaging" && item.Entry.Password {
+			found = true
+			if !names[strings.ToUpper(item.Name)] {
+				t.Fatalf("core messaging secret %s missing", item.Name)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no core messaging secret declared")
 	}
 }
 

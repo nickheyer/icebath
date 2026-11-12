@@ -153,7 +153,9 @@ func prepareGitCommand(ctx context.Context, w io.Writer, move checkoutMoveFunc) 
 		return false, nil, false, err
 	}
 	gitCmd = ensureNonTrampolineGit(ctx, w, gitCmd)
-	discardLockfileChurn(ctx, w, gitCmd, root, move)
+	if err := discardLockfileChurn(ctx, w, gitCmd, root, move); err != nil {
+		return false, nil, false, err
+	}
 	normalizeManagedEOL(ctx, w, gitCmd, root, move)
 	originURL, _ := getOriginURL(ctx, gitCmd, root)
 	fork := isFork(originURL)
@@ -371,6 +373,13 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	desktopDir := filepath.Join(root, "apps", "desktop")
 	_, packaged := desktopPackagedExecutable(desktopDir)
 	hadDesktopAppBeforeUpdate := packaged || desktopDistExists(desktopDir) || len(installedDesktopApps()) > 0
+	releaseBinary, err := releaseBinaryInstall(ctx, root)
+	if err != nil {
+		return err
+	}
+	if releaseBinary {
+		return applyReleaseUpdate(ctx, w, args, opts, preUpdatePlan, preUpdateSnapshotID, token, hadDesktopAppBeforeUpdate, gatewayMode, resume)
+	}
 	useZipUpdate, gitCmd, fork, err := prepareGitCommand(ctx, w, movesFor(token))
 	if err != nil {
 		return err
@@ -406,6 +415,26 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 		return err
 	}
 	return handled
+}
+
+// The release path of a binary install, channel selection, download and swap, then the completion
+func applyReleaseUpdate(ctx context.Context, w io.Writer, args map[string]any, opts *updateOptions, preUpdatePlan *UpdatePlan, preUpdateSnapshotID *string,
+	token map[string]any, hadDesktopAppBeforeUpdate, gatewayMode bool, resume func() error) error {
+	completionRequest, err := sourceCompletionRequest(ctx, opts, preUpdatePlan, preUpdateSnapshotID, token, hadDesktopAppBeforeUpdate, gatewayMode)
+	if err != nil {
+		return err
+	}
+	branch := resolveUpdateBranch(args)
+	completionRequest["branch"] = branch
+	target, err := selectApplyTarget(ctx, w, args, branch, completionRequest, nil, resume)
+	if err != nil {
+		return err
+	}
+	applyErr := updateViaRelease(ctx, w, target, completionRequest)
+	if err := resumePausedGatewaysAtExit(ctx, w, token, completionRequest); err != nil {
+		return err
+	}
+	return applyErr
 }
 
 // The git path of the update, fetch, preflight, checkout phase, pull and completion

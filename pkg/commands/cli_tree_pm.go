@@ -12,7 +12,7 @@ import (
 // Adds the pm tree bound to pkg/pm handlers plus the hidden update takeover entry
 func (c *CLI) addPM(root *cobra.Command) {
 	pm.SetCommandArgv(c.CommandArgv)
-	pmCmd := c.newCmd(root, "pm", "Package manager: lock, install, repair, env, doctor, gc, bundle", "")
+	pmCmd := c.newCmd(root, "pm", "Package manager: lock, install, repair, env, doctor, gc", "")
 	c.Bind("pm", func(cmd *cobra.Command, args []string) error {
 		return &ExitError{Code: 2, Msg: fmt.Sprintf("usage: %s\n%s: error: the following arguments are required: cmd", cmd.UseLine(), cmd.CommandPath())}
 	})
@@ -73,16 +73,6 @@ func (c *CLI) addPM(root *cobra.Command) {
 	c.newCmd(pmCmd, "gc", "remove store entries nothing references", "")
 	c.Bind("pm gc", func(cmd *cobra.Command, args []string) error { return runPM(cmd, pm.CmdGC) })
 
-	bundle := c.newCmd(pmCmd, "bundle", "stage a payload (repo+store+facts+relocatable venv) into --out", "")
-	sf(bundle, "out", "", "", "")
-	_ = bundle.MarkFlagRequired("out")
-	sf(bundle, "ref", "", "", "git ref for the repo snapshot (default HEAD)")
-	sf(bundle, "cache", "", "", "persistent build cache (default: UV_CACHE_DIR or PM's shared cache)")
-	c.Bind("pm bundle", func(cmd *cobra.Command, args []string) error {
-		bundleArgs := pmBundleArgs(cmd)
-		return runPM(cmd, func(ctx context.Context) (int, error) { return pm.CmdBundle(ctx, bundleArgs) })
-	})
-
 	c.newCmd(pmCmd, "status", "print the latest pm sync receipt (machine-readable)", "")
 	c.Bind("pm status", func(cmd *cobra.Command, args []string) error { return runPM(cmd, pm.CmdStatus) })
 
@@ -105,40 +95,6 @@ func (c *CLI) addPM(root *cobra.Command) {
 	c.Bind("pm worker", func(cmd *cobra.Command, args []string) error {
 		os.Exit(pm.WorkerMain())
 		return nil
-	})
-
-	stage := c.newCmd(pmCmd, "stage-native", "prepare and assemble a native payload with home and PM state isolated", "")
-	stage.Hidden = true
-	sf(stage, "out", "", "", "")
-	_ = stage.MarkFlagRequired("out")
-	sf(stage, "ref", "", "HEAD", "")
-	sf(stage, "source", "", "", "")
-	_ = stage.MarkFlagRequired("source")
-	sf(stage, "tui", "", "", "")
-	sf(stage, "web", "", "", "")
-	c.Bind("pm stage-native", func(cmd *cobra.Command, args []string) error {
-		stageArgs := pmStageNativeArgs(cmd)
-		return runPM(cmd, func(ctx context.Context) (int, error) { return pm.StageNativeMain(ctx, stageArgs) })
-	})
-
-	payloadCmd := c.newCmd(pmCmd, "payload", "relocate payload links or rehash payload tool facts", "")
-	payloadCmd.Hidden = true
-	c.pos(payloadCmd, p("action"), p("payload"))
-	c.Bind("pm payload", func(cmd *cobra.Command, args []string) error {
-		action, payload := args[0], args[1]
-		return runPM(cmd, func(ctx context.Context) (int, error) { return pm.PayloadMain(pm.SyncOutput(ctx), action, payload) })
-	})
-
-	assemble := c.newCmd(pmCmd, "assemble-agent", "assemble a runnable agent from prepared inputs", "")
-	assemble.Hidden = true
-	sf(assemble, "inputs", "", "", "")
-	_ = assemble.MarkFlagRequired("inputs")
-	sf(assemble, "out", "", "", "")
-	_ = assemble.MarkFlagRequired("out")
-	c.Bind("pm assemble-agent", func(cmd *cobra.Command, args []string) error {
-		inputs, _ := cmd.Flags().GetString("inputs")
-		out, _ := cmd.Flags().GetString("out")
-		return runPM(cmd, func(ctx context.Context) (int, error) { return 0, pm.AgentMain(ctx, inputs, out) })
 	})
 
 	takeover := c.newCmd(root, "update-takeover", "finish an update a historical updater handed off", "")
@@ -227,15 +183,6 @@ func pmEnvironmentArgs(cmd *cobra.Command, args []string) pm.EnvironmentArgs {
 	return envArgs
 }
 
-// Bundle output dir, snapshot ref and build cache as given
-func pmBundleArgs(cmd *cobra.Command) pm.BundleArgs {
-	var bundleArgs pm.BundleArgs
-	bundleArgs.Out, _ = cmd.Flags().GetString("out")
-	bundleArgs.Ref, _ = cmd.Flags().GetString("ref")
-	bundleArgs.Cache, _ = cmd.Flags().GetString("cache")
-	return bundleArgs
-}
-
 // Update names, target, skipped targets and the uv, npm and termux passes
 func pmUpdateArgs(cmd *cobra.Command, args []string) pm.UpdateArgs {
 	f := cmd.Flags()
@@ -247,16 +194,4 @@ func pmUpdateArgs(cmd *cobra.Command, args []string) pm.UpdateArgs {
 	updateArgs.NPM, _ = f.GetBool("npm")
 	updateArgs.Termux, _ = f.GetBool("termux")
 	return updateArgs
-}
-
-// Native staging child output, ref, source and frontend products
-func pmStageNativeArgs(cmd *cobra.Command) pm.StageNativeArgs {
-	f := cmd.Flags()
-	var stageArgs pm.StageNativeArgs
-	stageArgs.Out, _ = f.GetString("out")
-	stageArgs.Ref, _ = f.GetString("ref")
-	stageArgs.Source, _ = f.GetString("source")
-	stageArgs.TUI, _ = f.GetString("tui")
-	stageArgs.Web, _ = f.GetString("web")
-	return stageArgs
 }

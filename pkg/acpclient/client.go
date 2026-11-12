@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -38,7 +39,7 @@ type Vendor struct {
 	MissingCommandHint       string
 	AuthRequiredHint         *string
 	UnsupportedTransportHint string
-	ModelEntryDisabled       func(entry any) bool
+	ModelEntryDisabled       func(entry any) (bool, error)
 	EarlyExitError           func(stderrText string) (string, bool)
 }
 
@@ -47,10 +48,13 @@ func BaseVendor() Vendor {
 	return Vendor{
 		MarkerBaseURL: "acp://agent", PlaceholderModel: "acp", Label: "ACP",
 		UnsupportedTransportHint: "Either install a CLI release that supports --acp, or point the provider at a working command/args pair.",
-		ModelEntryDisabled:       func(any) bool { return false },
-		EarlyExitError:           func(string) (string, bool) { return "", false },
+		ModelEntryDisabled:       neverDisabled,
+		EarlyExitError:           noEarlyExitError,
 	}
 }
+
+// Early exit hook that leaves every CLI death to the generic exited early error
+func noEarlyExitError(string) (string, bool) { return "", false }
 
 // Constructor keywords of the client, empty values falling back to the vendor defaults
 type Options struct {
@@ -68,8 +72,8 @@ type Options struct {
 // OpenAI client shaped facade over one ACP agent CLI spoken to on stdio
 type Client struct {
 	Vendor
-	APIKey         string
-	BaseURL        string
+	apiKey         string
+	baseURL        string
 	defaultHeaders map[string]string
 	acpCommand     string
 	acpArgs        []string
@@ -88,8 +92,8 @@ func New(ctx context.Context, v Vendor, o Options) (*Client, error) {
 		env = &tools.Env{Home: home.Dir(ctx)}
 	}
 	c := &Client{Vendor: v, env: env, processes: map[*process]bool{}}
-	c.APIKey = firstNonEmpty(o.APIKey, v.PlaceholderModel)
-	c.BaseURL = firstNonEmpty(o.BaseURL, v.MarkerBaseURL)
+	c.apiKey = firstNonEmpty(o.APIKey, v.PlaceholderModel)
+	c.baseURL = firstNonEmpty(o.BaseURL, v.MarkerBaseURL)
 	c.defaultHeaders = map[string]string{}
 	for k, val := range o.DefaultHeaders {
 		c.defaultHeaders[k] = val
@@ -138,6 +142,19 @@ func firstNonEmpty(vals ...string) string {
 
 // Headers the caller passed at construction
 func (c *Client) DefaultHeaders() map[string]string { return c.defaultHeaders }
+
+// Key reported to callers, the vendor's session default model id when none was passed
+func (c *Client) APIKey() string { return c.apiKey }
+
+// Base url reported to callers, the never dialled acp marker when none was passed
+func (c *Client) BaseURL() string { return c.baseURL }
+
+// A complete async safe client the auxiliary wraps never redispatch through a wire adapter
+func (c *Client) AuxDeclares(flag string) bool {
+	return flag == "ICEBATH_SKIP_TRANSPORT_WRAP" || flag == "ICEBATH_SKIP_ASYNC_WRAP"
+}
+
+var _ provider.AuxClient = (*Client)(nil)
 
 // Whether no session process is live, true once the last one drained or close ran
 func (c *Client) IsClosed() bool {
@@ -657,6 +674,59 @@ func (c *Client) runPrompt(ctx context.Context, promptText string, timeoutSecond
 		return nil
 	})
 	return text, reasoning, err
+}
+
+// Answers OpenAI chat kwargs through one ACP prompt, a completion map or its chunk stream when stream is set
+func (c *Client) CreateChatCompletion(ctx context.Context, kwargs map[string]any) (any, error) {
+	messages, err := iterate(or(kwargs["messages"], []any{}))
+	if err != nil {
+		return nil, err
+	}
+	var toolList []any
+	if raw := kwargs["tools"]; raw != nil {
+		if toolList, err = iterate(raw); err != nil {
+			return nil, err
+		}
+	}
+	promptText, err := provider.ACPFormatMessagesAsPrompt(messages, toolList, kwargs["tool_choice"])
+	if err != nil {
+		return nil, err
+	}
+	model := kwargs["model"]
+	requestedModel := ""
+	if pyrepr.Truthy(model) {
+		requestedModel = pyrepr.Str(model)
+	}
+	responseText, reasoning, err := c.runPrompt(ctx, promptText, effectiveTimeout(kwargs["timeout"]), requestedModel)
+	if err != nil {
+		return nil, err
+	}
+	toolCalls, cleanedText, err := provider.ExtractToolCallsFromText(responseText)
+	if err != nil {
+		return nil, err
+	}
+	var reasoningValue any
+	if reasoning != "" {
+		reasoningValue = reasoning
+	}
+	message := map[string]any{
+		"content": cleanedText, "tool_calls": toolCalls, "reasoning": reasoningValue, "reasoning_content": reasoningValue,
+		"reasoning_details": nil,
+	}
+	finishReason := "stop"
+	if len(toolCalls) > 0 {
+		finishReason = "tool_calls"
+	}
+	completion := map[string]any{
+		"choices": []any{map[string]any{"message": message, "finish_reason": finishReason}},
+		"usage": map[string]any{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+			"prompt_tokens_details": map[string]any{"cached_tokens": 0}},
+		"model": or(model, c.PlaceholderModel),
+	}
+	if pyrepr.Truthy(kwargs["stream"]) {
+		return provider.CompletionToStreamChunks(completion)
+	}
+	return completion, nil
 }
 
 // Python str of an exception the client raised or an OS error it hit

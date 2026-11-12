@@ -141,10 +141,10 @@ var (
 	updateFinalizeOutput = gateway.FinalizeUpdateOutput
 	updateAcquireLock    = acquireUpdateLock
 	updateDescribeHolder = updaterecord.DescribeHolder
+	updateRunImpl        = cmdUpdateImpl
 )
 
 var (
-	_ ttyReporter     = (*gateway.UpdateOutputStream)(nil)
 	_ updateLogMirror = (*gateway.UpdateOutputStream)(nil)
 )
 
@@ -204,7 +204,7 @@ func cmdUpdate(ctx context.Context, u UpdateInvocation) error {
 		release()
 		updateFinalizeOutput(ioState)
 	}()
-	err = cmdUpdateImpl(ctx, w, args, gatewayMode)
+	err = updateRunImpl(ctx, w, args, gatewayMode)
 	var exit *pm.SystemExit
 	switch {
 	case err == nil:

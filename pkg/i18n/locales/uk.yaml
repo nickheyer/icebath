@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Доступні набори інструментів"
     currently_enabled_legend: "(*) = зараз увімкнено"
     tip_enable_all: "Порада: використовуйте 'all' або '*', щоб увімкнути всі набори інструментів"
-    example: "Приклад: python cli.py --toolsets web,terminal"
+    example: "Приклад: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Невідома підкоманда /usage: {args}. Спробуйте /usage або /usage reset [--force]."

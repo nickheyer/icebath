@@ -94,7 +94,7 @@ describe('resetModelVisibilityKeepingCustoms', () => {
     const visible = effectiveVisibleKeys($visibleModels.get(), catalog)
 
     expect($customModels.get()).toEqual([{ model: 'acme/model-x', provider: 'openrouter' }])
-    expect(window.localStorage.getItem('hermes.desktop.custom-models')).toContain('acme/model-x')
+    expect(window.localStorage.getItem('icebath.desktop.custom-models')).toContain('acme/model-x')
     expect(visible.has(modelVisibilityKey('openrouter', 'acme/model-x'))).toBe(true)
 
     for (const key of defaultVisibleKeys(catalog)) {

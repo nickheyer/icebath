@@ -17,19 +17,19 @@ import {
 } from './browser-settings'
 import { browserStartupProfileKey } from './browser-startup-profile'
 
-type BootstrapWindow = Window & { __HERMES_BASE_PATH__?: string; __HERMES_DASHBOARD_PROFILE__?: string }
+type BootstrapWindow = Window & { __ICEBATH_BASE_PATH__?: string; __ICEBATH_DASHBOARD_PROFILE__?: string }
 
 const win = window as BootstrapWindow
 
 function host(basePath = '/hermes') {
   document.documentElement.dataset.hermesDesktopHost = 'browser'
-  win.__HERMES_BASE_PATH__ = basePath
+  win.__ICEBATH_BASE_PATH__ = basePath
 }
 
 function unhost() {
   delete document.documentElement.dataset.hermesDesktopHost
-  delete win.__HERMES_BASE_PATH__
-  delete win.__HERMES_DASHBOARD_PROFILE__
+  delete win.__ICEBATH_BASE_PATH__
+  delete win.__ICEBATH_DASHBOARD_PROFILE__
 }
 
 function putFolder(profile: string, dir: string, basePath = '/hermes') {
@@ -62,7 +62,7 @@ afterEach(() => {
 
 describe('browser profile folder for a new chat', () => {
   it('starts a chat or tile in profile B in B folder, and stays detached when B never chose one', () => {
-    expect(browserDefaultProjectDirKey('/hermes', 'beta')).toBe('hermes:browser:default-project-dir:["/hermes","beta"]')
+    expect(browserDefaultProjectDirKey('/hermes', 'beta')).toBe('icebath:browser:default-project-dir:["/hermes","beta"]')
     host()
     putFolder('alpha', '/srv/alpha')
     putFolder('beta', '/srv/beta')
@@ -247,7 +247,7 @@ describe('browser profile prefs follow rename and delete', () => {
   })
 
   it('keeps folder and startup prefs when this page is not the browser host', () => {
-    win.__HERMES_BASE_PATH__ = '/hermes'
+    win.__ICEBATH_BASE_PATH__ = '/hermes'
     putFolder('alpha', '/srv/alpha')
     putStartup('alpha')
     $defaultProfileRoute.set({ connectionId: null, profile: 'alpha' })
@@ -267,12 +267,12 @@ describe('browser profile prefs follow rename and delete', () => {
 // folder alpha's tab chose sits under 'default'. A tab that named
 // `?profile=default` saved there too, so whose folder it is stays unknown.
 describe('browser folder saved by an older build', () => {
-  const legacyKey = 'hermes:browser:default-project-dir:["/hermes","default"]'
-  const alphaKey = 'hermes:browser:default-project-dir:["/hermes","alpha"]'
+  const legacyKey = 'icebath:browser:default-project-dir:["/hermes","default"]'
+  const alphaKey = 'icebath:browser:default-project-dir:["/hermes","alpha"]'
 
   function serveAlphaWithLegacy(dir: string) {
     host()
-    win.__HERMES_DASHBOARD_PROFILE__ = 'alpha'
+    win.__ICEBATH_DASHBOARD_PROFILE__ = 'alpha'
     localStorage.setItem(legacyKey, dir)
   }
 
@@ -333,7 +333,7 @@ describe('browser folder saved by an older build', () => {
 
     expect(resolveNewSessionCwd('default')).toBe('/srv/default')
 
-    win.__HERMES_DASHBOARD_PROFILE__ = 'alpha'
+    win.__ICEBATH_DASHBOARD_PROFILE__ = 'alpha'
 
     expect(resolveNewSessionCwd('alpha')).toBe('')
     expect(resolveNewSessionCwd('default')).toBe('/srv/default')

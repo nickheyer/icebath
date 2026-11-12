@@ -1309,6 +1309,7 @@ func (r *RelayRuntime) CloseSession(ctx context.Context, event map[string]any) {
 	r.closeSession(ctx, event)
 }
 
+// Closes one session already admitted by the host lifecycle gate
 func (r *RelayRuntime) closeSession(ctx context.Context, event map[string]any) {
 	sessionID := relayEventSessionID(event, "session_id")
 	session := r.LookupSession(sessionID)

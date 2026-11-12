@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"net"
 	"net/http"
@@ -576,7 +577,7 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 	if list, ok := msg["tool_calls"].([]any); ok {
 		for i, rawTC := range list {
 			tc, _ := rawTC.(map[string]any)
-			fn, _ := tc["function"].(map[string]any)
+			fn, _ := pyjson.Dict(tc["function"])
 			if fn == nil || fn["name"] == nil {
 				continue
 			}

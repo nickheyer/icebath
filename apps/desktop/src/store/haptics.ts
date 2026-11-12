@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import { persistStore } from '@/lib/persist-store'
 import { persistBoolean, storedBoolean } from '@/lib/storage'
 
-const HAPTICS_MUTED_STORAGE_KEY = 'hermes.desktop.hapticsMuted'
+const HAPTICS_MUTED_STORAGE_KEY = 'icebath.desktop.hapticsMuted'
 
 export const $hapticsMuted = atom(storedBoolean(HAPTICS_MUTED_STORAGE_KEY, false))
 

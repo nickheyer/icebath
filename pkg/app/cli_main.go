@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -19,11 +21,12 @@ import (
 
 // MainOptions carries the cli.py main keyword arguments
 type MainOptions struct {
-	Model, Reasoning, Toolsets, Query, OutputFormat, Provider, Image, Resume, APIKey, BaseURL             string
-	Oneshot, IgnoreRules, IgnoreUserConfig, Compact, Verbose, Quiet, Worktree, Checkpoints, PassSessionID bool
-	RunBudget                                                                                             float64
-	Skills                                                                                                []string
-	MaxTurns                                                                                              *int
+	Model, Reasoning, Toolsets, Query, Q, OutputFormat, Provider, Image, Resume, APIKey, BaseURL             string
+	Oneshot, IgnoreRules, IgnoreUserConfig, Compact, Verbose, Quiet, Worktree, W, Checkpoints, PassSessionID bool
+	ListTools, ListToolsets, Gateway                                                                         bool
+	RunBudget                                                                                                float64
+	Skills                                                                                                   []string
+	MaxTurns                                                                                                 *int
 }
 
 // ErrSetupCancelled reports a provider picker the user left with Ctrl+C, EOF or an exit
@@ -49,33 +52,23 @@ func selectProviderAndModel(ctx context.Context) (err error) {
 	return err
 }
 
-// Main is the interactive chat entry, running a single query when one is given, returning the exit code
-func Main(ctx context.Context, o MainOptions) (code int) {
+// Interactive chat entry, a single query when one is given, returning the exit code and the error it raises
+func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	defer runAtExit()
 	ConfigureWindowsStdio()
 	_ = os.Setenv("ICEBATH_INTERACTIVE", "1")
-	tools.RegisterSelf(ctx, "cli", "", nil)
-	if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
-		fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
-	}
-	if c := console(); c.StdinIsTTY() && c.StdoutIsTTY() {
-		detectLightMode()
-	}
-	joinWorktree := startWorktreeSetup(ctx, o.Worktree)
-	query := o.Query
-	quiet := o.Quiet
-	if o.OutputFormat == "stream-json" {
-		if query == "" {
-			fmt.Fprintln(stderrWriter(), "--format stream-json requires -q/--query")
-			return 1
-		}
-		quiet = true
+	if o.Gateway {
+		return runLegacyGateway(ctx), nil
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			if _, interrupted := r.(keyboardInterrupt); interrupted {
 				fmt.Fprintln(stderrWriter(), "KeyboardInterrupt")
 				code = 130
+				return
+			}
+			if raised, isErr := r.(error); isErr && isValueErrorClass(raised) {
+				code, err = 1, raised
 				return
 			}
 			exit, ok := r.(singleQueryExit)
@@ -85,6 +78,27 @@ func Main(ctx context.Context, o MainOptions) (code int) {
 			code = exit.code
 		}
 	}()
+	if !(o.ListTools || o.ListToolsets) {
+		tools.RegisterSelf(ctx, "cli", "", nil)
+		if warning := profiles.SharedProfileWarning(ctx, home.Dir(ctx), ""); warning != "" {
+			fmt.Fprintln(stderrWriter(), i18n.T(ctx, "cli.startup.warning", "", map[string]any{"warning": warning}))
+		}
+	}
+	if c := console(); c.StdinIsTTY() && c.StdoutIsTTY() {
+		detectLightMode()
+	}
+	joinWorktree := startWorktreeSetup(ctx, o.ListTools, o.ListToolsets, o.Worktree, o.W)
+	query := o.Query
+	if query == "" {
+		query = o.Q
+	}
+	quiet := o.Quiet
+	if o.OutputFormat == "stream-json" {
+		if query == "" {
+			return 1, &appValueError{msg: "--format stream-json requires -q/--query"}
+		}
+		quiet = true
+	}
 	maxTurns := o.MaxTurns
 	var runBudget *float64
 	if o.RunBudget > 0 {
@@ -97,25 +111,57 @@ func Main(ctx context.Context, o MainOptions) (code int) {
 		Checkpoints: o.Checkpoints, PassSessionID: o.PassSessionID, IgnoreRules: o.IgnoreRules}, o.Toolsets != "", o.Skills)
 	if err != nil {
 		if home.EmitPartialUpdateHint(err, stderrWriter()) {
-			return 1
+			return 1, nil
 		}
-		fmt.Fprintln(stderrWriter(), err.Error())
-		return 1
+		return 1, err
 	}
 	if joinWorktree != nil {
 		if wtInfo := joinWorktree(); wtInfo == nil {
-			return 0
+			return 0, nil
 		}
+	}
+	if o.ListTools || o.ListToolsets {
+		c.showBanner()
+		if o.ListTools {
+			c.showTools()
+		} else {
+			c.showToolsets()
+		}
+		return 0, nil
 	}
 	defer runCleanup(ctx, c.env, true)
 	installSingleQuerySignalHandlers(c)
 	defer c.signalStop()
 	if query != "" || o.Image != "" {
 		runSingleQueryMode(c, query, o.Image, quiet, o.Oneshot, o.OutputFormat == "stream-json")
-		return 0
+		return 0, nil
 	}
 	c.run()
-	return 0
+	return 0, nil
+}
+
+// Runs main as the chat command does, a ValueError printed to stdout as Error then its message with exit 1
+func ChatMain(ctx context.Context, o MainOptions) int {
+	code, err := Main(ctx, o)
+	if err == nil {
+		return code
+	}
+	if isValueErrorClass(err) {
+		fmt.Fprintln(console().Out, "Error: "+err.Error())
+		return 1
+	}
+	fmt.Fprintln(stderrWriter(), err.Error())
+	return 1
+}
+
+// Reports an error of the Python ValueError class or a subclass, the errors an except ValueError clause catches
+func isValueErrorClass(err error) bool {
+	mro := pyrepr.BuiltinExceptionMRO(pyrepr.ExceptionName(err))
+	var declared interface{ PyExceptionMRO() []string }
+	if errors.As(err, &declared) {
+		mro = declared.PyExceptionMRO()
+	}
+	return slices.Contains(mro, "ValueError")
 }
 
 // Splits a comma separated toolsets flag, nil when the flag was not given
@@ -338,10 +384,10 @@ func (c *CLI) showToolAvailabilityWarnings() {
 	}
 }
 
-// Starts worktree creation and the tool prewarm in the background, nil when no worktree is wanted
-func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]string {
+// Starts worktree creation and the tool prewarm in the background, nil for a listing or when no worktree is wanted
+func startWorktreeSetup(ctx context.Context, listTools, listToolsets, worktree, w bool) func() map[string]string {
 	cfg := CLIConfig(ctx)
-	if !worktree && !cliTruthy(cfg["worktree"]) {
+	if listTools || listToolsets || !(worktree || w || cliTruthy(cfg["worktree"])) {
 		return nil
 	}
 	env := tools.ToolEnvFrom(ctx)

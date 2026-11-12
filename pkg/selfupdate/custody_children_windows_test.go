@@ -10,6 +10,9 @@ var custodySubreaper = func() bool { return false }
 
 // Child stand-ins the Windows suite re-executes this binary as
 func cuChild(mode string, args []string) int {
+	if code, ok := debtLiveChild(mode, args); ok {
+		return code
+	}
 	if mode == "built" {
 		fmt.Println("built")
 		code, _ := strconv.Atoi(args[0])

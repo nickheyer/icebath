@@ -283,8 +283,6 @@ type CLI struct {
 	pendingMoaConfig             map[string]any
 	pendingMoaDisableAfterTurn   bool
 	pendingMoaRestoreModel       map[string]string
-	emitStreamTextHook           func(string)
-	streamReasoningDeltaHook     func(string)
 	pendingEditSnapshots         map[string]*tools.LocalEditSnapshot
 	lastInputModeRecovery        *float64
 	lastTermiosDriftCheck        *float64
@@ -353,6 +351,7 @@ type CLI struct {
 	promptDuration             float64
 	lastTurnFinishedAt         *float64
 	sessionDB                  *gatewaycli.GatewaySessionStore
+	handoffDB                  handoffStore
 	pendingTitle               string
 	resumed                    bool
 	sessionID                  string
@@ -463,7 +462,7 @@ type CLI struct {
 	statusBarVisible                bool
 	batteryVisible                  bool
 	vimMode                         bool
-	statusBarSuppressedAfterResize  bool
+	statusBarSuppressedAfterResize  atomic.Bool
 	resizeRecoveryPending           bool
 	resizeRecoveryLock              sync.Mutex
 	resizeRecoveryTimer             *time.Timer

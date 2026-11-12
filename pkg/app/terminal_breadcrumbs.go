@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,8 +86,8 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 		cwd, _ = os.Getwd()
 	}
 	now := breadcrumbNow()
-	payload := map[string]any{"session_id": sessionID, "cwd": cwd, "ts": now}
-	if err := config.AtomicJSONWrite(ctx, filepath.Join(dir, terminalID), payload); err != nil {
+	payload := pyjson.ObjectOf("session_id", sessionID, "cwd", cwd, "ts", now)
+	if err := config.AtomicJSONWriteWith(ctx, filepath.Join(dir, terminalID), payload); err != nil {
 		return
 	}
 	pyfs.UnlinkFilesOlderThan(dir, "*", staleBreadcrumbAfter, &now)

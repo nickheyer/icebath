@@ -47,7 +47,7 @@ func newSelfPostServer(t *testing.T, fail int) *selfPostServer {
 		if len(body.Messages) > 0 {
 			text = body.Messages[0].Content
 		}
-		s.posts = append(s.posts, selfPost{text, req.Header.Get("X-Hermes-Session-Id")})
+		s.posts = append(s.posts, selfPost{text, req.Header.Get("X-Icebath-Session-Id")})
 		failing := len(s.posts) <= s.fail
 		s.mu.Unlock()
 		if failing {

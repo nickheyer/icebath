@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
@@ -53,10 +52,10 @@ const (
 	RecoveryClosureInit     = "icebath_cli/__init__.py"
 )
 
-const (
-	restoreClaimName        = "icebath-update-pull.claim"
-	restoreClaimWaitSeconds = 10.0
-)
+const restoreClaimName = "icebath-update-pull.claim"
+
+// Seconds a launch waits for another launch's restore claim before leaving the tree to it
+var restoreClaimWaitSeconds = 10.0
 
 var objectIDRE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 
@@ -237,6 +236,9 @@ func (g restoreGit) runBytes(args ...string) (*gitRun, error) {
 func (g restoreGit) runWith(stdin *string, text bool, args ...string) (*gitRun, error) {
 	base := []string{g.executable, "--literal-pathspecs", "-C", g.root}
 	opts := ChildOptions{Dir: g.root, Capture: true, Text: text, Timeout: 120 * time.Second, Input: stdin}
+	if stdin == nil {
+		opts.Stdin = DevNull
+	}
 	done, err := RunGit(g.ctx, base, args, opts)
 	if err != nil {
 		return nil, err
@@ -672,17 +674,10 @@ func keepAside(file string) (string, error) {
 	}
 }
 
-// Whether a test binary runs against this very checkout, which no repair may touch
+// Whether go test or a pytest case drives this process against its own checkout, which no repair may touch
 func testOwnsLiveCheckout(root string) bool {
-	if !testing.Testing() {
-		return false
-	}
 	resolved, err := pypath.Resolve(root)
-	if err != nil {
-		return false
-	}
-	repo, err := pypath.Resolve(pm.RepoRoot())
-	return err == nil && resolved == repo
+	return err == nil && pm.LiveCheckoutUnderTest(resolved)
 }
 
 // Key value fields of the interrupted pull marker

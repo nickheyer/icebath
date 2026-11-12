@@ -10,7 +10,7 @@ import { atom } from 'nanostores'
 
 import { persistBoolean, storedBoolean } from '@/lib/storage'
 
-const KEY = 'hermes.desktop.disableF12.v1'
+const KEY = 'icebath.desktop.disableF12.v1'
 
 export const $disableF12 = atom<boolean>(typeof window === 'undefined' ? false : storedBoolean(KEY, false))
 

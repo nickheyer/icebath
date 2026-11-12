@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,10 +9,12 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // File name of the emergency stop sentinel under a home
@@ -120,11 +121,19 @@ func GetState(ctx context.Context) *EstopState {
 		if err != nil {
 			continue
 		}
-		var raw map[string]any
-		if json.Unmarshal(estopStripBOM(data), &raw) != nil || raw == nil {
+		body := estopStripBOM(data)
+		if !utf8.Valid(body) {
 			continue
 		}
-		state = &EstopState{Reason: stringField(raw, "reason"), EngagedAt: stringField(raw, "engaged_at")}
+		parsed, err := pyjson.Loads(string(body))
+		if err != nil {
+			continue
+		}
+		raw, ok := parsed.(*pyjson.Object)
+		if !ok {
+			continue
+		}
+		state = &EstopState{Reason: stringField(raw.Vals, "reason"), EngagedAt: stringField(raw.Vals, "engaged_at")}
 		break
 	}
 	if !found {
@@ -141,15 +150,12 @@ func estopStripBOM(data []byte) []byte {
 	return data
 }
 
-// Truthy string value of a JSON object field as text, empty for a falsy or non string value
+// Python str of a truthy JSON object field, empty for a missing or falsy value
 func stringField(raw map[string]any, key string) string {
-	switch v := raw[key].(type) {
-	case string:
-		return v
-	case nil, bool:
+	if !pyrepr.Truthy(raw[key]) {
 		return ""
 	}
-	return fmt.Sprint(raw[key])
+	return pyrepr.Str(raw[key])
 }
 
 // Short notice for new gateway turns while paused, empty when not paused

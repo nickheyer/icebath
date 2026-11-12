@@ -9,7 +9,7 @@ var ProjectFolder = pydantic.NewModel("ProjectFolder", ClosedConfig,
 	pydantic.Def("label", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("is_primary", pydantic.Bool, false),
 	pydantic.Def("added_at", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``hermes_cli/projects_db.py::ProjectFolder.to_dict``.")
 
 var ProjectInfo = pydantic.NewModel("ProjectInfo", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -23,12 +23,12 @@ var ProjectInfo = pydantic.NewModel("ProjectInfo", ClosedConfig,
 	pydantic.Def("archived", pydantic.Bool, false),
 	pydantic.Req("created_at", pydantic.Int),
 	pydantic.Fac("folders", pydantic.List(ProjectFolder), pydantic.NewList),
-)
+).Described("``hermes_cli/projects_db.py::Project.to_dict`` — one stored project with its folders.")
 
 var ProjectsPayload = pydantic.NewModel("ProjectsPayload", ClosedConfig,
 	pydantic.Req("projects", pydantic.List(ProjectInfo)),
 	pydantic.Def("active_id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``methods_projects._projects_payload``: every project (archived included) + the active id.")
 
 var ProjectResult = pydantic.NewModel("ProjectResult", ClosedConfig,
 	pydantic.Req("project", ProjectInfo),
@@ -40,7 +40,7 @@ var OptionalProjectResult = pydantic.NewModel("OptionalProjectResult", ClosedCon
 
 var ProjectIdParams = pydantic.Extend(ProfileParams, "ProjectIdParams", ParamsConfig,
 	pydantic.Req("id", pydantic.Str),
-)
+).Described("Any method addressed at one stored project (``5062`` when the id resolves to nothing).")
 
 var _ = Method("projects.list", ProfileParams, ProjectsPayload, "Every project of the profile (archived included) plus which one is active.")
 
@@ -56,7 +56,7 @@ var ProjectsCreateParams = pydantic.Extend(ProfileParams, "ProjectsCreateParams"
 	pydantic.Def("color", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("board_slug", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("use", pydantic.Bool, false),
-)
+).Described("``use`` also activates the new project.")
 
 var _ = Method("projects.create", ProjectsCreateParams, OptionalProjectResult, "Create a project from a name + folders; duplicate primary paths are refused (5063).")
 
@@ -66,7 +66,7 @@ var ProjectsUpdateParams = pydantic.Extend(ProjectIdParams, "ProjectsUpdateParam
 	pydantic.Def("icon", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("color", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("board_slug", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Absent keys are left untouched; ``''`` clears ``color`` / ``icon``.")
 
 var _ = Method("projects.update", ProjectsUpdateParams, ProjectResult, "Patch a project's display fields; answers the refreshed project.")
 
@@ -96,7 +96,7 @@ var _ = Method("projects.delete", ProjectIdParams, ProjectsPayload, "Delete a pr
 
 var ProjectsSetActiveParams = pydantic.Extend(ProfileParams, "ProjectsSetActiveParams", ParamsConfig,
 	pydantic.Def("id", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("No ``id`` (or null) clears the active project.")
 
 var ActiveIdResult = pydantic.NewModel("ActiveIdResult", ClosedConfig,
 	pydantic.Def("active_id", pydantic.Nullable(pydantic.Str), nil),
@@ -106,7 +106,7 @@ var _ = Method("projects.set_active", ProjectsSetActiveParams, ActiveIdResult, "
 
 var ProjectsForCwdParams = pydantic.Extend(ProfileParams, "ProjectsForCwdParams", ParamsConfig,
 	pydantic.Def("cwd", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Absent ``cwd`` resolves the gateway's default completion cwd.")
 
 var ProjectsForCwdResult = pydantic.NewModel("ProjectsForCwdResult", ClosedConfig,
 	pydantic.Def("project", pydantic.Nullable(ProjectInfo), nil),
@@ -120,7 +120,7 @@ var RepoDiscoveryPolicy = pydantic.NewModel("RepoDiscoveryPolicy", ClosedConfig,
 	pydantic.Req("enabled", pydantic.Bool),
 	pydantic.Req("roots", pydantic.List(pydantic.Str)),
 	pydantic.Req("exclude_paths", pydantic.List(pydantic.Str)),
-)
+).Described("``methods_projects._repo_discovery_policy`` — the effective ``desktop.repo_scan_*`` config.")
 
 var RepoDiscoveryPolicyParams = pydantic.NewModel("RepoDiscoveryPolicyParams", ParamsConfig,
 	pydantic.Def("enabled", pydantic.Nullable(pydantic.Bool), nil),
@@ -129,18 +129,18 @@ var RepoDiscoveryPolicyParams = pydantic.NewModel("RepoDiscoveryPolicyParams", P
 	pydantic.Def("repo_scan_enabled", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("repo_scan_roots", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("repo_scan_exclude_paths", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("The policy the desktop scanned under (short or ``repo_scan_*`` long keys both accepted).")
 
 var DiscoveredRepo = pydantic.NewModel("DiscoveredRepo", ClosedConfig,
 	pydantic.Req("root", pydantic.Str),
 	pydantic.Def("label", pydantic.Str, ""),
 	pydantic.Def("sessions", pydantic.Int, 0),
 	pydantic.Def("last_active", pydantic.Float, 0.0),
-)
+).Described("``methods_projects._discover_repos_payload`` row: a git root with session totals.")
 
 var ProjectsDiscoverReposParams = pydantic.Extend(ProfileParams, "ProjectsDiscoverReposParams", ParamsConfig,
 	pydantic.Def("scan", pydantic.Bool, false),
-)
+).Described("``scan`` asks the host to walk the policy roots itself (remote-gateway desktop).")
 
 var ProjectsDiscoverReposResult = pydantic.NewModel("ProjectsDiscoverReposResult", ClosedConfig,
 	pydantic.Req("repos", pydantic.List(DiscoveredRepo)),
@@ -157,7 +157,7 @@ var RecordRepoItem = pydantic.NewModel("RecordRepoItem", ParamsConfig,
 var ProjectsRecordReposParams = pydantic.Extend(ProfileParams, "ProjectsRecordReposParams", ParamsConfig,
 	pydantic.Def("repos", pydantic.Nullable(pydantic.List(pydantic.Union(RecordRepoItem, pydantic.Str))), nil),
 	pydantic.Def("discovery_policy", pydantic.Nullable(RepoDiscoveryPolicyParams), nil),
-)
+).Described("Repos as ``{root, label}`` objects or bare root strings; entries without a root are skipped.")
 
 var ProjectsRecordReposResult = pydantic.Extend(ProjectsDiscoverReposResult, "ProjectsRecordReposResult", ClosedConfig,
 	pydantic.Req("accepted", pydantic.Bool),
@@ -167,7 +167,7 @@ var _ = Method("projects.record_repos", ProjectsRecordReposParams, ProjectsRecor
 
 var ProjectTreeSession = pydantic.Extend(StoredSessionRow, "ProjectTreeSession", OpenConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``methods_projects._project_tree_row`` + ``project_tree.stamp_profile``: the minimal row the\nsidebar renders, stamped with the profile it belongs to.")
 
 var ProjectTreeLane = pydantic.NewModel("ProjectTreeLane", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -177,7 +177,7 @@ var ProjectTreeLane = pydantic.NewModel("ProjectTreeLane", ClosedConfig,
 	pydantic.Def("isKanban", pydantic.Bool, false),
 	pydantic.Def("isGit", pydantic.Bool, true),
 	pydantic.Fac("sessions", pydantic.List(ProjectTreeSession), pydantic.NewList),
-)
+).Described("One branch / worktree / kanban lane inside a repo; ``sessions`` is empty unless hydrated.")
 
 var ProjectTreeRepo = pydantic.NewModel("ProjectTreeRepo", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -202,7 +202,7 @@ var ProjectTreeNode = pydantic.NewModel("ProjectTreeNode", ClosedConfig,
 	pydantic.Fac("repos", pydantic.List(ProjectTreeRepo), pydantic.NewList),
 	pydantic.Fac("previewSessions", pydantic.List(ProjectTreeSession), pydantic.NewList),
 	pydantic.Fac("sessionIds", pydantic.List(pydantic.Str), pydantic.NewList),
-)
+).Described("``project_tree._project_node`` — explicit, auto (git root) or the synthetic Home bucket.")
 
 var ProjectsTreeParams = pydantic.Extend(ProfileParams, "ProjectsTreeParams", ParamsConfig,
 	pydantic.Def("preview_limit", pydantic.Nullable(pydantic.Int), nil),
@@ -230,7 +230,7 @@ var _ = Method("projects.project_sessions", ProjectsProjectSessionsParams, Proje
 
 var PetInfoParams = pydantic.Extend(ProfileParams, "PetInfoParams", ParamsConfig,
 	pydantic.Def("knownRevision", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``knownRevision``: the spritesheet revision the caller already holds (send-once bytes).")
 
 var PetInfoResult = pydantic.NewModel("PetInfoResult", OpenConfig,
 	pydantic.Req("enabled", pydantic.Bool),
@@ -248,7 +248,7 @@ var PetInfoResult = pydantic.NewModel("PetInfoResult", OpenConfig,
 	pydantic.Def("loopMs", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("scale", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("stateRows", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("``server._pet_sprite_payload`` behind ``enabled``; every sprite field is absent when the pet\ndisplay is off, ``spritesheetBase64`` is elided when ``spritesheetUnchanged``.")
 
 var _ = Method("pet.info", PetInfoParams, PetInfoResult, "Active pet for sprite renderers: spritesheet (base64) + frame geometry + state-row taxonomy.")
 
@@ -266,7 +266,7 @@ var PetCellsParams = pydantic.Extend(ProfileParams, "PetCellsParams", ParamsConf
 	pydantic.Def("state", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("cols", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("graphics", pydantic.Bool, false),
-)
+).Described("``graphics`` opts into the kitty payload when the TTY speaks it; ``cols`` overrides the width.")
 
 var PetCellsResult = pydantic.NewModel("PetCellsResult", ClosedConfig,
 	pydantic.Req("enabled", pydantic.Bool),
@@ -282,7 +282,7 @@ var PetCellsResult = pydantic.NewModel("PetCellsResult", ClosedConfig,
 	pydantic.Def("color", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("rows", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("placeholder", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
-)
+).Described("Unicode: ``frames`` is frame → row → cell ``[tr,tg,tb,ta, br,bg,bb,ba]``; kitty (``graphics``\nset): ``frames`` are transmit escapes and ``placeholder`` the text grid.")
 
 var _ = Method("pet.cells", PetCellsParams, PetCellsResult, "Half-block cell frames (or a kitty placement) for one pet state.")
 
@@ -337,7 +337,7 @@ var _ = Method("pet.export", PetSlugParams, PetExportResult, "Export an installe
 
 var PetThumbParams = pydantic.Extend(PetSlugParams, "PetThumbParams", ParamsConfig,
 	pydantic.Def("url", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``url``: spritesheet source for a not-yet-installed pet.")
 
 var PetThumbResult = pydantic.NewModel("PetThumbResult", ClosedConfig,
 	pydantic.Req("ok", pydantic.Bool),

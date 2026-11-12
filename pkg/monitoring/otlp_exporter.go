@@ -15,10 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// OTLPUnavailable reports an OTLP exporter the process cannot build
-type OTLPUnavailable struct{ Msg string }
-
-func (e *OTLPUnavailable) Error() string { return e.Msg }
+// OTelSDKModule is the Go OpenTelemetry SDK module the exporter is linked against
+const OTelSDKModule = "go.opentelemetry.io/otel/sdk"
 
 func otlpLog() *slog.Logger { return slog.Default().With("logger", "agent.monitoring.otlp_exporter") }
 
@@ -261,9 +259,6 @@ func (s *OTLPStreamer) Shutdown() {
 		s.provider.Shutdown()
 	}
 }
-
-// OTLPAvailable reports that the exporter is built into this binary, no optional SDK to install
-func OTLPAvailable() bool { return true }
 
 // IsOTLPEnabled reports an enabled export with an endpoint
 func IsOTLPEnabled(cfg map[string]any) bool {

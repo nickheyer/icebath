@@ -113,18 +113,19 @@ func (s *sources) tier(name string, size int) *image.NRGBA {
 	return cover(src, c.rect, size, size, s.tubDark)
 }
 
-// Tub artwork on the macOS grid plate, the disk image volume icon for every channel
-func (s *sources) volumeIcon() *image.NRGBA {
-	dst := image.NewRGBA(image.Rect(0, 0, canvasSide, canvasSide))
-	plate := cover(s.tub, s.tubTile, int(macPlate.w), int(macPlate.h), s.tubDark)
-	sil := roundedMask(canvasSide, canvasSide, macPlate, 1)
-	draw.DrawMask(dst, dst.Bounds(), plate, image.Pt(-int(macPlate.x), -int(macPlate.y)), sil, image.Point{}, draw.Over)
+// Tub artwork on the macOS grid plate at size, the disk image volume and file icon for every channel
+func (s *sources) volumeIcon(size int) *image.NRGBA {
+	k := float64(size) / canvasSide
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	plate := cover(s.tub, s.tubTile, int(math.Round(macPlate.w*k)), int(math.Round(macPlate.h*k)), s.tubDark)
+	sil := roundedMask(size, size, macPlate, k)
+	at := image.Pt(-int(math.Round(macPlate.x*k)), -int(math.Round(macPlate.y*k)))
+	draw.DrawMask(dst, dst.Bounds(), plate, at, sil, image.Point{}, draw.Over)
 	return toNRGBA(dst)
 }
 
-// Disk image window background at scale, banner scene dimmed under the wordmark and an arrow between the icons
-func (s *sources) dmgBackground(scale int) *image.NRGBA {
-	w, h := 769*scale, 457*scale
+// Disk image window background, banner scene dimmed under the wordmark, the electron one with an arrow between its icons
+func (s *sources) dmgBackground(w, h int, arrowScale float64) *image.NRGBA {
 	scene := cover(s.banner, s.banner.Bounds(), w, h, s.tubDark)
 	dst := image.NewRGBA(scene.Bounds())
 	draw.Draw(dst, dst.Bounds(), scene, image.Point{}, draw.Src)
@@ -134,7 +135,10 @@ func (s *sources) dmgBackground(scale int) *image.NRGBA {
 	box := s.textBox
 	k := 0.34 * float64(w) / float64(box.Dx())
 	drawScaled(dst, s.textWhite.SubImage(box), k, (float64(w)-float64(box.Dx())*k)/2-float64(box.Min.X)*k, 0.07*float64(h)-float64(box.Min.Y)*k)
-	f := float64(scale)
+	if arrowScale == 0 {
+		return toNRGBA(dst)
+	}
+	f := arrowScale
 	cx, cy, half := (253.0+512.0)/2*f, (238.0+235.0)/2*f, 34*f
 	z := vector.NewRasterizer(w, h)
 	shaft, head := 2*f, 9*f

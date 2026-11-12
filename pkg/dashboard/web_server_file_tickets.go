@@ -87,7 +87,7 @@ func sessionTokenOf(req *Request) (string, bool) {
 		pyrepr.Truthy(req.State().Get("token_authenticated")) {
 		return "", false
 	}
-	if token := req.Headers().Get(sessionHeaderName); token != "" {
+	if token := presentedSessionHeader(req.Headers()); token != "" {
 		return token, true
 	}
 	if token := strings.TrimPrefix(req.Headers().Get("authorization"), "Bearer "); token != "" {

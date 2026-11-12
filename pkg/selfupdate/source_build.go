@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -39,14 +38,11 @@ func SourceProductCurrent(ctx context.Context, projectRoot, product, out string)
 	if !ok {
 		return false
 	}
-	env := pm.EnvFor([]string{"node"}, nil)
-	result, err := pysubprocess.RunWith(ctx, []string{node, filepath.Join(projectRoot, "scripts", "build", "freshness.mjs"),
-		"--source", projectRoot, "--product", product, "--out", out},
-		pysubprocess.Options{Dir: projectRoot, Env: pm.EnvList(env), Check: true})
+	host, err := frontendNodeHost(node)
 	if err != nil {
 		return false
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(result.Stdout)) == "true"
+	return frontendProductCurrent(host, projectRoot, product, out, nil, pm.EnvFor([]string{"node"}, nil))
 }
 
 // Process environment as Python os environ maps it, keys upper cased on Windows
@@ -175,9 +171,14 @@ func runSourceScriptIn(ctx context.Context, projectRoot, script string, args []s
 	return err
 }
 
-// Dependency install flags, no install allowed unless explicit or lazy installs are on
+// True when dependencies may be installed, an explicit build or lazy installs being on
+func sourceInstallAllowed(ctx context.Context, explicit bool) bool {
+	return explicit || pm.LazyInstallsAllowedFor(ctx)
+}
+
+// Dependency install flags of the node build scripts, no install allowed unless explicit or lazy installs are on
 func sourceInstallArgs(ctx context.Context, explicit bool) []string {
-	if explicit || pm.LazyInstallsAllowedFor(ctx) {
+	if sourceInstallAllowed(ctx, explicit) {
 		return nil
 	}
 	return []string{"--no-install"}
@@ -185,12 +186,8 @@ func sourceInstallArgs(ctx context.Context, explicit bool) []string {
 
 // Prepares node dependencies of the workspace union, reusing a completed identical union
 func PrepareSourceDependencies(ctx context.Context, projectRoot string, workspaces []string, env map[string]string, explicit bool) error {
-	args := []string{"--source", projectRoot, "--reuse"}
-	args = append(args, sourceInstallArgs(ctx, explicit)...)
-	for _, workspace := range workspaces {
-		args = append(args, "--workspace", workspace)
-	}
-	return runSourceScript(ctx, projectRoot, "scripts/build/node-deps.mjs", args, env, "Preparing Node dependencies")
+	st := newFrontendStep("Preparing Node dependencies")
+	return st.close(frontendPrepareNodeDependencies(ctx, st, projectRoot, workspaces, env, true, sourceInstallAllowed(ctx, explicit), true, nil))
 }
 
 // Prepares launch dependencies keeping an installed desktop frontend in the union
@@ -204,9 +201,23 @@ func PrepareLaunchDependencies(ctx context.Context, projectRoot string, env map[
 	return PrepareSourceDependencies(ctx, projectRoot, workspaces, env, false)
 }
 
-// Compiles the TUI bundle of the checkout
+// TUI compiler of the source builds, the tui build step update and launch tests replace with a fixture compiler
+var compileSourceTUI = frontendBuildDeveloperTUI
+
+// Compiles the TUI bundle of the checkout into ui-tui/dist
 func BuildSourceTUI(ctx context.Context, projectRoot string, env map[string]string) error {
-	return runSourceScript(ctx, projectRoot, "scripts/build/tui.mjs", nil, env, "Building the TUI")
+	st := newFrontendStep("Building the TUI")
+	_, err := compileSourceTUI(ctx, st, projectRoot, env)
+	return st.close(err)
+}
+
+// Replaces the TUI compiler for tests of other packages, the returned function restoring the real one
+func SwapTUICompilerForTests(compile func(ctx context.Context, source string, env map[string]string) error) func() {
+	prev := compileSourceTUI
+	compileSourceTUI = func(ctx context.Context, _ *frontendStep, source string, env map[string]string) (string, error) {
+		return filepath.Join(source, "ui-tui", "dist", "entry.js"), compile(ctx, source, env)
+	}
+	return func() { compileSourceTUI = prev }
 }
 
 // Directory the bundled web UI of a checkout is built into and served from
@@ -214,20 +225,26 @@ func WebDistDir(projectRoot string) string {
 	return filepath.Join(projectRoot, "cmd", "icebath", "web_dist")
 }
 
+// Dashboard compiler of the source builds, the web build step update tests replace with a fixture compiler
+var compileSourceWeb = frontendBuildWeb
+
 // Compiles the web UI under bounded CPU and heap with committed icons unless others are given
 func BuildSourceWeb(ctx context.Context, projectRoot string, env map[string]string, icons string) error {
 	ApplyWebBuildLimits(env)
 	if icons == "" {
 		icons = projectRoot
 	}
-	return runSourceScript(ctx, projectRoot, "scripts/build/web.mjs",
-		[]string{"--source", projectRoot, "--icons", icons, "--out", WebDistDir(projectRoot)}, env, "Building the web UI")
+	st := newFrontendStep("Building the web UI")
+	return st.close(compileSourceWeb(ctx, st, projectRoot, icons, WebDistDir(projectRoot), env))
 }
+
+// Webapp compiler of the source builds, the webapp build step tests replace with a fixture compiler
+var compileSourceWebapp = frontendBuildSourceWebapp
 
 // Compiles the browser renderer whose dependencies live in a private workspace
 func buildSourceWebapp(ctx context.Context, projectRoot string, env map[string]string, explicit bool) error {
-	return runSourceScript(ctx, projectRoot, "apps/desktop/scripts/build-webapp.mjs", sourceInstallArgs(ctx, explicit), env,
-		"Building the Webapp renderer")
+	st := newFrontendStep("Building the Webapp renderer")
+	return st.close(compileSourceWebapp(ctx, st, projectRoot, "", sourceInstallAllowed(ctx, explicit), env))
 }
 
 // Frontend workspaces the checkout carries among ui-tui and web
@@ -300,6 +317,15 @@ func exceptionName(err error) string {
 // True on Linux without an X11 or Wayland display
 func headlessLinux() bool {
 	return runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == ""
+}
+
+// Replaces the dashboard compiler for tests of other packages, the returned function restoring the real one
+func SwapWebCompilerForTests(compile func(ctx context.Context, source, icons, out string, env map[string]string) error) func() {
+	prev := compileSourceWeb
+	compileSourceWeb = func(ctx context.Context, _ *frontendStep, source, icons, out string, env map[string]string) error {
+		return compile(ctx, source, icons, out, env)
+	}
+	return func() { compileSourceWeb = prev }
 }
 
 // Swaps the PM tool acquisition and installed node lookup of source builds, returning the restore

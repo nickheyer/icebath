@@ -174,7 +174,7 @@ func asciiBox(title string, width int) {
 func toolsetMap(toolDefs []map[string]any, availability map[string]any, toolsetFor func(string) string) *pyjson.Object {
 	out := pyjson.NewObject()
 	for _, def := range toolDefs {
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		name, _ := fn["name"].(string)
 		var ts any
 		if s := toolsetFor(name); s != "" {
@@ -679,7 +679,7 @@ func (c *CLI) showTools() {
 	type toolRow struct{ name, desc string }
 	sorted := slices.Clone(toolDefs)
 	toolName := func(def map[string]any) string {
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		name, _ := fn["name"].(string)
 		return name
 	}
@@ -691,7 +691,7 @@ func (c *CLI) showTools() {
 		if toolset == "" {
 			toolset = "unknown"
 		}
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		desc, _ := fn["description"].(string)
 		desc, _, _ = strings.Cut(desc, "\n")
 		if i := strings.Index(desc, ". "); i >= 0 {
@@ -1245,15 +1245,15 @@ func joinServerKeys(keys []mcp.ServerKey) (string, error) {
 
 // Disconnects every MCP server, rereads config, reconnects, refreshes the agent tools and notes the change for the model
 func (c *CLI) reloadMCP() {
+	if connection := gatewayConnectionFor(c); connection != nil {
+		c.reloadGatewayMCP(connection)
+		return
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			infoPrint("  " + c.t("gateway.reload_mcp.failed", map[string]any{"error": panicText(r)}))
 		}
 	}()
-	if connection := gatewayConnectionFor(c); connection != nil {
-		c.reloadGatewayMCP(connection)
-		return
-	}
 	if err := c.reloadMCPLocal(); err != nil {
 		infoPrint("  " + c.t("gateway.reload_mcp.failed", map[string]any{"error": err.Error()}))
 	}

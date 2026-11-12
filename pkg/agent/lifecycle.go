@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -102,8 +102,8 @@ func lifecycleSessionEndMessages(results []any) []string {
 		if m, ok := result.(map[string]any); ok {
 			text = m["message"]
 		}
-		if s, ok := text.(string); ok && strings.TrimSpace(s) != "" {
-			messages = append(messages, strings.TrimSpace(s))
+		if s, ok := text.(string); ok && pystr.Strip(s) != "" {
+			messages = append(messages, pystr.Strip(s))
 		}
 	}
 	return messages

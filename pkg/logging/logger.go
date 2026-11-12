@@ -79,6 +79,12 @@ var (
 
 func init() { minLevel.Store(LevelWarning) }
 
+// Level at or below which every logger drops its records, zero leaving all levels enabled
+var disableLevel atomic.Int64
+
+// Drops records at or below level on every logger, the manager wide logging.disable switch
+func Disable(level int) { disableLevel.Store(int64(level)) }
+
 // Logger for a dotted name, the root logger for an empty name or root
 func GetLogger(name string) *Logger {
 	if name == "" || name == "root" {
@@ -190,7 +196,9 @@ func (l *Logger) EffectiveLevel() int {
 }
 
 // Reports whether a record at level passes this logger's effective level
-func (l *Logger) IsEnabledFor(level int) bool { return level >= l.EffectiveLevel() }
+func (l *Logger) IsEnabledFor(level int) bool {
+	return int64(level) > disableLevel.Load() && level >= l.EffectiveLevel()
+}
 
 // Logs msg at level with the record attributes resolved from ctx
 func (l *Logger) LogContext(ctx context.Context, level int, msg string) {

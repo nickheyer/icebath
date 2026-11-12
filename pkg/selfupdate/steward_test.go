@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -129,7 +130,10 @@ func TestStewardMalformedStampDegradesToUnknown(t *testing.T) {
 func TestStewardPackageManagerLayoutsAndOwnership(t *testing.T) {
 	t.Setenv("SCOOP", "")
 	t.Setenv("SCOOP_GLOBAL", "")
+	t.Setenv("ChocolateyInstall", "")
 	for path, want := range map[string]string{
+		`C:\ProgramData\chocolatey\lib\icebath\tools\icebath.exe`:                     StewardChoco,
+		"/home/me/.local/share/pipx/venvs/icebath-cli/bin/icebath":                    StewardPip,
 		"/nix/store/abc-icebath-1.0/bin/icebath":                                      StewardNix,
 		"/opt/homebrew/Caskroom/icebath/1.0/icebath":                                  StewardHomebrew,
 		"/usr/local/Cellar/icebath/1.0/bin/icebath":                                   StewardHomebrew,
@@ -138,13 +142,13 @@ func TestStewardPackageManagerLayoutsAndOwnership(t *testing.T) {
 		"/home/me/.local/bin/icebath":                                                 "",
 		"/home/me/nix/store/icebath":                                                  "",
 	} {
-		if got := packageManagerPath(strings.ReplaceAll(path, `\`, "/")); got != want {
+		if got := config.PackageManagerOfPath(strings.ReplaceAll(path, `\`, "/")); got != want {
 			t.Fatalf("%s got %q want %q", path, got, want)
 		}
 	}
 	scoop := filepath.Join(t.TempDir(), "custom-scoop")
 	t.Setenv("SCOOP", scoop)
-	if got := packageManagerPath(filepath.Join(scoop, "apps", "icebath", "current", "icebath")); got != StewardScoop {
+	if got := config.PackageManagerOfPath(filepath.Join(scoop, "apps", "icebath", "current", "icebath")); got != StewardScoop {
 		t.Fatal(got)
 	}
 	previous := packageOwner

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
@@ -93,7 +94,7 @@ func ensureMessageAgentTool(ctx context.Context, a *AIAgent) (ok bool) {
 	present := false
 	for _, t := range a.tools {
 		if m, isMap := t.(map[string]any); isMap {
-			if fn, _ := m["function"].(map[string]any); fn != nil && fn["name"] == messageAgentToolName {
+			if fn, _ := pyjson.Dict(m["function"]); fn != nil && fn["name"] == messageAgentToolName {
 				present = true
 				break
 			}

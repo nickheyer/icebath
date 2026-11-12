@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -200,11 +201,11 @@ func writeMonitoringConfig(t *testing.T, body string) string {
 func TestCmdMonitoringStatusReportsDisabledExport(t *testing.T) {
 	dir := writeMonitoringConfig(t, "monitoring:\n  gateway_health_export:\n    enabled: false\n")
 	var out bytes.Buffer
-	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": nil}, &out)
+	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": nil}, &out, io.Discard)
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
-	want := "Gateway monitoring\n  Health export:  disabled (monitoring.gateway_health_export.enabled)\n  OTLP endpoint:  not configured (monitoring.export.otlp)\n  OTel SDK:       installed (optional extra: icebath-agent[otlp])\n\n  Scope: gateway service health + redacted diagnostics only.\n  No prompts, messages, tool args/results, usage analytics, or traces.\n"
+	want := "Gateway monitoring\n  Health export:  disabled (monitoring.gateway_health_export.enabled)\n  OTLP endpoint:  not configured (monitoring.export.otlp)\n  OTel SDK:       " + otelSDKLine(t) + "\n\n  Scope: gateway service health + redacted diagnostics only.\n  No prompts, messages, tool args/results, usage analytics, or traces.\n"
 	if out.String() != want {
 		t.Fatalf("output %q", out.String())
 	}
@@ -213,7 +214,7 @@ func TestCmdMonitoringStatusReportsDisabledExport(t *testing.T) {
 func TestCmdMonitoringStatusReportsEnabledExportDetails(t *testing.T) {
 	dir := writeMonitoringConfig(t, "monitoring:\n  gateway_health_export:\n    enabled: true\n    metrics_enabled: false\n    export_interval_seconds: 30\n  export:\n    otlp:\n      enabled: true\n      endpoint: https://collector.example/v1/traces\n")
 	var out bytes.Buffer
-	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": "status"}, &out)
+	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": "status"}, &out, io.Discard)
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -228,8 +229,28 @@ func TestCmdMonitoringStatusReportsEnabledExportDetails(t *testing.T) {
 
 func TestCmdMonitoringUnknownActionExitsTwo(t *testing.T) {
 	dir := writeMonitoringConfig(t, "")
-	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": "bogus"}, io.Discard)
-	if code != 2 || err == nil || err.Error() != "Unknown monitoring action: bogus" {
-		t.Fatalf("code %d err %v", code, err)
+	var stderr bytes.Buffer
+	code, err := CmdMonitoring(context.Background(), dir, map[string]any{"monitoring_action": "bogus"}, io.Discard, &stderr)
+	if code != 2 || err != nil || stderr.String() != "Unknown monitoring action: bogus\n" {
+		t.Fatalf("code %d err %v stderr %q", code, err, stderr.String())
 	}
+}
+
+// Module path and build info version of the linked Go OpenTelemetry SDK, read independently of the command
+func otelSDKLine(t *testing.T) string {
+	t.Helper()
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		t.Fatal("test binary carries no build info")
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "go.opentelemetry.io/otel/sdk" {
+			if dep.Version == "" || strings.Contains(dep.Version, "Python") {
+				t.Fatalf("dep %+v", dep)
+			}
+			return dep.Path + " " + dep.Version
+		}
+	}
+	t.Fatal("build info lists no go.opentelemetry.io/otel/sdk")
+	return ""
 }

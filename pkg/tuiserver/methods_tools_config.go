@@ -118,7 +118,7 @@ func toolsShow(ctx context.Context, rid any, params map[string]any, _ *tuigatewa
 	defs := tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true,
 		SkipToolSearchAssembly: true})
 	toolName := func(def map[string]any) string {
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		return pyrepr.Str(fn["name"])
 	}
 	sorted := append([]map[string]any(nil), defs...)
@@ -127,7 +127,7 @@ func toolsShow(ctx context.Context, rid any, params map[string]any, _ *tuigatewa
 	sections := map[string][]map[string]any{}
 	for _, def := range sorted {
 		name := toolName(def)
-		fn, _ := def["function"].(map[string]any)
+		fn, _ := pyjson.Dict(def["function"])
 		desc, _, _ := strings.Cut(strOr(fn["description"]), "\n")
 		if i := strings.Index(desc, ". "); i >= 0 {
 			desc = desc[:i+1]

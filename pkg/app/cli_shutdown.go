@@ -214,17 +214,24 @@ func waitForOneshotBackgroundCompletions(c *CLI) {
 	}
 }
 
+// Agent whose memory provider the single query shuts down, a true nil when neither the CLI nor the active ref holds one
+func singleQueryAgent(c *CLI) cliAgent {
+	if c.agent != nil {
+		return c.agent
+	}
+	if active := currentActiveAgent(); active != nil {
+		return active
+	}
+	return nil
+}
+
 // Settles the session, releases its lease, then lingers as a bystander and runs cleanup
 func finalizeSingleQuery(c *CLI) {
 	func() {
 		defer c.releaseActiveSession()
 		flushOneShotSessionStore(c)
 		notifySingleQuerySessionFinalize(c, "shutdown")
-		a := c.agent
-		if a == nil {
-			a = currentActiveAgent()
-		}
-		shutdownAgentMemoryProvider(a)
+		shutdownAgentMemoryProvider(singleQueryAgent(c))
 	}()
 	waitForOneshotBackgroundCompletions(c)
 	runCleanup(c.ctx, c.env, false)

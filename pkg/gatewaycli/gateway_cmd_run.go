@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -280,7 +281,7 @@ func makeExitDiag(ctx context.Context) func(tag string, extra ...[2]any) {
 		line.Set("ts", pydatetime.ISOFormatUTC(time.Now()))
 		line.Set("tag", tag)
 		line.Set("pid", int64(os.Getpid()))
-		line.Set("python", strings.TrimPrefix(runtime.Version(), "go"))
+		line.Set("go", hostinfo.GoVersion())
 		line.Set("platform", pythonPlatform())
 		for _, kv := range extra {
 			line.Set(kv[0].(string), kv[1])

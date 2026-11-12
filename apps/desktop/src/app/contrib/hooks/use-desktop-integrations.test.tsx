@@ -178,8 +178,8 @@ describe('useDesktopIntegrations', () => {
   describe('profile-ready gate', () => {
     it('does NOT restore before profileReady is true', () => {
       // Set remembered state, but profileReady=false.
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       render({ profileReady: false })
 
@@ -188,7 +188,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('restores on profileReady when remembered route exists and owns the session', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
 
       const sessions = [session({ id: 'remembered-session', profile: 'default' })]
 
@@ -198,7 +198,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('restores remembered session id when no remembered route exists', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       const sessions = [session({ id: 'remembered-session', profile: 'default' })]
 
@@ -209,7 +209,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('announces the restored session so the pre-session draft follows the cold-start navigation', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
       // Typed on the fresh chat while the backend was still coming up.
       stashSessionDraft(null, 'typed while booting', [])
 
@@ -222,12 +222,12 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('waits for sessions before validating a remembered session route', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
 
       const result = render({ profileReady: true, sessions: [] })
 
       expect(navigate).not.toHaveBeenCalled()
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/remembered-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBe('/remembered-session')
 
       result.rerender({
         activeProfile: 'default',
@@ -250,22 +250,22 @@ describe('useDesktopIntegrations', () => {
       // must boot into its own blank fresh-draft chat, not the session the
       // primary window has open.
       peerWindowMock.mockReturnValue(true)
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       render({ profileReady: true, sessions: [session({ id: 'remembered-session', profile: 'default' })] })
 
       expect(navigate).not.toHaveBeenCalled()
       // The remembered values stay intact for the primary window's next boot.
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/remembered-session')
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('remembered-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBe('/remembered-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('remembered-session')
     })
   })
 
   describe('display.resume_last_session', () => {
     it('stays on the fresh chat when the setting is off, and keeps remembering the open chat', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       const sessions = [session({ id: 'remembered-session', profile: 'default' })]
       const result = render({ profileReady: true, resumeLastSession: false, sessions })
@@ -284,11 +284,11 @@ describe('useDesktopIntegrations', () => {
         sessions: [...sessions, session({ id: 'other-session', profile: 'default' })]
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('other-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('other-session')
     })
 
     it('holds the restore until the config record answers, then restores when on', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       const sessions = [session({ id: 'remembered-session', profile: 'default' })]
       const result = render({ profileReady: true, resumeLastSession: null, sessions })
@@ -324,7 +324,7 @@ describe('useDesktopIntegrations', () => {
 
     it('repairs a remembered delegate child to its parent on restore', async () => {
       // Written by an older build (or a list slice that served the child).
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'delegate-child')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'delegate-child')
       stubGetSession({ id: 'delegate-child', parent_session_id: 'parent-session', source: 'subagent' })
 
       const sessions = [session({ id: 'parent-session', profile: 'default' })]
@@ -332,7 +332,7 @@ describe('useDesktopIntegrations', () => {
       render({ profileReady: true, sessions })
 
       await waitFor(() => expect(navigate).toHaveBeenCalledWith('/parent-session', { replace: true }))
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('parent-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('parent-session')
     })
 
     // Pins the reachability contract of the by-id resolve branch: the
@@ -343,14 +343,14 @@ describe('useDesktopIntegrations', () => {
     // finds the row — an id absent from the list is cleared before the
     // repair, it never reaches it (evidence for the #97809 review reply).
     it('clears an unlisted remembered id instead of restoring it', async () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'unlisted-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'unlisted-session')
       stubGetSession({ connection_id: 'ssh-proxmox', id: 'unlisted-session', profile: 'default' })
       setSessionOwnerHint('unlisted-session', { connectionId: 'ssh-proxmox', profile: 'default' })
 
       render({ profileReady: true, sessions: [session({ id: 'other-session', profile: 'default' })] })
 
       await waitFor(() =>
-        expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBeNull()
+        expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBeNull()
       )
       expect(navigate).not.toHaveBeenCalledWith('/unlisted-session', { replace: true })
     })
@@ -359,7 +359,7 @@ describe('useDesktopIntegrations', () => {
       // The delegate child resolves to its parent, and the parent row (listed,
       // untagged) is what the repair consults: an explicit `local` hint is
       // stale, exactly as on the click path.
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'delegate-child')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'delegate-child')
       stubGetSession({ id: 'delegate-child', parent_session_id: 'parent-session', source: 'subagent' })
       setSessionOwnerHint('parent-session', { connectionId: 'local', profile: 'default' })
 
@@ -378,8 +378,8 @@ describe('useDesktopIntegrations', () => {
 
       render({ locationPathname: '/delegate-child', profileReady: true, routedSessionId: 'delegate-child', sessions })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('parent-session')
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/parent-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('parent-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBe('/parent-session')
     })
 
     it('keeps remembering a /branch child: source, not parenthood, is the discriminator', () => {
@@ -389,15 +389,15 @@ describe('useDesktopIntegrations', () => {
 
       render({ locationPathname: '/branch-child', profileReady: true, routedSessionId: 'branch-child', sessions })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('branch-child')
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBe('/branch-child')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('branch-child')
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBe('/branch-child')
     })
   })
 
   describe('resume-exhausted write barrier (#98467)', () => {
     it('does not re-persist an exhausted session on a session-list refresh', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/exhausted-session')
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'exhausted-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/exhausted-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'exhausted-session')
 
       const sessions = [session({ id: 'exhausted-session', profile: 'default' })]
 
@@ -426,14 +426,14 @@ describe('useDesktopIntegrations', () => {
         sessions: [...sessions, session({ id: 'other-session', profile: 'default' })]
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBeNull()
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBeNull()
     })
   })
 
   describe('ownership validation', () => {
     it('refuses to restore a session route owned by another profile', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/ai-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/ai-session')
 
       const sessions = [session({ id: 'ai-session', profile: 'ai-engineer' })]
 
@@ -445,8 +445,8 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('refuses to restore a session id owned by another profile', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'ai-session')
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/ai-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'ai-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/ai-session')
 
       const sessions = [session({ id: 'ai-session', profile: 'ai-engineer' })]
 
@@ -457,7 +457,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('clears stale remembered route owned by wrong profile', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.ai-engineer', '/ai-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.ai-engineer', '/ai-session')
 
       const sessions = [session({ id: 'ai-session', profile: 'ai-engineer' })]
 
@@ -472,7 +472,7 @@ describe('useDesktopIntegrations', () => {
       // no connection tag (the legacy primary-SSH path). At click time
       // openStoredSession clears it; the boot auto-restore must too, or the
       // pathname-driven resume routes a remote session to the Mac backend.
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'ssh-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'ssh-session')
       setSessionOwnerHint('ssh-session', { connectionId: 'local', profile: 'default' })
 
       const sessions = [session({ id: 'ssh-session', profile: 'default' })]
@@ -486,7 +486,7 @@ describe('useDesktopIntegrations', () => {
 
   describe('two profiles with distinct sessions', () => {
     it('restores profile A session when profile A is active', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.coder', '/coder-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.coder', '/coder-session')
 
       const sessions = [
         session({ id: 'coder-session', profile: 'coder' }),
@@ -499,7 +499,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('does NOT bleed profile A session into profile B', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.coder', '/coder-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.coder', '/coder-session')
 
       const sessions = [session({ id: 'coder-session', profile: 'coder' })]
 
@@ -521,8 +521,8 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('does NOT restore remembered navigation on a blank new-chat route', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/remembered-session')
 
       render({ profileReady: true, sessions: [session({ id: 'remembered-session', profile: 'default' })] })
 
@@ -539,12 +539,12 @@ describe('useDesktopIntegrations', () => {
         sessions: [session({ id: 'live', profile: 'default' })]
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBeNull()
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBeNull()
     })
 
     it('does not restore the remembered session id either', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'remembered-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'remembered-session')
 
       render({ profileReady: true, sessions: [session({ id: 'remembered-session', profile: 'default' })] })
 
@@ -555,8 +555,8 @@ describe('useDesktopIntegrations', () => {
   describe('legacy key behavior', () => {
     it('discards legacy global keys on read and does NOT restore from them', () => {
       // Simulate a pre-per-profile install.
-      window.localStorage.setItem('hermes.desktop.lastSessionId', 'legacy-session')
-      window.localStorage.setItem('hermes.desktop.lastRoute', '/session/legacy-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId', 'legacy-session')
+      window.localStorage.setItem('icebath.desktop.lastRoute', '/session/legacy-session')
 
       // Profile contexts without matching sessions.
       const sessions = [session({ id: 'legacy-session', profile: 'default' })]
@@ -564,8 +564,8 @@ describe('useDesktopIntegrations', () => {
       render({ profileReady: true, sessions })
 
       // Legacy keys must be discarded.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId')).toBeNull()
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute')).toBeNull()
 
       // And no navigation should happen (the per-profile keys were empty).
       expect(navigate).not.toHaveBeenCalled()
@@ -675,7 +675,7 @@ describe('useDesktopIntegrations', () => {
       })
 
       // The coder session should be persisted under coder's key.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.coder')).toBe('coder-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.coder')).toBe('coder-session')
 
       // Now switch to ops.
       rerender({
@@ -689,10 +689,10 @@ describe('useDesktopIntegrations', () => {
       })
 
       // The ops session should now be persisted under ops's key.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.ops')).toBe('ops-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.ops')).toBe('ops-session')
 
       // Coder's remembered session should still be there.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.coder')).toBe('coder-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.coder')).toBe('coder-session')
     })
 
     it('does NOT overwrite remembered state when session ownership fails validation', () => {
@@ -710,13 +710,13 @@ describe('useDesktopIntegrations', () => {
       })
 
       // No session should be remembered for the active profile.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.ops')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.ops')).toBeNull()
     })
   })
 
   describe('route-scoped restoration', () => {
     it('restores a non-session route like /capabilities', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/capabilities')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/capabilities')
 
       const sessions = [session({ id: 'some-session', profile: 'default' })]
 
@@ -727,7 +727,7 @@ describe('useDesktopIntegrations', () => {
     })
 
     it('does NOT restore overlay routes (settings/command-center)', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/settings')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/settings')
 
       render({ profileReady: true, sessions: [] })
 
@@ -756,13 +756,13 @@ describe('useDesktopIntegrations', () => {
       })
 
       // Overlay routes must NOT be persisted.
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBeNull()
     })
   })
 
   describe('exhausted session cleanup', () => {
     it('clears remembered session id when the exhausted session matches', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'exhausted')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'exhausted')
 
       const sessions = [session({ id: 'exhausted', profile: 'default' })]
 
@@ -772,11 +772,11 @@ describe('useDesktopIntegrations', () => {
         sessions
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBeNull()
     })
 
     it('clears remembered route when it carries the exhausted session', () => {
-      window.localStorage.setItem('hermes.desktop.lastRoute.profile.default', '/exhausted')
+      window.localStorage.setItem('icebath.desktop.lastRoute.profile.default', '/exhausted')
 
       const sessions = [session({ id: 'exhausted', profile: 'default' })]
 
@@ -786,11 +786,11 @@ describe('useDesktopIntegrations', () => {
         sessions
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastRoute.profile.default')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.lastRoute.profile.default')).toBeNull()
     })
 
     it('does NOT clear exhausted when profileReady is false', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'exhausted')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'exhausted')
 
       render({
         profileReady: false,
@@ -799,11 +799,11 @@ describe('useDesktopIntegrations', () => {
       })
 
       // profileReady=false gates the cleanup effect.
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('exhausted')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('exhausted')
     })
 
     it('does NOT clear remembered state when exhausted id does not match', () => {
-      window.localStorage.setItem('hermes.desktop.lastSessionId.profile.default', 'other-session')
+      window.localStorage.setItem('icebath.desktop.lastSessionId.profile.default', 'other-session')
 
       render({
         profileReady: true,
@@ -811,7 +811,7 @@ describe('useDesktopIntegrations', () => {
         sessions: [session({ id: 'other-session', profile: 'default' })]
       })
 
-      expect(window.localStorage.getItem('hermes.desktop.lastSessionId.profile.default')).toBe('other-session')
+      expect(window.localStorage.getItem('icebath.desktop.lastSessionId.profile.default')).toBe('other-session')
     })
   })
 

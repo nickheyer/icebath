@@ -1901,8 +1901,13 @@ func (c *MoAClient) ConsumeAndSaveTrace(sessionID string, aggregatorOutputFallba
 
 // LastReferenceMetrics is the per advisor metrics list of the latest fan out, nil when none
 func (c *MoAClient) LastReferenceMetrics() any {
-	if m := c.Chat.Completions.lastReferenceMetrics; m != nil {
-		return m
+	return c.Chat.Completions.LastReferenceMetrics()
+}
+
+// Per advisor metrics of the most recent fan out read only, nil when none
+func (c *MoAChatCompletions) LastReferenceMetrics() any {
+	if c.lastReferenceMetrics != nil {
+		return c.lastReferenceMetrics
 	}
 	return nil
 }

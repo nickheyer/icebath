@@ -129,29 +129,16 @@ func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout 
 	if err := SpawnOwned(ctx, cmd, "git "+args[0]); err != nil {
 		return 0, false, err
 	}
-	done := make(chan struct{})
-	var waitErr error
-	go func() {
-		waitErr = cmd.Wait()
-		close(done)
-	}()
-	timer := time.NewTimer(time.Duration(timeout * float64(time.Second)))
-	defer timer.Stop()
-	killed := false
-	select {
-	case <-done:
-	case <-timer.C:
-		terminateProcessTreeGrace(cmd, done, commitGraphKillGrace)
-		<-done
-		killed = true
-	}
-	ReleaseProcessGroupOnceEmpty(cmd.Process.Pid, nil, time.Second)
-	if killed {
+	child := WatchCmd(cmd)
+	if !child.WaitExit(time.Duration(timeout * float64(time.Second))) {
+		KillChildTree(child, commitGraphKillGrace)
+		ReleaseProcessGroupOnceEmpty(cmd.Process.Pid, nil, time.Second)
 		toolsLogger(nil).Warn(fmt.Sprintf("git %s in %s exceeded %ss; killed", args[0], repoRoot, strconv.FormatFloat(timeout, 'g', -1, 64)))
 		return 0, true, nil
 	}
+	ReleaseProcessGroupOnceEmpty(cmd.Process.Pid, nil, time.Second)
 	rc := 0
-	if waitErr != nil {
+	if waitErr := child.Err(); waitErr != nil {
 		var exit *exec.ExitError
 		if !errors.As(waitErr, &exit) {
 			return 0, false, waitErr
@@ -352,7 +339,7 @@ func (h *logDirOnFailureHandler) Handle(ctx context.Context, r slog.Record) erro
 		if _, err := home.Mkdir(ctx, filepath.Dir(h.path)); err != nil {
 			return nil
 		}
-		f, err := os.OpenFile(h.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		f, err := os.OpenFile(h.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 		if err != nil {
 			return nil
 		}

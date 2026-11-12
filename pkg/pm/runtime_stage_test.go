@@ -23,7 +23,7 @@ import (
 // Reference project whose lock pins the PM runtime graph the Python engine shipped
 func peRuntimeProject(t *testing.T) string {
 	t.Helper()
-	project := filepath.Join(peReferences, "pm")
+	project := filepath.Join(peReferences(t, "pm/"), "pm")
 	if !isRegularFile(filepath.Join(project, "uv.lock")) {
 		t.Fatalf("runtime project %s has no lock", project)
 	}

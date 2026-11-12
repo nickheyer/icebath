@@ -5,16 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Hidden first argument that runs the stderr timestamping wrapper instead of the CLI
@@ -56,24 +62,86 @@ func StampLine(line string) string {
 
 // Opens the error log for appending after creating its parent directory
 func openStderrLog(logPath string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o777); err != nil {
+	if err := pyfs.Makedirs(filepath.Dir(logPath), 0o777, true); err != nil {
 		return nil, err
 	}
 	return os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 }
 
-// Copies every line of src to dst stamped, decoding invalid UTF-8 with replacement characters
-func copyWithTimestamps(src io.Reader, dst io.Writer) {
+// Writes the stamped line and flushes, a Windows text stream ending it in CRLF
+func writeTimestampedLine(w io.Writer, line string) error {
+	text := StampLine(line)
+	if runtime.GOOS == "windows" {
+		text = strings.ReplaceAll(text, "\n", "\r\n")
+	}
+	if _, err := io.WriteString(w, text); err != nil {
+		return streamIOError(err)
+	}
+	if f, ok := pysys.Attr[interface{ Flush() error }](w); ok {
+		return streamIOError(f.Flush())
+	}
+	return nil
+}
+
+// Copies every line of src to dst stamped, decoding invalid UTF-8 bytes as replacement characters
+func copyLinesWithTimestamps(src io.Reader, dst io.Writer) error {
 	r := bufio.NewReader(src)
 	for {
-		line, err := r.ReadString('\n')
-		if line != "" {
-			io.WriteString(dst, StampLine(strings.ToValidUTF8(line, "�")))
+		line, err := r.ReadBytes('\n')
+		if len(line) > 0 {
+			if werr := writeTimestampedLine(dst, pystr.DecodeUTF8Replace(line)); werr != nil {
+				return werr
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
 		}
 		if err != nil {
-			return
+			return streamIOError(err)
 		}
 	}
+}
+
+// Appends every stderr line of the child to the error log stamped until the pipe ends
+func copyStderrWithTimestamps(stderr io.Reader, logPath string) error {
+	f, err := openStderrLog(logPath)
+	if err != nil {
+		return err
+	}
+	err = copyLinesWithTimestamps(stderr, f)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
+}
+
+// Copies every stdout line of the child to the wrapper stdout stamped, keeping its destination
+func copyStdoutWithTimestamps(stdout io.Reader, out io.Writer) error {
+	return copyLinesWithTimestamps(stdout, out)
+}
+
+// Errno error of a stream read or write, which Python raises without a filename
+func streamIOError(err error) error {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err
+	}
+	return err
+}
+
+// Last traceback line of the Python exception a Go error stands for
+func stderrTimestampExceptionLine(err error) string {
+	var fe *pyrepr.FormatError
+	if errors.As(err, &fe) {
+		return fe.Class + ": " + fe.Msg
+	}
+	return pypath.OSErrorClass(err) + ": " + pypath.OSErrorText(err)
+}
+
+// Prints the traceback an uncaught exception leaves on stderr and returns the interpreter exit status
+func stderrTimestampUncaught(err error) int {
+	fmt.Fprintf(stderrTimestampStderr, "Traceback (most recent call last):\n%s\n", stderrTimestampExceptionLine(err))
+	return 1
 }
 
 // True for an icebath gateway run argv the wrapper may mark as externally supervised
@@ -161,6 +229,29 @@ func forwardedSignals() []os.Signal {
 	return append([]os.Signal{syscall.SIGTERM, os.Interrupt}, extraForwardedSignals...)
 }
 
+// Forwards the wrapper signals to the child until the returned restore runs, a failed forward raised to the main flow
+func installSignalForwarders(p *os.Process, raise func(error)) func() {
+	sigs := make(chan os.Signal, 8)
+	signal.Notify(sigs, stderrTimestampSignals()...)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case s := <-sigs:
+				if err := forwardSignal(p, s); err != nil {
+					raise(err)
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		signal.Stop(sigs)
+		close(done)
+	}
+}
+
 // Runs the child with stamped stdout and stamped stderr appended to the error log, returning the supervisor exit status
 func StderrTimestampMain(argv []string) int {
 	logPath, command, code := parseStderrTimestampArgs(argv)
@@ -180,50 +271,80 @@ func StderrTimestampMain(argv []string) int {
 	for k, v := range childLaunchdLabelEnv(environ) {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	stdout, err1 := cmd.StdoutPipe()
-	stderr, err2 := cmd.StderrPipe()
-	err := errors.Join(err1, err2)
+	var stderr io.ReadCloser
+	stdout, stdoutW, err := os.Pipe()
 	if err == nil {
-		err = cmd.Start()
+		cmd.Stdout = stdoutW
+		stderr, err = cmd.StderrPipe()
+		if err == nil {
+			err = cmd.Start()
+		}
+		stdoutW.Close()
+		if err != nil {
+			stdout.Close()
+		}
 	}
 	if err != nil {
-		if f, openErr := openStderrLog(logPath); openErr == nil {
-			io.WriteString(f, StampLine("failed to start stderr-timestamped command: "+startErrorText(argvChild[0], err)))
-			f.Close()
+		f, openErr := openStderrLog(logPath)
+		if openErr != nil {
+			return stderrTimestampUncaught(openErr)
+		}
+		err = writeTimestampedLine(f, "failed to start stderr-timestamped command: "+startErrorText(argvChild[0], err))
+		if cerr := f.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return stderrTimestampUncaught(err)
 		}
 		return 127
 	}
 	pumped := make(chan struct{})
+	wrapperStdout, wrapperStderr := stderrTimestampStdout, stderrTimestampStderr
 	go func() {
-		copyWithTimestamps(stdout, stderrTimestampStdout)
-		close(pumped)
-	}()
-	sigs := make(chan os.Signal, 8)
-	signal.Notify(sigs, stderrTimestampSignals()...)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case s := <-sigs:
-				_ = cmd.Process.Signal(s)
-			case <-done:
-				return
-			}
+		defer close(pumped)
+		defer stdout.Close()
+		if err := copyStdoutWithTimestamps(stdout, wrapperStdout); err != nil {
+			fmt.Fprintf(wrapperStderr, "Exception in thread Thread-1 (_copy_stdout_with_timestamps):\nTraceback (most recent call last):\n%s\n", stderrTimestampExceptionLine(err))
 		}
 	}()
-	if f, openErr := openStderrLog(logPath); openErr == nil {
-		copyWithTimestamps(stderr, f)
-		f.Close()
-	} else {
-		_, _ = io.Copy(io.Discard, stderr)
+	raised := make(chan error, 1)
+	restore := installSignalForwarders(cmd.Process, func(err error) {
+		select {
+		case raised <- err:
+			stderr.Close()
+		default:
+		}
+	})
+	crash := func(err error) int {
+		stderr.Close()
+		restore()
+		return stderrTimestampUncaught(err)
 	}
-	waitErr := cmd.Wait()
+	copyErr := copyStderrWithTimestamps(stderr, logPath)
+	select {
+	case err := <-raised:
+		return crash(err)
+	default:
+	}
+	if copyErr != nil {
+		return crash(copyErr)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	var waitErr error
+	select {
+	case waitErr = <-waited:
+	case err := <-raised:
+		return crash(err)
+	}
 	select {
 	case <-pumped:
 	case <-time.After(stdoutDrainTimeout):
+	case err := <-raised:
+		return crash(err)
 	}
-	signal.Stop(sigs)
-	close(done)
+	stderr.Close()
+	restore()
 	return childReturncodeForSupervisor(command, exitStatusOf(cmd, waitErr))
 }
 

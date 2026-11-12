@@ -40,6 +40,11 @@ type extractedResponse struct {
 	preExtract               string
 }
 
+// Runner seam holding the startup restore gate open until an adapter recovery task finishes
+type StartupRestoreTaskJoiner interface {
+	JoinStartupRestore(ctx context.Context, name string, wait func(ctx context.Context) error)
+}
+
 // Runner seam clearing the durable crash marker of a turn whose reply is ledgered or owed nothing
 type DurableActiveTurnClearer interface {
 	ClearDurableActiveTurn(ctx context.Context, event *MessageEvent) error

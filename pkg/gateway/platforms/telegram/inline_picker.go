@@ -35,6 +35,16 @@ type InlineCommandSource interface {
 	GatewaySkillEntries(ctx context.Context, platform string, maxSlots int, reserved map[string]bool, descLimit int,
 		sanitize func(string) string) ([]CatalogItem, error)
 	SanitizeTelegramName(raw string) string
+	TelegramMenuMaxCommands(ctx context.Context) int
+	TelegramMenuCommands(ctx context.Context, maxCommands int) ([]CatalogItem, int, error)
+}
+
+// Command menu readers the process wiring installed, panicking when unassigned
+func menuCommands() InlineCommandSource {
+	if InlineCommands == nil {
+		panic("telegram.InlineCommands unassigned: the process wiring installs the pkg/commands telegram menu readers")
+	}
+	return InlineCommands
 }
 
 // Registry surface the process wiring installs from pkg/commands over commands.Default and the raw config

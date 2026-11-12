@@ -25,7 +25,7 @@ import {
 } from './composer-queue'
 
 const SESSION_KEY = 'session-abc'
-const QUEUE_STORAGE_KEY = 'hermes.desktop.composerQueue.v1'
+const QUEUE_STORAGE_KEY = 'icebath.desktop.composerQueue.v1'
 
 function attachment(id: string, kind: ComposerAttachment['kind'] = 'file'): ComposerAttachment {
   return {
@@ -442,7 +442,7 @@ describe('composer queue terminal payload persistence', () => {
     resetFrozenQueuedTransportsForTests()
   })
 
-  it('does not persist frozen terminal CONTENTS into hermes.desktop.composerQueue.v1', () => {
+  it('does not persist frozen terminal CONTENTS into icebath.desktop.composerQueue.v1', () => {
     const entry = enqueueQueuedPrompt(SESSION_KEY, {
       attachments: [],
       text: TERMINAL_CHIP_DRAFT,

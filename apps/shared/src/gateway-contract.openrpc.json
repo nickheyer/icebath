@@ -3,7 +3,7 @@
   "info": {
     "title": "Icebath TUI/Desktop gateway",
     "version": "1",
-    "description": "Generated from tui_gateway/contracts by scripts/gen_gateway_contracts.py."
+    "description": "Generated from the pkg/tuigateway contracts by pkg/tuigateway/contractgen."
   },
   "methods": [
     {
@@ -638,7 +638,7 @@
     },
     {
       "name": "connectors.operation.wake",
-      "summary": "The browser leg came back (hermes://connections/done): read the accounts now, not at the next tick.",
+      "summary": "The browser leg came back (icebath://connections/done): read the accounts now, not at the next tick.",
       "params": [
         {
           "name": "params",
@@ -2420,7 +2420,7 @@
     },
     {
       "name": "plugins.catalog.lookup",
-      "summary": "One curated plugin-catalog entry by name, from the backend's live catalog (cached, with the in-tree fallback and kill list); backs hermes://plugin/install?catalog= deep links.",
+      "summary": "One curated plugin-catalog entry by name, from the backend's live catalog (cached, with the in-tree fallback and kill list); backs icebath://plugin/install?catalog= deep links.",
       "params": [
         {
           "name": "params",
@@ -10768,7 +10768,7 @@
             "default": null
           },
           "desktop_protocol": {
-            "const": "hermes-gateway-v1",
+            "const": "icebath-gateway-v1",
             "title": "Desktop Protocol",
             "type": "string"
           },
@@ -13539,7 +13539,7 @@
               }
             ],
             "default": null,
-            "title": "Requires Icebath"
+            "title": "Requires Hermes"
           },
           "has_desktop_half": {
             "anyOf": [
@@ -27621,7 +27621,7 @@
         "enum": [
           "connected",
           "app_not_running",
-          "hermes_not_connected",
+          "icebath_not_connected",
           "endpoint_unavailable",
           "no_interactive_session",
           "version_too_old",

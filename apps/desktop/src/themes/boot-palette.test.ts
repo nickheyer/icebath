@@ -14,7 +14,7 @@ afterEach(() => {
 
 it('writes the palette as one snapshot and reads it back', () => {
   writeBootPalette(palette)
-  expect(JSON.parse(localStorage.getItem('hermes-boot-palette')!)).toEqual(palette)
+  expect(JSON.parse(localStorage.getItem('icebath-boot-palette')!)).toEqual(palette)
   expect(readBootPalette()).toEqual(palette)
 })
 
@@ -25,13 +25,13 @@ it.each([
 ])('drops the previous snapshot instead of storing %s', (_case, next) => {
   writeBootPalette(palette)
   writeBootPalette(next)
-  expect(localStorage.getItem('hermes-boot-palette')).toBeNull()
+  expect(localStorage.getItem('icebath-boot-palette')).toBeNull()
   expect(readBootPalette()).toBeNull()
 })
 
 it('drops the previous snapshot when the new one cannot be written', () => {
   // A stand-in storage, so the failing write does not depend on the environment's Storage.
-  const items = new Map([['hermes-boot-palette', JSON.stringify(palette)]])
+  const items = new Map([['icebath-boot-palette', JSON.stringify(palette)]])
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => items.get(key) ?? null,
     removeItem: (key: string) => items.delete(key),
@@ -40,7 +40,7 @@ it('drops the previous snapshot when the new one cannot be written', () => {
     }
   })
   writeBootPalette({ ...palette, background: '#ffffff', foreground: '#1f2328' })
-  expect(items.has('hermes-boot-palette')).toBe(false)
+  expect(items.has('icebath-boot-palette')).toBe(false)
 })
 
 it('keeps self-contained colour functions', () => {

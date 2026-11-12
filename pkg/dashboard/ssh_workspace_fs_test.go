@@ -81,7 +81,7 @@ func TestSshWorkspaceFsListsAndReadsRemotePaths(t *testing.T) {
 			sshFsEntry("src", "/srv/repos/src", "d"),
 			sshFsEntry("node_modules", "/srv/repos/node_modules", "d"),
 		}, "\n")},
-		&tools.ExecResult{Output: "__HERMES_FS_SIZE__:5\naGVsbG8=\n"},
+		&tools.ExecResult{Output: "__ICEBATH_FS_SIZE__:5\naGVsbG8=\n"},
 	)
 	backend := newSshWorkspaceFs(env)
 	listing, err := backend.ListDir("/srv/repos", map[string]bool{"node_modules": true})
@@ -117,7 +117,7 @@ func TestSshWorkspaceFsListsAndReadsRemotePaths(t *testing.T) {
 
 func TestSshWorkspaceFsMapsRemoteSizeFailure(t *testing.T) {
 	isolateSSHFsFactory(t)
-	env := newFakeSSHFsEnv(&tools.ExecResult{ReturnCode: 47, Output: "__HERMES_FS_ERROR__:EFBIG\n"})
+	env := newFakeSSHFsEnv(&tools.ExecResult{ReturnCode: 47, Output: "__ICEBATH_FS_ERROR__:EFBIG\n"})
 	_, _, _, err := newSshWorkspaceFs(env).ReadBytes("/srv/repos/large.bin", 3, nil)
 	var fsErr *SshWorkspaceFsError
 	if !errors.As(err, &fsErr) || fsErr.Code != "EFBIG" || !strings.Contains(fsErr.Error(), "EFBIG") {
@@ -136,7 +136,7 @@ func TestSshWorkspaceFsInspectsResolvedFileBeforeStreaming(t *testing.T) {
 	isolateSSHFsFactory(t)
 	resolved := "/srv/repos/.env"
 	encoded := base64.StdEncoding.EncodeToString([]byte(resolved))
-	env := newFakeSSHFsEnv(&tools.ExecResult{Output: "__HERMES_FS_TARGET__:" + encoded + "\n__HERMES_FS_SIZE__:6\n"})
+	env := newFakeSSHFsEnv(&tools.ExecResult{Output: "__ICEBATH_FS_TARGET__:" + encoded + "\n__ICEBATH_FS_SIZE__:6\n"})
 	backend := newSshWorkspaceFs(env)
 	target, size, err := backend.InspectFile("safe-link")
 	if err != nil || target != resolved || size != 6 {

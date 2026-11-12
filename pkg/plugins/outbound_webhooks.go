@@ -403,11 +403,13 @@ type outboundDelivery struct {
 
 func buildOutboundDelivery(event string, target *OutboundWebhookTarget, body []byte, deliveryID string) *outboundDelivery {
 	headers := map[string]string{"Content-Type": "application/json", "User-Agent": "Icebath-Agent-Outbound-Webhook",
-		"X-Hermes-Event": event, "X-Hermes-Delivery": deliveryID}
+		"X-Hermes-Event": event, "X-Hermes-Delivery": deliveryID,
+		"X-Icebath-Event": event, "X-Icebath-Delivery": deliveryID}
 	if target.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(target.Secret))
 		mac.Write(body)
 		headers["X-Hermes-Signature-256"] = "sha256=" + hex.EncodeToString(mac.Sum(nil))
+		headers["X-Icebath-Signature-256"] = headers["X-Hermes-Signature-256"]
 	}
 	return &outboundDelivery{URL: target.URL, Label: target.Label(), Event: event, Body: body, Headers: headers, Timeout: target.Timeout}
 }

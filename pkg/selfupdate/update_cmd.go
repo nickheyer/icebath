@@ -16,7 +16,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	xterm "github.com/charmbracelet/x/term"
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -28,6 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -52,31 +52,15 @@ var (
 	updateSleep     = time.Sleep
 	// Terminal probes of the interactive restore prompt
 	updateStdinIsTTY  = func() bool { return fileIsTTY(os.Stdin) }
-	updateStdoutIsTTY = func(w io.Writer) bool { return writerIsTTY(w) }
+	updateStdoutIsTTY = func(w io.Writer) bool { return pysys.Isatty(w) }
 )
 
 // Whether an open file is a terminal the way isatty reports one
-func fileIsTTY(f *os.File) bool { return xterm.IsTerminal(f.Fd()) }
-
-// Mirroring update writer that reports whether its original stream is still a terminal
-type ttyReporter interface {
-	IsATTY() bool
-}
+func fileIsTTY(f *os.File) bool { return pysys.Isatty(f) }
 
 // Mirroring update writer exposing the update log it copies every write into
 type updateLogMirror interface {
 	Log() io.Writer
-}
-
-// Whether a writer is a terminal, the original stream of a mirroring update writer included
-func writerIsTTY(w io.Writer) bool {
-	if f, ok := w.(*os.File); ok {
-		return fileIsTTY(f)
-	}
-	if s, ok := w.(ttyReporter); ok {
-		return s.IsATTY()
-	}
-	return false
 }
 
 // Retired entry of an old updater, hands the run to the takeover child without inventing a path
@@ -575,7 +559,7 @@ func logOnlyWrite(w io.Writer, text string) error {
 	if text == "" {
 		return nil
 	}
-	if stream, ok := w.(updateLogMirror); ok && stream.Log() != nil {
+	if stream, ok := pysys.Attr[updateLogMirror](w); ok && stream.Log() != nil {
 		log := stream.Log()
 		if _, err := io.WriteString(log, text); err != nil {
 			if isKeyboardInterrupt(err) {
@@ -666,16 +650,12 @@ func runLoggedSubprocess(ctx context.Context, w io.Writer, cmd []string, cwd str
 		return nil, err
 	}
 	pipeW.Close()
-	stop := context.AfterFunc(ctx, func() { proc.KillTree(child.Process.Pid) })
+	handle := tools.WatchCmd(child)
+	stop := context.AfterFunc(ctx, func() { tools.KillChildTree(handle, 0) })
 	defer stop()
 	abandon := func() {
-		proc.KillTree(child.Process.Pid)
-		done := make(chan struct{})
-		go func() { _ = child.Wait(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-		}
+		tools.KillChildTree(handle, 0)
+		handle.WaitExit(5 * time.Second)
 	}
 	var decoder newlineDecoder
 	var output strings.Builder
@@ -701,7 +681,7 @@ func runLoggedSubprocess(ctx context.Context, w io.Writer, cmd []string, cwd str
 		return nil, ctx.Err()
 	}
 	code := 0
-	if err := child.Wait(); err != nil {
+	if err := handle.Err(); err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) {
 			return nil, err

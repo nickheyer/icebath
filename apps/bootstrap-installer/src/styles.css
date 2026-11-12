@@ -19,7 +19,7 @@
  *     correct node_modules path even from here.
  *
  * Follows the OS appearance: the installer has no in-app theme switcher, so
- * src/theme.ts tracks the Tauri window theme and toggles `.dark` on
+ * src/theme.ts tracks the system theme and toggles `.dark` on
  * <html>. The desktop's runtime applyTheme() normally PAINTS the dark seed
  * colors inline (its imported :root.dark below only flips the per-mode mix
  * knobs + neutral chrome), so we supply the Nous *dark* seeds ourselves in the

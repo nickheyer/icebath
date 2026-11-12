@@ -113,3 +113,14 @@ func TestDisplayLanguageErrorAfterDiscovery(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestGuardSectionSubKeysKeepDocumentOrder(t *testing.T) {
+	terminal := map[string]any{"cwd": ".", "backend": "local", "timeout": 60}
+	SetMappingKeys(terminal, []string{"timeout", "backend", "cwd"})
+	var out strings.Builder
+	_, err := GuardSectionOverwrite("terminal", "zsh", map[string]any{"terminal": terminal}, false, &out)
+	var refusal *ConfigSetRefusal
+	if !errors.As(err, &refusal) || !strings.Contains(refusal.Message, "Sub-keys: timeout, backend, cwd") {
+		t.Fatalf("refusal %v", err)
+	}
+}

@@ -417,7 +417,7 @@ func ApplyPluginYAMLHooks(ctx context.Context, yamlCfg map[string]any, gatewayPl
 		for k, v := range managedExtra[entry.Name] {
 			effective[k] = v
 		}
-		seeded, err := entry.ApplyYAMLConfigFn(yamlCfg, effective)
+		seeded, err := entry.ApplyYAMLConfigFn(ctx, yamlCfg, effective)
 		if err != nil {
 			slog.Debug(fmt.Sprintf("apply_yaml_config_fn for %s raised: %s", entry.Name, err))
 			continue

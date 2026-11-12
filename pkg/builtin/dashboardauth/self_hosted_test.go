@@ -374,7 +374,7 @@ func TestStartLoginStateInCookieMatchesURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	parts := map[string]string{}
-	for _, seg := range strings.Split(result.CookiePayload["hermes_session_pkce"], ";") {
+	for _, seg := range strings.Split(result.CookiePayload["icebath_session_pkce"], ";") {
 		if k, v, ok := strings.Cut(seg, "="); ok {
 			parts[k] = v
 		}

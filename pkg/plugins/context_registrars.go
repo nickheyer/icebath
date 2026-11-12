@@ -216,13 +216,13 @@ func (c *Context) SpawnTask(ctx context.Context, fn func(context.Context) error,
 func cleanApprovalTransportName(name string, present tools.ApprovalPresentFunc) (string, error) {
 	clean := strings.ToLower(strings.TrimSpace(name))
 	if clean == "builtin" {
-		return "", errors.New("approval transport name 'builtin' is reserved")
+		return "", &HostBuiltinError{Type: "ValueError", Message: "approval transport name 'builtin' is reserved"}
 	}
 	if !approvalTransportNameRe.MatchString(clean) {
-		return "", errors.New("approval transport name must match [a-z0-9][a-z0-9_-]{0,63}")
+		return "", &HostBuiltinError{Type: "ValueError", Message: "approval transport name must match [a-z0-9][a-z0-9_-]{0,63}"}
 	}
 	if present == nil {
-		return "", errors.New("approval transport present_fn must be callable")
+		return "", &HostBuiltinError{Type: "TypeError", Message: "approval transport present_fn must be callable"}
 	}
 	return clean, nil
 }
@@ -253,7 +253,7 @@ func (c *Context) RegisterApprovalTransport(ctx context.Context, name string, pr
 	existing := m.approvalTransports[clean]
 	m.mu.RUnlock()
 	if existing != nil {
-		return fmt.Errorf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))
+		return &HostBuiltinError{Type: "ValueError", Message: fmt.Sprintf("approval transport %s is already registered by %s", config.PyRepr(clean), config.PyRepr(existing.PluginID))}
 	}
 	entry := &tools.RegisteredApprovalTransport{Name: clean, Present: present, PluginID: c.PluginID(), ProfileHome: resolvedHome(ctx)}
 	logInfo(fmt.Sprintf("Plugin %s registered approval transport: %s", c.PluginID(), clean))
@@ -607,8 +607,18 @@ type CLICommand struct {
 	Description string
 	Setup       func(parser any)
 	Handler     func(args any) error
-	Plugin      string
-	PluginKey   string
+	// Plugin parser of a hosted plugin parsing the raw arguments onto the top level namespace and running its func
+	Parse     func(ctx context.Context, top map[string]any, argv []string) (CLIOutcome, error)
+	Plugin    string
+	PluginKey string
+}
+
+// What a hosted plugin command did, the exit status it raised or returned and arguments nothing recognized
+type CLIOutcome struct {
+	Code       int
+	Exited     bool
+	Dispatched bool
+	Extras     []string
 }
 
 // Registers a CLI subcommand whose setup receives the subparser and whose handler runs it
@@ -616,7 +626,13 @@ func (c *Context) RegisterCLICommand(name, help string, setup func(parser any), 
 	if c.ignoredAfterAbandonedLoad("register_cli_command") {
 		return nil
 	}
-	entry := &CLICommand{Name: name, Help: help, Description: description, Setup: setup, Handler: handler, Plugin: c.manifest.Name, PluginKey: c.PluginID()}
+	return c.registerCLICommand(&CLICommand{Name: name, Help: help, Description: description, Setup: setup, Handler: handler})
+}
+
+// Stores one CLI command entry under its name and leases it to the plugin
+func (c *Context) registerCLICommand(entry *CLICommand) *Registration {
+	name := entry.Name
+	entry.Plugin, entry.PluginKey = c.manifest.Name, c.PluginID()
 	var handle *Registration
 	serializedReplacement(func() {
 		handle = registerEntry(c, "cli_command", name, c.manager.cliCommands, entry, nil,
@@ -661,6 +677,9 @@ func (c *Context) registerCommand(name string, handler PluginCommandHandler, des
 		mode = "text"
 	}
 	entry := &PluginCommand{Handler: handler, Description: description, Plugin: c.manifest.Name, PluginKey: c.PluginID(), ArgsHint: hint, ArgumentMode: mode}
+	c.manager.mu.Lock()
+	c.manager.notePluginCommandOrderLocked(clean)
+	c.manager.mu.Unlock()
 	return registerEntry(c, "command", clean, c.manager.pluginCommands, entry, nil,
 		fmt.Sprintf("Plugin %s registered command: /%s", c.manifest.Name, clean))
 }

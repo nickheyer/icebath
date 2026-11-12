@@ -13,6 +13,7 @@ import (
 
 // test_session_edit_policy.py test_the_owners_edit_guard_enforces_the_sessions_policy
 func TestTheOwnersEditGuardEnforcesTheSessionsPolicy(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	cases := []struct {
 		id, name, policy string
 		asks             bool

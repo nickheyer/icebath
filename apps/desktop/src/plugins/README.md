@@ -13,4 +13,4 @@ repo instead.
 
 User- and agent-authored plugins load at runtime from
 `$ICEBATH_HOME/desktop-plugins/<name>/plugin.js` (the disk door) — see the
-`hermes-desktop-plugins` skill.
+`icebath-desktop-plugins` skill.

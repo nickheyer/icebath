@@ -256,6 +256,13 @@ var (
 	nextID      atomic.Uintptr
 )
 
+// Loads and binds the PortAudio library without initializing its host APIs
+func Load() error {
+	importMu.Lock()
+	defer importMu.Unlock()
+	return openPortAudio()
+}
+
 // Import loads PortAudio and initializes it once, failing like importing sounddevice fails
 func Import() (Module, error) {
 	importMu.Lock()

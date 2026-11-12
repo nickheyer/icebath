@@ -17,7 +17,7 @@ var CanonicalConfigSetParams = pydantic.Extend(ProfileParams, "CanonicalConfigSe
 	pydantic.Def("value", pydantic.Any, nil),
 	pydantic.Def("confirm_expensive_model", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("scope", pydantic.Nullable(pydantic.Literal("session", "global")), nil),
-)
+).Described("Session controls (``busy`` / ``verbose`` / ``yolo`` / ``show_reasoning`` / ``service_tier``, which\nneed ``session_id``) and the TUI's profile preferences (``gateway/session_tui_config.py``;\n``session_id`` optional). ``model`` is recognised only to be refused with\n``use_session_mutation_model``: a model pick is the revision-fenced ``session.mutate`` operation,\nnever a config write.")
 
 var CanonicalAttachedImageResult = pydantic.Extend(AttachedImageResult, "CanonicalAttachedImageResult", ClosedConfig,
 	pydantic.Req("mime", pydantic.Str),
@@ -72,7 +72,7 @@ var CanonicalBotDeliverResult = pydantic.NewModel("CanonicalBotDeliverResult", C
 	pydantic.Def("retry_admission_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("reason", pydantic.Nullable(pydantic.Str), nil),
-).WithAfter(admittedOrRefused)
+).Described("A delivery's receipt. It names its admission, unless ``refused``: the FIFO refused the\ndelivery before anything was committed (``gateway/session_bot.py``), a terminal ``failed``\nreceipt with no admission that the relay settles as the sender's answer.").WithAfter(admittedOrRefused)
 
 var _ = CanonicalMethod("config.get", ConfigGetParams, CanonicalConfigGetResult, "")
 

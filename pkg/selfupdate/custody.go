@@ -18,10 +18,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
@@ -349,6 +349,30 @@ func decodeChildText(raw []byte) string {
 	return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw))
 }
 
+// Pid is the child process id
+func (c *startedChild) Pid() int { return c.cmd.Process.Pid }
+
+// Kill sends the child alone a kill, an already reaped child is no error as with Popen.kill
+func (c *startedChild) Kill() error {
+	if c.wasReaped() {
+		return nil
+	}
+	if err := c.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
+}
+
+// WaitExit reports whether the child was reaped within timeout
+func (c *startedChild) WaitExit(timeout time.Duration) bool {
+	for deadline := time.Now().Add(timeout); !c.wasReaped(); time.Sleep(10 * time.Millisecond) {
+		if !time.Now().Before(deadline) {
+			return false
+		}
+	}
+	return true
+}
+
 // Kills the child process alone unless it was already reaped
 func killChildOnly(c *startedChild) {
 	if !c.wasReaped() {
@@ -410,7 +434,7 @@ func Run(ctx context.Context, argv []string, inheritLock bool, opts ChildOptions
 	}
 	return child.communicate(ctx, opts, func(c *startedChild) bool {
 		if !c.wasReaped() {
-			proc.KillTree(c.cmd.Process.Pid)
+			tools.KillChildTree(c, 0)
 		}
 		return true
 	}, killChildOnly)

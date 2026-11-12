@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -41,6 +42,7 @@ type gatewayServiceRemover struct {
 
 // Uninstall steps and probes the uninstall cases replace the way the Python cases monkeypatch them
 var (
+	uninstallNegativeNumber       = regexp.MustCompile(`^-\d+$|^-\d*\.\d+$`)
 	uninstallProjectRoot          = config.GetProjectRoot
 	uninstallIsWindows            = func() bool { return runtime.GOOS == "windows" }
 	uninstallIsDefaultHome        = isDefaultIcebathHome
@@ -489,13 +491,13 @@ func icebathPathMarkers(h string, includeManagedBin bool) []string {
 func splitUserPath(pathValue string, markers []string) (kept, removed []string) {
 	lowered := make([]string, len(markers))
 	for i, m := range markers {
-		lowered[i] = strings.ToLower(m)
+		lowered[i] = pystr.Lower(m)
 	}
 	for _, entry := range strings.Split(pathValue, ";") {
 		if entry == "" {
 			continue
 		}
-		probe := strings.ToLower(strings.TrimRight(entry, `\/`))
+		probe := pystr.Lower(strings.TrimRight(entry, `\/`))
 		if slices.ContainsFunc(lowered, func(m string) bool { return strings.HasPrefix(probe, m) }) {
 			removed = append(removed, entry)
 		} else {
@@ -944,8 +946,8 @@ func rmtreeStep(w io.Writer, p, indent string, fully bool) {
 // Electron and setup cache dirs macOS writes outside the home that the desktop data removal never reaches
 func macosCacheLeftoverDirs() []string {
 	caches := filepath.Join(guiUserHome(), "Library", "Caches")
-	return []string{filepath.Join(caches, "Icebath"), filepath.Join(caches, "com.nousresearch.icebath"),
-		filepath.Join(caches, "icebath-setup"), filepath.Join(caches, "com.nousresearch.icebath.setup")}
+	return []string{filepath.Join(caches, "Icebath"), filepath.Join(caches, "ai.icebath"),
+		filepath.Join(caches, "icebath-setup"), filepath.Join(caches, "ai.icebath.setup")}
 }
 
 // Removes an existing tree reporting true, false when nothing is there
@@ -1178,7 +1180,7 @@ func uninstallModeNamespace(mode string, desktopUserdata any) map[string]any {
 
 // Argparse of the uninstall module entry, the mode, the desktop data override and an exit code when rejected
 func parseUninstallModuleArgs(argv []string, stdout, stderr io.Writer) (string, any, int, bool) {
-	const prog = "icebath_cli.uninstall"
+	const prog = "icebath " + UninstallModuleEntry
 	const usage = "usage: " + prog + " [-h] --mode {gui,lite,full,data}\n"
 	fail := func(msg string) (string, any, int, bool) {
 		fmt.Fprintf(stderr, "%s%s: error: %s\n", usage, prog, msg)
@@ -1221,7 +1223,7 @@ func parseUninstallModuleArgs(argv []string, stdout, stderr io.Writer) (string, 
 			return "", nil, 0, true
 		}
 		if !hasValue {
-			if i+1 >= len(argv) || (strings.HasPrefix(argv[i+1], "-") && argv[i+1] != "-") {
+			if i+1 >= len(argv) || uninstallModuleOptionLike(argv[i+1]) {
 				return fail("argument " + option + ": expected one argument")
 			}
 			i++
@@ -1243,6 +1245,20 @@ func parseUninstallModuleArgs(argv []string, stdout, stderr io.Writer) (string, 
 		return fail("--desktop-userdata requires --mode data")
 	}
 	return mode, desktopUserdata, 0, false
+}
+
+// Whether argparse reads the word as an option, negative numbers and words with a space reading as values
+func uninstallModuleOptionLike(word string) bool {
+	if !strings.HasPrefix(word, "-") || word == "-" {
+		return false
+	}
+	name, _, _ := strings.Cut(word, "=")
+	for _, option := range []string{"-h", "--help", "--mode", "--desktop-userdata"} {
+		if name == option || (strings.HasPrefix(name, "--") && len(name) > 2 && strings.HasPrefix(option, name)) {
+			return true
+		}
+	}
+	return !uninstallNegativeNumber.MatchString(word) && !strings.Contains(word, " ")
 }
 
 // Runs one uninstall mode non interactively for the desktop app, the exit code the run ends with

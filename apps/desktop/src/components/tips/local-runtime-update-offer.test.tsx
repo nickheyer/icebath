@@ -249,7 +249,7 @@ it('dismisses per target build without installing and persists the retirement', 
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: en.tips.close }))
   })
-  expect(JSON.parse(localStorage.getItem('hermes.desktop.tips.retired.v1')!)).toContain(
+  expect(JSON.parse(localStorage.getItem('icebath.desktop.tips.retired.v1')!)).toContain(
     'local-runtime-update:next-build'
   )
   await due()

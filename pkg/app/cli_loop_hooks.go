@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -40,33 +41,11 @@ func (q *inputQueue) snapshot() []any {
 
 // Loop manager bound to the current session id, the gateway's on a gateway store and none before its session opens
 func (c *CLI) getLoopManager() agent.LoopAutomation {
-	gateway, connection := c.automationConnection()
-	if gateway && connection == nil {
-		return nil
-	}
-	c.uiMu.Lock()
-	sessionID, existing := c.sessionID, c.loopManager
-	c.uiMu.Unlock()
-	if sessionID == "" {
-		return nil
-	}
-	if existing != nil && existing.Session() == sessionID {
-		return existing
-	}
-	var manager agent.LoopAutomation
-	if gateway {
-		remote, err := NewGatewayLoopManager(c.ctx, sessionID, connection)
-		if err != nil {
-			panic(err)
-		}
-		manager = remote
-	} else {
-		manager = agent.NewLoopManager(c.ctx, sessionID)
-	}
-	c.uiMu.Lock()
-	c.loopManager = manager
-	c.uiMu.Unlock()
-	return manager
+	return automationManager(c, &c.loopManager,
+		func(sid string) agent.LoopAutomation { return agent.NewLoopManager(c.ctx, sid) },
+		func(sid string, connection *gatewaycli.GatewayConnection) (agent.LoopAutomation, error) {
+			return NewGatewayLoopManager(c.ctx, sid, connection)
+		})
 }
 
 // Whether the session's goal defers this loop's tick, asked of the gateway when the manager is the gateway's

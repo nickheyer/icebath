@@ -54,6 +54,7 @@ type apItem struct {
 
 var (
 	cliRegistry          sync.Map
+	argparseOwn          sync.Map
 	apWhitespaceRe       = regexp.MustCompile(`[ \t\n\r\f\v]+`)
 	apLongBreakRe        = regexp.MustCompile(`\n\n\n+`)
 	apHelpText           = "show this help message and exit"
@@ -91,7 +92,11 @@ func apFlag(cmd *cobra.Command, opts []string) *pflag.Flag {
 
 // Actions of a command from the hermes parser table, or derived from cobra for commands hermes never declared
 func apItems(cmd *cobra.Command) ([]apItem, *apParser) {
-	if p, ok := argparseTree[apPath(cmd)]; ok {
+	p, ok := argparseTree[apPath(cmd)]
+	if own, found := argparseOwn.Load(cmd); found {
+		p, ok = own.(*apParser), true
+	}
+	if ok {
 		items := make([]apItem, 0, len(p.Acts))
 		for _, a := range p.Acts {
 			items = append(items, apResolve(cmd, a))

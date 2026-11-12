@@ -56,11 +56,9 @@ var ttsEnsureImport = pm.EnsureImport
 var ttsModuleImportable = func(ctx context.Context, module string) bool { return pm.AnchorImportable(ctx, module) }
 
 var (
-	ttsImportEdgeTTS    = ttsSDKImporter("edge_tts", "tts.edge")
-	ttsImportElevenLabs = ttsSDKImporter("elevenlabs", "tts.elevenlabs")
-	ttsImportMistral    = ttsSDKImporter("mistralai", "tts.mistral")
-	ttsImportKittenTTS  = ttsSDKImporter("kittentts", "")
-	ttsImportPiper      = ttsSDKImporter("piper", "")
+	ttsImportEdgeTTS   = ttsSDKImporter("edge_tts", "tts.edge")
+	ttsImportKittenTTS = ttsSDKImporter("kittentts", "")
+	ttsImportPiper     = ttsSDKImporter("piper", "")
 )
 
 // Whether an importer succeeds
@@ -129,16 +127,14 @@ type builtinTTSEntry struct {
 }
 
 var builtinTTSDispatch = map[string]builtinTTSEntry{
-	"elevenlabs": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportElevenLabs) }, "ElevenLabs", func() ttsGenerator { return ttsGenerateElevenLabs },
-		"ElevenLabs provider selected but 'elevenlabs' package not installed. Run: " + pm.InstallHint("tts-premium")},
-	"openai": {openAIClientImportable, "OpenAI TTS", nil, "OpenAI provider selected but 'openai' package not installed."},
+	"elevenlabs": {nil, "ElevenLabs", func() ttsGenerator { return ttsGenerateElevenLabs }, ""},
+	"openai":     {openAIClientImportable, "OpenAI TTS", nil, "OpenAI provider selected but 'openai' package not installed."},
 	"deepinfra": {openAIClientImportable, "DeepInfra TTS", func() ttsGenerator { return ttsGenerateDeepInfra },
 		"DeepInfra TTS uses the 'openai' SDK but it isn't installed."},
 	"minimax": {nil, "MiniMax TTS", func() ttsGenerator { return ttsGenerateMiniMax }, ""},
 	"xai":     {nil, "xAI TTS", func() ttsGenerator { return ttsGenerateXAI }, ""},
-	"mistral": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportMistral) }, "Mistral Voxtral TTS", func() ttsGenerator { return ttsGenerateMistral },
-		"Mistral provider selected but 'mistralai' package not installed. Run `icebath setup` to install Mistral support."},
-	"gemini": {nil, "Google Gemini TTS", func() ttsGenerator { return ttsGenerateGemini }, ""},
+	"mistral": {nil, "Mistral Voxtral TTS", func() ttsGenerator { return ttsGenerateMistral }, ""},
+	"gemini":  {nil, "Google Gemini TTS", func() ttsGenerator { return ttsGenerateGemini }, ""},
 	"neutts": {func(ctx context.Context) bool { return ttsCheckNeuTTS(ctx) }, "NeuTTS (local)", func() ttsGenerator { return ttsGenerateNeuTTS },
 		"NeuTTS provider selected but neutts is not installed. Run icebath setup tts and choose NeuTTS; espeak-ng is also required."},
 	"kittentts": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportKittenTTS) }, "KittenTTS (local, ~25MB)", func() ttsGenerator { return ttsGenerateKittenTTS },

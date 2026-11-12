@@ -146,6 +146,11 @@ func (t *TurnRunner) releaseEvictedAgent(ctx context.Context, a *agent.AIAgent) 
 }
 
 // Fresh agent for the turn route with the session's toolsets, prompt, routing and policy bounds
+// Session env of the turn read through the policy terminal scope, so the prompt and tools see the client cwd
+func turnAgentEnv(ctx context.Context, tc *TurnContext) *tools.Env {
+	return tools.EnvInTerminalScope(ctx, tc.sessionEnv)
+}
+
 func (t *TurnRunner) buildFreshAgent(ctx context.Context, route turnRoute, platformKey, combinedEphemeral string, maxIterations int,
 	reasoningConfig map[string]any, pr map[string]any, skipContextFiles bool) (*agent.AIAgent, error) {
 	tc, runner, src := t.ctx, t.runner, t.ctx.source
@@ -239,8 +244,8 @@ func (t *TurnRunner) buildFreshAgent(ctx context.Context, route turnRoute, platf
 	if err != nil {
 		return nil, err
 	}
-	opts.Env = tc.sessionEnv
-	return agent.NewAIAgent(ctx, opts)
+	opts.Env = turnAgentEnv(ctx, tc)
+	return newAIAgent(ctx, opts)
 }
 
 // Reuses this session's cached agent or builds a fresh one, the session env applied either way
@@ -277,7 +282,7 @@ func (t *TurnRunner) resolveTurnAgent(ctx context.Context, route turnRoute, plat
 			chain = runner.refreshFallbackModel(ctx)
 		}
 		applyFallbackChainToAgent(a, chain)
-		a.SetToolEnv(tc.sessionEnv)
+		a.SetToolEnv(turnAgentEnv(ctx, tc))
 	}
 	if found.evicted != nil {
 		t.releaseEvictedAgent(ctx, found.evicted)

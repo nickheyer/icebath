@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"slices"
 )
 
 // One generated file, how it renders from the art and the shape it must have
@@ -18,7 +19,7 @@ type target struct {
 const (
 	appxDir      = "apps/desktop/assets/appx"
 	desktopAsset = "apps/desktop/assets"
-	tauriIcons   = "apps/bootstrap-installer/src-tauri/icons"
+	wailsBuild   = "apps/bootstrap-installer/build"
 )
 
 var (
@@ -29,7 +30,7 @@ var (
 		dark   bool
 	}{{"", false}, {"_altform-unplated", true}, {"_altform-lightunplated", false}}
 	desktopICO = []int{16, 24, 32, 48, 64, 128, 256}
-	tauriICO   = []int{16, 32, 64, 128, 256}
+	wailsICO   = []int{256, 128, 64, 48, 32, 16}
 	faviconICO = []int{16, 32, 48}
 	tiers      = []string{"automation", "connect", "memory", "sandbox"}
 )
@@ -53,15 +54,17 @@ func squareTile(size int, dark bool) func(a *art) ([]byte, error) {
 	}
 }
 
-func icoTile(sizes []int, dark bool) func(a *art) ([]byte, error) {
+// ICO of the squircle rendered at its largest frame, planes as the original writer set them
+func icoTile(sizes []int, dark bool, planes uint16) func(a *art) ([]byte, error) {
 	return func(a *art) ([]byte, error) {
-		return encodeICO(a.tile(sizes[len(sizes)-1], squirclePlate, dark, true), sizes)
+		return encodeICO(a.tile(slices.Max(sizes), squirclePlate, dark, true), sizes, planes)
 	}
 }
 
-func icnsTile(dark bool) func(a *art) ([]byte, error) {
+// ICNS of the macOS grid tile in the chunk layout of the original
+func icnsTile(dark bool, layout icnsLayout) func(a *art) ([]byte, error) {
 	return func(a *art) ([]byte, error) {
-		return encodeICNS(a.tile(canvasSide, macPlate, dark, true))
+		return encodeICNS(a.tile(canvasSide, macPlate, dark, true), layout)
 	}
 }
 
@@ -154,13 +157,13 @@ func iconManifest(a *art) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-// Icon Composer package targets under dir: manifest, light and dark art and the mono material
+// Icon Composer package targets in the package dir, manifest, light and dark art and the mono material
 func iconPackage(dir string) []target {
 	return []target{
-		{dir + "/icon.icon/icon.json", iconManifest, shape{format: "JSON"}},
-		{dir + "/icon.icon/Assets/art-light.png", func(a *art) ([]byte, error) { return encodePNG(a.iconLayer(false)) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
-		{dir + "/icon.icon/Assets/art-dark.png", func(a *art) ([]byte, error) { return encodePNG(a.iconLayer(true)) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
-		{dir + "/icon.icon/Assets/mono.png", func(a *art) ([]byte, error) { return encodePNG(a.iconMono()) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
+		{dir + "/icon.json", iconManifest, shape{format: "JSON"}},
+		{dir + "/Assets/art-light.png", func(a *art) ([]byte, error) { return encodePNG(a.iconLayer(false)) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
+		{dir + "/Assets/art-dark.png", func(a *art) ([]byte, error) { return encodePNG(a.iconLayer(true)) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
+		{dir + "/Assets/mono.png", func(a *art) ([]byte, error) { return encodePNG(a.iconMono()) }, shape{format: "PNG", w: canvasSide, h: canvasSide}},
 	}
 }
 
@@ -205,17 +208,17 @@ func allTargets() []target {
 		out = append(out, target{rel, render, want})
 	}
 	add(desktopAsset+"/icon.png", squareTile(1024, false), squareShape(1024, true))
-	add(desktopAsset+"/icon.ico", icoTile(desktopICO, false), shape{format: "ICO", frames: desktopICO})
-	add(desktopAsset+"/icon.icns", icnsTile(false), shape{format: "ICNS", w: 1024, h: 1024})
+	add(desktopAsset+"/icon.ico", icoTile(desktopICO, false, 0), shape{format: "ICO", frames: desktopICO})
+	add(desktopAsset+"/icon.icns", icnsTile(false, pillowIcns), shape{format: "ICNS", w: 1024, h: 1024, icns: pillowIcns})
 	add(desktopAsset+"/icon-dark.png", squareTile(1024, true), squareShape(1024, true))
-	add(desktopAsset+"/icon-dark.ico", icoTile(desktopICO, true), shape{format: "ICO", frames: desktopICO})
-	add(desktopAsset+"/icon-dark.icns", icnsTile(true), shape{format: "ICNS", w: 1024, h: 1024})
+	add(desktopAsset+"/icon-dark.ico", icoTile(desktopICO, true, 0), shape{format: "ICO", frames: desktopICO})
+	add(desktopAsset+"/icon-dark.icns", icnsTile(true, pillowIcns), shape{format: "ICNS", w: 1024, h: 1024, icns: pillowIcns})
 	add(desktopAsset+"/icon-mac.png", func(a *art) ([]byte, error) { return encodePNG(a.tile(1024, macPlate, false, true)) }, squareShape(1024, true))
-	add("apps/desktop/packaging/dmg-volume.icns", func(a *art) ([]byte, error) { return encodeICNS(a.src.volumeIcon()) }, shape{format: "ICNS", w: 1024, h: 1024})
+	add("apps/desktop/packaging/dmg-volume.icns", func(a *art) ([]byte, error) { return encodeICNS(a.src.volumeIcon(1024), pillowIcns) }, shape{format: "ICNS", w: 1024, h: 1024, icns: pillowIcns})
 	add("apps/desktop/packaging/icebath-dmg.tiff", func(a *art) ([]byte, error) {
-		return encodeTIFF([]tiffPage{{a.src.dmgBackground(1), 72}, {a.src.dmgBackground(2), 144}}), nil
+		return encodeTIFF([]tiffPage{{a.src.dmgBackground(769, 457, 1), 72}, {a.src.dmgBackground(1538, 914, 2), 144}}), nil
 	}, shape{format: "TIFF", w: 769, h: 457, frames: []int{769, 1538}})
-	out = append(out, iconPackage(desktopAsset)...)
+	out = append(out, iconPackage(desktopAsset+"/icon.icon")...)
 	out = append(out, appxTargets()...)
 	add("apps/desktop/public/apple-touch-icon.png", squareTile(1024, false), squareShape(1024, true))
 	add("apps/desktop/public/icebath-mark.png", squareTile(256, false), squareShape(256, true))
@@ -241,14 +244,20 @@ func allTargets() []target {
 	add("apps/desktop/src/assets/catalog-art-retro.svg", func(a *art) ([]byte, error) {
 		return []byte(a.src.catalogSVG(mustHex("#1c2733"), color.NRGBA{0xF2, 0xF2, 0xF2, 255})), nil
 	}, shape{format: "SVG"})
-	add(tauriIcons+"/32x32.png", squareTile(32, false), squareShape(32, false))
-	add(tauriIcons+"/128x128.png", squareTile(128, false), squareShape(128, false))
-	add(tauriIcons+"/128x128@2x.png", squareTile(256, false), squareShape(256, false))
-	add(tauriIcons+"/icon.ico", icoTile(tauriICO, false), shape{format: "ICO", frames: tauriICO})
-	add(tauriIcons+"/icon.icns", icnsTile(false), shape{format: "ICNS", w: 1024, h: 1024})
-	out = append(out, iconPackage(tauriIcons)...)
+	add(wailsBuild+"/appicon.png", squareTile(256, false), squareShape(256, true))
+	add(wailsBuild+"/linux/appimage/icebath-setup.png", squareTile(256, false), squareShape(256, true))
+	add(wailsBuild+"/windows/icon.ico", icoTile(wailsICO, false, 1), shape{format: "ICO", frames: wailsICO})
+	add(wailsBuild+"/darwin/icons.icns", icnsTile(false, wailsIcns), shape{format: "ICNS", w: 256, h: 256, icns: wailsIcns})
+	add(wailsBuild+"/darwin/dmg-file-icon.png", func(a *art) ([]byte, error) { return encodePNG(a.src.volumeIcon(1254)) }, squareShape(1254, true))
+	add(wailsBuild+"/darwin/dmg-file-icon.icns", func(a *art) ([]byte, error) {
+		return encodeICNS(a.src.volumeIcon(1024), iconutilIcns)
+	}, shape{format: "ICNS", w: 1024, h: 1024, icns: iconutilIcns})
+	add(wailsBuild+"/darwin/dmg-background.png", func(a *art) ([]byte, error) {
+		return encodePNG(a.src.dmgBackground(540, 380, 0))
+	}, shape{format: "PNG", w: 540, h: 380})
+	out = append(out, iconPackage(wailsBuild+"/appicon.icon")...)
 	add("apps/bootstrap-installer/public/icebath-mark.png", squareTile(256, false), squareShape(256, true))
-	add("web/public/favicon.ico", icoTile(faviconICO, false), shape{format: "ICO", frames: faviconICO})
+	add("web/public/favicon.ico", icoTile(faviconICO, false, 0), shape{format: "ICO", frames: faviconICO})
 	add("pkg/app/banner_art.go", func(a *art) ([]byte, error) { return a.src.bannerGo(), nil }, shape{format: "TEXT"})
 	add("ui-tui/src/bannerArt.ts", func(a *art) ([]byte, error) { return a.src.bannerTS(), nil }, shape{format: "TEXT"})
 	return out

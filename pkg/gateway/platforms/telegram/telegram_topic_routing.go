@@ -1,7 +1,9 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
+	"github.com/go-telegram/bot/models"
 	"log/slog"
 	"sync"
 	"time"
@@ -29,6 +31,9 @@ type TopicMessage struct {
 	Date              *time.Time
 	ForumTopicCreated any
 	Chat              any
+
+	raw     *models.Message
+	authCtx context.Context
 }
 
 // TopicRoutingHost is the adapter surface the topic routing relies on

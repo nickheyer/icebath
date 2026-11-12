@@ -63,6 +63,7 @@ type GatewayRPCError struct {
 	Msg  string
 	Code *int64
 	Data map[string]any
+	Raw  any
 }
 
 func (e *GatewayRPCError) Error() string { return e.Msg }
@@ -164,7 +165,7 @@ func RPCError(errMember any) *GatewayRPCError {
 	if reason == "" {
 		reason = "request_failed"
 	}
-	out := &GatewayRPCError{Msg: reason, Data: data}
+	out := &GatewayRPCError{Msg: reason, Data: data, Raw: errMember}
 	switch c := obj.Vals["code"].(type) {
 	case int64:
 		out.Code = &c
@@ -324,6 +325,8 @@ type GatewayClient struct {
 	sequence int64
 	readDone chan struct{}
 	started  bool
+	hooks    FrameHooks
+	readErr  error
 }
 
 func NewGatewayClient(socket GatewaySocket) *GatewayClient {
@@ -455,15 +458,22 @@ func (c *GatewayClient) Read() {
 	for {
 		raw, err := c.socket.Recv()
 		if err != nil {
+			c.mu.Lock()
+			c.readErr = err
+			c.mu.Unlock()
 			return
 		}
 		decoded, err := pyjson.Loads(raw)
-		if err != nil {
+		frame, ok := decoded.(*pyjson.Object)
+		if err != nil || !ok {
+			if c.hooks.Malformed != nil {
+				c.hooks.Malformed(raw)
+				continue
+			}
 			return
 		}
-		frame, ok := decoded.(*pyjson.Object)
-		if !ok {
-			return
+		if c.hooks.Inbound != nil {
+			c.hooks.Inbound(raw, frame)
 		}
 		var waiter chan rpcAnswer
 		if idv, has := frame.Get("id"); has {
@@ -746,6 +756,15 @@ func ConnectGatewayWith(ctx context.Context, opts ConnectGatewayOptions) (*Gatew
 		}
 		target, protocols = GatewayWSTarget(result.Endpoint, ticket)
 	}
+	sock, err := DialGatewaySocket(ctx, target, protocols, opts.MaxSize)
+	if err != nil {
+		return nil, err
+	}
+	return NewGatewayClient(sock).Start(), nil
+}
+
+// Socket on a gateway WebSocket target offering the protocols, never through a proxy
+func DialGatewaySocket(ctx context.Context, target string, protocols []string, maxSize int64) (GatewaySocket, error) {
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 10 * time.Second, Subprotocols: protocols}
 	conn, resp, err := dialer.DialContext(ctx, target, http.Header{})
 	if err != nil {
@@ -759,11 +778,11 @@ func ConnectGatewayWith(ctx context.Context, opts ConnectGatewayOptions) (*Gatew
 		}
 		return nil, err
 	}
-	conn.SetReadLimit(opts.MaxSize)
+	conn.SetReadLimit(maxSize)
 	sock := &wsSocket{conn: conn}
 	if protocols != nil && sock.Subprotocol() != CanonicalGatewayProtocol {
 		sock.Close()
 		return nil, &GatewayClientError{Msg: "Gateway protocol mismatch; update/restart required"}
 	}
-	return NewGatewayClient(sock).Start(), nil
+	return sock, nil
 }

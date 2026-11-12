@@ -99,7 +99,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 	}
 	list, _ := listOfAny(calls)
 	for _, raw := range list {
-		call, ok := raw.(map[string]any)
+		call, ok := pyjson.Dict(raw)
 		if !ok || len(call) == 0 {
 			continue
 		}

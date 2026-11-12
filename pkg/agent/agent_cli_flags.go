@@ -145,7 +145,7 @@ func (a *AIAgent) controlSnapshotRevision() (string, error) {
 			return "", err
 		}
 	}
-	if raw, err := a.controlMeta(ctx, loopMetaPrefix+target); err != nil {
+	if raw, err := a.controlMeta(ctx, loopMetaKey(target)); err != nil {
 		return "", err
 	} else if raw != "" {
 		if loopState, err = SessionLoopStateFromJSON(raw); err != nil {

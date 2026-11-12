@@ -3,7 +3,7 @@
 
 import { randomUuid } from '@icebath/shared'
 
-export const CANONICAL_GATEWAY_PROTOCOL = 'hermes-gateway-v1'
+export const CANONICAL_GATEWAY_PROTOCOL = 'icebath-gateway-v1'
 
 /** Dial `/api/ws` or a sibling stream beside it. A local gateway's one-use ticket leaves the URL
  *  for the gateway subprotocol; a remote route keeps its own query credential. */

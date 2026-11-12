@@ -532,10 +532,11 @@ func TestUpdateCommandRoutesTermuxToItsOwnPass(t *testing.T) {
 func peBootstrapCheckout(t *testing.T) (string, *Lockfile) {
 	t.Helper()
 	root := t.TempDir()
+	references := peReferences(t, "scripts/gen-bootstrap-pins.py", "scripts/install.sh", "scripts/install.ps1", "pm/")
 	for _, rel := range []string{"scripts/gen-bootstrap-pins.py", "scripts/install.sh", "scripts/install.ps1"} {
-		writeFile(t, filepath.Join(root, rel), readFile(t, filepath.Join(peReferences, rel)), 0o755)
+		writeFile(t, filepath.Join(root, rel), readFile(t, filepath.Join(references, rel)), 0o755)
 	}
-	if err := os.CopyFS(filepath.Join(root, "pm"), os.DirFS(filepath.Join(peReferences, "pm"))); err != nil {
+	if err := os.CopyFS(filepath.Join(root, "pm"), os.DirFS(filepath.Join(references, "pm"))); err != nil {
 		t.Fatal(err)
 	}
 	lock := NewLockfile(filepath.Join(root, "pm", "lock.json"))

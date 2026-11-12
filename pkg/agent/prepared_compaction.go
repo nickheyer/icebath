@@ -200,13 +200,13 @@ func messageIdentity(msg any) PreparedIdentity {
 		}
 	}
 	for _, tc := range calls {
-		if d, ok := tc.(map[string]any); ok {
+		if d, ok := pyjson.Dict(tc); ok {
 			name := ""
 			fn := d["function"]
 			if !pyrepr.Truthy(fn) {
 				fn = map[string]any{}
 			}
-			if fd, ok := fn.(map[string]any); ok {
+			if fd, ok := pyjson.Dict(fn); ok {
 				name = pyrepr.Str(pyGetDefault(fd, "name", ""))
 			}
 			parts = append(parts, pyrepr.Str(pyGetDefault(d, "id", ""))+":"+name)

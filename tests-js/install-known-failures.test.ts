@@ -39,7 +39,7 @@ describe('known install failures', () => {
   it('matches manual-only app updates only for the three proven July script cases', () => {
     const sample = {
       ...base, commit: '7c1a029553d87c43ecff8a3821336bc95872213b',
-      updateMethod: 'hermes-desktop-app-update',
+      updateMethod: 'icebath-desktop-app-update',
       error: 'E2E ASSERTION FAILED: app driven via captured icebath desktop spec; update completed',
       logs: { desktop: '[icebath] [updates] no staged updater; surfacing manual `icebath update` for CLI install at C:/install\n[icebath] [updates] manual: icebath update\n' },
     }
@@ -62,7 +62,7 @@ describe('known install failures', () => {
     }
 
     expect(matchKnownFailure(sample)?.id).toBe('macos-june-setup-update-self-lock')
-    expect(matchKnownFailure({ ...sample, updateMethod: 'hermes-desktop-app-update' })?.id).toBe('macos-june-setup-update-self-lock')
+    expect(matchKnownFailure({ ...sample, updateMethod: 'icebath-desktop-app-update' })?.id).toBe('macos-june-setup-update-self-lock')
     expect(matchKnownFailure({ ...sample, logs: { bootstrap: failed } })).toBeNull()
     expect(matchKnownFailure({ ...sample, commit: 'f'.repeat(40) })).toBeNull()
     expect(matchKnownFailure({ ...sample, platform: 'windows' })).toBeNull()

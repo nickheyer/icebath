@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api, setManagementProfile } from './api';
 
 beforeEach(() => {
-  vi.stubGlobal('window', { __HERMES_SESSION_TOKEN__: 'fixture' });
+  vi.stubGlobal('window', { __ICEBATH_SESSION_TOKEN__: 'fixture' });
   setManagementProfile('work');
 });
 afterEach(() => { vi.unstubAllGlobals(); setManagementProfile(''); });

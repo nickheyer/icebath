@@ -15,7 +15,7 @@ vi.mock('./right-rail/real-profile-consent-dialog', () => ({
 // way the main window left it, sets the pop-out query string, and only then
 // imports the shell. Regression tests for the black pop-out window (shell
 // spawns, no URL bar, content never paints — #119850).
-const TABS_KEY = 'hermes.desktop.previewTabs.v2'
+const TABS_KEY = 'icebath.desktop.previewTabs.v2'
 
 // Loaded once at collection, outside every test's budget: vi.resetModules() keeps each module's
 // transformed code, so the fresh copy a test imports only re-evaluates it. Without this the first

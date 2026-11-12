@@ -109,3 +109,6 @@ func (r *GatewayRunner) ExitReason() *string { return r.exitReason }
 
 // Exit status the gateway asked for, nil while it runs
 func (r *GatewayRunner) ExitCode() *int { return r.exitCode }
+
+// Whether a signal handler started this stop, read by adapters that tell shutdown exits from crashes
+func (r *GatewayRunner) StopRequestedBySignal() bool { return r.stopRequestedBySignal }

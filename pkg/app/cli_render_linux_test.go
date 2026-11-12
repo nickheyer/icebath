@@ -142,9 +142,11 @@ func TestOsc11ChildProcess(t *testing.T) {
 	if os.Getenv("ICEBATH_OSC11_CHILD") != "1" {
 		return
 	}
-	bg, ok := queryOSC11Background()
+	bg, ok, err := queryOSC11Background()
 	result := "None"
-	if ok {
+	if err != nil {
+		result = "error"
+	} else if ok {
 		result = "'" + bg + "'"
 	}
 	fmt.Printf("RESULT:%s\n", result)
@@ -160,7 +162,7 @@ func TestOsc11ChildProcess(t *testing.T) {
 	chunk := make([]byte, 256)
 	deadline := time.Now().Add(600 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if !fdReadable(fd, time.Now().Add(100*time.Millisecond)) {
+		if ready, _ := fdReadable(fd, time.Now().Add(100*time.Millisecond)); !ready {
 			continue
 		}
 		n, err := unix.Read(fd, chunk)

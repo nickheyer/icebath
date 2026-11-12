@@ -24,3 +24,6 @@ export const HERO_ART = [
   '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀',
   '⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀'
 ]
+
+export const LOGO_GRADIENT = [0, 0, 0, 0, 0, 0] as const
+export const HERO_GRADIENT = [3, 3, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 3] as const

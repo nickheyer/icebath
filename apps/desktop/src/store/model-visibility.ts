@@ -3,13 +3,13 @@ import { atom } from 'nanostores'
 
 import { persistString, storedString } from '@/lib/storage'
 
-const STORAGE_KEY = 'hermes.desktop.visible-models'
+const STORAGE_KEY = 'icebath.desktop.visible-models'
 
 /** Every `provider::model` key the user has had a chance to judge — snapshotted
  *  each time the visible set is persisted. A model absent from here appeared
  *  AFTER the user last curated (plugin update, catalog refresh, new release), so
  *  it falls through to the curated default rule instead of defaulting to hidden. */
-const KNOWN_STORAGE_KEY = 'hermes.desktop.known-models'
+const KNOWN_STORAGE_KEY = 'icebath.desktop.known-models'
 
 /** Models shown per provider in the status-bar dropdown before the user has
  *  customized the list. Backend `models` are already relevance-ordered. */

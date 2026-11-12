@@ -28,7 +28,6 @@ var (
 		"codex_responses":    {"openai.responses", "OpenAIResponsesCodec"},
 		"anthropic_messages": {"anthropic.messages", "AnthropicMessagesCodec"},
 	}
-	relayCodecFn = relayCodec
 )
 
 const relaySyncLoopError = "Synchronous Relay LLM execution cannot run on an event-loop thread"
@@ -141,11 +140,11 @@ func newRelayManagedAttempt(ctx context.Context, rt *tools.RelayRuntime, session
 		return nil, err
 	}
 	a.operation = relayOperationName(name, metadata)
-	codec, err := relayCodecFn(relay, metadata)
+	codec, err := relayCodec(relay, metadata)
 	if err != nil {
 		return nil, err
 	}
-	responseCodec, err := relayCodecFn(relay, metadata)
+	responseCodec, err := relayCodec(relay, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +356,7 @@ type relayStreamHandle interface {
 	finalResponse() any
 }
 
+// Opens the managed Relay stream for one provider attempt, the Go form of the relay_llm stream alias
 var relayStreamFn = func(ctx context.Context, request map[string]any, streamFactory func(ctx context.Context, request map[string]any) (any, error), o ManagedLlmStreamOptions) (relayStreamHandle, error) {
 	s, err := NewManagedLlmStream(ctx, request, streamFactory, o)
 	if err != nil {
@@ -1073,6 +1073,9 @@ func (a *AnthropicStreamAccumulator) Observe(event any) error {
 	if !ok {
 		return nil
 	}
+	if err := auxHashable(payload["type"]); err != nil {
+		return err
+	}
 	switch payload["type"] {
 	case "message_start":
 		if message, ok := payload["message"].(map[string]any); ok {
@@ -1570,7 +1573,7 @@ func relayRestoreProviderMessageExtensions(original, final, baseline, intercepte
 
 // Codec only request shape used to identify real rewrites, nil when the baseline fails
 func relayCodecRoundTripRequestBody(ctx context.Context, relay *tools.NemoRelay, relayRequest any, relayRequestBody, metadata map[string]any) (map[string]any, error) {
-	codec, err := relayCodecFn(relay, metadata)
+	codec, err := relayCodec(relay, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -1613,7 +1616,7 @@ func relayProviderRequestBody(content, metadata map[string]any) map[string]any {
 	body := relayCopyMap(content)
 	if relayAPIMode(metadata) == "codex_responses" {
 		relayRewriteTools(body, func(t map[string]any) bool {
-			_, ok := t["function"].(map[string]any)
+			_, ok := pyjson.Dict(t["function"])
 			return t["type"] == "function" && ok
 		}, func(t map[string]any) map[string]any {
 			out := map[string]any{"type": "function"}

@@ -169,7 +169,7 @@ func pkceLoginStart(authorizeURL, clientID, scope, redirectURI string) gateway.L
 	}
 	return gateway.LoginStart{
 		RedirectURL:   authorizeURL + "?" + pyurl.URLEncode(params),
-		CookiePayload: map[string]string{"hermes_session_pkce": "state=" + state + ";verifier=" + codeVerifier},
+		CookiePayload: map[string]string{"icebath_session_pkce": "state=" + state + ";verifier=" + codeVerifier},
 	}
 }
 

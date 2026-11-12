@@ -4,7 +4,7 @@ type ZoomState = { level: number; percent: number }
 
 /** App scale is independent of browser zoom and monitor pixel density. */
 export function createBrowserZoom(basePath: string): NonNullable<Window['hermesDesktop']['zoom']> {
-  const storageKey = `hermes:browser:ui-scale:${basePath || '/'}`
+  const storageKey = `icebath:browser:ui-scale:${basePath || '/'}`
   const listeners = new Set<(state: ZoomState) => void>()
   let percent = 100
 

@@ -10,7 +10,7 @@ var ServerRequestParams = pydantic.NewModel("ServerRequestParams", ParamsConfig,
 
 var ValueResult = pydantic.NewModel("ValueResult", ClosedConfig,
 	pydantic.Req("value", pydantic.Str),
-)
+).Described("The answer to any one-string prompt (sudo, secret, vault prompts, desktop bridges):\n``''`` means skipped / declined.")
 
 var ClarifyQuestion = pydantic.NewModel("ClarifyQuestion", ParamsConfig,
 	pydantic.Req("qid", pydantic.Str),
@@ -22,12 +22,12 @@ var ClarifyQuestion = pydantic.NewModel("ClarifyQuestion", ParamsConfig,
 var ClarifyRequestParams = pydantic.Extend(ServerRequestParams, "ClarifyRequestParams", ParamsConfig,
 	pydantic.Req("questions", pydantic.List(ClarifyQuestion)),
 	pydantic.Def("answers", pydantic.Nullable(pydantic.Dict(pydantic.Nullable(pydantic.Str))), nil),
-)
+).Described("``answers`` rides only on a reconnect replay (locks the server already accepted; null = skipped).")
 
 var ClarifyResult = pydantic.NewModel("ClarifyResult", ClosedConfig,
 	pydantic.Def("answers", pydantic.Nullable(pydantic.Dict(pydantic.Nullable(pydantic.Str))), nil),
 	pydantic.Def("outcome", pydantic.Nullable(pydantic.Literal("submitted", "timed_out", "cancelled")), nil),
-)
+).Described("``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response\nwithout ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as\nmain's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline).")
 
 var _ = ServerRequestOf("clarify", ClarifyRequestParams, ClarifyResult, "The clarify tool: ask the user 1-5 questions.")
 
@@ -63,7 +63,7 @@ var SetupBeatRequestParams = pydantic.Extend(ServerRequestParams, "SetupBeatRequ
 	pydantic.Def("question", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("tool_call_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Req("card", pydantic.Union(SetupNameCard, SetupThemeCard, SetupOptionsCard, SetupConnectorsCard, SetupPluginsCard)),
-)
+).Described("``card`` is the beat's data (``agent/onboarding_flow.py::BEATS``): name, theme, connectors and\nplugins have their own shape; layout, tour and build carry ``options``. ``tool_call_id`` is the\nsetup_beat call the card belongs to: only that transcript row draws it.")
 
 var SetupNameAnswer = pydantic.NewModel("SetupNameAnswer", ClosedConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -102,7 +102,7 @@ var SetupBeatResult = pydantic.NewModel("SetupBeatResult", ClosedConfig,
 	pydantic.Def("answer", pydantic.Nullable(pydantic.Union(SetupNameAnswer, SetupThemeAnswer, SetupLayoutAnswer, SetupConnectorsAnswer, SetupPluginsAnswer, SetupTourAnswer, SetupBuildAnswer)), nil),
 	pydantic.Def("said", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("wrote_instead", pydantic.Bool, false),
-)
+).Described("``answer`` holds the shown beat's picks; ids must be one of the card's options (the backend\nrejects any other answer). ``said`` is composer text typed while the name card waited: the name.\n``wrote_instead``: the user sent a message instead of answering; the backend ends the turn and the\nclient sends that message as the next one. A response with none of these, or none within 300 s,\ncloses the card unanswered.")
 
 var _ = ServerRequestOf("setup_beat", SetupBeatRequestParams, SetupBeatResult, "The onboarding chat's card for one beat; blocks setup_beat until answered (300 s).")
 
@@ -118,7 +118,7 @@ var ApprovalRequestParams = pydantic.Extend(ServerRequestParams, "ApprovalReques
 	pydantic.Def("smart_denied", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("tool_name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("session_id_hint", pydantic.Nullable(pydantic.Str), nil).Alias("gateway_session_id"),
-)
+).Described("``tui_gateway/server.py::_approval_request_payload`` — the command is redacted server-side.")
 
 var ApprovalResult = pydantic.NewModel("ApprovalResult", ClosedConfig,
 	pydantic.Req("choice", ApprovalChoice),
@@ -131,7 +131,7 @@ var EmptyRequestParams = pydantic.Extend(ServerRequestParams, "EmptyRequestParam
 
 var SudoRequestParams = pydantic.Extend(ServerRequestParams, "SudoRequestParams", ParamsConfig,
 	pydantic.Def("command", pydantic.Str, ""),
-)
+).Described("Original command, redacted server-side before any password-injection rewrite.")
 
 var _ = ServerRequestOf("sudo", SudoRequestParams, ValueResult, "Masked sudo password for the terminal tool.")
 
@@ -187,7 +187,7 @@ var PreviewActRequestParams = pydantic.Extend(ServerRequestParams, "PreviewActRe
 	pydantic.Def("amount", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("max", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("allow_shortcut", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``tools/drive_preview_tool.py`` and ``tools/annotate_preview_tool.py`` field sets.")
 
 var _ = ServerRequestOf("preview.act", PreviewActRequestParams, ValueResult, "Click / type / scroll / annotate inside the in-app browser preview.")
 
@@ -208,7 +208,7 @@ var TourRequestParams = pydantic.Extend(ServerRequestParams, "TourRequestParams"
 	pydantic.Def("steps", pydantic.Nullable(pydantic.List(TourStep)), nil),
 	pydantic.Def("step_index", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("preset", pydantic.Nullable(TourPreset), nil),
-)
+).Described("``tools/tour_tool.py`` field set.")
 
 var _ = ServerRequestOf("tour", TourRequestParams, ValueResult, "Drive a guided tour highlight in the desktop renderer.")
 
@@ -220,7 +220,7 @@ var ThemeApplyRequestParams = pydantic.Extend(ServerRequestParams, "ThemeApplyRe
 	pydantic.Def("accent", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("mode", pydantic.Nullable(ThemeMode), nil),
 	pydantic.Def("layout", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``tools/set_theme_tool.py`` values; accent is a swatch id, ``theme`` or ``#rrggbb``.")
 
 var ThemePickRequestParams = pydantic.Extend(ServerRequestParams, "ThemePickRequestParams", ParamsConfig,
 	pydantic.Req("picker", ThemePicker),
@@ -230,13 +230,13 @@ var ThemeValues = pydantic.NewModel("ThemeValues", ParamsConfig,
 	pydantic.Def("accent", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("mode", pydantic.Nullable(ThemeMode), nil),
 	pydantic.Def("layout", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("What the renderer applied. ``accent`` is a swatch id, ``custom:#rrggbb``, or null for the theme's own.")
 
 var ThemePickResult = pydantic.NewModel("ThemePickResult", ClosedConfig,
 	pydantic.Def("picked", pydantic.Nullable(ThemeValues), nil),
 	pydantic.Def("said", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("cancelled", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``picked`` once the user chose (already applied); ``cancelled`` when the card was dismissed. A response\nwith neither is a cancel.")
 
 var _ = ServerRequestOf("theme.apply", ThemeApplyRequestParams, ValueResult, "Apply set_theme values in the window showing the session (JSON text answer).")
 
@@ -252,4 +252,4 @@ var RequestCancelPayload = pydantic.NewModel("RequestCancelPayload", ClosedConfi
 
 var _ = Event("request.cancel", RequestCancelPayload, "The backend withdrew an open server→client request; clear the matching card only.")
 
-var TourPreset = pydantic.Enum("TourPreset", "quick", "quick", "full", "full")
+var TourPreset = pydantic.Enum("TourPreset", "quick", "quick", "full", "full").Described("Which built-in tour ``start`` without steps runs.")

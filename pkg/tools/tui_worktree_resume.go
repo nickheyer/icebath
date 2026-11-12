@@ -173,6 +173,6 @@ func RecreateTUIWorktree(ctx context.Context, cwd, sessionID string) string {
 		return ""
 	}
 	copyWorktreeIncludes(repoRoot, tree)
-	retainWorktreeForSession(repoRoot, tree, sessionID, home.StatePath(home.Dir(ctx)))
+	RetainWorktreeForSession(repoRoot, tree, sessionID, home.StatePath(home.Dir(ctx)))
 	return tree
 }

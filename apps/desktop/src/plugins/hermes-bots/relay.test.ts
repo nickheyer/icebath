@@ -34,7 +34,7 @@ const { clearBotAttentionMock, hostMock, noteBotAttentionMock, UnboundedCache } 
     pluginDecisions: {
       get: () => {
         try {
-          const raw = window.localStorage.getItem('hermes.desktop.pluginDecisions.v2')
+          const raw = window.localStorage.getItem('icebath.desktop.pluginDecisions.v2')
 
           return raw ? (JSON.parse(raw) as Record<string, boolean>) : {}
         } catch {
@@ -149,7 +149,7 @@ async function pushAndSettle(times = 1, event?: { connectionId?: string }) {
   await vi.advanceTimersByTimeAsync(RELAY_PUSH_DEBOUNCE_MS + 10)
 }
 
-const PLUGIN_DECISIONS_KEY = 'hermes.desktop.pluginDecisions.v2'
+const PLUGIN_DECISIONS_KEY = 'icebath.desktop.pluginDecisions.v2'
 
 beforeEach(() => {
   vi.useFakeTimers()

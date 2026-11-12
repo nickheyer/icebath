@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -744,6 +745,11 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 					s.log.Error(fmt.Sprintf("Cron startup recovery error for profile at %s: %v", e.Home, r))
 				}
 			}()
+			leave, held := gateway.ProcessOwnership.Hold(e.Home)
+			if !held {
+				return
+			}
+			defer leave()
 			pctx, ps := s.profileCronScope(ctx, e.Home)
 			recovered, err := schedulerRecoverInterrupted(pctx, p)
 			if err != nil {
@@ -764,6 +770,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 		profileErrors := map[string]string{}
 		var cycleErr error
 		cycle := []ProfileHome{}
+		var leaves []func()
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -783,7 +790,13 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 				}
 				enumerated = gated
 			}
-			cycle = enumerated
+			// A profile unserved by this gateway keeps its home untouched, and its release waits for this cycle
+			for _, e := range enumerated {
+				if leave, held := gateway.ProcessOwnership.Hold(e.Home); held {
+					leaves = append(leaves, leave)
+					cycle = append(cycle, e)
+				}
+			}
 			hs := make([]string, 0, len(cycle))
 			for _, e := range cycle {
 				hs = append(hs, e.Home)
@@ -855,6 +868,9 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 			case tickErr != "":
 				ps.guardedStoreWrite("tick error", func() { ps.RecordTickerError(home.WithOverride(ctx, ps.home), tickErr) })
 			}
+		}
+		for _, leave := range leaves {
+			leave()
 		}
 		if ok {
 			failures = 0

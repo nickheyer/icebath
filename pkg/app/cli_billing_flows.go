@@ -64,6 +64,81 @@ func (c *CLI) portalRow() slashConfirmChoice {
 	return c.billingRow("portal", "cli.billing.choice_manage_on_portal", "cli.billing.desc_open_billing_page")
 }
 
+// Allow remote spending or not now rows of the step up modal
+func (c *CLI) allowRemoteSpendingChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("yes", "cli.billing.choice_allow_remote_spending", "cli.billing.desc_allow_remote_spending"),
+		c.billingRow("no", "cli.billing.choice_not_now", "cli.billing.desc_not_now")}
+}
+
+// Add funds, auto reload, monthly limit, portal and cancel rows of the top up menu
+func (c *CLI) topupMenuChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("buy", "cli.billing.choice_add_funds", "cli.billing.desc_add_funds"),
+		c.billingRow("auto", "cli.billing.choice_auto_reload", "cli.billing.desc_auto_reload"),
+		c.billingRow("limit", "cli.billing.choice_monthly_limit", "cli.billing.desc_monthly_limit"),
+		c.portalRow(), c.cancelRow("", "", "")}
+}
+
+// Add card on portal, recheck card and back rows
+func (c *CLI) addCardChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("portal", "cli.billing.choice_add_card_on_portal", "cli.billing.desc_add_card_on_portal"),
+		c.billingRow("recheck", "cli.billing.choice_recheck_card", "cli.billing.desc_recheck_card"),
+		c.cancelRow("", "cli.billing.choice_back", "")}
+}
+
+// Edit thresholds, turn off and cancel rows for auto reload already on
+func (c *CLI) autoReloadTopChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("edit", "cli.billing.choice_edit_thresholds", "cli.billing.desc_edit_thresholds"),
+		c.billingRow("off", "cli.billing.choice_turn_off", "cli.billing.desc_turn_off"),
+		c.cancelRow("", "", "")}
+}
+
+// Agree and turn on or cancel rows of the auto reload consent
+func (c *CLI) autoReloadAgreeChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("agree", "cli.billing.choice_agree_turn_on", "cli.billing.desc_agree_turn_on"),
+		c.cancelRow("", "", "")}
+}
+
+// Change plan row of the subscription menu
+func (c *CLI) changePlanRow() slashConfirmChoice {
+	return c.billingRow("change", "cli.subscription.choice_change_plan", "cli.subscription.desc_change_plan")
+}
+
+// Portal and close rows ending the subscription change menu
+func (c *CLI) changeMenuTail() []slashConfirmChoice {
+	return []slashConfirmChoice{c.portalRow(), c.cancelRow("close", "cli.billing.choice_close", "")}
+}
+
+// Cancel subscription or go back rows of the cancel confirmation
+func (c *CLI) cancelSubChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("yes", "cli.subscription.choice_cancel_subscription", "cli.subscription.desc_cancel_subscription"),
+		c.billingRow("cancel", "cli.billing.choice_go_back", "cli.subscription.desc_keep_your_plan")}
+}
+
+// Keep going on credits row offered to window plans in the top up menu
+func (c *CLI) keepGoingRow() slashConfirmChoice {
+	return c.billingRow("hermes", "cli.billing.keep_going_choice", "cli.billing.keep_going_desc")
+}
+
+// Turn keep going on or keep it off rows
+func (c *CLI) keepGoingAgreeChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("agree", "cli.billing.keep_going_turn_on", "cli.billing.keep_going_desc"),
+		c.cancelRow("", "", "cli.billing.keep_going_keep_off_desc")}
+}
+
+// Turn keep going off or leave it on rows
+func (c *CLI) keepGoingOffChoices() []slashConfirmChoice {
+	return []slashConfirmChoice{
+		c.billingRow("off", "cli.billing.keep_going_turn_off", "cli.billing.keep_going_turn_off_desc"),
+		c.cancelRow("", "cli.billing.keep_going_leave_on", "")}
+}
+
 // Runs the choice modal and returns the normalized value, empty when dismissed
 func (c *CLI) modalChoice(title, detail string, choices []slashConfirmChoice) string {
 	raw, ok := c.promptTextInputModal(title, detail, choices, 120)
@@ -128,9 +203,7 @@ func (c *CLI) stepUpRemoteSpending(explain, noninteractiveMsg, declinedMsg, notG
 		return false
 	}
 	choice := c.modalChoice(c.t("cli.billing.allow_remote_spending_title", nil), c.t("cli.billing.allow_remote_spending_detail", nil),
-		[]slashConfirmChoice{
-			c.billingRow("yes", "cli.billing.choice_allow_remote_spending", "cli.billing.desc_allow_remote_spending"),
-			c.billingRow("no", "cli.billing.choice_not_now", "cli.billing.desc_not_now")})
+		c.allowRemoteSpendingChoices())
 	if choice != "yes" {
 		infoPrint(declinedMsg)
 		return false
@@ -472,16 +545,15 @@ func (c *CLI) subscriptionOpenPortal(manageURL, verb string) {
 // In terminal change menu for a paid admin
 func (c *CLI) subscriptionChangeMenu(state *provider.SubscriptionState, manageURL string) {
 	cur := state.Current
-	changeRow := c.billingRow("change", "cli.subscription.choice_change_plan", "cli.subscription.desc_change_plan")
 	var head []slashConfirmChoice
 	if cur != nil && (cur.CancelAtPeriodEnd || pyrepr.Truthy(cur.PendingDowngradeTierName)) {
 		keepName := pyrepr.Or(cur.TierName, c.t("cli.subscription.your_plan", nil))
 		head = []slashConfirmChoice{{Value: "keep", Label: c.t("cli.subscription.choice_keep_plan", map[string]any{"plan": keepName}),
-			Desc: c.t("cli.subscription.desc_keep_plan", nil)}, changeRow}
+			Desc: c.t("cli.subscription.desc_keep_plan", nil)}, c.changePlanRow()}
 	} else {
-		head = []slashConfirmChoice{changeRow, c.billingRow("cancel_sub", "cli.subscription.choice_cancel_subscription", "cli.subscription.desc_cancel_subscription")}
+		head = []slashConfirmChoice{c.changePlanRow(), c.billingRow("cancel_sub", "cli.subscription.choice_cancel_subscription", "cli.subscription.desc_cancel_subscription")}
 	}
-	choices := append(head, c.portalRow(), c.cancelRow("close", "cli.billing.choice_close", ""))
+	choices := append(head, c.changeMenuTail()...)
 	switch c.modalChoice(c.t("cli.subscription.manage_your_subscription", nil), "", choices) {
 	case "change":
 		c.subscriptionPickTier(state)
@@ -648,10 +720,7 @@ func (c *CLI) subscriptionConfirmCancel(state *provider.SubscriptionState) {
 	}
 	cprint("  " + c.t("cli.subscription.cancel_stays_active_until", map[string]any{"plan": plan, "end": end}))
 	c.billingDim(c.t("cli.subscription.keep_remaining_credits", nil), "", false)
-	choices := []slashConfirmChoice{
-		c.billingRow("yes", "cli.subscription.choice_cancel_subscription", "cli.subscription.desc_cancel_subscription"),
-		c.billingRow("cancel", "cli.billing.choice_go_back", "cli.subscription.desc_keep_your_plan")}
-	if c.modalChoice(c.t("cli.subscription.cancel_subscription_question", nil), "", choices) != "yes" {
+	if c.modalChoice(c.t("cli.subscription.cancel_subscription_question", nil), "", c.cancelSubChoices()) != "yes" {
 		infoPrint("  " + c.t("cli.subscription.cancelled_plan_unchanged", nil))
 		return
 	}

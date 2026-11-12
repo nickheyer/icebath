@@ -125,7 +125,8 @@ func ppChild(mode string, args []string) int {
 			}
 			token, err = updaterecord.DropNeverStopped(token)
 			must(err)
-			draining = updaterecord.SplitDraining(token)
+			draining, err = updaterecord.SplitDraining(token)
+			must(err)
 		}
 		emit(map[string]any{"recorded": len(found) > 0, "relaunched": ppEntryPids(token), "held": ppEntryPids(draining)})
 	case "replay-env":

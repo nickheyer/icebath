@@ -1,23 +1,26 @@
 package browser
 
 import (
+	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
+	"github.com/nickheyer/icebath/pkg/browser/harnesshost"
+	"github.com/nickheyer/icebath/pkg/internal/pyhost"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // sitecustomize on the harness PYTHONPATH, the real browser_harness CLI runs with only its daemon transport faked
@@ -67,26 +70,70 @@ telemetry.is_enabled = lambda: False
 telemetry.capture_cli_event = lambda *a, **k: None
 `
 
-var harnessEnv struct {
-	once   sync.Once
-	python string
-	err    error
-}
-
-// Interpreter of the pm managed environment holding the pinned browser-harness and the Pillow it pins
+// Venv over the host interpreter and its own Pillow holding the pinned browser-harness wheel from testdata
 func harnessPython(t *testing.T) string {
 	t.Helper()
-	harnessEnv.once.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
-		defer cancel()
-		harnessEnv.python, harnessEnv.err = pm.EnsureEnvironment(ctx, pm.EnsureEnvironmentOptions{
-			Name: "browser-harness", Requirements: []string{"browser-harness==0.1.13"},
-			Explicit: true, Timeout: 20 * time.Minute})
-	})
-	if harnessEnv.err != nil {
-		t.Fatal(harnessEnv.err)
+	var host string
+	for _, name := range []string{"python3", "python"} {
+		if found, err := exec.LookPath(name); err == nil {
+			host = found
+			break
+		}
 	}
-	return harnessEnv.python
+	if host == "" {
+		t.Fatal("harness cases need a host Python")
+	}
+	real, err := filepath.EvalSymlinks(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := pyhost.Discover(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	venv := filepath.Join(t.TempDir(), "harness-venv")
+	site := filepath.Join(venv, "lib", fmt.Sprintf("python%d.%d%s", in.Major, in.Minor, in.ABIFlags), "site-packages")
+	if err := os.MkdirAll(site, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := fmt.Sprintf("home = %s\ninclude-system-site-packages = true\nversion = %d.%d.0\n", filepath.Dir(real), in.Major, in.Minor)
+	if err := os.WriteFile(filepath.Join(venv, "pyvenv.cfg"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	python := filepath.Join(venv, "bin", "python")
+	if err := os.MkdirAll(filepath.Dir(python), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, python); err != nil {
+		t.Fatal(err)
+	}
+	wheel, err := zip.OpenReader(filepath.Join("testdata", "browser_harness-0.1.13-py3-none-any.whl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wheel.Close()
+	for _, member := range wheel.File {
+		target := filepath.Join(site, filepath.FromSlash(member.Name))
+		if member.FileInfo().IsDir() {
+			continue
+		}
+		r, err := member.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return python
 }
 
 type shotRun struct {
@@ -133,21 +180,17 @@ func (r shotRun) requirePNG(t *testing.T) {
 	}
 }
 
-// Runs code through the harness launcher with the embedded helpers in the given activation mode
+// Runs code through this binary hosting the harness with the Go helpers in the given activation mode
 func runHarnessShot(t *testing.T, activate string, activateWorks bool, code, daemonKind string) shotRun {
 	t.Helper()
 	python := harnessPython(t)
 	dir := t.TempDir()
-	module, err := WriteBrowserUseShot(filepath.Join(dir, "helpers"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	fake := filepath.Join(dir, "fake_transport")
 	os.Mkdir(fake, 0o755)
 	os.WriteFile(filepath.Join(fake, "sitecustomize.py"), []byte(fakeHarnessTransport), 0o644)
 	logPath := filepath.Join(dir, "cdp.jsonl")
 	shot := filepath.Join(dir, "shot.png")
-	argv, err := harnessCommand([]string{python, "-m", "browser_harness.run"}, activate, module)
+	argv, err := harnessCommand([]string{python, "-m", "browser_harness.run"}, activate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,43 +221,74 @@ func runHarnessShot(t *testing.T, activate string, activateWorks bool, code, dae
 
 func TestHarnessCommandWrapsOnlyTheHarnessModule(t *testing.T) {
 	other := []string{"/usr/bin/python3", "-m", "other"}
-	if got, err := harnessCommand(other, activateNever, "/x/browser_use_shot.py"); err != nil || !slices.Equal(got, other) {
+	if got, err := harnessCommand(other, activateNever); err != nil || !slices.Equal(got, other) {
 		t.Fatalf("got %v", got)
 	}
-	if got, err := harnessCommand(nil, activateNever, "/x/browser_use_shot.py"); err != nil || got != nil {
+	if got, err := harnessCommand(nil, activateNever); err != nil || got != nil {
 		t.Fatalf("got %v", got)
 	}
-	got, err := harnessCommand([]string{"/py", "-m", "browser_harness.run"}, activateIfCloud, "/x/it's/browser_use_shot.py")
-	want := "import importlib.util, runpy\n" +
-		"spec = importlib.util.spec_from_file_location('icebath_browser_use_shot', \"/x/it's/browser_use_shot.py\")\n" +
-		"shot = importlib.util.module_from_spec(spec); spec.loader.exec_module(shot)\n" +
-		"import browser_harness.helpers\n" +
-		"shot.install(browser_harness.helpers, activate='if-cloud')\n" +
-		"runpy.run_module('browser_harness.run', run_name='__main__', alter_sys=True)\n"
-	if err != nil || len(got) != 3 || got[0] != "/py" || got[1] != "-c" || got[2] != want {
-		t.Fatalf("got %q", got)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := harnessCommand([]string{"/py", "-m", "browser_harness.run"}, activateIfCloud)
+	if want := []string{exe, harnesshost.Entry, "--python", "/py", "--activate", "if-cloud"}; err != nil || !slices.Equal(got, want) {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 
-func TestWriteBrowserUseShotWritesTheEmbeddedModule(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "nested")
-	path, err := WriteBrowserUseShot(dir)
-	if err != nil || path != filepath.Join(dir, "browser_use_shot.py") {
-		t.Fatalf("path %q err %v", path, err)
+func TestInstalledHelpersKeepTheHermesNamesSignaturesAndDocs(t *testing.T) {
+	code := "import inspect, json\nprint(json.dumps([[f.__name__, str(inspect.signature(f)), f.__doc__, f.__module__ == 'browser_harness.helpers'] for f in (capture_screenshot, new_tab)]))"
+	run := runHarnessShot(t, activateAlways, true, code, "")
+	run.requireSuccess(t)
+	var got []any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(run.stdout)), &got); err != nil {
+		t.Fatalf("stdout %q %v", run.stdout, err)
 	}
-	data, _ := os.ReadFile(path)
-	if !bytes.Equal(data, browserUseShotSource) || !bytes.Contains(data, []byte(`logging.getLogger("icebath_browser_use_shot")`)) {
-		t.Fatal("written module differs from the embedded one")
+	want := []any{
+		[]any{"capture_screenshot", "(path=None, full=False, max_dim=None)", "Save a PNG of the current viewport. Set max_dim=1800 on a 2x display to keep the file under\nthe 2000px-per-side limit some image-aware LLMs enforce.", false},
+		[]any{"new_tab_in_front", "(url='about:blank')", "Open (or reuse a blank) tab, navigate to url, and bring it to the front on a cloud browser.", false},
 	}
-	os.WriteFile(path, []byte("stale"), 0o644)
-	if _, err := WriteBrowserUseShot(dir); err != nil {
-		t.Fatal(err)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("helpers %v", got)
 	}
-	if data, _ := os.ReadFile(path); !bytes.Equal(data, browserUseShotSource) {
-		t.Fatal("stale module not replaced")
+}
+
+func TestCaptureScreenshotBindsArgumentsLikeItsDef(t *testing.T) {
+	code := "for call in (lambda: capture_screenshot(1, 2, 3, 4), lambda: capture_screenshot(nope=1), lambda: capture_screenshot({shot!r}, path={shot!r})):\n" +
+		"    try:\n        call()\n    except TypeError as e:\n        print(e)"
+	run := runHarnessShot(t, activateNever, true, code, "")
+	run.requireSuccess(t)
+	want := "make_capture_screenshot.<locals>.capture_screenshot() takes from 0 to 3 positional arguments but 4 were given\n" +
+		"make_capture_screenshot.<locals>.capture_screenshot() got an unexpected keyword argument 'nope'\n" +
+		"make_capture_screenshot.<locals>.capture_screenshot() got multiple values for argument 'path'\n"
+	if run.stdout != want {
+		t.Fatalf("stdout %q", run.stdout)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Fatalf("temp files left %v", entries)
+}
+
+func TestHarnessExitStatusFollowsSystemExitAndUncaughtErrors(t *testing.T) {
+	for _, c := range []struct {
+		code   string
+		status int
+		stderr string
+	}{
+		{"raise SystemExit(7)", 7, ""},
+		{"raise SystemExit('bye')", 1, "bye\n"},
+		{"raise SystemExit(None)", 0, ""},
+		{"raise ValueError('boom')", 1, "ValueError: boom"},
+	} {
+		run := runHarnessShot(t, activateNever, true, c.code, "")
+		status := 0
+		var exit *exec.ExitError
+		if errors.As(run.err, &exit) {
+			status = exit.ExitCode()
+		} else if run.err != nil {
+			t.Fatalf("%s: %v", c.code, run.err)
+		}
+		if status != c.status || !strings.Contains(run.stderr, c.stderr) {
+			t.Fatalf("%s: status %d stderr %q", c.code, status, run.stderr)
+		}
 	}
 }
 

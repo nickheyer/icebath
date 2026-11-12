@@ -610,7 +610,7 @@ describe('PluginsTab', () => {
       expect(checked()).toBe('false')
       expect($pluginRecords.get().kanban.status).toBe('disabled')
       expect($pluginDecisions.get()).not.toHaveProperty('kanban')
-      expect(window.localStorage.getItem('hermes.desktop.pluginDecisions.v2')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.pluginDecisions.v2')).toBeNull()
       expect(notices('success')).toHaveLength(0)
 
       // Same intended value again, backend healthy: both halves turn on.

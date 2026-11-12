@@ -166,7 +166,7 @@ type AIAgent struct {
 	compressionIdleCompactAfterSeconds float64
 	compressionThresholdAutoraised     map[string]any
 	maxCompressionAttempts             int
-	auxCompressionContextLengthConfig  int
+	auxCompressionContextLengthConfig  *int
 	configContextLength                int
 	codexResponsesNativeCompaction     bool
 	codexResponsesCompactThreshold     float64
@@ -740,7 +740,7 @@ func (a *AIAgent) toolSurface(ctx context.Context, defs []map[string]any) []map[
 }
 
 func snapshotToolName(def map[string]any) string {
-	fn, _ := def["function"].(map[string]any)
+	fn, _ := pyjson.Dict(def["function"])
 	name, _ := fn["name"].(string)
 	return name
 }

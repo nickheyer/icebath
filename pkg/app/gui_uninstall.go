@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	guiDesktopEntryName       = "com.nousresearch.icebath.desktop"
+	guiDesktopEntryName       = "ai.icebath.desktop"
 	guiLegacyDesktopEntryName = "icebath.desktop"
 )
 

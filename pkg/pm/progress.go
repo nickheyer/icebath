@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 
 	"github.com/charmbracelet/x/term"
 )
@@ -57,10 +58,7 @@ func VerboseOutput(env map[string]string) bool {
 }
 
 // Reports whether a stream is an interactive terminal
-func isTerminalStream(stream io.Writer) bool {
-	f, ok := stream.(*os.File)
-	return ok && f != nil && term.IsTerminal(f.Fd())
-}
+func isTerminalStream(stream io.Writer) bool { return pysys.Isatty(stream) }
 
 // Terminal width the way shutil get_terminal_size reports it, COLUMNS first then stdout, else 80
 func terminalColumns() int {

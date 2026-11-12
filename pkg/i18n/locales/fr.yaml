@@ -4031,7 +4031,7 @@ cli:
     header: "(^_^)b Ensembles d'outils disponibles"
     currently_enabled_legend: "(*) = actuellement activé"
     tip_enable_all: "Astuce : utilisez 'all' ou '*' pour activer tous les ensembles d'outils"
-    example: "Exemple : python cli.py --toolsets web,terminal"
+    example: "Exemple : icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Sous-commande /usage inconnue : {args}. Essayez /usage ou /usage reset [--force]."

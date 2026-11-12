@@ -88,8 +88,8 @@ async function stampExeIdentity(
     'version-string': {
       ProductName: 'Icebath',
       FileDescription: 'Icebath',
-      CompanyName: 'Nous Research',
-      LegalCopyright: 'Copyright (c) 2026 Nous Research'
+      CompanyName: 'Nicholas W. Heyer',
+      LegalCopyright: 'Copyright (c) 2026 Nicholas W. Heyer'
     }
   }
 

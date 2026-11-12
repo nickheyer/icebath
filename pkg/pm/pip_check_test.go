@@ -122,7 +122,7 @@ func TestPipCheckOverridesRoundTripAsRequirementLines(t *testing.T) {
 
 // The upstream application lock reads the same through this parser as through tomllib in pip_check itself
 func TestPipCheckReadsTheRealLockLikeTomllib(t *testing.T) {
-	reference := peReferences
+	reference := peReferences(t, "uv.lock", "pm/")
 	lock := filepath.Join(reference, "uv.lock")
 	versions, err := OverriddenVersions(lock)
 	if err != nil {

@@ -119,8 +119,8 @@ describe("usePlugins across a profile switch", () => {
     await answer("beta", [manifest("same", "beta.js", "beta.css")]);
     const betaTab: ComponentType<Record<string, never>> = () => null;
     fromBundleOf("beta", () => {
-      window.__HERMES_PLUGINS__!.register("same", betaTab);
-      window.__HERMES_PLUGINS__!.registerSlot("same", "header-left", none);
+      window.__ICEBATH_PLUGINS__!.register("same", betaTab);
+      window.__ICEBATH_PLUGINS__!.registerSlot("same", "header-left", none);
     });
     expect(latest.plugins.map((p) => [p.manifest.entry, p.component])).toEqual([["beta.js", betaTab]]);
     expect(getSlotEntries("header-left")).toHaveLength(1);
@@ -136,15 +136,15 @@ describe("usePlugins across a profile switch", () => {
 
     // beta's bundle finishing after the switch registers nothing for alpha
     fromBundleOf("beta", () => {
-      window.__HERMES_PLUGINS__!.register("same", betaTab);
-      window.__HERMES_PLUGINS__!.registerSlot("same", "header-left", none);
+      window.__ICEBATH_PLUGINS__!.register("same", betaTab);
+      window.__ICEBATH_PLUGINS__!.registerSlot("same", "header-left", none);
     });
     expect(getPluginComponent("same")).toBeUndefined();
     expect(getSlotEntries("header-left")).toEqual([]);
 
     await answer("alpha", [manifest("same", "alpha.js")]);
     const alphaTab: ComponentType<Record<string, never>> = () => null;
-    fromBundleOf("alpha", () => window.__HERMES_PLUGINS__!.register("same", alphaTab));
+    fromBundleOf("alpha", () => window.__ICEBATH_PLUGINS__!.register("same", alphaTab));
     expect(latest.plugins.map((p) => [p.manifest.entry, p.component])).toEqual([["alpha.js", alphaTab]]);
     expect(attrs("script[data-hermes-plugin]", "src").every((s) => s.includes("/dashboard-plugins/@alpha/"))).toBe(true);
   });

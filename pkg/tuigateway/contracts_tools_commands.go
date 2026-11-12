@@ -6,7 +6,7 @@ import (
 
 var open = pydantic.NewModel("_Open", OpenConfig)
 
-var BatteryCategory = pydantic.Enum("BatteryCategory", "good", "good", "warn", "warn", "bad", "bad", "critical", "critical", "dim", "dim")
+var BatteryCategory = pydantic.Enum("BatteryCategory", "good", "good", "warn", "warn", "bad", "bad", "critical", "critical", "dim", "dim").Described("``agent/battery.py::battery_category`` colour bucket.")
 
 var SystemBatteryParams = pydantic.NewModel("SystemBatteryParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
@@ -75,7 +75,7 @@ var ProcessEntry = pydantic.NewModel("ProcessEntry", OpenConfig,
 	pydantic.Def("started_epoch", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("completion_reason", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("detached", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``tools/process_registry.py::list_sessions`` row plus the gateway's ``output_tail``.")
 
 var ProcessListResult = pydantic.NewModel("ProcessListResult", ClosedConfig,
 	pydantic.Fac("processes", pydantic.List(ProcessEntry), pydantic.NewList),
@@ -100,7 +100,7 @@ var ProcessKillResult = pydantic.NewModel("ProcessKillResult", OpenConfig,
 	pydantic.Def("termination_source", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("output", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``tools/process_registry.py::kill_process`` snapshot; ``error`` rides on the failure statuses.")
 
 var _ = Method("process.kill", ProcessKillParams, ProcessKillResult, "Kill one background process the caller's session owns and return its output snapshot.")
 
@@ -138,7 +138,7 @@ var CliExecResult = pydantic.NewModel("CliExecResult", ClosedConfig,
 	pydantic.Def("hint", pydantic.Nullable(pydantic.Str), nil),
 )
 
-var _ = Method("cli.exec", CliExecParams, CliExecResult, "Run ``hermes <argv>`` non-interactively and capture its output; ``blocked`` explains a refusal.")
+var _ = Method("cli.exec", CliExecParams, CliExecResult, "Run ``icebath <argv>`` non-interactively and capture its output; ``blocked`` explains a refusal.")
 
 var CommandsCatalogParams = pydantic.NewModel("CommandsCatalogParams", ParamsConfig,
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),
@@ -191,7 +191,7 @@ var CommandResolveResult = pydantic.NewModel("CommandResolveResult", ClosedConfi
 
 var _ = Method("command.resolve", CommandResolveParams, CommandResolveResult, "Canonical registry command for a name or alias.")
 
-var DispatchType = pydantic.Enum("DispatchType", "exec", "exec", "alias", "alias", "plugin", "plugin", "send", "send", "skill", "skill", "prefill", "prefill")
+var DispatchType = pydantic.Enum("DispatchType", "exec", "exec", "alias", "alias", "plugin", "plugin", "send", "send", "skill", "skill", "prefill", "prefill").Described("``apps/shared/src/slash.ts::parseCommandDispatch`` branches on this.")
 
 var CommandDispatchParams = pydantic.NewModel("CommandDispatchParams", ParamsConfig,
 	pydantic.Req("name", pydantic.Str),
@@ -209,7 +209,7 @@ var CommandDispatchResult = pydantic.NewModel("CommandDispatchResult", ClosedCon
 	pydantic.Def("display", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("status", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One structured directive: ``exec``/``plugin`` carry ``output``; ``alias`` a ``target``;\n``send``/``prefill``/``skill`` a ``message`` (UIs render ``display``, never ``message``).")
 
 var _ = Method("command.dispatch", CommandDispatchParams, CommandDispatchResult, "Run a quick/plugin/bundle/skill/built-in slash command and answer a structured directive.")
 
@@ -229,7 +229,7 @@ var SlashExecResult = pydantic.NewModel("SlashExecResult", ClosedConfig,
 	pydantic.Def("display", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("name", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("status", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Plain worker/plugin text in ``output`` (+ ``warning``), or — when the command was rerouted to\n``command.dispatch`` — that method's directive fields with ``type`` set.")
 
 var _ = Method("slash.exec", SlashExecParams, SlashExecResult, "Execute a slash command against the session's slash worker (or a live/plugin shortcut).")
 
@@ -300,7 +300,7 @@ var RollbackRestoreResult = pydantic.NewModel("RollbackRestoreResult", OpenConfi
 	pydantic.Def("history_removed", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("debug", pydantic.Nullable(pydantic.Any), nil),
-)
+).Described("``tools/checkpoint_manager.py::restore`` outcome; ``history_removed`` is added for a full\n(non-file) restore that also rewound the live transcript.")
 
 var _ = Method("rollback.restore", RollbackRestoreParams, RollbackRestoreResult, "Restore the working tree (or one file) to a checkpoint by hash or 1-based index.")
 
@@ -366,7 +366,7 @@ var CronJobRow = pydantic.NewModel("CronJobRow", OpenConfig,
 	pydantic.Def("continuity", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("context_from", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("attach_to_session", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``tools/cronjob_job_args.py::_format_job``.")
 
 var CronRemovedJob = pydantic.NewModel("CronRemovedJob", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -394,7 +394,7 @@ var CronManageResult = pydantic.NewModel("CronManageResult", OpenConfig,
 	pydantic.Def("message", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("guidance", pydantic.Nullable(pydantic.Any), nil),
 	pydantic.Def("removed_job", pydantic.Nullable(CronRemovedJob), nil),
-)
+).Described("Pass-through of ``tools/cronjob_tools.py::cronjob`` JSON: ``list`` → ``jobs``/``count``\n(+ ``scoped`` when profile-scoped); ``add`` → the created job's summary + ``job``; ``remove`` →\n``removed_job``; ``pause``/``resume`` → ``job``. A tool-level failure lands in ``error``.")
 
 var _ = Method("cron.manage", CronManageParams, CronManageResult, "List/add/remove/pause/resume cron jobs in the (optionally profile-scoped) cron store.")
 

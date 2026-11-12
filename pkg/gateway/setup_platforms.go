@@ -613,3 +613,6 @@ func pyIndex(idx, n int) (int, bool) {
 	}
 	return idx, idx >= 0 && idx < n
 }
+
+// Telegram credentials and allowlist wizard of the CLI setup
+func SetupTelegram(ctx context.Context) error { return setupTelegram(ctx) }

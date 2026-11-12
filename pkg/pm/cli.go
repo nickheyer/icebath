@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // LockArgs are pm lock's arguments, a nil Name or Version when not given
@@ -43,13 +44,6 @@ type EnvironmentArgs struct {
 	Name        string
 	Extra       []string
 	Requirement []string
-}
-
-// BundleArgs are pm bundle's arguments, an empty Ref or Cache when not given
-type BundleArgs struct {
-	Out   string
-	Ref   string
-	Cache string
 }
 
 type cliStderrKey struct{}
@@ -297,12 +291,9 @@ func fmtBytes(n int64) string { return fmt.Sprintf("%.1f MiB", float64(n)/(1024*
 // Seams the progress renderer reads, replaced by tests the way Python patches the cli module
 var (
 	enableVT         = enableVTProcessing
-	streamIsTerminal = func(w io.Writer) bool {
-		f, ok := w.(*os.File)
-		return ok && f != nil && fileIsTTY(f)
-	}
-	stderrStream   = func() io.Writer { return os.Stderr }
-	progressStream = defaultProgressStream
+	streamIsTerminal = func(w io.Writer) bool { return pysys.Isatty(w) }
+	stderrStream     = func() io.Writer { return os.Stderr }
+	progressStream   = defaultProgressStream
 )
 
 // Stream for in place progress, stdout first then stderr, nil off a terminal
@@ -585,13 +576,18 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 	failed := 0
 	var install *InstallError
 	if sync {
-		selection, carried, err := firstSelection(ctx, extras)
-		if err == nil {
-			opts := SyncVenvOptions{Extras: selection, Explicit: true}
-			if len(carried) > 0 {
-				opts.Automatic = carried
+		var err error
+		if runtimeOnlyProject(RepoRoot()) && onlyRelayAlias(extras) {
+			_, err = EnsureRuntimeEnvironment(ctx, RuntimeEnvironmentOptions{Explicit: true, Output: out})
+		} else {
+			var selection, carried []string
+			if selection, carried, err = firstSelection(ctx, extras); err == nil {
+				opts := SyncVenvOptions{Extras: selection, Explicit: true}
+				if len(carried) > 0 {
+					opts.Automatic = carried
+				}
+				err = installSyncVenv(ctx, opts)
 			}
-			err = installSyncVenv(ctx, opts)
 		}
 		switch {
 		case err == nil:
@@ -623,6 +619,16 @@ func installPythonEnvironments(ctx context.Context, extras []string, sync bool, 
 		}
 	}
 	return failed, nil
+}
+
+// Whether the requested extras name at most the nemo-relay alias the core runtime set already covers
+func onlyRelayAlias(extras []string) bool {
+	for _, extra := range extras {
+		if ExtraKey(extra) != ExtraKey("nemo-relay") {
+			return false
+		}
+	}
+	return true
 }
 
 // Installs the tool closure then the venv, the optional defaults last, recording activation inputs for a full closure
@@ -1129,11 +1135,6 @@ func CmdEnvironment(ctx context.Context, args EnvironmentArgs) (int, error) {
 	}
 	fmt.Fprintln(SyncOutput(ctx), python)
 	return 0, nil
-}
-
-// Stages a payload of repo, store, facts and relocatable venv into the output dir
-func CmdBundle(ctx context.Context, args BundleArgs) (int, error) {
-	return stageNative(ctx, args)
 }
 
 // CmdUpdateArgs runs pm update, the driver living in update.go

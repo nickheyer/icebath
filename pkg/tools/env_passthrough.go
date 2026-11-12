@@ -2,6 +2,7 @@ package tools
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -109,16 +110,20 @@ func buildProviderEnvBlocklist() map[string]bool {
 	return blocked
 }
 
-// Adapter secrets declared process wide by messaging entries, bundled manifests, and the env table
+// Adapter secrets declared process wide by core messaging entries, bundled manifests, and the env table
 func buildAdapterSecretEnv() map[string]bool {
 	requireAdapterSecretSources()
 	names := map[string]bool{}
 	for _, n := range staticAdapterSecretEnv {
 		names[n] = true
 	}
+	core, err := config.CoreDeclaredEnvNames()
+	if err != nil {
+		panic(fmt.Sprintf("tools: core declared env names: %v", err))
+	}
 	for _, item := range config.OptionalEnvVars.Items() {
 		name, meta := item.Name, item.Entry
-		if meta.Category == "messaging" && meta.Password {
+		if core[name] && meta.Category == "messaging" && meta.Password {
 			names[strings.ToUpper(name)] = true
 		}
 	}

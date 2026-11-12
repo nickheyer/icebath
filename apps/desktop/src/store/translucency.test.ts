@@ -34,8 +34,8 @@ import {
   TRANSLUCENCY_MIN
 } from './translucency'
 
-const KEY = 'hermes.desktop.translucency.v2'
-const LEGACY_KEY = 'hermes.desktop.translucency.v1'
+const KEY = 'icebath.desktop.translucency.v2'
+const LEGACY_KEY = 'icebath.desktop.translucency.v1'
 
 // The book is per-appearance; the tests below drive one appearance at a time.
 // Dark is the store's initial appearance, so it is also the reset target.
@@ -344,7 +344,7 @@ describe('cross-window sync', () => {
     setTranslucency(12)
     window.localStorage.setItem(KEY, JSON.stringify({ mode: 'clear', base: {}, light: {}, dark: { intensity: 99 } }))
 
-    window.dispatchEvent(new StorageEvent('storage', { key: 'hermes.desktop.zoom.v1', newValue: 'x' }))
+    window.dispatchEvent(new StorageEvent('storage', { key: 'icebath.desktop.zoom.v1', newValue: 'x' }))
 
     expect($translucency.get().intensity).toBe(12)
   })

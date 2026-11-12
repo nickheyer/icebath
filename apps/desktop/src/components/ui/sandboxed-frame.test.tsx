@@ -108,8 +108,8 @@ describe('SandboxedFrame in the Webapp', () => {
 
   function browserHost() {
     window.document.documentElement.dataset.hermesDesktopHost = 'browser'
-    vi.stubGlobal('__HERMES_BASE_PATH__', '/hermes')
-    vi.stubGlobal('__HERMES_UI_SURFACE__', 'webapp')
+    vi.stubGlobal('__ICEBATH_BASE_PATH__', '/hermes')
+    vi.stubGlobal('__ICEBATH_UI_SURFACE__', 'webapp')
   }
 
   function guestLoaded(frame: HTMLIFrameElement) {

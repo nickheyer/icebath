@@ -1537,5 +1537,5 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 	return recoveryReport(source, output, inspection, diskSpace, verification, "healthy",
 		"allow_partial", true, "mode", "lost_and_found_salvage", "best_effort", true, "unreadable_schemas", recoveryStrings(missingRequired),
 		"sqlite3_cli", cliReport, "lost_and_found", mapping, "session_stubs", fabricated, "fts_rebuild", fts, "copy", copyReport,
-		"orphan_cleanup", orphanCleanup, "derived_metadata", derived), nil
+		"orphan_cleanup", orphanCleanup, "derived_metadata", derived)
 }

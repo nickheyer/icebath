@@ -150,6 +150,9 @@ func (f *repairProfilesFinding) asDict() *pyjson.Object {
 		"action", optional(f.action), "reason", optional(f.reason))
 }
 
+// Whether apply holds a fix for the finding
+func (f *repairProfilesFinding) repairable() bool { return f.fix != nil }
+
 // Pointer to a copy of text for optional finding fields
 func strRef(s string) *string { return &s }
 
@@ -238,7 +241,7 @@ func (p *repairProfilesPlan) add(f *repairProfilesFinding) { p.findings = append
 func (p *repairProfilesPlan) repairable() []*repairProfilesFinding {
 	var out []*repairProfilesFinding
 	for _, f := range p.findings {
-		if f.fix != nil {
+		if f.repairable() {
 			out = append(out, f)
 		}
 	}
@@ -425,7 +428,7 @@ func (p *repairProfilesPlan) moveBatch(src, dst repairProfilesStore) *repairMove
 	if b, ok := p.moves[key]; ok {
 		return b
 	}
-	b := &repairMoveBatch{src: src, dst: dst, errs: map[string]error{}}
+	b := newRepairMoveBatch(src, dst)
 	p.moves[key] = b
 	return b
 }
@@ -718,6 +721,11 @@ type repairMoveBatch struct {
 	ids      []string
 	result   map[string]*pyjson.Object
 	errs     map[string]error
+}
+
+// Empty batch of sessions moving from src to dst, not yet run
+func newRepairMoveBatch(src, dst repairProfilesStore) *repairMoveBatch {
+	return &repairMoveBatch{src: src, dst: dst, errs: map[string]error{}}
 }
 
 // Registers a session in the batch and returns the fix reporting its outcome

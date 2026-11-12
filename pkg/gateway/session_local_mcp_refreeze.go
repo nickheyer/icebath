@@ -61,7 +61,7 @@ func refreezeEditor(ctx context.Context, a *SessionAuthority, ref SessionRef) er
 	}
 	var schemas map[string]any
 	complete, drifted := false, false
-	err = borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, true, func(s map[string]any, connected []int) error {
+	err = borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, true, func(_ context.Context, s map[string]any, connected []int) error {
 		schemas, complete = s, len(connected) == len(names)
 		if complete {
 			listed := make([]string, 0, len(names))

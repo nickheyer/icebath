@@ -46,7 +46,7 @@ const { setVoiceChatMode } = await import('./voice-live')
 const { mirrorDisplayToggle } = await import('./display-toggles')
 
 const $toggle = atom(true)
-mirrorDisplayToggle('display.in_app_tips', 'hermes.desktop.route-test-toggle.v1', $toggle)
+mirrorDisplayToggle('display.in_app_tips', 'icebath.desktop.route-test-toggle.v1', $toggle)
 
 const boxGamma = {
   authMode: 'token',
@@ -121,7 +121,7 @@ describe('config writes on a remote-only profile', () => {
     configureGatewayRegistry({ onActiveRouteChanged: profile => $activeGatewayProfile.set(profile), onEvent: vi.fn() })
     setPrimaryGateway({ connectionState: 'open', request: primaryRequest } as never, 'default')
     // The user touched the toggle earlier: every socket change re-sends it.
-    localStorage.setItem('hermes.desktop.route-test-toggle.v1', 'true')
+    localStorage.setItem('icebath.desktop.route-test-toggle.v1', 'true')
 
     try {
       await expect(ensureGatewayForAgent('box', 'gamma')).resolves.toBe(true)
@@ -138,7 +138,7 @@ describe('config writes on a remote-only profile', () => {
       expect(sockets.filter(socket => socket !== box).flatMap(socket => socket.requests)).toEqual([])
       expect(primaryRequest).not.toHaveBeenCalledWith('config.set', expect.anything())
     } finally {
-      localStorage.removeItem('hermes.desktop.route-test-toggle.v1')
+      localStorage.removeItem('icebath.desktop.route-test-toggle.v1')
     }
   })
 })

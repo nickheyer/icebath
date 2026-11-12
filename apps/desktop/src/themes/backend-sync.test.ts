@@ -148,7 +148,7 @@ describe('ingestBackendSkin', () => {
 
   it('hydrates the registry from storage on load, so a persisted pick resolves before the gateway connects', async () => {
     ingestBackendSkin(skin('neon'), { apply: false })
-    expect(JSON.parse(window.localStorage.getItem('hermes-desktop-backend-themes-v1') ?? '{}').neon?.name).toBe('neon')
+    expect(JSON.parse(window.localStorage.getItem('icebath-desktop-backend-themes-v1') ?? '{}').neon?.name).toBe('neon')
 
     // Relaunch: a fresh module instance with the same storage.
     vi.resetModules()
@@ -159,7 +159,7 @@ describe('ingestBackendSkin', () => {
 
   it('drops junk and built-in names from the cached registry', async () => {
     const mono = { name: 'mono', label: 'x', colors: { background: '#000', foreground: '#fff', primary: '#f0f' } }
-    window.localStorage.setItem('hermes-desktop-backend-themes-v1', JSON.stringify({ mono, bad: { name: 'bad' } }))
+    window.localStorage.setItem('icebath-desktop-backend-themes-v1', JSON.stringify({ mono, bad: { name: 'bad' } }))
 
     vi.resetModules()
     const fresh = await import('./backend-sync')

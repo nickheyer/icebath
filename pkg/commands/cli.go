@@ -760,17 +760,17 @@ func (c *CLI) CommandArgv(argv []string) []string {
 }
 
 // FirstPositional returns the first subcommand token of argv or empty
-func (c *CLI) FirstPositional(argv []string) string {
+func (c *CLI) FirstPositional(argv []string) (string, bool) {
 	if rest := c.CommandArgv(argv); len(rest) > 0 {
-		return rest[0]
+		return rest[0], true
 	}
-	return ""
+	return "", false
 }
 
 // PluginCLIDiscoveryNeeded reports whether argv may name a plugin provided command
 func (c *CLI) PluginCLIDiscoveryNeeded(argv []string) bool {
-	first := c.FirstPositional(argv)
-	return first != "" && !BuiltinSubcommands[first]
+	first, ok := c.FirstPositional(argv)
+	return ok && !BuiltinSubcommands[first]
 }
 
 func insideMCPAddArgs(argv []string, index int) bool {

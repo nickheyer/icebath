@@ -17,7 +17,7 @@ const bloomberg = (foreground: string) => ({
 
 const cssVar = (name: string) => window.document.documentElement.style.getPropertyValue(name)
 
-const customStyleEl = () => window.document.getElementById('hermes-desktop-custom-css') as HTMLStyleElement | null
+const customStyleEl = () => window.document.getElementById('icebath-desktop-custom-css') as HTMLStyleElement | null
 
 describe('ThemeProvider ← backend skin sync', () => {
   beforeEach(() => {
@@ -79,7 +79,7 @@ describe('ThemeProvider ← backend skin sync', () => {
   // name, flattened it to the default, and the connect-time seed (apply: false,
   // by design) never repainted — so the theme "didn't stick" until `/skin`.
   it('paints a persisted backend skin once the connect-time seed makes it resolvable', () => {
-    window.localStorage.setItem('hermes-desktop-theme-v2', 'bloomberg')
+    window.localStorage.setItem('icebath-desktop-theme-v2', 'bloomberg')
 
     render(
       <ThemeProvider>
@@ -147,7 +147,7 @@ describe('ThemeProvider ← local bridge fallback', () => {
     const previous = Object.getOwnPropertyDescriptor(window, 'hermesDesktop')
 
     try {
-      window.localStorage.setItem('hermes-desktop-theme-v2', 'everforest')
+      window.localStorage.setItem('icebath-desktop-theme-v2', 'everforest')
       Object.defineProperty(window, 'hermesDesktop', {
         configurable: true,
         value: { localSkin: { profile: 'research', skin: bloomberg('#ff9f0a') } }
@@ -443,9 +443,9 @@ describe('ThemeProvider boot-failure palette', () => {
     act(() => ctx!.setTheme('boot-palette'))
 
     const midground = colors.midground ?? colors.ring
-    const snapshot = JSON.parse(window.localStorage.getItem('hermes-boot-palette')!)
+    const snapshot = JSON.parse(window.localStorage.getItem('icebath-boot-palette')!)
     expect(snapshot).toEqual({
-      background: window.localStorage.getItem('hermes-boot-background'),
+      background: window.localStorage.getItem('icebath-boot-background'),
       foreground: colors.foreground,
       accent: midground,
       accentForeground: colors.midgroundForeground ?? readableInk(midground)
@@ -454,7 +454,7 @@ describe('ThemeProvider boot-failure palette', () => {
   })
 
   it('stores no snapshot for a theme whose accent is a var() the notice could not resolve', () => {
-    window.localStorage.setItem('hermes-boot-palette', '{"stale":true}')
+    window.localStorage.setItem('icebath-boot-palette', '{"stale":true}')
     const colors = { ...midnightTheme.colors, midground: 'var(--theme-primary)', midgroundForeground: '#161616' }
     installUserTheme({ ...midnightTheme, name: 'boot-palette-var', colors, darkColors: colors })
     let ctx: ReturnType<typeof useTheme>
@@ -466,7 +466,7 @@ describe('ThemeProvider boot-failure palette', () => {
 
     act(() => ctx!.setTheme('boot-palette-var'))
 
-    expect(window.localStorage.getItem('hermes-boot-palette')).toBeNull()
-    expect(window.localStorage.getItem('hermes-boot-background')).not.toBeNull()
+    expect(window.localStorage.getItem('icebath-boot-palette')).toBeNull()
+    expect(window.localStorage.getItem('icebath-boot-background')).not.toBeNull()
   })
 })

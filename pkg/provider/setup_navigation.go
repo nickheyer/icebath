@@ -155,6 +155,14 @@ type setupNavigationState struct {
 	resolvedChoices, replayChoices               []any
 }
 
+// Fresh state reset to the section with the prompt counter set afterwards
+func newSetupNavigationState(sectionIndex, promptIndex int) *setupNavigationState {
+	s := &setupNavigationState{}
+	s.reset(sectionIndex, nil)
+	s.promptIndex = promptIndex
+	return s
+}
+
 // Rewinds the per section counters when entering a section or leaving the wizard
 func (s *setupNavigationState) reset(sectionIndex int, replay []any) {
 	s.sectionIndex, s.promptIndex, s.activePromptIndex = sectionIndex, 0, -1
@@ -256,8 +264,7 @@ func HandleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 func setupNavigationScope(fn func()) {
 	setupNavMu.Lock()
 	prev := setupNavigation
-	setupNavigation = &setupNavigationState{}
-	setupNavigation.reset(-1, nil)
+	setupNavigation = newSetupNavigationState(-1, 0)
 	setupNavMu.Unlock()
 	token := cliui.SetMenuNavigationHandler(handleSetupMenuNavigation)
 	defer func() {

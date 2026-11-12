@@ -12,7 +12,7 @@ import (
 	"unicode"
 )
 
-// Python repr of a YAML shaped value with sorted mapping keys
+// Python repr of a YAML shaped value, mappings in file or insertion order like a dict repr
 func PyRepr(v any) string {
 	switch x := v.(type) {
 	case nil:
@@ -48,7 +48,7 @@ func PyRepr(v any) string {
 		return "[" + strings.Join(parts, ", ") + "]"
 	}
 	if m := AsMap(v); m != nil {
-		keys := SortedKeys(m)
+		keys := MappingKeys(m)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
 			parts[i] = pyStringRepr(k) + ": " + PyRepr(m[k])

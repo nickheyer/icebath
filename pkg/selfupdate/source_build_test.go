@@ -157,7 +157,7 @@ func sbSourceCheckout(t *testing.T) (string, *[]string) {
 		"esbuild: process.env.ESBUILD_BINARY_PATH, "+
 		"npmrc: process.env.NPM_CONFIG_USERCONFIG}) + '\\n');\n")
 	sbRun(t, root, npm, "install", "--package-lock-only", "--ignore-scripts", "--offline", "--no-audit", "--no-fund")
-	for _, name := range []string{"node-deps.mjs", "electron-runtime.mjs", "freshness.mjs", "frontend-common.mjs"} {
+	for _, name := range []string{"freshness.mjs", "frontend-common.mjs"} {
 		raw, err := os.ReadFile(filepath.Join(sbHermesScripts, name))
 		if err != nil {
 			t.Fatal(err)
@@ -190,8 +190,7 @@ func sbSourceProducts(t *testing.T) (string, *[]string) {
 			"    recordProduct({source: root, product: step, out, inputs: buildInputs(root, step)});\n"+
 			"  }\n"+
 			"}\n")
-	for _, row := range [][3]string{{"generate-icons.mjs", "icons", "never-rendered-at-install"},
-		{"build/tui.mjs", "tui", "ui-tui/dist/entry.js"}, {"build/web.mjs", "web", "cmd/icebath/web_dist/index.html"}} {
+	for _, row := range [][3]string{{"generate-icons.mjs", "icons", "never-rendered-at-install"}} {
 		relative := "../"
 		if strings.HasPrefix(row[0], "build/") {
 			relative = "../../"
@@ -205,8 +204,71 @@ func sbSourceProducts(t *testing.T) (string, *[]string) {
 		"build('desktop', relative('../..', staging) + '/linux-unpacked/icebath');\n")
 	sbWrite(t, filepath.Join(root, "scripts/build/build-desktop.mjs"), "if (!process.argv.includes('--icons')) await import('../generate-icons.mjs');\n")
 	sbWrite(t, filepath.Join(root, "web/public/favicon.ico"), "committed icon")
+	node, _ := exec.LookPath("node")
+	prev := compileSourceWeb
+	compileSourceWeb = func(_ context.Context, _ *frontendStep, source, _, out string, env map[string]string) error {
+		events, err := os.OpenFile(filepath.Join(source, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		_, err = events.WriteString(`{"step":"web"}` + "\n")
+		events.Close()
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(filepath.Join(source, "fail-web")); err == nil {
+			return sbWebFailure
+		}
+		if _, err := os.Stat(filepath.Join(source, "web/public/favicon.ico")); err != nil {
+			return errors.New("icons missing")
+		}
+		sbWrite(t, filepath.Join(out, "index.html"), "web")
+		host, err := frontendNodeHost(node)
+		if err != nil {
+			return err
+		}
+		inputs, err := frontendBuildInputs(source, "web", map[string]string{}, env)
+		if err != nil {
+			return err
+		}
+		return frontendRecordProduct(host, source, "web", out, inputs, env, nil, false)
+	}
+	t.Cleanup(func() { compileSourceWeb = prev })
+	prevTUI := compileSourceTUI
+	compileSourceTUI = func(_ context.Context, _ *frontendStep, source string, env map[string]string) (string, error) {
+		entry := filepath.Join(source, "ui-tui", "dist", "entry.js")
+		events, err := os.OpenFile(filepath.Join(source, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return "", err
+		}
+		_, err = events.WriteString(`{"step":"tui"}` + "\n")
+		events.Close()
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(filepath.Join(source, "fail-tui")); err == nil {
+			return "", sbTUIFailure
+		}
+		sbWrite(t, entry, "tui")
+		host, err := frontendNodeHost(node)
+		if err != nil {
+			return "", err
+		}
+		inputs, err := frontendBuildInputs(source, "tui", map[string]string{}, env)
+		if err != nil {
+			return "", err
+		}
+		return entry, frontendRecordProduct(host, source, "tui", filepath.Dir(entry), inputs, env, nil, false)
+	}
+	t.Cleanup(func() { compileSourceTUI = prevTUI })
 	return root, acquired
 }
+
+// Failure the fixture TUI compiler reports when the checkout asks it to fail
+var sbTUIFailure = errors.New("fixture tui failure")
+
+// Failure the fixture dashboard compiler reports when the checkout asks it to fail
+var sbWebFailure = errors.New("fixture web failure")
 
 func sbNeedsLinux(t *testing.T) {
 	if runtime.GOOS != "linux" {
@@ -242,8 +304,8 @@ func TestInstalledNpmDoesNotAuthorizeMissingWorkspaceDependencies(t *testing.T) 
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_DISABLE_LAZY_INSTALLS", "1")
-	var called *pm.CalledProcessError
-	if err := PrepareSourceDependencies(ctx, root, []string{"ui-tui", "web"}, env, false); !errors.As(err, &called) {
+	if err := PrepareSourceDependencies(ctx, root, []string{"ui-tui", "web"}, env, false); err == nil ||
+		err.Error() != "Workspace dependencies are stale or missing and lazy installs are disabled; run an explicit build/update" {
 		t.Fatalf("err %v", err)
 	}
 	if len(sbEvents(t, root)) != 0 {
@@ -306,9 +368,8 @@ func TestPreparationReusesOnlyTheExactCompletedWorkspaceUnion(t *testing.T) {
 		t.Fatalf("acquired %v", *acquired)
 	}
 	sbWrite(t, filepath.Join(root, "package-lock.json"), "not json")
-	var called *pm.CalledProcessError
-	if err := PrepareSourceDependencies(ctx, root, []string{"ui-tui", "web"}, env, false); !errors.As(err, &called) {
-		t.Fatalf("err %v", err)
+	if err := PrepareSourceDependencies(ctx, root, []string{"ui-tui", "web"}, env, false); err == nil {
+		t.Fatal("an unparsable lock was accepted")
 	}
 	if raw, _ := os.ReadFile(filepath.Join(root, "package-lock.json")); string(raw) != "not json" || len(sbEvents(t, root)) != 2 {
 		t.Fatal("a lock failure fell back to npm install")
@@ -427,7 +488,8 @@ func TestUpdateFailureRaisesWithoutRetriesOrReplacingLiveApp(t *testing.T) {
 				t.Fatalf("err %v", err)
 			}
 			var called *pm.CalledProcessError
-			if !errors.As(failure.Failures[0].Err, &called) {
+			fixture := map[string]error{"web": sbWebFailure, "tui": sbTUIFailure}[step]
+			if fixture != nil && !errors.Is(failure.Failures[0].Err, fixture) || fixture == nil && !errors.As(failure.Failures[0].Err, &called) {
 				t.Fatalf("failure %v", failure.Failures[0].Err)
 			}
 			if got := sbSteps(t, root); !reflect.DeepEqual(got, []string{"deps", "tui", "web", "desktop"}) {
@@ -566,7 +628,7 @@ func TestUpdateRebuildsTheWebappBundleAHomeServes(t *testing.T) {
 		t.Run(map[bool]string{false: "off", true: "on"}[enabled], func(t *testing.T) {
 			tmp := t.TempDir()
 			root := filepath.Join(tmp, "checkout")
-			sbWrite(t, filepath.Join(root, "apps/desktop/scripts/build-webapp.mjs"), "")
+			sbWrite(t, filepath.Join(root, "apps/desktop/vite.config.ts"), "")
 			homes := []string{filepath.Join(tmp, "default"), filepath.Join(tmp, "profiles", "work")}
 			for _, h := range homes {
 				_ = os.MkdirAll(h, 0o755)
@@ -605,7 +667,7 @@ func TestAFailedWebappRebuildInUpdateMarksTheServedBundleOutOfDate(t *testing.T)
 		t.Run(map[bool]string{false: "unbuilt", true: "built"}[built], func(t *testing.T) {
 			tmp := t.TempDir()
 			root := filepath.Join(tmp, "checkout")
-			sbWrite(t, filepath.Join(root, "apps/desktop/scripts/build-webapp.mjs"), "")
+			sbWrite(t, filepath.Join(root, "apps/desktop/vite.config.ts"), "")
 			dist := WebappDistDir(root)
 			_ = os.MkdirAll(dist, 0o755)
 			if built {

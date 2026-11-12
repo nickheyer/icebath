@@ -100,7 +100,7 @@ func TestRealLibraryMatchesPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := Import(filepath.Join(core, "sherpa_onnx"), Environment{Stdout: os.Stdout, ImportSentencepiece: func() error { return nil },
+	m, err := Import(filepath.Join(core, "sherpa_onnx"), Environment{Stdout: os.Stdout,
 		ImportPypinyin: func() (*pypinyin.Module, error) { return py, nil }})
 	if err != nil {
 		t.Fatal(err)

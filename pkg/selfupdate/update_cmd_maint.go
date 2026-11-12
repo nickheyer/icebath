@@ -1019,7 +1019,7 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "  ℹ macOS: if Icebath re-prompts for permissions you already "+
 			"granted (toggle shows ON), the stored grant is stale — run "+
-			"`tccutil reset ScreenCapture com.nousresearch.icebath` (repeat "+
+			"`tccutil reset ScreenCapture ai.icebath` (repeat "+
 			"per affected service), toggle it ON in System Settings, then "+
 			"fully quit & relaunch once.")
 	}

@@ -217,7 +217,7 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 		t.Fatalf("pending %#v", snapshot["pending"])
 	}
 	info, _ := snapshot["info"].(map[string]any)
-	if info["desktop_protocol"] != "hermes-gateway-v1" {
+	if info["desktop_protocol"] != "icebath-gateway-v1" {
 		t.Fatalf("desktop_protocol %v", info["desktop_protocol"])
 	}
 }

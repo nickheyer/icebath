@@ -3,48 +3,50 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/logging"
 )
 
 func TestParseSinceHours(t *testing.T) {
-	cutoff, ok := parseLogSince("2h")
-	if !ok {
-		t.Fatal("no cutoff")
+	cutoff, ok, err := parseLogSince("2h")
+	if !ok || err != nil {
+		t.Fatal("no cutoff", err)
 	}
-	if d := time.Since(cutoff).Seconds() - 7200; d > 2 || d < -2 {
+	if d := naiveLocalNow().Sub(cutoff).Seconds() - 7200; d > 2 || d < -2 {
 		t.Fatalf("cutoff off by %v", d)
 	}
 }
 
 func TestParseSinceInvalidReturnsNone(t *testing.T) {
 	for _, s := range []string{"abc", "", "10x"} {
-		if _, ok := parseLogSince(s); ok {
+		if _, ok, err := parseLogSince(s); ok || err != nil {
 			t.Fatalf("%q parsed", s)
 		}
 	}
 }
 
 func TestParseSinceWhitespaceTolerance(t *testing.T) {
-	if _, ok := parseLogSince("  5m  "); !ok {
+	if _, ok, err := parseLogSince("  5m  "); !ok || err != nil {
 		t.Fatal("not parsed")
 	}
 }
 
 func TestParseLineTimestampStandardFormat(t *testing.T) {
 	ts, ok := parseLogLineTimestamp("2026-04-11 10:23:45 INFO gateway.run: msg")
-	if !ok || !ts.Equal(time.Date(2026, 4, 11, 10, 23, 45, 0, time.Local)) {
+	if !ok || !ts.Equal(time.Date(2026, 4, 11, 10, 23, 45, 0, time.UTC)) {
 		t.Fatalf("ts %v", ts)
 	}
 }
 
 func TestIsoTSeparatedUpdateAndHandoffStamps(t *testing.T) {
-	want := time.Date(2026, 9, 29, 21, 36, 18, 0, time.Local)
+	want := time.Date(2026, 9, 29, 21, 36, 18, 0, time.UTC)
 	for _, line := range []string{"2026-09-29T21:36:18+08:00 update| step done", "2026-09-29T21:36:18Z step stalled"} {
 		if ts, ok := parseLogLineTimestamp(line); !ok || !ts.Equal(want) {
 			t.Fatalf("%q gave %v", line, ts)
@@ -105,7 +107,7 @@ func TestCombinedFilters(t *testing.T) {
 }
 
 func TestSinceFilter(t *testing.T) {
-	cutoff := time.Now().Add(-time.Hour)
+	cutoff := naiveLocalNow().Add(-time.Hour)
 	f := logFilters{since: &cutoff}
 	if matchesLogFilters("2020-01-01 00:00:00 INFO x: old msg", f) {
 		t.Fatal("old line kept")
@@ -137,7 +139,7 @@ func TestUnstampedLinesShareTheVerdictOfTheRecordAbove(t *testing.T) {
 		old+" ERROR gateway.run: old failure\n"+frames+"ValueError: old\n"+
 		recent+" INFO tools.x: multi-line info\n"+"  info continuation\n"+
 		recent+" ERROR gateway.run: new failure\n"+frames+"ValueError: new\n"), 0o644)
-	since := time.Now().Add(-time.Hour)
+	since := naiveLocalNow().Add(-time.Hour)
 	read := func(f logFilters) string {
 		lines, err := readLogTail(path, 50, true, f)
 		if err != nil {
@@ -183,5 +185,23 @@ func TestUpdateLogsAreReadFromTheRootHomeUnderAProfile(t *testing.T) {
 	out.Reset()
 	if err := ListLogs(ctx, out); err != nil || !strings.Contains(out.String(), "agent.log") || !strings.Contains(out.String(), "update.log (root)") {
 		t.Fatalf("list %v %q", err, out.String())
+	}
+}
+
+func TestParseSinceBeyondTheDatetimeRangeRaisesOverflowError(t *testing.T) {
+	for since, want := range map[string]string{
+		"99999999999d":          "Python int too large to convert to C int",
+		"99999999999999999999s": "Python int too large to convert to C int",
+		"86400000000000s":       "days=1000000000; must have magnitude <= 999999999",
+		"1000000d":              "date value out of range",
+	} {
+		_, ok, err := parseLogSince(since)
+		var raised *pyint.Error
+		if ok || !errors.As(err, &raised) || raised.Kind != "OverflowError" || err.Error() != want {
+			t.Fatalf("%s gave %v %v", since, ok, err)
+		}
+	}
+	if _, ok, err := parseLogSince("700000d"); !ok || err != nil {
+		t.Fatalf("700000d gave %v %v", ok, err)
 	}
 }

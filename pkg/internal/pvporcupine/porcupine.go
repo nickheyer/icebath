@@ -261,3 +261,20 @@ func pathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// Loads the host platform dynamic library and resolves the engine init function
+func (m *Module) LoadLibrary() error {
+	libraryPath, err := m.PvLibraryPath("")
+	if err != nil {
+		return err
+	}
+	if !pathExists(libraryPath) {
+		return &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find Porcupine's dynamic library at '%s'.", libraryPath)}
+	}
+	library, err := pyctypes.LoadLibrary(libraryPath, false)
+	if err != nil {
+		return err
+	}
+	_, err = library.Symbol("pv_porcupine_init")
+	return err
+}

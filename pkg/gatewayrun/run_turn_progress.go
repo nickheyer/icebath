@@ -342,10 +342,16 @@ func (t *TurnRunner) progressEmit(msg string) {
 	}
 }
 
-// Tools env of the turn, its session env or the active home with the turn terminal scope
+// Tools env of the turn, its session env or the active home, read through the policy scope while the turn runs in it
 func (t *TurnRunner) toolsEnv() *tools.Env {
-	if t.ctx.sessionEnv != nil {
-		return t.ctx.sessionEnv
+	env := t.ctx.sessionEnv
+	if env == nil {
+		env = &tools.Env{Home: home.Dir(t.turnCtx), TerminalScope: tools.GetTerminalScope(t.turnCtx)}
 	}
-	return &tools.Env{Home: home.Dir(t.turnCtx), TerminalScope: tools.GetTerminalScope(t.turnCtx)}
+	if scope := t.policyScope.Load(); scope != nil && env.TerminalScope != scope {
+		scoped := *env
+		scoped.TerminalScope = scope
+		return &scoped
+	}
+	return env
 }

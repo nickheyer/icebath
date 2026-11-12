@@ -1,0 +1,25 @@
+// git group bridge, its Go service GitService lands with the git lane
+import * as GitService from '../bindings/github.com/nickheyer/icebath/apps/desktop/gitservice.js'
+import { fire } from '../runtime'
+
+export const gitWorktreeList = (repoPath) => GitService.GitWorktreeList(repoPath)
+export const gitWorktreeAdd = (repoPath, options) => GitService.GitWorktreeAdd(repoPath, options)
+export const gitWorktreeRemove = (repoPath, worktreePath, options) => GitService.GitWorktreeRemove(repoPath, worktreePath, options)
+export const gitBranchSwitch = (repoPath, branch) => GitService.GitBranchSwitch(repoPath, branch)
+export const gitBranchList = (repoPath) => GitService.GitBranchList(repoPath)
+export const gitBaseBranchList = (repoPath) => GitService.GitBaseBranchList(repoPath)
+export const gitRepoStatus = (repoPath) => GitService.GitRepoStatus(repoPath)
+export const gitFileDiff = (repoPath, filePath) => GitService.GitFileDiff(repoPath, filePath)
+export const gitScanRepos = (roots, options) => GitService.GitScanRepos(roots, options)
+export const gitReviewList = (repoPath, scope, baseRef) => GitService.GitReviewList(repoPath, scope, baseRef)
+export const gitReviewDiff = (repoPath, filePath, scope, baseRef, staged) => GitService.GitReviewDiff(repoPath, filePath, scope, baseRef, staged)
+export const gitReviewStage = (repoPath, filePath) => GitService.GitReviewStage(repoPath, filePath)
+export const gitReviewUnstage = (repoPath, filePath) => GitService.GitReviewUnstage(repoPath, filePath)
+export const gitReviewRevert = (repoPath, filePath) => GitService.GitReviewRevert(repoPath, filePath)
+export const gitReviewRevParse = (repoPath, ref) => GitService.GitReviewRevParse(repoPath, ref)
+export const gitReviewCommit = (repoPath, message, push) => GitService.GitReviewCommit(repoPath, message, push)
+export const gitReviewCommitContext = (repoPath) => GitService.GitReviewCommitContext(repoPath)
+export const gitReviewPush = (repoPath) => GitService.GitReviewPush(repoPath)
+export const gitReviewShipInfo = (repoPath) => GitService.GitReviewShipInfo(repoPath)
+export const gitReviewPrList = (repoPath, branches, numbers) => GitService.GitReviewPrList(repoPath, branches, numbers)
+export const gitReviewCreatePr = (repoPath) => GitService.GitReviewCreatePr(repoPath)

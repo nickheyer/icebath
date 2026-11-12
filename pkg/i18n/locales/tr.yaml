@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Kullanılabilir Araç Setleri"
     currently_enabled_legend: "(*) = şu anda etkin"
     tip_enable_all: "İpucu: Tüm araç setlerini etkinleştirmek için 'all' veya '*' kullanın"
-    example: "Örnek: python cli.py --toolsets web,terminal"
+    example: "Örnek: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Bilinmeyen /usage alt komutu: {args}. /usage veya /usage reset [--force] deneyin."

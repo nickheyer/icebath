@@ -3,6 +3,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -14,6 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
 // Program on a pseudo terminal with everything it painted kept for the case to search
@@ -97,17 +101,49 @@ func (p *terminalProgram) text() string {
 
 // Waits until the painted text holds want, false after the timeout or once the program exited without it
 func (p *terminalProgram) waitFor(want string, timeout time.Duration) bool {
+	return p.waitForAny([]string{want}, timeout)
+}
+
+// Waits until the painted text holds one of wants, false after the timeout or once the program exited without one
+func (p *terminalProgram) waitForAny(wants []string, timeout time.Duration) bool {
+	holds := func() bool {
+		painted := p.text()
+		for _, want := range wants {
+			if strings.Contains(painted, want) {
+				return true
+			}
+		}
+		return false
+	}
 	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
-		if strings.Contains(p.text(), want) {
+		if holds() {
 			return true
 		}
 		select {
 		case <-p.exited:
-			return strings.Contains(p.text(), want)
+			return holds()
 		default:
 		}
 	}
 	return false
+}
+
+// Every empty composer example prompt of the English catalog, one of which a ready prompt paints at random
+func composerHints(t *testing.T) []string {
+	t.Helper()
+	var hints []string
+	for index := 1; ; index++ {
+		key := fmt.Sprintf("tips.placeholder.p%02d", index)
+		text := i18n.T(context.Background(), key, i18n.DefaultLanguage, nil)
+		if text == key {
+			break
+		}
+		hints = append(hints, strings.TrimSuffix(text, "\u2026"))
+	}
+	if len(hints) == 0 {
+		t.Fatal("the catalog holds no composer example prompt")
+	}
+	return hints
 }
 
 // Types text one key at a time the way a person does
@@ -139,7 +175,7 @@ func TestClassicInteractiveSessionRunsItsTurnInTheGatewayItLaunches(t *testing.T
 		t.Fatalf("no consent menu on a fresh home\n%s\n%s", program.text(), homeFailureLines(h))
 	}
 	program.typeKeys(t, "\r")
-	if !program.waitFor("Ask anything", 90*time.Second) {
+	if !program.waitForAny(composerHints(t), 90*time.Second) {
 		t.Fatalf("the prompt never became ready\n%s\n%s", program.text(), homeFailureLines(h))
 	}
 	if !bannerSessionLabel.MatchString(program.text()) {

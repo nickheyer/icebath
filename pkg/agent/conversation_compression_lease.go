@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"sync"
 	"time"
 
@@ -543,10 +542,7 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 	sid := a.sessionID
 	a.compressionSkippedDueToLock = nil
 	api, lookupErr := resolveLockAPI(lockDB)
-	ttl := 300.0
-	if v := heartbeatTTL(a.compressionLockTTLSeconds); v != nil {
-		ttl = *v
-	}
+	ttl := compressionLockTTL(a.compressionLockTTLSeconds)
 	var db compressionLockDB
 	if lockDB != nil {
 		db, _ = lockDB.(compressionLockDB)
@@ -601,31 +597,20 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 	return lease, "", nil
 }
 
-// float(ttl or 300.0) with an unparsable value keeping the default
-func heartbeatTTL(v any) *float64 {
-	var f float64
-	switch x := v.(type) {
-	case nil:
-		return nil
-	case float64:
-		f = x
-	case int:
-		f = float64(x)
-	case int64:
-		f = float64(x)
-	case string:
-		parsed, err := strconv.ParseFloat(x, 64)
-		if err != nil && x != "" {
-			return nil
-		}
-		f = parsed
-	default:
-		return nil
+// float(ttl or 300.0) with TypeError and ValueError keeping 300 and OverflowError raised
+func compressionLockTTL(v any) float64 {
+	if !pyrepr.Truthy(v) {
+		return 300
 	}
-	if f == 0 {
-		f = 300
+	f, err := pyint.Float(v)
+	var pyErr *pyint.Error
+	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
+		panic(err)
 	}
-	return &f
+	if err != nil {
+		return 300
+	}
+	return f
 }
 
 func sessionLabel(a *AIAgent) string {

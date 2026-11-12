@@ -83,7 +83,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
-  Reflect.deleteProperty(window, '__HERMES_AUTH_REQUIRED__')
+  Reflect.deleteProperty(window, '__ICEBATH_AUTH_REQUIRED__')
   Reflect.deleteProperty(window, 'hermesDesktop')
   window.document.documentElement.removeAttribute('data-hermes-desktop-host')
   vi.unstubAllGlobals()
@@ -462,7 +462,7 @@ describe('GatewaySettings', () => {
       Reflect.deleteProperty(window, 'hermesDesktop')
 
       if (credential === 'gated') {
-        Object.assign(window, { __HERMES_AUTH_REQUIRED__: true })
+        Object.assign(window, { __ICEBATH_AUTH_REQUIRED__: true })
       } else {
         seedWebappSession('served-token')
       }
@@ -475,14 +475,14 @@ describe('GatewaySettings', () => {
     }
 
     afterEach(() => {
-      Reflect.deleteProperty(window, '__HERMES_AUTH_REQUIRED__')
+      Reflect.deleteProperty(window, '__ICEBATH_AUTH_REQUIRED__')
       clearWebappSession()
     })
 
     it.each([false, true])('offers the serving host and its sign-out only (embedded: %s)', async embedded => {
       const fetchMock = installWebapp('gated')
       const toLogin = vi.fn((event: Event) => event.preventDefault())
-      window.addEventListener('hermes:browser-reauth-required', toLogin, { once: true })
+      window.addEventListener('icebath:browser-reauth-required', toLogin, { once: true })
 
       render(<GatewaySettings embedded={embedded} />)
 

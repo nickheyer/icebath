@@ -35,7 +35,7 @@ type DesktopFinding struct {
 
 var desktopForbidden = []desktopRule{
 	{"dynamic code evaluation", mustPyRe(`(?<![\w$.])eval\(|\bnew\s+Function\(`)},
-	{"dynamic import outside the SDK", mustPyRe(`\bimport\(\s*(?!['"](?:@hermes/plugin-sdk|react)(?:/[\w/-]*)?['"]\s*\))`)},
+	{"dynamic import outside the SDK", mustPyRe(`\bimport\(\s*(?!['"](?:@icebath/plugin-sdk|@hermes/plugin-sdk|react)(?:/[\w/-]*)?['"]\s*\))`)},
 	{"remote import outside the SDK", mustPyRe(`\bimport\s+(?:[^;'"]*?\bfrom\s*)?['"][a-zA-Z][\w+.-]*:`)},
 	{"script injection", mustPyRe(`createElement\(\s*['"]script['"]\s*\)|<script\b`)},
 	{"app DOM reach", mustPyRe(`\bdocument\.(?:querySelector(?:All)?|getElementsBy\w+|getElementById)\(\s*[` + "`" + `'"][^` + "`" + `'"]*\[data-(?:slot|tour|sidebar|testid)\b`)},

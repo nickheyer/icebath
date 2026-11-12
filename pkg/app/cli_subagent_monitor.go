@@ -131,7 +131,7 @@ func (m *subagentMonitor) selected() (map[string]any, bool) {
 // Subagent surface the dock and monitor read, the gateway session's view or this process's registry
 type subagentBackend interface {
 	subagentRows(busy bool) []map[string]any
-	subagentTail(subagentID string, fetch bool) string
+	subagentTail(subagentID string, fetch bool) *string
 	subagentControl(action, subagentID string, message any) (map[string]any, error)
 }
 
@@ -269,7 +269,11 @@ func (m *subagentMonitor) pollTail() bool {
 	backend := m.subagents()
 	id := pyrepr.Str(row["subagent_id"])
 	before := backend.subagentTail(id, false)
-	return backend.subagentTail(id, true) != before
+	after := backend.subagentTail(id, true)
+	if before == nil || after == nil {
+		return (before == nil) != (after == nil)
+	}
+	return *after != *before
 }
 
 // Moves the selection by delta through the roster, wrapping around
@@ -539,9 +543,12 @@ func readTail(c *CLI, path any) string {
 	return b.String()
 }
 
-// Transcript tail of a subagent row from the monitor backend
+// Transcript tail of a subagent row from the monitor backend, the unavailable notice when it has none
 func subagentTail(m *subagentMonitor, row map[string]any) string {
-	return m.subagents().subagentTail(pyrepr.Str(row["subagent_id"]), false)
+	if text := m.subagents().subagentTail(pyrepr.Str(row["subagent_id"]), false); text != nil {
+		return *text
+	}
+	return m.cli.t("cli.subagents.transcript_unavailable", nil)
 }
 
 // This process's subagent registry behind the dock's subagent surface
@@ -576,11 +583,12 @@ func (l *localSubagents) subagentRows(bool) []map[string]any {
 }
 
 // Transcript tail of a child from its live transcript path
-func (l *localSubagents) subagentTail(subagentID string, _ bool) string {
+func (l *localSubagents) subagentTail(subagentID string, _ bool) *string {
 	l.mu.Lock()
 	path := l.paths[subagentID]
 	l.mu.Unlock()
-	return readTail(l.cli, path)
+	text := readTail(l.cli, path)
+	return &text
 }
 
 // Runs a steer or stop control action against the CLI agent's spawn tree

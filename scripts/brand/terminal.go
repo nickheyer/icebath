@@ -122,7 +122,7 @@ func (s *sources) heroCells() [][]cell {
 func (s *sources) logoCells() [][]cell {
 	letter := [3]float64{float64(s.letter.R), float64(s.letter.G), float64(s.letter.B)}
 	red := [3]float64{float64(s.red.R), float64(s.red.G), float64(s.red.B)}
-	box := inkBox(s.textWhite)
+	box := s.textBox
 	t := newInkTable(s.textWhite, box, func(x, y int) float64 {
 		c := s.textWhite.NRGBAAt(x, y)
 		return accentT(c.R, c.G, c.B, letter, red)
@@ -239,8 +239,39 @@ func (s *sources) bannerTS() []byte {
 		}
 		b.WriteString("]\n")
 	}
-	writeArray("LOGO_ART", plainLines(s.logoCells()))
+	writeGradient := func(name string, rows [][]cell) {
+		parts := make([]string, len(rows))
+		for i, row := range rows {
+			parts[i] = fmt.Sprint(rowTone(row))
+		}
+		fmt.Fprintf(&b, "export const %s = [%s] as const\n", name, strings.Join(parts, ", "))
+	}
+	logo, hero := s.logoCells(), s.heroCells()
+	writeArray("LOGO_ART", plainLines(logo))
 	b.WriteString("\n")
-	writeArray("HERO_ART", plainLines(s.heroCells()))
+	writeArray("HERO_ART", plainLines(hero))
+	b.WriteString("\n")
+	writeGradient("LOGO_GRADIENT", logo)
+	writeGradient("HERO_GRADIENT", hero)
 	return []byte(b.String())
+}
+
+// Theme palette slot of a row, primary for letters, accent for accent rows and muted for blank rows
+func rowTone(row []cell) int {
+	inked, accents := 0, 0
+	for _, c := range row {
+		if c.inked {
+			inked++
+			if c.accent {
+				accents++
+			}
+		}
+	}
+	switch {
+	case inked == 0:
+		return 3
+	case 2*accents > inked:
+		return 1
+	}
+	return 0
 }

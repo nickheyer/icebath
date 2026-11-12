@@ -20,7 +20,7 @@ func psHome(t *testing.T) string {
 	return h
 }
 
-func TestPauseRecordMutexExcludesOtherThreadsOfThisProcess(t *testing.T) {
+func TestTheRecordMutexExcludesOtherThreadsOfThisProcess(t *testing.T) {
 	psHome(t)
 	held, release := make(chan struct{}), make(chan struct{})
 	var wg sync.WaitGroup

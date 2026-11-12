@@ -591,7 +591,7 @@ export default function SystemPage() {
   // ── Update check / apply ───────────────────────────────────────────
   const checkForUpdate = useCallback(
     async (force = false) => {
-      if (status?.can_update_hermes === false) return;
+      if (status?.can_update_icebath === false) return;
       setCheckingUpdate(true);
       try {
         const info = await api.checkHermesUpdate(force);
@@ -611,14 +611,14 @@ export default function SystemPage() {
         setCheckingUpdate(false);
       }
     },
-    [showToast, status?.can_update_hermes],
+    [showToast, status?.can_update_icebath],
   );
 
   // Auto-check (cached) runs inside loadAll on mount; this is the
   // user-triggered forced re-check from the "Check for updates" button.
   const applyUpdate = async () => {
     setUpdateConfirmOpen(false);
-    if (status?.can_update_hermes === false) {
+    if (status?.can_update_icebath === false) {
       showToast(
         "Icebath updates are managed outside this dashboard.",
         "success",
@@ -711,7 +711,7 @@ export default function SystemPage() {
   }
 
   const gatewayRunning = status?.gateway_running;
-  const canUpdateHermes = status?.can_update_hermes !== false;
+  const canUpdateHermes = status?.can_update_icebath !== false;
   const validEvents = hooks?.valid_events?.length
     ? hooks.valid_events
     : HOOK_EVENTS_FALLBACK;
@@ -925,8 +925,8 @@ export default function SystemPage() {
                 <div className="truncate">{stats?.hostname}</div>
               </div>
               <div>
-                <div className="text-xs uppercase tracking-wider text-muted-foreground">Python</div>
-                <div>{stats?.python_impl} {stats?.python_version}</div>
+                <div className="text-xs uppercase tracking-wider text-muted-foreground">Go</div>
+                <div>{stats?.runtime} {stats?.go_version}</div>
               </div>
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">Icebath</div>

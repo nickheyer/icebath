@@ -110,6 +110,8 @@ type MessageEvent struct {
 	MediaFilenames      []string
 	// Replay of an inbound message the startup restore queued, never queued again
 	StartupRestoreReplay bool
+	// Batch opened by a tagged bot whose continuation chunks wait the split delay
+	BotTagDebounce bool
 
 	gatewayAccepted        bool
 	producerDelivery       bool

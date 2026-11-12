@@ -35,29 +35,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const icebathAgentLogo = "[bold #FFD700]██╗ ██████╗███████╗██████╗  █████╗ ████████╗██╗  ██╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]\n" +
-	"[bold #FFD700]██║██╔════╝██╔════╝██╔══██╗██╔══██╗╚══██╔══╝██║  ██║      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝[/]\n" +
-	"[#FFBF00]██║██║     █████╗  ██████╔╝███████║   ██║   ███████║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║[/]\n" +
-	"[#FFBF00]██║██║     ██╔══╝  ██╔══██╗██╔══██║   ██║   ██╔══██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║[/]\n" +
-	"[#CD7F32]██║╚██████╗███████╗██████╔╝██║  ██║   ██║   ██║  ██║      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║[/]\n" +
-	"[#CD7F32]╚═╝ ╚═════╝╚══════╝╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝[/]"
-
-const icebathCaduceus = "[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⣀⣀⠀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#CD7F32]⠀⠀⠀⠀⠀⠀⢀⣠⣴⣾⣿⣿⣇⠸⣿⣿⠇⣸⣿⣿⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#FFBF00]⠀⢀⣠⣴⣶⠿⠋⣩⡿⣿⡿⠻⣿⡇⢠⡄⢸⣿⠟⢿⣿⢿⣍⠙⠿⣶⣦⣄⡀⠀[/]\n" +
-	"[#FFBF00]⠀⠀⠉⠉⠁⠶⠟⠋⠀⠉⠀⢀⣈⣁⡈⢁⣈⣁⡀⠀⠉⠀⠙⠻⠶⠈⠉⠉⠀⠀[/]\n" +
-	"[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⡿⠛⢁⡈⠛⢿⣿⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#FFD700]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠿⣿⣦⣤⣈⠁⢠⣴⣿⠿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠻⢿⣿⣦⡉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#FFBF00]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢷⣦⣈⠛⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣴⠦⠈⠙⠿⣦⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#CD7F32]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣤⡈⠁⢤⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠷⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⠑⢶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠁⢰⡆⠈⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⠈⣡⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]\n" +
-	"[#B8860B]⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]"
-
 const releaseURLBase = "https://github.com/NousResearch/hermes-agent/releases/tag"
 
 const bannerSnapshotVersion = 1
@@ -322,8 +299,17 @@ func getLatestReleaseTag(ctx context.Context, repoDir string) *[2]string {
 // Version label shown in the startup banner title
 func formatBannerVersionLabel() string { return FormatBannerVersionLabel(context.Background()) }
 
-// Version label of the install, its channel or its upstream and local revisions
+// Version label of the install, panicking with the lookup error like the exception Python leaves uncaught
 func FormatBannerVersionLabel(ctx context.Context) string {
+	label, err := BannerVersionLabel(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return label
+}
+
+// Version label of the install, its channel or its revisions, or the version or channel lookup error
+func BannerVersionLabel(ctx context.Context) (string, error) {
 	root := pm.RepoRoot()
 	stamp := pm.ReadInstallStamp(root)
 	stampValue := func(key string) any {
@@ -335,7 +321,7 @@ func FormatBannerVersionLabel(ctx context.Context) string {
 	}
 	info, err := updaterecord.GetVersionInfo()
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	if stampValue("distribution") == "desktop-app" {
 		label := "Icebath Agent v" + info.DerivedVersion
@@ -344,18 +330,18 @@ func FormatBannerVersionLabel(ctx context.Context) string {
 			if c := stampValue("commit"); pyrepr.Truthy(c) {
 				commit = pyrepr.Str(c)
 			}
-			return label + " · commit-build · " + pystr.Slice(commit, 0, 12)
+			return label + " · commit-build · " + pystr.Slice(commit, 0, 12), nil
 		}
 		if tag := stampValue("tag"); pyrepr.Truthy(tag) {
 			if selfupdate.IsCanaryTag(tag) {
-				return label + " · canary"
+				return label + " · canary", nil
 			}
-			return label + " · stable"
+			return label + " · stable", nil
 		}
 		if stampValue("payload") == "bootstrap" {
-			return label + " · installer"
+			return label + " · installer", nil
 		}
-		return label
+		return label, nil
 	}
 	base := fmt.Sprintf("Icebath Agent v%s (%s)", info.DerivedVersion, ReleaseDate)
 	cfg := quiet(func() (any, error) {
@@ -367,23 +353,23 @@ func FormatBannerVersionLabel(ctx context.Context) string {
 	}, nil)
 	channel, err := selfupdate.ResolveUpdateChannel(cfg, root)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	if channel != "main" {
 		label := base + " · " + channel
 		if head := selfupdate.GitStdout([]string{"rev-parse", "HEAD"}, root); head != "" {
 			label += " · local " + pystr.Slice(head, 0, 12)
 		}
-		return label
+		return label, nil
 	}
 	state := getGitBannerState(ctx, "")
 	if state == nil {
-		return base
+		return base, nil
 	}
 	if state.Ahead <= 0 || state.Upstream == state.Local {
-		return base + " · upstream " + state.Upstream
+		return base + " · upstream " + state.Upstream, nil
 	}
-	return fmt.Sprintf("%s · upstream %s · local %s (+%d carried %s)", base, state.Upstream, state.Local, state.Ahead, plural(state.Ahead, "commit"))
+	return fmt.Sprintf("%s · upstream %s · local %s (+%d carried %s)", base, state.Upstream, state.Local, state.Ahead, plural(state.Ahead, "commit")), nil
 }
 
 // Runs target on its own goroutine with any failure swallowed
@@ -1154,7 +1140,7 @@ func buildWelcomeBanner(ctx context.Context, console *pyrich.Console, o welcomeB
 	dim := skinColor(ctx, "banner_dim", "#B8860B")
 	text := skinColor(ctx, "banner_text", "#FFF8DC")
 	skin := quiet(func() (*config.SkinConfig, error) { return bannerActiveSkin(ctx), nil }, nil)
-	hero, logo := icebathCaduceus, icebathAgentLogo
+	hero, logo := icebathHero, icebathAgentLogo
 	if skin != nil {
 		if pyrepr.Truthy(skin.BannerHero) {
 			custom, isStr := skin.BannerHero.(string)

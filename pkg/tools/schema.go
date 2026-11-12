@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"math"
 	"regexp"
@@ -651,7 +652,7 @@ func schemaReactiveStrip(tools []map[string]any, stripNode func(map[string]any) 
 			continue
 		}
 		var params map[string]any
-		if fn, ok := tool["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(tool["function"]); ok {
 			params, _ = fn["parameters"].(map[string]any)
 		}
 		if params == nil {

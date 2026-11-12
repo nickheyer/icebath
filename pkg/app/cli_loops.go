@@ -44,31 +44,48 @@ func (c *CLI) automationConnection() (bool, *gatewaycli.GatewayConnection) {
 
 // Goal manager bound to the current session id, the gateway's on a gateway store and none before its session opens
 func (c *CLI) getGoalManager() goals.Manager {
+	return automationManager(c, &c.goalManager,
+		func(sid string) goals.Manager { return goals.NewGoalManager(c.ctx, sid, int64(c.goalMaxTurns())) },
+		func(sid string, connection *gatewaycli.GatewayConnection) (goals.Manager, error) {
+			return NewGatewayGoalManager(c.ctx, sid, connection)
+		})
+}
+
+// Manager of a session bound slot, the gateway's on a gateway store and none before its session opens
+func automationManager[M interface{ Session() string }](c *CLI, slot *M, local func(string) M,
+	remote func(string, *gatewaycli.GatewayConnection) (M, error)) M {
 	gateway, connection := c.automationConnection()
 	if gateway && connection == nil {
-		return nil
+		var none M
+		return none
 	}
-	c.uiMu.Lock()
-	sessionID, existing := c.sessionID, c.goalManager
-	c.uiMu.Unlock()
-	if sessionID == "" {
-		return nil
-	}
-	if existing != nil && existing.Session() == sessionID {
-		return existing
-	}
-	var manager goals.Manager
-	if gateway {
-		remote, err := NewGatewayGoalManager(c.ctx, sessionID, connection)
+	return sessionBoundManager(c, slot, func(sid string) M {
+		if !gateway {
+			return local(sid)
+		}
+		manager, err := remote(sid, connection)
 		if err != nil {
 			panic(err)
 		}
-		manager = remote
-	} else {
-		manager = goals.NewGoalManager(c.ctx, sessionID, int64(c.goalMaxTurns()))
-	}
+		return manager
+	})
+}
+
+// Manager cached in slot, rebuilt when the session id changed and none while the session id is empty
+func sessionBoundManager[M interface{ Session() string }](c *CLI, slot *M, build func(string) M) M {
 	c.uiMu.Lock()
-	c.goalManager = manager
+	sessionID, existing := c.sessionID, *slot
+	c.uiMu.Unlock()
+	if sessionID == "" {
+		var none M
+		return none
+	}
+	if any(existing) != nil && existing.Session() == sessionID {
+		return existing
+	}
+	manager := build(sessionID)
+	c.uiMu.Lock()
+	*slot = manager
 	c.uiMu.Unlock()
 	return manager
 }

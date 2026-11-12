@@ -75,7 +75,10 @@ func (r *GatewayRunner) finishStartupRestore(ctx context.Context) {
 	drained := 0
 	func() {
 		defer func() { r.startupRestoreInProgress = false }()
-		if tasks := append([]*gatewayTask(nil), r.startupRestoreTasks...); len(tasks) > 0 {
+		r.startupRestoreTasksMu.Lock()
+		tasks := append([]*gatewayTask(nil), r.startupRestoreTasks...)
+		r.startupRestoreTasksMu.Unlock()
+		if len(tasks) > 0 {
 			done := r.waitBoundedOrRelease(ctx, tasks, startupRestoreDrainTimeoutSecs(),
 				"Startup-restore gate released after %.0fs with %d boot auto-resume turn(s) "+
 					"still running; draining inbound queue now (resume slots already claimed, so no "+
@@ -86,7 +89,9 @@ func (r *GatewayRunner) finishStartupRestore(ctx context.Context) {
 				report(task.gatewayFuture)
 			}
 		}
+		r.startupRestoreTasksMu.Lock()
 		r.startupRestoreTasks = []*gatewayTask{}
+		r.startupRestoreTasksMu.Unlock()
 		r.awaitStartupWarmup(ctx)
 		drained = r.drainStartupRestoreQueue(ctx)
 	}()

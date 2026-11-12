@@ -47,7 +47,7 @@ export const LOCALE_META: Record<Locale, { name: string }> = Object.fromEntries(
   SUPPORTED_LOCALES.map((id) => [id, { name: LOCALE_ENDONYMS[id] }]),
 ) as Record<Locale, { name: string }>;
 
-const STORAGE_KEY = "hermes-locale";
+const STORAGE_KEY = "icebath-locale";
 
 function isLocale(value: string): value is Locale {
   return (SUPPORTED_LOCALES as string[]).includes(value);

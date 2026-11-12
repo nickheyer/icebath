@@ -4,7 +4,7 @@ import { requireBrowserConnection } from './browser-connection'
 import { readJson, writeJson } from './storage'
 
 export function browserStartupProfileKey(basePath: string): string {
-  return `hermes:webapp:default-profile:${basePath || '/'}`
+  return `icebath:webapp:default-profile:${basePath || '/'}`
 }
 
 /** A profile route this tab can apply: a valid profile name on its one connection. The profile

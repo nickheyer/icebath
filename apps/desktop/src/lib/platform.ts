@@ -23,10 +23,10 @@ export const isLinuxPlatform = (): boolean =>
 
 /** Globals the Icebath web server injects into the page it serves. */
 export interface BrowserHostGlobals {
-  __HERMES_AUTH_REQUIRED__?: boolean
-  __HERMES_BASE_PATH__?: string
-  __HERMES_DASHBOARD_PROFILE__?: string
-  __HERMES_UI_SURFACE__?: string
+  __ICEBATH_AUTH_REQUIRED__?: boolean
+  __ICEBATH_BASE_PATH__?: string
+  __ICEBATH_DASHBOARD_PROFILE__?: string
+  __ICEBATH_UI_SURFACE__?: string
 }
 
 /**
@@ -35,7 +35,7 @@ export interface BrowserHostGlobals {
  * ICEBATH_HOME), which the browser host reads as `default`.
  */
 export function browserLaunchProfile(): string {
-  return String((window as Window & BrowserHostGlobals).__HERMES_DASHBOARD_PROFILE__ ?? '').trim()
+  return String((window as Window & BrowserHostGlobals).__ICEBATH_DASHBOARD_PROFILE__ ?? '').trim()
 }
 
 /** The profile a request that names none reaches: the one the server runs as, else `default`. */
@@ -53,7 +53,7 @@ export function browserLaunchProfileOrDefault(): string {
 export function hasBrowserHostBootstrap(): boolean {
   const win = window as Window & BrowserHostGlobals
 
-  return win.__HERMES_AUTH_REQUIRED__ === true || win.__HERMES_UI_SURFACE__ === 'webapp'
+  return win.__ICEBATH_AUTH_REQUIRED__ === true || win.__ICEBATH_UI_SURFACE__ === 'webapp'
 }
 
 /** Renderer host, independent of the OS or the gateway's connection mode. */

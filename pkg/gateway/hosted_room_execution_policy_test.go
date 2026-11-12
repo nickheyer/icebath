@@ -59,6 +59,7 @@ func roomTestDispatch(t *testing.T, policy *pyjson.Object) *HostedMemberDispatch
 }
 
 func TestExecutionPolicyDigestCoversToolsApprovalsAndIterationLimit(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	value := roomTestPolicy(t, "manual", 12)
 	checked, err := RoomExecutionPolicyFromMapping(value)
 	if err != nil {
@@ -85,6 +86,7 @@ func TestExecutionPolicyDigestCoversToolsApprovalsAndIterationLimit(t *testing.T
 }
 
 func TestUnlimitedPolicySurvivesTheCatalogJsonRoundTripExactly(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	policy := roomTestPolicy(t, "manual", 0)
 	catalog, err := CatalogMapping(context.Background(), CatalogOptions{InstallationID: "install-peer",
 		PersistentProcess: true, TargetProfile: "reviewer", ExecutionPolicy: policy})
@@ -113,6 +115,7 @@ func TestUnlimitedPolicySurvivesTheCatalogJsonRoundTripExactly(t *testing.T) {
 }
 
 func TestRoomPolicyOverridesBroaderLiveApprovalConfig(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	policy, err := RoomExecutionPolicyFromMapping(roomTestPolicy(t, "manual", 12))
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +133,7 @@ func TestRoomPolicyOverridesBroaderLiveApprovalConfig(t *testing.T) {
 }
 
 func TestRoomCatalogFailsClosedWhenRemoteApprovalsAreOff(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	_, err := CatalogMapping(context.Background(), CatalogOptions{InstallationID: "install-peer",
 		PersistentProcess: true, TargetProfile: "reviewer", ExecutionPolicy: roomTestPolicy(t, "off", 12)})
 	if _, isPeer := err.(*HostedRoomPeerError); !isPeer || !strings.Contains(err.Error(), "requires manual or smart approvals") {
@@ -189,6 +193,7 @@ func TestCatalogPolicyComesFromTheServedProfileNotTheLaunchEnv(t *testing.T) {
 }
 
 func TestCatalogRequiresTheServedProfileAndNeverReadsHermesProfile(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_PROFILE", "reviewer")
 	if _, err := CatalogMapping(context.Background(), CatalogOptions{InstallationID: "install-peer", PersistentProcess: true}); err == nil || !strings.Contains(err.Error(), "target_profile") {
 		t.Fatalf("missing %v", err)

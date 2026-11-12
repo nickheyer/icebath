@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"regexp"
 	"strings"
 	"sync"
@@ -297,7 +298,7 @@ func convertToolsToConverse(tools []map[string]any) []any {
 		if !has {
 			fn = map[string]any{}
 		}
-		f, _ := asMap(fn)
+		f, _ := pyjson.Dict(fn)
 		name, has := f["name"]
 		if !has {
 			name = ""
@@ -548,11 +549,11 @@ func bedrockToolCallArgs(msg map[string]any) map[string]any {
 	args := map[string]any{}
 	calls, _ := asList(msg["tool_calls"])
 	for _, c := range calls {
-		tc, ok := asMap(c)
+		tc, ok := pyjson.Dict(c)
 		if !ok {
 			continue
 		}
-		fn, _ := asMap(tc["function"])
+		fn, _ := pyjson.Dict(tc["function"])
 		raw, has := fn["arguments"]
 		if !has {
 			raw = "{}"
@@ -654,7 +655,7 @@ func bedrockAssistantBlocks(msg map[string]any, content any, claude, own bool) [
 	}
 	calls, _ := asList(msg["tool_calls"])
 	for _, c := range calls {
-		tc, ok := asMap(c)
+		tc, ok := pyjson.Dict(c)
 		if !ok {
 			continue
 		}
@@ -662,7 +663,7 @@ func bedrockAssistantBlocks(msg map[string]any, content any, claude, own bool) [
 		if !has {
 			fn = map[string]any{}
 		}
-		f, _ := asMap(fn)
+		f, _ := pyjson.Dict(fn)
 		args, has := f["arguments"]
 		if !has {
 			args = "{}"

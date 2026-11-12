@@ -347,7 +347,7 @@ func writeLatestReceipt(t *testing.T, outcome string) *pyjson.Object {
 func TestReceiptEndpointReturnsFullReceiptAndSummary(t *testing.T) {
 	c := newSessionClient(t)
 	receipt := writeLatestReceipt(t, "success")
-	r := c.get("/api/hermes/update/receipt")
+	r := c.get("/api/icebath/update/receipt")
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -366,7 +366,7 @@ func TestReceiptEndpointReturnsFullReceiptAndSummary(t *testing.T) {
 
 func TestReceiptEndpoint404WhenNoReceipt(t *testing.T) {
 	c := newSessionClient(t)
-	if r := c.get("/api/hermes/update/receipt"); r.Status != 404 {
+	if r := c.get("/api/icebath/update/receipt"); r.Status != 404 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
 }
@@ -483,7 +483,7 @@ func TestGitInstallReportsBehindCount(t *testing.T) {
 	gitProjectRoot(t)
 	fakeUpdateCheck(t, func() *pyjson.Object { return pyjson.ObjectOf("behind", int64(5), "commits", []any{}) })
 
-	r := c.get("/api/hermes/update/check")
+	r := c.get("/api/icebath/update/check")
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -513,7 +513,7 @@ func TestReleaseMessageNamesOnlyAKnownVersion(t *testing.T) {
 					return pyjson.ObjectOf("behind", behind, "held", heldValue, "rollback", !held, "sourceVersion", version,
 						"channel", "preview", "commits", []any{})
 				})
-				r := c.get("/api/hermes/update/check")
+				r := c.get("/api/icebath/update/check")
 				if r.Status != 200 {
 					t.Fatalf("status %d %s", r.Status, r.Body)
 				}
@@ -549,14 +549,14 @@ func TestManagedRuntimeDashboardIsNotApplyable(t *testing.T) {
 	if !dashboardLocalUpdateManagedExternally(context.Background()) {
 		t.Fatal("dashboard not managed externally")
 	}
-	body := jsonObject(t, c.get("/api/hermes/update/check"))
+	body := jsonObject(t, c.get("/api/icebath/update/check"))
 	if body["install_method"] != "managed-runtime" || body["can_apply"] != false || body["update_available"] != false || body["behind"] != nil {
 		t.Fatalf("body %v", body)
 	}
 	if message, _ := body["message"].(string); !strings.Contains(message, "managed outside this dashboard") || body["update_command"] != "" {
 		t.Fatalf("body %v", body)
 	}
-	refused := jsonObject(t, c.send("POST", "/api/hermes/update", nil))
+	refused := jsonObject(t, c.send("POST", "/api/icebath/update", nil))
 	if refused["ok"] != false || refused["error"] != "dashboard_update_managed_externally" || refused["update_command"] != "" {
 		t.Fatalf("refused %v", refused)
 	}
@@ -578,7 +578,7 @@ func TestForcedUpdateCheckRunsInTheNamedProfilesScope(t *testing.T) {
 	gitProjectRoot(t)
 	seen := fakeUpdateCheck(t, func() *pyjson.Object { return pyjson.ObjectOf("behind", int64(0), "commits", []any{}) })
 
-	r := c.get("/api/hermes/update/check?force=true&profile=worker_beta")
+	r := c.get("/api/icebath/update/check?force=true&profile=worker_beta")
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -615,7 +615,7 @@ func TestCommitBackendUpdateRoutesRefuseBeforeChecksOrSpawns(t *testing.T) {
 			cache := filepath.Join(os.Getenv("ICEBATH_HOME"), ".update_check")
 			writeTestFile(t, cache, "source checkout cache")
 
-			r := c.get("/api/hermes/update/check?force=true")
+			r := c.get("/api/icebath/update/check?force=true")
 			if r.Status != 200 {
 				t.Fatalf("status %d %s", r.Status, r.Body)
 			}
@@ -623,7 +623,7 @@ func TestCommitBackendUpdateRoutesRefuseBeforeChecksOrSpawns(t *testing.T) {
 			if data["message"] != selfupdate.CommitBuildUpdateMessage || data["can_apply"] != false || data["current_version"] != "1.2.3+gabcdef12" {
 				t.Fatalf("check %v", data)
 			}
-			if got := jsonObject(t, c.send("POST", "/api/hermes/update", nil))["message"]; got != selfupdate.CommitBuildUpdateMessage {
+			if got := jsonObject(t, c.send("POST", "/api/icebath/update", nil))["message"]; got != selfupdate.CommitBuildUpdateMessage {
 				t.Fatalf("update message %v", got)
 			}
 			if raw, err := os.ReadFile(cache); err != nil || string(raw) != "source checkout cache" {
@@ -664,7 +664,7 @@ func TestUpdateHermesReturnsDockerGuidanceWithoutSpawning(t *testing.T) {
 	isolateActionRegistries(t, filepath.Join(t.TempDir(), "logs"))
 	forbidActionSpawn(t, "docker update guard should not spawn icebath update")
 
-	r := c.send("POST", "/api/hermes/update", nil)
+	r := c.send("POST", "/api/icebath/update", nil)
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -688,7 +688,7 @@ func TestUpdateHermesReturnsAptGuidanceWithoutSpawning(t *testing.T) {
 	isolateActionRegistries(t, filepath.Join(t.TempDir(), "logs"))
 	forbidActionSpawn(t, "APT-managed update guard should not spawn icebath update")
 
-	r := c.send("POST", "/api/hermes/update", nil)
+	r := c.send("POST", "/api/icebath/update", nil)
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -696,13 +696,41 @@ func TestUpdateHermesReturnsAptGuidanceWithoutSpawning(t *testing.T) {
 	if data["ok"] != false || data["pid"] != nil || data["error"] != "apt_update_required" || !pyrepr.Truthy(data["update_command"]) {
 		t.Fatalf("data %v", data)
 	}
-	check := c.get("/api/hermes/update/check")
+	check := c.get("/api/icebath/update/check")
 	if check.Status != 200 {
 		t.Fatalf("status %d %s", check.Status, check.Body)
 	}
 	cd := jsonObject(t, check)
 	if cd["install_method"] != "apt" || cd["can_apply"] != false || cd["update_command"] != data["update_command"] {
 		t.Fatalf("check %v", cd)
+	}
+}
+
+func TestUpdateHermesReturnsPackageManagerGuidanceWithoutSpawning(t *testing.T) {
+	for method, want := range map[string][2]string{
+		"homebrew":   {"brew upgrade --cask icebath", "Icebath is managed by Homebrew; run `brew upgrade --cask icebath`."},
+		"chocolatey": {"choco upgrade icebath", "Icebath is managed by Chocolatey; run `choco upgrade icebath`."},
+		"dpkg":       {"sudo apt update && sudo apt install --only-upgrade icebath", "Icebath is managed by its Debian package; run `sudo apt update && sudo apt install --only-upgrade icebath`."},
+	} {
+		t.Run(method, func(t *testing.T) {
+			c := newSessionClient(t)
+			installMethodRoot(t, method)
+			isolateActionRegistries(t, filepath.Join(t.TempDir(), "logs"))
+			forbidActionSpawn(t, "a package manager install must not spawn icebath update")
+			r := c.send("POST", "/api/icebath/update", nil)
+			if r.Status != 200 {
+				t.Fatalf("status %d %s", r.Status, r.Body)
+			}
+			data := jsonObject(t, r)
+			if data["ok"] != false || data["pid"] != nil || data["error"] != "update_not_in_place" || data["update_command"] != want[0] {
+				t.Fatalf("data %v", data)
+			}
+			check := c.get("/api/icebath/update/check")
+			cd := jsonObject(t, check)
+			if cd["install_method"] != method || cd["can_apply"] != false || cd["update_command"] != want[0] || cd["message"] != want[1] {
+				t.Fatalf("check %v", cd)
+			}
+		})
 	}
 }
 
@@ -720,7 +748,7 @@ func TestUpdateHermesSpawnsWithActionID(t *testing.T) {
 	}
 	t.Cleanup(func() { actionPopen = saved })
 
-	r := c.send("POST", "/api/hermes/update", nil)
+	r := c.send("POST", "/api/icebath/update", nil)
 	if r.Status != 200 {
 		t.Fatalf("status %d %s", r.Status, r.Body)
 	}
@@ -751,6 +779,6 @@ func TestUpdateHermesReusesRunningAction(t *testing.T) {
 	actionIDs["hermes-update"] = strings.Repeat("b", 32)
 	actionMu.Unlock()
 
-	r := c.send("POST", "/api/hermes/update", nil)
+	r := c.send("POST", "/api/icebath/update", nil)
 	r.expect(t, 200, `{"ok":true,"pid":24680,"name":"hermes-update","already_running":true,"action_id":"`+strings.Repeat("b", 32)+`"}`)
 }

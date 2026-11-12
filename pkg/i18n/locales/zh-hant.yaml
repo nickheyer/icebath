@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b 可用工具集"
     currently_enabled_legend: "(*) = 目前已啟用"
     tip_enable_all: "提示：使用 'all' 或 '*' 可啟用全部工具集"
-    example: "範例：python cli.py --toolsets web,terminal"
+    example: "範例：icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "未知的 /usage 子指令：{args}。請試試 /usage 或 /usage reset [--force]。"

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"strings"
 	"sync"
@@ -396,12 +397,12 @@ func digestHistory(messagesSnapshot []map[string]any, tail int) []map[string]any
 			if calls := reviewToolCalls(m["tool_calls"]); len(calls) > 0 {
 				var names []string
 				for _, tc := range calls {
-					call, ok := tc.(map[string]any)
+					call, ok := pyjson.Dict(tc)
 					if !ok {
 						continue
 					}
 					name := "?"
-					if fn, ok := call["function"].(map[string]any); ok {
+					if fn, ok := pyjson.Dict(call["function"]); ok {
 						if n, has := fn["name"]; has {
 							name = pyrepr.Str(n)
 						}

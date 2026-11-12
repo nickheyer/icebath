@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -136,7 +137,7 @@ func sideQuestionBuildFork(ctx context.Context, parent *AIAgent, capture *sideQu
 	names := map[string]bool{}
 	for _, tool := range capture.tools {
 		entry, _ := tool.(map[string]any)
-		fn, _ := entry["function"].(map[string]any)
+		fn, _ := pyjson.Dict(entry["function"])
 		name, ok := fn["name"].(string)
 		if !ok {
 			return nil, fmt.Errorf("KeyError: 'name'")

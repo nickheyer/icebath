@@ -1,6 +1,10 @@
 package hostinfo
 
-import "testing"
+import (
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestNormalizeAndWindowsNativeArch(t *testing.T) {
 	if NormalizeArch(" X86_64 ") != "amd64" || NormalizeArch("AARCH64") != "arm64" || NormalizeArch("i686") != "x86" || NormalizeArch("riscv") != "unknown" {
@@ -98,5 +102,21 @@ func TestRuntimePredicatesAndSummary(t *testing.T) {
 	ClearCaches()
 	if NativeArch() == "" {
 		t.Fatal("arch after cache clear")
+	}
+}
+
+func TestGoVersionIsTheReleaseNumber(t *testing.T) {
+	got := GoVersion()
+	if got == "" || strings.HasPrefix(got, "go") || strings.ContainsAny(got, " \t") && !strings.HasPrefix(got, "devel ") {
+		t.Fatalf("GoVersion %q", got)
+	}
+	if first := strings.Fields(runtime.Version())[0]; first != "devel" && "go"+got != first {
+		t.Fatalf("GoVersion %q for runtime %q", got, runtime.Version())
+	}
+}
+
+func TestModuleVersionOfAnUnlinkedModuleIsEmpty(t *testing.T) {
+	if got := ModuleVersion("example.invalid/not-linked"); got != "" {
+		t.Fatalf("ModuleVersion %q", got)
 	}
 }

@@ -224,5 +224,5 @@ func (r *GatewayRunner) newBackgroundAgent(ctx context.Context, route turnRoute,
 		return nil, err
 	}
 	opts.Env = env
-	return agent.NewAIAgent(ctx, opts)
+	return newAIAgent(ctx, opts)
 }

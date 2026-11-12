@@ -16,7 +16,7 @@ func (fakeIDPProvider) Name() string        { return "stub" }
 func (fakeIDPProvider) DisplayName() string { return "Stub IdP (test only)" }
 func (fakeIDPProvider) StartLogin(_ context.Context, redirectURI string) (gateway.LoginStart, error) {
 	return gateway.LoginStart{RedirectURL: redirectURI + "?code=stub_code&state=s",
-		CookiePayload: map[string]string{"hermes_session_pkce": "state=s;verifier=v"}}, nil
+		CookiePayload: map[string]string{"icebath_session_pkce": "state=s;verifier=v"}}, nil
 }
 func (fakeIDPProvider) CompleteLogin(context.Context, string, string, string, string) (*gateway.DashboardSession, error) {
 	return &gateway.DashboardSession{UserID: "u1", Provider: "stub"}, nil

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"net/http"
 	"time"
@@ -39,7 +40,7 @@ func estimateChunkBytes(chunk map[string]any) int {
 			calls, _ := delta["tool_calls"].([]any)
 			for _, tc := range calls {
 				m, _ := tc.(map[string]any)
-				if fn, ok := m["function"].(map[string]any); ok {
+				if fn, ok := pyjson.Dict(m["function"]); ok {
 					add(fn, "arguments", "name")
 				}
 			}

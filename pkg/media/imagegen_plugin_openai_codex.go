@@ -81,9 +81,6 @@ func readCodexImageCredential(ctx context.Context) (token, baseURL string) {
 	return "", ""
 }
 
-// Whether an HTTP client for the images request is linked
-func codexHTTPAvailable() bool { return codexImagesHTTPClient != nil }
-
 // Accepted raster MIME of the bytes, empty for anything else
 func sniffCodexImageMime(raw []byte) string {
 	if m := tools.SniffImageMime(raw); codexAcceptedInputMime[m] {
@@ -271,15 +268,15 @@ func newOpenAICodexImageGenProvider() *openAICodexImageGenProvider {
 		label: "OpenAI (Codex auth)", models: gptImage2Tiers, defaultModelID: gptImage2Default, price: &price}}
 }
 
-// Available when a Codex token resolves and an HTTP client is linked
+// Available when a Codex token resolves
 func (p *openAICodexImageGenProvider) IsAvailable() bool {
 	return codexImageAvailable(context.Background())
 }
 
-// Codex token presence through the secret scope the context carries, plus the linked HTTP client
+// Codex token presence through the secret scope the context carries
 func codexImageAvailable(ctx context.Context) bool {
 	token, _ := readCodexImageCredential(ctx)
-	return token != "" && codexHTTPAvailable()
+	return token != ""
 }
 
 // Picker entry with no credential prompt, the Codex OAuth bootstrap hook starting the sign in
@@ -313,9 +310,6 @@ func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.E
 	token, baseURL := readCodexImageCredential(ctx)
 	if token == "" {
 		return errorFactory("openai-codex", aspect, "", "")(codexNoAuth, "auth_required"), nil
-	}
-	if !codexHTTPAvailable() {
-		return errorFactory("openai-codex", aspect, "", "")("httpx Python package not installed (pip install httpx)", "missing_dependency"), nil
 	}
 	tierID, meta := resolveCodexImageModel(env)
 	size := sizeFor(aspect)

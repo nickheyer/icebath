@@ -136,7 +136,7 @@ func statusLocalReads(ctx context.Context) (*pyjson.Object, error) {
 		return nil, err
 	}
 	return pyjson.ObjectOf("version", info.BaseVersion, "config_version", int64(current), "latest_config_version", int64(latest),
-		"can_update_hermes", !dashboardLocalUpdateManagedExternally(ctx), "nous_session_valid", nousSessionValidity(ctx)), nil
+		"can_update_icebath", !dashboardLocalUpdateManagedExternally(ctx), "nous_session_valid", nousSessionValidity(ctx)), nil
 }
 
 var webappSignedOutStatusKeys = map[string]bool{"version": true, "release_date": true, "gateway_running": true, "gateway_state": true,
@@ -208,7 +208,7 @@ func getStatus(ctx context.Context, req *Request, profile string) (*pyjson.Objec
 	status := pyjson.ObjectOf(
 		"version", local.GetOr("version", nil), "release_date", tuiserver.Banner.ReleaseDate,
 		"config_version", local.GetOr("config_version", nil), "latest_config_version", local.GetOr("latest_config_version", nil),
-		"can_update_hermes", local.GetOr("can_update_hermes", nil),
+		"can_update_icebath", local.GetOr("can_update_icebath", nil),
 		"gateway_running", gw.running, "gateway_state", gw.state,
 		"gateway_platforms", gw.platforms,
 		"gateway_exit_reason", gw.exitReason,
@@ -281,8 +281,8 @@ func getSystemStats(ctx context.Context) (*pyjson.Object, error) {
 	info := displaySystemPlatform(pyplatform.System(), pyplatform.Release(), pyplatform.Version(), pyplatform.Platform())
 	info.Set("arch", pyplatform.Machine())
 	info.Set("hostname", pyplatform.Node())
-	info.Set("python_version", runtime.Version())
-	info.Set("python_impl", runtime.Compiler)
+	info.Set("go_version", runtime.Version())
+	info.Set("runtime", runtime.Compiler)
 	info.Set("hermes_version", version.BaseVersion)
 	info.Set("cpu_count", int64(pypsutil.CPUCount()))
 	vm, err := pypsutil.VirtualMemory()

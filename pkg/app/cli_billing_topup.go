@@ -112,14 +112,9 @@ func (c *CLI) billingOverview(state *provider.BillingState) {
 	}
 	c.billingDim(autoLine, "", false)
 	infoPrint("  " + billingRule)
-	choices := []slashConfirmChoice{
-		c.billingRow("buy", "cli.billing.choice_add_funds", "cli.billing.desc_add_funds"),
-		c.billingRow("auto", "cli.billing.choice_auto_reload", "cli.billing.desc_auto_reload"),
-		c.billingRow("limit", "cli.billing.choice_monthly_limit", "cli.billing.desc_monthly_limit"),
-		c.portalRow(), c.cancelRow("", "", "")}
+	choices := c.topupMenuChoices()
 	if state.KeepGoingOnCredits != nil {
-		keep := c.billingRow("hermes", "cli.billing.keep_going_choice", "cli.billing.keep_going_desc")
-		choices = append(choices[:2], append([]slashConfirmChoice{keep}, choices[2:]...)...)
+		choices = append(choices[:2], append([]slashConfirmChoice{c.keepGoingRow()}, choices[2:]...)...)
 	}
 	switch c.modalChoice(c.t("cli.billing.topup_title", nil), "", choices) {
 	case "buy":
@@ -152,10 +147,7 @@ func (c *CLI) billingAddCardFlow(state *provider.BillingState) *provider.Billing
 	c.blockHeader("\U0001f4b3", c.t("cli.billing.add_card_first", nil), false)
 	cprint("  " + c.t("cli.billing.no_saved_card", nil))
 	c.billingDim(c.t("cli.billing.add_card_once_hint", nil), "", false)
-	choices := []slashConfirmChoice{
-		c.billingRow("portal", "cli.billing.choice_add_card_on_portal", "cli.billing.desc_add_card_on_portal"),
-		c.billingRow("recheck", "cli.billing.choice_recheck_card", "cli.billing.desc_recheck_card"),
-		c.cancelRow("", "cli.billing.choice_back", "")}
+	choices := c.addCardChoices()
 loop:
 	for i := 0; i < 8; i++ {
 		switch c.modalChoice(c.t("cli.billing.add_card_title", nil), "", choices) {
@@ -508,10 +500,7 @@ func (c *CLI) billingAutoReloadFlow(state *provider.BillingState) {
 	}
 	if currentlyOn {
 		top := c.modalChoice(c.t("cli.billing.auto_reload", nil), c.t("cli.billing.auto_reload_on_detail", map[string]any{"rule": current}),
-			[]slashConfirmChoice{
-				c.billingRow("edit", "cli.billing.choice_edit_thresholds", "cli.billing.desc_edit_thresholds"),
-				c.billingRow("off", "cli.billing.choice_turn_off", "cli.billing.desc_turn_off"),
-				c.cancelRow("", "", "")})
+			c.autoReloadTopChoices())
 		if top == "off" {
 			c.billingAutoReloadDisable(state)
 			return
@@ -540,7 +529,7 @@ func (c *CLI) billingAutoReloadFlow(state *provider.BillingState) {
 	c.billingDim(c.t("cli.billing.auto_reload_consent", map[string]any{"card": card.Masked(), "threshold": fmtMoney(thresholdAmt)}), "", true)
 	if c.modalChoice(c.t("cli.billing.turn_on_auto_reload_question", nil),
 		c.t("cli.billing.auto_reload_rule_cap", map[string]any{"threshold": fmtMoney(thresholdAmt), "reload_to": fmtMoney(reloadAmt)}),
-		[]slashConfirmChoice{c.billingRow("agree", "cli.billing.choice_agree_turn_on", "cli.billing.desc_agree_turn_on"), c.cancelRow("", "", "")}) != "agree" {
+		c.autoReloadAgreeChoices()) != "agree" {
 		infoPrint("  " + c.t("cli.billing.cancelled_yellow", nil))
 		return
 	}
@@ -577,10 +566,7 @@ func (c *CLI) billingOfferKeepGoingOff(state *provider.BillingState) {
 	if !(must(state.CanChangePlan()) && state.KeepGoingOnCredits != nil && *state.KeepGoingOnCredits && c.app != nil) {
 		return
 	}
-	choices := []slashConfirmChoice{
-		c.billingRow("off", "cli.billing.keep_going_turn_off", "cli.billing.keep_going_turn_off_desc"),
-		c.cancelRow("", "cli.billing.keep_going_leave_on", "")}
-	if c.modalChoice(c.t("cli.billing.keep_going_is_on_title", nil), "", choices) == "off" {
+	if c.modalChoice(c.t("cli.billing.keep_going_is_on_title", nil), "", c.keepGoingOffChoices()) == "off" {
 		c.billingKeepGoingOnCreditsFlow(state)
 	}
 }
@@ -589,9 +575,7 @@ func (c *CLI) billingOfferKeepGoingOff(state *provider.BillingState) {
 func (c *CLI) billingKeepGoingOnCreditsFlow(state *provider.BillingState) {
 	turnOn := state.KeepGoingOnCredits == nil || !*state.KeepGoingOnCredits
 	if turnOn && c.modalChoice(c.t("cli.billing.keep_going_confirm_title", nil), c.t("cli.billing.keep_going_confirm_body", nil),
-		[]slashConfirmChoice{
-			c.billingRow("agree", "cli.billing.keep_going_turn_on", "cli.billing.keep_going_desc"),
-			c.cancelRow("", "", "cli.billing.keep_going_keep_off_desc")}) != "agree" {
+		c.keepGoingAgreeChoices()) != "agree" {
 		infoPrint("  " + c.t("cli.billing.cancelled_yellow", nil))
 		return
 	}

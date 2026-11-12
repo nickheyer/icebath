@@ -770,7 +770,7 @@ function LegacyGroupChatWorkspace({ group, members, onBack, visible = true }: Gr
 
     const channel =
       !desktopBridge && typeof BroadcastChannel !== 'undefined'
-        ? new BroadcastChannel('hermes.desktop.preview-annotate-handoff.v1')
+        ? new BroadcastChannel('icebath.desktop.preview-annotate-handoff.v1')
         : null
 
     if (!desktopBridge && !channel) {
@@ -800,7 +800,7 @@ function LegacyGroupChatWorkspace({ group, members, onBack, visible = true }: Gr
       }
 
       const destination = request.destination
-      const sourceWindowId = window.sessionStorage.getItem('hermes.desktop.previewAnnotate.windowId')?.trim()
+      const sourceWindowId = window.sessionStorage.getItem('icebath.desktop.previewAnnotate.windowId')?.trim()
 
       if (
         !sourceWindowId ||

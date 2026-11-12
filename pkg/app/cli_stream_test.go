@@ -106,17 +106,19 @@ func configuredCLI(t *testing.T, display map[string]any, o CLIOptions) *CLI {
 	return c
 }
 
-func thinkTagCLI() (*CLI, *[]string, *[]string) {
+func thinkTagCLI(t *testing.T) (*CLI, *[]string, *[]string) {
 	c := bareCLI()
 	emitted, reasoning := &[]string{}, &[]string{}
-	c.emitStreamTextHook = func(text string) { *emitted = append(*emitted, text) }
-	c.streamReasoningDeltaHook = func(text string) { *reasoning = append(*reasoning, text) }
+	prevEmit, prevReasoning := emitStreamTextSink, streamReasoningSink
+	t.Cleanup(func() { emitStreamTextSink, streamReasoningSink = prevEmit, prevReasoning })
+	emitStreamTextSink = func(_ *CLI, text string) { *emitted = append(*emitted, text) }
+	streamReasoningSink = func(_ *CLI, text string) { *reasoning = append(*reasoning, text) }
 	return c, emitted, reasoning
 }
 
 func TestThinkTagInProse(t *testing.T) {
 	t.Run("test_think_tag_mid_sentence", func(t *testing.T) {
-		c, emitted, _ := thinkTagCLI()
+		c, emitted, _ := thinkTagCLI(t)
 		for _, tok := range []string{"  1. Fix reasoning mode in eval ", "(/think not producing ", "<think>", " tags — ~2% gap)", "\n  2. Launch production"} {
 			c.streamDelta(tok)
 		}
@@ -129,7 +131,7 @@ func TestThinkTagInProse(t *testing.T) {
 		}
 	})
 	t.Run("test_think_tag_in_backticks", func(t *testing.T) {
-		c, _, _ := thinkTagCLI()
+		c, _, _ := thinkTagCLI(t)
 		c.streamDelta("Use the `<think>` tag for reasoning")
 		if c.inReasoningBlock {
 			t.Fatal("a tag in backticks must not start reasoning")
@@ -139,7 +141,7 @@ func TestThinkTagInProse(t *testing.T) {
 
 func TestRealReasoningBlock(t *testing.T) {
 	t.Run("test_think_at_start_of_stream", func(t *testing.T) {
-		c, emitted, _ := thinkTagCLI()
+		c, emitted, _ := thinkTagCLI(t)
 		c.streamDelta("<think>")
 		if !c.inReasoningBlock {
 			t.Fatal("a leading tag must open the reasoning block")
@@ -156,14 +158,14 @@ func TestRealReasoningBlock(t *testing.T) {
 		}
 	})
 	t.Run("test_think_after_newline", func(t *testing.T) {
-		c, emitted, _ := thinkTagCLI()
+		c, emitted, _ := thinkTagCLI(t)
 		c.streamDelta("Some preamble\n<think>")
 		if !c.inReasoningBlock || !strings.Contains(strings.Join(*emitted, ""), "Some preamble") {
 			t.Fatalf("block %v emitted %q", c.inReasoningBlock, *emitted)
 		}
 	})
 	t.Run("test_think_with_only_whitespace_before", func(t *testing.T) {
-		c, _, _ := thinkTagCLI()
+		c, _, _ := thinkTagCLI(t)
 		c.streamDelta("   <think>")
 		if !c.inReasoningBlock {
 			t.Fatal("whitespace before the tag still opens the block")
@@ -171,7 +173,7 @@ func TestRealReasoningBlock(t *testing.T) {
 	})
 	t.Run("test_reasoning_tags_are_case_insensitive", func(t *testing.T) {
 		for _, tag := range []string{"THINK", "Think", "ThInK", "THOUGHT", "REASONING", "Thinking"} {
-			c, emitted, _ := thinkTagCLI()
+			c, emitted, _ := thinkTagCLI(t)
 			c.streamDelta("<" + tag + ">hidden reasoning</" + tag + ">Visible answer")
 			if c.inReasoningBlock {
 				t.Fatalf("%s left the block open", tag)
@@ -187,7 +189,7 @@ func TestFlushRecovery(t *testing.T) {
 	t.Run("test_flush_recovers_buffered_content", func(t *testing.T) {
 		recordPrints(t)
 		t.Setenv("COLUMNS", "80")
-		c, emitted, _ := thinkTagCLI()
+		c, emitted, _ := thinkTagCLI(t)
 		c.inReasoningBlock = true
 		c.streamPrefilt = " tags — ~2% gap)\n  2. Launch production"
 		c.streamBoxOpened = true
@@ -592,7 +594,9 @@ func TestReasoningDisplayModeSelection(t *testing.T) {
 		c := bareCLI()
 		c.showReasoning, c.streamingEnabled = true, true
 		var got []string
-		c.streamReasoningDeltaHook = func(text string) { got = append(got, text) }
+		prevReasoning := streamReasoningSink
+		t.Cleanup(func() { streamReasoningSink = prevReasoning })
+		streamReasoningSink = func(_ *CLI, text string) { got = append(got, text) }
 		cb := c.currentReasoningCallback()
 		if cb == nil {
 			t.Fatal("no callback")

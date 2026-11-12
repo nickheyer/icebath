@@ -11,7 +11,7 @@ import (
 )
 
 // Designated requirement identifier that keeps TCC identity stable across managed Python generations
-const managedPythonIdentifier = "com.nousresearch.icebath.managed-python"
+const managedPythonIdentifier = "ai.icebath.managed-python"
 
 // Platform the signer runs on, replaced by tests the way they patch platform system
 var signingPlatform = func() string { return runtime.GOOS }

@@ -13,7 +13,7 @@ import (
 func TestAutomaticRepairNeverUndoesAWithoutThatLandedAfterItsRead(t *testing.T) {
 	b := declBlockingSetup(t)
 	repo := RepoRoot()
-	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences, "pyproject.toml")))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
 	peSwap(t, &syncFeaturePolicy, func(context.Context, []string, bool) ([]string, []string, error) { return nil, nil, nil })
 	peSwap(t, &ConfiguredFeaturesMissingDeps, func(context.Context) []ConfiguredFeatureGap {
 		return []ConfiguredFeatureGap{{Feature: "Matrix", Hint: "Run `icebath setup`.", Extra: "matrix"}}

@@ -14,7 +14,7 @@ import { atom } from 'nanostores'
 
 import { persistString, storedString } from '@/lib/storage'
 
-const KEY = 'hermes.desktop.user-bubble-transparency.v1'
+const KEY = 'icebath.desktop.user-bubble-transparency.v1'
 
 export const $userBubbleTransparency = atom<number>(
   typeof window === 'undefined' ? TRANSLUCENCY_MIN : clampIntensity(storedString(KEY))

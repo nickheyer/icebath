@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -77,6 +79,17 @@ func UnknownMethodMessage(method string) string {
 	return "unknown method: " + method + " — not available on this Icebath backend"
 }
 
+// Topic modules in the order importing the contracts package runs them, which fixes the catalog order
+var contractModules = []string{"billing_delegation_pets", "config_free_tier_control", "connectors_operation", "connectors",
+	"server_requests", "display", "events", "groups_bot_relay", "i18n", "liveness", "machine",
+	"profiles_vault_complete_foreign_subagents", "projects_pets", "prompt_voice", "sessions", "tools_commands",
+	"tools_mcp_plugins", "canonical", "canonical_sessions", "canonical_projections"}
+
+// Where one entry was declared, its topic module rank and source line
+type declaredAt struct{ module, line, seq int }
+
+var declarations = map[any]declaredAt{}
+
 // Adds an entry under its name, panicking when the table already declares that name
 func declare[T any](table map[string]*T, name string, entry *T) {
 	contractsMu.Lock()
@@ -85,7 +98,49 @@ func declare[T any](table map[string]*T, name string, entry *T) {
 		panic("contract declared twice: " + name)
 	}
 	table[name] = entry
+	at := declaredAt{module: len(contractModules), seq: len(declarations)}
+	if _, file, line, ok := runtime.Caller(2); ok {
+		at.line = line
+		module := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(file), "contracts_"), ".go")
+		if i := slices.Index(contractModules, module); i >= 0 {
+			at.module = i
+		}
+	}
+	declarations[entry] = at
 }
+
+// Entries of one table in registration order, the order the Python registry dicts keep
+func declaredOrder[T any](table map[string]*T) []*T {
+	contractsMu.RLock()
+	defer contractsMu.RUnlock()
+	out := make([]*T, 0, len(table))
+	for _, entry := range table {
+		out = append(out, entry)
+	}
+	slices.SortFunc(out, func(a, b *T) int {
+		x, y := declarations[a], declarations[b]
+		if x.module != y.module {
+			return x.module - y.module
+		}
+		if x.line != y.line {
+			return x.line - y.line
+		}
+		return x.seq - y.seq
+	})
+	return out
+}
+
+// Client methods in registration order
+func MethodsInOrder() []*MethodContract { return declaredOrder(Methods) }
+
+// Canonical methods in registration order
+func CanonicalMethodsInOrder() []*MethodContract { return declaredOrder(CanonicalMethods) }
+
+// Server requests in registration order
+func ServerRequestsInOrder() []*ServerRequestContract { return declaredOrder(ServerRequests) }
+
+// Events in registration order
+func EventsInOrder() []*EventContract { return declaredOrder(Events) }
 
 // Declares a client method contract
 func Method(name string, params, result *pydantic.Model, doc string) *MethodContract {

@@ -3,15 +3,20 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -44,6 +49,7 @@ type PlatformHome struct {
 
 // CompleterSources supplies the live data the slash completer reads per keystroke
 type CompleterSources struct {
+	Ctx                context.Context
 	Registry           *Registry
 	Cfg                func() config.Tree
 	Skills             func() map[string]SkillInfo
@@ -129,6 +135,76 @@ func fileSizeLabel(path string) string {
 	return fmt.Sprintf("%.1fG", float64(size)/(1024*1024*1024))
 }
 
+func (c *SlashCompleter) ctx() context.Context {
+	if c.src.Ctx == nil {
+		return context.Background()
+	}
+	return c.src.Ctx
+}
+
+// CLI config loader the personality completer reads, assigned in wiring with the app loader
+var LoadCLIConfig func(ctx context.Context) map[string]any
+
+// Config file whose signature keys the personality memo
+var getConfigPath = func(ctx context.Context) string { return home.ConfigPath(home.Dir(ctx)) }
+
+var (
+	personalitiesMu   sync.Mutex
+	personalitiesMemo *personalitiesMemoEntry
+)
+
+type personalitiesMemoEntry struct {
+	sig           []any
+	personalities map[string]any
+}
+
+// Personalities of the CLI config memoised on config path and cache version so a disk edit reloads them
+func personalitiesFromCLIConfig(ctx context.Context) map[string]any {
+	cfgPath := getConfigPath(ctx)
+	sig := []any{nil, nil, nil, nil, nil}
+	if version, err := config.ConfigCacheVersion(ctx, cfgPath); err == nil {
+		sig = append([]any{cfgPath}, version...)
+	}
+	personalitiesMu.Lock()
+	defer personalitiesMu.Unlock()
+	if personalitiesMemo == nil || !reflect.DeepEqual(personalitiesMemo.sig, sig) {
+		personalitiesMemo = &personalitiesMemoEntry{sig: sig, personalities: AvailablePersonalities(config.Tree(LoadCLIConfig(ctx)))}
+	}
+	return personalitiesMemo.personalities
+}
+
+// Runs a completion generator and keeps what it produced before a panic ended the stream
+func quiet(gen func(sub string, yield func(Completion))) func(string) []Completion {
+	return func(sub string) (out []Completion) {
+		defer func() { _ = recover() }()
+		gen(sub, func(c Completion) { out = append(out, c) })
+		return out
+	}
+}
+
+// Yields every completion of a slice producing source
+func yieldAll(source func(string) []Completion) func(string, func(Completion)) {
+	return func(sub string, yield func(Completion)) {
+		for _, c := range source(sub) {
+			yield(c)
+		}
+	}
+}
+
+// Provider result, the zero value when the provider is unset or panics
+func callProvider[T any](provider func() T) (out T) {
+	if provider == nil {
+		return out
+	}
+	defer func() {
+		if recover() != nil {
+			var zero T
+			out = zero
+		}
+	}()
+	return provider()
+}
+
 func (c *SlashCompleter) cfg() config.Tree {
 	if c.src.Cfg == nil {
 		return config.Tree{}
@@ -143,13 +219,19 @@ func (c *SlashCompleter) skinCompletions(sub string) []Completion {
 	return prefixCompletions(c.src.Skins(), sub, true)
 }
 
-func (c *SlashCompleter) personalityCompletions(sub string) []Completion {
-	rows := []NameMeta{{"none", "clear personality overlay"}}
-	personalities := AvailablePersonalities(c.cfg())
-	for _, name := range PersonalityNames(personalities) {
-		rows = append(rows, NameMeta{name, DescribePersonality(personalities[name], 50)})
+// None plus the configured personalities matching the typed prefix, described lazily per row
+func personalityCompletions(ctx context.Context, sub string, yield func(Completion)) {
+	personalities := personalitiesFromCLIConfig(ctx)
+	lowered := strings.ToLower(sub)
+	emit := func(name, meta string) {
+		if strings.HasPrefix(name, lowered) && name != lowered {
+			yield(completion(name, sub, name, meta))
+		}
 	}
-	return prefixCompletions(rows, sub, true)
+	emit("none", "clear personality overlay")
+	for _, name := range PersonalityNames(personalities) {
+		emit(name, DescribePersonality(personalities[name], 50))
+	}
 }
 
 func (c *SlashCompleter) toolsCompletions(sub string) []Completion {
@@ -225,7 +307,7 @@ func dirCompletions(expanded, word string, limit int, textFor func(string) strin
 			searchDir = "."
 		}
 	}
-	entries, err := os.ReadDir(searchDir)
+	entries, err := listDir(searchDir)
 	if err != nil {
 		return nil
 	}
@@ -258,6 +340,9 @@ func dirCompletions(expanded, word string, limit int, textFor func(string) strin
 	}
 	return out
 }
+
+// Directory listing the path completer reads, the real filesystem in production
+var listDir = os.ReadDir
 
 func expandUser(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") {
@@ -340,12 +425,7 @@ func ScorePath(filePath, query string) int {
 	return 25
 }
 
-func (c *SlashCompleter) callSkills() map[string]SkillInfo {
-	if c.src.Skills == nil {
-		return nil
-	}
-	return c.src.Skills()
-}
+func (c *SlashCompleter) callSkills() map[string]SkillInfo { return callProvider(c.src.Skills) }
 
 func (c *SlashCompleter) commandAllowed(cmd string) bool {
 	return c.src.CommandAllowed == nil || c.src.CommandAllowed(cmd)
@@ -526,14 +606,20 @@ func (c *SlashCompleter) fuzzyFileCompletions(word, query string, limit int) []C
 }
 
 // Plugin command names and descriptions, the provider's answer else this process's plugin registry
-func (c *SlashCompleter) pluginCommands() map[string]string {
+func (c *SlashCompleter) pluginCommands() (out map[string]string) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Debug("plugin command completion unavailable", "panic", r)
+			out = map[string]string{}
+		}
+	}()
 	if c.src.PluginCommands != nil {
 		if found := c.src.PluginCommands(); found != nil {
 			return found
 		}
 	}
-	out := map[string]string{}
-	for name, info := range plugins.GetPluginCommands(context.Background()) {
+	out = map[string]string{}
+	for name, info := range plugins.GetPluginCommands(c.ctx()) {
 		out[name] = info.Description
 	}
 	return out
@@ -542,13 +628,13 @@ func (c *SlashCompleter) pluginCommands() map[string]string {
 func (c *SlashCompleter) dynamic(base string) (func(string) []Completion, bool, bool) {
 	switch base {
 	case "/skin":
-		return c.skinCompletions, true, true
+		return quiet(yieldAll(c.skinCompletions)), true, true
 	case "/personality":
-		return c.personalityCompletions, true, true
+		return quiet(func(sub string, yield func(Completion)) { personalityCompletions(c.ctx(), sub, yield) }), true, true
 	case "/tools":
-		return c.toolsCompletions, false, true
+		return quiet(yieldAll(c.toolsCompletions)), false, true
 	case "/handoff":
-		return c.handoffCompletions, false, true
+		return quiet(yieldAll(c.handoffCompletions)), false, true
 	}
 	return nil, false, false
 }
@@ -564,12 +650,12 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 		}
 		return nil
 	}
-	parts := strings.SplitN(text, " ", 2)
-	base := strings.ToLower(parts[0])
+	parts := pystr.SplitWhitespace(text, 1)
+	base := pystr.Lower(parts[0])
 	if len(parts) > 1 || strings.HasSuffix(text, " ") {
 		sub := ""
 		if len(parts) > 1 {
-			sub = strings.TrimLeft(parts[1], " ")
+			sub = parts[1]
 		}
 		firstArg := !strings.Contains(sub, " ")
 		if c.isSkillCommand(base) {
@@ -603,8 +689,7 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 			}
 		}
 	}
-	if c.src.Bundles != nil {
-		bundles := c.src.Bundles()
+	if bundles := callProvider(c.src.Bundles); bundles != nil {
 		for _, cmd := range sortedKeys(bundles) {
 			if strings.HasPrefix(cmd[1:], word) {
 				info := bundles[cmd]
@@ -639,53 +724,107 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 	return out
 }
 
-// Inline ghost text for the slash command or subcommand being typed, empty when none
-func (c *SlashCompleter) Suggest(text string) string {
-	if !strings.HasPrefix(text, "/") {
-		return ""
+// SlashCommandAutoSuggest ghosts slash commands and subcommands and falls back to a history suggester
+type SlashCommandAutoSuggest[B, D any] struct {
+	history   func(B, D) (string, bool)
+	completer *SlashCompleter
+}
+
+// Suggester over an optional history source and an optional completer whose filter and skill tables it reuses
+func NewSlashCommandAutoSuggest[B, D any](history func(B, D) (string, bool), completer *SlashCompleter) *SlashCommandAutoSuggest[B, D] {
+	return &SlashCommandAutoSuggest[B, D]{history: history, completer: completer}
+}
+
+func (s *SlashCommandAutoSuggest[B, D]) allowed(cmd string) bool {
+	return s.completer == nil || s.completer.commandAllowed(cmd)
+}
+
+func (s *SlashCommandAutoSuggest[B, D]) historySuggestion(b B, doc D) (string, bool) {
+	if s.history == nil {
+		return "", false
 	}
-	parts := strings.SplitN(text, " ", 2)
-	base := strings.ToLower(parts[0])
+	return s.history(b, doc)
+}
+
+// Ghost text for the text before the cursor, ok false when nothing is suggested
+func (s *SlashCommandAutoSuggest[B, D]) GetSuggestion(b B, doc D, text string) (string, bool) {
+	if !strings.HasPrefix(text, "/") {
+		return s.historySuggestion(b, doc)
+	}
+	parts := pystr.SplitWhitespace(text, 1)
+	base := pystr.Lower(parts[0])
 	if len(parts) == 1 && !strings.HasSuffix(text, " ") {
-		word := strings.ToLower(text[1:])
-		names := CommandNames(c.src.Registry)
-		sort.SliceStable(names, func(i, j int) bool { return len(names[i]) < len(names[j]) })
+		word := pystr.Lower(text[1:])
+		reg := Default
+		if s.completer != nil {
+			reg = s.completer.src.Registry
+		}
+		names := commandsInOrder(reg)
+		sort.SliceStable(names, func(i, j int) bool { return utf8.RuneCountInString(names[i]) < utf8.RuneCountInString(names[j]) })
 		for _, cmd := range names {
 			name := cmd[1:]
-			if c.commandAllowed(cmd) && strings.HasPrefix(name, word) && name != word {
-				return name[len(word):]
+			if s.allowed(cmd) && strings.HasPrefix(name, word) && name != word {
+				return name[len(word):], true
 			}
 		}
-		return ""
+		return "", false
 	}
 	sub := ""
 	if len(parts) > 1 {
-		sub = strings.TrimLeft(parts[1], " ")
+		sub = parts[1]
 	}
-	subLower := strings.ToLower(sub)
-	if c.isSkillCommand(base) {
-		for _, comp := range c.stackedSkillCompletions(text) {
+	subLower := pystr.Lower(sub)
+	if s.completer != nil && s.completer.isSkillCommand(base) {
+		for _, comp := range s.completer.stackedSkillCompletions(text) {
 			remainder := comp.Text
-			if comp.Start < 0 {
-				r := []rune(comp.Text)
-				if -comp.Start <= len(r) {
-					remainder = string(r[-comp.Start:])
-				}
+			if comp.Start != 0 {
+				remainder = pySliceFrom(comp.Text, -comp.Start)
 			}
-			if strings.TrimSpace(remainder) != "" {
-				return remainder
+			if pystr.Strip(remainder) != "" {
+				return remainder, true
 			}
 		}
 	}
-	if !c.commandAllowed(base) {
-		return ""
+	if !s.allowed(base) {
+		return "", false
 	}
 	if !strings.Contains(sub, " ") {
-		for _, s := range Subcommands(c.src.Registry)[base] {
-			if strings.HasPrefix(s, subLower) && s != subLower {
-				return s[len(sub):]
+		reg := Default
+		if s.completer != nil {
+			reg = s.completer.src.Registry
+		}
+		for _, cand := range Subcommands(reg)[base] {
+			if strings.HasPrefix(cand, subLower) && cand != subLower {
+				return pySliceFrom(cand, utf8.RuneCountInString(sub)), true
 			}
 		}
 	}
-	return ""
+	return s.historySuggestion(b, doc)
+}
+
+// Flat command table keys in category order, a repeated key keeping its first position
+func commandsInOrder(r *Registry) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, g := range CommandsByCategory(r) {
+		for _, row := range g.Rows {
+			if !seen[row.Command] {
+				seen[row.Command] = true
+				out = append(out, row.Command)
+			}
+		}
+	}
+	return out
+}
+
+// Code point suffix from index n as Python slicing gives it, empty past the end
+func pySliceFrom(s string, n int) string {
+	r := []rune(s)
+	if n >= len(r) {
+		return ""
+	}
+	if n < 0 {
+		n = max(len(r)+n, 0)
+	}
+	return string(r[n:])
 }

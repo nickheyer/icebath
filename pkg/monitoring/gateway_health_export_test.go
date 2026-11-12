@@ -140,20 +140,6 @@ func TestGatewayHealthMetricsReachLoopbackCollector(t *testing.T) {
 	}
 }
 
-func TestStartGatewayHealthExportReportsOTLPUnavailableWhenSDKMissing(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	saved := requireGatewayHealthSDK
-	t.Cleanup(func() { requireGatewayHealthSDK = saved })
-	requireGatewayHealthSDK = func() (*gatewayHealthSDK, error) { return nil, &OTLPUnavailable{Msg: "missing"} }
-	runtime := StartGatewayHealthExport(map[string]any{"monitoring": map[string]any{
-		"export":                map[string]any{"otlp": map[string]any{"enabled": true, "endpoint": "http://127.0.0.1:4318"}},
-		"gateway_health_export": map[string]any{"enabled": true, "metrics_enabled": true, "diagnostic_events_enabled": false},
-	}})
-	if runtime.Enabled || runtime.Reason != "otlp_unavailable" {
-		t.Fatalf("runtime %+v", runtime)
-	}
-}
-
 func TestRegisteredObservableMetricNamesCoverSnapshotMetrics(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	saved := GatewayReadRuntimeStatus

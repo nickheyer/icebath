@@ -12,11 +12,11 @@ const webappLaunchScript = "\n" +
 	"  fail();\n" +
 	"} else {\n" +
 	"  fetch(`${basePath}/webapp/window-session`, {\n" +
-	"    method: 'POST', credentials: 'same-origin', headers: {'X-Hermes-Window-Ticket': ticket}\n" +
+	"    method: 'POST', credentials: 'same-origin', headers: {'X-Icebath-Window-Ticket': ticket}\n" +
 	"  }).then(response => response.ok ? response.json() : Promise.reject()).then(({token}) => {\n" +
 	"    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error();\n" +
 	"    try {\n" +
-	"      sessionStorage.setItem(`hermes.webapp.session.v1:${JSON.stringify([location.origin, basePath])}`, token);\n" +
+	"      sessionStorage.setItem(`icebath.webapp.session.v1:${JSON.stringify([location.origin, basePath])}`, token);\n" +
 	"    } catch {\n" +
 	"      show('This browser does not let the Webapp keep its sign-in in this tab. Allow site data for this '\n" +
 	"        + 'address, then run icebath webapp again.');\n" +
@@ -39,7 +39,7 @@ const webappWindowScript = "\n" +
 	"if (!/^[a-f0-9-]{36}$/.test(id)) {\n" +
 	"  status.textContent = 'Open this window from an authorized Hermes Webapp tab.';\n" +
 	"} else {\n" +
-	"  const channel = new BroadcastChannel(`hermes.webapp.window:${id}`);\n" +
+	"  const channel = new BroadcastChannel(`icebath.webapp.window:${id}`);\n" +
 	"  let receiving = false;\n" +
 	"  let finished = false;\n" +
 	"  const controller = new AbortController();\n" +
@@ -62,13 +62,13 @@ const webappWindowScript = "\n" +
 	"    try {\n" +
 	"      const response = await fetch(`${basePath}/webapp/window-session`, {\n" +
 	"        method: 'POST', credentials: 'same-origin',\n" +
-	"        headers: {'X-Hermes-Window-Ticket': ticket}, signal: controller.signal\n" +
+	"        headers: {'X-Icebath-Window-Ticket': ticket}, signal: controller.signal\n" +
 	"      });\n" +
 	"      if (!response.ok) throw new Error('Window authorization expired. Open a new window from the original tab.');\n" +
 	"      const {token} = await response.json();\n" +
 	"      if (finished) return;\n" +
 	"      if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('Invalid window authorization.');\n" +
-	"      sessionStorage.setItem(`hermes.webapp.session.v1:${JSON.stringify([location.origin, basePath])}`, token);\n" +
+	"      sessionStorage.setItem(`icebath.webapp.session.v1:${JSON.stringify([location.origin, basePath])}`, token);\n" +
 	"      const target = new URL(`${basePath}/`, location.origin);\n" +
 	"      target.search = params.get('query') || '';\n" +
 	"      target.hash = params.get('route') || '/';\n" +

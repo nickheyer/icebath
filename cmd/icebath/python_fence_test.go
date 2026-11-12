@@ -12,9 +12,6 @@ import (
 var pythonSourceAllowList = []string{
 	"pkg/plugins/hostchild/",
 	"pkg/plugins/testdata/",
-	"pkg/pm/venv_entry.py",
-	"pkg/pm/bundle_scripts/",
-	"pkg/browser/browser_use_shot.py",
 }
 
 // Directory holding go.mod, found by walking upward from the package directory

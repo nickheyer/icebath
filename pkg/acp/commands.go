@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strconv"
 	"strings"
 	"sync"
@@ -228,7 +229,7 @@ func (a *HermesACPAgent) cmdTools(ctx context.Context, args string, st *SessionS
 	surface := append([]map[string]any{}, defs...)
 	names := map[string]bool{}
 	for _, t := range surface {
-		if fn, ok := t["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(t["function"]); ok {
 			names[pyStr(fn["name"])] = true
 		}
 	}
@@ -238,7 +239,7 @@ func (a *HermesACPAgent) cmdTools(ctx context.Context, args string, st *SessionS
 	}
 	lines := []string{fmt.Sprintf("Available tools (%d):", len(surface))}
 	for _, t := range surface {
-		fn, _ := t["function"].(map[string]any)
+		fn, _ := pyjson.Dict(t["function"])
 		name, desc := "?", ""
 		if v, ok := fn["name"]; ok {
 			name = pyStr(v)

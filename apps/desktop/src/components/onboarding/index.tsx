@@ -598,7 +598,7 @@ const NOUS_FALLBACK: OAuthProvider = {
   status: { logged_in: false }
 }
 
-const SHOW_ALL_KEY = 'hermes-onboarding-show-all-v1'
+const SHOW_ALL_KEY = 'icebath-onboarding-show-all-v1'
 
 const readShowAll = () => {
   try {

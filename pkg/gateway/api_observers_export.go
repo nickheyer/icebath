@@ -47,6 +47,16 @@ func RowInt(row *pyjson.Object, key string) *int64 { return rowInt(row, key) }
 // Live session the authority holds for the id and whether it holds one
 func (a *SessionAuthority) Live(sessionID string) (*LiveSession, bool) { return a.live(sessionID) }
 
+// Viewers subscribed to the live session of the id, read under the authority lock, zero when none is live
+func (a *SessionAuthority) SubscriberCount(sessionID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if live := a.Sessions[sessionID]; live != nil {
+		return len(live.Subscribers)
+	}
+	return 0
+}
+
 // Prefill messages a local session policy freezes for the session
 func SessionPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, sessionID string) ([]any, error) {
 	return sessionPrefill(ctx, a, policy, sessionID)

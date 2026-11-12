@@ -105,7 +105,7 @@ func platformsReport(ctx context.Context, cfg *gateway.GatewayConfig, configFile
 		}
 	}
 	return append(out, "", "  "+t("cli.gateway_status.conversations_persist", nil), "", "  "+t("cli.gateway_status.to_start", nil),
-		"    python cli.py --gateway", "", "  "+t("cli.gateway_status.config_file", map[string]any{"path": configFile}), "")
+		"    icebath gateway run", "", "  "+t("cli.gateway_status.config_file", map[string]any{"path": configFile}), "")
 }
 
 // Gateway config loader of the /platforms report, a raised panic turned into the load error, swapped by tests

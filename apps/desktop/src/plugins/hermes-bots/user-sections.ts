@@ -423,4 +423,4 @@ export function groupRowsBySection<TRow extends { bot?: RosterRow } | RosterRow>
 // message. `dataTransfer.types` is readable during dragover (the DATA itself
 // is not, by design), so a drop target can still light up correctly.
 
-export const BOT_DRAG_MIME = 'application/x-hermes-bot-key'
+export const BOT_DRAG_MIME = 'application/x-icebath-bot-key'

@@ -447,12 +447,12 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 }
 
 // Runs a per profile safety net over every sibling profile against its own snapshot, failures logged and skipped
-func restoreAllProfiles(profileSnapshots *pyjson.Object, invokingHome, what string, restore func(snapID, h string) (*pyjson.Object, error)) []*pyjson.Object {
+func restoreAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, invokingHome, what string, restore func(snapID, h string) (*pyjson.Object, error)) []*pyjson.Object {
 	restored := []*pyjson.Object{}
 	if profileSnapshots == nil || profileSnapshots.Len() == 0 {
 		return restored
 	}
-	invokingHome = restoreHome(context.Background(), invokingHome)
+	invokingHome = restoreHome(ctx, invokingHome)
 	byName := map[string]string{}
 	for _, pair := range SiblingProfileHomes(invokingHome) {
 		byName[pair[0]] = pair[1]
@@ -479,12 +479,12 @@ func restoreAllProfiles(profileSnapshots *pyjson.Object, invokingHome, what stri
 
 // Config model settings safety net of every sibling profile, one result per restored profile
 func RestoreConfigModelSettingsAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, invokingHome string) []*pyjson.Object {
-	return restoreAllProfiles(profileSnapshots, invokingHome, "Config model-settings restore check", func(snapID, h string) (*pyjson.Object, error) {
+	return restoreAllProfiles(ctx, profileSnapshots, invokingHome, "Config model-settings restore check", func(snapID, h string) (*pyjson.Object, error) {
 		return RestoreConfigModelSettingsIfRewritten(ctx, snapID, h)
 	})
 }
 
 // Cron jobs safety net of every sibling profile, one result per restored profile
 func RestoreCronJobsAllProfiles(profileSnapshots *pyjson.Object, invokingHome string) []*pyjson.Object {
-	return restoreAllProfiles(profileSnapshots, invokingHome, "Cron restore check", RestoreCronJobsIfEmptied)
+	return restoreAllProfiles(context.Background(), profileSnapshots, invokingHome, "Cron restore check", RestoreCronJobsIfEmptied)
 }

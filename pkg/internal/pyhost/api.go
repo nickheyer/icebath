@@ -34,6 +34,8 @@ var (
 	pyObjectIsSubclass     func(o, cls uintptr) int32
 	pyObjectGenericGetAttr func(o, name uintptr) uintptr
 	pyObjectIsTrue         func(o uintptr) int32
+	pyObjectGetIter        func(o uintptr) uintptr
+	pyIterNext             func(it uintptr) uintptr
 	pyCallableCheck        func(o uintptr) int32
 	pyTypeGetFlags         func(t uintptr) uint32
 	pyTypeFromSpec         func(spec uintptr) uintptr
@@ -130,6 +132,8 @@ func functionTable() []symbol {
 		{&pyObjectIsSubclass, "PyObject_IsSubclass"},
 		{&pyObjectGenericGetAttr, "PyObject_GenericGetAttr"},
 		{&pyObjectIsTrue, "PyObject_IsTrue"},
+		{&pyObjectGetIter, "PyObject_GetIter"},
+		{&pyIterNext, "PyIter_Next"},
 		{&pyCallableCheck, "PyCallable_Check"},
 		{&pyTypeGetFlags, "PyType_GetFlags"},
 		{&pyTypeFromSpec, "PyType_FromSpec"},

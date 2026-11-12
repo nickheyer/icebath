@@ -17,6 +17,7 @@ import (
 // One started hook process with its captured streams
 type shellHookRun struct {
 	cmd            *exec.Cmd
+	child          *tools.CmdChild
 	stdout, stderr bytes.Buffer
 	readers        []*os.File
 	done           chan struct{}
@@ -60,7 +61,7 @@ func startShellHookProcess(argv []string, env map[string]string, stdin []byte) (
 		errR.Close()
 		return nil, err
 	}
-	run := &shellHookRun{cmd: cmd, readers: []*os.File{outR, errR}, done: make(chan struct{})}
+	run := &shellHookRun{cmd: cmd, child: tools.WatchCmd(cmd), readers: []*os.File{outR, errR}, done: make(chan struct{})}
 	go func() {
 		_, _ = inW.Write(stdin)
 		inW.Close()
@@ -71,7 +72,7 @@ func startShellHookProcess(argv []string, env map[string]string, stdin []byte) (
 	go func() { defer wg.Done(); _, _ = io.Copy(&run.stderr, errR) }()
 	go func() {
 		wg.Wait()
-		_ = cmd.Wait()
+		<-run.child.Done()
 		outR.Close()
 		errR.Close()
 		close(run.done)
@@ -81,7 +82,7 @@ func startShellHookProcess(argv []string, env map[string]string, stdin []byte) (
 
 // Kills the hook's whole tree, then drains for at most a second before abandoning held pipes
 func (r *shellHookRun) reap() {
-	tools.KillProcessTree(r.cmd.Process.Pid)
+	tools.KillChildTree(r.child, 0)
 	select {
 	case <-r.done:
 	case <-time.After(time.Second):

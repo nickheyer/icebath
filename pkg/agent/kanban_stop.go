@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -39,7 +40,7 @@ func kanbanToolCallName(tc any) string {
 		return call.Function.Name
 	case map[string]any:
 		name := call["name"]
-		if fn, ok := call["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(call["function"]); ok {
 			name = fn["name"]
 		}
 		if !pyTruthy(name) {

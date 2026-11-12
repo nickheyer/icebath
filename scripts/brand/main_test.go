@@ -92,9 +92,12 @@ func framesOf(t *testing.T, path string) []*image.NRGBA {
 		imgs, _, err = readICO(data)
 	case ".icns":
 		var reps map[string]image.Image
-		reps, err = readICNS(data)
-		for _, k := range icnsTypes {
-			imgs = append(imgs, reps[k.kind])
+		var order []string
+		reps, order, err = readICNS(data)
+		for _, kind := range order {
+			if img, ok := reps[kind]; ok {
+				imgs = append(imgs, img)
+			}
 		}
 	default:
 		var img image.Image
@@ -199,7 +202,7 @@ var tileRels = []string{
 	"apps/desktop/assets/appx/Square44x44Logo.targetsize-256_altform-lightunplated.png", "apps/desktop/assets/appx/Wide310x150Logo.scale-200.png",
 }
 
-var unbrandedRels = []string{"web/public/favicon.ico", "apps/bootstrap-installer/src-tauri/icons/32x32.png", "apps/bootstrap-installer/public/icebath-mark.png"}
+var unbrandedRels = []string{"web/public/favicon.ico", "apps/bootstrap-installer/build/appicon.png", "apps/bootstrap-installer/public/icebath-mark.png"}
 
 func TestRendererCanaryRuleIsTheCanonicalOne(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join(sourceRoot(t), "pkg", "selfupdate", "channel.go"))
@@ -532,7 +535,7 @@ func TestWriteStatusIncludesEveryTarget(t *testing.T) {
 }
 
 func TestCheckAcceptsWrittenOutputsAndReportsMissingOnes(t *testing.T) {
-	targets := subset("apps/desktop/assets/icon.png", "apps/desktop/assets/icon.icns", "web/public/favicon.ico",
+	targets := subset("apps/desktop/assets/icon.png", "apps/desktop/assets/icon.icns", "web/public/favicon.ico", "apps/bootstrap-installer/build/darwin", "apps/bootstrap-installer/build/windows",
 		"apps/desktop/packaging/icebath-dmg.tiff", "apps/desktop/src/assets/tiers", "pkg/app/banner_art.go")
 	out := generate(t, stableTag, "", targets)
 	stable, desktop, err := buildArt(sourceRoot(t), envOf(stableTag, ""))
@@ -557,7 +560,7 @@ func TestTiffPagesRoundTripThroughLZW(t *testing.T) {
 		t.Fatal(err)
 	}
 	for scale, dpi := range map[int]uint32{1: 72, 2: 144} {
-		page := src.dmgBackground(scale)
+		page := src.dmgBackground(769*scale, 457*scale, float64(scale))
 		data := encodeTIFF([]tiffPage{{page, dpi}})
 		got, err := tiff.Decode(bytes.NewReader(data))
 		if err != nil {
@@ -570,7 +573,7 @@ func TestTiffPagesRoundTripThroughLZW(t *testing.T) {
 			}
 		}
 	}
-	sizes, err := tiffPageSizes(encodeTIFF([]tiffPage{{src.dmgBackground(1), 72}, {src.dmgBackground(2), 144}}))
+	sizes, err := tiffPageSizes(encodeTIFF([]tiffPage{{src.dmgBackground(769, 457, 1), 72}, {src.dmgBackground(1538, 914, 2), 144}}))
 	if err != nil || len(sizes) != 2 || sizes[0] != [2]int{769, 457} || sizes[1] != [2]int{1538, 914} {
 		t.Fatalf("pages %v %v", sizes, err)
 	}
@@ -616,5 +619,26 @@ func TestBannerArtKeepsTheShapeTheBannersExpect(t *testing.T) {
 	code := src.bannerGo()
 	if formatted, err := format.Source(code); err != nil || !bytes.Equal(formatted, code) {
 		t.Fatalf("banner Go source is not gofmt clean: %v", err)
+	}
+}
+
+func TestIcnsArgbChunksRunLengthRoundTrip(t *testing.T) {
+	src, err := loadSources(sourceRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, side := range []int{16, 32} {
+		img := resize(src.volumeIcon(1024), side, side)
+		body := encodeARGB(img)
+		back, err := decodeARGB(body, side)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(back.Pix, img.Pix) {
+			t.Fatalf("%d px ARGB chunk does not decode to the pixels written", side)
+		}
+	}
+	if got := encodeARGB(image.NewNRGBA(image.Rect(0, 0, 16, 16)))[4:6]; !bytes.Equal(got, []byte{0xff, 0}) {
+		t.Fatalf("a run of 130 zero bytes codes as %x", got)
 	}
 }

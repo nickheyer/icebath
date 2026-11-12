@@ -144,7 +144,7 @@ func seSameProfiles(t *testing.T, got map[string]any) bool {
 	return len(got) == 1 && pyrepr.Equal(got["p"], os.Getpid())
 }
 
-func TestPauseAnUnreadableAcceptedStopReceiptKeepsTheDrainingGatewayOwed(t *testing.T) {
+func TestAnUnreadableAcceptedStopReceiptKeepsTheDrainingGatewayOwed(t *testing.T) {
 	seSkipRoot(t)
 	for _, receipt := range []string{"refused", "malformed", "missing"} {
 		t.Run(receipt, func(t *testing.T) {
@@ -193,7 +193,7 @@ func TestPauseAnUnreadableAcceptedStopReceiptKeepsTheDrainingGatewayOwed(t *test
 	}
 }
 
-func TestPauseAnAcceptedStopWhoseReceiptCannotBeWrittenStaysOwed(t *testing.T) {
+func TestAnAcceptedStopWhoseReceiptCannotBeWrittenStaysOwed(t *testing.T) {
 	seSkipRoot(t)
 	marker, saved := seAcceptedThenOrphaned(t, false, true, false)
 	if err := updaterecord.WritePause(context.Background(), saved, updaterecord.PauseUnowned(), ""); err != nil {
@@ -207,7 +207,7 @@ func TestPauseAnAcceptedStopWhoseReceiptCannotBeWrittenStaysOwed(t *testing.T) {
 	}
 }
 
-func TestPauseAnAcceptedStopTheRecordCouldNotCheckpointOutlivesTheRequestTTL(t *testing.T) {
+func TestAnAcceptedStopTheRecordCouldNotCheckpointOutlivesTheRequestTTL(t *testing.T) {
 	seSkipRoot(t)
 	for _, consumed := range []bool{true, false} {
 		t.Run(strconv.FormatBool(consumed), func(t *testing.T) {

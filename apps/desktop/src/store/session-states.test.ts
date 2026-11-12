@@ -759,7 +759,7 @@ describe('closeAllOpenSessionTiles persists Bot Mode Close All (#94137)', () => 
 })
 
 describe('dropTilesForProfile', () => {
-  const TILES_KEY = 'hermes.desktop.sessionTiles.v2'
+  const TILES_KEY = 'icebath.desktop.sessionTiles.v2'
   const BOTS_BUCKET = '__bots_workspace__'
 
   const storedTiles = (): Record<string, unknown> => {

@@ -156,7 +156,7 @@ export function restartGateway(profile?: null | string): Promise<ActionResponse>
 export function updateHermes(): Promise<ActionResponse> {
   return hermesApi<ActionResponse>({
     ...profileScoped(),
-    path: '/api/hermes/update',
+    path: '/api/icebath/update',
     method: 'POST'
   })
 }
@@ -167,7 +167,7 @@ export function updateHermes(): Promise<ActionResponse> {
 export function checkHermesUpdate(force = false): Promise<BackendUpdateCheckResponse> {
   return hermesApi<BackendUpdateCheckResponse>({
     ...profileScoped(),
-    path: `/api/hermes/update/check${force ? '?force=true' : ''}`
+    path: `/api/icebath/update/check${force ? '?force=true' : ''}`
   })
 }
 

@@ -12,23 +12,23 @@ const require = createRequire(import.meta.url)
  * @param {NodeJS.ProcessEnv} [env]
  * @returns {import('../apps/desktop/electron/install-stamp.js').ChannelBuildRequest | null}
  */
+// Request bytes a validator already admitted in this process, so repeated admission asks the binary once
+const admittedChannelRequests = new Set()
+
 export function channelBuildRequest(env = process.env) {
   if (!env._ICEBATH_CHANNEL_REQUEST_JSON) return null
   const value = JSON.parse(env._ICEBATH_CHANNEL_REQUEST_JSON)
   if (env.ICEBATH_DESKTOP_VARIANT !== 'bundled') throw new Error('Channel builds support only bundled packaging')
   if (env.ICEBATH_BUILD_COMMIT || env.ICEBATH_PAYLOAD_TAG) throw new Error('Channel request conflicts with commit or tag identity')
-  // The bundled toolchain already supplies Python. Reuse the authoritative
-  // validator rather than maintaining a third protocol decoder for packaging.
-  const validator = [
-    'import sys',
-    'sys.path.insert(0, sys.argv[1])',
-    'from hermes_cli.release_channels import decode_json',
-    'from scripts.bundles.desktop_prepare import validate_channel_request',
-    'validate_channel_request(decode_json(sys.stdin.buffer.read()))'
-  ].join('; ')
-  execFileSync(env.ICEBATH_PYTHON || 'python', ['-I', '-S', '-c', validator, path.resolve(import.meta.dirname, '..')], {
-    env, input: env._ICEBATH_CHANNEL_REQUEST_JSON, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000
-  })
+  // The icebath binary owns the release protocol validator, so packaging keeps no second decoder.
+  const validator = env.ICEBATH_BIN?.trim() || 'icebath'
+  const admission = `${validator}\0${env._ICEBATH_CHANNEL_REQUEST_JSON}`
+  if (!admittedChannelRequests.has(admission)) {
+    execFileSync(validator, ['channel-request-validate'], {
+      env, input: env._ICEBATH_CHANNEL_REQUEST_JSON, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000
+    })
+    admittedChannelRequests.add(admission)
+  }
   if (env.ICEBATH_PAYLOAD_VERSION && env.ICEBATH_PAYLOAD_VERSION !== value.version) throw new Error('Channel package version conflicts with prepared request')
   Object.freeze(value.identity)
   Object.freeze(value.bundleEnv)

@@ -39,7 +39,7 @@ func rabUpgradedStore(t *testing.T) rabStore {
 	tmp := isolateHome(t)
 	t.Setenv(EnvRuntimeDir, filepath.Join(tmp, "runtime"))
 	repo := filepath.Join(tmp, "checkout")
-	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences, "pyproject.toml")))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
 	peSwap(t, &repoRoot, func() string { return repo })
 	ctx := context.Background()
 	target, err := CurrentTarget()

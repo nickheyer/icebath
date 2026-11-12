@@ -502,8 +502,8 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 		for idx, tc := range original {
 			var name any
 			var fn map[string]any
-			if d, ok := tc.(map[string]any); ok {
-				fn, _ = d["function"].(map[string]any)
+			if d, ok := pyjson.Dict(tc); ok {
+				fn, _ = pyjson.Dict(d["function"])
 				if fn != nil {
 					name = fn["name"]
 				}
@@ -522,16 +522,14 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 				msg["tool_calls"] = tcs
 				copied = true
 			}
-			if d, ok := tc.(map[string]any); ok {
-				var newFn map[string]any
-				if fn != nil {
-					newFn = shallowDict(fn)
-					newFn["name"] = coerced
-				} else {
-					newFn = map[string]any{"name": coerced, "arguments": "{}"}
+			if d, ok := pyjson.AsObject(tc); ok {
+				newFn := pyjson.ObjectOf("name", coerced, "arguments", "{}")
+				if f, isDict := pyjson.AsObject(d.Vals["function"]); isDict {
+					newFn = f.Copy()
+					newFn.Set("name", coerced)
 				}
-				cp := shallowDict(d)
-				cp["function"] = newFn
+				cp := d.Copy()
+				cp.Set("function", newFn)
 				tcs[idx] = cp
 				continue
 			}
@@ -539,7 +537,7 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 			if s, ok := toolCallArguments(tc).(string); ok {
 				args = s
 			}
-			tcs[idx] = map[string]any{"id": getToolCallID(tc), "type": "function", "function": map[string]any{"name": coerced, "arguments": args}}
+			tcs[idx] = pyjson.ObjectOf("id", getToolCallID(tc), "type", "function", "function", pyjson.ObjectOf("name", coerced, "arguments", args))
 		}
 	}
 }

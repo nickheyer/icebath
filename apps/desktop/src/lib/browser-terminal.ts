@@ -291,7 +291,7 @@ export function createBrowserTerminal(options: BrowserTerminalOptions): Terminal
   const terminals = new Map<string, TerminalState>()
   let sequence = 0
   let paused = false
-  const storageKey = (key: string) => `hermes.webapp.terminal.v1:${JSON.stringify([window.location.origin, options.basePath, key])}`
+  const storageKey = (key: string) => `icebath.webapp.terminal.v1:${JSON.stringify([window.location.origin, options.basePath, key])}`
 
   const load = (key?: string): SavedTerminal | null => {
     const saved = key ? readJson<SavedTerminal>(storageKey(key)) : null

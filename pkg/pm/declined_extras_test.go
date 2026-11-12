@@ -30,7 +30,7 @@ func declSynced(t *testing.T) (string, *[][]string) {
 	t.Helper()
 	tmp := ieClientEnv(t)
 	repo := filepath.Join(tmp, "checkout")
-	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences, "pyproject.toml")))
+	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
 	peSwap(t, &repoRoot, func() string { return repo })
 	calls := &[][]string{}
 	peSwap(t, &cliInstallNames, func(context.Context, []string, *string, bool) (int, error) { return 0, nil })

@@ -29,7 +29,7 @@ func textModule(t *testing.T) (*Module, *bytes.Buffer) {
 		}
 	}
 	out := &bytes.Buffer{}
-	return &Module{env: Environment{Stdout: out, ImportSentencepiece: func() error { return nil },
+	return &Module{env: Environment{Stdout: out,
 		ImportPypinyin: func() (*pypinyin.Module, error) { return pypinyin.Import(dir) }}}, out
 }
 
@@ -157,13 +157,7 @@ func TestText2TokenErrors(t *testing.T) {
 	}
 	missing := errors.New("No module named 'pypinyin'")
 	m.env.ImportPypinyin = func() (*pypinyin.Module, error) { return nil, missing }
-	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{}); err != missing || out.String() != "Please run\n  pip install pypinyin\nbefore you continue\n" {
+	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{}); err != missing || out.String() != "Please run\n  icebath pm install --extra wake-sherpa\nbefore you continue\n" {
 		t.Fatalf("pypinyin import failure gave %v, printed %q", err, out.String())
-	}
-	out.Reset()
-	missing = errors.New("No module named 'sentencepiece'")
-	m.env.ImportSentencepiece = func() error { return missing }
-	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{}); err != missing || out.String() != "Please run\n  pip install sentencepiece\nbefore you continue\n" {
-		t.Fatalf("sentencepiece import failure gave %v, printed %q", err, out.String())
 	}
 }

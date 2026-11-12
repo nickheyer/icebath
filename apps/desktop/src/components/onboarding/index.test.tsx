@@ -89,7 +89,7 @@ describe('onboarding Picker', () => {
     fireEvent.click(skip)
 
     expect($desktopOnboarding.get().firstRunSkipped).toBe(true)
-    expect(window.localStorage.getItem('hermes-onboarding-skipped-v1')).toBe('1')
+    expect(window.localStorage.getItem('icebath-onboarding-skipped-v1')).toBe('1')
   })
 
   it('keeps Nous Portal on top of the key form when the provider list failed to load', () => {

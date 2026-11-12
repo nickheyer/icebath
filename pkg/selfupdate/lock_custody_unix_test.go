@@ -41,10 +41,7 @@ func luKillOwnerKeepsCustody(t *testing.T, owner *exec.Cmd, pidFile string, root
 	return contender
 }
 
-func TestLockGitKeepsCheckoutCustodyAfterItsUpdaterIsKilled(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("needs git")
-	}
+func TestGitKeepsCheckoutCustodyAfterItsUpdaterIsKilled(t *testing.T) {
 	cuGitEnv(t)
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "checkout")
@@ -79,7 +76,7 @@ func TestLockGitKeepsCheckoutCustodyAfterItsUpdaterIsKilled(t *testing.T) {
 	}
 }
 
-func TestLockTheSourceBuildKeepsCheckoutCustodyAfterItsUpdaterIsKilled(t *testing.T) {
+func TestTheSourceBuildKeepsCheckoutCustodyAfterItsUpdaterIsKilled(t *testing.T) {
 	tmp := t.TempDir()
 	root := filepath.Join(tmp, "checkout")
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {

@@ -1054,7 +1054,7 @@ func estimateMsgBudgetTokens(ctx context.Context, msg map[string]any, chargeStal
 	tokens += 10
 	calls, _ := msg["tool_calls"].([]any)
 	for _, tc := range calls {
-		if _, ok := tc.(map[string]any); ok {
+		if _, ok := pyjson.Dict(tc); ok {
 			tokens += provider.EstimateTokens(pyrepr.Str(tc))
 		}
 	}

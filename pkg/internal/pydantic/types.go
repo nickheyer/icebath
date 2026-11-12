@@ -551,6 +551,14 @@ type EnumType struct {
 	Name   string
 	names  []string
 	values []string
+	// Class docstring after inspect.cleandoc, the description of the JSON schema
+	Doc string
+}
+
+// The enum with its class docstring set
+func (e *EnumType) Described(doc string) *EnumType {
+	e.Doc = doc
+	return e
 }
 
 // StrEnum class from alternating member names and values in declaration order
@@ -572,6 +580,9 @@ func (e *EnumType) Member(name string) string {
 	}
 	panic("AttributeError: " + name)
 }
+
+// Member values in declaration order
+func (e *EnumType) Values() []string { return append([]string(nil), e.values...) }
 
 func (e *EnumType) Label() string { return "str-enum[" + e.Name + "]" }
 

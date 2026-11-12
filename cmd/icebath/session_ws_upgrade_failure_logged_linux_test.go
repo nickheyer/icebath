@@ -62,7 +62,11 @@ func runSessionUpgradeDials() {
 	if failure != nil {
 		cronError = *failure
 	}
-	rpc := agent.NewWorkerRPC(home.Dir(ctx))
+	rpc, err := agent.NewWorkerRPC(home.Dir(ctx))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, exceptionText(err))
+		os.Exit(1)
+	}
 	if _, err := rpc.Call(ctx, "worker.heartbeat", nil); err != nil {
 		worker = exceptionText(err)
 	}

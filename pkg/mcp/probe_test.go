@@ -24,15 +24,6 @@ func probeHome(t *testing.T, servers map[string]any) *tools.Env {
 	return &tools.Env{Home: h}
 }
 
-// test_mcp_probe.py TestProbeMcpServerTools test_returns_empty_when_mcp_not_available
-func TestProbeMcpServerToolsReturnsEmptyWhenMcpNotAvailable(t *testing.T) {
-	env := probeHome(t, map[string]any{"github": map[string]any{"command": mockBinary(t), "connect_timeout": 5}})
-	closeSDKGate(t)
-	if got := Probe(context.Background(), env); len(got) != 0 || serverSpawned("github") {
-		t.Fatalf("got %v spawned %v", got, serverSpawned("github"))
-	}
-}
-
 func TestProbeMcpServerToolsFailedServerOmittedFromResults(t *testing.T) {
 	env := probeHome(t, map[string]any{
 		"github": map[string]any{"command": mockBinary(t), "connect_timeout": 5},

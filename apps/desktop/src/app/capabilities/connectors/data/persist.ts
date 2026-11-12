@@ -13,9 +13,9 @@ export type PersistedRead = 'bundled' | 'servers' | ConnectorRead
 const persists = (read: PersistedRead): boolean =>
   read === 'bundled' || read === 'servers' || CONNECTOR_LIFETIMES[read].persist
 
-const STORAGE_PREFIX = 'hermes.connectors.v4.'
+const STORAGE_PREFIX = 'icebath.connectors.v4.'
 
-const IDENTITY_KEY = 'hermes.connectors.identity.v4'
+const IDENTITY_KEY = 'icebath.connectors.identity.v4'
 
 const PERSIST_MAX_BYTES = 256 * 1024
 

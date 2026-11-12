@@ -2118,7 +2118,7 @@
   "skills.plugins.serverStates.app_not_running": ["ar","ja","ru","zh","zh-hant"],
   "skills.plugins.serverStates.connected": ["ar","ja","ru","zh","zh-hant"],
   "skills.plugins.serverStates.endpoint_unavailable": ["ar","ja","ru","zh","zh-hant"],
-  "skills.plugins.serverStates.hermes_not_connected": ["ar","ja","ru","zh","zh-hant"],
+  "skills.plugins.serverStates.icebath_not_connected": ["ar","ja","ru","zh","zh-hant"],
   "skills.plugins.serverStates.missing_app": ["ar","ja","ru","zh","zh-hant"],
   "skills.plugins.serverStates.no_interactive_session": ["ar","ja","ru","zh","zh-hant"],
   "skills.plugins.serverStates.unknown": ["ar","ja","ru","zh","zh-hant"],

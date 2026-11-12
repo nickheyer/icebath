@@ -16,9 +16,9 @@ func TestFingerprintErrorEnumeratesParentCliSession(t *testing.T) {
 	source := filepath.Join(tmp, "busy.db")
 	lfFreshStore(t, source)
 	next := int64(0)
-	swap(t, &recoverySourceFingerprint, func(string) *pyjson.Object {
+	swap(t, &recoverySourceFingerprint, func(string) (*pyjson.Object, error) {
 		next++
-		return pyjson.ObjectOf("main", pyjson.ObjectOf("size", next, "mtime_ns", next))
+		return pyjson.ObjectOf("main", pyjson.ObjectOf("size", next, "mtime_ns", next)), nil
 	})
 	_, err := inspectSessionDatabase(context.Background(), source, tmp)
 	var recErr *sessionRecoveryError

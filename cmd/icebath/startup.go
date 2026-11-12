@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/browser/harnesshost"
+	"github.com/nickheyer/icebath/pkg/containerinit/stage"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -23,11 +26,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/pm/specprobe/specchild"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
+	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
@@ -39,6 +45,7 @@ var version string
 
 // Assigns every process hook and then runs the hidden child entry argv names, the first step of main
 func startProcess(ctx context.Context) {
+	updaterecord.SetBuildVersion(version)
 	logging.InstallSlogBridge()
 	installProcessWiring()
 	dispatchChildEntries(ctx)
@@ -46,7 +53,11 @@ func startProcess(ctx context.Context) {
 
 // Hidden child modes a re-executed binary dispatches once the hooks their Python imports install are wired
 func dispatchChildEntries(ctx context.Context) {
+	selfupdate.DispatchCustodyLauncher()
+	selfupdate.DispatchDesktopUpdateVerifyEntry(ctx, exit)
 	home.DispatchScratchPruneEntry(ctx)
+	pluginhost.DispatchPluginHostEntry(ctx)
+	relayhost.DispatchRelayHostEntry(ctx)
 	googlemeet.DispatchMeetBotEntry(ctx)
 	botdesktop.DispatchIdleWatchEntry()
 	gateway.DispatchStderrTimestampEntry()
@@ -54,6 +65,7 @@ func dispatchChildEntries(ctx context.Context) {
 	gateway.DispatchDetachedRestartWatcherEntry(ctx)
 	gateway.DispatchUpdateHelperEntry(ctx)
 	gateway.DispatchSystemdStopMarkEntry(ctx)
+	stage.DispatchStageEntry(ctx)
 	gateway.DispatchCgroupCleanupEntry()
 	gateway.DispatchKanbanWorkerClientEntry(ctx)
 	gateway.DispatchWindowsSSHRuntimeEntry(ctx, exit)
@@ -64,10 +76,13 @@ func dispatchChildEntries(ctx context.Context) {
 	agent.DispatchManagedWorkerEntry(exit)
 	app.DispatchUninstallModuleEntry(ctx)
 	app.DispatchSlashWorkerEntry(ctx, exit)
+	app.DispatchCLIModuleEntry(ctx, exit)
 	tuiserver.DispatchComputeHostEntry(ctx, exit)
 	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	acp.DispatchModuleEntry(ctx, exit)
+	specchild.DispatchEntry()
+	harnesshost.DispatchEntry()
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal
@@ -84,7 +99,7 @@ func warnIfUnsupervisedPID1(pid int) {
 	fmt.Fprintln(os.Stderr, "[icebath] WARNING: this process is PID 1 with no init above it "+
 		"(entrypoint override?). Orphaned child processes will not be "+
 		"reaped and will accumulate as zombies. Use the image's default "+
-		"ENTRYPOINT (docker/entrypoint-dispatch.sh) instead of overriding "+
+		"ENTRYPOINT (/init) instead of overriding "+
 		"it, or run with `docker run --init` / `init: true` in Compose.")
 }
 
@@ -178,100 +193,18 @@ func isGlobalFastVersionArgv(argv []string) bool {
 	return len(argv) == 1 && (argv[0] == "--version" || argv[0] == "-V")
 }
 
-// Cheap probe for an active non default profile redirecting the home
-func activeProfileMayOverrideHome(root string) bool {
-	raw, err := os.ReadFile(filepath.Join(root, "active_profile"))
-	if err != nil {
-		return false
-	}
-	active := strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff"))
-	return active != "" && active != "default"
-}
-
-// Conservative probe for container mode routing, any profile ambiguity meaning it may be active
-func containerModeMayBeActive() bool {
-	if os.Getenv("ICEBATH_DEV") == "1" || hostinfo.IsContainer() {
-		return false
-	}
-	if h := strings.TrimSpace(os.Getenv(home.EnvHome)); h != "" {
-		if _, err := os.Stat(filepath.Join(h, ".container-mode")); err == nil {
-			return true
-		}
-		parent := filepath.Base(filepath.Dir(filepath.Clean(h)))
-		return parent != home.ProfilesDir && activeProfileMayOverrideHome(h)
-	}
-	def := home.PlatformDefault()
-	if activeProfileMayOverrideHome(def) {
-		return true
-	}
-	_, err := os.Stat(filepath.Join(def, ".container-mode"))
-	return err == nil
-}
-
 // Answers icebath --version before config and logging, never when container mode may route it
 func tryFastVersion(argv []string) bool {
-	if !isGlobalFastVersionArgv(argv) || containerModeMayBeActive() {
+	if !isGlobalFastVersionArgv(argv) || startupfast.ContainerModeMayBeActive() {
 		return false
 	}
 	printVersionInfo(true)
 	return true
 }
 
-// Version label the startup banner title shows
-func bannerVersionLabel() string { return app.FormatBannerVersionLabel(context.Background()) }
-
-// The canonical icebath --version output, hermes_cli/_startup_fast.py print_fast_version_info
+// The canonical icebath --version output on stdout, the update status line when asked
 func printVersionInfo(checkUpdates bool) {
-	fmt.Println(bannerVersionLabel())
-	root := pm.RepoRoot()
-	fmt.Println("Install directory: " + root)
-	ctx := context.Background()
-	method, err := config.DetectInstallMethod(ctx, home.Dir(ctx), root)
-	if err != nil {
-		method = readInstallMethodStamp()
-	}
-	if method != "" {
-		fmt.Println("Install method: " + method)
-	}
-	fmt.Println("Go: " + strings.TrimPrefix(runtime.Version(), "go"))
-	if !checkUpdates {
-		return
-	}
-	status, err := selfupdate.CheckForUpdates(ctx, selfupdate.SourceCheckOptions{InstallRoot: root, Home: home.Dir(ctx), Passive: true})
-	if err != nil || status == nil {
-		return
-	}
-	command, _ := config.RecommendedUpdateCommand(ctx, home.Dir(ctx))
-	behind, _ := status.Get("behind")
-	rollback, _ := status.Get("rollback")
-	sourceVersion, _ := status.Get("sourceVersion")
-	switch {
-	case truthy(rollback):
-		fmt.Printf("Newer than stable release v%v — '%s' moves back to it\n", sourceVersion, command)
-	case intOf(behind) == selfupdate.UpdateAvailableNoCount && behind != nil:
-		fmt.Printf("Update available — run '%s'\n", command)
-	case behind != nil && intOf(behind) > 0:
-		word := "commits"
-		if intOf(behind) == 1 {
-			word = "commit"
-		}
-		fmt.Printf("Update available: %d %s behind — run '%s'\n", intOf(behind), word, command)
-	case behind != nil && intOf(behind) == 0:
-		fmt.Println("Up to date")
-	}
-}
-
-// The installer's .install_method stamp in the resolved home, lower cased
-func readInstallMethodStamp() string {
-	h := strings.TrimSpace(os.Getenv(home.EnvHome))
-	if h == "" {
-		h = home.PlatformDefault()
-	}
-	raw, err := os.ReadFile(filepath.Join(h, ".install_method"))
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff")))
+	startupfast.PrintFastVersionInfo(context.Background(), os.Stdout, checkUpdates)
 }
 
 // Loads the home .env over shell exports with the project root .env as the dev fallback
@@ -337,10 +270,7 @@ func setupLogging(argv []string) {
 }
 
 // Termux check safe for cold start sensitive paths
-func isTermuxStartupEnvironment() bool {
-	prefix := os.Getenv("PREFIX")
-	return os.Getenv("TERMUX_VERSION") != "" || strings.Contains(prefix, "com.termux/files/usr") || strings.HasPrefix(prefix, "/data/data/com.termux/")
-}
+func isTermuxStartupEnvironment() bool { return selfupdate.IsTermuxEnv(nil) }
 
 // Container mode metadata when the NixOS activation routes every invocation into the managed container
 func containerExecInfo() *config.ContainerExecInfo {

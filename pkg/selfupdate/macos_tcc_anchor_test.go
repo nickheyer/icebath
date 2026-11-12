@@ -55,7 +55,7 @@ func TestUvStoreDetectionMatchesUvMacosStorePath(t *testing.T) {
 	}
 }
 
-func TestUvStoreDetectionMatchesIcebathRuntimeRepairGeneration(t *testing.T) {
+func TestUvStoreDetectionMatchesHermesRuntimeRepairGeneration(t *testing.T) {
 	if !tccIsUvMacosStore("/Users/u/icebath-agent/.icebath-runtime/python/generation-a1b2c3/cpython-3.11.15-macos-aarch64-none/bin/python3.11") {
 		t.Fatal("not matched")
 	}

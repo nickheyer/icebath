@@ -8,12 +8,12 @@ import { installBrowserDesktopBridge } from './browser-desktop-bridge'
 import { announceWebappWindow, createBrowserWindowOpener } from './browser-window'
 
 const POPUP_BLOCKED = 'Webapp window did not open. Allow popups for this site and try again.'
-const bootstrap = window as Window & { __HERMES_AUTH_REQUIRED__?: boolean }
+const bootstrap = window as Window & { __ICEBATH_AUTH_REQUIRED__?: boolean }
 
 afterEach(() => {
   vi.useRealTimers()
   Reflect.deleteProperty(window, 'hermesDesktop')
-  delete bootstrap.__HERMES_AUTH_REQUIRED__
+  delete bootstrap.__ICEBATH_AUTH_REQUIRED__
   window.document.documentElement.removeAttribute('data-hermes-desktop-host')
   window.history.replaceState(null, '', '/')
   vi.unstubAllGlobals()
@@ -40,7 +40,7 @@ function outcome(pending: Promise<unknown>): () => string | undefined {
 /** `/webapp/window` as the gateway serves it: says ready on the channel its fragment names, done once it has a ticket. */
 function handoffPage(href: string): unknown[] {
   const id = new URLSearchParams(new URL(href).hash.slice(1)).get('channel')
-  const channel = new BroadcastChannel(`hermes.webapp.window:${id}`)
+  const channel = new BroadcastChannel(`icebath.webapp.window:${id}`)
   const received: unknown[] = []
 
   channel.onmessage = event => {
@@ -131,7 +131,7 @@ describe('gated host pop-out', () => {
     expect([name, features]).toEqual(['_blank', 'noopener,noreferrer'])
 
     // The window loads that address and boots the Webapp.
-    bootstrap.__HERMES_AUTH_REQUIRED__ = true
+    bootstrap.__ICEBATH_AUTH_REQUIRED__ = true
     window.history.replaceState(null, '', String(href))
     expect(installBrowserDesktopBridge()).toBe(true)
     await vi.advanceTimersByTimeAsync(5_000)

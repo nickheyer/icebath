@@ -427,3 +427,13 @@ func findTensorflowliteC(dir, platform string, platformKnown bool) (string, erro
 	}
 	return path, nil
 }
+
+// Loads the tensorflowlite_c library the package carries and binds the functions the models call
+func (m *Module) LoadLibrary() error {
+	path, err := m.findTensorflowliteC()
+	if err != nil {
+		return err
+	}
+	_, err = newTfLiteWakeWord(path)
+	return err
+}

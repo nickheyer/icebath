@@ -23,7 +23,7 @@ export interface CustomModel {
   provider: string
 }
 
-const STORAGE_KEY = 'hermes.desktop.custom-models'
+const STORAGE_KEY = 'icebath.desktop.custom-models'
 
 function loadCustomModels(): CustomModel[] {
   const raw = storedString(STORAGE_KEY)

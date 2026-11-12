@@ -96,7 +96,7 @@ func TestWarningTracksLiveOtherInstallInSameHome(t *testing.T) {
 				found = e
 			}
 		}
-		if found == nil || found["icebath_home"] != home.Key(root) {
+		if found == nil || found["hermes_home"] != home.Key(root) {
 			t.Fatalf("entry %v", found)
 		}
 		if w := SharedProfileWarning(ctx, filepath.Join(root, "profiles", "work"), current); w != "" {
@@ -149,17 +149,17 @@ func TestWarningRejectsReusedOrUnverifiableProcessIdentity(t *testing.T) {
 		}
 	}
 	entries[0]["create_time"] = original
-	delete(entries[0], "icebath_home")
+	delete(entries[0], "hermes_home")
 	write()
 	if SharedProfileWarning(ctx, "", current) != "" {
 		t.Fatal("homeless entry warned")
 	}
-	entries[0]["icebath_home"] = home.Key(filepath.Join(root, "profiles", "other"))
+	entries[0]["hermes_home"] = home.Key(filepath.Join(root, "profiles", "other"))
 	write()
 	if SharedProfileWarning(ctx, "", current) != "" {
 		t.Fatal("other home warned")
 	}
-	entries[0]["icebath_home"] = home.Key(root)
+	entries[0]["hermes_home"] = home.Key(root)
 	write()
 	if SharedProfileWarning(ctx, "", current) == "" {
 		t.Fatal("restored entry silent")

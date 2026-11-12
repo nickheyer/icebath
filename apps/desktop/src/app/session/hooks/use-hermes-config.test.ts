@@ -31,7 +31,7 @@ vi.mock('@/hermes', () => ({
   getHermesConfigDefaults: vi.fn().mockResolvedValue({})
 }))
 
-const WORKSPACE_CWD_KEY = 'hermes.desktop.workspace-cwd'
+const WORKSPACE_CWD_KEY = 'icebath.desktop.workspace-cwd'
 
 const mockConfig = (config: Record<string, unknown>) =>
   vi.mocked(getHermesConfig).mockResolvedValue(config as Awaited<ReturnType<typeof getHermesConfig>>)

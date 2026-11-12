@@ -112,7 +112,7 @@ func TestOsc11ProbeSkipsOverSsh(t *testing.T) {
 			clearLightEnv(t)
 			out := installTTYConsole(t, os.Stdin)
 			t.Setenv(v, "1.2.3.4 5555 22")
-			if bg, ok := queryOSC11Background(); ok || bg != "" {
+			if bg, ok, err := queryOSC11Background(); ok || bg != "" || err != nil {
 				t.Fatalf("probed over ssh: %q", bg)
 			}
 			if out.Len() != 0 {
@@ -127,7 +127,7 @@ func TestOsc11ProbeSkipsWhenNotATty(t *testing.T) {
 	var out, errOut bytes.Buffer
 	restore := SetStreams(&cliui.Console{In: os.Stdin, Out: &out, StdinTTY: func() bool { return false }, StdoutTTY: func() bool { return true }}, &errOut)
 	t.Cleanup(restore)
-	if _, ok := queryOSC11Background(); ok || out.Len() != 0 {
+	if _, ok, err := queryOSC11Background(); ok || err != nil || out.Len() != 0 {
 		t.Fatal("a non tty stdin must not be probed")
 	}
 }

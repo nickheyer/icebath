@@ -486,7 +486,7 @@ func sessionJoinsDelegation(a *AIAgent) bool {
 	}
 	for _, t := range a.tools {
 		m, _ := t.(map[string]any)
-		fn, _ := m["function"].(map[string]any)
+		fn, _ := pyjson.Dict(m["function"])
 		if fn != nil && fn["name"] == "delegate_task" {
 			description, _ := fn["description"].(string)
 			return strings.Contains(description, tools.OneshotDescriptionDelivery)

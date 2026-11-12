@@ -2,7 +2,7 @@ import { randomUuid } from '@hermes/plugin-sdk'
 
 import type { CanonicalGroupBinding } from './canonical-groups'
 
-const STORAGE_KEY = 'hermes.desktop.canonicalGroupSends.v1'
+const STORAGE_KEY = 'icebath.desktop.canonicalGroupSends.v1'
 
 export interface PreparedCanonicalGroupSend {
   binding: CanonicalGroupBinding

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -15,6 +17,10 @@ import (
 
 // Mirrors the import time sequence of hermes_cli/main.py and then its main()
 func main() {
+	if code, ok := containerinit.Dispatch(os.Args); ok {
+		os.Exit(code)
+	}
+	containerinit.DropRootInImage(os.Args)
 	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
 	if restoreInterruptedPull() {
@@ -22,6 +28,12 @@ func main() {
 	}
 	os.Args = args
 	pm.PinLauncherHome()
+	if handoff, tail, ok := pm.LegacyPostSwapInvocation(os.Args[1:]); ok {
+		exit(selfupdate.LegacyPostSwapMain(context.Background(), handoff, tail, os.Stderr))
+	}
+	if legacy, ok := app.LegacyAgentArgv(os.Args); ok {
+		exit(app.LegacyAgentMain(context.Background(), legacy, os.Stdout, os.Stderr, nil))
+	}
 	printLauncherRuntimeCommand(pinned)
 	normalizeHomeEnv()
 	bootLaunch()
@@ -30,6 +42,7 @@ func main() {
 		armStartupWatchdog()
 	}
 	suppressMouseResidueEarly(argv)
+	pm.EnsureProjectRootOnPath()
 	if tryFastVersion(argv) {
 		exit(0)
 	}
@@ -39,6 +52,9 @@ func main() {
 		exit(runCLI(argv))
 	}
 	if code, ok := runTUIHelperVerb(argv); ok {
+		exit(code)
+	}
+	if code, ok := runBuildHelperVerb(argv); ok {
 		exit(code)
 	}
 	ensureBinLaunchers()
@@ -63,7 +79,7 @@ func run(argv []string) int {
 	cleanupQuarantinedExes()
 	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
 	recoverUpdateDebtsOnStartup()
-	if firstPositional(argv) != "update" {
+	if first, _ := firstPositional(argv); first != "update" {
 		maybeRunBootBootstrap(pm.InstallRoot())
 	}
 	if problem := checkRuntime(pm.InstallRoot()); problem != "" {

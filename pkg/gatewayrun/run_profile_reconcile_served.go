@@ -25,6 +25,12 @@ func forEachServedProfile(ctx context.Context, r *GatewayRunner, body func(ctx c
 					runLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %v", p.Name, rec))
 				}
 			}()
+			// A profile unserved since the listing keeps its home untouched, and its release waits for this pass
+			leave, held := gateway.ProcessOwnership.Hold(p.Home)
+			if !held {
+				return
+			}
+			defer leave()
 			if err := body(gateway.ProfileRuntimeScope(ctx, p.Home, true), p.Name); err != nil {
 				runLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %s", p.Name, pyrepr.ExceptionMessage(err)))
 			}

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"fmt"
@@ -57,9 +58,9 @@ func auditIterSshdConfigLinesLive() []string {
 		if err != nil {
 			continue
 		}
-		text := strings.TrimPrefix(strings.ToValidUTF8(string(data), "\ufffd"), "\ufeff")
+		text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 		for _, raw := range pystr.Splitlines(text, false) {
-			s := strings.TrimSpace(raw)
+			s := pystr.Strip(raw)
 			if s != "" && !strings.HasPrefix(s, "#") {
 				lines = append(lines, s)
 			}

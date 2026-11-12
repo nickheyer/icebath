@@ -1050,11 +1050,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, session, timeoutS an
 	if activate == "" {
 		activate = activateNever
 	}
-	shotPath, err := WriteBrowserUseShot(filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use"))
-	if err != nil {
-		return "", err
-	}
-	if cmd, err = harnessCommand(cmd, activate, shotPath); err != nil {
+	if cmd, err = harnessCommand(cmd, activate); err != nil {
 		return "", err
 	}
 	workspace := workspaceDir(env, taskID)

@@ -272,7 +272,7 @@ export interface SessionDraft {
 // the key (rather than just its text) lets a reload restore that exact fresh
 // draft; starting another new chat rotates the key so abandoned unsent drafts
 // cannot bleed into the next lifecycle.
-const FRESH_DRAFT_STORAGE_KEY = 'hermes.desktop.freshDraftKey'
+const FRESH_DRAFT_STORAGE_KEY = 'icebath.desktop.freshDraftKey'
 
 const createFreshDraftKey = (): string => `__new__:${randomUuid()}`
 

@@ -37,6 +37,9 @@ var whisperHallucinations = map[string]bool{
 
 var hallucinationRepeatRe = regexp.MustCompile(`(?i)^(?:thank you|thanks|bye|you|ok|okay|the end|\.|[\s\x{0b}\x{1c}-\x{1f}\x{85}\p{Z}]|,|!)+$`)
 
+// Whether a transcript is empty or a known Whisper hallucination, for callers outside the package
+func IsWhisperHallucination(transcript string) bool { return isWhisperHallucination(transcript) }
+
 // Whether a transcript is empty or a known Whisper hallucination on silence
 func isWhisperHallucination(transcript string) bool {
 	cleaned := pystr.Lower(pystr.Strip(transcript))

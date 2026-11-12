@@ -7,7 +7,7 @@ import (
 )
 
 type asyncResult struct {
-	value any
+	value *Ref
 	err   error
 }
 
@@ -156,6 +156,22 @@ func (r *Ref) Await(ctx context.Context) (any, error) {
 }
 
 func (h *Host) await(ctx context.Context, produce func(g *GIL) (uintptr, error)) (any, error) {
+	r, err := h.awaitRaw(ctx, nil, produce)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Release()
+	var out any
+	err = h.Do(func(g *GIL) error {
+		var err error
+		out, err = g.FromPython(r.obj)
+		return err
+	})
+	return out, err
+}
+
+// Awaits what produce returns as a task, inside pyctx when given, and hands back the raw result
+func (h *Host) awaitRaw(ctx context.Context, pyctx *Ref, produce func(g *GIL) (uintptr, error)) (*Ref, error) {
 	if Forked() {
 		return nil, ErrForkedChild
 	}
@@ -176,9 +192,7 @@ func (h *Host) await(ctx context.Context, produce func(g *GIL) (uintptr, error))
 			return err
 		}
 		if !awaitable {
-			v, err := g.FromPython(aw)
-			pyDecRef(aw)
-			ch <- asyncResult{v, err}
+			ch <- asyncResult{value: g.adopt(aw)}
 			return nil
 		}
 		h.pendingMu.Lock()
@@ -196,7 +210,16 @@ func (h *Host) await(ctx context.Context, produce func(g *GIL) (uintptr, error))
 		start, err := g.NewRawFunc("async_call_start", func(g *GIL, _, _ uintptr) (uintptr, error) {
 			defer pyDecRef(aw)
 			defer pyDecRef(done)
-			t, err := g.CallMethod(h.asyncio, "ensure_future", []any{Borrowed(aw)}, map[string]any{"loop": Borrowed(h.loop)})
+			ensure, err := g.Attr(h.asyncio, "ensure_future")
+			var t uintptr
+			if err == nil {
+				if pyctx != nil {
+					t, err = g.CallMethod(pyctx.obj, "run", []any{Borrowed(ensure), Borrowed(aw)}, map[string]any{"loop": Borrowed(h.loop)})
+				} else {
+					t, err = g.Call(ensure, []any{Borrowed(aw)}, map[string]any{"loop": Borrowed(h.loop)})
+				}
+				pyDecRef(ensure)
+			}
 			if err != nil {
 				h.deliver(id, asyncResult{err: err})
 				pyIncRef(pyNone)
@@ -230,7 +253,7 @@ func (h *Host) await(ctx context.Context, produce func(g *GIL) (uintptr, error))
 		h.forget(id)
 		return nil, err
 	}
-	finish := func(res asyncResult) (any, error) {
+	finish := func(res asyncResult) (*Ref, error) {
 		select {
 		case t := <-taskBox:
 			t.Release()
@@ -299,9 +322,7 @@ func (h *Host) complete(g *GIL, id uint64, task uintptr) {
 		h.deliver(id, asyncResult{err: err})
 		return
 	}
-	defer pyDecRef(res)
-	v, err := g.FromPython(res)
-	h.deliver(id, asyncResult{v, err})
+	h.deliver(id, asyncResult{value: g.adopt(res)})
 }
 
 func (h *Host) deliver(id uint64, res asyncResult) {

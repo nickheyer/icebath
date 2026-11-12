@@ -6,7 +6,7 @@
  * persistence stays testable without React.
  */
 
-const CHAT_PANEL_COLLAPSED_KEY = "hermes-chat-panel-collapsed";
+const CHAT_PANEL_COLLAPSED_KEY = "icebath-chat-panel-collapsed";
 
 /** The panel's collapsed flag remembered from the previous visit. */
 export function readChatPanelCollapsed(): boolean {

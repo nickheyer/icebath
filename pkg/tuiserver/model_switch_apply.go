@@ -99,8 +99,7 @@ func mergePreflightWarning(ctx context.Context, result *provider.ModelSwitchResu
 			value := int(n)
 			cfgCtx = &value
 		}
-		history, _ := session.Get("history").([]any)
-		a.MergePreflightCompressionWarning(ctx, result, dictList(history), customProvs, cfgCtx, agent.PreflightConfigured{})
+		a.MergePreflightCompressionWarning(ctx, result, historyAsMessages(historyList(session.Get("history"))), customProvs, cfgCtx, agent.PreflightConfigured{})
 	}); failure != nil {
 		logger().Debug(fmt.Sprintf("preflight-compression switch warning failed: %s", panicMessage(failure)))
 	}

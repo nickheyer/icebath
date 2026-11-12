@@ -22,7 +22,17 @@ func ActiveConfigKeyManifests(h string) []config.PluginConfigKeys {
 	disabled := disabledPlugins(cfg)
 	enabled, enabledPresent := enabledPlugins(cfg)
 	var out []config.PluginConfigKeys
-	winners := ResolveManifestWinners(CollectDirectoryManifests(h))
+	manifests := CollectDirectoryManifests(h)
+	directoryKeys := map[string]bool{}
+	for _, m := range manifests {
+		directoryKeys[m.ID()] = true
+	}
+	for _, m := range discoverEntrypointManifests(context.Background()) {
+		if !directoryKeys[m.ID()] {
+			manifests = append(manifests, m)
+		}
+	}
+	winners := ResolveManifestWinners(manifests)
 	for _, key := range sortedKeys(winners) {
 		m := winners[key]
 		gate := GateManifest(h, m, disabled, enabled, enabledPresent)

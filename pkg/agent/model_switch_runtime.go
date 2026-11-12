@@ -182,7 +182,7 @@ func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, a
 	}
 	a.apiMode = apiMode
 	clear(a.transportCache)
-	a.codexReasoningReplayEnabled, a.codexReasoningReplayRejected = true, false
+	resetCodexReasoningReplay(a)
 	if apiKey != "" {
 		a.apiKey = apiKey
 	}

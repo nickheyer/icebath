@@ -142,15 +142,6 @@ func TestOpenAICodexAvailabilityFollowsCodexTokenOnly(t *testing.T) {
 	if !p.IsAvailable() {
 		t.Fatal("unavailable with a Codex token")
 	}
-	prev := codexImagesHTTPClient
-	codexImagesHTTPClient = nil
-	defer func() { codexImagesHTTPClient = prev }()
-	if p.IsAvailable() {
-		t.Fatal("available without an HTTP client")
-	}
-	if res, _ := p.Generate(context.Background(), env, ImageGenRequest{Prompt: "a cat"}); res["error_type"] != "missing_dependency" {
-		t.Fatal(res)
-	}
 }
 
 func TestOpenAICodexCustomRouteKeepsImageRequestOnConfiguredHost(t *testing.T) {

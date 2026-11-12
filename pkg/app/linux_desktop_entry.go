@@ -34,7 +34,7 @@ import (
 
 const (
 	// Identity the packaged app claims for its window, carried by the entry file name
-	desktopAppID = "com.nousresearch.icebath"
+	desktopAppID = "ai.icebath"
 	// App id entry file name
 	desktopEntryFileName = desktopAppID + ".desktop"
 	// Entry name the app id entry replaced, kept as a hidden alias for old pins

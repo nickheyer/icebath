@@ -385,6 +385,9 @@ func TestCaptureRetiredWALGenerationCopiesTheHeldInode(t *testing.T) {
 	if strings.Index(text, `"captured_at"`) > strings.Index(text, `"database"`) {
 		t.Fatal("manifest keys are not sorted")
 	}
+	if goLine := `"go": "` + strings.TrimPrefix(strings.Fields(runtime.Version())[0], "go") + `"`; !strings.Contains(text, goLine) || strings.Contains(text, `"python"`) {
+		t.Fatalf("manifest lacks %s or states a python runtime:\n%s", goLine, text)
+	}
 	if _, err := os.Stat(final + ".partial"); !os.IsNotExist(err) {
 		t.Fatal("staging dir left behind")
 	}

@@ -254,3 +254,12 @@ func (h *HeldInbound) redispatchHeldInbound(ctx context.Context, prior *gateway.
 	}
 	return nil
 }
+
+// Clears the redispatch task slot unless the current task owns it
+func (h *HeldInbound) clearRedispatchTaskExcept(current *gateway.AdapterTask) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.redispatchTask != current {
+		h.redispatchTask = nil
+	}
+}

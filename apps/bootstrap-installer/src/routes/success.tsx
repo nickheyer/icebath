@@ -11,7 +11,7 @@ import { launchHermesDesktop } from '../store'
  * with a status line below.
  *
  * Launching the desktop can fail (e.g. Stage-Desktop was skipped and
- * Icebath.exe doesn't exist). We catch the Tauri error and surface it
+ * Icebath.exe doesn't exist). We catch the backend error and surface it
  * inline rather than silently doing nothing — the previous version
  * had `onClick={() => void launchHermesDesktop()}` which swallowed
  * the rejection and left the user staring at an unresponsive button.

@@ -24,18 +24,21 @@ func init() {
 		return mcp.ManageCatalog(ctx, a.env, args, mcp.CatalogOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
 			Callback: callback, CardSurface: a.platform == "desktop"})
 	}))
-	tools.RegisterInlineToolExecutor("setup_mcp", agentInlineExecutor("setup_mcp", func(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
-		action, ok := args["action"]
-		if !ok {
-			action = "install"
-		}
-		server, ok := args["server"]
-		if !ok {
-			server = ""
-		}
-		return manageConnectionsInline(a, ctx, map[string]any{"action": action,
-			"connectors": []any{map[string]any{"name": server, "mcp": true}}}, ictx)
-	}))
+	tools.RegisterInlineToolExecutor("setup_mcp", agentInlineExecutor("setup_mcp", setupMCPShimInline))
+}
+
+// Replays a cached setup_mcp call as a manage_connections install of the named MCP server
+func setupMCPShimInline(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
+	action, ok := args["action"]
+	if !ok {
+		action = "install"
+	}
+	server, ok := args["server"]
+	if !ok {
+		server = ""
+	}
+	return manageConnectionsInline(a, ctx, map[string]any{"action": action,
+		"connectors": []any{map[string]any{"name": server, "mcp": true}}}, ictx)
 }
 
 // Executor over the agent behind the executor host, an error on any other host

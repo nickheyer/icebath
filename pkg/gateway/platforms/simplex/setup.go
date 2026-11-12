@@ -22,8 +22,7 @@ func InteractiveSetup(ctx context.Context) error {
 	if err != nil || declined {
 		return err
 	}
-	for _, line := range []string{"Requirements:", "  1. simplex-chat daemon running (e.g. `simplex-chat -p 5225`).",
-		"  2. Python package `websockets` installed (`pip install websockets`)."} {
+	for _, line := range []string{"Requirements:", "  1. simplex-chat daemon running (e.g. `simplex-chat -p 5225`)."} {
 		gateway.WizardCLI.PrintInfo(line)
 	}
 	for _, p := range setupPrompts {

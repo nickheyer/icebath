@@ -16,7 +16,7 @@ import (
 // Checkout carrying the reference pyproject under icebath names, gates reread from it until the test ends
 func svRealPyproject(t *testing.T) string {
 	t.Helper()
-	text := string(readFile(t, filepath.Join(peReferences, "pyproject.toml")))
+	text := string(readFile(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "[tool.hermes", "[tool.icebath"), "hermes-agent", "icebath-agent")
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte(text), 0o666)

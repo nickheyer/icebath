@@ -555,17 +555,14 @@ func configureHTTPAuth(ctx context.Context, env *tools.Env, ui CLIConfigUI, name
 	if authType == "oauth" {
 		cfgInfo(ui, fmt.Sprintf("Starting OAuth flow for '%s'...", name))
 		oauthCfg, _ := serverConfig["oauth"].(map[string]any)
-		provider, err := getManager().getOrBuildProvider(ctx, name, url, oauthCfg, cliHTTPOptions(name, url, serverConfig))
+		_, err := getManager().getOrBuildProvider(ctx, name, url, oauthCfg, cliHTTPOptions(name, url, serverConfig))
 		oauthOK := false
-		switch {
-		case err != nil:
+		if err != nil {
 			cfgWarning(ui, "OAuth error: "+excStr(err))
-		case provider != nil:
+		} else {
 			serverConfig["auth"] = "oauth"
 			cfgSuccess(ui, "OAuth configured (tokens will be acquired on first connection)")
 			oauthOK = true
-		default:
-			cfgWarning(ui, "OAuth setup failed — MCP SDK auth module not available")
 		}
 		if !oauthOK {
 			cfgInfo(ui, "This server may not support OAuth.")

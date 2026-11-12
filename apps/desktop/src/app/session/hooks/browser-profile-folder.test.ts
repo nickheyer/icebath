@@ -47,7 +47,7 @@ vi.mock('@/store/gateway', async original => ({
 
 const FOREGROUND_CREATE_DIAL = [undefined, undefined, { spawnPriority: 'foreground' }] as const
 
-const host = window as Window & { __HERMES_BASE_PATH__?: string; __HERMES_DASHBOARD_PROFILE__?: string }
+const host = window as Window & { __ICEBATH_BASE_PATH__?: string; __ICEBATH_DASHBOARD_PROFILE__?: string }
 
 const created = (id: string) => ({ info: {}, session_id: `${id}-runtime`, stored_session_id: `${id}-stored` })
 
@@ -97,8 +97,8 @@ beforeEach(async () => {
   // A gateway launched as `alpha`, opened at its plain address: the tab boots
   // on the gateway's own profile with no `?profile=`, as adoptPrimaryProfile
   // leaves it, and the boot sync fills the window's folder cache.
-  host.__HERMES_BASE_PATH__ = '/hermes'
-  host.__HERMES_DASHBOARD_PROFILE__ = 'alpha'
+  host.__ICEBATH_BASE_PATH__ = '/hermes'
+  host.__ICEBATH_DASHBOARD_PROFILE__ = 'alpha'
   seedWebappSession('served-token')
   window.history.replaceState(null, '', '/hermes#/')
   expect(installBrowserDesktopBridge()).toBe(true)
@@ -111,8 +111,8 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup()
   Reflect.deleteProperty(window, 'hermesDesktop')
-  delete host.__HERMES_BASE_PATH__
-  delete host.__HERMES_DASHBOARD_PROFILE__
+  delete host.__ICEBATH_BASE_PATH__
+  delete host.__ICEBATH_DASHBOARD_PROFILE__
   clearWebappSession()
   document.documentElement.removeAttribute('data-hermes-desktop-host')
   window.localStorage.clear()

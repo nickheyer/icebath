@@ -223,7 +223,7 @@ func pcRecordFiles(t *testing.T, home string) []string {
 	return names
 }
 
-func TestPauseRecordWrittenByAKilledUpdaterIsOrphanedOnlyAfterItsDeath(t *testing.T) {
+func TestRecordWrittenByAKilledUpdaterIsOrphanedOnlyAfterItsDeath(t *testing.T) {
 	psHome(t)
 	owner := pcStart(t, "owner", `{"default": 4242}`)
 	if got := owner.line(t); got != "written" {
@@ -277,7 +277,7 @@ func TestPauseRecordRecoveryNeverStartsGatewaysUnderAnUpdateThatTookTheCheckout(
 	}
 }
 
-func TestPauseRecordAClaimInTransferCannotBeTakenByASecondLaunch(t *testing.T) {
+func TestAClaimInTransferCannotBeTakenByASecondLaunch(t *testing.T) {
 	home := psHome(t)
 	pcOrphan(t, `{"default": 4242}`)
 	src := PauseRecordPath()
@@ -405,7 +405,7 @@ func TestPauseRecordAStopIntendedButNeverIssuedLeavesAServingGatewayAloneAndALat
 	}
 }
 
-func TestPauseRecordAnotherCheckoutsWriterNeverImportsOrRelabelsThisCheckoutsDebt(t *testing.T) {
+func TestAnotherCheckoutsWriterNeverImportsOrRelabelsThisCheckoutsDebt(t *testing.T) {
 	home := psHome(t)
 	pcOrphan(t, `{"alpha": 4242}`)
 	other := filepath.Join(home, "other")

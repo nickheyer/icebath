@@ -46,6 +46,17 @@ var mimeToExt = func() map[string]string {
 	return out
 }()
 
+// Extension of a document MIME as a dict inverted over the document table, the latest extension winning
+func LastDocumentExtForMime(mime string) string {
+	ext := ""
+	for _, e := range documentTypeOrder {
+		if mediacache.SupportedDocumentTypes[e] == mime {
+			ext = e
+		}
+	}
+	return ext
+}
+
 // Byte cache writers under the active profile home, swappable the way hermes module globals are
 var (
 	cacheImageFromBytes = func(ctx context.Context, data []byte, ext string) (string, error) {
@@ -217,4 +228,39 @@ func CacheMediaBytes(ctx context.Context, data []byte, filename, mimeType, defau
 func CacheMediaBytesAsync(ctx context.Context, data []byte, filename, mimeType, defaultKind string) (*CachedMedia, error) {
 	fn := cacheMediaBytesFn
 	return runOffLoop(ctx, func() (*CachedMedia, error) { return fn(ctx, data, filename, mimeType, defaultKind) })
+}
+
+// Document extensions whose small text bodies are inlined into the inbound message
+var TextInjectExtensions = func() map[string]bool {
+	out := map[string]bool{}
+	for _, ext := range []string{".txt", ".md", ".markdown", ".csv", ".tsv", ".log", ".json", ".jsonl", ".ndjson", ".xml",
+		".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf", ".env", ".properties", ".html", ".htm",
+		".css", ".scss", ".sass", ".less", ".py", ".pyi", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+		".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".c", ".h", ".cpp", ".cc", ".hpp", ".cs",
+		".java", ".kt", ".go", ".rs", ".rb", ".php", ".pl", ".lua", ".r", ".jl", ".swift", ".m",
+		".scala", ".clj", ".ex", ".exs", ".erl", ".sql", ".graphql", ".proto", ".tf", ".hcl",
+		".dockerfile", ".makefile", ".cmake", ".gradle", ".rst", ".tex", ".srt", ".vtt", ".diff",
+		".patch"} {
+		out[ext] = true
+	}
+	return out
+}()
+
+// MIME to extension inverse of one media table in insertion order, the last extension of a MIME winning
+func invertInOrder(table map[string]string, order []string) map[string]string {
+	out := map[string]string{}
+	for _, ext := range order {
+		out[table[ext]] = ext
+	}
+	return out
+}
+
+// MIME to extension inverse of the supported document table
+func DocumentMimeToExt() map[string]string {
+	return invertInOrder(mediacache.SupportedDocumentTypes, documentTypeOrder)
+}
+
+// MIME to extension inverse of the supported video table
+func VideoMimeToExt() map[string]string {
+	return invertInOrder(mediacache.SupportedVideoTypes, videoTypeOrder)
 }

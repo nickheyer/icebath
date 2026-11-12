@@ -34,6 +34,7 @@ func installSTTCatalogDoubles(t *testing.T) {
 }
 
 func TestLocalBrowserRowReadyOnlyWhenSetupWouldBeANoop(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, c := range []struct {
 		harness  bool
 		chromium string
@@ -57,7 +58,8 @@ func TestLocalBrowserRowReadyOnlyWhenSetupWouldBeANoop(t *testing.T) {
 }
 
 func TestImportableSDKDoesNotBypassPMConstraints(t *testing.T) {
-	for _, c := range []struct{ key, extra string }{{"ddgs", "ddgs"}, {"faster_whisper", "stt-whisper"}, {"kittentts", "kittentts"}, {"piper", "piper"}} {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	for _, c := range []struct{ key, extra string }{{"faster_whisper", "stt-whisper"}, {"kittentts", "kittentts"}, {"piper", "piper"}} {
 		for _, refused := range []bool{false, true} {
 			t.Run(c.key, func(t *testing.T) {
 				s, out := newTestToolsSetup(t, "")

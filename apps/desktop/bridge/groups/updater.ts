@@ -1,0 +1,25 @@
+// updater group bridge, its Go service UpdaterService lands with the updater lane
+import * as UpdaterService from '../bindings/github.com/nickheyer/icebath/apps/desktop/updaterservice.js'
+import { fire } from '../runtime'
+
+export const getBootstrapState = () => UpdaterService.GetBootstrapState()
+export const continueBootstrapLocal = () => UpdaterService.ContinueBootstrapLocal()
+export const resetBootstrap = () => UpdaterService.ResetBootstrap()
+export const updateHoldRecheck = () => UpdaterService.UpdateHoldRecheck()
+export const updateHoldQuit = () => UpdaterService.UpdateHoldQuit()
+export const updateHoldStartAnyway = (request) => UpdaterService.UpdateHoldStartAnyway(request)
+export const repairBootstrap = () => UpdaterService.RepairBootstrap()
+export const cancelBootstrap = () => UpdaterService.CancelBootstrap()
+export const getVersion = (scope) => UpdaterService.GetVersion(scope)
+export const relaunchApp = () => UpdaterService.RelaunchApp()
+export const uninstallSummary = () => UpdaterService.UninstallSummary()
+export const uninstallRun = (mode) => UpdaterService.UninstallRun(mode)
+export const uninstallOpenAppsSettings = () => UpdaterService.UninstallOpenAppsSettings()
+export const updatesCheck = (opts) => UpdaterService.UpdatesCheck(opts)
+export const updatesApply = (opts) => UpdaterService.UpdatesApply(opts)
+export const updatesSetChannel = (name) => UpdaterService.UpdatesSetChannel(name)
+export const updatesTakePendingRun = () => UpdaterService.UpdatesTakePendingRun()
+export const updatesAckPendingRun = (sent) => UpdaterService.UpdatesAckPendingRun(sent)
+export const desktopMetricsSetEnabled = (on, profile) => UpdaterService.DesktopMetricsSetEnabled(on, profile)
+export const desktopMetricsTakeRendererCrashes = () => UpdaterService.DesktopMetricsTakeRendererCrashes()
+export const desktopMetricsAckRendererCrashes = (sent) => UpdaterService.DesktopMetricsAckRendererCrashes(sent)

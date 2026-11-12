@@ -38,7 +38,7 @@ vi.mock('@/hermes', async importOriginal => ({
   }
 }))
 
-type ServedWindow = Window & { __HERMES_DASHBOARD_PROFILE__?: string; hermesDesktop?: Window['hermesDesktop'] }
+type ServedWindow = Window & { __ICEBATH_DASHBOARD_PROFILE__?: string; hermesDesktop?: Window['hermesDesktop'] }
 
 const win = window as unknown as ServedWindow
 
@@ -124,7 +124,7 @@ describe('a Webapp tab resuming a row its sidebar listed', () => {
     setSessions([])
     clearAllSessionStates()
     _resetSessionOwnerHintsForTests()
-    delete win.__HERMES_DASHBOARD_PROFILE__
+    delete win.__ICEBATH_DASHBOARD_PROFILE__
     clearWebappSession()
     Reflect.deleteProperty(win, 'hermesDesktop')
     document.documentElement.removeAttribute('data-hermes-desktop-host')
@@ -135,7 +135,7 @@ describe('a Webapp tab resuming a row its sidebar listed', () => {
 
   it("opens that profile's session on the tab's own socket, routed by the row's gateway", async () => {
     stubGateway()
-    win.__HERMES_DASHBOARD_PROFILE__ = 'default'
+    win.__ICEBATH_DASHBOARD_PROFILE__ = 'default'
     seedWebappSession('served-token')
     expect(installBrowserDesktopBridge()).toBe(true)
     const desktop = win.hermesDesktop!

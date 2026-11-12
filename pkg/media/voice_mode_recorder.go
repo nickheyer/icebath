@@ -510,7 +510,7 @@ func (r *AudioRecorder) ensureStream() error {
 	return nil
 }
 
-// Starts capture at the input device rate, a missing PortAudio or audio extra reported as the remedy
+// Starts capture at the input device rate, a PortAudio that cannot load reported with its remedy
 func (r *AudioRecorder) Start(ctx context.Context, onSilenceStop func()) error {
 	sd, err := importAudio()
 	switch {
@@ -518,7 +518,7 @@ func (r *AudioRecorder) Start(ctx context.Context, onSilenceStop func()) error {
 	case isAudioOSError(err):
 		return errors.New(portaudioMissingMessage())
 	case isAudioImportError(err):
-		return errors.New("Voice mode requires sounddevice and numpy.\n" + voiceCaptureInstallHint(err))
+		return errors.New("Voice mode requires the PortAudio library.\n" + voiceCaptureInstallHint(err))
 	default:
 		return err
 	}

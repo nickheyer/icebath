@@ -384,8 +384,7 @@ func recovered(fn func()) (r any) {
 }
 
 func TestSetupNavigationEscapeCancelsAndLeftGoesBack(t *testing.T) {
-	state := &setupNavigationState{}
-	state.reset(1, nil)
+	state := newSetupNavigationState(1, 0)
 	installSetupNavigation(t, state)
 	start, _ := handleSetupMenuNavigation(cliui.NavEventBegin)
 	if !start.AllowBack {
@@ -406,8 +405,7 @@ func TestSetupNavigationEscapeCancelsAndLeftGoesBack(t *testing.T) {
 func TestSetupStepsMoveToPreviousSectionOrRestartCurrentSection(t *testing.T) {
 	var calls []string
 	terminalAttempts, gatewayAttempts := 0, 0
-	state := &setupNavigationState{}
-	state.reset(-1, nil)
+	state := newSetupNavigationState(-1, 0)
 	installSetupNavigation(t, state)
 	captureSetupOutput(t)
 	err := runSetupSteps([]SetupStep{
@@ -456,8 +454,7 @@ func TestNestedBackReopensOnlyTheImmediatelyPreviousPrompt(t *testing.T) {
 		}
 		return nil
 	}
-	state := &setupNavigationState{}
-	state.reset(-1, nil)
+	state := newSetupNavigationState(-1, 0)
 	installSetupNavigation(t, state)
 	captureSetupOutput(t)
 	if err := runSetupSteps([]SetupStep{{"Model & Provider", modelProviderFlow}}); err != nil {

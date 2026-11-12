@@ -35,7 +35,7 @@ func onLoopPersist(ctx context.Context, rpc *WorkerRPC) error {
 
 func TestOnLoopRpcLogsCallerFramesWithoutArgumentValues(t *testing.T) {
 	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
-	rpc := NewWorkerRPC(t.TempDir())
+	rpc := mustNewWorkerRPC(t, t.TempDir())
 	if err := onLoopPersist(context.Background(), rpc); persistenceReason(err) != "synchronous_rpc_on_event_loop" {
 		t.Fatalf("on loop call %v", err)
 	}
@@ -63,7 +63,7 @@ func bestEffortUsage(ctx context.Context, store *RuntimeSessionStore) {
 func TestOnLoopStoreWriteNamesTheCallerNotTheStore(t *testing.T) {
 	records := captureLogger(t, "agent.runtime_session_store", slog.LevelWarn)
 	tmp := t.TempDir()
-	rpc := NewWorkerRPC(tmp)
+	rpc := mustNewWorkerRPC(t, tmp)
 	store := mustStore(t, rpc.Call, pyjson.ObjectOf("session_id", "s"), filepath.Join(tmp, "outbox"), 0)
 	defer store.closeOwner()
 	bestEffortUsage(pyctx.WithRunningLoop(context.Background()), store)

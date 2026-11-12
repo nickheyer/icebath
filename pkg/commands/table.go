@@ -1,11 +1,15 @@
 package commands
 
 import (
+	"context"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // Category identifiers in the order the registry introduces them
@@ -20,7 +24,7 @@ const (
 	CategoryBackground    = "Background & Automation"
 )
 
-// Meta carries the gateway and desktop fields the Def contract does not hold
+// Meta carries the gateway, executor and desktop fields every Def embeds
 type Meta struct {
 	GatewayOnly        bool
 	GatewayConfigGate  string
@@ -63,6 +67,7 @@ func def(name, description, category string, meta Meta, d Def) Def {
 	if d.BusyPolicy == "" {
 		d.BusyPolicy = BusyReject
 	}
+	d.Meta = meta
 	builtinMeta[name] = meta
 	return d
 }
@@ -299,7 +304,10 @@ func MetaOf(name string) Meta {
 		return m
 	}
 	if d := Default.Lookup(name); d != nil {
-		return builtinMeta[d.Name]
+		if m, ok := builtinMeta[d.Name]; ok {
+			return m
+		}
+		return d.Meta
 	}
 	return Meta{}
 }
@@ -339,13 +347,50 @@ func PluginEntries(r *Registry) []*Def {
 	return out
 }
 
-// PluginDescription returns a plugin command description or the default wording
-func PluginDescription(d *Def) string {
-	if strings.TrimSpace(d.Description) == "" {
-		return "Run /" + d.Name
-	}
-	return d.Description
+// PluginCommandEntry is one plugin slash command with its description and stripped argument hint
+type PluginCommandEntry struct {
+	Name, Description, ArgsHint string
 }
+
+// Plugin manager commands in registration order then registry plugin commands, a blank description localized
+func IterPluginCommandEntries(ctx context.Context, r *Registry) []PluginCommandEntry {
+	found := plugins.GetPluginCommands(ctx)
+	names := plugins.GetPluginCommandOrder(ctx)
+	seen := map[string]bool{}
+	for _, name := range names {
+		seen[name] = true
+	}
+	for _, name := range sortedKeys(found) {
+		if !seen[name] {
+			names = append(names, name)
+		}
+	}
+	var out []PluginCommandEntry
+	listed := map[string]bool{}
+	for _, name := range names {
+		if meta := found[name]; meta != nil && !listed[name] {
+			out = append(out, pluginCommandEntry(ctx, name, meta.Description, meta.ArgsHint))
+			listed[name] = true
+		}
+	}
+	for _, d := range PluginEntries(r) {
+		if !listed[d.Name] {
+			out = append(out, pluginCommandEntry(ctx, d.Name, d.Description, d.ArgsHint))
+			listed[d.Name] = true
+		}
+	}
+	return out
+}
+
+func pluginCommandEntry(ctx context.Context, name, description, argsHint string) PluginCommandEntry {
+	if description == "" {
+		description = i18n.T(ctx, "slash.shared.plugin_default_desc", "", map[string]any{"name": name})
+	}
+	return PluginCommandEntry{Name: name, Description: description, ArgsHint: strings.TrimFunc(argsHint, unicode.IsSpace)}
+}
+
+// Plugin entry source the gateway catalogs read, the real discovery walk in production
+var iterPluginCommandEntries = IterPluginCommandEntries
 
 var pipeSubsRe = regexp.MustCompile(`[a-z]+(?:\|[a-z]+)+`)
 
@@ -394,10 +439,9 @@ func InferArgumentMode(d *Def) string {
 
 // DesktopMeta returns the commands.catalog wire shape for one command
 func DesktopMeta(d *Def) map[string]any {
-	m := MetaOf(d.Name)
-	meta := map[string]any{"argument_mode": nilIfEmpty(InferArgumentMode(d)), "desktop": nilIfEmpty(m.Desktop)}
-	if m.DesktopSubcommands != nil {
-		meta["desktop_subcommands"] = append([]string(nil), m.DesktopSubcommands...)
+	meta := map[string]any{"argument_mode": nilIfEmpty(InferArgumentMode(d)), "desktop": nilIfEmpty(d.Desktop)}
+	if d.DesktopSubcommands != nil {
+		meta["desktop_subcommands"] = append([]string{}, d.DesktopSubcommands...)
 	}
 	return meta
 }
@@ -439,14 +483,14 @@ func GatewayKnownCommands() map[string]bool {
 }
 
 // IsGatewayKnownCommand reports whether a name is a builtin or registered plugin gateway command
-func IsGatewayKnownCommand(r *Registry, name string) bool {
+func IsGatewayKnownCommand(ctx context.Context, r *Registry, name string) bool {
 	if name == "" {
 		return false
 	}
 	if GatewayKnownCommands()[name] {
 		return true
 	}
-	for _, p := range PluginEntries(r) {
+	for _, p := range iterPluginCommandEntries(ctx, r) {
 		if p.Name == name {
 			return true
 		}

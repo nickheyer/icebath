@@ -19,6 +19,16 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
+  # Container init, supervisor and s6 verbs shipped only inside the image
+  - id: icebath-init
+    main: ./cmd/icebath-init
+    binary: icebath-init
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w"]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
   - id: archive
@@ -62,8 +72,20 @@ nfpms:
     license: MIT
     section: utils
     formats: [deb, rpm, apk]
-    bindir: /usr/bin
+    bindir: /usr/lib/icebath
     contents:
+      - src: /usr/lib/icebath/icebath
+        dst: /usr/bin/icebath
+        type: symlink
+      - src: packaging/install_method/dpkg
+        dst: /usr/lib/icebath/.install_method
+        packager: deb
+      - src: packaging/install_method/rpm
+        dst: /usr/lib/icebath/.install_method
+        packager: rpm
+      - src: packaging/install_method/apk
+        dst: /usr/lib/icebath/.install_method
+        packager: apk
       - src: LICENSE
         dst: /usr/share/licenses/icebath/LICENSE
     rpm:
@@ -75,7 +97,7 @@ nfpms:
         key_name: icebath
 
 dockers_v2:
-  - ids: [icebath]
+  - ids: [icebath, icebath-init]
     images: [ghcr.io/nickheyer/icebath]
     tags: ["{{ .Version }}", latest]
     platforms: [linux/amd64, linux/arm64]
@@ -118,6 +140,7 @@ homebrew_casks:
     hooks:
       post:
         install: |
+          File.write("#{staged_path}/.install_method", "homebrew\n")
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/icebath"]
           end
@@ -132,6 +155,7 @@ homebrew_casks:
 scoops:
   - name: icebath
     ids: [archive]
+    post_install: ["Set-Content -Path \"$dir\\.install_method\" -Value 'scoop' -Encoding ascii"]
     homepage: https://icebath.app
     description: Tiling agentic harness and netrunner toolkit
     license: MIT
@@ -183,7 +207,10 @@ aurs:
       name: nickheyer
       email: nick@heyer.app
     package: |-
-      install -Dm755 ./icebath "${pkgdir}/usr/bin/icebath"
+      install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
+      printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
 
 aur_sources:
@@ -212,7 +239,10 @@ aur_sources:
       go run ./cmd/icebath-build web
       go build -tags webdist -o icebath -ldflags="-linkmode=external -X main.version=v${pkgver}" ./cmd/icebath
     package: |-
-      install -Dm755 ./icebath "${pkgdir}/usr/bin/icebath"
+      install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
+      printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -s /usr/lib/icebath/icebath "${pkgdir}/usr/bin/icebath"
       install -Dm644 ./LICENSE "${pkgdir}/usr/share/licenses/icebath/LICENSE"
 
 nix:
@@ -222,6 +252,8 @@ nix:
     description: Tiling agentic harness and netrunner toolkit
     license: mit
     main_program: icebath
+    extra_install: |-
+      printf 'nix\n' > $out/bin/.install_method
     path: pkgs/icebath/default.nix
     commit_author:
       name: nickheyer

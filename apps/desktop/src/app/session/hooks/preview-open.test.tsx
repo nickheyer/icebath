@@ -267,7 +267,7 @@ describe('preview routing', () => {
       await emitPreviewClose('https://example.com/dashboard')
 
       expect($previewTabs.get()).toHaveLength(0)
-      expect(window.localStorage.getItem('hermes.desktop.previewTabs.v2')).toBeNull()
+      expect(window.localStorage.getItem('icebath.desktop.previewTabs.v2')).toBeNull()
     })
 
     it('does not remove a popped Browser tab through the persisted-url fallback', async () => {

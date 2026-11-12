@@ -114,7 +114,7 @@ func (a *APIServerAdapter) prepareSSEResponse(request *gateway.WebRequest, sessi
 	if gatewaySessionKey != "" {
 		headers["X-Hermes-Session-Key"] = gatewaySessionKey
 	}
-	response := gateway.NewWebStreamResponse(http.StatusOK, headers)
+	response := gateway.NewWebStreamResponse(http.StatusOK, withIcebathTwins(headers))
 	if err := response.Prepare(request); err != nil {
 		return nil, err
 	}

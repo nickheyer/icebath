@@ -1,4 +1,4 @@
-import { HERO_ART, LOGO_ART } from './bannerArt.js'
+import { HERO_ART, HERO_GRADIENT, LOGO_ART, LOGO_GRADIENT } from './bannerArt.js'
 import type { ThemeColors } from './theme.js'
 
 const RICH_RE = /\[(?:bold\s+)?(?:dim\s+)?(#(?:[0-9a-fA-F]{3,8}))\]([\s\S]*?)(\[\/\])/g
@@ -43,9 +43,6 @@ export function parseRichMarkup(markup: string): Line[] {
 
   return lines
 }
-
-const LOGO_GRADIENT = [0, 0, 1, 1, 2, 2] as const
-const HERO_GRADIENT = [2, 2, 1, 1, 0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3] as const
 
 const colorize = (art: string[], gradient: readonly number[], c: ThemeColors): Line[] => {
   const p = [c.primary, c.accent, c.border, c.muted]

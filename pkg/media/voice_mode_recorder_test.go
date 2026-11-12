@@ -61,9 +61,9 @@ func startedRecorder(t *testing.T) (*AudioRecorder, *fakeSD) {
 }
 
 func TestAudioRecorderStartRaisesWithoutAudioLibs(t *testing.T) {
-	withAudioImportFailure(t, &audioImportError{msg: "no sounddevice"})
+	withAudioImportFailure(t, &audioImportError{msg: "no dynamic library loader"})
 	err := NewAudioRecorder().Start(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "sounddevice and numpy") {
+	if err == nil || !strings.Contains(err.Error(), "requires the PortAudio library") || !strings.Contains(err.Error(), "no dynamic library loader") || strings.Contains(err.Error(), "sounddevice") {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -556,5 +556,23 @@ func TestStopPhraseSurvivesHallucinationFilterDefaultStopSurvivesRepeatRegexAdja
 	result := transcribeWithStopPhrases(t, "Stop.", []string{"stop"})
 	if result["transcript"] != "Stop." || pyTruthy(result["filtered"]) {
 		t.Fatalf("%v", result)
+	}
+}
+
+func TestVoiceCaptureHintsNameTheNativeLibraryTheBinaryLoads(t *testing.T) {
+	swapVoice(t, &isTermuxEnvironment, func() bool { return true })
+	termux := voiceCaptureInstallHint(&audioImportError{msg: "no loader"})
+	if !strings.Contains(termux, "pkg install termux-api") || strings.Contains(termux, "pip") || strings.Contains(termux, "numpy") {
+		t.Fatalf("termux hint %q", termux)
+	}
+	swapVoice(t, &isTermuxEnvironment, func() bool { return false })
+	if got := voiceCaptureInstallHint(&audioImportError{msg: "no loader"}); got != "no loader" {
+		t.Fatalf("hint %q", got)
+	}
+	missing := portaudioMissingMessage()
+	for _, want := range []string{"libportaudio2", "brew install portaudio", "portaudio.dll", "libportaudio64bit.dll"} {
+		if !strings.Contains(missing, want) {
+			t.Fatalf("missing %q in %q", want, missing)
+		}
 	}
 }

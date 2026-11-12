@@ -148,7 +148,7 @@ func ownerServesExistingRoutesAndWS(t *testing.T, shared bool) {
 		if epoch, _ := result["authority_epoch"].(float64); int64(epoch) != authority.Epoch || result["session_id"] != ref.SessionID {
 			t.Fatalf("resume = %v, epoch %d", result, authority.Epoch)
 		}
-		if subscribers := len(authority.Sessions[ref.SessionID].Subscribers); subscribers != 1 {
+		if subscribers := authority.SubscriberCount(ref.SessionID); subscribers != 1 {
 			t.Fatalf("subscribers = %d", subscribers)
 		}
 	}

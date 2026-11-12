@@ -94,8 +94,8 @@ export const GLASS_IS_WINDOWS = GLASS_SUPPORTED && !isMacPlatform()
 // Reading v1 as the seed is what carries an already-tuned window across the
 // upgrade — normalizeBook lands those values in `base`, which both appearances
 // inherit until one of them is edited.
-const KEY = 'hermes.desktop.translucency.v2'
-const LEGACY_KEY = 'hermes.desktop.translucency.v1'
+const KEY = 'icebath.desktop.translucency.v2'
+const LEGACY_KEY = 'icebath.desktop.translucency.v1'
 
 // An older build persisted the book at every load, so a stored default is no
 // choice: keep it provisional, or a browser upgraded from that build would

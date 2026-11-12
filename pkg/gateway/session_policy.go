@@ -552,10 +552,11 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 		}
 	}
-	surfaces := map[string]string{"cron": "cron", "kanban": "cli", "bot_room": "bot_room"}
+	surfaces := map[string]string{}
 	for label, surface := range Surfaces {
 		surfaces[label] = surface
 	}
+	surfaces["cron"], surfaces["kanban"], surfaces["bot_room"] = "cron", "cli", "bot_room"
 	if surface, known := surfaces[p.Source]; !isForwardPolicy(p) && (!known || p.Platform != surface) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}

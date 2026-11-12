@@ -11,9 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -24,12 +22,11 @@ import (
 const earlyCoreInstallMaxAttempts = 3
 
 var (
-	commandArgvMu         sync.Mutex
-	commandArgvHook       func([]string) []string
-	updateRetryRecovered  bool
-	repairDependencies    = RepairDependencies
-	pidIsRunning          = pidRunning
-	liveCheckoutUnderTest = func(root string) bool { return testing.Testing() && root == resolvePath(RepoRoot()) }
+	commandArgvMu        sync.Mutex
+	commandArgvHook      func([]string) []string
+	updateRetryRecovered bool
+	repairDependencies   = RepairDependencies
+	pidIsRunning         = pidRunning
 )
 
 // Installs the CLI parser's split of top level flags from the command a launch runs
@@ -113,12 +110,12 @@ func pidRunning(pid *big.Int) (bool, error) {
 		if !pid.IsInt64() || pid.Int64() > math.MaxUint32 {
 			return true, nil
 		}
-		return proc.Exists(int(pid.Int64())), nil
+		return pidAlive(int(pid.Int64())), nil
 	}
 	if !pid.IsInt64() || pid.Int64() > math.MaxInt32 {
 		return false, &PyError{Class: "OverflowError", Message: "Python int too large to convert to C int"}
 	}
-	return proc.Exists(int(pid.Int64())), nil
+	return pidAlive(int(pid.Int64())), nil
 }
 
 // Reports a legacy marker whose recorded pid names a running process
@@ -238,7 +235,7 @@ func recoverIfNeeded(ctx context.Context, projectRoot string, argv []string, exp
 	if projectRoot != "" {
 		root = resolvePath(projectRoot)
 	}
-	if !explicit && liveCheckoutUnderTest(root) {
+	if !explicit && LiveCheckoutUnderTest(root) {
 		return false, nil
 	}
 	if argv == nil {

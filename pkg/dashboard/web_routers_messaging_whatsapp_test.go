@@ -2,18 +2,15 @@ package dashboard
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,8 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Drops every session, the dict clear of hermes test setup and teardown
@@ -144,11 +139,17 @@ func (f *whatsappFixture) refusedStart(fields ...any) *HTTPException {
 // Whether another process can take the session lock the gateway takes
 func (f *whatsappFixture) gatewayCanAcquire() bool {
 	f.t.Helper()
+	return gatewayCanAcquireSession(f.t, f.session)
+}
+
+// Whether a process with the extra environment can take the session lock of the session dir
+func gatewayCanAcquireSession(t *testing.T, session string, env ...string) bool {
+	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperWhatsappLockProbe$", "-test.count=1")
-	cmd.Env = append(os.Environ(), "ICEBATH_TEST_WHATSAPP_LOCK_PROBE="+f.session)
+	cmd.Env = append(append(os.Environ(), env...), "ICEBATH_TEST_WHATSAPP_LOCK_PROBE="+session)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		f.t.Fatalf("lock probe: %v\n%s", err, out)
+		t.Fatalf("lock probe: %v\n%s", err, out)
 	}
 	switch {
 	case strings.Contains(string(out), "probe-acquired=true"):
@@ -156,7 +157,7 @@ func (f *whatsappFixture) gatewayCanAcquire() bool {
 	case strings.Contains(string(out), "probe-acquired=false"):
 		return false
 	}
-	f.t.Fatalf("lock probe printed no verdict:\n%s", out)
+	t.Fatalf("lock probe printed no verdict:\n%s", out)
 	return false
 }
 
@@ -190,12 +191,10 @@ type fakeBridge struct {
 	mu         sync.Mutex
 	stdout     io.Reader
 	returncode *int
-	pid        int
 	pollNone   bool
-	wait       func(timeout time.Duration) (int, error)
+	wait       func(timeout time.Duration) (int, bool)
 }
 
-func (b *fakeBridge) Pid() int          { return b.pid }
 func (b *fakeBridge) Stdout() io.Reader { return b.stdout }
 
 func (b *fakeBridge) Poll() *int {
@@ -214,7 +213,7 @@ func (b *fakeBridge) setCode(code int) {
 	b.returncode = &code
 }
 
-func (b *fakeBridge) Wait(timeout time.Duration) (int, error) {
+func (b *fakeBridge) Wait(timeout time.Duration) (int, bool) {
 	if b.wait != nil {
 		return b.wait(timeout)
 	}
@@ -224,18 +223,10 @@ func (b *fakeBridge) Wait(timeout time.Duration) (int, error) {
 		code := 0
 		b.returncode = &code
 	}
-	return *b.returncode, nil
+	return *b.returncode, true
 }
 
-func (b *fakeBridge) Terminate() error {
-	b.setCode(-15)
-	return nil
-}
-
-func (b *fakeBridge) Kill() error {
-	b.setCode(-9)
-	return nil
-}
+func (b *fakeBridge) Terminate() { b.setCode(-15) }
 
 // Stdout of a generator, each string a line and each func run when the reader reaches it
 type scriptedStdout struct {
@@ -377,7 +368,7 @@ func TestReservationCoversConnectedEventAndCredentialFlush(t *testing.T) {
 	result := f.mustStart("reset_session", true)
 	pairingID := result.GetOr("pairing_id", "").(string)
 	record := whatsappRecord(t, pairingID)
-	proc := &fakeBridge{pid: 4242}
+	proc := &fakeBridge{}
 	proc.stdout = &scriptedStdout{steps: []any{
 		`{"event":"connected","user":{"id":"15550001111"}}`,
 		func() {
@@ -414,7 +405,7 @@ func TestReservationCoversConnectedEventAndCredentialFlush(t *testing.T) {
 func TestExpiryStopsActiveWriterAndReleasesReservation(t *testing.T) {
 	f := newWhatsappFixture(t)
 	result := f.mustStart("reset_session", true)
-	proc := &fakeBridge{pid: 4242}
+	proc := &fakeBridge{}
 	proc.stdout = &scriptedStdout{steps: []any{
 		`{"event":"qr","qr":"test"}`,
 		func() {
@@ -444,7 +435,7 @@ func TestExpiryStopsActiveWriterAndReleasesReservation(t *testing.T) {
 func TestExpiryDuringSpawnKeepsReservationUntilLateProcessStops(t *testing.T) {
 	f := newWhatsappFixture(t)
 	result := f.mustStart("reset_session", true)
-	proc := &fakeBridge{pid: 4242}
+	proc := &fakeBridge{}
 	spawnWhatsappPairingProcess = func(ctx context.Context, sessionPath, mode string) (whatsappPairingProc, error) {
 		f.timers[0].fire()
 		if f.gatewayCanAcquire() {
@@ -486,13 +477,13 @@ func TestApplyWaitsForFlushBeforeRestartingGateway(t *testing.T) {
 	result := f.mustStart("reset_session", true)
 	pairingID := result.GetOr("pairing_id", "").(string)
 	record := whatsappRecord(t, pairingID)
-	proc := &fakeBridge{pid: 4242}
-	proc.wait = func(timeout time.Duration) (int, error) {
+	proc := &fakeBridge{}
+	proc.wait = func(timeout time.Duration) (int, bool) {
 		if f.gatewayCanAcquire() {
 			t.Error("gateway took the session before the bridge flushed")
 		}
 		proc.setCode(0)
-		return 0, nil
+		return 0, true
 	}
 	whatsappOnboardingMu.Lock()
 	record.status, record.proc = "connected", proc
@@ -739,31 +730,23 @@ func TestQueryProfileIsHonoredForRepair(t *testing.T) {
 	}
 }
 
-// Pairing process double of the onboarding cases, stopped only by terminate or kill
+// Pairing process double of the onboarding cases, stopped only by terminate
 type fakeOnboardingProc struct {
 	fakeBridge
-	terminated, killed bool
+	terminated bool
 }
 
 func (p *fakeOnboardingProc) Poll() *int {
-	if !p.terminated && !p.killed {
+	if !p.terminated {
 		return nil
 	}
 	code := *p.returncode
 	return &code
 }
 
-func (p *fakeOnboardingProc) Terminate() error {
-	p.terminated = true
-	return nil
-}
+func (p *fakeOnboardingProc) Terminate() { p.terminated = true }
 
-func (p *fakeOnboardingProc) Kill() error {
-	p.killed = true
-	return nil
-}
-
-func (p *fakeOnboardingProc) Wait(timeout time.Duration) (int, error) { return *p.returncode, nil }
+func (p *fakeOnboardingProc) Wait(timeout time.Duration) (int, bool) { return *p.returncode, true }
 
 func TestApplyWhatsappOnboardingSavesPairingPolicy(t *testing.T) {
 	dashboardTestApp(t)
@@ -812,7 +795,7 @@ func TestStartWhatsappOnboardingExistingCredsReturnsLinkedAccount(t *testing.T) 
 	sessionDir := filepath.Join(t.TempDir(), "session")
 	writeTestFile(t, filepath.Join(sessionDir, "creds.json"), `{"me":{"id":"15551234567:1@s.whatsapp.net","name":"Hermes Bot"}}`)
 	code := 1
-	oldProc := &fakeOnboardingProc{fakeBridge: fakeBridge{returncode: &code, pid: 12345}}
+	oldProc := &fakeOnboardingProc{fakeBridge: fakeBridge{returncode: &code}}
 	oldRecord := &whatsappOnboardingSession{proc: oldProc, mode: "bot", sessionPath: sessionDir,
 		expiresAt: "2099-01-01T00:00:00Z", expiresAtTS: epochNow() + 600, status: "starting"}
 	whatsappOnboardingMu.Lock()
@@ -848,308 +831,207 @@ func TestStartWhatsappOnboardingExistingCredsReturnsLinkedAccount(t *testing.T) 
 	}
 }
 
-func TestDashboardReportsPreparedBridgeBinaryMissing(t *testing.T) {
-	for _, executable := range []string{"npm", "node"} {
-		t.Run(executable, func(t *testing.T) {
-			savedFind, savedEnv, savedEnsure := whatsappFindNode, whatsappNodeEnv, whatsappEnsure
-			savedInstalled, savedDir, savedDeps := whatsappInstalled, whatsappBridgeDir, whatsappEnsureBridgeDependencies
-			t.Cleanup(func() {
-				whatsappFindNode, whatsappNodeEnv, whatsappEnsure = savedFind, savedEnv, savedEnsure
-				whatsappInstalled, whatsappBridgeDir, whatsappEnsureBridgeDependencies = savedInstalled, savedDir, savedDeps
-			})
-			whatsappFindNode = func(context.Context, string) (string, error) { return "", nil }
-			whatsappNodeEnv = func() map[string]string { return map[string]string{} }
-			whatsappEnsure = func(context.Context, string, pm.EnsureOptions) (*pm.Runner, error) {
-				return &pm.Runner{Env: map[string]string{}}, nil
-			}
-			whatsappInstalled = func(context.Context, string) (*pm.InstalledPackage, error) { return nil, nil }
-			tmp := t.TempDir()
-			bridgeDir := filepath.Join(tmp, "bridge")
-			writeTestFile(t, filepath.Join(bridgeDir, "bridge.js"), "")
-			whatsappBridgeDir = func(context.Context) string { return bridgeDir }
-			var err error
-			if executable == "npm" {
-				err = ensureWhatsappBridgeDependencies(context.Background(), bridgeDir)
-			} else {
-				whatsappEnsureBridgeDependencies = func(context.Context, string) error { return nil }
-				_, err = spawnWhatsappPairingBridge(context.Background(), filepath.Join(tmp, "session"), "bot")
-			}
-			caught, ok := asHTTPException(err)
-			if !ok || caught.StatusCode != 500 || !strings.Contains(caught.Detail.(string), executable) ||
-				!strings.Contains(caught.Detail.(string), "binary") {
-				t.Fatalf("Unexpected dashboard error: %v", err)
-			}
-		})
-	}
+// Arguments one pairing transport run was started with
+type pairingTransportCall struct {
+	session, mode string
+	env           map[string]string
+	pairJSON      bool
 }
 
-// Pins and records an already installed tool as the PM store entry of name
-func registerStoreTool(t *testing.T, name, executable string) string {
+// Replaces the pairing transport for the case, restoring the in process bridge after
+func installPairingTransport(t *testing.T, fn func(ctx context.Context, session, mode string, env map[string]string, out io.Writer, pairJSON bool) int) {
 	t.Helper()
-	ctx := context.Background()
-	out, err := exec.Command(executable, "--version").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	version := strings.TrimPrefix(strings.TrimSpace(string(out)), "v")
-	pkg, err := pm.GetPackage(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := pm.CurrentTarget()
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := pm.StoreRoot(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry := filepath.Join(store, pkg.StoreEntry(version, target))
-	binary := pkg.Binary(entry, target)
-	if err := os.MkdirAll(filepath.Dir(binary), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(executable, binary); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(executable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(data)
-	digest := hex.EncodeToString(sum[:])
-	lock := pm.NewLockfile(pm.LockfilePath())
-	lock.SetPin(name, version, map[string]any{target: map[string]any{"url": (&url.URL{Scheme: "file", Path: executable}).String(), "sha256": digest}})
-	if err := lock.Save(); err != nil {
-		t.Fatal(err)
-	}
-	tree, err := pm.TreeDigest(entry)
-	if err != nil {
-		t.Fatal(err)
-	}
-	recordStoreFact(t, name, version, entry, pm.FactRecord{Target: &target, Artifacts: []string{digest}, Digest: &tree})
-	return binary
+	saved := whatsappRunPairing
+	t.Cleanup(func() { whatsappRunPairing = saved })
+	whatsappRunPairing = fn
 }
 
-// Records one store entry in the PM facts
-func recordStoreFact(t *testing.T, name, version, entry string, extra pm.FactRecord) {
+// Everything the pairing pipe carries until the bridge releases it, failing when it stays open
+func drainPairingOutput(t *testing.T, proc whatsappPairingProc) string {
 	t.Helper()
-	ctx := context.Background()
-	pkg, err := pm.GetPackage(name)
-	if err != nil {
-		t.Fatal(err)
+	type result struct {
+		data []byte
+		err  error
 	}
-	target, err := pm.CurrentTarget()
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := pm.StoreRoot(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	factsPath, err := pm.FactsPath(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	facts, err := pm.NewFacts(factsPath, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := facts.Record(name, version, filepath.Base(entry), pkg.Env(entry, target), store, extra); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// PM store holding the Node on PATH and an unpublished fake npm that records its argv and env
-type npmProbe struct {
-	node, npm string
-	publish   func() *pm.Runner
-}
-
-const fakeNpmScript = "#!/usr/bin/env node\n" +
-	"const fs = require(\"fs\"); const path = require(\"path\");\n" +
-	"const i = process.argv.indexOf(\"--prefix\");\n" +
-	"const root = i < 0 ? process.cwd() : process.argv[i + 1];\n" +
-	"fs.mkdirSync(path.join(root, \"node_modules/.bin\"), {recursive:true});\n" +
-	"fs.writeFileSync(path.join(root, \"node_modules/.bin/test-server\"), \"ready\");\n" +
-	"fs.writeFileSync(path.join(root, \"called.json\"), JSON.stringify({argv: process.argv, env: process.env}));\n"
-
-func newNpmProbe(t *testing.T) *npmProbe {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("platforms(posix)")
-	}
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("requires an already-installed Node executable")
-	}
-	tmp := t.TempDir()
-	t.Setenv("PATH", filepath.Dir(node))
-	h := filepath.Join(tmp, "home")
-	if err := os.MkdirAll(h, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv(pm.EnvRuntimeDir, filepath.Join(h, "tools"))
-	t.Setenv(pm.EnvDisableLazyInstalls, "1")
-	lockPath := filepath.Join(tmp, "lock.json")
-	previous := pm.SwapLockfilePath(func() string { return lockPath })
-	t.Cleanup(func() { pm.SwapLockfilePath(previous) })
-	nodeBinary := registerStoreTool(t, "node", node)
-	ctx := context.Background()
-	store, err := pm.StoreRoot(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkg, err := pm.GetPackage("npm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := pm.CurrentTarget()
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry := filepath.Join(store, pkg.StoreEntry("1.0.0", target))
-	binary := pkg.Binary(entry, target)
-	writeTestFile(t, binary, fakeNpmScript)
-	if err := os.Chmod(binary, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	lock := pm.NewLockfile(pm.LockfilePath())
-	lock.SetPin("npm", "1.0.0", map[string]any{})
-	if err := lock.Save(); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", "")
-	return &npmProbe{node: nodeBinary, npm: binary, publish: func() *pm.Runner {
-		recordStoreFact(t, "npm", "1.0.0", entry, pm.FactRecord{})
-		return &pm.Runner{Name: "npm", Env: pm.EnvFor([]string{"npm"}, nil)}
-	}}
-}
-
-// Bridge dir with a package.json and no installed modules
-func npmConsumerBridge(t *testing.T) string {
-	t.Helper()
-	bridge := filepath.Join(t.TempDir(), "bridge")
-	writeTestFile(t, filepath.Join(bridge, "package.json"), `{"name":"test-bridge"}`)
-	return bridge
-}
-
-// Asserts the recorded npm call ran the PM npm under the PM node
-func assertPmNpmCall(t *testing.T, probe *npmProbe, outputDir string) {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(outputDir, "called.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	called, err := pyjson.LoadsDict(string(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	argv := called.GetOr("argv", []any{}).([]any)
-	if len(argv) < 2 || argv[1] != probe.npm {
-		t.Fatalf("argv %v want npm %s", argv, probe.npm)
-	}
-	searchPath := called.GetOr("env", pyjson.NewObject()).(*pyjson.Object).GetOr("PATH", "").(string)
-	if found, _ := pyshutil.Which("node", &searchPath); found != probe.node {
-		t.Fatalf("node on the child PATH %q want %s", found, probe.node)
-	}
-}
-
-func TestNpmConsumersExecuteWithPmNode(t *testing.T) {
-	t.Run("dashboard", func(t *testing.T) {
-		probe := newNpmProbe(t)
-		probe.publish()
-		bridge := npmConsumerBridge(t)
-		if err := ensureWhatsappBridgeDependencies(context.Background(), bridge); err != nil {
-			t.Fatal(err)
+	read := make(chan result, 1)
+	go func() {
+		data, err := io.ReadAll(proc.Stdout())
+		read <- result{data, err}
+	}()
+	select {
+	case r := <-read:
+		if r.err != nil {
+			t.Fatal(r.err)
 		}
-		assertPmNpmCall(t, probe, bridge)
+		return string(r.data)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the pairing kept its output pipe open")
+		return ""
+	}
+}
+
+func TestWhatsappPairingTerminateReleasesTheProcessItStopped(t *testing.T) {
+	cancelled := make(chan struct{})
+	installPairingTransport(t, func(ctx context.Context, session, mode string, env map[string]string, out io.Writer, pairJSON bool) int {
+		io.WriteString(out, `{"event":"qr","qr":"scan-me"}`+"\n")
+		<-ctx.Done()
+		close(cancelled)
+		return -15
 	})
+	pairing, err := spawnWhatsappPairingBridge(context.Background(), filepath.Join(t.TempDir(), "session"), "bot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pairing.Poll() != nil {
+		t.Fatal("pairing stopped before terminate")
+	}
+	terminateWhatsappPairing(pairing)
+	code := pairing.Poll()
+	if code == nil {
+		t.Fatal("terminate left the pairing running")
+	}
+	if *code != -15 {
+		t.Fatalf("exit code %d want -15", *code)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("the pairing transport never saw the cancellation")
+	}
+	if output := drainPairingOutput(t, pairing); output != `{"event":"qr","qr":"scan-me"}`+"\n" {
+		t.Fatalf("output %q", output)
+	}
+	terminateWhatsappPairing(pairing)
+	if again := pairing.Poll(); again == nil || *again != -15 {
+		t.Fatalf("second terminate changed the exit code to %v", again)
+	}
 }
 
-func TestMissingNpmAcquiresNpmClosureAtInstallBoundary(t *testing.T) {
-	t.Run("dashboard", func(t *testing.T) {
-		probe := newNpmProbe(t)
-		saved := whatsappEnsure
-		t.Cleanup(func() { whatsappEnsure = saved })
-		type call struct {
-			name     string
-			explicit bool
-		}
-		var calls []call
-		whatsappEnsure = func(_ context.Context, name string, opts pm.EnsureOptions) (*pm.Runner, error) {
-			calls = append(calls, call{name, opts.Explicit})
-			if name != "npm" {
-				t.Errorf("ensure %s", name)
-			}
-			return probe.publish(), nil
-		}
-		bridge := npmConsumerBridge(t)
-		if err := ensureWhatsappBridgeDependencies(context.Background(), bridge); err != nil {
-			t.Fatal(err)
-		}
-		if len(calls) != 1 || calls[0] != (call{"npm", true}) {
-			t.Fatalf("calls %v", calls)
-		}
-		assertPmNpmCall(t, probe, bridge)
+func TestDashboardPairingRunsPairJSONBridgeInProcess(t *testing.T) {
+	var calls []pairingTransportCall
+	installPairingTransport(t, func(ctx context.Context, session, mode string, env map[string]string, out io.Writer, pairJSON bool) int {
+		calls = append(calls, pairingTransportCall{session, mode, env, pairJSON})
+		line, _ := pyjson.Dumps(pyjson.ObjectOf("event", "started", "session", session), pyjson.Separators(",", ":"))
+		io.WriteString(out, line+"\n")
+		return 0
 	})
-}
-
-func TestDashboardPairingPreparesNpmBeforeNodeLookup(t *testing.T) {
-	probe := newNpmProbe(t)
-	ctx := context.Background()
-	factsPath, err := pm.FactsPath(ctx)
+	session := filepath.Join(t.TempDir(), "nested", "session")
+	child, err := spawnWhatsappPairingBridge(context.Background(), session, "bot")
 	if err != nil {
 		t.Fatal(err)
 	}
-	nodeFacts, err := os.ReadFile(factsPath)
-	if err != nil {
-		t.Fatal(err)
+	output := drainPairingOutput(t, child)
+	code, exited := child.Wait(10 * time.Second)
+	if !exited || code != 0 {
+		t.Fatalf("bridge exited %v with %d output %s", exited, code, output)
 	}
-	if err := os.Remove(factsPath); err != nil {
-		t.Fatal(err)
+	if info, err := os.Stat(session); err != nil || !info.IsDir() {
+		t.Fatalf("session dir not prepared: %v", err)
 	}
-	bridge := filepath.Join(t.TempDir(), "bridge")
-	writeTestFile(t, filepath.Join(bridge, "bridge.js"), "console.log(JSON.stringify({argv:process.argv, path:process.env.PATH}));\n")
-	savedDir, savedEnsure := whatsappBridgeDir, whatsappEnsure
-	t.Cleanup(func() { whatsappBridgeDir, whatsappEnsure = savedDir, savedEnsure })
-	whatsappBridgeDir = func(context.Context) string { return bridge }
-	var installs []string
-	whatsappEnsure = func(_ context.Context, name string, opts pm.EnsureOptions) (*pm.Runner, error) {
-		installs = append(installs, fmt.Sprintf("%s:%v", name, opts.Explicit))
-		if err := os.WriteFile(factsPath, nodeFacts, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return probe.publish(), nil
+	want := pairingTransportCall{session, "bot", map[string]string{"WHATSAPP_MODE": "bot", "WHATSAPP_DM_POLICY": "pairing"}, true}
+	if len(calls) != 1 || calls[0].session != want.session || calls[0].mode != want.mode ||
+		calls[0].pairJSON != want.pairJSON || !maps.Equal(calls[0].env, want.env) {
+		t.Fatalf("transport calls %+v want %+v", calls, want)
 	}
-	child, err := spawnWhatsappPairingBridge(ctx, filepath.Join(t.TempDir(), "session"), "bot")
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, readErr := io.ReadAll(child.Stdout())
-	code, waitErr := child.Wait(10 * time.Second)
-	if waitErr != nil {
-		child.Kill()
-		child.Wait(10 * time.Second)
-		t.Fatal(waitErr)
-	}
-	if readErr != nil || code != 0 {
-		t.Fatalf("bridge exit %d read %v output %s", code, readErr, output)
-	}
-	if len(installs) != 1 || installs[0] != "npm:true" {
-		t.Fatalf("installs %v", installs)
-	}
-	result, err := pyjson.LoadsDict(strings.TrimSpace(string(output)))
+	result, err := pyjson.LoadsDict(strings.TrimSpace(output))
 	if err != nil {
 		t.Fatalf("output %q: %v", output, err)
 	}
-	argv := result.GetOr("argv", []any{}).([]any)
-	if !slices.Contains(argv, any("--pair-json")) {
-		t.Fatalf("argv %v", argv)
+	if result.GetOr("event", nil) != "started" || result.GetOr("session", nil) != session {
+		t.Fatalf("event %v", result)
 	}
-	searchPath := result.GetOr("path", "").(string)
-	if found, _ := pyshutil.Which("node", &searchPath); found != probe.node {
-		t.Fatalf("node on the bridge PATH %q want %s", found, probe.node)
+}
+
+func TestDashboardReportsPairingTransportFailure(t *testing.T) {
+	f := newWhatsappFixture(t)
+	result := f.mustStart("reset_session", true)
+	pairingID := result.GetOr("pairing_id", "").(string)
+	record := whatsappRecord(t, pairingID)
+	start := f.starts[0]
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runWhatsappPairing(start.ctx, start.pairingID, start.sessionPath, start.mode)
+	}()
+	select {
+	case <-done:
+	case <-time.After(90 * time.Second):
+		t.Fatal("pairing against an unreachable server never finished")
+	}
+	whatsappOnboardingMu.Lock()
+	status, message, proc, reserved := record.status, record.err, record.proc, record.sessionReserved
+	whatsappOnboardingMu.Unlock()
+	if status != "error" || message != "WhatsApp pairing process exited with code 1." {
+		t.Fatalf("status %s error %v", status, message)
+	}
+	if code := proc.Poll(); code == nil || *code != 1 {
+		t.Fatalf("bridge exit %v", code)
+	}
+	if reserved || !f.gatewayCanAcquire() {
+		t.Fatal("failed pairing kept the session reserved")
+	}
+	if !f.timers[0].cancelled {
+		t.Fatal("expiry timer still armed")
+	}
+}
+
+func TestCancelStopsInProcessPairingAndReleasesReservation(t *testing.T) {
+	f := newWhatsappFixture(t)
+	cancelled := make(chan struct{})
+	installPairingTransport(t, func(ctx context.Context, session, mode string, env map[string]string, out io.Writer, pairJSON bool) int {
+		io.WriteString(out, `{"event":"qr","qr":"scan-me"}`+"\n")
+		<-ctx.Done()
+		close(cancelled)
+		return -15
+	})
+	result := f.mustStart("reset_session", true)
+	pairingID := result.GetOr("pairing_id", "").(string)
+	start := f.starts[0]
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runWhatsappPairing(start.ctx, start.pairingID, start.sessionPath, start.mode)
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		status, err := getWhatsappOnboardingStatus(pairingID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.GetOr("status", nil) == "waiting" && status.GetOr("qr_payload", nil) == "scan-me" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("qr event never reached the pairing: %v", status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if f.gatewayCanAcquire() {
+		t.Fatal("gateway took the session during pairing")
+	}
+	if ok := cancelWhatsappOnboarding(pairingID).GetOr("ok", nil); ok != true {
+		t.Fatalf("cancel ok %v", ok)
+	}
+	select {
+	case <-cancelled:
+	default:
+		t.Fatal("cancel left the pairing transport running")
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("pairing worker never finished after cancel")
+	}
+	whatsappOnboardingMu.Lock()
+	listed := whatsappOnboardingSessions.get(pairingID)
+	whatsappOnboardingMu.Unlock()
+	if listed != nil {
+		t.Fatalf("cancelled pairing still listed with status %s", listed.status)
+	}
+	if !f.gatewayCanAcquire() {
+		t.Fatal("cancelled pairing kept the session reserved")
+	}
+	if !f.timers[0].cancelled {
+		t.Fatal("expiry timer still armed")
 	}
 }

@@ -279,7 +279,7 @@ func (r *GatewayRunner) buildManualCompressionAgent(ctx context.Context, session
 		opts.SessionDB = asyncDB.DB()
 	}
 	applyRuntimeKwargs(&opts, runtimeKwargs)
-	tmpAgent, err := agent.NewAIAgent(ctx, opts)
+	tmpAgent, err := newAIAgent(ctx, opts)
 	if err != nil {
 		return nil, err
 	}

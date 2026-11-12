@@ -15,7 +15,7 @@ import (
 )
 
 // Label prefix of one off runtime jobs, never the installed ai.icebath service prefix fleet scans read
-const launchdRuntimeLabelPrefix = "com.nousresearch.icebath.runtime."
+const launchdRuntimeLabelPrefix = "ai.icebath.runtime."
 
 const launchdRuntimePollInterval = 0.5
 

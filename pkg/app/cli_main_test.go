@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -137,10 +138,10 @@ func TestMainQuietSingleQueryAnswersThroughRunConversation(t *testing.T) {
 	installScriptedGateway(t, client)
 	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
 		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
-	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+	code, err := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
 		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(5)})
-	if code != 0 {
-		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	if code != 0 || err != nil {
+		t.Fatalf("exit code %d %v, stdout %q, stderr %q", code, err, out.String(), errOut.String())
 	}
 	submits := client.callsOf("prompt.submit")
 	if len(submits) != 1 || submits[0]["text"] != "say hi" {
@@ -165,10 +166,10 @@ func TestMainQuietSingleQueryFailedTurnExitsOne(t *testing.T) {
 	installScriptedGateway(t, client)
 	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
 		"agent": map[string]any{"max_turns": 2}, "display": map[string]any{}})
-	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+	code, err := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
 		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(2)})
-	if code != 1 {
-		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	if code != 1 || err != nil {
+		t.Fatalf("exit code %d %v, stdout %q, stderr %q", code, err, out.String(), errOut.String())
 	}
 	if !strings.Contains(out.String(), "rejected the request and retrying won't help") || !strings.Contains(out.String(), "model not supported") {
 		t.Fatalf("stdout %q lacks the failure copy the agent returns as its final response", out.String())
@@ -273,5 +274,39 @@ func TestStatusBarVisibleFromDisplayConfig(t *testing.T) {
 	}
 	if !statusBarVisibleFromDisplayConfig(map[string]any{"tui_statusbar": "bottom"}) {
 		t.Fatal("the legacy key must still read")
+	}
+}
+
+func TestChatMainPrintsTheStreamJSONValueErrorToStdout(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	code := ChatMain(context.Background(), MainOptions{OutputFormat: "stream-json"})
+	if code != 1 || out.String() != "Error: --format stream-json requires -q/--query\n" || strings.Contains(errOut.String(), "requires") {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}
+
+func TestChatMainPrintsACLIBuildValueErrorToStdout(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	t.Cleanup(func() { SetCLIConfig(nil) })
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
+		"agent": map[string]any{"max_turns": math.NaN()}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
+	code := ChatMain(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1"})
+	if code != 1 || out.String() != "Error: cannot convert float NaN to integer\n" || strings.Contains(errOut.String(), "NaN") {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}
+
+func TestCLIModuleEntryReportsTheStreamJSONValueErrorOnStderr(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	code := cliModuleMain(context.Background(), []string{"--output-format", "stream-json"}, errOut)
+	if code != 1 || out.String() != "" || errOut.String() != "--format stream-json requires -q/--query\n" {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
 }

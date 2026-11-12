@@ -14,7 +14,7 @@ export interface GatewaySurvivor {
 
 // One slot on globalThis, keyed by a process-stable Symbol so repeated imports
 // (across hot reloads) resolve the exact same store.
-const SURVIVOR_KEY = Symbol.for('hermes.desktop.gatewaySurvivor')
+const SURVIVOR_KEY = Symbol.for('icebath.desktop.gatewaySurvivor')
 
 interface SurvivorGlobal {
   [SURVIVOR_KEY]?: GatewaySurvivor | null

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // NoDriverDiffFlags disable attribute scoped diff drivers on rendered diffs
@@ -190,9 +190,7 @@ func NoninteractiveGitEnv(base map[string]string) map[string]string {
 
 // Runs a probe child with captured pipes, nil on spawn failure or timeout
 func boundedProbeRun(argv []string, timeout time.Duration, env map[string]string, cwd string, input *string) *ProbeResult {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	if env != nil {
 		cmd.Env = mapToEnviron(env)
 	}
@@ -202,29 +200,26 @@ func boundedProbeRun(argv []string, timeout time.Duration, env map[string]string
 	if input != nil {
 		cmd.Stdin = strings.NewReader(*input)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	cmd.WaitDelay = time.Second
 	hideConsoleWindow(cmd)
 	proc.Group(cmd)
-	cmd.Cancel = func() error { return proc.Kill(cmd) }
-	if err := cmd.Start(); err != nil {
+	child, err := StartPiped(cmd)
+	if err != nil {
 		return nil
 	}
-	err := cmd.Wait()
-	if ctx.Err() != nil {
+	stdout, stderr, ok := child.Communicate(timeout)
+	if !ok {
+		KillAndDrain(child, time.Second)
 		return nil
 	}
 	code := 0
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		} else {
+	if err := child.Err(); err != nil {
+		ee, isExit := err.(*exec.ExitError)
+		if !isExit {
 			return nil
 		}
+		code = pysubprocess.Returncode(ee)
 	}
-	return &ProbeResult{Code: code, Stdout: stdout.String(), Stderr: stderr.String()}
+	return &ProbeResult{Code: code, Stdout: string(stdout), Stderr: string(stderr)}
 }
 
 // Runs a short git probe and returns stripped stdout, empty on any failure

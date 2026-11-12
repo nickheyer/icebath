@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b 사용 가능한 도구 세트"
     currently_enabled_legend: "(*) = 현재 활성화됨"
     tip_enable_all: "팁: 모든 도구 세트를 활성화하려면 'all' 또는 '*'를 사용하세요"
-    example: "예시: python cli.py --toolsets web,terminal"
+    example: "예시: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "알 수 없는 /usage 하위 명령: {args}. /usage 또는 /usage reset [--force]를 사용해 보세요."

@@ -14,7 +14,7 @@ import {
 } from './session'
 import { $sessionStates, sessionTileDelegate } from './session-states'
 
-const STORAGE_KEY = 'hermes.desktop.model-presets'
+const STORAGE_KEY = 'icebath.desktop.model-presets'
 const pendingWrites = new Map<string, Promise<unknown>>()
 const confirmedValues = new Map<string, string>()
 

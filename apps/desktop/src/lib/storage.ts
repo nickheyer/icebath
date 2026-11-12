@@ -68,7 +68,7 @@ export interface WriteOptions {
 // store never takes such a value, by seed or by write, so a fresh client's
 // defaults cannot fill it ahead of the client that holds the user's choices
 // (#145536 review). Not a shared key itself.
-export const PROVISIONAL_PREFERENCES_KEY = 'hermes:ui-preferences:provisional'
+export const PROVISIONAL_PREFERENCES_KEY = 'icebath:ui-preferences:provisional'
 
 function rawRead(key: string): null | string {
   try {

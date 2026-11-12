@@ -71,6 +71,7 @@ func anyContains(msgs []map[string]any, text string) bool {
 }
 
 func TestMicroAbsorbsOneExchangeAndLeavesASummaryMarker(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := microConversation(6)
 	result := mustMicro(t, c, copyRows(messages))
@@ -82,6 +83,7 @@ func TestMicroAbsorbsOneExchangeAndLeavesASummaryMarker(t *testing.T) {
 }
 
 func TestMicroDisabledIsANoOp(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.microCompactEnabled = false
 	messages := microConversation(6)
@@ -91,6 +93,7 @@ func TestMicroDisabledIsANoOp(t *testing.T) {
 }
 
 func TestMicroIsOffUnlessExplicitlyEnabled(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	fresh := newCompressorWith(t, 40960, func(o *ContextCompressorOptions) {
 		o.Model, o.ThresholdPercent, o.ProtectFirstN, o.ProtectLastN, o.Provider = "test-model", 0.75, 1, 2, "test"
 		o.ConfigContextLength = iptr(40960)
@@ -103,6 +106,7 @@ func TestMicroIsOffUnlessExplicitlyEnabled(t *testing.T) {
 }
 
 func TestMicroCadenceOfOneRunsEveryTurn(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.microCompactEveryNTurns = 1
 	first := mustMicro(t, c, microConversation(8))
@@ -113,6 +117,7 @@ func TestMicroCadenceOfOneRunsEveryTurn(t *testing.T) {
 }
 
 func TestMicroCadenceSkipsTurnsUntilAPassIsDue(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.microCompactEveryNTurns = 3
 	first := mustMicro(t, c, microConversation(8))
@@ -127,6 +132,7 @@ func TestMicroCadenceSkipsTurnsUntilAPassIsDue(t *testing.T) {
 }
 
 func TestMicroCadenceIsClampedToAtLeastOne(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, bogus := range []int{0, -5} {
 		c := microCompressor(t, "ROLLING SUMMARY")
 		c.microCompactEveryNTurns = bogus
@@ -137,6 +143,7 @@ func TestMicroCadenceIsClampedToAtLeastOne(t *testing.T) {
 }
 
 func TestMicroCursorAdvancesAcrossSuccessiveTurns(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	first := mustMicro(t, c, microConversation(8))
 	after := c.microCompactCursor
@@ -147,6 +154,7 @@ func TestMicroCursorAdvancesAcrossSuccessiveTurns(t *testing.T) {
 }
 
 func TestMicroProtectedHeadAndTailSurvive(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := microConversation(6)
 	result := mustMicro(t, c, copyRows(messages))
@@ -156,6 +164,7 @@ func TestMicroProtectedHeadAndTailSurvive(t *testing.T) {
 }
 
 func TestMicroUserMessagesAreNeverAbsorbed(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := microConversation(10)
 	var originals []string
@@ -201,6 +210,7 @@ func microToolConversation(rounds, calls, bodyChars int, followup bool) []map[st
 }
 
 func TestMicroCursorIsDerivedFromTheSplicedList(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	msgs := microToolConversation(8, 3, 500, false)
 	for range 4 {
@@ -219,6 +229,7 @@ func TestMicroCursorIsDerivedFromTheSplicedList(t *testing.T) {
 }
 
 func TestMicroResumeDoesNotDestroyTheAccumulatedSummary(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	msgs := microConversation(10)
 	first := microCompressor(t, "IMPORTANT HISTORY: decisions and paths")
 	for range 3 {
@@ -238,6 +249,7 @@ func TestMicroResumeDoesNotDestroyTheAccumulatedSummary(t *testing.T) {
 }
 
 func TestMicroResumeKeepsTheOldMarkerWhenRehydrationFails(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	msgs := microConversation(10)
 	first := microCompressor(t, "IMPORTANT HISTORY: decisions and paths")
 	for range 3 {
@@ -254,6 +266,7 @@ func TestMicroResumeKeepsTheOldMarkerWhenRehydrationFails(t *testing.T) {
 }
 
 func TestMicroRollingSummaryRoundTripsThroughAMarker(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.microCompactRollingSummary = "decisions: use the existing helper"
 	marker := summaryMarkers(mustMicro(t, c, microConversation(6)))[0]
@@ -263,6 +276,7 @@ func TestMicroRollingSummaryRoundTripsThroughAMarker(t *testing.T) {
 }
 
 func TestMicroShortConversationIsUntouched(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := []map[string]any{{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}}
 	if !sameRows(mustMicro(t, c, copyRows(messages)), messages) {
@@ -271,6 +285,7 @@ func TestMicroShortConversationIsUntouched(t *testing.T) {
 }
 
 func TestMicroSummarizerFailureLeavesConversationIntact(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	patchMicroSummarizer(t, func(string) *string { return nil })
 	messages := microConversation(6)
@@ -280,6 +295,7 @@ func TestMicroSummarizerFailureLeavesConversationIntact(t *testing.T) {
 }
 
 func TestMicroPoisonExchangeIsSkippedAfterRepeatedFailures(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	patchMicroSummarizer(t, func(string) *string { return nil })
 	messages := microConversation(6)
@@ -292,6 +308,7 @@ func TestMicroPoisonExchangeIsSkippedAfterRepeatedFailures(t *testing.T) {
 }
 
 func TestMicroRepeatedCompactionShrinksContextAndKeepsOneMarker(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "")
 	n := 0
 	patchMicroSummarizer(t, func(string) *string {
@@ -349,6 +366,7 @@ func objInt(o *pyjson.Object, key string) int {
 }
 
 func TestMicroEmitsContentFreeTokenTelemetry(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	logs := captureInfoLogs(t)
 	result := mustMicro(t, c, microConversation(8))
@@ -368,6 +386,7 @@ func TestMicroEmitsContentFreeTokenTelemetry(t *testing.T) {
 }
 
 func TestMicroEmitterNeverForcesWindowResolution(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.thresholdTokens, c.resolvedContextLength = nil, nil
 	prev := compressorModelContextLength
@@ -386,6 +405,7 @@ func TestMicroEmitterNeverForcesWindowResolution(t *testing.T) {
 }
 
 func TestMicroCumulativeSavingsAccumulateAcrossPasses(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := microConversation(10)
 	for range 6 {
@@ -397,6 +417,7 @@ func TestMicroCumulativeSavingsAccumulateAcrossPasses(t *testing.T) {
 }
 
 func TestMicroDefragTriggersOnceTheRollingSummaryGrows(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "FRESH DEFRAGGED SUMMARY")
 	messages := mustMicro(t, c, microConversation(8))
 	c.microCompactRollingSummary = strings.Repeat("x", 40_000)
@@ -421,6 +442,7 @@ func TestMicroDefragTriggersOnceTheRollingSummaryGrows(t *testing.T) {
 }
 
 func TestMicroDefragNeverAbsorbsUserMessages(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "DEFRAGGED")
 	messages := []map[string]any{{"role": "system", "content": "sys"}}
 	for i := range 10 {
@@ -436,6 +458,7 @@ func TestMicroDefragNeverAbsorbsUserMessages(t *testing.T) {
 }
 
 func TestMicroDefragSummarizesOnlyTheSummaryText(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	captured := ""
 	patchMicroSummarizer(t, func(text string) *string { captured = text; s := "DEFRAGGED"; return &s })
@@ -447,6 +470,7 @@ func TestMicroDefragSummarizesOnlyTheSummaryText(t *testing.T) {
 }
 
 func TestMicroSplicedTranscriptHasNoConsecutiveSameRoleMessages(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	msgs := microToolConversation(8, 2, 400, true)
 	for range 4 {
@@ -460,6 +484,7 @@ func TestMicroSplicedTranscriptHasNoConsecutiveSameRoleMessages(t *testing.T) {
 }
 
 func TestMicroMarkerReportsNoUserProvenance(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	marker := summaryMarkers(mustMicro(t, c, microConversation(6)))[0]
 	if v, ok := marker[state.CompressedSummaryHasUserTurnKey].(bool); !ok || v {
@@ -468,6 +493,7 @@ func TestMicroMarkerReportsNoUserProvenance(t *testing.T) {
 }
 
 func TestMicroSupersedeNeverDropsABatchCompactionMarker(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "MICRO SUMMARY (exchanges 1..k only)")
 	msgs := mustMicro(t, c, microConversation(8))
 	if c.microCompactRollingSummary == "" {
@@ -488,6 +514,7 @@ func TestMicroSupersedeNeverDropsABatchCompactionMarker(t *testing.T) {
 }
 
 func TestMicroDefragNeverRewritesABatchCompactionMarker(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "DEFRAGGED")
 	msgs := []map[string]any{{"role": "system", "content": "sys"}, {"role": "user", "content": "[batch summary] CRITICAL HISTORY: exchanges 1..m", state.CompressedSummaryMetadataKey: true}}
 	for i := range 6 {
@@ -500,6 +527,7 @@ func TestMicroDefragNeverRewritesABatchCompactionMarker(t *testing.T) {
 }
 
 func TestMicroBatchCompressResetsMicroState(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	msgs := mustMicro(t, c, microConversation(8))
 	if c.microCompactRollingSummary == "" || c.microCompactCursor <= 0 {
@@ -530,6 +558,7 @@ func (d *microCaptureDB) ArchiveAndCompact(_ context.Context, sessionID string, 
 }
 
 func TestMicroDBSyncPassesExactCarriedMessages(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	db := &microCaptureDB{}
 	c.sessionDB, c.sessionID = db, "sess"
@@ -550,6 +579,7 @@ func TestMicroDBSyncPassesExactCarriedMessages(t *testing.T) {
 }
 
 func TestMicroSplicePreservesDBPersistedStamps(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	messages := microConversation(8)
 	for _, m := range messages {
@@ -576,6 +606,7 @@ func microDefragSetup(t *testing.T) (*ContextCompressor, []map[string]any) {
 }
 
 func TestMicroDefragMarkerPopRaisesInvalidationFlag(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c, messages := microDefragSetup(t)
 	if c.flushScanCursorInvalidated {
 		t.Fatal("flag raised before defrag")
@@ -587,6 +618,7 @@ func TestMicroDefragMarkerPopRaisesInvalidationFlag(t *testing.T) {
 }
 
 func TestMicroNoDefragNoFlag(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	mustMicro(t, c, microConversation(8))
 	if c.flushScanCursorInvalidated {
@@ -595,6 +627,7 @@ func TestMicroNoDefragNoFlag(t *testing.T) {
 }
 
 func TestMicroMergePopsPersistedMarkerAndRaisesFlag(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := microCompressor(t, "ROLLING SUMMARY")
 	c.microCompactRollingSummary = "ROLLING"
 	messages := []map[string]any{

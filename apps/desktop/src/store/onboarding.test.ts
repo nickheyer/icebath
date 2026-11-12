@@ -289,7 +289,7 @@ describe('refreshOnboarding', () => {
 
     installApiMock(api)
     // Simulate a returning user: cache is set and store is configured.
-    window.localStorage.setItem('hermes-desktop-onboarded-v1', '1')
+    window.localStorage.setItem('icebath-desktop-onboarded-v1', '1')
     $desktopOnboarding.set(
       baseState({
         configured: true,
@@ -306,7 +306,7 @@ describe('refreshOnboarding', () => {
     expect($desktopOnboarding.get().configured).toBe(true)
     expect($desktopOnboarding.get().reason).toBeNull()
     // The cache must survive the refresh — proving we didn't downgrade.
-    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBe('1')
+    expect(window.localStorage.getItem('icebath-desktop-onboarded-v1')).toBe('1')
   })
 
   it('keeps an unknown readiness notice temporary and clears it on recovery (#124545)', async () => {
@@ -350,7 +350,7 @@ describe('refreshOnboarding', () => {
 
     expect(ready).toBe(false)
     expect($desktopOnboarding.get().configured).toBeNull()
-    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBeNull()
+    expect(window.localStorage.getItem('icebath-desktop-onboarded-v1')).toBeNull()
     // Nothing was ever verified, so there is no outage worth a toast.
     expect(notifySpy).not.toHaveBeenCalled()
   })
@@ -363,7 +363,7 @@ describe('refreshOnboarding', () => {
     // setup.ready bumped the boot generation moments ago. The runtime_check
     // answers ok:false because the external secret source (BWS) has not
     // hydrated yet — a hydration race, not a credential verdict (#124939).
-    window.localStorage.setItem('hermes-desktop-onboarded-v1', '1')
+    window.localStorage.setItem('icebath-desktop-onboarded-v1', '1')
     $desktopOnboarding.set(baseState({ configured: true, providers: null, requested: false }))
 
     notifySetupReady()
@@ -372,14 +372,14 @@ describe('refreshOnboarding', () => {
 
     expect(ready).toBe(false)
     expect($desktopOnboarding.get().configured).toBe(true)
-    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBe('1')
+    expect(window.localStorage.getItem('icebath-desktop-onboarded-v1')).toBe('1')
   })
 
   it('still downgrades when the same ok:false arrives long after boot', async () => {
     const { notifySetupReady } = await import('@/store/live-sync')
 
     installApiMock(vi.fn())
-    window.localStorage.setItem('hermes-desktop-onboarded-v1', '1')
+    window.localStorage.setItem('icebath-desktop-onboarded-v1', '1')
     $desktopOnboarding.set(baseState({ configured: true, providers: null, requested: false }))
 
     // Boot happened, then the grace window elapsed: an ok:false now is a real
@@ -392,29 +392,29 @@ describe('refreshOnboarding', () => {
 
       expect(ready).toBe(false)
       expect($desktopOnboarding.get().configured).toBe(false)
-      expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBeNull()
+      expect(window.localStorage.getItem('icebath-desktop-onboarded-v1')).toBeNull()
     } finally {
       clock.mockRestore()
     }
   })
 
   it('keeps a persisted "choose later" when a passive round completes onboarding', () => {
-    window.localStorage.setItem('hermes-onboarding-skipped-v1', '1')
+    window.localStorage.setItem('icebath-onboarding-skipped-v1', '1')
     $desktopOnboarding.set(baseState({ configured: null, firstRunSkipped: true }))
 
     completeDesktopOnboarding()
 
-    expect(window.localStorage.getItem('hermes-onboarding-skipped-v1')).toBe('1')
+    expect(window.localStorage.getItem('icebath-onboarding-skipped-v1')).toBe('1')
     expect($desktopOnboarding.get().firstRunSkipped).toBe(true)
   })
 
   it('clears the skip only when the user actually connected a provider', () => {
-    window.localStorage.setItem('hermes-onboarding-skipped-v1', '1')
+    window.localStorage.setItem('icebath-onboarding-skipped-v1', '1')
     $desktopOnboarding.set(baseState({ configured: null, firstRunSkipped: true }))
 
     completeDesktopOnboarding(true)
 
-    expect(window.localStorage.getItem('hermes-onboarding-skipped-v1')).toBeNull()
+    expect(window.localStorage.getItem('icebath-onboarding-skipped-v1')).toBeNull()
     expect($desktopOnboarding.get().firstRunSkipped).toBe(false)
   })
 
@@ -422,7 +422,7 @@ describe('refreshOnboarding', () => {
     // Outside the boot window: no setup.ready bump precedes the round, so an
     // answered ok:false is a real verdict, not a hydration race.
     installApiMock(vi.fn())
-    window.localStorage.setItem('hermes-desktop-onboarded-v1', '1')
+    window.localStorage.setItem('icebath-desktop-onboarded-v1', '1')
     $desktopOnboarding.set(
       baseState({
         configured: true,
@@ -437,7 +437,7 @@ describe('refreshOnboarding', () => {
     expect(ready).toBe(false)
     expect($desktopOnboarding.get().configured).toBe(false)
     expect($desktopOnboarding.get().reason).toContain('No usable credentials found for openrouter.')
-    expect(window.localStorage.getItem('hermes-desktop-onboarded-v1')).toBeNull()
+    expect(window.localStorage.getItem('icebath-desktop-onboarded-v1')).toBeNull()
   })
 
   it('keeps a keyless custom runtime out of setup', async () => {

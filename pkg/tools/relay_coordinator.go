@@ -173,20 +173,17 @@ type RelaySessionInitializer func(ctx context.Context, host *RelayRuntime, conte
 
 // Semantic conversation and turn lifetimes of icebath core
 type RelaySessionCoordinator struct {
-	Registry       RelayHostSource
-	prepareSession func(ctx context.Context, host *RelayRuntime, context map[string]any)
-	initializerMu  sync.Mutex
-	initializers   *pydict.Dict[string, RelaySessionInitializer]
-	activeTurnsMu  sync.Mutex
-	activeTurns    map[relayTurnKey]map[*RelayTurnContext]bool
+	Registry      RelayHostSource
+	initializerMu sync.Mutex
+	initializers  *pydict.Dict[string, RelaySessionInitializer]
+	activeTurnsMu sync.Mutex
+	activeTurns   map[relayTurnKey]map[*RelayTurnContext]bool
 }
 
 // Coordinator over registry
 func NewRelaySessionCoordinator(registry RelayHostSource) *RelaySessionCoordinator {
-	c := &RelaySessionCoordinator{Registry: registry, initializers: pydict.New[string, RelaySessionInitializer](),
+	return &RelaySessionCoordinator{Registry: registry, initializers: pydict.New[string, RelaySessionInitializer](),
 		activeTurns: map[relayTurnKey]map[*RelayTurnContext]bool{}}
-	c.prepareSession = c.runSessionInitializers
-	return c
 }
 
 // Registers idempotent profile and session preparation before scope creation
@@ -196,15 +193,26 @@ func (c *RelaySessionCoordinator) RegisterSessionInitializer(name string, callba
 	c.initializerMu.Unlock()
 }
 
-func (c *RelaySessionCoordinator) runSessionInitializers(ctx context.Context, host *RelayRuntime, context map[string]any) {
+// Runs every registered initializer in order, logging a failed one and going on
+func (c *RelaySessionCoordinator) prepareSession(ctx context.Context, host *RelayRuntime, context map[string]any) {
 	c.initializerMu.Lock()
 	names, callbacks := c.initializers.Keys(), c.initializers.Values()
 	c.initializerMu.Unlock()
 	for i, callback := range callbacks {
-		if err := callback(ctx, host, context); err != nil {
+		if err := relayRunInitializer(ctx, callback, host, context); err != nil {
 			relayLogger().WarnContext(ctx, "Icebath Relay session initializer failed: "+names[i], "err", err)
 		}
 	}
+}
+
+// Error or recovered panic of one initializer call
+func relayRunInitializer(ctx context.Context, callback RelaySessionInitializer, host *RelayRuntime, context map[string]any) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("%v", rec)
+		}
+	}()
+	return callback(ctx, host, context)
 }
 
 // Conversation identity and working directories of AcquireConversation

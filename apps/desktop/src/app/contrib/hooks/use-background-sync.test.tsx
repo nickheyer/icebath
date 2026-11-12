@@ -187,8 +187,8 @@ describe('useBackgroundSync live-status poll with no session open', () => {
   // A reconnect re-resolves the socket's own route and publishes the primary's descriptor
   // (sharedPrimary false) while the picked profile stays selected; the poll must still name it.
   it('keeps naming the picked profile after a reconnect republishes the primary descriptor', async () => {
-    const win = window as unknown as Window & { __HERMES_DASHBOARD_PROFILE__?: string }
-    win.__HERMES_DASHBOARD_PROFILE__ = 'default'
+    const win = window as unknown as Window & { __ICEBATH_DASHBOARD_PROFILE__?: string }
+    win.__ICEBATH_DASHBOARD_PROFILE__ = 'default'
     seedWebappSession('served-token')
     window.history.replaceState(null, '', '/?profile=research#/')
 
@@ -212,7 +212,7 @@ describe('useBackgroundSync live-status poll with no session open', () => {
         request.mock.calls.filter(([method]) => method === 'session.active_list').map(([, params]) => params)
       ).toEqual([{ profile: 'research' }, { profile: 'research' }])
     } finally {
-      delete win.__HERMES_DASHBOARD_PROFILE__
+      delete win.__ICEBATH_DASHBOARD_PROFILE__
       clearWebappSession()
       Reflect.deleteProperty(window, 'hermesDesktop')
       window.history.replaceState(null, '', '/#/')

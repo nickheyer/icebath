@@ -12,7 +12,7 @@ type clong = int64
 
 // PortAudio cannot be loaded without a purego dynamic loader binding for this platform
 func openPortAudio() error {
-	return &UnsupportedError{Msg: "audio-io is unavailable on " + runtime.GOOS + "/" + runtime.GOARCH + ", PortAudio cannot be loaded without a dynamic loader binding"}
+	return &UnsupportedError{Msg: "This icebath build for " + runtime.GOOS + "/" + runtime.GOARCH + " has no dynamic library loader, so it cannot load PortAudio"}
 }
 
 func ignoreStderr() func() { return func() {} }

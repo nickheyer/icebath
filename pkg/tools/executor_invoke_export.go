@@ -2,13 +2,11 @@ package tools
 
 import (
 	"context"
-
-	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Runs one call past its middleware the way a concurrent batch worker executes it
-func (e *Executor) InvokeTool(ctx context.Context, name string, args map[string]any, taskID, toolCallID string, messages *[]*state.Message) (string, error) {
-	return e.invokeTool(ctx, name, args, "", taskID, toolCallID, messages, nil)
+// Runs one inline or registry tool through every pipeline step the options do not skip
+func (e *Executor) InvokeTool(ctx context.Context, name string, args map[string]any, taskID, toolCallID string, opts InvokeToolOptions) (string, error) {
+	return e.invokeTool(ctx, name, args, "", taskID, toolCallID, opts)
 }
 
 // Task list tool over the given store with the list and merge args of one call

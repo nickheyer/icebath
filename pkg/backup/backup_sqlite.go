@@ -40,6 +40,13 @@ type runtimeError struct{ msg string }
 
 func (e *runtimeError) Error() string { return e.msg }
 
+// RuntimeError raised when a snapshot source stays busy past its deadline
+type sqliteBackupTimeout struct{ msg string }
+
+func (e *sqliteBackupTimeout) Error() string { return e.msg }
+
+func (e *sqliteBackupTimeout) Unwrap() error { return &runtimeError{e.msg} }
+
 // Interruption of a copy by a stop request, passing every handler that catches ordinary failures
 type Interrupted struct{ Cause error }
 
@@ -247,15 +254,70 @@ func steppedRollbackJournalCopy(src, dst pysqlite.RawConn, checkBusy func(status
 	return connBackup(src, dst, -1, checkBusy, rollbackBusySleep)
 }
 
+// One long backup call on its own goroutine so a stop request ends the wait without waiting for the copy
+type offThreadCopy struct {
+	copy     func() error
+	done     chan struct{}
+	started  bool
+	err      error
+	panicked any
+}
+
+func newOffThreadCopy(copy func() error) *offThreadCopy {
+	return &offThreadCopy{copy: copy, done: make(chan struct{})}
+}
+
+// Runs the copy, keeping its error or panic for the waiting caller
+func (c *offThreadCopy) runCopy() {
+	defer close(c.done)
+	defer func() { c.panicked = recover() }()
+	c.err = c.copy()
+}
+
+// Starts the copy and returns its outcome, or Interrupted as soon as the context stops
+func (c *offThreadCopy) run(ctx context.Context) error {
+	c.started = true
+	go c.runCopy()
+	select {
+	case <-c.done:
+	case <-ctx.Done():
+		return &Interrupted{context.Cause(ctx)}
+	}
+	if c.panicked != nil {
+		panic(c.panicked)
+	}
+	return c.err
+}
+
+// Reports whether the copy goroutine is still inside the backup call
+func (c *offThreadCopy) running() bool {
+	if !c.started {
+		return false
+	}
+	select {
+	case <-c.done:
+		return false
+	default:
+		return true
+	}
+}
+
 // Consistent WAL safe snapshot through the backup API, false and no destination when none can be made
 func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (bool, error) {
 	var conn, backupConn *sqliteConn
-	copierRunning := false
+	var copier *offThreadCopy
 	defer func() {
-		if !copierRunning {
+		if copier == nil || !copier.running() {
 			closeQuietly(backupConn)
 			closeQuietly(conn)
+			return
 		}
+		src, dst := conn, backupConn
+		go func() {
+			<-copier.done
+			closeQuietly(dst)
+			closeQuietly(src)
+		}()
 	}()
 	err := func() error {
 		if err := secureCreate(dst); err != nil {
@@ -285,7 +347,7 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 			if status == sqlite3.SQLITE_BUSY || status == sqlite3.SQLITE_LOCKED {
 				if !now.Before(busyDeadline) {
 					text, _ := pyrepr.Format(timeoutSeconds, "g")
-					return &runtimeError{"database remained locked for " + text + " seconds"}
+					return &sqliteBackupTimeout{"database remained locked for " + text + " seconds"}
 				}
 			} else {
 				busyDeadline = now.Add(window)
@@ -299,21 +361,9 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 		if !wal {
 			return steppedRollbackJournalCopy(conn, backupConn, checkProgress)
 		}
-		done := make(chan error, 1)
-		go func() { done <- connBackup(conn, backupConn, -1, checkProgress, 100*time.Millisecond) }()
-		select {
-		case err := <-done:
-			return err
-		case <-ctx.Done():
-			copierRunning = true
-			src, dst := conn, backupConn
-			go func() {
-				<-done
-				closeQuietly(dst)
-				closeQuietly(src)
-			}()
-			return &Interrupted{context.Cause(ctx)}
-		}
+		src, dst := conn, backupConn
+		copier = newOffThreadCopy(func() error { return connBackup(src, dst, -1, checkProgress, 100*time.Millisecond) })
+		return copier.run(ctx)
 	}()
 	if err == nil {
 		return true, nil

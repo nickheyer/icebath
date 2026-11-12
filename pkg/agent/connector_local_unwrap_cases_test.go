@@ -86,7 +86,7 @@ func singleLocalUnwrapKeepsLiveState(t *testing.T, flattenProbe bool) {
 		if name != entry["name"] {
 			t.Fatalf("unwrapped name %q for %v", name, entry["name"])
 		}
-		raw, err := ex.InvokeTool(ctx, name, args, "task", "call", nil)
+		raw, err := ex.InvokeTool(ctx, name, args, "task", "call", tools.InvokeToolOptions{PreToolBlockChecked: true})
 		if err != nil {
 			t.Fatal(err)
 		}

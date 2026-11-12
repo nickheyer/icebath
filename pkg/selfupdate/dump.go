@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
@@ -394,9 +395,6 @@ func dumpAPIKeyLines(h string, showKeys bool) []string {
 	return lines
 }
 
-// Version of the OpenAI Python SDK, which no Go build carries
-func dumpOpenAIVersion() string { return "not installed" }
-
 // Length of a mapping or list config value, zero for anything else
 func dumpLen(v any) int {
 	switch x := v.(type) {
@@ -444,8 +442,7 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 		"--- icebath dump ---",
 		fmt.Sprintf("%-18s%s", "version:", dumpVersionLine(projectRoot)),
 		fmt.Sprintf("%-18s%s %s %s", "os:", pyplatform.System(), pyplatform.Release(), pyplatform.Machine()),
-		fmt.Sprintf("%-18s%s", "python:", runtime.Version()),
-		fmt.Sprintf("%-18s%s", "openai_sdk:", dumpOpenAIVersion()),
+		fmt.Sprintf("%-18s%s", "go:", hostinfo.GoVersion()),
 		fmt.Sprintf("%-18s%s", "profile:", profile),
 		fmt.Sprintf("%-18s%s", "icebath_home:", home.Display(h)),
 		fmt.Sprintf("%-18s%s", "model:", model),

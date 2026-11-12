@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/plugins/verify"
 )
 
 func verifyArgs(path string, overrides map[string]any) map[string]any {
@@ -140,6 +141,31 @@ func TestBadPath(t *testing.T) {
 	}
 }
 
+func TestHumanReportPadsByCodePointAndStripsPythonWhitespace(t *testing.T) {
+	zero, two, start, refused := 0, 2, "npm start", "connection refused"
+	recipe := &verify.Recipe{Name: "web", Kind: "node", Start: &start}
+	result := &verify.VerifyResult{RecipeName: "web", Phases: []*verify.PhaseResult{
+		{Phase: "büild", Command: "make", ExitCode: &zero, Duration: 1.25, OutputTail: "ok"},
+		{Phase: "t", Command: "pytest", ExitCode: &two, Duration: 0.04, OutputTail: "fail line\n\x1c  "},
+		{Phase: "lint", Command: "ruff", TimedOut: true, Duration: 30},
+	}, Readiness: &verify.ReadinessResult{URL: "http://127.0.0.1:3000/", Error: &refused, Duration: 5, OutputTail: "server crashed \n"}}
+	var out bytes.Buffer
+	printVerifyHumanReport(&out, recipe, "detected", result)
+	want := "Recipe: web (node) — source: detected\n\n" +
+		"  büild  PASS        1.2s  make\n" +
+		"  t      FAIL        0.0s  pytest\n" +
+		"  lint   TIMEOUT    30.0s  ruff\n" +
+		"  start  FAIL        5.0s  npm start\n\n" +
+		"Readiness: http://127.0.0.1:3000/ -> not ready (connection refused)\n\n" +
+		"Result: FAILED\n" +
+		"\n--- output tail: t (pytest) ---\nfail line\n" +
+		"\n--- output tail: lint (ruff) ---\n\n" +
+		"\n--- output tail: start ---\nserver crashed\n"
+	if out.String() != want {
+		t.Fatalf("report\n%q\nwant\n%q", out.String(), want)
+	}
+}
+
 func TestHumanReportListsPhasesAndFailingTails(t *testing.T) {
 	dir := t.TempDir()
 	writeVerifyManifest(t, dir, "sh -c 'echo boom; exit 3'")
@@ -151,5 +177,37 @@ func TestHumanReportListsPhasesAndFailingTails(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("%q missing from %s", want, out)
 		}
+	}
+}
+
+func TestRecordVerifyEvidenceJoinsTailsAndSwallowsLedgerFailures(t *testing.T) {
+	t.Setenv("ICEBATH_SESSION_ID", "sess-9")
+	prev := verify.EvidenceRecorder
+	t.Cleanup(func() { verify.EvidenceRecorder = prev })
+	var got []any
+	verify.EvidenceRecorder = func(ctx context.Context, root, sessionID string, ok bool, command, scope, output string) (map[string]any, error) {
+		got = []any{root, sessionID, ok, command, scope, output}
+		panic("ledger broke")
+	}
+	zero, one, code := 0, 1, 200
+	result := &verify.VerifyResult{Phases: []*verify.PhaseResult{
+		{Phase: "build", Command: "make", ExitCode: &zero, OutputTail: "built"},
+		{Phase: "test", Command: "go test", ExitCode: &one},
+	}, Readiness: &verify.ReadinessResult{Ready: true, StatusCode: &code}}
+	recordVerifyEvidence(context.Background(), "/w", &verify.Recipe{Name: "x"}, result, true)
+	want := []any{"/w", "sess-9", false, "icebath verify", "targeted", "[build] make\nbuilt\n[start] None -> ready (HTTP 200)"}
+	if len(got) != len(want) {
+		t.Fatalf("recorder args %#v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("arg %d = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+	result.Readiness = nil
+	result.Phases = result.Phases[:1]
+	recordVerifyEvidence(context.Background(), "/w", &verify.Recipe{Name: "x"}, result, false)
+	if got[2] != true || got[4] != "full" || got[5] != "[build] make\nbuilt" {
+		t.Fatalf("full run args %#v", got)
 	}
 }

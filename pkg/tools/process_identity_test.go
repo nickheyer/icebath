@@ -526,7 +526,7 @@ func TestLedgerRewriteKeepsRowOrderAndNumberTypes(t *testing.T) {
 			order = append(order, name)
 		}
 	}
-	want := "pid create_time purpose install spawner_pid spawner_create registered_at argv host port profile icebath_home isolated boot_start spawner_boot boot_id"
+	want := "pid create_time purpose install spawner_pid spawner_create registered_at argv host port profile hermes_home isolated boot_start spawner_boot boot_id"
 	if got := strings.Join(order, " "); got != want {
 		t.Fatalf("new row key order %q, want %q", got, want)
 	}

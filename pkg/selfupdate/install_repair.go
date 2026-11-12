@@ -229,7 +229,7 @@ func CleanupQuarantinedExes(ctx context.Context, root, scriptsDir string) {
 	for _, c := range candidates {
 		base := filepath.Base(c.stale)
 		original := filepath.Join(filepath.Dir(c.stale), base[:strings.LastIndex(base, ".old.")])
-		if !pathPresent(original) {
+		if _, err := os.Stat(original); err != nil {
 			RestoreQuarantinedShims([][2]string{{original, c.stale}}, os.Stderr, nil)
 			continue
 		}

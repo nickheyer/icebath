@@ -3,9 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -14,13 +15,7 @@ func init() {
 		read, err := paneReader("read_terminal_callback", a.readTerminalCallback)
 		return tools.ReadTerminalTool(args["start_line"], args["count"], read), err
 	}))
-	tools.RegisterInlineToolExecutor("desktop_preview", guiExecutor(func(a *AIAgent, _ context.Context, args map[string]any, _ tools.InlineToolContext) (string, error) {
-		if action, _ := args["action"].(string); strings.TrimSpace(action) != "read" {
-			return tools.PreviewTool(a.env, args), nil
-		}
-		read, err := paneReader("read_preview_callback", a.readPreviewCallback)
-		return tools.ReadPreviewTool(args["start"], args["count"], read), err
-	}))
+	tools.RegisterInlineToolExecutor("desktop_preview", guiExecutor(desktopPreviewInline))
 	tools.RegisterInlineToolExecutor("drive_preview", guiExecutor(func(a *AIAgent, _ context.Context, args map[string]any, _ tools.InlineToolContext) (string, error) {
 		act, err := desktopRequest("drive_preview_callback", a.drivePreviewCallback)
 		return tools.DrivePreviewTool(args, act), err
@@ -41,14 +36,34 @@ func init() {
 		request, err := desktopAnswer("theme_callback", a.themeCallback)
 		return tools.SetThemeFromArgs(args, request), err
 	}))
-	tools.RegisterInlineToolExecutor("setup_beat", guiExecutor(func(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
-		card, err := desktopAnswer("setup_beat_callback", a.setupBeatCallback)
-		if err != nil {
-			return "", err
-		}
-		endTurn := func() { a.InterruptWith("", InterruptOptions{ToolReason: reasonNewMessage}) }
-		return tools.SetupBeatTool(tools.WithEnvHome(ctx, a.env), a.env, a.sessionDB, a.sessionID, ictx.ToolCallID, args, card, endTurn), nil
-	}))
+	tools.RegisterInlineToolExecutor("setup_beat", guiExecutor(setupBeatInline))
+}
+
+// Reads the preview pane through the GUI callback for action read, else runs the registry preview handler
+func desktopPreviewInline(a *AIAgent, _ context.Context, args map[string]any, _ tools.InlineToolContext) (string, error) {
+	action := args["action"]
+	if !pyrepr.Truthy(action) {
+		action = ""
+	}
+	text, ok := action.(string)
+	if !ok {
+		return "", fmt.Errorf("%s object has no attribute 'strip'", pyrepr.StrRepr(pyrepr.TypeName(action)))
+	}
+	if pystr.Strip(text) != "read" {
+		return tools.PreviewTool(a.env, args), nil
+	}
+	read, err := paneReader("read_preview_callback", a.readPreviewCallback)
+	return tools.ReadPreviewTool(args["start"], args["count"], read), err
+}
+
+// Runs one setup beat card against the session row, a card answered past ending the turn like a new message
+func setupBeatInline(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
+	card, err := desktopAnswer("setup_beat_callback", a.setupBeatCallback)
+	if err != nil {
+		return "", err
+	}
+	endTurn := func() { a.InterruptWith("", InterruptOptions{ToolReason: reasonNewMessage}) }
+	return tools.SetupBeatTool(tools.WithEnvHome(ctx, a.env), a.env, a.sessionDB, a.sessionID, ictx.ToolCallID, args, card, endTurn), nil
 }
 
 // Inline executor running a GUI callback tool against the agent that carries the callbacks

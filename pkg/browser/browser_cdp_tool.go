@@ -162,7 +162,6 @@ var (
 	resolveCDPEndpoint = func(env *tools.Env) string {
 		return pystr.Strip(cfgOf(env).cdpOverride(context.Background()))
 	}
-	cdpTransportAvailable   = true
 	cdpEvalSSRFGuardActive  = evalSSRFGuardActive
 	currentPagePrivateURL   = cdpCurrentPagePrivateURL
 	cdpCallFn               = cdpCall
@@ -250,7 +249,7 @@ var originlessPagePrefixes = []string{"about:", "chrome:", "chrome-untrusted:", 
 
 // Private page url a non allow listed call would reach, the unverified marker when targets cannot be read
 func cdpCurrentPagePrivateURL(env *tools.Env, endpoint string, targetID any) string {
-	if endpoint == "" || !cdpTransportAvailable {
+	if endpoint == "" {
 		return pageURLUnverified
 	}
 	result, err := cdpCallFn(context.Background(), endpoint, "Target.getTargets", pyjson.NewObject(), nil, 5.0)
@@ -660,10 +659,7 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 	}
 	methodName, _ := method.(string)
 	if pyrepr.Truthy(frameID) {
-		endpoint := ""
-		if cdpTransportAvailable {
-			endpoint = resolveCDPEndpoint(env)
-		}
+		endpoint := resolveCDPEndpoint(env)
 		guardParams := params
 		if !pyrepr.Truthy(guardParams) {
 			guardParams = pyjson.NewObject()
@@ -675,9 +671,6 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 	}
 	if methodName == "" {
 		return toolErr("'method' is required (e.g. 'Target.getTargets')", "cdp_docs", cdpDocsURL)
-	}
-	if !cdpTransportAvailable {
-		return toolErr("The 'websockets' Python package is required but not installed. Run: icebath pm repair")
 	}
 	endpoint := resolveCDPEndpoint(env)
 	if endpoint == "" {

@@ -169,3 +169,44 @@ func ReadTextChars(path string, n int, sig bool) (string, error) {
 	}
 	return string(result), nil
 }
+
+// Lines of a text mode open in for line in handle order, a chunk decode error raised only when iteration reaches it
+func ReadTextLines(path string, sig bool, each func(line string) bool) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	dec := &textDecoder{path: path, sig: sig}
+	chunk := make([]byte, textChunkSize)
+	pending := ""
+	for {
+		got, rerr := f.Read(chunk)
+		if rerr != nil && rerr != io.EOF {
+			return rerr
+		}
+		eof := got == 0
+		decoded, derr := dec.decode(chunk[:got], eof)
+		if derr != nil {
+			return derr
+		}
+		pending += decoded
+		for {
+			cut := strings.IndexByte(pending, '\n')
+			if cut < 0 {
+				break
+			}
+			line := pending[:cut+1]
+			pending = pending[cut+1:]
+			if !each(line) {
+				return nil
+			}
+		}
+		if eof {
+			if pending != "" {
+				each(pending)
+			}
+			return nil
+		}
+	}
+}

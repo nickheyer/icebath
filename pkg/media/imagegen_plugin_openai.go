@@ -45,20 +45,6 @@ var openAIImageModels = func() imageModelCatalog {
 	return c
 }()
 
-// The linked OpenAI images client constructor, a missing_dependency envelope when none is linked
-func importOpenAI(providerName, aspect string) (func(*tools.Env, openAIClientOptions) (*openAIClient, error), map[string]any) {
-	if newOpenAIClientHook == nil {
-		return nil, errorFactory(providerName, aspect, "", "")(openAIMissing, "missing_dependency")
-	}
-	return newOpenAIClientHook, nil
-}
-
-// Whether the OpenAI images client is linked
-func openAIImportable() bool {
-	c, _ := importOpenAI("", "")
-	return c != nil
-}
-
 // Credential read through the secret scope, panicking like the scope does on an unscoped multiplexed read
 func mustSecret(ctx context.Context, name string) string {
 	v, _, err := provider.GetSecret(ctx, name)
@@ -223,13 +209,13 @@ func newOpenAIImageGenProvider() *openAIImageGenProvider {
 			Key: "OPENAI_API_KEY", Prompt: "OpenAI API key", URL: "https://platform.openai.com/api-keys"}}}
 }
 
-// Available when the resolved endpoint carries a key and the client is linked
+// Available when the resolved endpoint carries a key
 func (p *openAIImageGenProvider) IsAvailable() bool {
 	_, key, err := resolveOpenAIEndpoint(context.Background(), p.env())
 	if err != nil {
 		panic(err)
 	}
-	return key != "" && openAIImportable()
+	return key != ""
 }
 
 // Text and image modalities with the sixteen source images images.edit accepts
@@ -255,10 +241,7 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 		return errorFactory("openai", aspect, "", "")("OPENAI_API_KEY not set (or the variable named by image_gen.openai.key_env is empty). "+
 			"Run `icebath tools` → Image Generation → OpenAI to configure, or `icebath setup` to add the key.", "auth_required"), nil
 	}
-	newClient, failure := importOpenAI("openai", aspect)
-	if failure != nil {
-		return failure, nil
-	}
+	newClient := newOpenAIClientHook
 	tierID, meta := resolveOpenAIImageModel(env)
 	size := sizeFor(aspect)
 	sources := collectSourceImages(req.ImageURL, req.ReferenceImageURLs, 16)

@@ -8,16 +8,22 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
+	"github.com/nickheyer/icebath/pkg/relayhost"
+	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Dispatches the fake llama-server, scratch prune and tools MCP server entries so a child runs its mode instead
 func TestMain(m *testing.M) {
+	relayhost.DispatchRelayHostEntry(context.Background())
+	relaytest.Provision()
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	dispatchFakeLlamaServerEntry()
 	home.DispatchScratchPruneEntry(context.Background())
+	pluginhost.DispatchPluginHostEntry(context.Background())
 	installLocalStackProbeDoubles()
 	installSpilloverWiring()
 	DispatchCodexToolsMCPServerEntry()

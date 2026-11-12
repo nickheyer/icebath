@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"os"
 	"reflect"
@@ -1564,7 +1565,7 @@ func NormalizeToolSchema(schema any) (map[string]any, bool) {
 		return nil, false
 	}
 	if m["type"] == "function" {
-		if fn, ok := m["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(m["function"]); ok {
 			m = fn
 		}
 	}
@@ -1600,7 +1601,7 @@ func MemoryProviderToolsEnabled(ctx context.Context, env *tools.Env, enabled, di
 
 // Name of a tool in OpenAI function form
 func functionToolName(tool map[string]any) string {
-	fn, _ := tool["function"].(map[string]any)
+	fn, _ := pyjson.Dict(tool["function"])
 	name, _ := fn["name"].(string)
 	return name
 }

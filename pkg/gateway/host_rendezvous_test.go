@@ -68,10 +68,16 @@ func runHostRendezvousChild(mode string) int {
 			fmt.Println(won)
 		}
 	default:
+		if run, ok := platformHostChildModes[mode]; ok {
+			return run(hold)
+		}
 		return 2
 	}
 	return 0
 }
+
+// Child modes only one platform builds, registered by its test file
+var platformHostChildModes = map[string]func(hold func()) int{}
 
 type hostChild struct {
 	cmd    *exec.Cmd

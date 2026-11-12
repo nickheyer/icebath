@@ -126,15 +126,6 @@ func TestNoEndpointReturnsHelpfulError(t *testing.T) {
 	}
 }
 
-func TestWebsocketsMissingReturnsError(t *testing.T) {
-	env := testEnv(t)
-	pin(t, &cdpTransportAvailable, false)
-	out := decodeResult(t, browserCDP(t.Context(), env, "Target.getTargets", nil, nil, nil, 30.0, ""))
-	if !strings.Contains(strings.ToLower(objStr(out, "error")), "websockets") {
-		t.Fatalf("got %v", out)
-	}
-}
-
 func runCDP(t *testing.T, env *tools.Env, method string, params any, targetID any) *pyjson.Object {
 	t.Helper()
 	return decodeResult(t, browserCDP(t.Context(), env, method, params, targetID, nil, 30.0, ""))

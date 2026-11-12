@@ -140,7 +140,7 @@ func TestPauseTreeASetPausedOnAnAlreadyUnreadableHeadResumesUntilAMoveIsBound(t 
 	}
 }
 
-func TestPauseTreeAnUpdateAdoptingAnOrphanNeverCertifiesTheTreeItLeftTorn(t *testing.T) {
+func TestAnUpdateAdoptingAnOrphanNeverCertifiesTheTreeItLeftTorn(t *testing.T) {
 	base := t.TempDir()
 	root := ptCheckout(t, base, "a.py")
 	t.Setenv("ICEBATH_HOME", filepath.Join(base, "home"))
@@ -167,7 +167,7 @@ func TestPauseTreeAnUpdateAdoptingAnOrphanNeverCertifiesTheTreeItLeftTorn(t *tes
 	}
 }
 
-func TestPauseTreeAnAdoptedBaselineNeverReplacesThisRunsOwn(t *testing.T) {
+func TestAnAdoptedBaselineNeverReplacesThisRunsOwn(t *testing.T) {
 	base := t.TempDir()
 	root := ptCheckout(t, base, "a.py")
 	t.Setenv("ICEBATH_HOME", filepath.Join(base, "home"))
@@ -323,7 +323,7 @@ func ptClonedCheckout(t *testing.T, base string) (string, string) {
 	return origin, root
 }
 
-func TestPauseTreeALaterFetchNeverCertifiesBytesAnEarlierRecordedMoveLeft(t *testing.T) {
+func TestALaterFetchNeverCertifiesBytesAnEarlierRecordedMoveLeft(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(base, "home"))
 	origin, root := ptClonedCheckout(t, base)

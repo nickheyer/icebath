@@ -42,11 +42,11 @@ func TestOsc11DrainGuardLateReplyIsConsumedNotLeaked(t *testing.T) {
 		time.Sleep(150 * time.Millisecond)
 		_, _ = writeEnd.Write([]byte("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\\x1b[?62;22c"))
 	}()
-	bg, ok := queryOSC11Background()
-	if !ok || bg != "#0C0C0C" {
+	bg, ok, err := queryOSC11Background()
+	if err != nil || !ok || bg != "#0C0C0C" {
 		t.Fatalf("got %q %v", bg, ok)
 	}
-	if fdReadable(int(readEnd.Fd()), time.Now()) {
+	if ready, _ := fdReadable(int(readEnd.Fd()), time.Now()); ready {
 		t.Fatal("late OSC 11 bytes must be consumed, not left to leak")
 	}
 }
@@ -58,11 +58,11 @@ func TestOsc11DrainGuardPostDeadlineStragglerIsDrained(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		_, _ = writeEnd.Write([]byte("\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\"))
 	}()
-	bg, ok := queryOSC11Background()
-	if ok || bg != "" {
+	bg, ok, err := queryOSC11Background()
+	if err != nil || ok || bg != "" {
 		t.Fatalf("OSC 11 was swallowed, only DA1 answered, got %q", bg)
 	}
-	if fdReadable(int(readEnd.Fd()), time.Now()) {
+	if ready, _ := fdReadable(int(readEnd.Fd()), time.Now()); ready {
 		t.Fatal("the drain loop should have consumed the straggler bytes")
 	}
 }

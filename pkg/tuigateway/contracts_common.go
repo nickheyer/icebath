@@ -11,7 +11,7 @@ var PlanGauge = pydantic.NewModel("PlanGauge", ClosedConfig,
 	pydantic.Req("label", pydantic.Str),
 	pydantic.Req("used_bp", pydantic.Int),
 	pydantic.Def("resets_at_ms", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``gateway/session_usage.py::plan_gauge``: a window plan's allowance for the status bar.")
 
 var Usage = pydantic.NewModel("Usage", OpenConfig,
 	pydantic.Def("model", pydantic.Str, ""),
@@ -38,14 +38,14 @@ var Usage = pydantic.NewModel("Usage", OpenConfig,
 	pydantic.Def("cost_usd", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("cost_status", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("plan_gauge", pydantic.Nullable(PlanGauge), nil),
-)
+).Described("``tui_gateway/server.py::_get_usage`` + ``agent/context_breakdown.py::context_usage_fields``.")
 
 var ProjectRef = pydantic.NewModel("ProjectRef", ClosedConfig,
 	pydantic.Req("id", pydantic.Str),
 	pydantic.Req("slug", pydantic.Str),
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Def("primary_path", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``tui_gateway/server.py::_project_info_for_cwd``.")
 
 var McpServerStatus = pydantic.NewModel("McpServerStatus", OpenConfig,
 	pydantic.Def("name", pydantic.Str, ""),
@@ -85,7 +85,7 @@ var SessionLiveInfo = pydantic.NewModel("SessionLiveInfo", OpenConfig,
 	pydantic.Def("system_prompt", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("credential_warning", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("lazy", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``tui_gateway/server.py::_session_info`` — the ``session.info`` event and the ``info`` field of\n``session.create`` / ``session.resume`` / ``session.activate`` results.")
 
 var StoredSessionRow = pydantic.NewModel("StoredSessionRow", OpenConfig,
 	pydantic.Req("id", pydantic.Str),
@@ -117,7 +117,7 @@ var StoredSessionRow = pydantic.NewModel("StoredSessionRow", OpenConfig,
 	pydantic.Def("continuation_kind", pydantic.Nullable(pydantic.Str), nil),
 )
 
-var ToolLabelKind = pydantic.Enum("ToolLabelKind", "connector", "connector", "mcp", "mcp", "tool", "tool")
+var ToolLabelKind = pydantic.Enum("ToolLabelKind", "connector", "connector", "mcp", "mcp", "tool", "tool").Described("Which surface one inner call of a bridged ``tool_call`` runs on.")
 
 var ToolLabel = pydantic.NewModel("ToolLabel", ClosedConfig,
 	pydantic.Req("kind", ToolLabelKind),
@@ -127,7 +127,7 @@ var ToolLabel = pydantic.NewModel("ToolLabel", ClosedConfig,
 	pydantic.Req("text", pydantic.Str),
 	pydantic.Req("name", pydantic.Str),
 	pydantic.Def("preview", pydantic.Str, ""),
-)
+).Described("``tools.tool_labels.ToolLabel`` — what one call executed through the tool_search bridge is,\nin words. Clients render ``text`` (or ``app``/``action`` in their own columns) and never parse\nthe tool name themselves.")
 
 var TranscriptMessage = pydantic.NewModel("TranscriptMessage", OpenConfig,
 	pydantic.Req("role", pydantic.Str),
@@ -143,9 +143,9 @@ var TranscriptMessage = pydantic.NewModel("TranscriptMessage", OpenConfig,
 	pydantic.Def("args", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("labels", pydantic.Nullable(pydantic.List(ToolLabel)), nil),
 	pydantic.Def("reasoning", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One transcript row as the gateway PROJECTS it for renderers (``session_history._project_history``):\n``text``, display-only ``timestamp`` / ``display_kind`` / ``display_metadata``, the durable ``row_id``\nrewind targets, and for tool rows raw ``content``, ``tool_call_id``, ``name``, ``context`` and ``args``.\nAssistant detail sidecars (``reasoning``, …) ride as extra keys.")
 
-var SubagentStatus = pydantic.Enum("SubagentStatus", "queued", "queued", "running", "running", "completed", "completed", "failed", "failed", "error", "error", "timeout", "timeout", "interrupted", "interrupted")
+var SubagentStatus = pydantic.Enum("SubagentStatus", "queued", "queued", "running", "running", "completed", "completed", "failed", "failed", "error", "error", "timeout", "timeout", "interrupted", "interrupted").Described("Lifecycle of one delegated child (``tools/delegate_tool_child_run.py``); ``failed`` /\n``error`` / ``timeout`` / ``interrupted`` / ``completed`` are terminal.")
 
 var TerminalSubagentStatuses = map[string]bool{
 	SubagentStatus.Member("completed"): true, SubagentStatus.Member("failed"): true, SubagentStatus.Member("error"): true,
@@ -163,23 +163,23 @@ var PendingApproval = pydantic.NewModel("PendingApproval", OpenConfig,
 	pydantic.Def("smart_denied", pydantic.Nullable(pydantic.Bool), nil),
 	pydantic.Def("choices", pydantic.Nullable(pydantic.List(pydantic.Str)), nil),
 	pydantic.Def("tool_name", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("One unresolved ``tools/approval.py`` gateway queue entry as ``server._approval_request_payload``\nrenders it (command redacted; ``choices`` precomputed). The key set is owned by the approval tool.")
 
 var MessageReaction = pydantic.NewModel("MessageReaction", OpenConfig,
 	pydantic.Req("emoji", pydantic.Str),
 	pydantic.Req("author", pydantic.Str),
 	pydantic.Def("at", pydantic.Nullable(pydantic.Float), nil),
 	pydantic.Def("seen", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("One persisted reaction row (``hermes_state_messages.set_message_reaction``); ``seen`` is\nstamped once announced.")
 
 var SessionParams = pydantic.NewModel("SessionParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Any method addressed at one live session.")
 
 var ProfileParams = pydantic.NewModel("ProfileParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("Any method the desktop may route to a named profile (``requestGatewayForProfile`` adds ``profile``).")
 
 var SessionOwner = pydantic.NewModel("SessionOwner", ParamsConfig,
 	pydantic.Req("type", pydantic.Literal("session")),
@@ -211,7 +211,7 @@ var PlanUsageGauge = pydantic.NewModel("PlanUsageGauge", ClosedConfig,
 	pydantic.Def("resets_at_ms", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("scope", pydantic.Str, "all"),
 	pydantic.Def("title", pydantic.Str, ""),
-)
+).Described("One server allowance on ``ModelOptionProvider.plan_usage``, in the server's order. ``label`` is the\nserver's id (``day`` / ``week`` / ``month`` / ``top_tier`` have client words; any other id shows\n``title``). ``scope``: which models a full one stops (``all`` / ``top_tier``).")
 
 var PlanUsage = pydantic.NewModel("PlanUsage", ClosedConfig,
 	pydantic.Req("kind", pydantic.Str),
@@ -222,4 +222,4 @@ var PlanUsage = pydantic.NewModel("PlanUsage", ClosedConfig,
 	pydantic.Fac("featured_model_ids", pydantic.List(pydantic.Str), pydantic.NewList),
 	pydantic.Def("paused_reason", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("credits_pay", pydantic.Nullable(pydantic.Bool), nil),
-)
+).Described("``hermes_cli/model_picker_usage.py::PickerUsage.to_payload`` — usage-window plan chrome.")

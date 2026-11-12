@@ -210,6 +210,7 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 		logWarn(fmt.Sprintf(conflict, e.name, clean, "is already registered by a plugin."))
 		return
 	}
+	m.notePluginCommandOrderLocked(clean)
 	m.pluginCommands[clean] = &PluginCommand{Handler: handler, Description: desc, Plugin: "context-engine:" + e.name, ArgsHint: hint}
 	m.mu.Unlock()
 	logDebug(fmt.Sprintf("Context engine '%s' registered command: /%s", e.name, clean))

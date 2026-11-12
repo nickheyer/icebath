@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"sort"
 	"strconv"
 	"strings"
@@ -76,7 +77,7 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 			return 0, nil
 		}
 		toolName := func(def map[string]any) string {
-			fn, _ := def["function"].(map[string]any)
+			fn, _ := pyjson.Dict(def["function"])
 			return pyrepr.Str(requireKey(fn, "name"))
 		}
 		sorted := append([]map[string]any(nil), defs...)
@@ -85,7 +86,7 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 		grouped := map[string][]row{}
 		for _, def := range sorted {
 			name := toolName(def)
-			fn, _ := def["function"].(map[string]any)
+			fn, _ := pyjson.Dict(def["function"])
 			desc := ""
 			if raw, ok := fn["description"]; ok {
 				desc = pyrepr.Str(raw)

@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -103,11 +104,11 @@ func currentThreadName() string {
 
 // Runs fn here, or on a fresh goroutine without the loop marker when this context runs an event loop
 func CallOffEventLoop(ctx context.Context, fn func(ctx context.Context) error) error {
-	if !pyctx.RunningLoop(ctx) {
+	if !pyctx.RunningLoop(ctx) && !tools.RelayHasRunningEventLoop(ctx) {
 		return fn(ctx)
 	}
 	done := make(chan error, 1)
-	off := pyctx.WithoutRunningLoop(ctx)
+	off := tools.RelayWithoutRunningLoop(pyctx.WithoutRunningLoop(ctx))
 	go func() { done <- fn(off) }()
 	return <-done
 }
@@ -116,15 +117,42 @@ func CallOffEventLoop(ctx context.Context, fn func(ctx context.Context) error) e
 type ownerLink struct {
 	ws       *websocket.Conn
 	awaiting atomic.Value
-	replies  chan any
+	mu       sync.Mutex
+	replies  []any
+	ready    chan struct{}
 	done     chan struct{}
 }
 
+// Link over an open socket whose reader goroutine starts at once, no request awaited yet
 func newOwnerLink(ws *websocket.Conn) *ownerLink {
-	l := &ownerLink{ws: ws, replies: make(chan any, 64), done: make(chan struct{})}
+	l := &ownerLink{ws: ws, ready: make(chan struct{}, 1), done: make(chan struct{})}
 	l.awaiting.Store(int64(0))
 	go l.read()
 	return l
+}
+
+// Appends to the unbounded reply queue so the reader never blocks, waking a waiting receive
+func (l *ownerLink) put(reply any) {
+	l.mu.Lock()
+	l.replies = append(l.replies, reply)
+	l.mu.Unlock()
+	select {
+	case l.ready <- struct{}{}:
+	default:
+	}
+}
+
+// Oldest queued reply, false when the queue is empty
+func (l *ownerLink) pop() (any, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.replies) == 0 {
+		return nil, false
+	}
+	reply := l.replies[0]
+	l.replies[0] = nil
+	l.replies = l.replies[1:]
+	return reply, true
 }
 
 // Discards broadcast events as they arrive and queues the reply to the awaited request id or the read error
@@ -133,7 +161,7 @@ func (l *ownerLink) read() {
 	for {
 		_, data, err := l.ws.ReadMessage()
 		if err != nil {
-			l.replies <- err
+			l.put(err)
 			return
 		}
 		frame, err := pyjson.LoadsBytes(data)
@@ -143,7 +171,7 @@ func (l *ownerLink) read() {
 		obj, ok := frame.(*pyjson.Object)
 		awaiting := l.awaiting.Load().(int64)
 		if ok && awaiting != 0 && pyjson.Equal(obj.GetOr("id", nil), awaiting) {
-			l.replies <- obj
+			l.put(obj)
 		}
 	}
 }
@@ -167,14 +195,18 @@ func (l *ownerLink) send(requestID int64, message string) error {
 func (l *ownerLink) receive(timeout time.Duration) (*pyjson.Object, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case reply := <-l.replies:
-		if err, ok := reply.(error); ok {
-			return nil, err
+	for {
+		if reply, ok := l.pop(); ok {
+			if err, isErr := reply.(error); isErr {
+				return nil, err
+			}
+			return reply.(*pyjson.Object), nil
 		}
-		return reply.(*pyjson.Object), nil
-	case <-timer.C:
-		return nil, &workerStoreError{"TimeoutError", "worker_receipt_timeout"}
+		select {
+		case <-l.ready:
+		case <-timer.C:
+			return nil, &workerStoreError{"TimeoutError", "worker_receipt_timeout"}
+		}
 	}
 }
 
@@ -194,15 +226,12 @@ type WorkerRPC struct {
 }
 
 // Caller bound to the profile home, resolved
-func NewWorkerRPC(home string) *WorkerRPC {
-	resolved, err := filepath.Abs(home)
+func NewWorkerRPC(home string) (*WorkerRPC, error) {
+	resolved, err := pypath.Resolve(home)
 	if err != nil {
-		resolved = home
+		return nil, err
 	}
-	if real, err := filepath.EvalSymlinks(resolved); err == nil {
-		resolved = real
-	}
-	return &WorkerRPC{home: resolved}
+	return &WorkerRPC{home: resolved}, nil
 }
 
 // Live link, redialed with a fresh worker adoption ticket after the owner closed it while idle
@@ -240,6 +269,21 @@ func (r *WorkerRPC) connection(ctx context.Context) (*ownerLink, error) {
 	ws.SetReadLimit(8 * 1024 * 1024)
 	r.link = newOwnerLink(ws)
 	return r.link, nil
+}
+
+// Send and receive half of the owner connection one request travels over
+type workerOwnerConn interface {
+	send(requestID int64, message string) error
+	receive(timeout time.Duration) (*pyjson.Object, error)
+}
+
+// Live owner connection of an exchange, the WorkerRPC connection hermes tests swap for an in process reply
+var workerRPCConnection = func(r *WorkerRPC, ctx context.Context) (workerOwnerConn, error) {
+	link, err := r.connection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return link, nil
 }
 
 // Forgets the link, closing a socket that is not already gone
@@ -306,13 +350,13 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Obje
 
 // Sends the request once, redialing a single time when the send itself failed, then waits for its reply
 func (r *WorkerRPC) exchange(ctx context.Context, requestID int64, message string) (*pyjson.Object, error) {
-	link, err := r.connection(ctx)
+	link, err := workerRPCConnection(r, ctx)
 	if err != nil {
 		return nil, err
 	}
 	if err := link.send(requestID, message); err != nil {
 		r.drop()
-		if link, err = r.connection(ctx); err != nil {
+		if link, err = workerRPCConnection(r, ctx); err != nil {
 			return nil, err
 		}
 		if err := link.send(requestID, message); err != nil {

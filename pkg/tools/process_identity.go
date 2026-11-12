@@ -267,7 +267,7 @@ type LedgerEntry struct {
 	Host          string   `json:"host"`
 	Port          *int     `json:"port"`
 	Profile       string   `json:"profile"`
-	IcebathHome   string   `json:"icebath_home"`
+	IcebathHome   string   `json:"hermes_home"`
 	Isolated      bool     `json:"isolated"`
 	BootStart     *float64 `json:"boot_start"`
 	SpawnerBoot   *float64 `json:"spawner_boot"`
@@ -279,7 +279,7 @@ func (e LedgerEntry) asObject() *pyjson.Object {
 	o := pyjson.ObjectOf(
 		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
 		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, "host", e.Host, "port", nil,
-		"profile", e.Profile, "icebath_home", e.IcebathHome, "isolated", e.Isolated, "boot_start", nil,
+		"profile", e.Profile, "hermes_home", e.IcebathHome, "isolated", e.Isolated, "boot_start", nil,
 		"spawner_boot", nil, "boot_id", nil)
 	if e.CreateTime != nil {
 		o.Set("create_time", *e.CreateTime)

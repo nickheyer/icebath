@@ -1,13 +1,16 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -15,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -92,7 +96,16 @@ func (c *CLI) handleRollbackCommand(command string) {
 		gatewayRollback(c, connection, command)
 		return
 	}
-	printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
+	c.checkpointManager()
+}
+
+// Prints that no agent session exists, a gateway agent holding no manager raising on its enabled check as main does
+func (c *CLI) checkpointManager() {
+	if c.agent == nil {
+		printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
+		return
+	}
+	panic(fmt.Errorf("'NoneType' object has no attribute 'enabled'"))
 }
 
 var diffModes = map[string]string{
@@ -164,7 +177,7 @@ func (c *CLI) printDiffBody(diff, statHint string, limit, total int) {
 
 // Prints why the session diff is unavailable off the gateway, no local agent holding a checkpoint baseline
 func (c *CLI) printSessionDiffFor() {
-	printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
+	c.checkpointManager()
 }
 
 // Renders a session diff result, stat then the body unless stat only
@@ -475,10 +488,20 @@ func (c *CLI) handleHandoffCommand(cmdOriginal string) bool {
 	if homeChannel == nil {
 		return true
 	}
-	if !c.handoffPrepareSession() {
+	sessionTitle, ok := c.handoffPrepareSession()
+	if !ok {
 		return true
 	}
-	panic(c.sessionDB.Refused("request_handoff"))
+	requested, err := c.handoffSessionDB().RequestHandoff(c.ctx, c.sessionID, platformName)
+	if err != nil {
+		panic(err)
+	}
+	if !requested {
+		return handoffKeep("  " + c.commandsT("handoff.already_in_flight", nil))
+	}
+	cp("  "+c.commandsT("handoff.queued", map[string]any{"title": sessionTitle, "platform": platformName, "home": homeChannel.Name}),
+		"  "+c.commandsT("handoff.waiting", nil))
+	return c.handoffWait(platformName, sessionTitle)
 }
 
 // Home channel of the destination platform, nil after printing why it is unknown, disabled or homeless
@@ -518,20 +541,152 @@ func (c *CLI) handoffValidateTarget(platformName string) *gateway.HomeChannel {
 	return homeChannel
 }
 
-// Refuses mid turn and makes sure a session row exists, false after printing why it cannot
-func (c *CLI) handoffPrepareSession() bool {
+// Session store verbs a /handoff calls, met by the gateway store and by a registry database
+type handoffStore interface {
+	GetSession(ctx context.Context, sessionID string) (map[string]any, error)
+	SetSessionTitle(ctx context.Context, sessionID, title string) (bool, error)
+	RequestHandoff(ctx context.Context, sessionID, platform string) (bool, error)
+	GetHandoffState(ctx context.Context, sessionID string) *pyjson.Object
+	FailHandoff(ctx context.Context, sessionID, reason string, onlyStates []string) (bool, error)
+}
+
+var (
+	_ handoffStore = (*gatewaycli.GatewaySessionStore)(nil)
+	_ handoffStore = registryHandoffStore{}
+)
+
+// Registry database answering get_session with the plain mapping the gateway store returns
+type registryHandoffStore struct{ *state.SessionDB }
+
+// Session row as a plain mapping, nil when absent
+func (r registryHandoffStore) GetSession(ctx context.Context, sessionID string) (map[string]any, error) {
+	row, err := r.SessionDB.GetSession(ctx, sessionID)
+	if err != nil || row == nil {
+		return nil, err
+	}
+	plain := make(map[string]any, row.Len())
+	for _, key := range row.Keys {
+		plain[key], _ = row.Get(key)
+	}
+	return plain, nil
+}
+
+// Seconds clock and sleep of the handoff poll, the wall clock in production
+var (
+	handoffTime  = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
+	handoffSleep = time.Sleep
+)
+
+const (
+	handoffPendingTimeout = 60.0
+	handoffRunningTimeout = 900.0
+	handoffHeartbeatEvery = 30.0
+)
+
+// Store a /handoff runs against, the registry database it acquired or the live gateway store, nil when neither
+func (c *CLI) handoffSessionDB() handoffStore {
+	if c.handoffDB != nil {
+		return c.handoffDB
+	}
+	if c.sessionDB != nil && c.sessionDB.Bool() {
+		return c.sessionDB
+	}
+	return nil
+}
+
+// Refuses mid turn and makes sure a session row exists, the display title or false after printing why not
+func (c *CLI) handoffPrepareSession() (string, bool) {
 	if c.agentRunning {
 		cp("  " + c.commandsT("shared.agent_busy", map[string]any{"command": "/handoff"}))
-		return false
+		return "", false
 	}
-	if c.sessionDB == nil {
-		c.initSessionStore()
-	}
-	if c.sessionMeta(c.sessionID) == nil {
-		if _, err := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, "handoff-"+pystr.Slice(c.sessionID, 0, 8)); err != nil {
-			cp("  " + c.commandsT("handoff.session_row_failed", map[string]any{"error": err.Error()}))
-			return false
+	if c.handoffSessionDB() == nil {
+		if db, err := state.Acquire(c.ctx, ""); err == nil {
+			c.handoffDB = registryHandoffStore{db}
 		}
 	}
-	return true
+	db := c.handoffSessionDB()
+	if db == nil {
+		cp(c.dbUnavailableLine())
+		return "", false
+	}
+	meta, err := db.GetSession(c.ctx, c.sessionID)
+	if err == nil && len(meta) == 0 {
+		_, err = db.SetSessionTitle(c.ctx, c.sessionID, "handoff-"+pystr.Slice(c.sessionID, 0, 8))
+	}
+	if err != nil {
+		cp("  " + c.commandsT("handoff.session_row_failed", map[string]any{"error": err.Error()}))
+		return "", false
+	}
+	sessionTitle := ""
+	if meta, err := db.GetSession(c.ctx, c.sessionID); err == nil {
+		if title, _ := meta["title"].(string); title != "" {
+			sessionTitle = title
+		}
+	}
+	if sessionTitle == "" {
+		sessionTitle = pystr.Slice(c.sessionID, 0, 8)
+	}
+	return sessionTitle, true
+}
+
+// Polls the handoff row, pending for a minute then failed for a retry, running for fifteen minutes and never failed
+func (c *CLI) handoffWait(platformName, sessionTitle string) bool {
+	db := c.handoffSessionDB()
+	pendingDeadline := handoffTime() + handoffPendingTimeout
+	var runningDeadline, nextHeartbeat float64
+	running := false
+	lastState := "pending"
+	for {
+		stateRow := db.GetHandoffState(c.ctx, c.sessionID)
+		current := "pending"
+		if stateRow != nil {
+			if value, _ := stateRow.Get("state"); pyrepr.Truthy(value) {
+				current = pyrepr.Str(value)
+			}
+		}
+		if current != lastState {
+			if current == "running" {
+				cp("  " + c.commandsT("handoff.picked_up", nil))
+				runningDeadline = handoffTime() + handoffRunningTimeout
+				nextHeartbeat = handoffTime() + handoffHeartbeatEvery
+				running = true
+			}
+			lastState = current
+		}
+		if current == "completed" {
+			cp("", "  "+c.commandsT("handoff.complete", map[string]any{"platform": platformName}),
+				"  "+c.commandsT("handoff.resume_hint", map[string]any{"title": sessionTitle}), "")
+			markSessionHandedOff(c.sessionID)
+			c.setShouldExit(false)
+			return false
+		}
+		if current == "failed" {
+			var reason any = c.commandsT("handoff.unknown_error", nil)
+			if value, _ := stateRow.Get("error"); pyrepr.Truthy(value) {
+				reason = value
+			}
+			return handoffKeep("  "+c.commandsT("handoff.failed", map[string]any{"error": reason}),
+				"  "+c.commandsT("handoff.session_intact_retry", nil))
+		}
+		now := handoffTime()
+		if current == "pending" {
+			if now >= pendingDeadline {
+				break
+			}
+		} else {
+			if running && now >= nextHeartbeat {
+				cp("  " + c.commandsT("handoff.still_transferring", nil))
+				nextHeartbeat = now + handoffHeartbeatEvery
+			}
+			if running && now >= runningDeadline {
+				return handoffKeep("  "+c.commandsT("handoff.taking_long", nil),
+					"  "+c.commandsT("handoff.check_platform", map[string]any{"platform": platformName}),
+					"  "+c.commandsT("handoff.no_longer_waiting", nil), "  "+c.commandsT("handoff.retry_when_settled", nil))
+			}
+		}
+		handoffSleep(500 * time.Millisecond)
+	}
+	_, _ = db.FailHandoff(c.ctx, c.sessionID, "timed out waiting for gateway", []string{"pending"})
+	return handoffKeep("  "+c.commandsT("handoff.timed_out", nil), "  "+c.commandsT("handoff.session_intact", nil))
 }

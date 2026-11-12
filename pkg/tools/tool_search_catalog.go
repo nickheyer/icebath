@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"regexp"
 	"sort"
@@ -53,7 +54,7 @@ func catalogTokenize(text string) []string {
 
 // The function block of a tool def or an empty map when absent
 func toolDefFn(td map[string]any) map[string]any {
-	if fn, ok := td["function"].(map[string]any); ok && fn != nil {
+	if fn, ok := pyjson.Dict(td["function"]); ok && fn != nil {
 		return fn
 	}
 	return map[string]any{}

@@ -22,7 +22,7 @@ const snapshot = {
   info: {
     branch: 'main',
     cwd: '/work/repo',
-    desktop_protocol: 'hermes-gateway-v1',
+    desktop_protocol: 'icebath-gateway-v1',
     lazy: true,
     mcp_servers: [
       { connected: true, name: 'nous-support', status: 'connected', tools: 6, transport: 'http' },
@@ -106,7 +106,7 @@ describe('banner from a canonical session snapshot', () => {
     // draws its card (headings, version line slot, loading rows) rather than a one-line notice.
     const { info } = canonicalResult('session.resume', {
       ...snapshot,
-      info: { desktop_protocol: 'hermes-gateway-v1', lazy: true, model: 'anthropic/claude-opus-5.5', version: '0.18.0' }
+      info: { desktop_protocol: 'icebath-gateway-v1', lazy: true, model: 'anthropic/claude-opus-5.5', version: '0.18.0' }
     })
 
     const frame = await render(info)

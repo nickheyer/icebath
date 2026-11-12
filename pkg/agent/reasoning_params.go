@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"slices"
 	"strings"
@@ -74,18 +75,26 @@ func sanitizeToolCallsForStrictAPI(apiMsg map[string]any, model, baseURL, provid
 	}
 	out := make([]any, len(toolCalls))
 	for i, tc := range toolCalls {
-		m, isMap := tc.(map[string]any)
-		if !isMap {
-			out[i] = tc
-			continue
-		}
-		kept := make(map[string]any, len(m))
-		for k, v := range m {
-			if !strip[k] {
-				kept[k] = v
+		switch m := tc.(type) {
+		case *pyjson.Object:
+			kept := pyjson.NewObject()
+			for _, k := range m.Keys {
+				if !strip[k] {
+					kept.Set(k, m.Vals[k])
+				}
 			}
+			out[i] = kept
+		case map[string]any:
+			kept := make(map[string]any, len(m))
+			for k, v := range m {
+				if !strip[k] {
+					kept[k] = v
+				}
+			}
+			out[i] = kept
+		default:
+			out[i] = tc
 		}
-		out[i] = kept
 	}
 	apiMsg["tool_calls"] = out
 }

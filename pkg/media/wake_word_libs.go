@@ -140,7 +140,7 @@ func (k sherpaSpotter) ResetStream(s sherpaStream) error {
 	return nil
 }
 
-// sherpa_onnx of the installed distribution over its C API library, text2token importing sentencepiece and pypinyin on first use
+// sherpa_onnx of the installed distribution over its C API library, text2token loading the pypinyin dictionaries on first use
 func importSherpaOnnx(ctx context.Context) (sherpaOnnxModule, error) {
 	dir, err := wakeInstalledPackage(ctx, "sherpa_onnx")
 	if err != nil {
@@ -152,10 +152,6 @@ func importSherpaOnnx(ctx context.Context) (sherpaOnnxModule, error) {
 	)
 	module, err := sherpaonnx.Import(dir, sherpaonnx.Environment{
 		Stdout: os.Stdout,
-		ImportSentencepiece: func() error {
-			_, err := wakeInstalledPackage(ctx, "sentencepiece")
-			return err
-		},
 		ImportPypinyin: func() (*pypinyin.Module, error) {
 			mu.Lock()
 			defer mu.Unlock()
@@ -178,4 +174,32 @@ func importSherpaOnnx(ctx context.Context) (sherpaOnnxModule, error) {
 		return nil, &WakeWordError{Class: "ImportError", Msg: err.Error(), Cause: err}
 	}
 	return sherpaOnnxLib{module}, nil
+}
+
+// Loads the Porcupine library from the pvporcupine package in the runtime environment
+func LoadPorcupineLibrary(ctx context.Context) error {
+	dir, err := wakeInstalledPackage(ctx, "pvporcupine")
+	if err != nil {
+		return err
+	}
+	module, err := pvporcupine.Import(dir)
+	if err != nil {
+		return err
+	}
+	return module.LoadLibrary()
+}
+
+// Loads the sherpa-onnx C API library from the sherpa_onnx package in the runtime environment
+func LoadSherpaOnnxLibrary(ctx context.Context) error {
+	_, err := importSherpaOnnx(ctx)
+	return err
+}
+
+// Loads the tensorflowlite_c library from the pyopen_wakeword package in the runtime environment
+func LoadOpenWakeWordLibrary(ctx context.Context) error {
+	dir, err := wakeInstalledPackage(ctx, "pyopen_wakeword")
+	if err != nil {
+		return err
+	}
+	return pyopenwakeword.Import(dir).LoadLibrary()
 }

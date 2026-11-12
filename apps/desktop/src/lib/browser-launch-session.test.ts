@@ -7,17 +7,17 @@ import { installBrowserDesktopBridge } from './browser-desktop-bridge'
 import { readWebappSession, WEBAPP_LAUNCH_REQUIRED, webappSessionKey } from './browser-launch-session'
 
 const win = window as Window & {
-  __HERMES_UI_SURFACE__?: string
-  __HERMES_BASE_PATH__?: string
-  __HERMES_AUTH_REQUIRED__?: boolean
+  __ICEBATH_UI_SURFACE__?: string
+  __ICEBATH_BASE_PATH__?: string
+  __ICEBATH_AUTH_REQUIRED__?: boolean
 }
 
 afterEach(() => {
   window.dispatchEvent(new Event('beforeunload'))
   Reflect.deleteProperty(window, 'hermesDesktop')
-  delete win.__HERMES_UI_SURFACE__
-  delete win.__HERMES_BASE_PATH__
-  delete win.__HERMES_AUTH_REQUIRED__
+  delete win.__ICEBATH_UI_SURFACE__
+  delete win.__ICEBATH_BASE_PATH__
+  delete win.__ICEBATH_AUTH_REQUIRED__
   sessionStorage.clear()
   localStorage.clear()
   window.history.replaceState(null, '', '/')
@@ -27,8 +27,8 @@ afterEach(() => {
 
 it('uses one private session for REST, RPC and terminal across reload without losing the profile', async () => {
   const token = 'a'.repeat(43)
-  win.__HERMES_UI_SURFACE__ = 'webapp'
-  win.__HERMES_BASE_PATH__ = '/one'
+  win.__ICEBATH_UI_SURFACE__ = 'webapp'
+  win.__ICEBATH_BASE_PATH__ = '/one'
   // Where /webapp/launch leaves the credential before it opens /one/?profile=coder.
   sessionStorage.setItem(webappSessionKey('/one'), token)
   window.history.replaceState(null, '', '/one/?profile=coder')
@@ -59,7 +59,7 @@ it('uses one private session for REST, RPC and terminal across reload without lo
   expect(window.location.search).toBe('?profile=coder')
   const desktop = window.hermesDesktop!
   await desktop.api({ path: '/api/fs/read-text' })
-  expect(new Headers(fetchMock.mock.calls[0][1].headers).get('X-Hermes-Session-Token')).toBe(token)
+  expect(new Headers(fetchMock.mock.calls[0][1].headers).get('X-Icebath-Session-Token')).toBe(token)
   expect((await desktop.getConnection()).token).toBe(token)
   // RPC: the gateway socket's one-use ticket is minted over REST with the same private session;
   // the session token itself never rides a socket URL.
@@ -77,14 +77,14 @@ it('uses one private session for REST, RPC and terminal across reload without lo
     )!
 
   const mint = mintFor('gateway')
-  expect(new Headers(mint[1].headers).get('X-Hermes-Session-Token')).toBe(token)
+  expect(new Headers(mint[1].headers).get('X-Icebath-Session-Token')).toBe(token)
   // Terminal: each dial mints its own one-use ticket the same way.
   await desktop.terminal.start({ cwd: '/work' })
   expect(urls[0].pathname).toBe('/one/api/host-terminal')
   expect(urls[0].searchParams.get('ticket')).toBe('shell-ticket')
   const shellMint = mintFor('host-terminal')
   expect(shellMint[1].method).toBe('POST')
-  expect(new Headers(shellMint[1].headers).get('X-Hermes-Session-Token')).toBe(token)
+  expect(new Headers(shellMint[1].headers).get('X-Icebath-Session-Token')).toBe(token)
   // A plugin's live socket cannot carry a ticket here; it stays on its polling fallback.
   const stopPluginSocket = pluginSocket('kanban', '/events', () => undefined)
   await new Promise(resolve => setTimeout(resolve, 20))
@@ -104,7 +104,7 @@ it('uses one private session for REST, RPC and terminal across reload without lo
 })
 
 it('fails closed with actionable launch instructions in a fresh tab and ignores local grants under OAuth', async () => {
-  win.__HERMES_UI_SURFACE__ = 'webapp'
+  win.__ICEBATH_UI_SURFACE__ = 'webapp'
   const fetchMock = vi.fn()
   vi.stubGlobal('fetch', fetchMock)
   expect(installBrowserDesktopBridge()).toBe(true)
@@ -117,7 +117,7 @@ it('fails closed with actionable launch instructions in a fresh tab and ignores 
   expect(readWebappSession('')).toHaveLength(43)
   sessionStorage.clear()
   expect(readWebappSession('')).toBe('')
-  win.__HERMES_AUTH_REQUIRED__ = true
+  win.__ICEBATH_AUTH_REQUIRED__ = true
   expect(installBrowserDesktopBridge()).toBe(true)
   expect((await window.hermesDesktop!.getConnection()).authMode).toBe('oauth')
   expect((await window.hermesDesktop!.getConnection()).token).toBe('')
@@ -125,7 +125,7 @@ it('fails closed with actionable launch instructions in a fresh tab and ignores 
 
 it('takes the credential only from the tab storage the launch page fills, never from the address', () => {
   // The browser records every address in its history, where a credential would outlive the tab.
-  win.__HERMES_UI_SURFACE__ = 'webapp'
+  win.__ICEBATH_UI_SURFACE__ = 'webapp'
   window.history.replaceState(null, '', `/?profile=coder#hermes-session=${'c'.repeat(43)}`)
   expect(readWebappSession('')).toBe('')
   expect(installBrowserDesktopBridge()).toBe(true)
@@ -137,8 +137,8 @@ it('takes the credential only from the tab storage the launch page fills, never 
 it.each(['window', 'session'] as const)('hands off a private %s through a one-use ticket without sharing its session token', async kind => {
   const token = 'a'.repeat(43)
   const ticket = 'b'.repeat(43)
-  win.__HERMES_UI_SURFACE__ = 'webapp'
-  win.__HERMES_BASE_PATH__ = '/one'
+  win.__ICEBATH_UI_SURFACE__ = 'webapp'
+  win.__ICEBATH_BASE_PATH__ = '/one'
   sessionStorage.setItem(webappSessionKey('/one'), token)
   window.history.replaceState(null, '', '/one/?profile=coder')
   const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ticket })))
@@ -169,7 +169,7 @@ it.each(['window', 'session'] as const)('hands off a private %s through a one-us
   const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit]
   expect(url.pathname).toBe('/one/api/webapp/window-ticket')
   expect(init.method).toBe('POST')
-  expect(new Headers(init.headers).get('X-Hermes-Session-Token')).toBe(token)
+  expect(new Headers(init.headers).get('X-Icebath-Session-Token')).toBe(token)
   expect(open).toHaveBeenCalledOnce()
   const [opened, target, features] = open.mock.calls[0]
   const child = new URL(String(opened))
@@ -177,7 +177,7 @@ it.each(['window', 'session'] as const)('hands off a private %s through a one-us
   expect(child.pathname).toBe('/one/webapp/window')
   expect(child.search).toBe('')
   const handoff = new URLSearchParams(child.hash.slice(1))
-  expect(Channel.current.name).toBe(`hermes.webapp.window:${handoff.get('channel')}`)
+  expect(Channel.current.name).toBe(`icebath.webapp.window:${handoff.get('channel')}`)
   expect(Channel.current.postMessage).toHaveBeenCalledWith({ ticket })
   expect(Channel.current.close).toHaveBeenCalledOnce()
   expect(handoff.get('query')).toContain('profile=research')
@@ -202,7 +202,7 @@ it('asks a tab without a working credential to sign in, so reconnecting stops', 
   // The reconnect loop stops retrying only for an error that reads as a sign-in requirement;
   // the startup overlay then shows the Webapp sign-in view for this message.
   const failure = (request: Promise<unknown>) => request.then(() => null, (error: unknown) => error)
-  win.__HERMES_UI_SURFACE__ = 'webapp'
+  win.__ICEBATH_UI_SURFACE__ = 'webapp'
   vi.stubGlobal('fetch', vi.fn(async () => new Response('Unauthorized', { status: 401 })))
   expect(installBrowserDesktopBridge()).toBe(true)
 

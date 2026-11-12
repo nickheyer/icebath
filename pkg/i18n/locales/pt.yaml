@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b Conjuntos de Ferramentas Disponíveis"
     currently_enabled_legend: "(*) = ativado atualmente"
     tip_enable_all: "Dica: use 'all' ou '*' para ativar todos os conjuntos de ferramentas"
-    example: "Exemplo: python cli.py --toolsets web,terminal"
+    example: "Exemplo: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "Subcomando /usage desconhecido: {args}. Tente /usage ou /usage reset [--force]."

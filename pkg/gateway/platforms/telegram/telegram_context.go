@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"github.com/go-telegram/bot/models"
 	"strings"
 	"unicode/utf8"
 
@@ -21,6 +22,8 @@ type ContextMessage struct {
 	Voice           any
 	VideoNote       any
 	Audio           any
+
+	raw *models.Message
 }
 
 // Message text or caption paired with the entities whose offsets index into that same text

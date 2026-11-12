@@ -327,6 +327,11 @@ func GetPluginCommands(ctx context.Context) map[string]*PluginCommand {
 	return ensurePluginsDiscovered(ctx, false).PluginCommands()
 }
 
+// Plugin slash command names after discovery in the order their names were first registered
+func GetPluginCommandOrder(ctx context.Context) []string {
+	return ensurePluginsDiscovered(ctx, false).PluginCommandOrder()
+}
+
 // Plugin auxiliary task registrations sorted by key after discovery
 func GetPluginAuxiliaryTasks(ctx context.Context) []map[string]any {
 	tasks := ensurePluginsDiscovered(ctx, false).AuxiliaryTasks()

@@ -63,6 +63,8 @@ type Manager struct {
 	contextEngine                 any
 	cliCommands                   map[string]*CLICommand
 	pluginCommands                map[string]*PluginCommand
+	pluginCommandSeq              map[string]uint64
+	nextPluginCommandSeq          uint64
 	pluginSkills                  map[string]*PluginSkill
 	automationBlueprints          map[string]*blueprintEntry
 	portableMCPServers            map[string]map[string]any
@@ -102,6 +104,7 @@ func NewManager(h string) *Manager {
 		eventPendingCap:            eventPendingCapDefault,
 		cliCommands:                map[string]*CLICommand{},
 		pluginCommands:             map[string]*PluginCommand{},
+		pluginCommandSeq:           map[string]uint64{},
 		pluginSkills:               map[string]*PluginSkill{},
 		automationBlueprints:       map[string]*blueprintEntry{},
 		portableMCPServers:         map[string]map[string]any{},

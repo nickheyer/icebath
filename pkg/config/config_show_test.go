@@ -76,3 +76,29 @@ func TestShowConfigManagedBannerListsPinnedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestShowConfigModelKeepsFileOrder(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("ICEBATH_MANAGED_DIR", filepath.Join(t.TempDir(), "nope"))
+	InvalidateManagedCache()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	text := "model:\n  provider: custom\n  base_url: http://127.0.0.1:9/v1\n  default: fake-model\n  context_length: 128000\n"
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(h, os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := showSources(cfg, nil)
+	src.RedactConfigValue = RedactConfigValue
+	var out strings.Builder
+	if err := ShowConfig(&out, src); err != nil {
+		t.Fatal(err)
+	}
+	want := "  Model:        {'provider': 'custom', 'base_url': 'http://127.0.0.1:9/v1', 'default': 'fake-model', 'context_length': 128000}"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("missing %q in\n%s", want, out.String())
+	}
+}

@@ -13,7 +13,7 @@ func reinstallRuntimeSnapshot(ctx context.Context, a *AIAgent, rt map[string]any
 	if err := applyPrimaryRuntimeFields(a, rt); err != nil {
 		return err
 	}
-	a.codexReasoningReplayEnabled, a.codexReasoningReplayRejected = true, false
+	resetCodexReasoningReplay(a)
 	restoreRuntimeCapabilities(a, rt)
 	caching, err := runtimeField(rt, "use_prompt_caching")
 	if err != nil {

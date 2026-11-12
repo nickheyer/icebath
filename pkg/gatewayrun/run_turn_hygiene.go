@@ -588,7 +588,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 	opts := agent.AIAgentOptions{Model: model, MaxIterations: 4, QuietMode: true, SkipMemory: !checkpointRequired,
 		EnabledToolsets: []string{"memory"}, SessionID: entry.SessionID, SessionDB: db}
 	applyRuntimeKwargs(&opts, runtime)
-	hygAgent, err := agent.NewAIAgent(ctx, opts)
+	hygAgent, err := newAIAgent(ctx, opts)
 	if err != nil {
 		return nil, nil, err
 	}

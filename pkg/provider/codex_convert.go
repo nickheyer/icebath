@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"regexp"
 	"sort"
@@ -687,7 +688,7 @@ func CoerceToolName(name any, fallback string) string {
 func responsesTools(toolDefs []map[string]any) []map[string]any {
 	var converted []map[string]any
 	for _, item := range toolDefs {
-		fn, _ := item["function"].(map[string]any)
+		fn, _ := pyjson.Dict(item["function"])
 		if !nonblank(fn["name"]) {
 			continue
 		}

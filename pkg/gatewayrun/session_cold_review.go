@@ -162,7 +162,7 @@ func (r *GatewayRunner) coldReviewParent(ctx context.Context, source *gateway.Se
 			return err
 		}
 		opts.Env = tools.ToolEnvFrom(scoped)
-		parent, err := agent.NewAIAgent(scoped, opts)
+		parent, err := newAIAgent(scoped, opts)
 		if err != nil {
 			return err
 		}

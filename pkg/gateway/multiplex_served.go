@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Pid of the default profile's gateway when a verified live process owns it
-func LiveDefaultGatewayPid() (int, bool, error) {
+// Pid of the default profile's gateway when a verified live process owns it, the module attribute hermes tests patch
+var LiveDefaultGatewayPid = func() (int, bool, error) {
 	return LiveGatewayPidForHome(home.Root())
 }
 

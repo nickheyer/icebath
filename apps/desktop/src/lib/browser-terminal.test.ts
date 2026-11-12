@@ -48,7 +48,7 @@ class Socket {
 
 function install() {
   Reflect.deleteProperty(window, 'hermesDesktop')
-  Object.assign(window, { __HERMES_AUTH_REQUIRED__: true, __HERMES_BASE_PATH__: '/one' })
+  Object.assign(window, { __ICEBATH_AUTH_REQUIRED__: true, __ICEBATH_BASE_PATH__: '/one' })
   installBrowserDesktopBridge()
 
   return window.hermesDesktop!.terminal
@@ -68,8 +68,8 @@ beforeEach(() => {
 afterEach(() => {
   window.dispatchEvent(new Event('beforeunload'))
   Reflect.deleteProperty(window, 'hermesDesktop')
-  Reflect.deleteProperty(window, '__HERMES_AUTH_REQUIRED__')
-  Reflect.deleteProperty(window, '__HERMES_BASE_PATH__')
+  Reflect.deleteProperty(window, '__ICEBATH_AUTH_REQUIRED__')
+  Reflect.deleteProperty(window, '__ICEBATH_BASE_PATH__')
   $connection.set(null)
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -306,7 +306,7 @@ describe('persistent browser terminals', () => {
     await install().start({ cwd: '/original', restoreKey: 'tab-one' })
     window.dispatchEvent(new Event('beforeunload'))
     Reflect.deleteProperty(window, 'hermesDesktop')
-    Object.assign(window, { __HERMES_BASE_PATH__: '/two' })
+    Object.assign(window, { __ICEBATH_BASE_PATH__: '/two' })
     installBrowserDesktopBridge()
     await window.hermesDesktop!.terminal.start({ cwd: '/original', restoreKey: 'tab-one' })
     expect(Socket.instances.at(-1)!.url.searchParams.has('attach')).toBe(false)
@@ -317,7 +317,7 @@ describe('host terminal after sign-out', () => {
   /** A Webapp tab on the loopback bind, signed in by its launch link. */
   function installWebapp() {
     Reflect.deleteProperty(window, 'hermesDesktop')
-    Object.assign(window, { __HERMES_AUTH_REQUIRED__: false, __HERMES_BASE_PATH__: '/one' })
+    Object.assign(window, { __ICEBATH_AUTH_REQUIRED__: false, __ICEBATH_BASE_PATH__: '/one' })
     seedWebappSession('launch-link-session')
     installBrowserDesktopBridge()
 

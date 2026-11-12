@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 
-const EPOCH_KEY = Symbol.for('hermes.desktop.gatewayActivationEpoch')
+const EPOCH_KEY = Symbol.for('icebath.desktop.gatewayActivationEpoch')
 
 // Same dev-HMR rule as the gateway registry state: a re-evaluated module must
 // hand back the SAME atom, or existing subscribers are orphaned. Production has

@@ -98,9 +98,12 @@ func openLock(path string) (*os.File, error) {
 
 // Reservations of canonical profile homes held through open locked descriptors
 type ProfileOwnership struct {
-	mu      sync.Mutex
-	handles *pydict.Dict[string, *os.File]
-	writers []*ownershipWriter
+	mu       sync.Mutex
+	handles  *pydict.Dict[string, *os.File]
+	writers  []*ownershipWriter
+	busy     map[string]int
+	parked   map[string]*os.File
+	released map[string]bool
 }
 
 type ownershipWriter struct {
@@ -122,7 +125,8 @@ func (w *ownershipWriter) alive() bool {
 
 // Empty ownership with no reservations
 func NewProfileOwnership() *ProfileOwnership {
-	return &ProfileOwnership{handles: pydict.New[string, *os.File]()}
+	return &ProfileOwnership{handles: pydict.New[string, *os.File](), busy: map[string]int{}, parked: map[string]*os.File{},
+		released: map[string]bool{}}
 }
 
 // Process wide reservations of the running gateway
@@ -152,14 +156,27 @@ func (o *ProfileOwnership) Reserve(ctx context.Context, homes []string, purpose 
 		canon = append(canon, c)
 	}
 	sort.Strings(canon)
-	var added []string
+	var added, revived []string
 	for _, h := range canon {
 		if o.handles.Has(h) {
 			continue
 		}
+		if o.released[h] {
+			revived = append(revived, h)
+			delete(o.released, h)
+		}
+		if f, ok := o.parked[h]; ok {
+			delete(o.parked, h)
+			o.handles.Set(h, f)
+			added = append(added, h)
+			continue
+		}
 		if err := o.reserveOne(ctx, h, purpose); err != nil {
 			for i := len(added) - 1; i >= 0; i-- {
-				o.releaseLocked(added[i])
+				o.releaseLocked(added[i], false)
+			}
+			for _, r := range revived {
+				o.released[r] = true
 			}
 			return err
 		}
@@ -235,17 +252,56 @@ func (o *ProfileOwnership) Release(h string) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.releaseLocked(c)
+	o.releaseLocked(c, true)
 }
 
-func (o *ProfileOwnership) releaseLocked(c string) {
+// Drops the reservation of c, retire refusing later work there, the lock parked while entered work runs
+func (o *ProfileOwnership) releaseLocked(c string, retire bool) {
 	f, ok := o.handles.Get(c)
 	if !ok {
 		return
 	}
 	o.handles.Delete(c)
+	if retire {
+		o.released[c] = true
+	}
+	if o.busy[c] > 0 {
+		o.parked[c] = f
+		return
+	}
 	releaseFileLock(f)
 	f.Close()
+}
+
+// Enters background work in home, refused once its reservation was released, the lock outliving every entered work
+func (o *ProfileOwnership) Hold(h string) (func(), bool) {
+	c, err := CanonicalHome(h)
+	if err != nil {
+		return func() {}, true
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.released[c] {
+		return nil, false
+	}
+	o.busy[c]++
+	var once sync.Once
+	return func() { once.Do(func() { o.leave(c) }) }, true
+}
+
+// Ends one entered work in a home and unlocks a reservation released while it ran
+func (o *ProfileOwnership) leave(c string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.busy[c]--; o.busy[c] > 0 {
+		return
+	}
+	delete(o.busy, c)
+	if f, ok := o.parked[c]; ok {
+		delete(o.parked, c)
+		releaseFileLock(f)
+		f.Close()
+	}
 }
 
 // Registers then starts a writer so a partial startup cannot forget a live one
@@ -280,7 +336,7 @@ func (o *ProfileOwnership) Close() {
 	o.writers = nil
 	keys := o.handles.Keys()
 	for i := len(keys) - 1; i >= 0; i-- {
-		o.releaseLocked(keys[i])
+		o.releaseLocked(keys[i], false)
 	}
 }
 

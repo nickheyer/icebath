@@ -223,6 +223,7 @@ func Request(ctx context.Context, method, home, profile, etag string, body any, 
 	https := req.URL.Scheme == "https"
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("X-Hermes-Instance-Id", InstanceID())
+	req.Header.Set("X-Icebath-Instance-Id", InstanceID())
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

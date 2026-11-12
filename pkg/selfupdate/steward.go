@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -24,6 +25,8 @@ const (
 	StewardRPM       = "rpm"
 	StewardPacman    = "pacman"
 	StewardApk       = "apk"
+	StewardChoco     = "chocolatey"
+	StewardPip       = "pip"
 )
 
 var StewardUpdateMessages = map[string]string{
@@ -63,11 +66,19 @@ var StewardUpdateMessages = map[string]string{
 	StewardPacman: "✗ This icebath was installed by an Arch package.\n" +
 		"\n" +
 		"The package manager owns the binary. Update through your AUR helper:\n" +
-		"  paru -S icebath-bin",
+		"  paru -Syu icebath-bin",
 	StewardApk: "✗ This icebath was installed by an Alpine package.\n" +
 		"\n" +
 		"The package manager owns the binary. Update with:\n" +
 		"  apk upgrade icebath",
+	StewardChoco: "✗ This icebath was installed by Chocolatey.\n" +
+		"\n" +
+		"The package manager owns the binary. Update with:\n" +
+		"  choco upgrade icebath",
+	StewardPip: "✗ This icebath was installed from the icebath-cli wheel.\n" +
+		"\n" +
+		"The package manager owns the binary. Update with:\n" +
+		"  pipx upgrade icebath-cli",
 }
 
 const SourceOnTermuxUpdateMessage = "✗ This icebath is a source checkout running under Termux.\n" +
@@ -94,7 +105,7 @@ var stewardUninstallMessages = map[string]string{
 	StewardDocker: "✗ This icebath runs from a Docker image.\n" +
 		"\n" +
 		"There is no code to uninstall — remove the container and image:\n" +
-		"  docker rm <container> && docker rmi nousresearch/icebath-agent\n" +
+		"  docker rm <container> && docker rmi ghcr.io/nickheyer/icebath\n" +
 		"\n" +
 		stewardDeleteDataPreamble +
 		stewardDeleteDataCLI,
@@ -180,38 +191,6 @@ func StewardUninstallMessage(steward string, platform *string) string {
 	return strings.ReplaceAll(stewardUninstallFallback, "{steward}", steward)
 }
 
-// Package manager whose install layout the binary path sits in, empty for none
-func packageManagerPath(binary string) string {
-	slashed := filepath.ToSlash(binary)
-	parts := strings.Split(slashed, "/")
-	for i, part := range parts {
-		lower := strings.ToLower(part)
-		next := ""
-		if i+1 < len(parts) {
-			next = strings.ToLower(parts[i+1])
-		}
-		switch {
-		case lower == "nix" && next == "store" && i <= 1:
-			return StewardNix
-		case lower == "cellar" || lower == "caskroom":
-			return StewardHomebrew
-		case lower == "winget" && next == "packages":
-			return StewardWinGet
-		case lower == "apps" && next == "icebath" && i > 0 && strings.EqualFold(parts[i-1], "scoop"):
-			return StewardScoop
-		}
-	}
-	for _, env := range []string{"SCOOP", "SCOOP_GLOBAL"} {
-		if root := os.Getenv(env); root != "" {
-			apps := filepath.ToSlash(filepath.Join(root, "apps")) + "/"
-			if strings.HasPrefix(strings.ToLower(slashed), strings.ToLower(apps)) {
-				return StewardScoop
-			}
-		}
-	}
-	return ""
-}
-
 // System package database query answering whether a package owns the binary, swapped by tests
 var packageOwner = func(binary string) string {
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
@@ -263,7 +242,7 @@ func SealedSteward(projectRoot string) *string {
 		if resolved, err := filepath.EvalSymlinks(binary); err == nil {
 			binary = resolved
 		}
-		if manager := packageManagerPath(binary); manager != "" {
+		if manager := config.PackageManagerOfPath(binary); manager != "" {
 			steward = manager
 		} else if manager := packageOwner(binary); manager != "" {
 			steward = manager

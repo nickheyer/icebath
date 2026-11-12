@@ -349,7 +349,7 @@ func (c *CLI) recoverAfterResize(app tuiScreenApp, originalOnResize func()) {
 	if monitor != nil && monitor.isOpening() {
 		return
 	}
-	c.statusBarSuppressedAfterResize = true
+	c.statusBarSuppressedAfterResize.Store(true)
 	newWidth, haveNew := c.resizeWidth()
 	prev := c.lastResizeWidth
 	narrowest, haveNarrowest := 0, false
@@ -421,7 +421,7 @@ func (c *CLI) restartDebounceTimer(slot **time.Timer, delay float64, fn func(tim
 // Clears the status bar suppression once the reflow settles, a fresh resize restarting the wait
 func (c *CLI) scheduleStatusBarUnsuppress(app tuiScreenApp, delay float64) {
 	clear := func() {
-		c.statusBarSuppressedAfterResize = false
+		c.statusBarSuppressedAfterResize.Store(false)
 		_ = app.Invalidate()
 	}
 	c.resizeRecoveryLock.Lock()

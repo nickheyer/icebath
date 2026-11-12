@@ -515,7 +515,7 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuigateway.Sess
 			info["tools"] = grouped
 			scope := tools.ScopeKey(home.Dir(ctx))
 			for _, def := range a.ToolDefs() {
-				function, _ := def["function"].(map[string]any)
+				function, _ := pyjson.Dict(def["function"])
 				name := function["name"].(string)
 				toolset := tools.Default.ToolsetForTool(ctx, scope, name)
 				if toolset == "" {

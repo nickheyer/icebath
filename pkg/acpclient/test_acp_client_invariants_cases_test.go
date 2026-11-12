@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func acmeVendor() Vendor {
@@ -442,12 +443,12 @@ func sessionWithConfigOptions() map[string]any {
 			map[string]any{"value": "model-fable", "name": "Fable", "_meta": map[string]any{"acmePolicy": "off"}}}}}}
 }
 
-func acmeDisabled(entry any) bool {
+func acmeDisabled(entry any) (bool, error) {
 	meta, _ := dictGet(entry, "_meta").(map[string]any)
-	return meta["acmePolicy"] == "off"
+	return meta["acmePolicy"] == "off", nil
 }
 
-func selection(t *testing.T, session map[string]any, model, placeholder string, disabled func(any) bool) (string, map[string]any, bool) {
+func selection(t *testing.T, session map[string]any, model, placeholder string, disabled func(any) (bool, error)) (string, map[string]any, bool) {
 	t.Helper()
 	method, params, ok, err := modelSelectionRequest(session, model, placeholder, disabled)
 	if err != nil {
@@ -493,5 +494,85 @@ func TestModelSelectionFallsBackToLegacyExtension(t *testing.T) {
 func TestModelSelectionSkipsProviderPlaceholderSlug(t *testing.T) {
 	if _, _, ok := selection(t, sessionWithConfigOptions(), "acme-acp", "acme-acp", neverDisabled); ok {
 		t.Fatal("the placeholder slug means the session default")
+	}
+}
+
+func TestCompletedPromptLeavesNoAgentProcess(t *testing.T) {
+	var spawned []*process
+	c := recordingClient(t, "server", &spawned)
+	completion, err := c.CreateChatCompletion(context.Background(), map[string]any{"model": "acme-acp", "messages": userHi("hi")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content := completionMessage(t, completion)["content"]; content != "done" {
+		t.Fatalf("%#v", completion)
+	}
+	if len(spawned) != 1 {
+		t.Fatalf("spawned %d processes", len(spawned))
+	}
+	if _, ended := spawned[0].poll(); !ended {
+		t.Fatal("the agent process outlived its completed prompt")
+	}
+	if !c.IsClosed() {
+		t.Fatal("the client must report closed once its only session drained")
+	}
+}
+
+func TestStreamTruePreservesToolCallDeltas(t *testing.T) {
+	toolResponse := `<tool_call>{"id":"call_read","type":"function",` +
+		`"function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}</tool_call>`
+	t.Setenv("ACPCLIENT_FAKE_REPLY", toolResponse)
+	var spawned []*process
+	c := recordingClient(t, "server", &spawned)
+	stream, err := c.CreateChatCompletion(context.Background(), map[string]any{
+		"model": "acme-acp", "messages": userHi("read README.md"), "stream": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := stream.(*provider.StreamChunks).Chunks
+	choice := chunks[0]["choices"].([]any)[0].(map[string]any)
+	delta := choice["delta"].(map[string]any)
+	if delta["content"] != nil || choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("%#v", choice)
+	}
+	toolCalls, _ := delta["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("%#v", delta["tool_calls"])
+	}
+	toolDelta := toolCalls[0].(map[string]any)
+	fn := toolDelta["function"].(map[string]any)
+	if toolDelta["index"] != 0 || toolDelta["id"] != "call_read" || fn["name"] != "read_file" {
+		t.Fatalf("%#v", toolDelta)
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(fn["arguments"].(string)), &args); err != nil || !reflect.DeepEqual(args, map[string]any{"path": "README.md"}) {
+		t.Fatalf("%v %v", args, err)
+	}
+	if choices, _ := chunks[1]["choices"].([]any); len(choices) != 0 {
+		t.Fatalf("%#v", chunks[1])
+	}
+}
+
+func TestRunPromptReceivesPickerModel(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "requests.jsonl")
+	t.Setenv("ACPCLIENT_FAKE_LOG", logPath)
+	var spawned []*process
+	c := recordingClient(t, "server", &spawned)
+	if _, err := c.CreateChatCompletion(context.Background(), map[string]any{"model": "model-terra", "messages": userHi("hi")}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := ""
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		var req map[string]any
+		if json.Unmarshal([]byte(line), &req) == nil && req["method"] == "session/set_model" {
+			seen, _ = req["params"].(map[string]any)["modelId"].(string)
+		}
+	}
+	if seen != "model-terra" {
+		t.Fatalf("model forwarded to the session %q in %s", seen, raw)
 	}
 }

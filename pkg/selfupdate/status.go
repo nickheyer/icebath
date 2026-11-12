@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -285,7 +286,7 @@ func (s *statusRun) loadConfig() {
 func (s *statusRun) renderEnvironment() error {
 	s.section("Environment")
 	s.kv("Project:", config.GetProjectRoot())
-	s.kv("Python:", runtime.Version())
+	s.kv("Go:", hostinfo.GoVersion())
 	_, err := os.Stat(home.EnvPath(s.h))
 	s.kvFlag(".env file:", err == nil, "exists", "not found")
 	s.loadConfig()

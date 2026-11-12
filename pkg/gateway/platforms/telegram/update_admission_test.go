@@ -31,6 +31,11 @@ func newAdmissionRig(t *testing.T, dir string, processor UpdateProcessor) *admis
 	t.Helper()
 	r := &admissionRig{adapter: &admissionAdapter{"core"}, state: NewUpdateAdmission(dir)}
 	r.app = NewTelegramApplication(111, processor, r.adapter, r.state)
+	t.Cleanup(func() {
+		if flush := r.state.ReceiptFlush(); flush != nil {
+			_ = flush.Wait(context.Background())
+		}
+	})
 	return r
 }
 

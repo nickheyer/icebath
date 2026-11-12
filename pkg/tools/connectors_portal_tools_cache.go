@@ -28,6 +28,9 @@ type PortalToolsClient interface {
 	Tools(slug, ifNoneMatch string) (any, error)
 }
 
+// Source values a ToolsRead may carry, the Literal of its source field
+var ToolsReadSources = []string{"cache", "network", "revalidated"}
+
 // ToolsRead is one connector tool listing with where it came from and whether it is stale
 type ToolsRead struct {
 	Connector      string

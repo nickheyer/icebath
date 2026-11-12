@@ -484,3 +484,150 @@ func TestHostCallAsync(t *testing.T) {
 		t.Fatalf("plain callable %v %v", v, err)
 	}
 }
+
+// Classes built from Go members bind self, kinds and iteration read builtins, and errors match and re-raise by class
+func TestHostClassMembersAndHelpers(t *testing.T) {
+	h := needHost(t)
+	err := h.Do(func(g *GIL) error {
+		builtins, err := g.Import("builtins")
+		if err != nil {
+			return err
+		}
+		defer g.Decref(builtins)
+		dict, _ := g.Attr(builtins, "dict")
+		defer g.Decref(dict)
+		cls, err := g.NewClass("icebath.tests", "Box", []any{Borrowed(dict)}, map[string]any{
+			"double": RawFunc(func(g *GIL, args, _ uintptr) (uintptr, error) {
+				v, err := g.CallMethod(g.TupleItem(args, 0), "__getitem__", []any{"n"}, nil)
+				if err != nil {
+					return 0, err
+				}
+				defer g.Decref(v)
+				n, err := g.FromPython(v)
+				if err != nil {
+					return 0, err
+				}
+				return g.ToPython(n.(int64) * 2)
+			}),
+			"size": Property(func(g *GIL, self uintptr) (any, error) {
+				n, err := g.CallMethod(builtins, "len", []any{Borrowed(self)}, nil)
+				if err != nil {
+					return nil, err
+				}
+				defer g.Decref(n)
+				return g.FromPython(n)
+			}),
+			"kind": "box",
+		})
+		if err != nil {
+			return err
+		}
+		defer g.Decref(cls)
+		inst, err := g.Call(cls, []any{map[string]any{"n": int64(21)}}, nil)
+		if err != nil {
+			return err
+		}
+		defer g.Decref(inst)
+		ref := g.NewRef(inst)
+		dbl, derr := g.CallMethod(inst, "double", nil, nil)
+		var doubled any
+		if derr == nil {
+			doubled, derr = g.FromPython(dbl)
+			g.Decref(dbl)
+		}
+		if derr != nil || doubled != int64(42) {
+			t.Errorf("double() = %v %v", doubled, derr)
+		}
+		if v, err := ref.GetAttrLocked(g, "size"); err != nil || v != int64(1) {
+			t.Errorf("size = %v %v", v, err)
+		}
+		if v, err := ref.GetAttrLocked(g, "kind"); err != nil || v != "box" {
+			t.Errorf("kind = %v %v", v, err)
+		}
+		typ := pyObjectType(inst)
+		defer g.Decref(typ)
+		if g.KindOf(inst) != KindDict || g.qualifiedName(typ) != "icebath.tests.Box" || g.KindOf(typ) != KindOther || g.KindOf(pyNone) != KindNone {
+			t.Errorf("kinds %v %v %s", g.KindOf(inst), g.KindOf(typ), g.qualifiedName(typ))
+		}
+		list, _ := g.ToPython([]any{int64(1), int64(2), int64(3)})
+		defer g.Decref(list)
+		var sum int64
+		if err := g.Iterate(list, func(item uintptr) error {
+			v, err := g.FromPython(item)
+			sum += v.(int64)
+			return err
+		}); err != nil || sum != 6 {
+			t.Errorf("iterate sum %d %v", sum, err)
+		}
+		_, perr := g.CallMethod(builtins, "int", []any{"x"}, nil)
+		pe, ok := perr.(*PyError)
+		if !ok || !pe.Matches(g, "ValueError") || !pe.Matches(g, "Exception") || pe.Matches(g, "KeyError") || pe.Exception() == nil {
+			t.Errorf("matches %v", perr)
+		}
+		keyErr, _ := g.CallMethod(builtins, "KeyError", []any{"k"}, nil)
+		defer g.Decref(keyErr)
+		raiser, _ := g.NewFunc("raiser", func(g *GIL, _ []any, _ map[string]any) (any, error) { return nil, g.Raising(g.NewRef(keyErr)) })
+		defer g.Decref(raiser)
+		if _, err := g.Call(raiser, nil, nil); err == nil || err.Error() != "KeyError: 'k'" {
+			t.Errorf("raising %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An awaitable runs as a task inside the given contextvars context and hands back its raw result
+func TestHostAwaitInContext(t *testing.T) {
+	h := needHost(t)
+	var coro, pyctx *Ref
+	err := h.Do(func(g *GIL) error {
+		cv, err := g.Import("contextvars")
+		if err != nil {
+			return err
+		}
+		defer g.Decref(cv)
+		v, err := g.CallMethod(cv, "ContextVar", []any{"probe"}, map[string]any{"default": "unset"})
+		if err != nil {
+			return err
+		}
+		defer g.Decref(v)
+		c, err := g.CallMethod(cv, "copy_context", nil, nil)
+		if err != nil {
+			return err
+		}
+		set, _ := g.Attr(v, "set")
+		defer g.Decref(set)
+		r, err := g.CallMethod(c, "run", []any{Borrowed(set), "inside"}, nil)
+		if err != nil {
+			return err
+		}
+		g.Decref(r)
+		get, _ := g.Attr(v, "get")
+		defer g.Decref(get)
+		asyncio, _ := g.Import("asyncio")
+		defer g.Decref(asyncio)
+		co, err := g.CallMethod(asyncio, "to_thread", []any{Borrowed(get)}, nil)
+		if err != nil {
+			return err
+		}
+		coro, pyctx = g.Own(co), g.Own(c)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := coro.AwaitIn(context.Background(), pyctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got any
+	_ = h.Do(func(g *GIL) error {
+		got, err = g.FromPython(out.Ptr())
+		return err
+	})
+	if got != "inside" {
+		t.Fatalf("var inside the task = %v %v", got, err)
+	}
+}

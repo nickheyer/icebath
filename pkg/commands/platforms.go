@@ -1,12 +1,15 @@
 package commands
 
 import (
+	"context"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // NameDesc is one platform menu entry
@@ -65,6 +68,9 @@ func GatewayAvailableCommands(r *Registry, cfg config.Tree) []*Def {
 	}
 	return out
 }
+
+// Gateway command source the platform catalogs read, the config gated registry walk in production
+var gatewayAvailableCommands = GatewayAvailableCommands
 
 // RequiresArgument reports whether a hint makes a bare invocation incomplete
 func RequiresArgument(argsHint string) bool {
@@ -138,15 +144,15 @@ func clampCommandNames(entries []menuEntry, reserved map[string]bool) []menuEntr
 }
 
 // TelegramBotCommands returns sanitized canonical commands for setMyCommands, plugins optionally included
-func TelegramBotCommands(r *Registry, cfg config.Tree, includePlugins bool) []NameDesc {
+func TelegramBotCommands(ctx context.Context, r *Registry, cfg config.Tree, includePlugins bool) []NameDesc {
 	var pairs []NameDesc
-	for _, d := range GatewayAvailableCommands(r, cfg) {
-		pairs = append(pairs, NameDesc{d.Name, d.Description})
+	for _, d := range gatewayAvailableCommands(r, cfg) {
+		pairs = append(pairs, NameDesc{d.Name, d.Describe(ctx)})
 	}
 	if includePlugins {
-		for _, p := range PluginEntries(r) {
+		for _, p := range iterPluginCommandEntries(ctx, r) {
 			if !RequiresArgument(p.ArgsHint) {
-				pairs = append(pairs, NameDesc{p.Name, PluginDescription(p)})
+				pairs = append(pairs, NameDesc{p.Name, p.Description})
 			}
 		}
 	}
@@ -271,7 +277,7 @@ func prioritizeTelegram(cfg config.Tree, candidates []menuEntry) []menuEntry {
 	return out
 }
 
-func collectGatewaySkillEntries(r *Registry, platform string, skills SkillSource, maxSlots int, reserved map[string]bool,
+func collectGatewaySkillEntries(ctx context.Context, r *Registry, platform string, skills SkillSource, maxSlots int, reserved map[string]bool,
 	descLimit int, sanitize func(string) string) ([]menuEntry, int) {
 	if sanitize == nil {
 		sanitize = func(n string) string { return n }
@@ -286,13 +292,25 @@ func collectGatewaySkillEntries(r *Registry, platform string, skills SkillSource
 		return clampCommandNames(out, reserved)
 	}
 	var pluginRows []menuEntry
+	found := plugins.GetPluginCommands(ctx)
+	for _, name := range sortedKeys(found) {
+		meta := found[name]
+		if platform == "telegram" && RequiresArgument(meta.ArgsHint) {
+			continue
+		}
+		desc := meta.Description
+		if desc == "" {
+			desc = i18n.T(ctx, "slash.shared.plugin_command_desc", "", nil)
+		}
+		pluginRows = append(pluginRows, menuEntry{raw: name, desc: desc})
+	}
 	for _, p := range PluginEntries(r) {
-		if platform == "telegram" && RequiresArgument(p.ArgsHint) {
+		if _, dup := found[p.Name]; dup || (platform == "telegram" && RequiresArgument(p.ArgsHint)) {
 			continue
 		}
 		desc := p.Description
 		if desc == "" {
-			desc = "Plugin command"
+			desc = i18n.T(ctx, "slash.shared.plugin_command_desc", "", nil)
 		}
 		pluginRows = append(pluginRows, menuEntry{raw: p.Name, desc: desc})
 	}
@@ -329,13 +347,13 @@ func collectGatewaySkillEntries(r *Registry, platform string, skills SkillSource
 }
 
 // TelegramMenuCommands builds the capped Telegram menu with core, plugin then skill tiers and the hidden count
-func TelegramMenuCommands(r *Registry, cfg config.Tree, skills SkillSource, maxCommands int) ([]NameDesc, int) {
-	core := TelegramBotCommands(r, cfg, false)
+func TelegramMenuCommands(ctx context.Context, r *Registry, cfg config.Tree, skills SkillSource, maxCommands int) ([]NameDesc, int) {
+	core := TelegramBotCommands(ctx, r, cfg, false)
 	reserved := map[string]bool{}
 	for _, c := range core {
 		reserved[c.Name] = true
 	}
-	entries, hidden := collectGatewaySkillEntries(r, "telegram", skills, -1, reserved, 40, SanitizeTelegramName)
+	entries, hidden := collectGatewaySkillEntries(ctx, r, "telegram", skills, -1, reserved, 40, SanitizeTelegramName)
 	var candidates []menuEntry
 	for _, c := range core {
 		candidates = append(candidates, menuEntry{name: c.Name, desc: c.Description, source: "core", raw: c.Name})
@@ -458,21 +476,21 @@ type SlackSlash struct {
 }
 
 // SlackNativeSlashes lists every gateway command as a standalone slash under the manifest cap
-func SlackNativeSlashes(r *Registry, cfg config.Tree) []SlackSlash {
-	available := GatewayAvailableCommands(r, cfg)
+func SlackNativeSlashes(ctx context.Context, r *Registry, cfg config.Tree) []SlackSlash {
+	available := gatewayAvailableCommands(r, cfg)
 	var wanted []SlackSlash
 	for _, d := range available {
-		wanted = append(wanted, SlackSlash{d.Name, d.Description, d.ArgsHint})
+		wanted = append(wanted, SlackSlash{d.Name, d.Describe(ctx), d.ArgsHint})
 	}
 	for _, d := range available {
 		for _, a := range d.Aliases {
-			wanted = append(wanted, SlackSlash{a, "Alias for /" + d.Name + " — " + d.Description, d.ArgsHint})
+			wanted = append(wanted, SlackSlash{a, i18n.T(ctx, "slash.shared.slack_alias_for", "", map[string]any{"name": d.Name, "description": d.Describe(ctx)}), d.ArgsHint})
 		}
 	}
-	for _, p := range PluginEntries(r) {
+	for _, p := range iterPluginCommandEntries(ctx, r) {
 		wanted = append(wanted, SlackSlash{p.Name, p.Description, p.ArgsHint})
 	}
-	entries := []SlackSlash{{"icebath", "Talk to icebath or run a subcommand", "[subcommand] [args]"}}
+	entries := []SlackSlash{{"icebath", i18n.T(ctx, "slash.hermes.description", "", nil), "[subcommand] [args]"}}
 	seen := map[string]bool{"icebath": true}
 	for _, w := range wanted {
 		name := SanitizeSlackName(w.Name)
@@ -494,15 +512,15 @@ func truncateRunes(s string, n int) string {
 }
 
 // SlackAppManifest returns the features.slash_commands manifest portion
-func SlackAppManifest(r *Registry, cfg config.Tree, requestURL string) map[string]any {
+func SlackAppManifest(ctx context.Context, r *Registry, cfg config.Tree, requestURL string) map[string]any {
 	if requestURL == "" {
 		requestURL = "https://icebath.local/slack/commands"
 	}
 	var slashes []map[string]any
-	for _, s := range SlackNativeSlashes(r, cfg) {
+	for _, s := range SlackNativeSlashes(ctx, r, cfg) {
 		desc := s.Description
 		if desc == "" {
-			desc = "Run /" + s.Name
+			desc = i18n.T(ctx, "slash.shared.plugin_default_desc", "", map[string]any{"name": s.Name})
 		}
 		entry := map[string]any{"command": "/" + s.Name, "description": desc, "should_escape": false, "url": requestURL}
 		if s.UsageHint != "" {
@@ -514,15 +532,15 @@ func SlackAppManifest(r *Registry, cfg config.Tree, requestURL string) map[strin
 }
 
 // SlackSubcommandMap maps every name and alias to its /command for the /icebath handler
-func SlackSubcommandMap(r *Registry, cfg config.Tree) map[string]string {
+func SlackSubcommandMap(ctx context.Context, r *Registry, cfg config.Tree) map[string]string {
 	out := map[string]string{}
-	for _, d := range GatewayAvailableCommands(r, cfg) {
+	for _, d := range gatewayAvailableCommands(r, cfg) {
 		out[d.Name] = "/" + d.Name
 		for _, a := range d.Aliases {
 			out[a] = "/" + a
 		}
 	}
-	for _, p := range PluginEntries(r) {
+	for _, p := range iterPluginCommandEntries(ctx, r) {
 		if _, ok := out[p.Name]; !ok {
 			out[p.Name] = "/" + p.Name
 		}

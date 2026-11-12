@@ -109,8 +109,8 @@ func TestResolveContextLengthWarnsOnUnitSuffixAndReadsAuxPin(t *testing.T) {
 	if pin != nil || effective != 0 || len(cps) != 0 || modelCfg["context_length"] != "256K" {
 		t.Fatalf("pin %v effective %d providers %v model %v", pin, effective, cps, modelCfg)
 	}
-	if a.auxCompressionContextLengthConfig != 64000 || a.configContextLength != 0 {
-		t.Fatalf("aux %d agent pin %d", a.auxCompressionContextLengthConfig, a.configContextLength)
+	if a.auxCompressionContextLengthConfig == nil || *a.auxCompressionContextLengthConfig != 64000 || a.configContextLength != 0 {
+		t.Fatalf("aux %v agent pin %d", a.auxCompressionContextLengthConfig, a.configContextLength)
 	}
 	if !strings.Contains(errOut.String(), "Invalid model.context_length in config.yaml: '256K'") {
 		t.Fatalf("stderr %q", errOut.String())

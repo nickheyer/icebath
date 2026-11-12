@@ -17,8 +17,8 @@ import type { UiPreferencesBridge } from './sync'
 // (#145536 re-review round 3), against the real native writer on a real file:
 // a removal elsewhere, an edit carried over a reload or a takeover, a tab
 // whose unsent edit another tab already took over.
-const MODE = 'hermes-desktop-mode-v1'
-const FAVORITES = 'hermes.desktop.favorite-models'
+const MODE = 'icebath-desktop-mode-v1'
+const FAVORITES = 'icebath.desktop.favorite-models'
 
 const dirs: string[] = []
 const stops: (() => void)[] = []

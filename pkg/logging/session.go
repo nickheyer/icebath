@@ -119,7 +119,7 @@ func (b *bridge) Enabled(_ context.Context, level slog.Level) bool {
 	if b.name != "" {
 		return GetLogger(b.name).IsEnabledFor(py)
 	}
-	return int64(py) >= minLevel.Load()
+	return int64(py) > disableLevel.Load() && int64(py) >= minLevel.Load()
 }
 
 func (b *bridge) Handle(ctx context.Context, r slog.Record) error {

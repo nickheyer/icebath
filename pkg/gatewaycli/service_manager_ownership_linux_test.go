@@ -23,7 +23,7 @@ func accountIDMapped(t *testing.T) bool {
 		}
 		first, _ := strconv.ParseInt(fields[0], 10, 64)
 		count, _ := strconv.ParseInt(fields[2], 10, 64)
-		if icebathUID >= first && icebathUID < first+count {
+		if int64(icebathUID) >= first && int64(icebathUID) < first+count {
 			return true
 		}
 	}

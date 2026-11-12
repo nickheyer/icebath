@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"slices"
 	"strings"
@@ -282,7 +283,7 @@ func carrierStripFunctionSignature(toolCalls []any) []any {
 		if !ok {
 			continue
 		}
-		fn, ok := m["function"].(map[string]any)
+		fn, ok := pyjson.Dict(m["function"])
 		if !ok {
 			continue
 		}
@@ -346,8 +347,8 @@ func carrierShape(msg map[string]any, r carrierWireRoute) map[string]any {
 	fnSig := false
 	if !r.keepFnSig {
 		for _, tc := range toolCalls {
-			if m, ok := tc.(map[string]any); ok {
-				if fn, ok := m["function"].(map[string]any); ok {
+			if m, ok := pyjson.Dict(tc); ok {
+				if fn, ok := pyjson.Dict(m["function"]); ok {
 					if _, has := fn["thought_signature"]; has {
 						fnSig = true
 						break

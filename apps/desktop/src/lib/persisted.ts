@@ -7,7 +7,7 @@ import { isSharedPreferenceKey } from './ui-preferences/keys'
 // storage choke point (so every read/write is observable in one place) and
 // writes back on every change — no per-atom subscribe boilerplate.
 //
-//   export const $foo = persistentAtom('hermes.desktop.foo', false, Codecs.bool)
+//   export const $foo = persistentAtom('icebath.desktop.foo', false, Codecs.bool)
 
 // Maps a value to/from its stored string form. `decode` only ever sees a real
 // stored string (absence falls back); `encode` returning null removes the key.

@@ -57,7 +57,7 @@ func authRedirectURI(ctx context.Context, conn *HTTPConnection) (string, error) 
 // Segments of a provider flat state and verifier PKCE string
 func providerPKCESegments(cookiePayload map[string]string) map[string]string {
 	out := map[string]string{}
-	for _, seg := range strings.Split(cookiePayload["hermes_session_pkce"], ";") {
+	for _, seg := range strings.Split(cookiePayload["icebath_session_pkce"], ";") {
 		if k, v, ok := strings.Cut(seg, "="); ok {
 			out[k] = v
 		}

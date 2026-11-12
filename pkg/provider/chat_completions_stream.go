@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"math"
 	"net/http"
@@ -627,7 +628,7 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 					return true, err
 				}
 			}
-			if fn, _ := tc["function"].(map[string]any); fn != nil {
+			if fn, _ := pyjson.Dict(tc["function"]); fn != nil {
 				if frag, ok := fn["arguments"].(string); ok && frag != "" {
 					if err := s.emit(StreamEvent{Kind: EventToolCallDelta, Index: slot, ToolCall: &state.ToolCall{ID: entry.ID, Type: "function", Function: state.ToolCallFunction{Name: entry.Name, Arguments: frag}}}); err != nil {
 						return true, err

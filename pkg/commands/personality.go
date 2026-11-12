@@ -145,10 +145,27 @@ func ResolvePersonality(value any, cfg config.Tree) (string, string, error) {
 	return name, RenderPersonalityPrompt(def), nil
 }
 
+// Nested mapping lookup returning the default when a node is missing or not a mapping
+func personalityGet(cfg map[string]any, def any, keys ...string) any {
+	var node any = cfg
+	for _, key := range keys {
+		m := config.AsMap(node)
+		if m == nil {
+			return def
+		}
+		child, ok := m[key]
+		if !ok {
+			return def
+		}
+		node = child
+	}
+	return node
+}
+
 // Selected display.personality name when it names a known personality, empty otherwise
 func ActivePersonalityName(cfg map[string]any) string {
 	tree := config.Tree(cfg)
-	name := NormalizePersonalityName(tree.Get("display.personality"))
+	name := NormalizePersonalityName(personalityGet(cfg, "", "display", "personality"))
 	if name == "" {
 		return ""
 	}
@@ -164,7 +181,7 @@ func ResolveEphemeralSystemPrompt(cfg map[string]any) string {
 	if name := ActivePersonalityName(cfg); name != "" {
 		return RenderPersonalityPrompt(AvailablePersonalities(tree)[name])
 	}
-	return PromptText(tree.Get("agent.system_prompt"))
+	return PromptText(personalityGet(cfg, "", "agent", "system_prompt"))
 }
 
 // Writes the canonical name to display.personality of the home config, false on any failure
@@ -190,8 +207,11 @@ func AvailablePersonalities(cfg config.Tree) map[string]any {
 		merged[name] = BuiltinPersonalities[name]
 		order = append(order, name)
 	}
-	for _, path := range []string{"personalities", "agent.personalities"} {
-		user := cfg.Map(path)
+	for _, path := range [][]string{{"personalities"}, {"agent", "personalities"}} {
+		user := config.AsMap(personalityGet(cfg, map[string]any{}, path...))
+		if user == nil {
+			continue
+		}
 		for _, name := range config.MappingKeys(user) {
 			key := strings.ToLower(strings.TrimSpace(name))
 			if key == "" || NeutralPersonalityNames[key] {

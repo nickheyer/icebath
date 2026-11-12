@@ -208,7 +208,7 @@ func TestFullUninstallSweepsMacosCachesAndDashboardLaunchd(t *testing.T) {
 	os.MkdirAll(h, 0o755)
 	t.Setenv("ICEBATH_HOME", h)
 	var cacheDirs []string
-	for _, name := range []string{"Icebath", "com.nousresearch.icebath", "icebath-setup", "com.nousresearch.icebath.setup"} {
+	for _, name := range []string{"Icebath", "ai.icebath", "icebath-setup", "ai.icebath.setup"} {
 		d := filepath.Join(tmp, "caches", name)
 		uninstallWrite(t, filepath.Join(d, "Cache"), "x")
 		cacheDirs = append(cacheDirs, d)

@@ -402,11 +402,14 @@ func compactionCount(a *AIAgent) any {
 	return a.contextCompressor.Base().CompressionCount
 }
 
+// Session the current turn started in, empty outside a turn since a rotating commit moves the live session off it
+func compactionTurnSessionID(a *AIAgent) string { return a.inflightTurnSessionID }
+
 // PublishCompactionAttempt publishes one compress_context attempt record from the attempt telemetry seam
 func PublishCompactionAttempt(ctx context.Context, a *AIAgent, record map[string]any) {
 	if compactionPublishesFor(a) {
 		count := compactionCount(a)
-		compactionPublish(ctx, func() map[string]any { return CompactionAttemptPayload(record, count) }, a.inflightTurnSessionID, nil, a.sessionID)
+		compactionPublish(ctx, func() map[string]any { return CompactionAttemptPayload(record, count) }, compactionTurnSessionID(a), nil, a.sessionID)
 	}
 }
 
@@ -417,7 +420,7 @@ func PublishMicroCompaction(ctx context.Context, record map[string]any, turnSess
 
 // PublishCompactionPrune publishes one committed proactive tool result prune measured by the rough token estimate
 func PublishCompactionPrune(ctx context.Context, a *AIAgent, messages, pruned []*state.Message, toolResultsPruned int) {
-	sessionID, turnSessionID := a.sessionID, a.inflightTurnSessionID
+	sessionID, turnSessionID := a.sessionID, compactionTurnSessionID(a)
 	if compactionPublishesFor(a) {
 		compactionPublish(ctx, func() map[string]any {
 			return PruneCompactionPayload(sessionID, compactionEstimateRough(ctx, messages), compactionEstimateRough(ctx, pruned), len(pruned), toolResultsPruned)
@@ -434,6 +437,6 @@ var compactionEstimateRough = func(ctx context.Context, msgs []*state.Message) i
 func PublishProviderNativeCompaction(ctx context.Context, a *AIAgent) {
 	if compactionPublishesFor(a) {
 		sessionID, count := a.sessionID, compactionCount(a)
-		compactionPublish(ctx, func() map[string]any { return ProviderNativeCompactionPayload(sessionID, count) }, a.inflightTurnSessionID, nil, "")
+		compactionPublish(ctx, func() map[string]any { return ProviderNativeCompactionPayload(sessionID, count) }, compactionTurnSessionID(a), nil, "")
 	}
 }

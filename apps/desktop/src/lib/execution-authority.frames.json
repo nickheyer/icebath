@@ -27,7 +27,7 @@
         "text": "epoch1"
        }
       ],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 0,
       "revision": 0
@@ -77,7 +77,7 @@
         "text": "epoch1"
        }
       ],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": true,
       "execution_generation": 1,
       "revision": 0
@@ -118,7 +118,7 @@
      "payload": {
       "stored_session_id": "shared",
       "pending": [],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 1,
       "revision": 1
@@ -156,7 +156,7 @@
         "text": "epoch2"
        }
       ],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 1,
       "revision": 1
@@ -206,7 +206,7 @@
         "text": "epoch2"
        }
       ],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": true,
       "execution_generation": 2,
       "revision": 1
@@ -247,7 +247,7 @@
      "payload": {
       "stored_session_id": "shared",
       "pending": [],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 2,
       "revision": 2
@@ -300,7 +300,7 @@
         "text": "queued"
        }
       ],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 2,
       "revision": 3
@@ -318,7 +318,7 @@
      "payload": {
       "stored_session_id": "shared",
       "pending": [],
-      "desktop_protocol": "hermes-gateway-v1",
+      "desktop_protocol": "icebath-gateway-v1",
       "running": false,
       "execution_generation": 2,
       "revision": 3

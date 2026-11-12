@@ -271,10 +271,6 @@ func elevenLabsStreamerAvailable(ctx context.Context, env *tools.Env) bool {
 
 func (s *elevenLabsStreamer) Stream(ctx context.Context, text string) (iter.Seq2[[]byte, error], error) {
 	return func(yield func([]byte, error) bool) {
-		if err := ttsImportElevenLabs(ctx); err != nil {
-			yield(nil, err)
-			return
-		}
 		apiKey := streamResolveKey(ctx, s.env, "ELEVENLABS_API_KEY", "elevenlabs")
 		section, err := s.sectionMap()
 		if err != nil {

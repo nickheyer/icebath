@@ -789,7 +789,7 @@ func cmdChat(a *chatArgs) int {
 	}
 	readQueryFile(a)
 	observability.BeginProcess(ctx, "cli")
-	return app.Main(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query, Oneshot: a.OneshotExit,
+	return app.ChatMain(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query, Oneshot: a.OneshotExit,
 		RunBudget: a.RunBudget, OutputFormat: a.OutputFormat, IgnoreRules: a.IgnoreRules || a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig || a.SafeMode,
 		Compact: a.Compact, Provider: a.Provider, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Image: a.Image, Resume: a.Resume,
 		Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID, MaxTurns: a.MaxTurns, APIKey: a.APIKey, BaseURL: a.BaseURL})

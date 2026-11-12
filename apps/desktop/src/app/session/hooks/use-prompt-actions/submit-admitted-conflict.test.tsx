@@ -63,7 +63,7 @@ it('a retry refused because its id is already admitted settles as delivered; oth
   expect(state.messages.filter(message => message.role === 'user')).toHaveLength(0)
   expect(state.messages.some(message => message.error)).toBe(false)
   expect(state.busy).toBe(false)
-  expect(window.localStorage.getItem('hermes.desktop.preparedSubmissions.v1') ?? '').not.toContain('restored-1')
+  expect(window.localStorage.getItem('icebath.desktop.preparedSubmissions.v1') ?? '').not.toContain('restored-1')
 
   refusal = { reason: 'admission_conflict' }
   await act(async () => {

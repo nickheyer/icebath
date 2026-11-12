@@ -23,11 +23,16 @@ func requirePath(t *testing.T, path string, file bool) {
 	}
 }
 
-// Fails unless nothing exists at the path
+// Fails unless nothing exists at the path, naming every entry found under it
 func requireAbsent(t *testing.T, path string) {
 	t.Helper()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("%s is still there: %v", path, err)
+		var found []string
+		_ = filepath.WalkDir(path, func(entry string, _ os.DirEntry, _ error) error {
+			found = append(found, entry)
+			return nil
+		})
+		t.Fatalf("%s is still there: %v %v", path, err, found)
 	}
 }
 

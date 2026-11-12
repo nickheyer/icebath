@@ -56,6 +56,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	sf(doctor, "ack", "", "", "Acknowledge a security advisory by ID and exit. After ack, the advisory will no longer trigger startup banners. Run `icebath doctor` first to see active advisories and their IDs.")
 
 	c.addVerify(root)
+	c.addInstallSelf(root)
 
 	security := c.newCmd(root, "security", "Supply-chain audit (OSV.dev) for venv, plugins, and MCP servers",
 		"On-demand vulnerability scan against OSV.dev. Covers the Icebath venv (installed PyPI dists), Python deps declared by plugins under ~/.icebath/plugins/, and pinned npx/uvx MCP servers in config.yaml. Does NOT scan globally-installed packages or editor/browser extensions.")

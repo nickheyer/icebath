@@ -16,7 +16,7 @@ import { createPluginContext } from './plugin'
 import { dropPlugin, publishPlugin } from './plugins-store'
 
 const CAPABILITY = 'preview.executeJavaScript'
-const GRANTS_KEY = 'hermes.desktop.pluginPreviewScriptGrants.v1'
+const GRANTS_KEY = 'icebath.desktop.pluginPreviewScriptGrants.v1'
 
 // A stand-in guest page: evaluates the injected source the way the webview
 // does (script completion value) against a page whose origin the test moves.

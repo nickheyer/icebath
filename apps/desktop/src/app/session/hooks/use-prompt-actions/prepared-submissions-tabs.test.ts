@@ -13,7 +13,7 @@ const installStorage = (storage: Storage) => Object.defineProperty(window, 'loca
 afterEach(() => { installStorage(realStorage); vi.resetModules(); localStorage.clear() })
 
 // The single blob an earlier build kept every browser journal entry in.
-const LEGACY_KEY = 'hermes.desktop.preparedSubmissions.v1'
+const LEGACY_KEY = 'icebath.desktop.preparedSubmissions.v1'
 const owner = { connectionId: 'local', profile: 'default' }
 const destination = { scopeKey: 'webapp::default' } as SubmissionDestination
 const intent = (text: string) => preparedSubmissionKey('stored', destination, text, [])
@@ -124,8 +124,8 @@ test('retiring an entry never hides a different send the earlier build left unde
   expect(await journal.adoptPreparedSubmission(key, 'earlier')).toEqual({ key, entry: entry('earlier', 'same words') })
 })
 
-const ENTRY = 'hermes.desktop.preparedSubmissions.v2:'
-const SPENT = 'hermes.desktop.preparedSubmissions.spent.v2:'
+const ENTRY = 'icebath.desktop.preparedSubmissions.v2:'
+const SPENT = 'icebath.desktop.preparedSubmissions.spent.v2:'
 
 // Storage over `stored` that runs `onKey` on every key() call and `onGet` on every getItem(): another
 // tab's writes landing while a journal read is part way through.

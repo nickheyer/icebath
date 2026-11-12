@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -398,7 +399,7 @@ func TestRootAuditRowIsNotMislabeledAsAgentBrowser(t *testing.T) {
 		}
 		return ""
 	})
-	toolsSeam(t, &doctorResolveWhatsappBridgeDir, func(d *Doctor) string { return filepath.Join(filepath.Dir(d.Home), "no-whatsapp-bridge") })
+	toolsSeam(t, &doctorWhatsAppSession, func(context.Context) (string, bool, bool, error) { return "", false, false, nil })
 	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
 		return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte(auditJSON(0, 0, 0))}, nil
 	})
@@ -443,6 +444,40 @@ func TestWorkspaceRuntimeFindingsAreNotDismissedAsBuildTooling(t *testing.T) {
 			}
 			if len(issues) != 1 || !strings.HasPrefix(issues[0], tc.workspace+" workspace has 2 npm vulnerabilities") {
 				t.Fatalf("issues = %q", issues)
+			}
+		})
+	}
+}
+
+func TestNpmAuditReportsTheInProcessWhatsAppSessionNotABridge(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		present, paired bool
+		err             error
+		want            string
+		manual          int
+	}{
+		{"absent", false, false, nil, "", 0},
+		{"paired", true, true, nil, "✓ WhatsApp session (paired, /wa/session)", 0},
+		{"unpaired", true, false, nil, "⚠ WhatsApp session not paired (/wa/session)", 1},
+		{"unreadable", true, false, errors.New("database is locked"), "⚠ WhatsApp session store unreadable (database is locked)", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, out := toolsDoctor(t)
+			toolsSeam(t, &doctorPMToolPath, func(context.Context, string) string { return "" })
+			toolsSeam(t, &doctorWhatsAppSession, func(context.Context) (string, bool, bool, error) {
+				return "/wa/session", tc.present, tc.paired, tc.err
+			})
+			f, err := checkNpmAudit(context.Background(), d, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := out.String()
+			if strings.Contains(text, "bridge") || (tc.want == "" && strings.Contains(text, "WhatsApp")) || !strings.Contains(text, tc.want) {
+				t.Fatalf("output:\n%s", text)
+			}
+			if len(f.ManualIssues) != tc.manual || (tc.manual == 1 && !strings.Contains(f.ManualIssues[0], "icebath whatsapp")) {
+				t.Fatalf("manual issues %q", f.ManualIssues)
 			}
 		})
 	}

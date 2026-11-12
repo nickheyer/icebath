@@ -136,7 +136,7 @@ func skillsBlock(stable string) string {
 func splitBreakdownTools(tools []map[string]any) (builtin, mcp, subagent []map[string]any) {
 	for _, tool := range tools {
 		source := tool
-		if fn, ok := tool["function"].(map[string]any); ok {
+		if fn, ok := pyjson.Dict(tool["function"]); ok {
 			source = fn
 		}
 		name, _ := source["name"].(string)

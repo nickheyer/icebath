@@ -31,6 +31,7 @@ func keylessServer(t *testing.T, target *string, handler http.HandlerFunc) {
 }
 
 func TestParseMCPBodyCases(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	sse := "event: message\ndata: " + keylessEnvelope("hello") + "\n\n"
 	if got, err := parseMCPBody(sse); err != nil || got != "hello" {
 		t.Fatalf("sse %q %v", got, err)
@@ -58,6 +59,7 @@ func TestParseMCPBodyCases(t *testing.T) {
 }
 
 func TestMCPCallDecodesLikeResponseText(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	title := "光伏发电站组件清洗与性能监测规范"
 	keylessServer(t, &exaMCPURL, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") != "icebath-agent" || r.Header.Get("Accept") != "application/json, text/event-stream" {
@@ -100,6 +102,7 @@ func TestMCPCallDecodesLikeResponseText(t *testing.T) {
 }
 
 func TestKeenableRequestErrorsAndDecoding(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	keylessServer(t, &keenableAPIURL, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Keenable-Title") != "icebath" || r.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("headers %v", r.Header)
@@ -147,6 +150,7 @@ func TestKeenableRequestErrorsAndDecoding(t *testing.T) {
 }
 
 func TestKeylessFirecrawlErrorKeepsStatusAndReason(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	keylessServer(t, &firecrawlCloudAPIURL, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(403)
 		io.WriteString(w, "your IP address looks suspicious\n")
@@ -158,6 +162,7 @@ func TestKeylessFirecrawlErrorKeepsStatusAndReason(t *testing.T) {
 }
 
 func TestExaTextParsing(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	text := "Title: First\nURL: https://a.example\nPublished: N/A\nHighlights:\nsome highlight\nmore\n\n---\nTitle: Second\nURL: https://b.example\nHighlights:\nother\n"
 	hits := parseExaSearchText(text, 5)
 	if len(hits) != 2 || hits[0].URL != "https://a.example" || hits[1].URL != "https://b.example" || hits[0].Description != "some highlight more" || hits[0].Position != 1 {
@@ -179,6 +184,7 @@ func TestExaTextParsing(t *testing.T) {
 }
 
 func TestKeylessCalls(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var lastTool string
 	var lastArgs map[string]any
 	reply := ""
@@ -284,6 +290,7 @@ func keylessThrottled(vendor string) func(context.Context, string, int) *WebSear
 }
 
 func TestKeylessFailover(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for message, want := range map[string]bool{
 		"free MCP rate limit": true, "Client error '403 Forbidden'": true, "HTTP status 401: unauthorized": true, "status code=403": true,
 		"HTTP 2403": false, "error 4031": false, "FORBIDDEN": false, "extract failed for 'forbidden kingdom trailer': connection timeout": false,
@@ -342,6 +349,7 @@ func TestKeylessFailover(t *testing.T) {
 }
 
 func TestKeylessExtractFailover(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	extractor := func(pages []*WebPage, called *bool) func(context.Context, []string) ([]*WebPage, error) {
 		return func(context.Context, []string) ([]*WebPage, error) {
@@ -375,6 +383,7 @@ func TestKeylessExtractFailover(t *testing.T) {
 }
 
 func TestKeylessTierAndRingMembership(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	paid := keylessPinnedEnv(t, "", map[string]any{"exa": "paid", "parallel": "paid"})
 	for _, name := range []string{"parallel", "exa"} {
 		if p := webProvider(paid, name); p == nil || p.KeylessAvailable(paid) {
@@ -413,9 +422,11 @@ func TestKeylessTierAndRingMembership(t *testing.T) {
 }
 
 func TestGetBackendAndAPIKeyGateWithTheKeylessTier(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for _, k := range []string{"FIRECRAWL_API_KEY", "FIRECRAWL_API_URL", "TAVILY_API_KEY", "KEENABLE_API_KEY", "BRAVE_SEARCH_API_KEY", "SEARXNG_URL", "TOOL_GATEWAY_USER_TOKEN"} {
 		t.Setenv(k, "")
 	}
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
 	env := sdkProviderEnv(t, "", nil)
 	want := keylessPreference()[0]
 	if got := getWebBackend(env); got != want {

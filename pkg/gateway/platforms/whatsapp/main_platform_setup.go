@@ -1,45 +1,26 @@
 package whatsapp
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"os/signal"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/lsp"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
-
-// Outcome of one bridge subprocess, interrupted when Ctrl-C arrived while it ran
-type bridgeRun struct {
-	code        int
-	stderr      string
-	interrupted bool
-}
 
 // Terminal, profile, package manager and process the WhatsApp wizard works through
 type whatsAppWizard struct {
-	ctx       context.Context
-	home      string
-	console   *cliui.Console
-	out       io.Writer
-	findNode  func(command string) (string, error)
-	ensure    func(name string) (map[string]string, error)
-	installed func(name string) (*pm.InstalledPackage, error)
-	nodeEnv   func() map[string]string
-	run       func(argv []string, dir string, env map[string]string, captureStderr bool) (bridgeRun, error)
-	bridgeDir func() string
+	ctx     context.Context
+	home    string
+	console *cliui.Console
+	out     io.Writer
+	pair    func(session, mode string) int
 }
 
 // Wizard over the process terminal, this profile and the installed package manager
@@ -47,65 +28,10 @@ func newWhatsAppWizard(ctx context.Context, h string, w io.Writer) *whatsAppWiza
 	base := cliui.Default()
 	con := &cliui.Console{In: base.In, Out: w, Getenv: base.Getenv, StdinTTY: base.StdinTTY, StdoutTTY: base.StdoutTTY,
 		TermSize: base.TermSize, MaskedSecretPrompt: base.MaskedSecretPrompt, OpenScreen: base.OpenScreen}
-	rt := &lsp.Runtime{InstalledBinary: func(name string) (string, bool) {
-		selected, err := pm.Installed(ctx, name, false)
-		if err != nil || selected == nil {
-			return "", false
-		}
-		return selected.Binary, true
-	}}
 	return &whatsAppWizard{
 		ctx: ctx, home: h, console: con, out: w,
-		findNode: func(command string) (string, error) { return lsp.FindNodeExecutable(rt, command) },
-		ensure: func(name string) (map[string]string, error) {
-			runner, err := pm.Ensure(ctx, name, pm.EnsureOptions{Explicit: true})
-			if err != nil {
-				return nil, err
-			}
-			return runner.Env, nil
-		},
-		installed: func(name string) (*pm.InstalledPackage, error) { return pm.Installed(ctx, name, false) },
-		nodeEnv:   func() map[string]string { return pm.WithIcebathNodePath(nil) },
-		run:       runBridgeProcess,
-		bridgeDir: func() string { return ResolveWhatsAppBridgeDir(ctx) },
+		pair: func(session, mode string) int { return RunPairing(ctx, session, mode, w, false) },
 	}
-}
-
-// Runs one bridge command in dir under env, stderr captured when asked, Ctrl-C reported rather than fatal
-func runBridgeProcess(argv []string, dir string, env map[string]string, captureStderr bool) (bridgeRun, error) {
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = dir
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		cmd.Env = append(cmd.Env, k+"="+env[k])
-	}
-	var stderr bytes.Buffer
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if captureStderr {
-		cmd.Stdout, cmd.Stderr = nil, &stderr
-	}
-	interrupts := make(chan os.Signal, 1)
-	signal.Notify(interrupts, os.Interrupt)
-	defer signal.Stop(interrupts)
-	if err := cmd.Start(); err != nil {
-		return bridgeRun{}, err
-	}
-	err := cmd.Wait()
-	result := bridgeRun{code: cmd.ProcessState.ExitCode(), stderr: pystr.DecodeUTF8Replace(stderr.Bytes())}
-	select {
-	case <-interrupts:
-		result.interrupted = true
-	default:
-	}
-	var exitErr *exec.ExitError
-	if err != nil && !errors.As(err, &exitErr) {
-		return result, err
-	}
-	return result, nil
 }
 
 // Prints each line, an empty one a blank line, one call per banner block
@@ -248,96 +174,7 @@ func (wz *whatsAppWizard) whatsappAllowedUsers(mode string) error {
 	return nil
 }
 
-// Whether the error is the InstallError or OSError the dependency preparation reports and stops on
-func preparationFailure(err error) bool {
-	var install *pm.InstallError
-	var pathErr *os.PathError
-	var execErr *exec.Error
-	return errors.As(err, &install) || errors.As(err, &pathErr) || errors.As(err, &execErr)
-}
-
-// Text of a preparation failure as Python prints the exception
-func preparationText(err error) string {
-	var install *pm.InstallError
-	if errors.As(err, &install) {
-		return install.Error()
-	}
-	return pypath.OSErrorText(err)
-}
-
-// Step four, npm installs the bridge dependencies when needed, false meaning stop
-func (wz *whatsAppWizard) whatsappInstallBridge(bridgeDir string) (bool, error) {
-	if _, err := os.Stat(filepath.Join(bridgeDir, "node_modules")); err == nil {
-		fmt.Fprintln(wz.out, "✓ Bridge dependencies already installed")
-		return true, nil
-	}
-	fmt.Fprintln(wz.out, "\n→ Installing WhatsApp bridge dependencies (this can take a few minutes)...")
-	npm, err := wz.findNode("npm")
-	if err != nil {
-		return false, err
-	}
-	result, err := func() (bridgeRun, error) {
-		env := wz.nodeEnv()
-		var err error
-		if npm == "" {
-			if env, err = wz.ensure("npm"); err != nil {
-				return bridgeRun{}, err
-			}
-			installed, err := wz.installed("npm")
-			if err != nil {
-				return bridgeRun{}, err
-			}
-			if installed == nil || installed.Binary == "" {
-				return bridgeRun{}, pm.NewInstallError("npm", "npm binary is missing after preparation", "")
-			}
-			npm = installed.Binary
-		}
-		return wz.run([]string{npm, "install", "--no-fund", "--no-audit", "--progress=false"}, bridgeDir, env, true)
-	}()
-	if err != nil {
-		if preparationFailure(err) {
-			fmt.Fprintf(wz.out, "  ✗ Bridge dependency preparation failed: %s\n", preparationText(err))
-			return false, nil
-		}
-		return false, err
-	}
-	if result.interrupted {
-		fmt.Fprintln(wz.out, "\n  ✗ Install cancelled")
-		return false, nil
-	}
-	if result.code != 0 {
-		preview := "(no output)"
-		if text := pystr.Strip(result.stderr); text != "" {
-			lines := pystr.Splitlines(text, false)
-			preview = strings.Join(lines[max(0, len(lines)-30):], "\n")
-		}
-		wz.say("  ✗ npm install failed:", preview)
-		return false, nil
-	}
-	fmt.Fprintln(wz.out, "  ✓ Dependencies installed")
-	return true, nil
-}
-
-// Node binary for the pairing run, installing it through the package manager when absent
-func (wz *whatsAppWizard) pairingNode() (string, error) {
-	node, err := wz.findNode("node")
-	if err != nil || node != "" {
-		return node, err
-	}
-	if _, err := wz.ensure("node"); err != nil {
-		return "", err
-	}
-	installed, err := wz.installed("node")
-	if err != nil {
-		return "", err
-	}
-	if installed == nil || installed.Binary == "" {
-		return "", pm.NewInstallError("node", "Node.js binary is missing after preparation", "")
-	}
-	return installed.Binary, nil
-}
-
-// Sets up WhatsApp, choosing the mode, the allowlist, installing the bridge and pairing it by QR code
+// Sets up WhatsApp, choosing the mode and the allowlist, then pairing it by QR code in process
 func CmdWhatsApp(ctx context.Context, h string, ns map[string]any, w io.Writer, requireTTY func(command string)) (int, error) {
 	requireTTY("whatsapp")
 	return 0, newWhatsAppWizard(ctx, h, w).setup()
@@ -359,15 +196,6 @@ func (wz *whatsAppWizard) setup() error {
 		fmt.Fprintln(wz.out, "✓ WhatsApp is already enabled")
 	}
 	if err := wz.whatsappAllowedUsers(mode); err != nil {
-		return err
-	}
-	bridgeDir := wz.bridgeDir()
-	bridgeScript := filepath.Join(bridgeDir, "bridge.js")
-	if _, err := os.Stat(bridgeScript); err != nil {
-		fmt.Fprintf(wz.out, "\n✗ Bridge script not found at %s\n", bridgeScript)
-		return nil
-	}
-	if ok, err := wz.whatsappInstallBridge(bridgeDir); err != nil || !ok {
 		return err
 	}
 	sessionDir := filepath.Join(wz.home, "whatsapp", "session")
@@ -407,18 +235,7 @@ func (wz *whatsAppWizard) setup() error {
 		fmt.Fprintln(wz.out, "📱 Open WhatsApp on your phone, then scan:")
 	}
 	wz.say("", "   Settings → Linked Devices → Link a Device", strings.Repeat("─", 50), "")
-	node, err := wz.pairingNode()
-	if err != nil {
-		var install *pm.InstallError
-		if errors.As(err, &install) {
-			fmt.Fprintf(wz.out, "  ✗ Node.js preparation failed: %s\n", install.Error())
-			return nil
-		}
-		return err
-	}
-	if _, err := wz.run([]string{node, bridgeScript, "--pair-only", "--session", sessionDir}, bridgeDir, wz.nodeEnv(), false); err != nil {
-		return err
-	}
+	wz.pair(sessionDir, mode)
 	fmt.Fprintln(wz.out)
 	if _, err := os.Stat(creds); err != nil {
 		fmt.Fprintln(wz.out, "⚠ Pairing may not have completed. Run 'icebath whatsapp' to try again.")

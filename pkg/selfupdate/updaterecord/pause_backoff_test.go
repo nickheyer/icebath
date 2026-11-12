@@ -49,7 +49,7 @@ func pbRetry(t *testing.T, claim string) map[string]any {
 	return mapOf(mapOf(mapOf(body["token"])["relaunch_retry"])["profile:alpha"])
 }
 
-func TestPauseRecoverAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing.T) {
+func TestAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing.T) {
 	psHome(t)
 	pbArgv()
 	ctx := context.Background()

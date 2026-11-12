@@ -703,7 +703,7 @@ func (c *CLI) cmdQueue(cmdOriginal string) {
 	if known {
 		if entry.takesIndex && rest != "" {
 			first := pystr.SplitWhitespace(rest, 1)[0]
-			management = first != "" && strings.IndexFunc(first, func(r rune) bool { return !unicode.IsDigit(r) }) < 0
+			management = first != "" && strings.IndexFunc(first, func(r rune) bool { return !pystr.IsDigit(r) }) < 0
 		} else {
 			management = rest == ""
 		}
@@ -758,33 +758,11 @@ func (c *CLI) cmdSteer(cmdOriginal string) {
 
 // Heartbeat manager bound to the current session id, the gateway's on a gateway store and none before its session opens
 func (c *CLI) getHeartbeatManager() agent.HeartbeatAutomation {
-	gateway, connection := c.automationConnection()
-	if gateway && connection == nil {
-		return nil
-	}
-	c.uiMu.Lock()
-	sessionID, existing := c.sessionID, c.heartbeatManager
-	c.uiMu.Unlock()
-	if sessionID == "" {
-		return nil
-	}
-	if existing != nil && existing.Session() == sessionID {
-		return existing
-	}
-	var manager agent.HeartbeatAutomation
-	if gateway {
-		remote, err := NewGatewayHeartbeatManager(c.ctx, sessionID, connection)
-		if err != nil {
-			panic(err)
-		}
-		manager = remote
-	} else {
-		manager = agent.NewHeartbeatManager(c.ctx, sessionID)
-	}
-	c.uiMu.Lock()
-	c.heartbeatManager = manager
-	c.uiMu.Unlock()
-	return manager
+	return automationManager(c, &c.heartbeatManager,
+		func(sid string) agent.HeartbeatAutomation { return agent.NewHeartbeatManager(c.ctx, sid) },
+		func(sid string, connection *gatewaycli.GatewayConnection) (agent.HeartbeatAutomation, error) {
+			return NewGatewayHeartbeatManager(c.ctx, sid, connection)
+		})
 }
 
 // Wait between two heartbeat watchdog polls

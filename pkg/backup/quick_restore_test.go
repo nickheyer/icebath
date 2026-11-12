@@ -760,6 +760,7 @@ func TestRoundTripBackupThenImport(t *testing.T) {
 }
 
 func TestImportRestoresTheSessionStoreWithItsMessageUids(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tmp := t.TempDir()
 	h := filepath.Join(tmp, ".icebath")
 	os.Mkdir(h, 0o755)

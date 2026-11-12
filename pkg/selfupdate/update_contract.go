@@ -130,6 +130,9 @@ func evaluateUpdateAdmission(ctx context.Context, projectRoot string) (*UpdateRe
 			}
 			return refusal(code, method, nil), nil
 		}
+		if config.IsPackageManagerInstallMethod(method) {
+			return refusal(method, method, func(string) string { return StewardUpdateMessage(method) }), nil
+		}
 		return nil, nil
 	}), nil
 }

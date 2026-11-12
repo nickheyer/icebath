@@ -298,7 +298,7 @@ describe('seedKnownModels', () => {
     // A visible set persisted before the snapshot existed, first loaded by a
     // build whose catalog already ships gpt-6 — the bug class from 122053:
     // seeding everything as judged would keep gpt-6 hidden forever.
-    window.localStorage.setItem('hermes.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
+    window.localStorage.setItem('icebath.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
 
     const store = await loadStore()
 
@@ -320,7 +320,7 @@ describe('seedKnownModels', () => {
   })
 
   it('re-seeding is inert once a snapshot exists (never a running union)', async () => {
-    window.localStorage.setItem('hermes.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
+    window.localStorage.setItem('icebath.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
 
     const store = await loadStore()
     const first = [featuredProvider('openai-codex', ['gpt-5.5'], ['gpt-5.5'])]
@@ -335,7 +335,7 @@ describe('seedKnownModels', () => {
   })
 
   it('honours an explicit hide-all sentinel: its defaults stay unknown, not re-admitted', async () => {
-    window.localStorage.setItem('hermes.desktop.visible-models', JSON.stringify(['nous::']))
+    window.localStorage.setItem('icebath.desktop.visible-models', JSON.stringify(['nous::']))
 
     const store = await loadStore()
     const providers = [featuredProvider('nous', ['hermes-4', 'hermes-5'], ['hermes-4', 'hermes-5'])]
@@ -437,9 +437,9 @@ describe('resetModelVisibility', () => {
     // A curation saved while the snapshot machinery was live: gpt-6 was listed
     // when the user kept gpt-5.5 and switched it off, so the snapshot counts it
     // as judged and the default rule never re-admits it.
-    window.localStorage.setItem('hermes.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
+    window.localStorage.setItem('icebath.desktop.visible-models', JSON.stringify(['openai-codex::gpt-5.5']))
     window.localStorage.setItem(
-      'hermes.desktop.known-models',
+      'icebath.desktop.known-models',
       JSON.stringify(['openai-codex::gpt-5.5', 'openai-codex::gpt-6', 'qwen::qwen3-coder'])
     )
 

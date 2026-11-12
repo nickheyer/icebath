@@ -50,7 +50,7 @@ func TestWorkerRpcReachesLoopbackOwnerWithProxyEnv(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	t.Setenv("HTTPS_PROXY", proxy)
-	rpc := NewWorkerRPC(home)
+	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	result, err := rpc.Call(context.Background(), "worker.persist", nil)
 	if err != nil {

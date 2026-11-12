@@ -172,39 +172,47 @@ func luminanceFromHex(hexStr string) (float64, bool) {
 
 var da1ReplyRe = regexp.MustCompile(`\x1b\[\?[0-9;]*c`)
 
-// The light mode detection ladder, env overrides, theme, background, COLORFGBG, OSC 11, then dark
-func detectLightModeUncached() bool {
+// The light mode detection ladder, env overrides, theme, background, COLORFGBG, OSC 11, then dark, a probe failure returned
+func detectLightModeUncached() (bool, error) {
 	for _, v := range []string{"ICEBATH_LIGHT", "ICEBATH_TUI_LIGHT"} {
 		val := pystr.Lower(pystr.Strip(os.Getenv(v)))
 		if trueRe.MatchString(val) {
-			return true
+			return true, nil
 		}
 		if falseRe.MatchString(val) {
-			return false
+			return false, nil
 		}
 	}
 	switch pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_TUI_THEME"))) {
 	case "light":
-		return true
+		return true, nil
 	case "dark":
-		return false
+		return false, nil
 	}
 	if lum, ok := luminanceFromHex(os.Getenv("ICEBATH_TUI_BACKGROUND")); ok {
-		return lum >= 0.5
+		return lum >= 0.5, nil
 	}
 	parts := strings.Split(pystr.Strip(os.Getenv("COLORFGBG")), ";")
 	last := parts[len(parts)-1]
 	if pystr.StrIsDigit(last) {
-		if n, ok := pystr.IntText(last); ok && n.IsInt64() && n.Int64() >= 0 && n.Int64() < 16 {
-			return n.Int64() == 7 || n.Int64() == 15
+		n, ok := pystr.IntText(last)
+		if !ok {
+			return false, fmt.Errorf("invalid literal for int() with base 10: '%s'", last)
+		}
+		if n.IsInt64() && n.Int64() >= 0 && n.Int64() < 16 {
+			return n.Int64() == 7 || n.Int64() == 15, nil
 		}
 	}
-	if bg, ok := queryOSC11Background(); ok {
+	bg, ok, err := queryOSC11Background()
+	if err != nil {
+		return false, err
+	}
+	if ok {
 		if lum, ok := luminanceFromHex(bg); ok {
-			return lum >= 0.5
+			return lum >= 0.5, nil
 		}
 	}
-	return lightDefaultTermPrograms[pystr.Strip(os.Getenv("TERM_PROGRAM"))]
+	return lightDefaultTermPrograms[pystr.Strip(os.Getenv("TERM_PROGRAM"))], nil
 }
 
 var (
@@ -219,7 +227,10 @@ func detectLightMode() bool {
 	if lightModeCache != nil {
 		return *lightModeCache
 	}
-	result := detectLightModeUncached()
+	result, err := detectLightModeUncached()
+	if err != nil {
+		result = false
+	}
 	lightModeCache = &result
 	return result
 }

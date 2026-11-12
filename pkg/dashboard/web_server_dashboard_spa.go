@@ -60,8 +60,9 @@ func mountSPA(application *FastAPI) {
 				withheld := gated || application.State.Bool("withhold_session_token")
 				if c.Str("full_path") == "" && !withheld {
 					return HTMLResponse("<!doctype html><html><head><script>"+
-						"window.__HERMES_SESSION_TOKEN__="+jsonDumps(SessionToken())+";"+
-						"window.__HERMES_AUTH_REQUIRED__=false;"+
+						"window.__ICEBATH_SESSION_TOKEN__="+jsonDumps(SessionToken())+";"+
+						"window.__HERMES_SESSION_TOKEN__=window.__ICEBATH_SESSION_TOKEN__;"+
+						"window.__ICEBATH_AUTH_REQUIRED__=false;"+
 						"</script></head><body>"+headlessMsg+"</body></html>", 200, noStoreHeaders...), nil
 				}
 				return JSONResponse(pyjson.ObjectOf("error", headlessMsg), 404)
@@ -106,12 +107,12 @@ func mountSPA(application *FastAPI) {
 		gated := application.State.Bool("auth_required")
 		surfaceJS := ""
 		if surface, ok := application.State.Lookup("ui_surface"); ok && surface != nil {
-			surfaceJS = "window.__HERMES_UI_SURFACE__=" + jsonDumps(surface) + ";"
+			surfaceJS = "window.__ICEBATH_UI_SURFACE__=" + jsonDumps(surface) + ";"
 		}
 		withheld := gated || application.State.Bool("withhold_session_token") || !PolicyOf(application.State).HTMLToken
 		tokenJS := ""
 		if !withheld {
-			tokenJS = `window.__HERMES_SESSION_TOKEN__="` + SessionToken() + `";`
+			tokenJS = `window.__ICEBATH_SESSION_TOKEN__="` + SessionToken() + `";window.__HERMES_SESSION_TOKEN__=window.__ICEBATH_SESSION_TOKEN__;`
 		}
 		initial := ""
 		if v := application.State.Get("initial_profile"); pyTruthy(v) {
@@ -124,12 +125,12 @@ func mountSPA(application *FastAPI) {
 			authJS = "true"
 		}
 		bootstrap := "<script>" + tokenJS +
-			"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__=" + chatJS + ";" +
-			`window.__HERMES_BASE_PATH__="` + prefix + `";` +
-			"window.__HERMES_AUTH_REQUIRED__=" + authJS + ";" +
-			"window.__HERMES_INITIAL_PROFILE__=" + initialProfileJS + ";" +
+			"window.__ICEBATH_DASHBOARD_EMBEDDED_CHAT__=" + chatJS + ";" +
+			`window.__ICEBATH_BASE_PATH__="` + prefix + `";` +
+			"window.__ICEBATH_AUTH_REQUIRED__=" + authJS + ";" +
+			"window.__ICEBATH_INITIAL_PROFILE__=" + initialProfileJS + ";" +
 			surfaceJS +
-			"window.__HERMES_DASHBOARD_PROFILE__=" + servingProfileJS + ";" +
+			"window.__ICEBATH_DASHBOARD_PROFILE__=" + servingProfileJS + ";" +
 			"</script>"
 		if prefix != "" {
 			for _, attr := range []string{`href="/assets/`, `src="/assets/`, `href="/favicon.ico"`, `href="/fonts/`,

@@ -16,8 +16,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
@@ -731,30 +732,35 @@ func doctorAuditOne(ctx context.Context, w io.Writer, npmBin, npmDir, label stri
 	}
 }
 
-// WhatsApp bridge directory, the install tree when writable else its mirror under the home
-var doctorResolveWhatsappBridgeDir = func(d *Doctor) string {
-	installBridge := filepath.Join(d.ProjectRoot, "scripts", "whatsapp-bridge")
-	homeBridge := filepath.Join(d.Home, "scripts", "whatsapp-bridge")
-	probe := filepath.Join(installBridge, ".write_test")
-	if fh, err := os.OpenFile(probe, os.O_CREATE|os.O_WRONLY, 0o666); err == nil {
-		fh.Close()
-		if os.Remove(probe) == nil {
-			return installBridge
+// Session directory, store presence and pairing of the in process WhatsApp adapter for the configured session path
+var doctorWhatsAppSession = func(ctx context.Context) (string, bool, bool, error) {
+	var extra map[string]any
+	if cfg, err := gateway.LoadGatewayConfig(ctx); err == nil {
+		if wa := cfg.Platforms[gateway.PlatformWhatsApp]; wa != nil {
+			extra = wa.Extra
 		}
+	} else {
+		return "", false, false, err
 	}
-	if _, err := os.Stat(homeBridge); err == nil {
-		return homeBridge
-	}
-	if err := pyfs.Makedirs(filepath.Dir(homeBridge), 0o777, true); err != nil {
-		return installBridge
-	}
-	if err := pyfs.CopyTree(installBridge, homeBridge, false, false, nil); err != nil {
-		return installBridge
-	}
-	return homeBridge
+	return whatsapp.SessionStatus(ctx, extra)
 }
 
-// Runs npm audit for the root package, the web and ui-tui workspaces and the WhatsApp bridge
+// Reports the WhatsApp session store once one exists, paired or awaiting a QR pairing
+func doctorCheckWhatsAppSession(ctx context.Context, d *Doctor, f *Finding) {
+	dir, present, paired, err := doctorWhatsAppSession(ctx)
+	switch {
+	case err != nil:
+		doctorCheckWarn(d.W, "WhatsApp session store unreadable", "("+err.Error()+")")
+	case !present:
+	case paired:
+		doctorCheckOK(d.W, "WhatsApp session", "(paired, "+dir+")")
+	default:
+		doctorCheckWarn(d.W, "WhatsApp session not paired", "("+dir+")")
+		f.ManualIssues = append(f.ManualIssues, "Pair WhatsApp by scanning the QR code: icebath whatsapp")
+	}
+}
+
+// Runs npm audit for the root package and the web and ui-tui workspaces, then reports the WhatsApp session
 func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		npmBin := doctorPMToolPath(ctx, "npm")
@@ -762,14 +768,6 @@ func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 			npmBin = safeWhich("npm")
 		}
 		if npmBin != "" {
-			whatsappBridgeDir := func() (dir string) {
-				defer func() {
-					if recover() != nil {
-						dir = filepath.Join(d.ProjectRoot, "scripts", "whatsapp-bridge")
-					}
-				}()
-				return doctorResolveWhatsappBridgeDir(d)
-			}()
 			for _, tree := range []struct {
 				dir, label string
 				extra      []string
@@ -777,7 +775,6 @@ func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 				{d.ProjectRoot, "Root npm package", []string{"--workspaces=false"}},
 				{d.ProjectRoot, "web workspace", []string{"--workspace", "web"}},
 				{d.ProjectRoot, "ui-tui workspace", []string{"--workspace", "ui-tui"}},
-				{whatsappBridgeDir, "WhatsApp bridge", nil},
 			} {
 				modulesRoot := tree.dir
 				if len(tree.extra) > 0 {
@@ -788,6 +785,7 @@ func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 				}
 			}
 		}
+		doctorCheckWhatsAppSession(ctx, d, f)
 		if doctorIsTermux() {
 			doctorCheckInfo(d.W, "Termux compatibility fallbacks:")
 			for _, note := range doctorTermuxInstallAllFallbackNotes {

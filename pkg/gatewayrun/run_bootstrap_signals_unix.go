@@ -16,6 +16,7 @@ var restartSignal os.Signal = syscall.SIGUSR1
 // Routes interrupt and terminate to the drain and the user signal to the restart on the loop until stop is called
 func startGatewayInstallSignalHandlers(loop gateway.EventLoop, shutdown func(sig *int), restart func()) (stop func()) {
 	ch := make(chan os.Signal, 4)
+	gateway.SupersedeHostSignalCleanup()
 	gatewaySignalsRouted.Store(true)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, restartSignal)
 	quit := make(chan struct{})

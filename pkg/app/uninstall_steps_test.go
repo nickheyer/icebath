@@ -430,8 +430,8 @@ func TestRemoveDesktopAppLeftoversRemovesHermesLibraryEntries(t *testing.T) {
 	fake := uninstallFakeHome(t)
 	library := filepath.Join(fake, "Library")
 	var ours []string
-	for _, pair := range [][2]string{{"Caches", "com.nousresearch.icebath"}, {"Logs", "Icebath"}, {"WebKit", "com.nousresearch.icebath"},
-		{"HTTPStorages", "com.nousresearch.icebath"}, {"Saved Application State", "com.nousresearch.icebath.savedState"}} {
+	for _, pair := range [][2]string{{"Caches", "ai.icebath"}, {"Logs", "Icebath"}, {"WebKit", "ai.icebath"},
+		{"HTTPStorages", "ai.icebath"}, {"Saved Application State", "ai.icebath.savedState"}} {
 		d := filepath.Join(library, pair[0], pair[1])
 		os.MkdirAll(d, 0o755)
 		ours = append(ours, d)

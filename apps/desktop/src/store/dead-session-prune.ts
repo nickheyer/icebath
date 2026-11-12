@@ -2,9 +2,9 @@
  * Prune renderer-stored session references whose sessions no longer exist on
  * the backend.
  *
- * Pins (`hermes.desktop.pinnedSessions`), composer drafts
+ * Pins (`icebath.desktop.pinnedSessions`), composer drafts
  * (`hermes:composer-drafts:v4`, mirrored to v3), queued prompts
- * (`hermes.desktop.composerQueue.v1`) and interrupted sends
+ * (`icebath.desktop.composerQueue.v1`) and interrupted sends
  * (`hermes:composer-outbox:v1:*`) are keyed by session id and re-asserted
  * or probed at boot. When a session is removed from state.db (retention purge,
  * manual delete, another surface pruning it), those keys go stale: nothing

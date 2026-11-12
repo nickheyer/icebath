@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -81,6 +82,8 @@ type TurnRunner struct {
 	localToolMu        sync.Mutex
 	localToolStarts    map[string]float64
 	localEditSnapshots map[string]*tools.LocalEditSnapshot
+	// Terminal scope of the session policy while the turn runs inside it
+	policyScope atomic.Pointer[tools.TerminalScope]
 }
 
 // Turn runner bound to the turn context, owned by the session authority when one holds the session

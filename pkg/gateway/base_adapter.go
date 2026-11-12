@@ -184,7 +184,7 @@ type PlatformAdapter interface {
 	EASmartDenyLine(ctx context.Context) string
 	EAActionLabelsFor(ctx context.Context) map[string]string
 	EAEscape(text string) string
-	ExecApprovalCmdBudget(description string, smartDenied bool) int
+	ExecApprovalCmdBudget(ctx context.Context, description string, smartDenied bool) int
 	SendExecApproval(ctx context.Context, chatID, command, sessionKey string, description *string, metadata map[string]any, allowPermanent, allowSession, smartDenied bool, requestID *string) (SendResult, error)
 	SendExecApprovalPrompt(ctx context.Context, prompt *ExecApprovalPrompt) (SendResult, error)
 	SendSlashConfirm(ctx context.Context, chatID, title, message, sessionKey, confirmID string, metadata map[string]any) (SendResult, error)
@@ -1166,6 +1166,13 @@ func (b *BasePlatformAdapter) ConfigureTextBatchDelays() {
 	maxDelay, maxSplit := textBatchMaxDelayS, textBatchMaxSplitDelayS
 	delay := b.coerceFloatExtra("text_batch_delay_seconds", textBatchDefaultDelayS, 0, &maxDelay)
 	split := b.coerceFloatExtra("text_batch_split_delay_seconds", textBatchDefaultSplitDelayS, delay, &maxSplit)
+	b.mu.Lock()
+	b.textBatchDelaySeconds, b.textBatchSplitDelaySecond = delay, split
+	b.mu.Unlock()
+}
+
+// Overrides the text batch delay and split delay with adapter specific values
+func (b *BasePlatformAdapter) SetTextBatchDelays(delay, split float64) {
 	b.mu.Lock()
 	b.textBatchDelaySeconds, b.textBatchSplitDelaySecond = delay, split
 	b.mu.Unlock()

@@ -86,12 +86,3 @@ func readChunkTimeout(f *os.File, buf []byte, timeout time.Duration) (int, bool,
 	}
 	return 0, false, err
 }
-
-// Kills the process group pid leads when it is not our own
-func killProcessGroup(pid int) {
-	pgid, err := syscall.Getpgid(pid)
-	if err != nil || pgid == syscall.Getpgrp() {
-		return
-	}
-	syscall.Kill(-pgid, syscall.SIGKILL)
-}

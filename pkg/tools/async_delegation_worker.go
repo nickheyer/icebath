@@ -33,8 +33,11 @@ func BindWorkerDelegationStore(store WorkerDelegationStore) error {
 	return nil
 }
 
+// Ledger every delegation write resolves, the bound store ledger in production
+var WorkerLedger = boundWorkerLedger
+
 // Ledger routed through the bound store in a worker, nil in the owner, an error for an unbound worker
-func workerLedger() (*WorkerDelegationLedger, error) {
+func boundWorkerLedger() (*WorkerDelegationLedger, error) {
 	if !isWorkerProcess() {
 		return nil, nil
 	}

@@ -86,10 +86,9 @@ func relayLLMChoicesPredicate(value any) bool {
 
 func relayLLMSID(s string) *string { return &s }
 
-func relayLLMNoCodec(t *testing.T) {
-	prev := relayCodecFn
-	relayCodecFn = func(*tools.NemoRelay, map[string]any) (*tools.NemoRelayCodec, error) { return nil, nil }
-	t.Cleanup(func() { relayCodecFn = prev })
+// Relay double without codecs so every protocol resolves to no codec
+func relayLLMNoCodec(f *relayLLMFake) {
+	f.relay.Codecs = nil
 }
 
 func relayLLMFinal(v any) func(context.Context) (any, error) {
@@ -182,7 +181,7 @@ func TestRelayUninterceptedProviderCallbackPreservesClientTimeout(t *testing.T) 
 		relayRequests = append(relayRequests, request.(*tools.RelayLLMRequest).Content)
 		return original(c, name, request, cb, kw)
 	}
-	relayLLMNoCodec(t)
+	relayLLMNoCodec(f)
 	result, err := RelayExecute(ctx, map[string]any{"model": "test-model", "messages": []any{}, "timeout": 1800.0},
 		func(_ context.Context, request map[string]any) (any, error) {
 			providerRequests = append(providerRequests, request)
@@ -209,7 +208,7 @@ func relayLLMCaptureExecuteNames(f *relayLLMFake) *[]string {
 func TestRelaySyncExecutionUsesCanonicalRelayOperationName(t *testing.T) {
 	f, ctx, _ := relayLLMTurn(t)
 	names := relayLLMCaptureExecuteNames(f)
-	relayLLMNoCodec(t)
+	relayLLMNoCodec(f)
 	result, err := RelayExecute(ctx, map[string]any{"model": "test-model", "messages": []any{}}, relayLLMFactory(map[string]any{"content": "done"}),
 		RelayExecuteOptions{Name: "custom", ModelName: "test-model", SessionID: relayLLMSID("session-1"), Metadata: map[string]any{"api_mode": "chat_completions"}})
 	if err != nil {
@@ -222,7 +221,7 @@ func TestRelaySyncExecutionUsesCanonicalRelayOperationName(t *testing.T) {
 func TestRelayAsyncExecutionUsesCanonicalRelayOperationName(t *testing.T) {
 	f, ctx, _ := relayLLMTurn(t)
 	names := relayLLMCaptureExecuteNames(f)
-	relayLLMNoCodec(t)
+	relayLLMNoCodec(f)
 	provider := func(context.Context, map[string]any) (any, error) {
 		return tools.RelayAwaitable(func(context.Context) (any, error) { return map[string]any{"content": "done"}, nil }), nil
 	}
@@ -243,7 +242,7 @@ func TestRelayStreamExecutionUsesCanonicalRelayOperationName(t *testing.T) {
 		names = append(names, name)
 		return original(c, name, request, provider, observe, finalizer, kw)
 	}
-	relayLLMNoCodec(t)
+	relayLLMNoCodec(f)
 	s, err := NewManagedLlmStream(ctx, map[string]any{"model": "test-model", "messages": []any{}}, relayLLMFactory([]any{map[string]any{"delta": "done"}}),
 		ManagedLlmStreamOptions{SessionID: "session-1", Name: "custom", ModelName: "test-model", Finalizer: relayLLMFinal(map[string]any{"content": "done"}),
 			Metadata: map[string]any{"api_mode": "anthropic_messages"}})
@@ -971,11 +970,10 @@ func TestRelayCodecBaselineFailureIsExplicit(t *testing.T) {
 	f, ctx, _ := relayLLMTurn(t)
 	body := map[string]any{"model": "test-model", "messages": []any{}}
 	request, _ := f.relay.LLMRequest(map[string]any{}, body)
-	prev := relayCodecFn
-	relayCodecFn = func(*tools.NemoRelay, map[string]any) (*tools.NemoRelayCodec, error) {
+	failing := func() (*tools.NemoRelayCodec, error) {
 		return &tools.NemoRelayCodec{Decode: func(context.Context, any) (any, error) { return nil, errors.New("simulated codec failure") }}, nil
 	}
-	defer func() { relayCodecFn = prev }()
+	f.relay.Codecs = &tools.NemoRelayCodecs{OpenAIChatCodec: failing, OpenAIResponsesCodec: failing, AnthropicMessagesCodec: failing}
 	baseline, err := relayCodecRoundTripRequestBody(ctx, f.relay, request, body, map[string]any{"api_mode": "chat_completions"})
 	if err != nil || baseline != nil {
 		t.Fatalf("baseline = %v, %v", baseline, err)
@@ -1185,4 +1183,20 @@ func TestRelayStreamCurrentInsideManagedCallbackReturnsRaw(t *testing.T) {
 	}
 	relayLLMEqual(t, relayLLMDrain(t, ctx, s), []any(nil))
 	relayLLMEqual(t, s.FinalResponse.(*relayLLMTestCompleted).Choices[0].Message.Content, "done")
+}
+
+func TestAnthropicStreamAccumulatorRejectsUnhashableEventType(t *testing.T) {
+	acc := NewAnthropicStreamAccumulator()
+	if err := acc.Observe(map[string]any{"type": map[string]any{}}); err == nil || err.Error() != "unhashable type: 'dict'" {
+		t.Fatalf("dict event type error %v", err)
+	}
+	if err := acc.Observe(map[string]any{"type": []any{"message_start"}}); err == nil || err.Error() != "unhashable type: 'list'" {
+		t.Fatalf("list event type error %v", err)
+	}
+	if err := acc.Observe(map[string]any{"type": "message_start", "message": map[string]any{"id": "msg_1", "extra": true}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := acc.Finalize(); got["id"] != "msg_1" || got["extra"] != nil {
+		t.Fatalf("message start kept %v", got)
+	}
 }

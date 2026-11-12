@@ -21,7 +21,7 @@ const FLUSH_DELAY_MS = 150
 // The store generation this origin has joined (imported its own values into).
 // Until then a key the store lacks is never removed here: it may be this
 // client's data the store has not received yet, not a peer's deletion.
-const JOINED_KEY = 'hermes:ui-preferences:generation'
+const JOINED_KEY = 'icebath:ui-preferences:generation'
 const RETRY_DELAY_MS = 5000
 const MAX_RETRY_DELAY_MS = 60_000
 

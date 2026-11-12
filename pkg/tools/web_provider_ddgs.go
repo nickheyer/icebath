@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Hard wall clock cap per search in seconds, kept as the Python value so messages print it the same way
@@ -293,33 +292,18 @@ var ddgsText = func(ctx context.Context, query string, maxResults int) ([]*ddgsT
 	return newDDGSClient(10).text(ctx, ddgsQuery{query: query, region: "us-en", safesearch: "moderate", page: 1}, maxResults)
 }
 
-var ddgsImported atomic.Bool
-
-// True once the ddgs extra is importable in the managed environment, a success remembered like sys.modules
-var ddgsPackageImportable = func(ctx context.Context) bool {
-	if ddgsImported.Load() {
-		return true
-	}
-	ok, err := pm.Available(ctx, "ddgs")
-	if err != nil || !ok {
-		return false
-	}
-	ddgsImported.Store(true)
-	return true
-}
+// Whether the DuckDuckGo client can search, always since it is compiled into the binary and needs no key
+var ddgsClientAvailable = func(context.Context) bool { return true }
 
 type ddgsProvider struct{ baseWebProvider }
 
-// Available reflects whether the ddgs extra is installed, never touching the network
+// Available reports the compiled in DuckDuckGo client, never touching the network
 func (p *ddgsProvider) Available(env *Env) bool {
-	return ddgsPackageImportable(context.Background())
+	return ddgsClientAvailable(context.Background())
 }
 
 // Search in a disposable worker with a hard wall clock timeout, every failure a search error result
 func (p *ddgsProvider) Search(ctx context.Context, env *Env, query string, limit int) (*WebSearchResponse, error) {
-	if !p.Available(env) {
-		return searchFail("ddgs package is not installed — run `pip install ddgs`"), nil
-	}
 	hits, err := ddgsSearchBoundedFn(ctx, env, query, max(1, limit))
 	if err != nil {
 		var te *ddgsTimeoutError
@@ -339,9 +323,9 @@ func (p *ddgsProvider) Search(ctx context.Context, env *Env, query string, limit
 	return searchOK(hits), nil
 }
 
-// SetupSchema is the icebath tools picker entry, post setup installing the ddgs extra
+// SetupSchema is the icebath tools picker entry, nothing to install for the built in client
 func (p *ddgsProvider) SetupSchema() map[string]any {
-	return setupSchema("DuckDuckGo (ddgs)", "free · no key · search only", "Search via the ddgs Python package — no API key (pair with any extract provider)", "", "", "", map[string]any{"post_setup": "ddgs"})
+	return setupSchema("DuckDuckGo (ddgs)", "free · no key · search only", "Search via the built-in DuckDuckGo client — no API key (pair with any extract provider)", "", "", "", nil)
 }
 
 // Worker entrypoint reading one request from stdin and writing one envelope to stdout

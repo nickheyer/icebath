@@ -369,7 +369,7 @@ func (c *CLI) initRuntimeState(resume string) {
 
 // Opens the gateway session store early so a title works before the first message, the gateway the single writer
 func (c *CLI) initSessionStore() {
-	c.sessionDB = gatewaycli.SessionStore()
+	c.sessionDB, c.handoffDB = gatewaycli.SessionStore(), nil
 }
 
 // Mints main's local session id, replaced by the gateway's once the CLI opens its gateway session
@@ -440,7 +440,8 @@ func (c *CLI) initUIState() {
 	display := cliMap(c.config, "display")
 	c.batteryVisible = cliTruthy(display["battery"])
 	c.vimMode = cliTruthy(display["vim_mode"])
-	c.statusBarSuppressedAfterResize, c.resizeRecoveryPending = false, false
+	c.statusBarSuppressedAfterResize.Store(false)
+	c.resizeRecoveryPending = false
 	c.resizeRecoveryTimer, c.statusBarUnsuppressTimer = nil, nil
 	c.lastResizeWidth = nil
 	c.backgroundTasks = map[string]chan struct{}{}

@@ -83,7 +83,7 @@ var CanonicalPendingPrompt = pydantic.NewModel("CanonicalPendingPrompt", ClosedC
 )
 
 var CanonicalSnapshotInfo = pydantic.Extend(SessionInventoryFields, "CanonicalSnapshotInfo", ClosedConfig,
-	pydantic.Req("desktop_protocol", pydantic.Literal("hermes-gateway-v1")),
+	pydantic.Req("desktop_protocol", pydantic.Literal("icebath-gateway-v1")),
 	pydantic.Def("source", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("model", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("lazy", pydantic.Nullable(pydantic.Bool), nil),
@@ -193,9 +193,9 @@ var CanonicalSubmitParams = pydantic.Extend(CanonicalSessionParams, "CanonicalSu
 
 var CanonicalVoiceStopped = pydantic.NewModel("CanonicalVoiceStopped", ClosedConfig,
 	pydantic.Req("voice_stopped", pydantic.Literal(true)),
-)
+).Described("A bare stop phrase typed while the session's voice chat is on: the chat ended, nothing was\nadmitted (TUI-26).")
 
-var CanonicalSubmitResult = pydantic.NewRootModel("CanonicalSubmitResult", pydantic.Union(AdmissionStatus, CanonicalVoiceStopped))
+var CanonicalSubmitResult = pydantic.NewRootModel("CanonicalSubmitResult", pydantic.Union(AdmissionStatus, CanonicalVoiceStopped)).Described("``prompt.submit``: the admission receipt, or ``{voice_stopped: true}``.")
 
 var CanonicalSteerQueuedParams = pydantic.Extend(CanonicalSessionParams, "CanonicalSteerQueuedParams", ParamsConfig,
 	pydantic.Req("admission_id", pydantic.Str),
@@ -208,7 +208,7 @@ var CanonicalReplaceQueuedParams = pydantic.Extend(CanonicalSessionParams, "Cano
 	pydantic.Def("attachments", pydantic.Nullable(pydantic.List(CanonicalAttachment)), nil),
 	pydantic.Def("display_kind", pydantic.Nullable(pydantic.Literal("hidden")), nil),
 	pydantic.Def("title_preview", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("The edited prompt: admitted as a NEW admission (``submission_id``) at the FIFO tail.")
 
 var CanonicalControlParams = pydantic.Extend(CanonicalSessionParams, "CanonicalControlParams", ParamsConfig,
 	pydantic.Req("execution_generation", pydantic.Int),
@@ -226,7 +226,7 @@ var CanonicalCorrectionAck = pydantic.NewModel("CanonicalCorrectionAck", ClosedC
 	pydantic.Def("delivered", pydantic.Nullable(pydantic.Literal(false)), nil),
 )
 
-var CanonicalCorrectionResult = pydantic.NewRootModel("CanonicalCorrectionResult", pydantic.Union(CanonicalCorrectionAck, CanonicalVoiceStopped))
+var CanonicalCorrectionResult = pydantic.NewRootModel("CanonicalCorrectionResult", pydantic.Union(CanonicalCorrectionAck, CanonicalVoiceStopped)).Described("``session.steer`` / ``session.redirect``: the correction verdict, or ``{voice_stopped: true}``\nwhen the busy-time text was a bare stop phrase that ended the LOCAL voice chat.")
 
 var CanonicalApprovalParams = pydantic.Extend(CanonicalControlParams, "CanonicalApprovalParams", ParamsConfig,
 	pydantic.Req("prompt_id", pydantic.Str),

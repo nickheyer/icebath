@@ -3714,7 +3714,7 @@ cli:
     header: "(^_^)b 利用可能なツールセット"
     currently_enabled_legend: "(*) = 現在有効"
     tip_enable_all: "ヒント: 'all' または '*' で全ツールセットを有効化できます"
-    example: "例: python cli.py --toolsets web,terminal"
+    example: "例: icebath chat --toolsets web,terminal"
   usage:
 
     unknown_subcommand: "不明な /usage サブコマンド: {args}。/usage または /usage reset [--force] を試してください。"

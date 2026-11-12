@@ -61,7 +61,7 @@ var nativeSTTLabels = map[string]string{
 
 func voiceLog() *slog.Logger { return slog.Default().With("logger", "tools.voice_mode") }
 
-// ImportError class of the audio import, the audio-io platform gate refusing this machine
+// Audio import failure where this build has no dynamic library loader for PortAudio
 type audioImportError struct{ msg string }
 
 func (e *audioImportError) Error() string { return e.msg }
@@ -189,20 +189,18 @@ func defaultInputSamplerate(sd pysounddevice.Module) int {
 	return voiceSampleRate
 }
 
-// Remediation for an unavailable capture extra, the Termux system package line on Termux
+// Why this build cannot load PortAudio, the Termux:API capture route on Termux
 func voiceCaptureInstallHint(err error) string {
 	if isTermuxEnvironment() {
-		return "pkg install python-numpy portaudio && python -m pip install sounddevice"
+		return "this build cannot load PortAudio on Termux, record through Termux:API instead: pkg install termux-api, then install the Termux:API Android app"
 	}
-	if err != nil {
-		return err.Error()
-	}
-	return "audio-io extra unavailable"
+	return err.Error()
 }
 
-// PortAudio install instructions for a missing shared library
+// PortAudio install instructions for a missing shared library, one line per host the loader searches
 func portaudioMissingMessage() string {
-	hint := "  Linux:  sudo apt-get install libportaudio2\n  macOS:  brew install portaudio"
+	hint := "  Linux:  sudo apt-get install libportaudio2\n  macOS:  brew install portaudio\n" +
+		"  Windows: put portaudio.dll in a PATH directory or libportaudio64bit.dll beside icebath.exe"
 	if isTermuxEnvironment() {
 		hint = "  Termux: pkg install portaudio"
 	}
@@ -316,8 +314,8 @@ func probeAudioLibraries(warnings, notices *[]string, hasForwardedAudio bool, te
 	if err != nil {
 		switch {
 		case isAudioImportError(err):
-			outcome("Termux:API microphone recording available (sounddevice not required)",
-				"Audio libraries not installed ("+voiceCaptureInstallHint(err)+")", "", true)
+			outcome("Termux:API microphone recording available (PortAudio not required)",
+				"PortAudio cannot be loaded ("+voiceCaptureInstallHint(err)+")", "", true)
 			return nil
 		case isAudioOSError(err):
 			outcome("Termux:API microphone recording available (PortAudio not required)", portaudioMissingMessage(), "", true)

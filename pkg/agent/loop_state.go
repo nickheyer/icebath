@@ -189,6 +189,9 @@ func parseLoopState(raw any, sessionID string) *SessionLoopState {
 	return st
 }
 
+// Session meta key the loop row of the session is stored under
+func loopMetaKey(sessionID string) string { return loopMetaPrefix + sessionID }
+
 // Stored loop of a session, nil when absent, unreadable or unparseable
 func LoadLoop(ctx context.Context, sessionID string) *SessionLoopState {
 	if sessionID == "" {
@@ -198,7 +201,7 @@ func LoadLoop(ctx context.Context, sessionID string) *SessionLoopState {
 	if db == nil {
 		return nil
 	}
-	raw, _, err := db.GetMeta(ctx, loopMetaPrefix+sessionID)
+	raw, _, err := db.GetMeta(ctx, loopMetaKey(sessionID))
 	if err != nil {
 		loopsLogger().Debug(fmt.Sprintf("LoopManager: get_meta failed: %s", err))
 		return nil
@@ -221,7 +224,7 @@ func SaveLoop(ctx context.Context, sessionID string, st *SessionLoopState) {
 	}
 	raw, err := st.ToJSON()
 	if err == nil {
-		err = db.SetMeta(ctx, loopMetaPrefix+sessionID, raw)
+		err = db.SetMeta(ctx, loopMetaKey(sessionID), raw)
 	}
 	if err != nil {
 		loopsLogger().Debug(fmt.Sprintf("LoopManager: set_meta failed: %s", err))

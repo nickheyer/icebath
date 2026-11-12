@@ -8,9 +8,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 // a previously burned heal token, not $userPlacedPanes. The invariant is
 // boot-scoped, so an intra-session drag sticks until the next launch.
 
-const TREE_KEY = 'hermes.desktop.layoutTree.v2'
-const USER_PLACED_KEY = 'hermes.desktop.userPlacedPanes.v1'
-const LEGACY_HEAL_KEY = 'hermes.desktop.paneDockHeals.v1'
+const TREE_KEY = 'icebath.desktop.layoutTree.v2'
+const USER_PLACED_KEY = 'icebath.desktop.userPlacedPanes.v1'
+const LEGACY_HEAL_KEY = 'icebath.desktop.paneDockHeals.v1'
 
 // The shipped regression shape: sessions and bots as SIBLING groups in a
 // column (the old `pos: 'bottom'` split), workspace beside them.

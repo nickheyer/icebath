@@ -121,8 +121,7 @@ func policyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 		auxiliary = cfg["auxiliary"]
 	}
 	ctx = editorScope(ctx, policy)
-	return editorMCPScope(ctx, a, policy, func() error {
-		scoped := ctx
+	return editorMCPScope(ctx, a, policy, func(scoped context.Context) error {
 		if a != nil {
 			scoped = provider.SessionAuxiliaryScope(scoped, auxiliary)
 		}

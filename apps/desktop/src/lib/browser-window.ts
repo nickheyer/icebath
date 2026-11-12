@@ -44,8 +44,8 @@ const HELLO_PARAM = 'hello'
 // The pop-out's channels, each named by a randomUuid() (crypto.randomUUID exists only in secure
 // contexts, and a gated host may be served over plain HTTP from another machine). The handoff page
 // (hermes_cli/web_routers/webapp.py) opens the window channel by the same name.
-const HELLO_CHANNEL_PREFIX = 'hermes.webapp.hello:'
-const WINDOW_CHANNEL_PREFIX = 'hermes.webapp.window:'
+const HELLO_CHANNEL_PREFIX = 'icebath.webapp.hello:'
+const WINDOW_CHANNEL_PREFIX = 'icebath.webapp.window:'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 

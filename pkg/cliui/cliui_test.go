@@ -530,6 +530,7 @@ func TestPasswordPromptUsesMaskedSecretPrompt(t *testing.T) {
 }
 
 func TestPromptYesNo(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	for input, want := range map[string]bool{"\n": true, "n\n": false, "yes\n": true, "nope\n": false} {
 		c, _ := testConsole(input, nil)

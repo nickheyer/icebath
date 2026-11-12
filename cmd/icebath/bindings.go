@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -273,29 +274,70 @@ func registerPluginCLICommands(cli *commands.CLI, argv []string) {
 		return
 	}
 	ctx := context.Background()
-	provider.RecoverLeftCoreForCommand(ctx, cli.FirstPositional(argv))
+	first, _ := cli.FirstPositional(argv)
+	provider.RecoverLeftCoreForCommand(ctx, first)
 	seen := map[string]bool{}
 	for _, info := range memory.DiscoverPluginCLICommands(ctx, processToolsEnv(ctx)) {
 		attachPluginCLICommand(cli, info.Name, info.Help, info.Description, info.Setup, info.Handler)
 		seen[info.Name] = true
 	}
 	plugins.DiscoverPlugins(ctx, false)
-	resolveDeferredPlatformCLICommand(ctx, cli.FirstPositional(argv))
+	resolveDeferredPlatformCLICommand(ctx, first)
 	for _, info := range plugins.GetPluginManager(ctx).CLICommands() {
 		if seen[info.Name] {
 			continue
 		}
-		setup := func(cmd *cobra.Command) {
-			if info.Setup != nil {
-				info.Setup(cmd)
-			}
+		if failure := attachManagerCLICommand(cli, info); failure != nil {
+			slog.Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
+			return
 		}
-		var handler func(cmd *cobra.Command, args []string) error
-		if info.Handler != nil {
-			handler = func(cmd *cobra.Command, args []string) error { return info.Handler(cmd) }
-		}
-		attachPluginCLICommand(cli, info.Name, info.Help, info.Description, setup, handler)
 	}
+}
+
+// Attaches one plugin manager command, returning what its setup raised so discovery stops there
+func attachManagerCLICommand(cli *commands.CLI, info *plugins.CLICommand) (failure any) {
+	setup := func(cmd *cobra.Command) {
+		if info.Parse != nil {
+			cmd.DisableFlagParsing, cmd.Args = true, cobra.ArbitraryArgs
+		}
+		if info.Setup != nil {
+			defer func() { failure = recover() }()
+			info.Setup(cmd)
+		}
+	}
+	var handler func(cmd *cobra.Command, args []string) error
+	switch {
+	case info.Parse != nil:
+		handler = func(cmd *cobra.Command, args []string) error { return runHostedPluginCommand(cli, cmd, args, info) }
+	case info.Handler != nil:
+		handler = func(cmd *cobra.Command, args []string) error {
+			if failure != nil {
+				return cmd.Root().Help()
+			}
+			return info.Handler(cli.Namespace(cmd, args))
+		}
+	}
+	attachPluginCLICommand(cli, info.Name, info.Help, info.Description, setup, handler)
+	return failure
+}
+
+// Runs a hosted plugin command whose own parser parses argv, printing top level help when it selects no func
+func runHostedPluginCommand(cli *commands.CLI, cmd *cobra.Command, args []string, info *plugins.CLICommand) error {
+	outcome, err := info.Parse(context.Background(), cli.Namespace(cmd, nil), args)
+	if err != nil {
+		return err
+	}
+	switch {
+	case outcome.Exited && outcome.Code == 0:
+		return nil
+	case len(outcome.Extras) > 0:
+		return &commands.ArgparseError{Cmd: cmd.Root(), Msg: "unrecognized arguments: " + strings.Join(outcome.Extras, " ")}
+	case outcome.Code != 0:
+		return &commands.ExitError{Code: outcome.Code}
+	case !outcome.Dispatched:
+		return cmd.Root().Help()
+	}
+	return nil
 }
 
 // Registers one plugin provided top level command from its descriptor

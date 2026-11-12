@@ -301,7 +301,7 @@ func (c *CLI) tuiBuildLayout(kb *ptKeyBindings, app *ptApplication) ([]*ptWindow
 		return c.voiceMode
 	}}
 	statusBar := &ptWindow{name: "status-bar", fragments: c.getStatusBarFragments, height: oneRow, filter: func() bool {
-		return c.statusBarVisible && !c.statusBarSuppressedAfterResize
+		return c.statusBarVisible && !c.statusBarSuppressedAfterResize.Load()
 	}}
 	c.tui.stashPanelWidget = &ptWindow{name: "stash-panel", fragments: c.getStashPanelDisplayFragments, filter: func() bool {
 		return c.promptStash != nil && c.promptStash.PanelOpen && c.promptStash.Len() > 0
@@ -318,6 +318,7 @@ func (c *CLI) tuiBuildLayout(kb *ptKeyBindings, app *ptApplication) ([]*ptWindow
 // The slash completer of the classic prompt over this session's skills, bundles and plugin commands
 func cliSlashCompleter(c *CLI) *commands.SlashCompleter {
 	return commands.NewCompleter(commands.CompleterSources{
+		Ctx:                c.ctx,
 		Cfg:                func() config.Tree { return config.Tree(CLIConfig(c.ctx)) },
 		Skills:             func() map[string]commands.SkillInfo { return completerSkills(sessionSkillCommands(c)) },
 		Bundles:            func() map[string]commands.BundleInfo { return completerBundles(getSkillBundles(c.ctx)) },
@@ -396,15 +397,9 @@ func (c *CLI) tuiBuildInputArea(app *ptApplication) {
 
 // Ghost text for slash commands and subcommands, the newest history line starting with the text otherwise
 func slashCommandAutoSuggest(completer *commands.SlashCompleter) func(b *ptBuffer, doc ptDocument) (string, bool) {
+	suggest := commands.NewSlashCommandAutoSuggest(autoSuggestFromHistory, completer)
 	return func(b *ptBuffer, doc ptDocument) (string, bool) {
-		text := doc.textBeforeCursor()
-		if strings.HasPrefix(text, "/") {
-			if s := completer.Suggest(text); s != "" {
-				return s, true
-			}
-			return "", false
-		}
-		return autoSuggestFromHistory(b, doc)
+		return suggest.GetSuggestion(b, doc, doc.textBeforeCursor())
 	}
 }
 

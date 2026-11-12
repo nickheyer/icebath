@@ -86,7 +86,7 @@ export type ResolvedQueuedPromptTransport =
 /**
  * Frozen terminal transport for queued entries, keyed by stable `queuedPromptId`.
  * Memory-only on purpose: persisting selection CONTENTS in
- * `hermes.desktop.composerQueue.v1` would survive renderer restart as stale
+ * `icebath.desktop.composerQueue.v1` would survive renderer restart as stale
  * secrets-adjacent terminal output, and label reuse after reload cannot
  * reconstruct the original pane (#77078).
  */
@@ -180,7 +180,7 @@ export const isSteerableEntry = (entry: Pick<QueuedPromptEntry, 'attachments' | 
 
 type QueueState = Record<string, QueuedPromptEntry[]>
 
-const STORAGE_KEY = 'hermes.desktop.composerQueue.v1'
+const STORAGE_KEY = 'icebath.desktop.composerQueue.v1'
 
 const load = (): QueueState => {
   if (typeof window === 'undefined') {

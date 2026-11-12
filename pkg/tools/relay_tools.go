@@ -90,7 +90,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 		if cbErr != nil && IsRelayWrappedCallbackError(err, cbErr) {
 			return nil, nil, cbErr
 		}
-		if !errors.Is(err, context.Canceled) && cbErr == nil && hv {
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, ErrKeyboardInterrupt) && cbErr == nil && hv {
 			slog.WarnContext(ctx, "NeMo Relay tool post-processing failed after dispatch success; returning the Icebath tool result", "error", err)
 			return value, final, nil
 		}

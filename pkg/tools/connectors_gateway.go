@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -426,7 +427,8 @@ func wireConnectionsResponse(payload map[string]any) (map[string]any, error) {
 		"initiated": int(asFloat(summary["initiated"])), "failed": int(asFloat(summary["failed"]))}}, nil
 }
 
-var connectionStatuses = map[string]bool{"pending": true, "active": true, "failed": true, "expired": true, "revoked": true, "inactive": true}
+// Status values a gateway connection row may carry, the ConnectionStatus Literal
+var ConnectionStatuses = []string{"pending", "active", "failed", "expired", "revoked", "inactive"}
 
 func wireListResponse(payload map[string]any) ([]map[string]any, string, error) {
 	if err := wireRequire(payload, "", "items"); err != nil {
@@ -456,7 +458,7 @@ func wireAccount(payload map[string]any) (map[string]any, error) {
 	if err := wireRequire(payload, "", "connectionId", "connector", "status", "label", "active", "createdAt", "updatedAt"); err != nil {
 		return nil, err
 	}
-	if !connectionStatuses[asStr(payload["status"])] {
+	if !slices.Contains(ConnectionStatuses, asStr(payload["status"])) {
 		return nil, &wireError{"status: Input should be a known connection status"}
 	}
 	if asStr(payload["label"]) == "" {

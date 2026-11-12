@@ -17,7 +17,7 @@ var AdmissionStatus = pydantic.NewModel("AdmissionStatus", ClosedConfig,
 	pydantic.Req("outcome", pydantic.Nullable(pydantic.Str)),
 	pydantic.Req("authority_epoch", pydantic.Int),
 	pydantic.Req("execution_generation", pydantic.Nullable(pydantic.Int)),
-)
+).Described("``gateway/session_contract.py::AdmissionReceipt`` as ``dataclasses.asdict`` sends it.")
 
 var PromptReceiptParams = pydantic.NewModel("PromptReceiptParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -28,7 +28,7 @@ var PromptReceiptParams = pydantic.NewModel("PromptReceiptParams", ParamsConfig,
 var PromptReceiptResult = pydantic.Extend(AdmissionStatus, "PromptReceiptResult", ClosedConfig,
 	pydantic.Def("result", pydantic.Nullable(pydantic.Any), nil),
 	pydantic.Def("usage", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("``result`` / ``usage``: the structured turn result committed at settlement, only with\n``include_result`` on a terminal admission that saved one.")
 
 var _ = CanonicalMethod("prompt.receipt", PromptReceiptParams, PromptReceiptResult, "Current receipt of one admission the caller submitted (or controls).")
 
@@ -54,20 +54,20 @@ var SessionMutateParams = pydantic.NewModel("SessionMutateParams", ParamsConfig,
 	pydantic.Req("operation", pydantic.Str),
 	pydantic.Req("payload", pydantic.Dict(pydantic.Any)),
 	pydantic.Def("expected_generation", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("``operation`` + ``payload`` are validated by ``hermes_state_mutations.validate_action``;\n``expected_generation`` is required for delete/rewind/reset/branch/model/compress/reasoning/workspace.\n``reasoning`` (``{effort}``) and ``workspace`` (``{cwd}``, refused ``session_busy`` mid-turn) rewrite\nthe session's frozen policy: session-scope ``/reasoning`` and Desktop's Move to project. ``edit_policy``\n(``{policy}``: ask / workspace_session / session) is an ACP session's edit approval (main's ACP modes).")
 
 var SessionMutateResult = pydantic.NewModel("SessionMutateResult", OpenConfig,
 	pydantic.Req("session_id", pydantic.Str),
 	pydantic.Req("operation", pydantic.Str),
 	pydantic.Def("revision", pydantic.Nullable(pydantic.Int), nil),
-)
+).Described("The committed mutation receipt plus the operation's projection (``title``, ``archived``,\n``branched_session_id``, compress ``status``/``lines``, …). ``revision`` is absent only on a\nread-only compress preview.")
 
 var _ = CanonicalMethod("session.mutate", SessionMutateParams, SessionMutateResult, "Revision-fenced, retry-idempotent session edit (rename, archive, sidebar, branch, delete, rewind, reset, model, reasoning, workspace, edit_policy, compress, import).")
 
 var SessionPruneParams = pydantic.NewModel("SessionPruneParams", ParamsConfig,
 	pydantic.Def("filters", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("never_active_days", pydantic.Nullable(pydantic.Float), nil),
-)
+).Described("Exactly one of ``filters`` (``SessionDB.prune_sessions`` keyword filters, as\n``icebath sessions prune`` builds them) or ``never_active_days`` (``--never-active``).")
 
 var SessionPruneResult = pydantic.NewModel("SessionPruneResult", ClosedConfig,
 	pydantic.Req("deleted", pydantic.Int),
@@ -75,7 +75,7 @@ var SessionPruneResult = pydantic.NewModel("SessionPruneResult", ClosedConfig,
 	pydantic.Def("skipped", pydantic.Nullable(pydantic.Int), nil),
 )
 
-var _ = CanonicalMethod("session.prune", SessionPruneParams, SessionPruneResult, "Local operator only: the owner deletes the ended sessions `hermes sessions prune` selected, skipping busy sessions and retained reset owners.")
+var _ = CanonicalMethod("session.prune", SessionPruneParams, SessionPruneResult, "Local operator only: the owner deletes the ended sessions `icebath sessions prune` selected, skipping busy sessions and retained reset owners.")
 
 var CommandObserveParams = pydantic.NewModel("CommandObserveParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -153,7 +153,7 @@ var CanonicalSessionInfo = pydantic.NewModel("CanonicalSessionInfo", OpenConfig,
 	pydantic.Def("tool_count", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("credential_hint", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("config_warning", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``gateway/session_local_inventory.py::snapshot_info``: ``local_session_info`` + the inventory.")
 
 var _ = CanonicalMethod("session.info", CanonicalSessionInfoParams, CanonicalSessionInfo, "Frozen launch policy projection of one local session.")
 
@@ -186,7 +186,7 @@ var SessionStats = pydantic.NewModel("SessionStats", ClosedConfig,
 	pydantic.Req("provider", pydantic.Str),
 	pydantic.Def("fallback_model", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("plan_gauge", pydantic.Nullable(PlanGauge), nil),
-)
+).Described("``gateway/session_usage.py::usage_stats``: session-cumulative counters (the agent's ``session_*``),\ncontext / compressor figures, rolling latency and throughput, rate-limit state, live subagents.")
 
 var _ = CanonicalMethod("session.stats", SessionStatsParams, SessionStats, "The session.usage dict on demand: what main's classic CLI read off its agent.")
 
@@ -203,7 +203,7 @@ var RollbackSessionDiffResult = pydantic.NewModel("RollbackSessionDiffResult", C
 	pydantic.Def("diff_lines", pydantic.Int, 0),
 	pydantic.Def("empty", pydantic.Bool, false),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
-)
+).Described("``gateway/session_tui_ops.py::_session_diff``: ``CheckpointManager.session_diff`` under the\nsession's frozen checkpoint policy (``enabled: false`` when that policy does not checkpoint).\n``diff`` is bounded to fit one frame; ``diff_lines`` counts the whole body.")
 
 var _ = CanonicalMethod("rollback.session_diff", RollbackSessionDiffParams, RollbackSessionDiffResult, "The classic CLI's /diff session: everything changed since the session's earliest retained checkpoint, as data for its terminal renderer.")
 
@@ -212,13 +212,13 @@ var SessionExportParams = pydantic.NewModel("SessionExportParams", ParamsConfig,
 	pydantic.Def("profile", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("format", pydantic.Str, "json"),
 	pydantic.Def("redact", pydantic.Bool, false),
-)
+).Described("``format``: json (default) / md / markdown / html / snapshot (``normalize_save_format``).")
 
 var SessionExportResult = pydantic.NewModel("SessionExportResult", ClosedConfig,
 	pydantic.Req("format", pydantic.Str),
 	pydantic.Req("filename", pydantic.Str),
 	pydantic.Req("content", pydantic.Str),
-)
+).Described("``gateway/session_tui_ops.py::export_session``: the rendered ``/save`` body and its default\nfile name. The client writes it (the gateway may be remote); nothing is written on the host.")
 
 var _ = CanonicalMethod("session.export", SessionExportParams, SessionExportResult, "The /save transcript rendered for the client to write (the gateway writes nothing).")
 
@@ -234,7 +234,7 @@ var SessionAutomationResult = pydantic.NewModel("SessionAutomationResult", Close
 	pydantic.Req("state", pydantic.Nullable(pydantic.Str)),
 	pydantic.Def("value", pydantic.Nullable(pydantic.Any), nil),
 	pydantic.Def("error", pydantic.Nullable(pydantic.Dict(pydantic.Str)), nil),
-)
+).Described("``gateway/session_viewer_automation.py``: the manager's persisted state after the call (its own\nJSON, ``null`` when none) and the call's value, or the refusal main's manager raised.")
 
 var _ = CanonicalMethod("session.automation", SessionAutomationParams, SessionAutomationResult, "The classic CLI's /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row.")
 
@@ -304,7 +304,7 @@ var CronStatusResult = pydantic.NewModel("CronStatusResult", OpenConfig,
 	pydantic.Req("result", pydantic.Nullable(pydantic.List(pydantic.Any))),
 	pydantic.Def("job_flags", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
 	pydantic.Def("job", pydantic.Nullable(pydantic.Dict(pydantic.Any)), nil),
-)
+).Described("``result`` is the ``run_job`` tuple once terminal; ``recover`` adds the frozen ``job`` and\nanswers ``status='missing'`` for a firing that was never admitted.")
 
 var _ = CanonicalMethod("cron.recover", CronRunParams, CronStatusResult, "Re-observe a firing after a scheduler restart (same request identity).")
 
@@ -360,7 +360,7 @@ var WorkerScopeParams = pydantic.NewModel("WorkerScopeParams", ParamsConfig,
 	pydantic.Req("pid", pydantic.Int),
 	pydantic.Req("birth", pydantic.Float),
 	pydantic.Req("secret", pydantic.Str),
-)
+).Described("The producer claim every worker verb proves (``gateway/session_worker.py::_SCOPE``).")
 
 var WorkerRegisterParams = pydantic.Extend(WorkerScopeParams, "WorkerRegisterParams", ParamsConfig,
 	pydantic.Req("kind", pydantic.Str),
@@ -374,7 +374,7 @@ var WorkerExecution = pydantic.NewModel("WorkerExecution", OpenConfig,
 	pydantic.Req("generation", pydantic.Int),
 	pydantic.Req("status", pydantic.Str),
 	pydantic.Req("last_sequence", pydantic.Int),
-)
+).Described("A ``worker_executions`` row without its adoption digest.")
 
 var _ = CanonicalMethod("worker.register", WorkerRegisterParams, WorkerExecution, "Register a compute worker execution on an idle session.")
 
@@ -387,7 +387,7 @@ var WorkerPersistParams = pydantic.Extend(WorkerScopeParams, "WorkerPersistParam
 	pydantic.Req("payload", pydantic.Dict(pydantic.Any)),
 )
 
-var WorkerPersistResult = pydantic.NewModel("WorkerPersistResult", OpenConfig)
+var WorkerPersistResult = pydantic.NewModel("WorkerPersistResult", OpenConfig).Described("The operation's durable receipt (``message_id`` for an append, delegation results, …).")
 
 var _ = CanonicalMethod("worker.persist", WorkerPersistParams, WorkerPersistResult, "Sequence-fenced typed persistence write from an adopted worker.")
 

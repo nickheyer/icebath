@@ -334,7 +334,16 @@ func nonApplyableMessage(method string) (string, bool) {
 	case "apt":
 		return "Icebath is managed by Termux APT; run `pkg upgrade icebath-agent`.", true
 	}
+	if manager, ok := packageManagerNames[method]; ok {
+		return "Icebath is managed by " + manager + "; run `" + config.RecommendedUpdateCommandForMethod(method) + "`.", true
+	}
 	return "", false
+}
+
+// Display name of each package manager install method the dashboard cannot update in place
+var packageManagerNames = map[string]string{
+	"chocolatey": "Chocolatey", "pip": "pipx", "homebrew": "Homebrew", "scoop": "Scoop", "winget": "WinGet",
+	"dpkg": "its Debian package", "rpm": "its RPM package", "pacman": "its Arch package", "apk": "its Alpine package",
 }
 
 // Channel release label with its version when the source check named one
@@ -435,7 +444,7 @@ func checkHermesUpdate(ctx context.Context, force bool, profile *string) (*pyjso
 		return nil, err
 	}
 	payload := pyjson.ObjectOf("install_method", method, "current_version", version, "behind", nil,
-		"update_available", false, "can_apply", method == "git",
+		"update_available", false, "can_apply", method == "git" || method == "script" || method == "setup-app",
 		"update_command", config.RecommendedUpdateCommandForMethod(method), "message", nil)
 	if message, ok := nonApplyableMessage(method); ok {
 		payload.Set("message", message)
@@ -747,11 +756,11 @@ func actionsRouter() *APIRouter {
 		Name:   "gateway_drain",
 		Handle: func(ctx context.Context, c *Call) (any, error) { return gatewayDrain(ctx, c.Request) },
 	})
-	r.Post("/api/hermes/update", &Endpoint{
+	r.Post("/api/icebath/update", &Endpoint{
 		Name:   "update_hermes",
 		Handle: func(ctx context.Context, c *Call) (any, error) { return updateHermes(ctx) },
 	})
-	r.Get("/api/hermes/update/check", &Endpoint{
+	r.Get("/api/icebath/update/check", &Endpoint{
 		Name:   "check_hermes_update",
 		Params: []Param{QueryParam("force", Bool, false), QueryParam("profile", Optional(Str), nil)},
 		Handle: func(ctx context.Context, c *Call) (any, error) {
@@ -775,7 +784,7 @@ func actionsStatusRouter() *APIRouter {
 			return getActionStatus(ctx, c.Str("name"), c.Int("lines"))
 		},
 	})
-	r.Get("/api/hermes/update/receipt", &Endpoint{
+	r.Get("/api/icebath/update/receipt", &Endpoint{
 		Name:   "get_update_receipt",
 		Handle: func(ctx context.Context, c *Call) (any, error) { return getUpdateReceipt(ctx) },
 	})

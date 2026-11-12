@@ -616,7 +616,7 @@ func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *
 				return err
 			}
 		}
-		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600)
+		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600, pyjson.Indent(2))
 	}()
 	if err != nil {
 		hostLog().Warn(fmt.Sprintf("host %s record could not be published; discovery will not find it", role), "error", err)

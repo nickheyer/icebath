@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/treekill"
 )
 
 const deadlineHelperEnv = "ICEBATH_DEADLINE_HELPER"
@@ -186,9 +187,9 @@ func TestKillProcessTreeClosesDescendantSnapshotForkWindow(t *testing.T) {
 		t.Fatal("pre-existing detached child did not start")
 	}
 	var schedules []int
-	prev := procPPIDMap
-	procPPIDMap = func() []procParent {
-		mapping := readPPIDMap()
+	prev := treekill.ParentMap
+	treekill.ParentMap = func() []treekill.Parent {
+		mapping := treekill.ReadParentMap()
 		_ = os.WriteFile(release, nil, 0o644)
 		for end := time.Now().Add(2 * time.Second); time.Now().Before(end); {
 			ids := readIDs()
@@ -204,7 +205,7 @@ func TestKillProcessTreeClosesDescendantSnapshotForkWindow(t *testing.T) {
 		return mapping
 	}
 	signalled := KillProcessTree(child.Process.Pid, 0)
-	procPPIDMap = prev
+	treekill.ParentMap = prev
 	ids := readIDs()
 	exited := func() bool {
 		for _, pid := range ids {
@@ -256,8 +257,8 @@ func TestRefusedHardKillPreservesTheTargetsOriginalRunState(t *testing.T) {
 				_ = syscall.Kill(pid, syscall.SIGSTOP)
 				waitForState(true)
 			}
-			prev := deadlineKill
-			deadlineKill = func(target int, sig syscall.Signal) error {
+			prev := treekill.Signal
+			treekill.Signal = func(target int, sig syscall.Signal) error {
 				if target != pid && target != -pid {
 					t.Errorf("signal aimed at %d, owned probe is %d", target, pid)
 				}
@@ -267,7 +268,7 @@ func TestRefusedHardKillPreservesTheTargetsOriginalRunState(t *testing.T) {
 				return syscall.Kill(target, sig)
 			}
 			signalled := KillProcessTree(pid, 0)
-			deadlineKill = prev
+			treekill.Signal = prev
 			if signalled {
 				t.Fatalf("initially stopped %v refused hard kill reported signalled", initiallyStopped)
 			}

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"log/slog"
 	"reflect"
 	"regexp"
@@ -455,7 +456,7 @@ func auxDedupeToolNames(tools []any, provider, model string) []any {
 	for _, tool := range tools {
 		name := ""
 		if t, ok := tool.(map[string]any); ok {
-			if fn, ok := t["function"].(map[string]any); ok {
+			if fn, ok := pyjson.Dict(t["function"]); ok {
 				name, _ = fn["name"].(string)
 			}
 		}

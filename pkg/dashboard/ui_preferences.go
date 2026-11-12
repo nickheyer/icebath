@@ -35,7 +35,17 @@ const (
 	uiPrefsLockPoll      = 20 * time.Millisecond
 )
 
-var uiPrefsKeyPrefixes = []string{"hermes.desktop.", "hermes-desktop-", "hermes-onboarding-"}
+var uiPrefsKeyPrefixes = []string{"icebath.desktop.", "icebath-desktop-", "icebath-onboarding-", "hermes.desktop.", "hermes-desktop-", "hermes-onboarding-"}
+
+// Icebath name of a key a hermes Desktop stored, unchanged for any other key
+func uiPreferenceKeyName(key string) string {
+	for _, legacy := range []string{"hermes.desktop.", "hermes-desktop-", "hermes-onboarding-"} {
+		if strings.HasPrefix(key, legacy) {
+			return "icebath" + strings.TrimPrefix(key, "hermes")
+		}
+	}
+	return key
+}
 
 var uiPrefsThreadLock sync.Mutex
 
@@ -68,7 +78,7 @@ func uiPreferencesStorePath(ctx context.Context) (string, error) {
 	return filepath.Join(resolved, uiPrefsStoreName), nil
 }
 
-// String keys with string values of a stored values mapping
+// String keys with string values of a stored values mapping, hermes Desktop keys read under their icebath names
 func sanitizeUIPreferences(values any) *pyjson.Object {
 	out := pyjson.NewObject()
 	m, ok := values.(*pyjson.Object)
@@ -76,8 +86,15 @@ func sanitizeUIPreferences(values any) *pyjson.Object {
 		return out
 	}
 	for _, k := range m.Keys {
-		if v, ok := m.Vals[k].(string); ok {
+		if v, ok := m.Vals[k].(string); ok && uiPreferenceKeyName(k) == k {
 			out.Set(k, v)
+		}
+	}
+	for _, k := range m.Keys {
+		if v, ok := m.Vals[k].(string); ok && uiPreferenceKeyName(k) != k {
+			if _, kept := out.Get(uiPreferenceKeyName(k)); !kept {
+				out.Set(uiPreferenceKeyName(k), v)
+			}
 		}
 	}
 	return out

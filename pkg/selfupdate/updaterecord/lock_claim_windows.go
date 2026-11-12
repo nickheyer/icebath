@@ -12,6 +12,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const noFollow = 0
@@ -36,7 +38,7 @@ func mutexAcquire(path string, wait time.Duration) (func(), error) {
 			}
 		}
 		if !errors.Is(last, windows.ERROR_SHARING_VIOLATION) {
-			return nil, &os.PathError{Op: "CreateFile", Path: path, Err: last}
+			return nil, last
 		}
 		if !time.Now().Before(deadline) {
 			return nil, &MarkerBusy{Path: path}
@@ -147,7 +149,7 @@ func SwapUpdateTreeJob(handle windows.Handle) func() {
 func BindChildToUpdateTree(pid int) error {
 	err := bindToKillOnCloseJob(pid)
 	if err != nil {
-		slog.Warn("Could not bind update child to the update's job", "pid", pid, "error", err)
+		slog.Warn(fmt.Sprintf("Could not bind update child %d to the update's job: %s", pid, pypath.OSErrorText(err)))
 	}
 	return err
 }

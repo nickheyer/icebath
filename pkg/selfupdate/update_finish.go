@@ -175,6 +175,19 @@ func UpdateFinishMain(ctx context.Context, contextPath, resultPath string, stdou
 	return code
 }
 
+// Exit status of a shipped updater's post swap hand off finished by a takeover child, an uncaught failure printed
+func LegacyPostSwapMain(ctx context.Context, handoffPath string, argvTail []string, stderr io.Writer) int {
+	code, err := pm.ContinueLegacyPostSwap(ctx, handoffPath, argvTail)
+	if err != nil {
+		if isInterrupt(err) {
+			return 130
+		}
+		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
+		return 1
+	}
+	return code
+}
+
 // Body of the finish child, the error an uncaught Python exception stands for
 func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, stderr io.Writer) (int, error) {
 	decoded, err := readRequestFile(contextPath)
@@ -191,6 +204,8 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	if err != nil {
 		return 0, err
 	}
+	savedProjectRoot := fleetProjectRoot
+	defer func() { fleetProjectRoot = savedProjectRoot }()
 	resumeArmed := false
 	restarting := pyrepr.Truthy(request.GetOr("restart_update", false))
 	cliStarted, begun := false, false
@@ -219,9 +234,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			}
 			updaterecord.RecordStep(ctx, "historical_takeover", true, "continuing in the selected interpreter")
 		}
-		saved := fleetProjectRoot
 		fleetProjectRoot = func() string { return root }
-		defer func() { fleetProjectRoot = saved }()
 		if restarting {
 			argv, err := pyIterable(request.GetOr("argv", nil))
 			if err != nil {

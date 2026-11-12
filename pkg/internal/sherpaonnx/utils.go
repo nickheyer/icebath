@@ -14,11 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// What text2token reaches outside the package, its two lazy imports and the stream print writes to
+// What text2token reaches outside the package, the pypinyin dictionaries of the runtime environment and the stream print writes to
 type Environment struct {
-	Stdout              io.Writer
-	ImportSentencepiece func() error
-	ImportPypinyin      func() (*pypinyin.Module, error)
+	Stdout         io.Writer
+	ImportPypinyin func() (*pypinyin.Module, error)
 }
 
 // The keyword arguments of text2token, TokensType cjkchar when empty
@@ -105,13 +104,9 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 	if tokensType == "" {
 		tokensType = "cjkchar"
 	}
-	if err := m.env.ImportSentencepiece(); err != nil {
-		fmt.Fprint(m.env.Stdout, "Please run\n  pip install sentencepiece\nbefore you continue\n")
-		return nil, err
-	}
 	py, err := m.env.ImportPypinyin()
 	if err != nil {
-		fmt.Fprint(m.env.Stdout, "Please run\n  pip install pypinyin\nbefore you continue\n")
+		fmt.Fprint(m.env.Stdout, "Please run\n  icebath pm install --extra wake-sherpa\nbefore you continue\n")
 		return nil, err
 	}
 	if !isFile(tokens) {

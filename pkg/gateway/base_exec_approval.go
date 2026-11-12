@@ -119,7 +119,7 @@ func (b *BasePlatformAdapter) EAFit(text string, budget int, suffix string, esca
 }
 
 // Characters of command preview that fit, platforms with a hard message cap compute it
-func (b *BasePlatformAdapter) ExecApprovalCmdBudget(description string, smartDenied bool) int {
+func (b *BasePlatformAdapter) ExecApprovalCmdBudget(ctx context.Context, description string, smartDenied bool) int {
 	return b.Traits.EACmdBudget
 }
 
@@ -138,7 +138,7 @@ func (b *BasePlatformAdapter) FormatExecApproval(ctx context.Context, command st
 	if b.Traits.EAReasonBudget != 0 {
 		desc = b.EAFit(desc, b.Traits.EAReasonBudget, "...", nil)
 	}
-	cmdPreview := b.EAFit(command, self.ExecApprovalCmdBudget(desc, smartDenied), "...", nil)
+	cmdPreview := b.EAFit(command, self.ExecApprovalCmdBudget(ctx, desc, smartDenied), "...", nil)
 	text := self.EAHeader(ctx) + b.Traits.EACodeOpen + self.EAEscape(cmdPreview) + b.Traits.EACodeClose +
 		self.EAReasonLabel(ctx) + self.EAEscape(desc) + b.EADeadlineLine(ctx)
 	if smartDenied {

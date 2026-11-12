@@ -18,6 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm/specprobe"
 )
 
 // Anchors maps each extra to the imports that prove it installed
@@ -49,21 +50,21 @@ func anchors(extra string) []string {
 	return []string{strings.ReplaceAll(extra, "-", "_")}
 }
 
-const importableProbe = "import importlib.util, sys\ntry:\n    found = importlib.util.find_spec(sys.argv[1]) is not None\nexcept (ImportError, ValueError):\n    found = False\nprint('1' if found else '0')\n"
-
-// Reports whether the selected environment's interpreter finds an anchor, the import this process's children make
+// Reports whether the selected environment's interpreter finds an anchor, asked of a child hosting that interpreter
 var anchorImportable = func(ctx context.Context, anchor string) bool {
 	root := RepoRoot()
 	venv, err := SelectedVenv(ctx, root)
 	if err != nil {
 		return false
 	}
-	command, err := VenvCommand(ctx, root, venv, []string{"-I"})
+	command, err := VenvCommand(ctx, root, venv, nil)
 	if err != nil || !isRegularFile(command[0]) {
 		return false
 	}
-	result, err := runCaptured(ctx, append(command, "-c", importableProbe, anchor), root, pyEnviron(), 60*time.Second)
-	return err == nil && result.Code == 0 && pystr.Strip(result.Stdout) == "1"
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	found, err := specprobe.FindSpecs(ctx, command[0], root, EnvList(pyEnviron()), []string{anchor})
+	return err == nil && found[0]
 }
 
 // AnchorImportable reports whether the selected environment's interpreter finds the module through importlib find_spec

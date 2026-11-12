@@ -151,10 +151,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 			"api.deepinfra.com so the live catalog can be fetched.", "no_model_available", errorOverride{Prompt: &prompt}), nil
 	}
 	size := sizeFor(aspect)
-	newClient, failure := importOpenAI("deepinfra", aspect)
-	if failure != nil {
-		return failure, nil
-	}
+	newClient := newOpenAIClientHook
 	fail = errorFactory("deepinfra", aspect, modelID, prompt)
 	baseURL := deepInfraBaseURL(env, config.Tree(diCfg))
 	client, err := newClient(env, openAIClientOptions{APIKey: &apiKey, BaseURL: &baseURL})
