@@ -143,6 +143,11 @@ var (
 	updateDescribeHolder = updaterecord.DescribeHolder
 )
 
+var (
+	_ ttyReporter     = (*gateway.UpdateOutputStream)(nil)
+	_ updateLogMirror = (*gateway.UpdateOutputStream)(nil)
+)
+
 // Takes the cross process update lock of root, returning the holder when another update has it and the release call
 func acquireUpdateLock(ctx context.Context, root string) (bool, *updaterecord.UpdateHolder, func(), error) {
 	lock := updaterecord.NewUpdateLock("", root, true)

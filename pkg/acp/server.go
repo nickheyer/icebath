@@ -68,6 +68,11 @@ type Client interface {
 	RequestPermission(ctx context.Context, options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate, meta *pyjson.Object) (*pyacp.RequestPermissionResponse, error)
 }
 
+// Agent seam that takes the callback fed with reasoning text during a prompt
+type ReasoningCallbackSetter interface {
+	SetReasoningCallback(cb any)
+}
+
 // Session operations the in process agent drives
 type Sessions interface {
 	CreateSession(ctx context.Context, cwd string) (*SessionState, error)
@@ -446,6 +451,22 @@ type turnArgs struct {
 	approvalCb            ApprovalCallback
 	editApprovalRequester tools.EditApprovalRequester
 }
+
+var (
+	_ pyacp.Connector          = (*HermesACPAgent)(nil)
+	_ pyacp.Initializer        = (*HermesACPAgent)(nil)
+	_ pyacp.Authenticator      = (*HermesACPAgent)(nil)
+	_ pyacp.SessionCreator     = (*HermesACPAgent)(nil)
+	_ pyacp.SessionLoader      = (*HermesACPAgent)(nil)
+	_ pyacp.SessionResumer     = (*HermesACPAgent)(nil)
+	_ pyacp.Canceller          = (*HermesACPAgent)(nil)
+	_ pyacp.SessionForker      = (*HermesACPAgent)(nil)
+	_ pyacp.SessionLister      = (*HermesACPAgent)(nil)
+	_ pyacp.Prompter           = (*HermesACPAgent)(nil)
+	_ pyacp.SessionModelSetter = (*HermesACPAgent)(nil)
+	_ pyacp.SessionModeSetter  = (*HermesACPAgent)(nil)
+	_ pyacp.ConfigOptionSetter = (*HermesACPAgent)(nil)
+)
 
 // ACP agent wrapping an in process AIAgent per session
 type HermesACPAgent struct {
@@ -1345,7 +1366,7 @@ func (a *HermesACPAgent) wireTurnCallbacks(st *SessionState, sessionID string, c
 	if target, ok := ag.(interface{ SetThinkingCallback(cb any) }); ok {
 		target.SetThinkingCallback(nil)
 	}
-	if target, ok := ag.(interface{ SetReasoningCallback(cb any) }); ok {
+	if target, ok := ag.(ReasoningCallbackSetter); ok {
 		if cbs.reasoningCb != nil {
 			target.SetReasoningCallback(cbs.reasoningCb)
 		} else {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -141,17 +142,22 @@ const (
 // FreeTierOutageCopy is the terminal copy once free model retries are spent
 const FreeTierOutageCopy = "The free model is having trouble responding right now. Try sending your message again in a minute."
 
-// FriendlyWait renders seconds as about a minute, N minutes, or N hours copy
-func FriendlyWait(seconds int) string {
+// FriendlyWait renders a wait as a rounded spoken duration, never a raw second count
+func FriendlyWait(seconds float64) string {
+	s := math.Max(0, seconds)
 	switch {
-	case seconds < 90:
+	case s <= 15:
+		return "a few seconds"
+	case s < 90:
 		return "about a minute"
-	case seconds < 3600:
-		return fmt.Sprintf("%d minutes", (seconds+59)/60)
-	case seconds < 5400:
+	case s < 3600:
+		return fmt.Sprintf("about %d minutes", int(math.RoundToEven(s/60)))
+	}
+	hours := int(math.RoundToEven(s / 3600))
+	if hours <= 1 {
 		return "about an hour"
 	}
-	return fmt.Sprintf("%d hours", (seconds+1799)/3600)
+	return fmt.Sprintf("about %d hours", hours)
 }
 
 // WelcomeRefusalCopy is the user sentence for a structured welcome tier refusal
@@ -169,7 +175,7 @@ func WelcomeRefusalCopy(r WelcomeRefusal, model string, inChat, door bool) strin
 	}
 	wait := "a little while"
 	if r.RetryAfter > 0 {
-		wait = FriendlyWait(r.RetryAfter)
+		wait = FriendlyWait(float64(r.RetryAfter))
 	}
 	var s string
 	switch r.Reason {

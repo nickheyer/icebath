@@ -54,6 +54,7 @@ var (
 	loopRestoreAgentToolPrefix      = mcp.RestoreAgentToolPrefix
 	loopPersistAgentToolNames       = mcp.PersistAgentToolNames
 	loopStoredPromptCapabilityStale = botmode.StoredPromptCapabilityStale
+	loopRefreshAgentMCPTools        = mcp.RefreshAgentMCPTools
 )
 
 // Native Responses estimate when compaction eligibility is proven, else messages plus tools
@@ -691,6 +692,14 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 	if policy == nil && a.platform != "desktop" && a.platform != "tui" {
 		return
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			if isUserInterruptPanic(r) {
+				panic(r)
+			}
+			conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %v", a.sessionID, r))
+		}
+	}()
 	if policy != nil {
 		launch, ok := policy.(*gateway.LocalSessionPolicy)
 		if !ok {
@@ -698,11 +707,11 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 				a.sessionID, fmt.Sprintf("'%T' object has no attribute 'toolsets'", policy)))
 			return
 		}
-		mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: append([]string{}, launch.Toolsets...), Quiet: true, ContentAware: true})
+		loopRefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: append([]string{}, launch.Toolsets...), Quiet: true, ContentAware: true})
 		return
 	}
 	enabled, disabled := TUIGatewayToolsets(ctx, a.platform)
-	mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: enabled, DisabledOverride: disabled, Quiet: true, ContentAware: true})
+	loopRefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: enabled, DisabledOverride: disabled, Quiet: true, ContentAware: true})
 }
 
 // Restores the cached system prompt from the session row or builds and persists it fresh

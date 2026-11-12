@@ -124,17 +124,20 @@ func TestUserOriginatedTurnPredicate(t *testing.T) {
 
 func TestReanchorSkipsHandoffFallback(t *testing.T) {
 	for _, tc := range []struct {
+		name string
 		rows []map[string]any
 		ask  string
 		want int
 	}{
-		{[]map[string]any{{"role": "system", "content": "sys"}, standaloneHandoff()}, "missing ask", -1},
-		{[]map[string]any{standaloneHandoff(), {"role": "user", "content": "live ask"}}, "live ask", 1},
-		{[]map[string]any{{"role": "user", "content": "original ask"}, standaloneHandoff()}, "rewritten ask", 0},
-		{[]map[string]any{{"role": "user", "content": "older ask"}, compositeHandoff("rewritten ask")}, "rewritten ask", 1},
+		{"test_fallback_skips_standalone_handoff", []map[string]any{{"role": "system", "content": "sys"}, standaloneHandoff()}, "missing ask", -1},
+		{"test_exact_match_still_wins", []map[string]any{standaloneHandoff(), {"role": "user", "content": "live ask"}}, "live ask", 1},
+		{"test_fallback_prefers_real_user_over_handoff", []map[string]any{{"role": "user", "content": "original ask"}, standaloneHandoff()}, "rewritten ask", 0},
+		{"test_exact_live_projection_reanchors_to_composite_carrier", []map[string]any{{"role": "user", "content": "older ask"}, compositeHandoff("rewritten ask")}, "rewritten ask", 1},
 	} {
-		if got := reanchorCurrentTurnUserIdx(rowsToMessages(tc.rows), tc.ask); got != tc.want {
-			t.Fatalf("%q got %d want %d", tc.ask, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := reanchorCurrentTurnUserIdx(rowsToMessages(tc.rows), tc.ask); got != tc.want {
+				t.Fatalf("%q got %d want %d", tc.ask, got, tc.want)
+			}
+		})
 	}
 }

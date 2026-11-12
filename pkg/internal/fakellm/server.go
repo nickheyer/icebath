@@ -36,13 +36,14 @@ type Call struct {
 	Raw  *string
 }
 
-// ToolCall is one assistant turn issuing one or more tool calls
+// ToolCall is one assistant turn issuing one or more tool calls, its text streamed whole or in ChunkChars pieces
 type ToolCall struct {
-	Name     string
-	Args     map[string]any
-	Raw      *string
-	Parallel []Call
-	Text     *string
+	Name       string
+	Args       map[string]any
+	Raw        *string
+	Parallel   []Call
+	Text       *string
+	ChunkChars int
 }
 
 // Error is an HTTP error response
@@ -490,7 +491,13 @@ func (s *Server) respond(w http.ResponseWriter, resp any, stream bool, promptTok
 		}
 	} else {
 		if content, _ := message["content"].(string); content != "" {
-			sse(w, chunk(map[string]any{"content": content}, nil))
+			pieceSize := len([]rune(content))
+			if call, _ := resp.(ToolCall); call.ChunkChars > 0 {
+				pieceSize = call.ChunkChars
+			}
+			for _, piece := range pieces(content, pieceSize) {
+				sse(w, chunk(map[string]any{"content": piece}, nil))
+			}
 		}
 		for i, raw := range message["tool_calls"].([]any) {
 			tc := raw.(map[string]any)

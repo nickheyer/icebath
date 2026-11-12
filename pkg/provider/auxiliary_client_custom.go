@@ -48,7 +48,7 @@ var (
 )
 
 // Active custom endpoint base URL, key and api mode like the main CLI, empty when none is configured
-func auxResolveCustomRuntime(ctx context.Context) (string, string, string, error) {
+func auxResolveCustomRuntime(ctx context.Context) (string, any, string, error) {
 	var rt *Runtime
 	var rerr error
 	if perr := auxRecoverRaise(func() { rt, rerr = auxResolveRuntimeProviderFn(ctx, "custom") }); perr != nil {
@@ -157,7 +157,7 @@ func auxWrapCodex(client AuxClient, model string) *CodexAuxiliaryClient {
 // Client for the active custom endpoint on its declared wire, or the Messages wrap a URL implies
 func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 	base, key, mode, err := auxResolveCustomRuntimeFn(ctx)
-	if err != nil || base == "" || key == "" {
+	if err != nil || base == "" || !auxTruthyKey(key) {
 		return nil, "", err
 	}
 	if strings.HasPrefix(strings.ToLower(base), strings.ToLower(DefaultCodexBaseURL)) {
@@ -193,7 +193,9 @@ func auxTryCustomEndpoint(ctx context.Context) (AuxClient, string, error) {
 				"anthropic SDK is not installed — falling back to OpenAI-wire.")
 			return auxCreateOpenAIClient(ctx, key, cleanBase, opts), model, nil
 		}
-		isOAuth := AnthropicRouteIsOAuth(ctx, base, key, nil, "")
+		keyText, _ := key.(string)
+		source, _ := anthSDKTokenSource(key)
+		isOAuth := AnthropicRouteIsOAuth(ctx, base, keyText, source, "")
 		return newAnthropicAuxiliaryClientFrom(real, model, key, base, isOAuth), model, nil
 	}
 	wrapped, err := auxMaybeWrapAnthropic(ctx, auxCreateOpenAIClient(ctx, key, cleanBase, opts), model, key, base, mode)

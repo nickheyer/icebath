@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 )
 
 // PortalDefaultTimeoutSeconds bounds every Portal connector metadata request
@@ -110,7 +111,17 @@ func portalDefaultTransport(ctx context.Context, method, rawURL string, headers 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	client := &http.Client{Timeout: timeout}
+	if bundle := pyrequests.EnvCABundle(); bundle != "" {
+		verify, err := pyrequests.VerifyTLSConfig(bundle)
+		if err != nil {
+			return nil, err
+		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = verify
+		client.Transport = transport
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

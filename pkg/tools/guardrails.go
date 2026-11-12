@@ -2028,8 +2028,8 @@ type TurnValidationRetries struct {
 }
 
 func previewToolName(name string) string {
-	if len(name) > 80 {
-		return name[:80] + "..."
+	if runes := []rune(name); len(runes) > 80 {
+		return string(runes[:80]) + "..."
 	}
 	return name
 }
@@ -2145,14 +2145,14 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			if !invalidNames[tc.Function.Name] {
 				continue
 			}
-			trimmed := strings.TrimRight(tc.Function.Arguments, " \t\r\n")
+			trimmed := pystr.Rstrip(tc.Function.Arguments)
 			if !strings.HasSuffix(trimmed, "}") && !strings.HasSuffix(trimmed, "]") {
 				truncated = true
 				break
 			}
 		}
 		if truncated {
-			host.Print(fmt.Sprintf("%s⚠️  Truncated tool call arguments detected (finish_reason=%q) — refusing to execute.", host.LogPrefix(), finishReason), true)
+			host.Print(fmt.Sprintf("%s⚠️  Truncated tool call arguments detected (finish_reason=%s) — refusing to execute.", host.LogPrefix(), pyrepr.Repr(finishReason)), true)
 			retries.InvalidJSON = 0
 			host.CleanupTaskResources()
 			code := "truncated_unreported"

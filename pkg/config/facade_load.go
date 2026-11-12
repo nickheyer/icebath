@@ -582,7 +582,7 @@ func ReadRawConfigReadonly(ctx context.Context, h string) (map[string]any, error
 	return readRawConfigImpl(ctx, h)
 }
 
-// User config.yaml exactly as written with no cache, empty when absent or not a mapping
+// User config.yaml as written with no cache, ONLY legal for write-back round-trips and raw-file diagnostics, behavioral reads use load_config()
 func ReadUserConfigRaw(ctx context.Context, configPath string) (map[string]any, error) {
 	doc, err := ReadConfigDoc(ctx, configPath)
 	if err != nil {

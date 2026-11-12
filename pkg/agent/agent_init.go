@@ -34,7 +34,7 @@ func providerDefaultRoutes(ctx context.Context, providerName string) map[string]
 		add(profile.BaseURL)
 	}
 	for _, row := range provider.RegistryInferenceRoutes(ctx) {
-		if provider.NormalizeProviderDef(ctx, provider.NormalizeProvider(row[0])) == providerName {
+		if provider.NormalizeProviderDef(ctx, provider.ModelsNormalizeProvider(row[0])) == providerName {
 			add(row[1])
 		}
 	}
@@ -68,8 +68,8 @@ func contextRouteMismatch(ctx context.Context, configuredBaseURL, activeBaseURL,
 	if configuredProvider == "" {
 		return false
 	}
-	configuredProvider = provider.NormalizeProviderDef(ctx, provider.NormalizeProvider(configuredProvider))
-	activeProvider = provider.NormalizeProviderDef(ctx, provider.NormalizeProvider(activeProvider))
+	configuredProvider = provider.NormalizeProviderDef(ctx, provider.ModelsNormalizeProvider(configuredProvider))
+	activeProvider = provider.NormalizeProviderDef(ctx, provider.ModelsNormalizeProvider(activeProvider))
 	if activeRoute != "" {
 		if configuredRoutes := providerDefaultRoutes(ctx, configuredProvider); len(configuredRoutes) > 0 {
 			return !configuredRoutes[activeRoute]

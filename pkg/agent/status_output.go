@@ -21,6 +21,9 @@ type processStdout struct{}
 
 func (processStdout) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
 
+// Descriptor of the process stdout at the call, what sys.stdout.isatty() asks about
+func (processStdout) Fd() uintptr { return os.Stdout.Fd() }
+
 var statusStdout io.Writer = processStdout{}
 
 // Routes agent stdout through w until the returned restore runs, the patch_stdout swap of sys.stdout

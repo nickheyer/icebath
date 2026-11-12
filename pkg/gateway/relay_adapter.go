@@ -165,7 +165,7 @@ func (a *RelayAdapter) negotiatedDescriptor(platform string) *CapabilityDescript
 	if platform == "" {
 		return nil
 	}
-	ws, ok := a.transport.(interface{ DescriptorForPlatform(string) any })
+	ws, ok := a.transport.(relayDescriptorSource)
 	if !ok {
 		return nil
 	}

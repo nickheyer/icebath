@@ -204,14 +204,14 @@ func CarryInboundDedup(predecessor, adapter any) {
 
 // Adapter that takes over inbound another instance is holding
 type HeldInboundAdopter interface {
-	AdoptHeldInbound(source any)
+	AdoptHeldInbound(ctx context.Context, source any)
 }
 
 // Moves the inbound the source holds to the target when the target can adopt it
-func HandOverHeldInbound(source, target any) {
+func HandOverHeldInbound(ctx context.Context, source, target any) {
 	adopter, ok := target.(HeldInboundAdopter)
 	if source != nil && ok {
-		adopter.AdoptHeldInbound(source)
+		adopter.AdoptHeldInbound(ctx, source)
 	}
 }
 

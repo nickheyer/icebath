@@ -117,6 +117,12 @@ func (a *AIAgent) runPerformAPICall(ctx context.Context, s *LoopState) (string, 
 // One API call with its retry and recovery loop, a turn result when a phase ends the turn
 func runAPIRetryLoop(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any, error) {
 	for s.RetryCount < s.MaxRetries {
+		switch guard := nousRateLimitGuard(ctx, a, s); guard.Action {
+		case "return":
+			return guard.Result, nil
+		case "break":
+			return nil, nil
+		}
 		var verdict PhaseVerdict
 		err := guardPhase(func() error {
 			if err := buildAPIRequest(ctx, a, s); err != nil {

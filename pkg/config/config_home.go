@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
 // Home skeleton that cannot be used, distinct from an invalid YAML document
@@ -186,20 +185,12 @@ func ConfigLoadIssue(err error) ConfigIssue {
 	return ConfigIssue{Severity: "error", Message: "Could not load config.yaml", Hint: "Run 'icebath setup' to create a valid config"}
 }
 
-// Reports whether chmod is skipped for a container or an explicit opt out
-func containerOrChmodSkipped() bool {
-	if os.Getenv("ICEBATH_CONTAINER") != "" || os.Getenv("ICEBATH_SKIP_CHMOD") != "" {
-		return true
-	}
-	return hostinfo.IsContainer()
-}
-
 // Owner only directory unless managed, container defaults or ICEBATH_HOME_MODE say otherwise
 func SecureDir(ctx context.Context, h, path string) { home.ApplySecureDirPolicy(ctx, path, h) }
 
 // Owner only config file unless managed or in a container
 func SecureFile(ctx context.Context, h, path string) {
-	if ManagedSystem(ctx, h) != "" || containerOrChmodSkipped() {
+	if ManagedSystem(ctx, h) != "" || home.ContainerOrChmodSkipped() {
 		return
 	}
 	if _, err := os.Stat(path); err == nil {

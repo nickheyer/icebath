@@ -123,6 +123,11 @@ func buildPrimaryRuntimeSnapshot(ctx context.Context, a *AIAgent, apiMode string
 	return rt
 }
 
+// Readonly config the reasoning echo flag reads, the load_config_readonly reasoning_params imports
+var reasoningEchoConfigLoader = func(ctx context.Context) (config.Tree, error) {
+	return config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+}
+
 // Configured model.reasoning_echo, false with a class only warning when the config cannot be read
 func readReasoningEchoFromConfig(ctx context.Context) bool {
 	warn := func(class string) bool {
@@ -132,7 +137,7 @@ func readReasoningEchoFromConfig(ctx context.Context) bool {
 			"configuration imports work again.", class))
 		return false
 	}
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	cfg, err := reasoningEchoConfigLoader(ctx)
 	if err != nil {
 		return warn(pyErrorClass(err))
 	}

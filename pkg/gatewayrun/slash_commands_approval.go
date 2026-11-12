@@ -121,8 +121,7 @@ func (r *GatewayRunner) deliverApprovalConfirmation(ctx context.Context, event *
 	if adapter != nil {
 		adapter.Base().ResumeTypingForChat(source.ChatID)
 	}
-	streaming, ok := adapter.(gateway.NativeStreamingAdapter)
-	if !ok || !streaming.SupportsNativeStreaming() {
+	if !gateway.AdapterSupportsNativeStreaming(adapter) {
 		return &confirmation, nil
 	}
 	replyTo := ""

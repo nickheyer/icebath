@@ -70,24 +70,32 @@ const (
 )
 
 func TestResolvePlatformHint(t *testing.T) {
-	bare := &AIAgent{}
-	if got := resolvePlatformHint(bare, "whatsapp", hintDefault); got != hintDefault {
-		t.Fatalf("missing overrides %q", got)
-	}
 	appendAgent := &AIAgent{}
 	appendAgent.platformHintOverrides = map[string]any{"whatsapp": map[string]any{"append": hintExtra}}
-	if got := resolvePlatformHint(appendAgent, "whatsapp", hintDefault); got != hintDefault+"\n\n"+hintExtra {
-		t.Fatalf("append %q", got)
-	}
-	replaceAgent := &AIAgent{}
-	replaceAgent.platformHintOverrides = map[string]any{"whatsapp": map[string]any{"replace": hintExtra}}
-	if got := resolvePlatformHint(replaceAgent, "whatsapp", hintDefault); got != hintExtra {
-		t.Fatalf("replace %q", got)
-	}
-	tg := "You are on Telegram. Markdown works."
-	if got := resolvePlatformHint(appendAgent, "telegram", tg); got != tg {
-		t.Fatalf("other platform %q", got)
-	}
+	t.Run("test_missing_attr_returns_default", func(t *testing.T) {
+		if got := resolvePlatformHint(&AIAgent{}, "whatsapp", hintDefault); got != hintDefault {
+			t.Fatalf("missing overrides %q", got)
+		}
+	})
+	t.Run("test_append_dict", func(t *testing.T) {
+		got := resolvePlatformHint(appendAgent, "whatsapp", hintDefault)
+		if got != hintDefault+"\n\n"+hintExtra || !strings.Contains(got, hintDefault) || !strings.Contains(got, hintExtra) {
+			t.Fatalf("append %q", got)
+		}
+	})
+	t.Run("test_replace_dict", func(t *testing.T) {
+		replaceAgent := &AIAgent{}
+		replaceAgent.platformHintOverrides = map[string]any{"whatsapp": map[string]any{"replace": hintExtra}}
+		if got := resolvePlatformHint(replaceAgent, "whatsapp", hintDefault); got != hintExtra || strings.Contains(got, hintDefault) {
+			t.Fatalf("replace %q", got)
+		}
+	})
+	t.Run("test_other_platform_unaffected", func(t *testing.T) {
+		tg := "You are on Telegram. Markdown works."
+		if got := resolvePlatformHint(appendAgent, "telegram", tg); got != tg {
+			t.Fatalf("other platform %q", got)
+		}
+	})
 	shorthand := &AIAgent{}
 	shorthand.platformHintOverrides = map[string]any{"whatsapp": "  " + hintExtra + " "}
 	if got := resolvePlatformHint(shorthand, "whatsapp", hintDefault); got != hintDefault+"\n\n"+hintExtra {
@@ -252,7 +260,8 @@ func TestAgentHomeNoneWithoutSessionDB(t *testing.T) {
 	}
 }
 
-func TestProfileNameForHome(t *testing.T) {
+func profileHomes(t *testing.T) (string, string, string) {
+	t.Helper()
 	tmp := t.TempDir()
 	botHome := filepath.Join(tmp, "profiles", "mybot")
 	otherHome := filepath.Join(tmp, "profiles", "other")
@@ -261,14 +270,27 @@ func TestProfileNameForHome(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	return tmp, botHome, otherHome
+}
+
+func TestProfileNameCorrectOnBoundProfileSession(t *testing.T) {
+	_, botHome, _ := profileHomes(t)
 	t.Setenv("ICEBATH_HOME", botHome)
 	if got := profileNameForHome(botHome); got != "mybot" {
 		t.Fatalf("bound profile session %q", got)
 	}
+}
+
+func TestProfileNameDefaultWhenHomeIsRoot(t *testing.T) {
+	tmp, _, _ := profileHomes(t)
 	t.Setenv("ICEBATH_HOME", tmp)
 	if got := profileNameForHome(tmp); got != "default" {
 		t.Fatalf("root home %q", got)
 	}
+}
+
+func TestProfileNameCorrectWhenAmbientIsAnotherProfile(t *testing.T) {
+	_, botHome, otherHome := profileHomes(t)
 	t.Setenv("ICEBATH_HOME", otherHome)
 	if got := profileNameForHome(botHome); got != "mybot" {
 		t.Fatalf("ambient other profile %q", got)

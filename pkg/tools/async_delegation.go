@@ -2461,6 +2461,18 @@ func (asyncDelegationLedger) UnmarkCopyHeld(id string)         { UnmarkCopyHeld(
 
 func init() { AsyncDelegationLedger = asyncDelegationLedger{} }
 
+// Installs one in memory delegation record for a case of another package and hands back the removal
+func SetAsyncDelegationRecordForTests(delegationID string, record map[string]any) func() {
+	asyncRecordsMu.Lock()
+	asyncRecords[delegationID] = &asyncRecord{m: record}
+	asyncRecordsMu.Unlock()
+	return func() {
+		asyncRecordsMu.Lock()
+		delete(asyncRecords, delegationID)
+		asyncRecordsMu.Unlock()
+	}
+}
+
 // Clears every registry, fence, offer and hold and tears down the executor and stale monitor
 func ResetAsyncDelegationForTests() {
 	asyncExecutorMu.Lock()

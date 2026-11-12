@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -75,8 +76,8 @@ func TestNoTopLevelPlatformsCreatedWhenMissing(t *testing.T) {
 	}
 }
 
-func TestGetMirrorsTheRedirectedLeafAfterSet(t *testing.T) {
-	h, _, stdout := redirectHome(t, "")
+func TestGetMirrorsGatewayResolutionAfterSet(t *testing.T) {
+	h, path, stdout := redirectHome(t, "")
 	redirectSet(t, h, "platforms.telegram.streaming", "false")
 	stdout()
 	if err := GetConfigValue(context.Background(), h, "platforms.telegram.streaming", false, false, redirectSources()); err != nil {
@@ -84,6 +85,17 @@ func TestGetMirrorsTheRedirectedLeafAfterSet(t *testing.T) {
 	}
 	if got := strings.TrimSpace(stdout()); got != "false" {
 		t.Fatalf("get printed %q", got)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := SafeLoad(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveDisplaySetting(context.Background(), AsMap(raw), "telegram", "streaming", nil); got != false {
+		t.Fatalf("gateway resolution %#v", got)
 	}
 }
 

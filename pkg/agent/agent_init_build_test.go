@@ -84,18 +84,31 @@ func TestExplicitClientKwargsSplitTheQueryAndPickTheHostHeaders(t *testing.T) {
 func TestDisplayConfigReadsStreamingLoadModeAndCommentary(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := &AIAgent{}
-	applyDisplayConfig(a, map[string]any{
+	if err := applyDisplayConfig(a, map[string]any{
 		"display": map[string]any{"show_commentary": false},
 		"agent":   map[string]any{"fast_auto_seconds": 15},
 		"model":   map[string]any{"lmstudio_load_mode": "JIT", "streaming": "off"},
-	}, "cli")
+	}, "cli"); err != nil {
+		t.Fatal(err)
+	}
 	if a.showCommentary || a.fastAutoSeconds != 15 || a.lmstudioLoadMode != "jit" || !a.RetrySession().DisableStreaming || a.toolGuardrails == nil {
 		t.Fatalf("display state = commentary %v fast %v mode %q streaming off %v", a.showCommentary, a.fastAutoSeconds, a.lmstudioLoadMode, a.RetrySession().DisableStreaming)
 	}
 	b := &AIAgent{}
-	applyDisplayConfig(b, map[string]any{"model": map[string]any{"lmstudio_load_mode": "lazy", "streaming": "maybe"}}, "telegram")
+	if err := applyDisplayConfig(b, map[string]any{"model": map[string]any{"lmstudio_load_mode": "lazy", "streaming": "maybe"}}, "telegram"); err != nil {
+		t.Fatal(err)
+	}
 	if !b.showCommentary || b.fastAutoSeconds != 60 || b.lmstudioLoadMode != "explicit" || b.RetrySession().DisableStreaming {
 		t.Fatalf("defaults = commentary %v fast %v mode %q streaming off %v", b.showCommentary, b.fastAutoSeconds, b.lmstudioLoadMode, b.RetrySession().DisableStreaming)
+	}
+	for raw, want := range map[any]float64{"30": 30, nil: 60, "abc": 60, true: 1} {
+		c := &AIAgent{}
+		if err := applyDisplayConfig(c, map[string]any{"agent": map[string]any{"fast_auto_seconds": raw}}, "cli"); err != nil || c.fastAutoSeconds != want {
+			t.Fatalf("fast_auto_seconds %v -> %v err %v", raw, c.fastAutoSeconds, err)
+		}
+	}
+	if err := applyDisplayConfig(&AIAgent{}, map[string]any{"agent": []any{"x"}}, "cli"); err == nil || !strings.Contains(err.Error(), "AttributeError") {
+		t.Fatalf("a list agent section raised %v", err)
 	}
 }
 

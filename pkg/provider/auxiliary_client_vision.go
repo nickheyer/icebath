@@ -172,13 +172,13 @@ func auxVisionMainProviderClient(ctx context.Context, mainProvider, mainModel st
 				customKey = runtime["api_key"]
 			}
 		} else {
-			var key string
+			var key any
 			var err error
 			customBase, key, customMode, err = auxResolveCustomRuntimeFn(ctx)
 			if err != nil {
 				return nil, "", err
 			}
-			if key != "" {
+			if auxTruthyKey(key) {
 				customKey = key
 			}
 		}

@@ -232,6 +232,9 @@ func TestS6LogRunCreatesLeafAsIcebathWithoutChown(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
 	}
+	if ranWhereAccountIsMapped(t) {
+		return
+	}
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	installFakeS6(t)
 	dir := t.TempDir()

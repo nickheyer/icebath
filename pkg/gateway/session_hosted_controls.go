@@ -214,15 +214,23 @@ func hostedTransportRef(transport InternalSessionRPC) (SessionRef, error) {
 	return SessionRef{}, &hostedAttributeError{"'" + pyrepr.TypeName(transport) + "' object has no attribute 'ref'"}
 }
 
+// Member producer that discards an attempt fenced on its task and hosted generation
+type hostedDiscarder interface {
+	Discard(ctx context.Context, profile, sessionID, source, expectedTaskID string, executionGeneration int64) (map[string]any, error)
+}
+
+var (
+	_ hostedDiscarder = (*HostedRoomAuthorityRPC)(nil)
+	_ hostedDiscarder = (*HostedRoomOwnerRPC)(nil)
+)
+
 // Discards the attempt through the member producer that fences on its hosted generation
 func hostedDiscard(ctx context.Context, transport InternalSessionRPC, profile, taskID string, generation int64) error {
 	ref, err := hostedTransportRef(transport)
 	if err != nil {
 		return err
 	}
-	discarder, ok := transport.(interface {
-		Discard(ctx context.Context, profile, sessionID, source, expectedTaskID string, executionGeneration int64) (map[string]any, error)
-	})
+	discarder, ok := transport.(hostedDiscarder)
 	if !ok {
 		return &hostedAttributeError{"'" + pyrepr.TypeName(transport) + "' object has no attribute 'discard'"}
 	}

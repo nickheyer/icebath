@@ -16,7 +16,7 @@ import (
 )
 
 // Native Anthropic or AnthropicBedrock client with the per request MiniMax token source when that route asks for one
-func initAnthropicClient(ctx context.Context, a *AIAgent, apiKey, baseURL string, timeout *float64) error {
+func initAnthropicClient(ctx context.Context, a *AIAgent, apiKey any, baseURL string, timeout *float64) error {
 	a.client = nil
 	a.clientKwargs = map[string]any{}
 	a.anthropicBaseURL = baseURL
@@ -29,17 +29,21 @@ func initAnthropicClient(ctx context.Context, a *AIAgent, apiKey, baseURL string
 		}
 		return nil
 	}
-	effective := apiKey
-	if effective == "" && a.provider == "anthropic" {
-		effective = provider.ResolveAnthropicToken(agentPoolEnv(ctx), a.model)
+	var key any = ""
+	if credentialPresent(apiKey) {
+		key = apiKey
+	} else if a.provider == "anthropic" {
+		key = provider.ResolveAnthropicToken(agentPoolEnv(ctx), a.model)
 	}
-	var key any = effective
 	var tokenSource func(context.Context) (string, error)
 	a.anthropicTokenSource = nil
-	if a.provider == "minimax-oauth" && effective != "" {
+	if src := taggedCredential(key); src != nil {
+		a.anthropicTokenSource, key, tokenSource = src, src, src.Mint
+	} else if a.provider == "minimax-oauth" && key != "" {
 		src := provider.BuildMinimaxOAuthTokenProvider(agentPoolEnv(ctx))
 		a.anthropicTokenSource, key, tokenSource = src, src, src.Mint
 	}
+	effective, _ := key.(string)
 	a.apiKey, a.anthropicAPIKey = effective, effective
 	a.isAnthropicOAuth = provider.AnthropicRouteIsOAuth(ctx, baseURL, effective, tokenSource, a.provider)
 	t := 0.0
@@ -56,6 +60,48 @@ func initAnthropicClient(ctx context.Context, a *AIAgent, apiKey, baseURL string
 		printKeyBanner(key, "token", false)
 	}
 	return nil
+}
+
+// Callable token source of a credential, false for a static string key
+func callableCredential(key any) (func(context.Context) (string, error), bool) {
+	switch k := key.(type) {
+	case *provider.TaggedTokenSource:
+		if k != nil {
+			return k.Mint, true
+		}
+	case *provider.CommandTokenSource:
+		if k != nil {
+			return k.Token, true
+		}
+	case func(context.Context) (string, error):
+		return k, k != nil
+	case func() (string, error):
+		return func(context.Context) (string, error) { return k() }, k != nil
+	case func() string:
+		return func(context.Context) (string, error) { return k(), nil }, k != nil
+	}
+	return nil, false
+}
+
+// Truth of a credential the way Python reads it, a callable always true and a string when non empty
+func credentialPresent(key any) bool {
+	if _, ok := callableCredential(key); ok {
+		return true
+	}
+	s, _ := key.(string)
+	return s != ""
+}
+
+// Tagged token source of a callable credential keeping its source label, nil for a static key
+func taggedCredential(key any) *provider.TaggedTokenSource {
+	if t, ok := key.(*provider.TaggedTokenSource); ok && t != nil {
+		return t
+	}
+	mint, ok := callableCredential(key)
+	if !ok {
+		return nil
+	}
+	return provider.TagCredentialSource(mint, provider.CredentialSourceOf(key))
 }
 
 // Region, guardrail config, credential and client of the Bedrock runtime bound to the agent
@@ -78,9 +124,9 @@ func applyBedrockBinding(ctx context.Context, a *AIAgent, baseURL string, mode p
 }
 
 // Mixture of agents facade in place of an HTTP client
-func initMoaClient(ctx context.Context, a *AIAgent, apiKey string) error {
+func initMoaClient(ctx context.Context, a *AIAgent, apiKey any) error {
 	var key any
-	if apiKey != "" {
+	if credentialPresent(apiKey) {
 		key = apiKey
 	}
 	if err := bindMoaRuntime(ctx, a, a.model, key); err != nil {
@@ -108,7 +154,8 @@ func initBedrockClient(ctx context.Context, a *AIAgent, baseURL string) error {
 }
 
 // Client kwargs from explicit credentials with the query split out, launch args and the route headers
-func explicitClientKwargs(ctx context.Context, a *AIAgent, apiKey, baseURL string, timeout *float64) (map[string]any, error) {
+func explicitClientKwargs(ctx context.Context, a *AIAgent, apiKey any, baseURL string, timeout *float64) (map[string]any, error) {
+	keyText, _ := apiKey.(string)
 	kwargs := map[string]any{"api_key": apiKey, "base_url": baseURL}
 	if u, err := url.Parse(baseURL); err == nil && u.RawQuery != "" {
 		query := map[string]string{}
@@ -132,12 +179,12 @@ func explicitClientKwargs(ctx context.Context, a *AIAgent, apiKey, baseURL strin
 		kwargs["command"], kwargs["args"] = a.acpCommand, a.acpArgs
 	}
 	if factory := hostDefaultHeadersFactory(baseURL); factory != nil {
-		headers, err := factory(ctx, apiKey, baseURL)
+		headers, err := factory(ctx, keyText, baseURL)
 		if err != nil {
 			return nil, err
 		}
 		kwargs["default_headers"] = headers
-	} else if routeHeaders := stringHeaders(provider.RouteAnswer(ctx, "client_headers", a.provider, a, map[string]any{"base_url": baseURL, "api_key": apiKey})); len(routeHeaders) > 0 {
+	} else if routeHeaders := stringHeaders(provider.RouteAnswer(ctx, "client_headers", a.provider, a, map[string]any{"base_url": baseURL, "api_key": keyText})); len(routeHeaders) > 0 {
 		kwargs["default_headers"] = routeHeaders
 	} else if profile, ok := provider.GetProviderProfile(ctx, a.provider); ok {
 		if h := profile.DefaultHeaders(); len(h) > 0 {
@@ -322,9 +369,9 @@ func (a *AIAgent) applyUserDefaultHeaders(ctx context.Context) {
 }
 
 // OpenAI wire client from explicit or routed kwargs with the header and TLS policy applied
-func initOpenAIClient(ctx context.Context, a *AIAgent, apiKey, baseURL string, fallbackModel []map[string]any, timeout *float64) error {
+func initOpenAIClient(ctx context.Context, a *AIAgent, apiKey any, baseURL string, fallbackModel []map[string]any, timeout *float64) error {
 	var kwargs map[string]any
-	if apiKey != "" && baseURL != "" {
+	if credentialPresent(apiKey) && baseURL != "" {
 		explicit, err := explicitClientKwargs(ctx, a, apiKey, baseURL, timeout)
 		if err != nil {
 			return err
@@ -379,7 +426,7 @@ func initOpenAIClient(ctx context.Context, a *AIAgent, apiKey, baseURL string, f
 }
 
 // Client for the agent's api mode, provider timeout resolved first
-func buildClient(ctx context.Context, a *AIAgent, apiKey, baseURL string, fallbackModel []map[string]any) error {
+func buildClient(ctx context.Context, a *AIAgent, apiKey any, baseURL string, fallbackModel []map[string]any) error {
 	a.anthropicClient = nil
 	a.isAnthropicOAuth = false
 	var timeout *float64

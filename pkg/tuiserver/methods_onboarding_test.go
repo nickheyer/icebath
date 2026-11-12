@@ -27,6 +27,7 @@ func launchedUnderWork(t *testing.T) (string, string) {
 	}
 	t.Setenv("ICEBATH_HOME", work)
 	prevMultiplex := provider.IsMultiplexActive(context.Background())
+	provider.SetMultiplexActive(false)
 	servedProfileMu.Lock()
 	prevServed := servedProfileHomes
 	servedProfileHomes = map[string]bool{}

@@ -309,36 +309,6 @@ func pyIntOf(v any) (int, bool, error) {
 	return 0, false, nil
 }
 
-// Keys of the YAML mapping at a path of the home config in document order
-func yamlKeyOrder(h string, path ...string) []string {
-	data, err := os.ReadFile(home.ConfigPath(h))
-	if err != nil {
-		return nil
-	}
-	var doc yaml.Node
-	if yaml.Unmarshal(data, &doc) != nil || len(doc.Content) == 0 {
-		return nil
-	}
-	node := doc.Content[0]
-	for _, part := range path {
-		var next *yaml.Node
-		for i := 0; node.Kind == yaml.MappingNode && i+1 < len(node.Content); i += 2 {
-			if node.Content[i].Value == part {
-				next = node.Content[i+1]
-			}
-		}
-		if next == nil {
-			return nil
-		}
-		node = next
-	}
-	var keys []string
-	for i := 0; node.Kind == yaml.MappingNode && i+1 < len(node.Content); i += 2 {
-		keys = append(keys, node.Content[i].Value)
-	}
-	return keys
-}
-
 // Mapping keys in document order, keys the document did not list appended sorted
 func orderedKeys(m map[string]any, order []string) []string {
 	seen := map[string]bool{}
@@ -648,7 +618,7 @@ func migrateTo16(r *migrationRun) error {
 	}
 	platforms := dictAt(display, "platforms")
 	var pairs []string
-	for _, plat := range orderedKeys(overrides, yamlKeyOrder(r.h, "display", "tool_progress_overrides")) {
+	for _, plat := range MappingKeys(overrides) {
 		mode := overrides[plat]
 		target, isMap := platforms[plat].(map[string]any)
 		if !isMap {

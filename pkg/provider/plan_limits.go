@@ -134,6 +134,17 @@ var (
 	planSuggestModelsFn  = SuggestModels
 )
 
+// SwapPlanLimitSourcesForTests scripts the cached catalog, featured picks and portal free picks, returning the restore
+func SwapPlanLimitSourcesForTests(pricing map[string]any, featured, free []string) func() {
+	prevPricing, prevFeatured, prevFree := planCachedPricingFn, planFeaturedModelsFn, planPortalFreeFn
+	planCachedPricingFn = func(string) map[string]any { return pricing }
+	planFeaturedModelsFn = func() []string { return featured }
+	planPortalFreeFn = func(context.Context) []string { return free }
+	return func() {
+		planCachedPricingFn, planFeaturedModelsFn, planPortalFreeFn = prevPricing, prevFeatured, prevFree
+	}
+}
+
 // Featured model ids of the last plan snapshot at any age, nil when none is known
 func planFeaturedModels() []string {
 	if usage := NousPickerUsage(false, true); usage != nil {

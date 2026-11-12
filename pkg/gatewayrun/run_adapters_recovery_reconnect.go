@@ -98,7 +98,7 @@ func (r *GatewayRunner) secondaryReconnectAttempt(ctx context.Context, profileNa
 	}()
 	if err != nil {
 		r.safeAdapterDisconnect(scoped, adapter, platform)
-		gateway.HandOverHeldInbound(adapter, predecessor)
+		gateway.HandOverHeldInbound(scoped, adapter, predecessor)
 		return nil, nil, err
 	}
 	return adapter, &success, nil
@@ -142,7 +142,7 @@ func (r *GatewayRunner) installSecondaryReconnect(ctx context.Context, profileNa
 		return false
 	}
 	profileMap.Set(platform, adapter)
-	gateway.HandOverHeldInbound(predecessor, adapter)
+	gateway.HandOverHeldInbound(ctx, predecessor, adapter)
 	r.syncVoiceModeStateToAdapter(ctx, adapter)
 	runLog().Info(fmt.Sprintf("✓ %s reconnected (profile: %s)", platform, profileName))
 	profile := profileName
@@ -198,7 +198,7 @@ func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profil
 			}
 			if adapter != nil {
 				r.safeAdapterDisconnect(ctx, adapter, platform)
-				gateway.HandOverHeldInbound(adapter, predecessor)
+				gateway.HandOverHeldInbound(ctx, adapter, predecessor)
 				if r.endSecondaryReconnect(profileName, platform, predecessor, adapter, success) {
 					return true, nil
 				}
@@ -210,7 +210,7 @@ func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profil
 				r.safeAdapterDisconnect(ctx, adapter, platform)
 				profileMap, _ := r.profileAdapters.Get(profileName)
 				if live, _ := profileMap.Get(platform); live != adapter {
-					gateway.HandOverHeldInbound(adapter, predecessor)
+					gateway.HandOverHeldInbound(ctx, adapter, predecessor)
 				}
 			}
 			if isCancellation(err) || ctx.Err() != nil {

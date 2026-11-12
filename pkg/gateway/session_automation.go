@@ -281,7 +281,7 @@ func automationNotificationMetadata(get func(key string) (any, bool)) (*pyjson.O
 }
 
 // Card a producer named for its admission, both keys or neither with a kind from the closed producer set
-func automationDisplayMetadata(get func(key string) (any, bool)) (*pyjson.Object, error) {
+func AutomationDisplayMetadata(get func(key string) (any, bool)) (*pyjson.Object, error) {
 	kind, hasKind := get("display_kind")
 	text, hasText := get("display_text")
 	out := pyjson.NewObject()
@@ -388,7 +388,7 @@ func snapshotAutomation(ctx context.Context, a *SessionAuthority, adapter Platfo
 	notification := pyjson.NewObject()
 	for _, build := range []func() (*pyjson.Object, error){
 		func() (*pyjson.Object, error) { return automationNotificationMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return automationDisplayMetadata(metadataGetter(event.Metadata)) },
+		func() (*pyjson.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
 		func() (*pyjson.Object, error) { return tickMetadata(event.Metadata) },
 	} {
 		part, err := build()
@@ -506,7 +506,7 @@ func snapshotLocalAutomation(ctx context.Context, a *SessionAuthority, adapter P
 	descriptor := pyjson.ObjectOf("identity", identity, "owner", ref.SessionID, "route", entry.SessionKey, "target", entry.SessionID)
 	for _, build := range []func() (*pyjson.Object, error){
 		func() (*pyjson.Object, error) { return automationNotificationMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return automationDisplayMetadata(metadataGetter(event.Metadata)) },
+		func() (*pyjson.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
 		func() (*pyjson.Object, error) { return tickMetadata(event.Metadata) },
 	} {
 		part, err := build()
@@ -717,7 +717,7 @@ func admitRouteWake(ctx context.Context, runner AuthorityRunner, adapter Platfor
 }
 
 // Async result card of an automation admission for its claim's start frame, empty for every other input
-func automationAdmissionDisplay(payload *pyjson.Object) *pyjson.Object {
+func AutomationAdmissionDisplay(payload *pyjson.Object) *pyjson.Object {
 	descriptor := automationDescriptor(payload)
 	kind, _ := descriptor.Get("display_kind")
 	text, _ := descriptor.Get("display_text")

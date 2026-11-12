@@ -204,7 +204,7 @@ func (a *RelayAdapter) FrontsPlatform(platform Platform) bool {
 	if value == "" {
 		return false
 	}
-	lister, ok := a.transport.(interface{ RelayIdentities() any })
+	lister, ok := a.transport.(relayIdentityLister)
 	if !ok {
 		return false
 	}

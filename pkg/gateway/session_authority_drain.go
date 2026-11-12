@@ -365,7 +365,7 @@ func (a *SessionAuthority) stampClaim(ctx context.Context, ref SessionRef, live 
 		a.executing[ref.SessionID] = *stamped
 	}
 	a.mu.Unlock()
-	live.EventStream.Publish(ref.SessionID, automationAdmissionDisplay(rowPayload(row)), "message.start", nil)
+	live.EventStream.Publish(ref.SessionID, AutomationAdmissionDisplay(rowPayload(row)), "message.start", nil)
 	return a.publishPending(ctx, ref)
 }
 

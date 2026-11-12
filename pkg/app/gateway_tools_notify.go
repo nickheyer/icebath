@@ -67,7 +67,7 @@ func queueAdmittedTurn(c *CLI, store *gatewaycli.GatewaySessionStore) {
 		}
 		admission := pyrepr.Str(params["admission_id"])
 		state.Lock()
-		queuedText, queued := state.QueuedInputs[admission]
+		queuedText, queued := state.QueuedInputs.Get(admission)
 		state.Unlock()
 		if queued && queuedText != nil {
 			adoptQueuedTurn(c, state, map[string]any{"admission_id": admission, "execution_generation": params["execution_generation"]}, pyrepr.Str(queuedText))
@@ -129,7 +129,7 @@ func adoptionWaiting(c *CLI, state *gatewaycli.SessionState) bool {
 func recoverQueued(c *CLI, store *gatewaycli.GatewaySessionStore) {
 	state := store.Connection.State(c.sessionID)
 	state.Lock()
-	if len(state.QueuedInputs) == 0 || (state.RecoveredSeq == state.PendingSeq && len(state.Missed) == 0) {
+	if state.QueuedInputs.Len() == 0 || (state.RecoveredSeq == state.PendingSeq && len(state.Missed) == 0) {
 		state.Unlock()
 		return
 	}
@@ -145,7 +145,8 @@ func recoverQueued(c *CLI, store *gatewaycli.GatewaySessionStore) {
 		text      any
 	}
 	var inputs []queuedInput
-	for admission, text := range state.QueuedInputs {
+	for _, admission := range state.QueuedInputs.Keys {
+		text, _ := state.QueuedInputs.Get(admission)
 		inputs = append(inputs, queuedInput{admission, text})
 	}
 	state.Unlock()
@@ -177,7 +178,7 @@ func recoverQueued(c *CLI, store *gatewaycli.GatewaySessionStore) {
 		}
 		if outcome, _ := receipt["outcome"].(string); status == "terminal" && gatewayNeverRan[outcome] {
 			state.Lock()
-			delete(state.QueuedInputs, input.admission)
+			state.QueuedInputs.Delete(input.admission)
 			delete(state.Missed, input.admission)
 			state.Unlock()
 			continue
@@ -205,7 +206,7 @@ func missedStart(state *gatewaycli.SessionState, params map[string]any) {
 	}
 	state.Lock()
 	defer state.Unlock()
-	if _, queued := state.QueuedInputs[admission]; queued {
+	if _, queued := state.QueuedInputs.Get(admission); queued {
 		state.Missed[admission] = true
 	}
 }
@@ -234,7 +235,7 @@ func takeAdmittedTurn(a *GatewayAgent, text any) map[string]any {
 	if armed != "" {
 		if adopted, ok := state.Adopted[armed]; ok {
 			delete(state.Adopted, armed)
-			delete(state.QueuedInputs, armed)
+			state.QueuedInputs.Delete(armed)
 			row, _ := adopted.(map[string]any)
 			return row
 		}

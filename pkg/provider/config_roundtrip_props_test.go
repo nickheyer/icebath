@@ -221,7 +221,7 @@ func propMigrationHome(cfg, envPath string, migrate func() error) roundtrip.Migr
 	}
 }
 
-func TestP4LoadIcebathDotenvIsIdempotent(t *testing.T) {
+func TestP4LoadHermesDotenvIsIdempotent(t *testing.T) {
 	for _, seed := range []int64{801, 802, 803, 804, 805, 806} {
 		t.Run(fmt.Sprint(seed), func(t *testing.T) {
 			_, h := selfReferenceHome(t)

@@ -70,6 +70,14 @@ type Runtime struct {
 	CredentialPool    *Pool
 }
 
+// Credential as the hermes runtime dict holds it, the callable token source when no static key was resolved
+func (rt *Runtime) APIKeyValue() any {
+	if rt.APIKey == "" && rt.TokenSource != nil {
+		return rt.TokenSource
+	}
+	return rt.APIKey
+}
+
 // Route converts the runtime into the wire route the adapters consume
 func (rt *Runtime) Route() Route {
 	route := Route{

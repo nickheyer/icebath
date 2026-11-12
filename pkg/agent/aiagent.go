@@ -398,7 +398,8 @@ func (a *AIAgent) SessionMessages() []*state.Message { return a.sessionMessages 
 
 // AIAgentOptions are the AIAgent constructor keywords, nil and zero values standing for None
 type AIAgentOptions struct {
-	BaseURL, APIKey, Provider, APIMode string
+	BaseURL, Provider, APIMode         string
+	APIKey                             any
 	ACPCommand                         string
 	ACPArgs                            []string
 	Command                            string
@@ -504,7 +505,7 @@ func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 		warnDeprecation("tool_delay is deprecated and ignored; sequential tool calls no longer sleep between executions.")
 	}
 	if rt := o.Runtime; rt != nil {
-		o.APIKey, o.BaseURL, o.Provider = rt.APIKey, rt.BaseURL, rt.Provider
+		o.APIKey, o.BaseURL, o.Provider = rt.APIKeyValue(), rt.BaseURL, rt.Provider
 		o.RequestedProvider, o.APIMode = rt.RequestedProvider, string(rt.APIMode)
 		o.RequestOverrides, o.ACPCommand, o.ACPArgs = rt.RequestOverrides, rt.Command, rt.Args
 	}

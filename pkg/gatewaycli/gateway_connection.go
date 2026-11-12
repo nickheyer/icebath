@@ -100,7 +100,7 @@ type SessionState struct {
 	RequestListeners    []*SessionListener
 	AdmittedTurn        map[string]any
 	Pending             []any
-	QueuedInputs        map[string]any
+	QueuedInputs        *pyjson.Object
 	Adopted             map[string]any
 	ArmedAdmission      string
 	PendingSeq          int
@@ -127,7 +127,7 @@ func WithoutListener(listeners []*SessionListener, listener *SessionListener) []
 }
 
 func NewSessionState(sessionID string) *SessionState {
-	return &SessionState{SessionID: sessionID, Info: map[string]any{}, Usage: map[string]any{}, QueuedInputs: map[string]any{},
+	return &SessionState{SessionID: sessionID, Info: map[string]any{}, Usage: map[string]any{}, QueuedInputs: pyjson.NewObject(),
 		Adopted: map[string]any{}, QueuedAt: map[string]int{}, Missed: map[string]bool{}}
 }
 
@@ -345,6 +345,9 @@ func SharedGatewayConnection() *GatewayConnection {
 	return sharedConn
 }
 
+// Dial every connection built without its own uses, the home owner's socket
+var DefaultConnect ConnectFunc = connectGateway
+
 // Dials this home's owner as a connection client
 func connectGateway(ctx context.Context) (ConnectionClient, error) {
 	client, err := gateway.ConnectGateway(ctx)
@@ -501,7 +504,7 @@ func (c *GatewayConnection) loop(ctx context.Context) {
 	connect := c.connect
 	c.mu.Unlock()
 	if connect == nil {
-		connect = connectGateway
+		connect = DefaultConnect
 	}
 	loopCtx, cancel := context.WithCancel(context.WithValue(ctx, loopKey{}, c))
 	defer cancel()
@@ -915,7 +918,7 @@ func (c *GatewayConnection) CallUntil(ctx context.Context, method string, wake *
 func (c *GatewayConnection) command(ctx context.Context, method string, params map[string]any, wake *pythread.Event, answer *commandAnswer, sent *pythread.Event) {
 	connect := c.connect
 	if connect == nil {
-		connect = connectGateway
+		connect = DefaultConnect
 	}
 	cmdCtx, cancel := context.WithCancel(ctx)
 	watched := make(chan struct{})

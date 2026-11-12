@@ -274,6 +274,8 @@ func applyGuarded(ctx context.Context, apply func(context.Context, string) error
 	return apply(ctx, name)
 }
 
+var _ pm.JSONRecord = (*CheckResult)(nil)
+
 // Writes the plugin-check receipt, logging at debug level when the write panics or fails
 func writeCheckReceipt(ctx context.Context, log *slog.Logger, results []*CheckResult, warning string, checkOK, anyUpdate bool) {
 	defer func() {

@@ -127,6 +127,9 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 	return provIn, modelIn
 }
 
+// ModelsNormalizeProvider is hermes_cli.models.normalize_provider, aliases collapsed and an empty name meaning openrouter
+func ModelsNormalizeProvider(provider string) string { return modelsNormalizeProvider(provider) }
+
 // Provider alias collapsed onto its canonical id, an empty name meaning openrouter
 func modelsNormalizeProvider(provider string) string {
 	if provider == "" {

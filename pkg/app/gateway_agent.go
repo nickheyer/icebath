@@ -116,6 +116,7 @@ type gatewayAgentOptions struct {
 	NoticeCallback           func(notice provider.AgentNotice)
 	NoticeClearCallback      func(key string)
 	ReactionCallback         func(kind string)
+	InterimAssistantCallback func(text any, alreadyStreamed bool)
 	ModelConfirmCallback     func(refusal map[string]any) bool
 	ModalWithdrawCallback    func(method string)
 	ToolEnv                  *tools.Env

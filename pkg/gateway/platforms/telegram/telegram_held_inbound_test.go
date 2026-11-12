@@ -295,7 +295,7 @@ func TestAdoptHeldInboundMovesQueueAndForwardsLaterHolds(t *testing.T) {
 	replacement.set(false, true)
 	first, second := heldEvent("first"), heldEvent("second")
 	old.held.SetEvents([]*gateway.MessageEvent{first, second})
-	replacement.held.AdoptHeldInbound(context.Background(), old.held)
+	gateway.HandOverHeldInbound(context.Background(), old.held, replacement.held)
 	if got := heldTexts(replacement.held); !slices.Equal(got, []string{"first", "second"}) {
 		t.Fatalf("adopted %v", got)
 	}

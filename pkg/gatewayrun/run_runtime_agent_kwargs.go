@@ -24,7 +24,7 @@ func runtimeAgentKwargs(rt *provider.Runtime) map[string]any {
 		overrides = rt.RequestOverrides
 	}
 	return map[string]any{
-		"api_key": rt.APIKey, "base_url": rt.BaseURL, "provider": rt.Provider,
+		"api_key": rt.APIKeyValue(), "base_url": rt.BaseURL, "provider": rt.Provider,
 		"requested_provider": rt.RequestedProvider, "api_mode": string(rt.APIMode),
 		"command": rt.Command, "args": slices.Clone(rt.Args), "credential_pool": pool,
 		"request_overrides": overrides,

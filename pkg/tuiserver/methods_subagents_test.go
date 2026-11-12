@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -122,6 +123,8 @@ func rosterTwoProfiles(t *testing.T) {
 	mkdirAll(t, bot2)
 	t.Setenv("ICEBATH_HOME", launch)
 	prevHome := wsTestSwapLaunchHome(launch)
+	prevMultiplex := provider.IsMultiplexActive(context.Background())
+	provider.SetMultiplexActive(false)
 	servedProfileMu.Lock()
 	prevServed := servedProfileHomes
 	servedProfileHomes = map[string]bool{}
@@ -131,6 +134,7 @@ func rosterTwoProfiles(t *testing.T) {
 		return state.NewSessionDB(ctx, dbPath, readOnly)
 	}
 	t.Cleanup(func() {
+		provider.SetMultiplexActive(prevMultiplex)
 		OpenSessionDBAtPath = prevOpen
 		wsTestSwapLaunchHome(prevHome)
 		servedProfileMu.Lock()

@@ -82,6 +82,13 @@ func pct(fraction float64, ok bool) string {
 	return fmt.Sprintf("%.0f%%", fraction*100)
 }
 
+// AdoptCreditsStateForTests installs a ready state the way a parsed response header does, without notices
+func (c *CreditsCapture) AdoptCreditsStateForTests(state *CreditsState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.adoptCredits(state)
+}
+
 func (c *CreditsCapture) adoptCredits(state *CreditsState) {
 	c.credits = state
 	if c.sessionStartMicros == nil {

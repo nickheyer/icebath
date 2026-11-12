@@ -58,12 +58,22 @@ var (
 // Whether an open file is a terminal the way isatty reports one
 func fileIsTTY(f *os.File) bool { return xterm.IsTerminal(f.Fd()) }
 
+// Mirroring update writer that reports whether its original stream is still a terminal
+type ttyReporter interface {
+	IsATTY() bool
+}
+
+// Mirroring update writer exposing the update log it copies every write into
+type updateLogMirror interface {
+	Log() io.Writer
+}
+
 // Whether a writer is a terminal, the original stream of a mirroring update writer included
 func writerIsTTY(w io.Writer) bool {
 	if f, ok := w.(*os.File); ok {
 		return fileIsTTY(f)
 	}
-	if s, ok := w.(interface{ IsATTY() bool }); ok {
+	if s, ok := w.(ttyReporter); ok {
 		return s.IsATTY()
 	}
 	return false
@@ -565,7 +575,7 @@ func logOnlyWrite(w io.Writer, text string) error {
 	if text == "" {
 		return nil
 	}
-	if stream, ok := w.(interface{ Log() io.Writer }); ok && stream.Log() != nil {
+	if stream, ok := w.(updateLogMirror); ok && stream.Log() != nil {
 		log := stream.Log()
 		if _, err := io.WriteString(log, text); err != nil {
 			if isKeyboardInterrupt(err) {

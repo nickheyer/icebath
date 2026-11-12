@@ -157,16 +157,34 @@ func (h *HeldInbound) HoldInboundEvent(ctx context.Context, event *gateway.Messa
 	}
 }
 
+// Adapter or queue whose held inbound a replacement adopts, the queue method promoted onto the embedding adapter
+type heldInboundCarrier interface {
+	HeldInboundQueue() *HeldInbound
+}
+
+var (
+	_ gateway.HeldInboundAdopter = (*HeldInbound)(nil)
+	_ heldInboundCarrier         = (*HeldInbound)(nil)
+)
+
+// The queue itself, so an adapter embedding it hands its queue to the adopting replacement
+func (h *HeldInbound) HeldInboundQueue() *HeldInbound { return h }
+
 // Takes over the hold queue of the replaced adapter and forwards its later holds here
-func (h *HeldInbound) AdoptHeldInbound(ctx context.Context, predecessor *HeldInbound) {
+func (h *HeldInbound) AdoptHeldInbound(ctx context.Context, source any) {
 	h.mu.Lock()
 	h.successor = weak.Pointer[HeldInbound]{}
 	h.mu.Unlock()
-	predecessor.mu.Lock()
-	predecessor.successor = weak.Make(h)
-	events := append([]*gateway.MessageEvent(nil), predecessor.events...)
-	predecessor.events = predecessor.events[:0]
-	predecessor.mu.Unlock()
+	var events []*gateway.MessageEvent
+	if carrier, ok := source.(heldInboundCarrier); ok {
+		if predecessor := carrier.HeldInboundQueue(); predecessor != nil {
+			predecessor.mu.Lock()
+			predecessor.successor = weak.Make(h)
+			events = append(events, predecessor.events...)
+			predecessor.events = predecessor.events[:0]
+			predecessor.mu.Unlock()
+		}
+	}
 	for _, event := range events {
 		h.adoptHeldEvent(ctx, event, "adopted", false)
 	}

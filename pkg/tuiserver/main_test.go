@@ -8,7 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -18,7 +20,18 @@ func TestMain(m *testing.M) {
 	runEntryTestChild()
 	runTestChild()
 	DispatchComputeHostEntry(context.Background(), func(code int) { AtExit(); os.Exit(code) })
+	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
+	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
+	tools.AsyncDelegationOwnerProbes.ProcessStartTime = func(pid int) (int64, bool) {
+		switch v := kanban.GatewayStatusProbes.ProcessStartTime(pid).(type) {
+		case int64:
+			return v, true
+		case int:
+			return int64(v), true
+		}
+		return 0, false
+	}
 	state.AdmissionMediaReferences = gateway.AdmissionMediaReferences
 	state.HostedDocumentReferences = gateway.HostedDocumentReferences
 	state.ReleaseUnheldMedia = gateway.ReleaseUnheldMediaRetainingHistory
@@ -27,6 +40,7 @@ func TestMain(m *testing.M) {
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.NousAccount = provider.NousAccountSource()
+	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	PersistPersonality = commands.PersistPersonality

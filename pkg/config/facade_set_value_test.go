@@ -16,7 +16,7 @@ func TestValidateConfigKeyKnownAndSuggested(t *testing.T) {
 	}
 	for _, key := range []string{"agent.max_turns", "discord.gateway_restart_notification", "mcp_servers.foo.command",
 		"providers.openrouter.api_key", "gateway.platforms.my_platform.extra.token", "platform_toolsets.cli"} {
-		if known, _ := validateConfigKey(key, src); !known {
+		if known, _ := ValidateConfigKey(key, src); !known {
 			t.Fatalf("%s validated as unknown", key)
 		}
 	}
@@ -26,11 +26,11 @@ func TestValidateConfigKeyKnownAndSuggested(t *testing.T) {
 		"agent.max_turn":       "agent.max_turns",
 		"platform_toolset.cli": "platform_toolsets.cli",
 	} {
-		if known, suggestion := validateConfigKey(key, src); known || !strings.Contains(suggestion, want) {
+		if known, suggestion := ValidateConfigKey(key, src); known || !strings.Contains(suggestion, want) {
 			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 		}
 	}
-	if known, _ := validateConfigKey("agent._max_turns", src); known {
+	if known, _ := ValidateConfigKey("agent._max_turns", src); known {
 		t.Fatal("a sub key typo under a known section passed")
 	}
 }
@@ -79,7 +79,7 @@ func TestValidateConfigKey(t *testing.T) {
 	t.Run("test_known_keys_pass", func(t *testing.T) {
 		for _, key := range []string{"agent.max_turns", "discord.gateway_restart_notification", "mcp_servers.foo.command",
 			"providers.openrouter.api_key", "gateway.platforms.my_platform.extra.token", "platform_toolsets.cli"} {
-			if known, _ := validateConfigKey(key, src); !known {
+			if known, _ := ValidateConfigKey(key, src); !known {
 				t.Fatalf("Expected %s to validate as known", PyRepr(key))
 			}
 		}
@@ -87,14 +87,14 @@ func TestValidateConfigKey(t *testing.T) {
 	t.Run("test_unknown_keys_with_suggestion", func(t *testing.T) {
 		for key, want := range map[string]string{"gateway.discord.gateway_restart_notification": "discord.gateway_restart_notification",
 			"disco": "discord", "agent.max_turn": "agent.max_turns", "platform_toolset.cli": "platform_toolsets.cli"} {
-			known, suggestion := validateConfigKey(key, src)
+			known, suggestion := ValidateConfigKey(key, src)
 			if known || !strings.Contains(suggestion, want) {
 				t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 			}
 		}
 	})
 	t.Run("test_underscore_only_first_segment_escapes", func(t *testing.T) {
-		if known, _ := validateConfigKey("agent._max_turns", src); known {
+		if known, _ := ValidateConfigKey("agent._max_turns", src); known {
 			t.Fatal("Sub-key typo under a known top-level key must still be flagged")
 		}
 	})

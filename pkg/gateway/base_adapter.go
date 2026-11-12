@@ -68,6 +68,7 @@ type AdapterTraits struct {
 	ServesProfilePrefix          bool
 	RequiresEditFinalize         bool
 	SupportsMessageEditing       bool
+	SupportsNativeStreaming      bool
 	SerialReceiveLoop            bool
 	MaxMessageLength             int
 	AckEmoji                     string

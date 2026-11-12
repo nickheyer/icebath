@@ -131,13 +131,15 @@ func buildContextEngine(ctx context.Context, a *AIAgent, agentCfg map[string]any
 			MinTailUserMessages: cs.MinTailUsers, TailMode: cs.TailMode, CustomProviders: providers, Env: a.env,
 		})
 	}
-	cc, native := a.contextCompressor.(*ContextCompressor)
-	if native {
+	if binder, ok := a.contextCompressor.(interface {
+		BindSessionState(db SessionStore, sessionID string) error
+	}); ok {
 		func() {
 			defer func() { _ = recover() }()
-			_ = cc.BindSessionState(a.sessionDB, a.sessionID)
+			_ = binder.BindSessionState(a.sessionDB, a.sessionID)
 		}()
 	}
+	cc, native := a.contextCompressor.(*ContextCompressor)
 	a.compressionEnabled, a.compressionInPlace = cs.Enabled, cs.InPlace
 	if cs.CheckpointRequired && cs.MicroCompact {
 		compressionLog().Warn("compression.checkpoint_required is enabled: post-turn micro-compaction is disabled for this agent so every lossy rewrite passes through the checkpoint-gated compressor.")
@@ -272,14 +274,20 @@ func initUsageState(a *AIAgent) {
 	a.apiLatencyHistory, a.apiOutputHistory = make([]float64, 0, 10), make([]int, 0, 10)
 }
 
+// Readonly config the agent sections read, the load_config_readonly init_agent imports
+var agentConfigLoader = func(ctx context.Context) (map[string]any, error) {
+	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	return map[string]any(tree), err
+}
+
 // Agent config read once for memory, skills and compression, empty with a class only warning when it fails
 func loadAgentConfig(ctx context.Context) map[string]any {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	tree, err := agentConfigLoader(ctx)
 	if err != nil {
 		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Check the active Hermes Python environment and dependencies; run 'icebath config check' after configuration imports work again.", pyErrorClass(err)))
 		return map[string]any{}
 	}
-	return map[string]any(tree)
+	return tree
 }
 
 // Constructs the agent in hermes order from routing through the primary runtime snapshot
@@ -376,7 +384,9 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 		return err
 	}
 	agentCfg := loadAgentConfig(ctx)
-	applyDisplayConfig(a, agentCfg, o.Platform)
+	if err := applyDisplayConfig(a, agentCfg, o.Platform); err != nil {
+		return err
+	}
 	a.skipMemory = o.SkipMemory
 	initMemory(ctx, a, agentCfg, o.SkipMemory, o.Platform, o.MemoryManager)
 	applyAgentSection(a, agentCfg)

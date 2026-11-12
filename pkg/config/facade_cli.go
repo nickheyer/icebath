@@ -190,7 +190,7 @@ func seqRatio(a, b []rune) float64 {
 }
 
 // Known flag and suggestion for a CLI key, the schema walk then the runtime read keys
-func validateConfigKey(key string, src ConfigCommandSources) (bool, string) {
+func ValidateConfigKey(key string, src ConfigCommandSources) (bool, string) {
 	known, suggestion := validateSchemaKey(key, src)
 	if known || key == "" {
 		return known, suggestion
@@ -255,7 +255,7 @@ func validateSchemaKey(key string, src ConfigCommandSources) (bool, string) {
 }
 
 func knownKey(key string, src ConfigCommandSources) bool {
-	ok, _ := validateConfigKey(key, src)
+	ok, _ := ValidateConfigKey(key, src)
 	return ok
 }
 
@@ -539,7 +539,7 @@ func SetConfigValue(ctx context.Context, h, key, value string, force bool, src C
 	if note != "" {
 		fmt.Fprintln(FacadeStdout, note)
 	}
-	known, suggestion := validateConfigKey(key, src)
+	known, suggestion := ValidateConfigKey(key, src)
 	if !known && !force && isWrongPrefixSuggestion(key, suggestion, src) {
 		return exitInvalid(UnknownSubkeyRefusal(key, suggestion))
 	}
@@ -685,7 +685,7 @@ func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src Co
 	}
 	fmt.Fprintln(FacadeStdout, formatConfigGetValue(value, asJSON))
 	if knownTopLevelKeys()[SplitPath(key)[0]] {
-		if known, suggestion := validateConfigKey(key, src); !known {
+		if known, suggestion := ValidateConfigKey(key, src); !known {
 			fmt.Fprintln(FacadeNoticeOut, colorize("⚠ '"+key+"' is not a recognized config key — Icebath may not read it; "+
 				"the value printed above comes from your config file.", ansiYellow))
 			if suggestion != "" {

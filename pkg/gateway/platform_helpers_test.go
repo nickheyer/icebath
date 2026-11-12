@@ -105,7 +105,11 @@ type dedupAdapter struct {
 	held     []any
 }
 
-func (a *dedupAdapter) AdoptHeldInbound(source any) { a.held = append(a.held, source) }
+func (a *dedupAdapter) AdoptHeldInbound(ctx context.Context, source any) {
+	a.held = append(a.held, source)
+}
+
+var _ HeldInboundAdopter = (*dedupAdapter)(nil)
 
 func TestCarryInboundDedupAndHeldInboundHandover(t *testing.T) {
 	old := &dedupAdapter{inbound: NewMessageDeduplicator(10, 300), Reaction: NewMessageDeduplicator(10, 300)}
@@ -118,9 +122,9 @@ func TestCarryInboundDedupAndHeldInboundHandover(t *testing.T) {
 	if !fresh.inbound.IsDuplicate("evt-1") || !fresh.Reaction.Contains("r-1") || fresh.inbound.Contains("stale") {
 		t.Fatal("replayed ids must stay suppressed on the rebuilt adapter and stale ones must not carry")
 	}
-	HandOverHeldInbound(old, fresh)
-	HandOverHeldInbound(nil, fresh)
-	HandOverHeldInbound(old, struct{}{})
+	HandOverHeldInbound(context.Background(), old, fresh)
+	HandOverHeldInbound(context.Background(), nil, fresh)
+	HandOverHeldInbound(context.Background(), old, struct{}{})
 	if len(fresh.held) != 1 || fresh.held[0] != any(old) {
 		t.Fatalf("held %v", fresh.held)
 	}

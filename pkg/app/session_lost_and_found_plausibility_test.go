@@ -42,6 +42,7 @@ func lfSchemaColumns(t *testing.T, conn state.SQLiteConn, table string) []string
 // Fresh current schema store at path
 func lfFreshStore(t *testing.T, path string) {
 	t.Helper()
+	caseHome(t)
 	db, err := state.NewSessionDB(context.Background(), path, false)
 	if err != nil {
 		t.Fatal(err)

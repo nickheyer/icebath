@@ -36,7 +36,7 @@ type adoptedAgent struct {
 }
 
 // Agent seam taking a mid turn steer
-type steerReceiver interface {
+type SteerReceiver interface {
 	Steer(text string) bool
 }
 
@@ -276,7 +276,7 @@ func receivingAgent(a *SessionAuthority, sessionID string, generation int64) any
 	if !hasAdopted || adopted.generation != generation || !isExecuting || executing != generation {
 		return nil
 	}
-	if _, ok := adopted.agent.(steerReceiver); !ok {
+	if _, ok := adopted.agent.(SteerReceiver); !ok {
 		return nil
 	}
 	return adopted.agent
@@ -299,7 +299,7 @@ func deliverSteer(a *SessionAuthority, sessionID string, generation int64, agent
 		if ticketed, ok := agent.(ticketedSteerReceiver); ok {
 			delivered = ticketed.SteerTicket(text, admissionID)
 		} else {
-			delivered = agent.(steerReceiver).Steer(text)
+			delivered = agent.(SteerReceiver).Steer(text)
 		}
 		a.mu.Lock()
 		entry.delivered[admissionID] = delivered

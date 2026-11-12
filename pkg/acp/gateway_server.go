@@ -170,6 +170,22 @@ func toolsChangedNotice(payload *pyjson.Object) string {
 	return fmt.Sprintf("Editor MCP tools changed (servers: %s); the new tool list applies from the next turn.\n", servers)
 }
 
+var (
+	_ pyacp.Connector          = (*GatewayACPAgent)(nil)
+	_ pyacp.Initializer        = (*GatewayACPAgent)(nil)
+	_ pyacp.Authenticator      = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionCreator     = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionLoader      = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionResumer     = (*GatewayACPAgent)(nil)
+	_ pyacp.Canceller          = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionForker      = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionLister      = (*GatewayACPAgent)(nil)
+	_ pyacp.Prompter           = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionModelSetter = (*GatewayACPAgent)(nil)
+	_ pyacp.SessionModeSetter  = (*GatewayACPAgent)(nil)
+	_ pyacp.ConfigOptionSetter = (*GatewayACPAgent)(nil)
+)
+
 // ACP projection of the profile gateway, it never constructs an execution owner
 type GatewayACPAgent struct {
 	loop            *coLoop

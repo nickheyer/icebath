@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -662,5 +664,71 @@ func TestConnectionRespondIgnoresOutcomeClaimsAndRejectsStrangers(t *testing.T) 
 		"result": map[string]any{"targets": []any{map[string]any{"name": "gmail", "status": "skipped"}}}})
 	if code := rpcCode(foreign); code != 4001 {
 		t.Fatalf("foreign %v", foreign)
+	}
+}
+
+// Guest auth state of one home whose held connectors bearer names that home to the double
+func ticketGuestHome(t *testing.T, h, token, portal string) {
+	t.Helper()
+	if _, err := provider.NewStore(h).SaveActiveProviderState("nous", map[string]any{"auth_method": "anonymous",
+		"account_tier": "anonymous", "anon_token": "anon_" + token, "access_token": token,
+		"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339), "portal_base_url": portal}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSecondaryTicketRunsConnectorsAndBillingInItsOwnProfile(t *testing.T) {
+	launch, bee := wsLegacyHomes(t)
+	var mu sync.Mutex
+	var seen [][2]string
+	homes := map[string]string{"Bearer launch-token": "launch", "Bearer bee-token": "bee"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var label string
+		var reply any
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/v1/connectors"):
+			label, reply = "list", map[string]any{"items": []any{}}
+		case strings.Contains(r.URL.Path, "charge"):
+			label, reply = "charge", map[string]any{"chargeId": "c"}
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		seen = append(seen, [2]string{label, homes[r.Header.Get("Authorization")]})
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(reply)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ICEBATH_SHARED_AUTH_DIR", t.TempDir())
+	t.Setenv("CONNECTOR_GATEWAY_URL", srv.URL)
+	if err := os.WriteFile(filepath.Join(bee, ".env"), []byte("CONNECTOR_GATEWAY_URL="+srv.URL+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ticketGuestHome(t, launch, "launch-token", srv.URL)
+	ticketGuestHome(t, bee, "bee-token", srv.URL)
+	calls := []struct {
+		method string
+		params map[string]any
+	}{{"connectors.list", map[string]any{"owner": map[string]any{"type": "account"}}}, {"billing.charge", map[string]any{"amount_usd": 5}}}
+	for _, call := range calls {
+		wsLegacyCall(t, context.Background(), wsLegacyActor(bee), call.method, call.params)
+	}
+	mu.Lock()
+	labels, homesSeen := map[string]bool{}, map[string]bool{}
+	for _, row := range seen {
+		labels[row[0]], homesSeen[row[1]] = true, true
+	}
+	if len(labels) != 2 || !labels["list"] || !labels["charge"] || len(homesSeen) != 1 || !homesSeen["bee"] {
+		t.Fatalf("seen %v", seen)
+	}
+	seen = nil
+	mu.Unlock()
+	wsLegacyCall(t, context.Background(), wsLegacyActor(launch), "billing.charge", map[string]any{"amount_usd": 5})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 1 || seen[0][1] != "launch" {
+		t.Fatalf("launch ticket seen %v", seen)
 	}
 }

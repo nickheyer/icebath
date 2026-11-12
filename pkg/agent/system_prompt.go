@@ -71,6 +71,8 @@ var (
 	buildEnvironmentHintsFn   = BuildEnvironmentHints
 	buildContextFilesPromptFn = BuildContextFilesPrompt
 	buildSkillsSystemPromptFn = (*skills.Scope).BuildSkillsSystemPrompt
+	codingSystemPromptPartsFn = tools.CodingSystemPromptParts
+	renderPromptSectionsFn    = plugins.RenderSystemPromptSections
 	hermesNow                 = config.TimeNow
 	hermesTimezone            = config.TimeZone
 	safeStrftime              = config.SafeStrftime
@@ -87,6 +89,8 @@ var (
 const tuiEmbeddedPaneClarifierText = " You're in its embedded terminal pane, beside the GUI chat — the user can " +
 	"select your output (Option-drag on macOS, Shift-drag elsewhere) and press " +
 	"Cmd/Ctrl+L to send it to the chat composer."
+
+func systemPromptLog() *slog.Logger { return slog.Default().With("logger", "agent.system_prompt") }
 
 // Reports whether an environment variable holds one of the shared truthy strings
 func envTruthy(name string) bool {
@@ -237,14 +241,14 @@ func renderPluginPromptSections(ctx context.Context, a *AIAgent) (rendered []plu
 			panic(r)
 		}
 		if len(a.pluginSectionsPrevious) > 0 {
-			slog.Warn(fmt.Sprintf("Plugin system prompt sections failed to re-render (%v); keeping the previous frozen sections", r))
+			systemPromptLog().Warn(fmt.Sprintf("Plugin system prompt sections failed to re-render (%v); keeping the previous frozen sections", r))
 			rendered = a.pluginSectionsPrevious
 			return
 		}
-		slog.Warn(fmt.Sprintf("Plugin system prompt sections could not be rendered: %v", r))
+		systemPromptLog().Warn(fmt.Sprintf("Plugin system prompt sections could not be rendered: %v", r))
 		rendered = nil
 	}()
-	return plugins.RenderSystemPromptSections(ctx, pluginSessionInfo(ctx, a))
+	return renderPromptSectionsFn(ctx, pluginSessionInfo(ctx, a))
 }
 
 // Recovers frozen section bytes from the exact canonical container that precedes the conversation start line
@@ -479,7 +483,7 @@ func autoLoadParts(ctx context.Context, a *AIAgent) []string {
 			res.prompt, res.loaded, res.missing = scope.BuildAutoLoadPrompt(sctx, a.sessionID, nil)
 		}
 		if len(res.missing) > 0 {
-			slog.Warn("skills.auto_load: skill(s) not found or disabled, skipped: " + strings.Join(res.missing, ", "))
+			systemPromptLog().Warn("skills.auto_load: skill(s) not found or disabled, skipped: " + strings.Join(res.missing, ", "))
 		}
 		a.autoLoadSkillsResult, a.autoLoadSkillsResolved = res, true
 	}
@@ -872,7 +876,7 @@ func sessionPrompt(a *AIAgent) string {
 	}
 	row, err := a.sessionDB.GetSession(context.Background(), a.sessionID)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("workspace snapshot: session row read failed (session=%s)", a.sessionID), "err", err)
+		systemPromptLog().Debug(fmt.Sprintf("workspace snapshot: session row read failed (session=%s)", a.sessionID), "err", err)
 		return ""
 	}
 	if row == nil {
@@ -915,7 +919,7 @@ func codingParts(a *AIAgent) ([]string, []string, []string) {
 		block := pin.block
 		replay = &block
 	}
-	prefix, workspace, trailing := tools.CodingSystemPromptParts(a.env, a.platform, cwd, a.model, a.validToolNames, replay)
+	prefix, workspace, trailing := codingSystemPromptPartsFn(a.env, a.platform, cwd, a.model, a.validToolNames, replay)
 	if replay == nil {
 		block := ""
 		if len(workspace) > 0 {
@@ -1074,7 +1078,7 @@ func ReconstructStaticPrefix(ctx context.Context, a *AIAgent, systemMessage *str
 		return
 	}
 	if err != nil {
-		slog.Debug("static system-prefix reconstruction failed on "+logLabel, "err", err)
+		systemPromptLog().Debug("static system-prefix reconstruction failed on "+logLabel, "err", err)
 	}
 	a.cachedSystemPromptStatic, a.staticRebuildFailedFor = "", stored
 }

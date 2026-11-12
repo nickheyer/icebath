@@ -3,9 +3,9 @@
 package tuigateway
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"golang.org/x/sys/unix"
 )
 
@@ -22,7 +22,7 @@ func stdinNonblock() bool {
 func stdinFlagParts() []string {
 	flags, err := unix.FcntlInt(0, unix.F_GETFL, 0)
 	if err != nil {
-		return []string{fmt.Sprintf("F_GETFL error: %s", err)}
+		return []string{"F_GETFL error: " + pypath.OSErrorText(err)}
 	}
 	if flags&unix.O_NONBLOCK != 0 {
 		return []string{"O_NONBLOCK=1"}

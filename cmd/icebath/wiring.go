@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
@@ -42,6 +43,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
+)
+
+var _ gateway.NativeStreamAdapter = (*wecom.Streamer)(nil)
+
+var (
+	_ gateway.SteerReceiver       = (*agent.AIAgent)(nil)
+	_ gateway.RedirectReceiver    = (*agent.AIAgent)(nil)
+	_ acp.ReasoningCallbackSetter = (*agent.AIAgent)(nil)
 )
 
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
@@ -176,6 +185,7 @@ func installProcessWiring() {
 	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
 	tuiserver.MintDisplayTicket, tuiserver.DisplayAdmissionOf = dashboard.MintWSTicket, dashboard.SocketAdmission
 	tuiserver.ShareNousDiagnostics, tuiserver.RedactDebugSupportText = selfupdate.ShareNousDiagnostics, selfupdate.RedactDebugSupportTextCapped
+	tuiserver.WriteProfileModel = dashboard.WriteProfileModel
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt

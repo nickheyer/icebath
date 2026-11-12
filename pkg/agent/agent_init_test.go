@@ -196,3 +196,14 @@ func TestResolveNoOverrideKeepsGlobal(t *testing.T) {
 		t.Fatalf("%v %v", effective, notice)
 	}
 }
+
+func TestContextRouteMismatchEmptyActiveProviderReadsAsOpenrouter(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ctx := context.Background()
+	if !contextRouteMismatch(ctx, "", "", "anthropic", "", false) {
+		t.Fatal("an empty active provider normalizes to openrouter, a different provider than anthropic")
+	}
+	if contextRouteMismatch(ctx, "", "", "openrouter", "", false) {
+		t.Fatal("an empty active provider is openrouter")
+	}
+}

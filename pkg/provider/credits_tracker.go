@@ -1007,6 +1007,13 @@ var (
 	creditsGo            = func(fn func()) { go fn() }
 )
 
+// SwapCreditsWarmForTests replaces the background pricing warm of a capture, returning the restore
+func SwapCreditsWarmForTests(warm func(context.Context)) func() {
+	prev := creditsWarmPricingFn
+	creditsWarmPricingFn = warm
+	return func() { creditsWarmPricingFn = prev }
+}
+
 func creditsCtx() context.Context {
 	return home.WithOverride(context.Background(), home.Process())
 }

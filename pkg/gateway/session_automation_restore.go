@@ -93,7 +93,7 @@ func restoreLocalAutomation(ctx context.Context, a *SessionAuthority, ref Sessio
 	event.Source, event.Internal, event.MessageID = live.Source, true, &messageID
 	event.Metadata = map[string]any{"gateway_session_key": live.Route, "gateway_session_id": entry.SessionID}
 	get := func(key string) (any, bool) { return descriptor.Get(key) }
-	for _, build := range []func(func(string) (any, bool)) (*pyjson.Object, error){automationNotificationMetadata, automationDisplayMetadata} {
+	for _, build := range []func(func(string) (any, bool)) (*pyjson.Object, error){automationNotificationMetadata, AutomationDisplayMetadata} {
 		part, err := build(get)
 		if err != nil {
 			return nil, err

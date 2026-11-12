@@ -24,7 +24,7 @@ func publisherLog() *slog.Logger {
 // Back socket to the dashboard that mirrors every emit, never blocking the agent loop on the sidecar
 type WsPublisherTransport struct {
 	lock   sync.Mutex
-	ws     *websocket.Conn
+	ws     *publisherConn
 	dead   atomic.Bool
 	queue  chan *string
 	worker chan struct{}
@@ -42,7 +42,7 @@ func NewWsPublisherTransport(url string, connectTimeout time.Duration) *WsPublis
 		t.dead.Store(true)
 		return t
 	}
-	t.ws = conn
+	t.ws = newPublisherConn(conn)
 	t.worker = make(chan struct{})
 	go t.drain()
 	return t
@@ -59,7 +59,7 @@ func (t *WsPublisherTransport) drain() {
 		ws := t.ws
 		var err error
 		if ws != nil {
-			err = ws.WriteMessage(websocket.TextMessage, []byte(*item))
+			err = ws.send(*item)
 		}
 		if err != nil {
 			publisherLog().Debug(fmt.Sprintf("event publisher write failed: %s", err))
@@ -112,18 +112,6 @@ func (t *WsPublisherTransport) Close() {
 	if t.ws == nil {
 		return
 	}
-	func() {
-		defer func() { _ = recover() }()
-		deadline := time.Now().Add(10 * time.Second)
-		if t.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), deadline) == nil {
-			_ = t.ws.SetReadDeadline(deadline)
-			for {
-				if _, _, err := t.ws.NextReader(); err != nil {
-					break
-				}
-			}
-		}
-		_ = t.ws.Close()
-	}()
+	t.ws.close()
 	t.ws = nil
 }

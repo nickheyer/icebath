@@ -95,7 +95,7 @@ func TestBuildSkillsSystemPromptExcludesDisabledSkills(t *testing.T) {
 	}
 }
 
-func TestBuildSkillsSystemPromptRebuildsWhenDisabledSkillsChange(t *testing.T) {
+func TestRebuildsPromptWhenDisabledSkillsChange(t *testing.T) {
 	s, h := indexScope(t)
 	writeIndexSkill(t, filepath.Join(h, "skills"), "tools/cached-skill", "---\nname: cached-skill\ndescription: Cached skill\n---\n")
 	if !strings.Contains(buildIndex(t, s, SkillsPromptOptions{}), "cached-skill") {
@@ -108,30 +108,40 @@ func TestBuildSkillsSystemPromptRebuildsWhenDisabledSkillsChange(t *testing.T) {
 }
 
 func TestSkillShouldShow(t *testing.T) {
-	empty := map[string][]string{"fallback_for_toolsets": nil, "requires_toolsets": nil, "fallback_for_tools": nil, "requires_tools": nil}
-	if !skillShouldShow(map[string][]string{}, nil, nil, "") {
-		t.Fatal("no filter info must show")
-	}
-	if !skillShouldShow(empty, map[string]bool{"web_search": true}, map[string]bool{"web": true}, "") {
-		t.Fatal("empty conditions must show")
-	}
-	req := map[string][]string{"requires_toolsets": {"terminal"}}
-	if skillShouldShow(req, map[string]bool{}, map[string]bool{}, "") {
-		t.Fatal("missing required toolset must hide")
-	}
+	t.Run("test_no_filter_info_always_shows", func(t *testing.T) {
+		if !skillShouldShow(map[string][]string{}, nil, nil, "") {
+			t.Fatal("no filter info must show")
+		}
+	})
+	t.Run("test_empty_conditions_always_shows", func(t *testing.T) {
+		empty := map[string][]string{"fallback_for_toolsets": nil, "requires_toolsets": nil, "fallback_for_tools": nil, "requires_tools": nil}
+		if !skillShouldShow(empty, map[string]bool{"web_search": true}, map[string]bool{"web": true}, "") {
+			t.Fatal("empty conditions must show")
+		}
+	})
+	t.Run("test_requires_hidden_when_toolset_missing", func(t *testing.T) {
+		req := map[string][]string{"requires_toolsets": {"terminal"}}
+		if skillShouldShow(req, map[string]bool{}, map[string]bool{}, "") {
+			t.Fatal("missing required toolset must hide")
+		}
+	})
 }
 
 func TestBuildSkillsSystemPromptConditional(t *testing.T) {
-	s, h := indexScope(t)
-	writeIndexSkill(t, filepath.Join(h, "skills"), "iot/openhue", "---\nname: openhue\ndescription: Hue lights\nmetadata:\n  hermes:\n    requires_toolsets: [terminal]\n---\n")
-	if out := buildIndex(t, s, SkillsPromptOptions{AvailableTools: map[string]bool{}, AvailableToolsets: map[string]bool{}}); strings.Contains(out, "openhue") {
-		t.Fatal(out)
-	}
-	s2, h2 := indexScope(t)
-	writeIndexSkill(t, filepath.Join(h2, "skills"), "search/duckduckgo", "---\nname: duckduckgo\ndescription: Free web search\nmetadata:\n  hermes:\n    fallback_for_toolsets: [web]\n---\n")
-	if out := buildIndex(t, s2, SkillsPromptOptions{}); !strings.Contains(out, "duckduckgo") {
-		t.Fatal(out)
-	}
+	t.Run("test_requires_skill_hidden_when_toolset_missing", func(t *testing.T) {
+		s, h := indexScope(t)
+		writeIndexSkill(t, filepath.Join(h, "skills"), "iot/openhue", "---\nname: openhue\ndescription: Hue lights\nmetadata:\n  hermes:\n    requires_toolsets: [terminal]\n---\n")
+		if out := buildIndex(t, s, SkillsPromptOptions{AvailableTools: map[string]bool{}, AvailableToolsets: map[string]bool{}}); strings.Contains(out, "openhue") {
+			t.Fatal(out)
+		}
+	})
+	t.Run("test_no_args_shows_all_skills", func(t *testing.T) {
+		s2, h2 := indexScope(t)
+		writeIndexSkill(t, filepath.Join(h2, "skills"), "search/duckduckgo", "---\nname: duckduckgo\ndescription: Free web search\nmetadata:\n  hermes:\n    fallback_for_toolsets: [web]\n---\n")
+		if out := buildIndex(t, s2, SkillsPromptOptions{}); !strings.Contains(out, "duckduckgo") {
+			t.Fatal(out)
+		}
+	})
 }
 
 func TestSessionPlatformGate(t *testing.T) {

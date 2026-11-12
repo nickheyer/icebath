@@ -51,9 +51,7 @@ func (a *RelayAdapter) Disconnect(ctx context.Context) error {
 	if a.transport == nil {
 		return ctx.Err()
 	}
-	if idler, ok := a.transport.(interface {
-		GoIdle(ctx context.Context, timeoutS float64) bool
-	}); ok {
+	if idler, ok := a.transport.(relayIdler); ok {
 		idler.GoIdle(ctx, relayGoIdleOnDisconnectTimeoutS)
 	}
 	remaining := math.Max(0, budget-time.Since(started).Seconds())
@@ -65,9 +63,7 @@ func (a *RelayAdapter) Disconnect(ctx context.Context) error {
 
 // Quiesces the relay for a scale to zero suspend with the reconnect path left armed
 func (a *RelayAdapter) GoDormant(ctx context.Context) (bool, error) {
-	dormant, ok := a.transport.(interface {
-		GoDormant(ctx context.Context, timeoutS float64) bool
-	})
+	dormant, ok := a.transport.(relayDormantTransport)
 	if !ok {
 		return false, nil
 	}
@@ -76,7 +72,7 @@ func (a *RelayAdapter) GoDormant(ctx context.Context) (bool, error) {
 
 // Parks the transport's reconnect supervisor, false when it did not take
 func (a *RelayAdapter) HoldRedial() bool {
-	holder, ok := a.transport.(interface{ HoldRedial() })
+	holder, ok := a.transport.(relayRedialHolder)
 	if !ok {
 		return false
 	}
@@ -85,7 +81,7 @@ func (a *RelayAdapter) HoldRedial() bool {
 
 // Undoes a hold when the suspend did not land, false when it did not take
 func (a *RelayAdapter) ReleaseRedial() bool {
-	releaser, ok := a.transport.(interface{ ReleaseRedial() })
+	releaser, ok := a.transport.(relayRedialReleaser)
 	if !ok {
 		return false
 	}

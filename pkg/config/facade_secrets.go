@@ -14,7 +14,7 @@ import (
 )
 
 // Reads an env name through the registered secret scope, the plain process env when none is registered
-func scopedEnvironGet(ctx context.Context, key string) (string, bool, error) {
+func ScopedEnvironGet(ctx context.Context, key string) (string, bool, error) {
 	if fn := hooks().ScopedSecret; fn != nil {
 		return fn(ctx, key)
 	}
@@ -24,7 +24,7 @@ func scopedEnvironGet(ctx context.Context, key string) (string, bool, error) {
 
 // Value from the scoped process env, else the home .env, a failed scoped read returned as an error
 func GetEnvValue(ctx context.Context, h, key string) (string, bool, error) {
-	v, ok, err := scopedEnvironGet(ctx, key)
+	v, ok, err := ScopedEnvironGet(ctx, key)
 	if err != nil || ok {
 		return v, ok, err
 	}
@@ -36,7 +36,7 @@ func GetEnvValue(ctx context.Context, h, key string) (string, bool, error) {
 func GetEnvValuePreferDotenv(ctx context.Context, h, key string) (string, error) {
 	raw := LoadEnv(h)[key]
 	if strings.HasPrefix(strings.TrimLeft(raw, " \t\n\r\v\f"), "op://") {
-		scoped, _, err := scopedEnvironGet(ctx, key)
+		scoped, _, err := ScopedEnvironGet(ctx, key)
 		if err != nil {
 			return "", err
 		}
@@ -47,7 +47,7 @@ func GetEnvValuePreferDotenv(ctx context.Context, h, key string) (string, error)
 	if raw != "" {
 		return raw, nil
 	}
-	v, _, err := scopedEnvironGet(ctx, key)
+	v, _, err := ScopedEnvironGet(ctx, key)
 	return v, err
 }
 

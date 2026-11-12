@@ -247,7 +247,7 @@ func TestAuxiliaryClientProviderPriorityCustomEndpointWhenNoNous(t *testing.T) {
 	auxFixedPoolEntry(t, false, nil)
 	ppNoRegistryNoNousRuntime(t)
 	prevCustom := auxResolveCustomRuntimeFn
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) {
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) {
 		return "http://localhost:1234/v1", "local-key", "openai-compatible", nil
 	}
 	t.Cleanup(func() { auxResolveCustomRuntimeFn = prevCustom })

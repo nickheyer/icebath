@@ -145,8 +145,10 @@ func TestToolStartClosesAPrefixWhoseSeparatorFellInTheHole(t *testing.T) {
 		return map[string]any{"pending": []any{map[string]any{"admission_id": "adm-1", "status": "started"}}}, true, nil
 	}
 	a, _ := makeScriptedAgent(t, client, gatewayAgentOptions{
-		StreamDeltaCallback:  func(text any) { output = append(output, text) },
-		ToolProgressCallback: func(string, string, string, map[string]any, map[string]any) { output = append(output, []string{"<tool>"}) }})
+		StreamDeltaCallback: func(text any) { output = append(output, text) },
+		ToolProgressCallback: func(string, string, string, map[string]any, map[string]any) {
+			output = append(output, []string{"<tool>"})
+		}})
 	if runTurnWithin(a, "q", 5*time.Second, agent.RunConversationOptions{}) == nil {
 		t.Fatal("the turn did not finish")
 	}

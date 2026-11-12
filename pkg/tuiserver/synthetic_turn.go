@@ -60,22 +60,19 @@ func (a *SyntheticHeavyAgent) Close() { a.interrupt.Set() }
 // Whether the turn has stream consumers, always true for the synthetic loop
 func (a *SyntheticHeavyAgent) HasStreamConsumers() bool { return true }
 
-// Python float of a spec value, false when it cannot convert
-func synthFloat(v any) (float64, bool) {
-	f, err := pyFloat(v)
-	return f, err == nil
-}
-
-// Python int of a spec value truncating floats, false when it cannot convert
-func synthInt(v any) (int64, bool) {
-	if f, isFloat := v.(float64); isFloat {
-		if math.IsInf(f, 0) || math.IsNaN(f) {
-			return 0, false
-		}
-		return int64(f), true
+// Python int of a spec value with the int() error, a value past int64 saturating at its bound
+func synthInt(v any) (int64, error) {
+	n, err := pyint.Of(v)
+	if err != nil {
+		return 0, err
 	}
-	n, err := pyint.Int64(v)
-	return n, err == nil
+	if !n.IsInt64() {
+		if n.Sign() < 0 {
+			return math.MinInt64, nil
+		}
+		return math.MaxInt64, nil
+	}
+	return n.Int64(), nil
 }
 
 // Intensity spec of a turn from a JSON object prompt, env and built in defaults filling every absent key
@@ -93,20 +90,14 @@ func parseSynthSpec(message any) (synthSpec, error) {
 		if !present {
 			return def(), nil
 		}
-		if f, ok := synthFloat(raw); ok {
-			return f, nil
-		}
-		return 0, fmt.Errorf("could not convert %s to float: %s", key, pyrepr.Repr(raw))
+		return pyFloat(raw)
 	}
 	intField := func(key string, def func() int64) (int64, error) {
 		raw, present := spec[key]
 		if !present {
 			return def(), nil
 		}
-		if n, ok := synthInt(raw); ok {
-			return n, nil
-		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(raw))
+		return synthInt(raw)
 	}
 	var out synthSpec
 	var err error

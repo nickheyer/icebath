@@ -152,11 +152,11 @@ func TestGatewayMultiplexKeysAreRecognizedConfigKeys(t *testing.T) {
 		t.Fatal("gateway.auto_migrate is a default")
 	}
 	for _, key := range []string{"gateway.multiplex_profiles", "gateway.profile_routes", "gateway.auto_multiplex_migration"} {
-		if known, suggestion := validateConfigKey(key, src); !known || suggestion != "" {
+		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
 			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 		}
 	}
-	if known, suggestion := validateConfigKey("gateway.auto_migrate", src); known || suggestion != "gateway.auto_multiplex_migration" {
+	if known, suggestion := ValidateConfigKey("gateway.auto_migrate", src); known || suggestion != "gateway.auto_multiplex_migration" {
 		t.Fatalf("gateway.auto_migrate known %v suggestion %q", known, suggestion)
 	}
 }
@@ -170,11 +170,11 @@ func TestEmptyDictDefaultSectionsAreOpenContainers(t *testing.T) {
 		}
 	}
 	for _, key := range []string{"compression.model_thresholds.gpt-5", "terminal.docker_env.FOO", "lsp.servers.python.command", "auxiliary.vision.extra_body.reasoning"} {
-		if known, suggestion := validateConfigKey(key, src); !known || suggestion != "" {
+		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
 			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 		}
 	}
-	if known, suggestion := validateConfigKey("compression.model_threshold.gpt-5", src); known || suggestion != "compression.model_thresholds" {
+	if known, suggestion := ValidateConfigKey("compression.model_threshold.gpt-5", src); known || suggestion != "compression.model_thresholds" {
 		t.Fatalf("typo known %v suggestion %q", known, suggestion)
 	}
 }
@@ -182,7 +182,7 @@ func TestEmptyDictDefaultSectionsAreOpenContainers(t *testing.T) {
 func TestLspRootPolicyKeysAreRecognizedAndOffByDefault(t *testing.T) {
 	src := pathCommandSources()
 	for _, key := range []string{"lsp.warmup_timeout", "lsp.broken_retry_seconds", "lsp.exclude_roots"} {
-		if known, suggestion := validateConfigKey(key, src); !known || suggestion != "" {
+		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
 			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 		}
 	}

@@ -14,9 +14,28 @@ func tempHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
+	isolateMirroredEnv(t)
 	SetCLIConfig(nil)
 	t.Cleanup(func() { SetCLIConfig(nil) })
 	return dir
+}
+
+// Unsets every env var the config loader mirrors for one case and restores the earlier values after it
+func isolateMirroredEnv(t *testing.T) {
+	t.Helper()
+	names := []string{"BROWSER_INACTIVITY_TIMEOUT", "ICEBATH_REDACT_SECRETS", "ICEBATH_CJK_FTS", "ICEBATH_SEARCH_SLOW_MS"}
+	for _, pair := range terminalEnvMappings() {
+		names = append(names, pair[1])
+	}
+	for _, task := range auxiliaryTaskEnv {
+		for _, field := range task.fields {
+			names = append(names, field[1])
+		}
+	}
+	for _, name := range names {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
 }
 
 func TestResolvePrefillMessagesFileUsesTopLevel(t *testing.T) {

@@ -55,8 +55,17 @@ func linesWith(lines []string, fragment string) []string {
 
 func tr(key string, kw map[string]any) string { return i18n.T(context.Background(), key, "", kw) }
 
+// Gives the case its own home when it has not made one yet
+func caseHome(t *testing.T) {
+	t.Helper()
+	if os.Getenv("ICEBATH_HOME") == "" {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+	}
+}
+
 func freshI18n(t *testing.T) {
 	t.Helper()
+	caseHome(t)
 	i18n.ResetLanguageCache()
 	t.Cleanup(i18n.ResetLanguageCache)
 }

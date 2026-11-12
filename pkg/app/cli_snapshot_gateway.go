@@ -125,7 +125,8 @@ func (c *CLI) rejoinAfterSnapshot(store *gatewaycli.GatewaySessionStore) (err er
 	drained := store.Connection
 	store.Connection = gatewaycli.SharedGatewayConnection()
 	key, _ := drained.LaunchKey()
-	store.Connection.SetLaunchKey(key, false)
+	_, typed := store.Connection.LaunchKey()
+	store.Connection.SetLaunchKey(key, typed)
 	return c.rejoinCLI(store)
 }
 

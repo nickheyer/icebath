@@ -14,6 +14,24 @@ type systemPromptInvalidator interface {
 
 var _ systemPromptInvalidator = (*agent.AIAgent)(nil)
 
+// Each accessor the helpers below read off a session agent, pinned on the real agent
+var _ interface {
+	Model() string
+	Provider() string
+	BaseURL() string
+	APIMode() string
+	APIKey() string
+	SessionID() string
+	EnabledToolsets() []string
+	DisabledToolsets() []string
+	SessionDB() *state.DB
+	SessionDBCreated() bool
+	CachedSystemPrompt() string
+	ToolDefs() []map[string]any
+	ContextCompressor() agent.ContextEngine
+	CompressionEnabled() bool
+} = (*agent.AIAgent)(nil)
+
 // Model of a session agent, empty when the agent exposes none
 func agentModel(a any) string {
 	if m, ok := a.(interface{ Model() string }); ok {

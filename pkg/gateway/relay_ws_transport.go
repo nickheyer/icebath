@@ -53,6 +53,50 @@ type RelayTransportConn interface {
 	SendFollowUp(ctx context.Context, action map[string]any, platform string) (map[string]any, error)
 }
 
+// Optional transport capabilities the relay adapter probes with getattr in Python
+type (
+	relayDescriptorSource interface {
+		DescriptorForPlatform(platform string) any
+	}
+	relayIdler interface {
+		GoIdle(ctx context.Context, timeoutS float64) bool
+	}
+	relayDormantTransport interface {
+		GoDormant(ctx context.Context, timeoutS float64) bool
+	}
+	relayRedialHolder interface {
+		HoldRedial()
+	}
+	relayRedialReleaser interface {
+		ReleaseRedial()
+	}
+	relayInterruptHandlerSetter interface {
+		SetInterruptInboundHandler(handler RelayInterruptHandler)
+	}
+	relayPassthroughHandlerSetter interface {
+		SetPassthroughHandler(handler RelayPassthroughHandler)
+	}
+	relayRevocationSource interface {
+		AuthRevoked() bool
+	}
+	relayIdentityLister interface {
+		RelayIdentities() any
+	}
+)
+
+var (
+	_ RelayTransportConn            = (*WebSocketRelayTransport)(nil)
+	_ relayDescriptorSource         = (*WebSocketRelayTransport)(nil)
+	_ relayIdler                    = (*WebSocketRelayTransport)(nil)
+	_ relayDormantTransport         = (*WebSocketRelayTransport)(nil)
+	_ relayRedialHolder             = (*WebSocketRelayTransport)(nil)
+	_ relayRedialReleaser           = (*WebSocketRelayTransport)(nil)
+	_ relayInterruptHandlerSetter   = (*WebSocketRelayTransport)(nil)
+	_ relayPassthroughHandlerSetter = (*WebSocketRelayTransport)(nil)
+	_ relayRevocationSource         = (*WebSocketRelayTransport)(nil)
+	_ relayIdentityLister           = (*WebSocketRelayTransport)(nil)
+)
+
 // One shot settable value a waiter can block on
 type relayFuture[T any] struct {
 	once sync.Once

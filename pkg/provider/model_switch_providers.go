@@ -311,6 +311,11 @@ func PrewarmPickerCacheAsync(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				modelsLog.Debug("picker cache prewarm failed", "error", r)
+			}
+		}()
 		pc, err := loadPickerContext(ctx)
 		if err != nil {
 			modelsLog.Debug("picker cache prewarm failed", "error", err)

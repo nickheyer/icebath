@@ -103,7 +103,9 @@ func (a *GatewayAgent) onInterim(payload map[string]any, streamCallback func(str
 		shown = pyrepr.Str(text)
 	}
 	a.currentTurn().seen[pystr.Strip(shown)] = true
-	if pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "" {
+	if cb := a.opts.InterimAssistantCallback; cb != nil {
+		cb(text, pyrepr.Truthy(payload["already_streamed"]))
+	} else if pyrepr.Truthy(text) && pystr.Strip(pyrepr.Str(text)) != "" {
 		a.emitPrint(pyrepr.Str(text))
 	}
 }

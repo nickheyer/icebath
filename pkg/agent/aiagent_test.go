@@ -189,11 +189,13 @@ func (e *recEngine) OnSessionStart(id string, kw map[string]any) {
 func (e *recEngine) CarryOverNewSessionContext(o, n string) {
 	e.calls = append(e.calls, "carry "+o+" "+n)
 }
-func (e *recEngine) BindSessionState(db *state.DB, id string) error {
+func (e *recEngine) BindSessionState(db SessionStore, id string) error {
 	e.bound = id
 	return nil
 }
 func (e *recEngine) BoundSessionID() string { return e.bound }
+
+var _ engineSessionBinder = (*recEngine)(nil)
 
 func TestTransitionContextEngineSessionOrder(t *testing.T) {
 	e := &recEngine{}

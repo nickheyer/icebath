@@ -50,7 +50,7 @@ func TestGetTextAuxiliaryClientCustomEndpointUsesCodexWrapperWhenRuntimeRequests
 	t.Setenv("OPENROUTER_API_KEY", "")
 	auxFixedPoolEntry(t, false, nil)
 	prevCustom, prevNous, prevMain := auxResolveCustomRuntimeFn, auxResolveNousRuntimeAPIFn, auxReadMainModel
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) {
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) {
 		return "https://api.openai.com/v1", "sk-test", "codex_responses", nil
 	}
 	auxResolveNousRuntimeAPIFn = func(context.Context, bool, string) (string, string, bool) { return "", "", false }

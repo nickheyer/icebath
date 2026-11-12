@@ -608,7 +608,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 		row := objMap(r)
 		role := row["role"]
 		roleText, _ := role.(string)
-		msg := map[string]any{"role": role, "content": loadedViewContent(roleText, decodeMessageContent(row["content"])), DBPersistedMarker: true}
+		msg := map[string]any{"role": role, "content": loadedViewContent(roleText, plainDictTree(decodeMessageContent(row["content"]))), DBPersistedMarker: true}
 		if stampSnapshot {
 			msg[DBRowSnapshot] = TranscriptRowSnapshot(row)
 		}
@@ -640,7 +640,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 			if err != nil {
 				return nil, err
 			}
-			msg["tool_calls"] = calls
+			msg["tool_calls"] = plainDictTree(calls)
 		}
 		if pyTruthy(row["platform_message_id"]) {
 			msg["message_id"] = row["platform_message_id"]
@@ -664,7 +664,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 					if err != nil {
 						return nil, err
 					}
-					msg[col] = v
+					msg[col] = plainDictTree(v)
 				}
 			}
 			if seqTruthy(msg["tool_calls"]) {

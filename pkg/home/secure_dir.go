@@ -48,7 +48,7 @@ func ManagedSystem(ctx context.Context, h string) string {
 }
 
 // Operator chmod skip or container signal that leaves directory modes to the deployment
-func containerOrChmodSkipped() bool {
+func ContainerOrChmodSkipped() bool {
 	if os.Getenv("ICEBATH_CONTAINER") != "" || os.Getenv("ICEBATH_SKIP_CHMOD") != "" {
 		return true
 	}
@@ -112,7 +112,7 @@ func ApplySecureDirPolicy(ctx context.Context, path, h string) {
 		return
 	}
 	explicit := pystr.Strip(os.Getenv("ICEBATH_HOME_MODE"))
-	if containerOrChmodSkipped() && explicit == "" {
+	if ContainerOrChmodSkipped() && explicit == "" {
 		chownToIcebathUID(path)
 		return
 	}

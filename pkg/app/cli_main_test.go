@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -92,8 +94,37 @@ func resetProcessState(t *testing.T) {
 	handedOffSessionIDs = map[string]bool{}
 	sessionIDSetsMu.Unlock()
 	t.Setenv("ICEBATH_EXIT_WATCHDOG_S", "0")
-	t.Setenv("ICEBATH_KANBAN_TASK", "")
-	_ = os.Unsetenv("ICEBATH_KANBAN_TASK")
+	for _, name := range []string{"ICEBATH_KANBAN_TASK", "ICEBATH_SINGLE_QUERY_SESSION"} {
+		t.Setenv(name, "")
+		_ = os.Unsetenv(name)
+	}
+}
+
+// Makes a scripted gateway the owner every connection of the case dials, creates answered with the scripted session
+func installScriptedGateway(t *testing.T, client *scriptedClient) {
+	t.Helper()
+	client.t = t
+	client.events = gateway.NewEventQueue(0)
+	inner := client.override
+	client.override = func(method string, params map[string]any) (any, bool, error) {
+		if inner != nil {
+			if answer, handled, err := inner(method, params); handled {
+				return answer, handled, err
+			}
+		}
+		if method == "session.create" || method == "session.resume" {
+			client.record(method, params)
+			return storeSnapshot(scriptSID), true, nil
+		}
+		return nil, false, nil
+	}
+	gatewaycli.SharedGatewayConnection().Close(context.Background())
+	previous := gatewaycli.DefaultConnect
+	gatewaycli.DefaultConnect = func(context.Context) (gatewaycli.ConnectionClient, error) { return client, nil }
+	t.Cleanup(func() {
+		gatewaycli.SharedGatewayConnection().Close(context.Background())
+		gatewaycli.DefaultConnect = previous
+	})
 }
 
 func TestMainQuietSingleQueryAnswersThroughRunConversation(t *testing.T) {
@@ -101,21 +132,23 @@ func TestMainQuietSingleQueryAnswersThroughRunConversation(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	resetProcessState(t)
 	out, errOut := captureStreams(t)
-	srv, calls := chatCompletionsServer(t, "hi there")
-	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": srv.URL + "/v1"},
+	client := &scriptedClient{script: []any{completeFrame("hi there")}, result: map[string]any{"final_response": "hi there", "api_calls": 1, "completed": true}}
+	installScriptedGateway(t, client)
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
 		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
 	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
-		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: ptr(5)})
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(5)})
 	if code != 0 {
 		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
-	if calls.Load() != 1 {
-		t.Fatalf("provider calls %d", calls.Load())
+	submits := client.callsOf("prompt.submit")
+	if len(submits) != 1 || submits[0]["text"] != "say hi" {
+		t.Fatalf("prompt.submit calls %v", submits)
 	}
 	if got := out.String(); got != "hi there\n" {
 		t.Fatalf("stdout %q", got)
 	}
-	if !strings.Contains(errOut.String(), "\nsession_id: ") {
+	if !strings.Contains(errOut.String(), "\nsession_id: "+scriptSID) {
 		t.Fatalf("stderr %q lacks the session_id trailer", errOut.String())
 	}
 }
@@ -125,14 +158,14 @@ func TestMainQuietSingleQueryFailedTurnExitsOne(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	resetProcessState(t)
 	out, errOut := captureStreams(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, `{"error":{"message":"model not supported"}}`, http.StatusBadRequest)
-	}))
-	t.Cleanup(srv.Close)
-	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": srv.URL + "/v1"},
+	failure := "The provider rejected the request and retrying won't help: model not supported"
+	client := &scriptedClient{script: []any{scriptFrame("message.complete", map[string]any{"text": failure, "outcome": "failed", "status": "error"})},
+		result: map[string]any{"final_response": failure, "failed": true, "completed": false, "error": "model not supported", "api_calls": 1}}
+	installScriptedGateway(t, client)
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
 		"agent": map[string]any{"max_turns": 2}, "display": map[string]any{}})
 	code := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
-		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxTurns: ptr(2)})
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(2)})
 	if code != 1 {
 		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}

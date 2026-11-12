@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -90,10 +91,16 @@ func TestToggleYoloBypassesDangerousCommandCheck(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	c := yoloStandIn(t, yoloSessionKey)
 	withConsoleInput(t, "")
-	env := &tools.Env{Home: h}
+	env := &tools.Env{Home: h, Values: &sync.Map{}}
 	tools.SetCurrentSessionKey(env, yoloSessionKey)
 	t.Cleanup(func() { tools.ResetCurrentSessionKey(env) })
+	if tools.IsCurrentSessionYoloEnabled(env) {
+		t.Fatal("the bypass was on before the toggle")
+	}
 	c.toggleYolo()
+	if !tools.IsCurrentSessionYoloEnabled(env) {
+		t.Fatal("the toggle did not arm the bypass of the bound session")
+	}
 	if result := tools.CheckAllCommandGuards(context.Background(), env, "rm -rf /tmp/scratch-xyzzy", "local", true); !result.Approved {
 		t.Fatalf("guard result %#v", result)
 	}

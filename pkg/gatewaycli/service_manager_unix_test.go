@@ -17,6 +17,9 @@ func TestSeedSuperviseSkeletonCreatesExpectedLayout(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux only")
 	}
+	if ranWhereAccountIsMapped(t) {
+		return
+	}
 	svc := filepath.Join(t.TempDir(), "gateway-foo")
 	if err := os.Mkdir(svc, 0o755); err != nil {
 		t.Fatal(err)

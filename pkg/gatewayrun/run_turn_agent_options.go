@@ -10,7 +10,10 @@ import (
 
 // Spreads resolved runtime keyword arguments onto agent constructor options, the AIAgent of a runtime splat
 func applyRuntimeKwargs(o *agent.AIAgentOptions, runtime map[string]any) {
-	o.APIKey = noneText(runtime["api_key"])
+	o.APIKey = runtime["api_key"]
+	if o.APIKey == nil {
+		o.APIKey = ""
+	}
 	o.BaseURL = noneText(runtime["base_url"])
 	o.Provider = noneText(runtime["provider"])
 	o.RequestedProvider = noneText(runtime["requested_provider"])

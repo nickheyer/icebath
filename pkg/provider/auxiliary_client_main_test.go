@@ -151,7 +151,7 @@ func auxFakeCustomRuntime(t *testing.T, base, key, mode, model string) {
 	t.Helper()
 	oldRuntime, oldModel := auxResolveCustomRuntimeFn, auxReadMainModel
 	t.Cleanup(func() { auxResolveCustomRuntimeFn, auxReadMainModel = oldRuntime, oldModel })
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) { return base, key, mode, nil }
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) { return base, key, mode, nil }
 	auxReadMainModel = func(context.Context) string { return model }
 }
 

@@ -787,7 +787,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 		return nil, &pyKeyError{"owner"}
 	}
 	event.Metadata = map[string]any{"gateway_session_key": route, "gateway_session_id": owner}
-	for _, describe := range []func(func(string) (any, bool)) (*pyjson.Object, error){automationNotificationMetadata, automationDisplayMetadata} {
+	for _, describe := range []func(func(string) (any, bool)) (*pyjson.Object, error){automationNotificationMetadata, AutomationDisplayMetadata} {
 		extra, err := describe(automation.Get)
 		if err != nil {
 			return nil, err

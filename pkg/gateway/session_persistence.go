@@ -63,6 +63,7 @@ var (
 	_ gatewayRouteRetirer        = (*state.SessionDB)(nil)
 	_ gatewaySessionPeerRecorder = (*state.SessionDB)(nil)
 	_ gatewaySessionPeerFinder   = (*state.SessionDB)(nil)
+	_ sessionResetPromoter       = (*state.SessionDB)(nil)
 )
 
 const sessionsJSONReadme = "LEGACY MIRROR of the gateway routing index (the primary copy lives in the gateway_routing " +

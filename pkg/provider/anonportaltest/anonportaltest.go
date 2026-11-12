@@ -87,6 +87,11 @@ func (p *Portal) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.ServeHTTP(w, r)
 		return
 	}
+	p.ServeDefault(w, r)
+}
+
+// Answers one request through the default NAS surface, the route an installed handler hands back to
+func (p *Portal) ServeDefault(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(r.Body)
 	r.Body = io.NopCloser(bytes.NewReader(raw))
 	p.mu.Lock()

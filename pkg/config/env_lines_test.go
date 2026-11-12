@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestEnvLineDefinesKeyMatchesWhatLoadEnvAccepts(t *testing.T) {
@@ -109,7 +111,7 @@ func TestWriteEnvLinesKeepsModeAndSymlinkTarget(t *testing.T) {
 	if err := WriteEnvLines(context.Background(), path, []string{"Z=3\n"}, false); err != nil {
 		t.Fatal(err)
 	}
-	if info, _ := os.Stat(path); !containerOrChmodSkipped() && ManagedSystem(context.Background(), "") == "" && info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(path); !home.ContainerOrChmodSkipped() && ManagedSystem(context.Background(), "") == "" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("secured mode = %o, want 600", info.Mode().Perm())
 	}
 

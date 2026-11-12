@@ -375,7 +375,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 			if err := disposeUnusedAdapter(ctx, adapter); err != nil {
 				return err
 			}
-			gateway.HandOverHeldInbound(adapter, predecessor)
+			gateway.HandOverHeldInbound(ctx, adapter, predecessor)
 		}
 		return nil
 	}()
@@ -390,7 +390,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 			return derr
 		}
 		if live, _ := r.adapters.Get(platform); live != adapter {
-			gateway.HandOverHeldInbound(adapter, predecessor)
+			gateway.HandOverHeldInbound(ctx, adapter, predecessor)
 		}
 	}
 	backoff := r.bumpReconnectBackoff(ctx, platform, info, attempt, nil, err.Error())
@@ -428,7 +428,7 @@ func (r *GatewayRunner) installReconnectedAdapter(ctx context.Context, platform 
 	r.deliveryRouter.Adapters = r.adapters
 	entry, _ := r.failedPlatforms.Get(platform)
 	r.failedPlatforms.Delete(platform)
-	gateway.HandOverHeldInbound(entry["predecessor"], adapter)
+	gateway.HandOverHeldInbound(ctx, entry["predecessor"], adapter)
 	degraded := adapter.SendPathDegraded()
 	status := platformStatus{state: optStr("connected"), needsAttention: optBool(false), retryingSince: optSince(nil)}
 	if degraded {

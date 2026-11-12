@@ -26,9 +26,9 @@ type gatewaySessionPeerFinder interface {
 	FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*pyjson.Object, error)
 }
 
-// Reset promotion that upgrades an accidental end reason to an explicit boundary
+// Reset promotion that upgrades an accidental end reason to an explicit boundary, true when a row was written
 type sessionResetPromoter interface {
-	PromoteToSessionReset(ctx context.Context, sessionID, reason string) error
+	PromoteToSessionReset(ctx context.Context, sessionID, reason string) bool
 }
 
 // Python repr of a decoded value
@@ -359,9 +359,7 @@ func (s *SessionStore) promoteSessionReset(ctx context.Context, sessionKey, sess
 			return fmt.Errorf("'NoneType' object has no attribute 'end_session'")
 		}
 		if promoter, ok := db.(sessionResetPromoter); ok {
-			if err := promoter.PromoteToSessionReset(ctx, sessionID, reason); err != nil {
-				return err
-			}
+			promoter.PromoteToSessionReset(ctx, sessionID, reason)
 		} else if err := db.EndSession(sessionID, reason); err != nil {
 			return err
 		}

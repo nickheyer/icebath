@@ -186,8 +186,11 @@ func (s *GatewayStreamConsumer) resolveDraftStreaming() bool {
 	return supported
 }
 
-// Whether the adapter streams natively for this chat
+// Whether a base adapter class with SUPPORTS_NATIVE_STREAMING streams natively for this chat by its probe
 func (s *GatewayStreamConsumer) resolveNativeStreaming() bool {
+	if !AdapterSupportsNativeStreaming(s.adapter) {
+		return false
+	}
 	native, ok := s.adapter.(NativeStreamAdapter)
 	if !ok {
 		return false

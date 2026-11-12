@@ -42,7 +42,7 @@ func busyControlHandlers(c *AuthorityConnection) map[string]controlHandler {
 }
 
 // Agent seam taking a redirect of the running turn
-type redirectReceiver interface {
+type RedirectReceiver interface {
 	Redirect(text string) bool
 }
 
@@ -102,13 +102,13 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 	var accepted bool
 	switch verb {
 	case "steer":
-		receiver, ok := agent.(steerReceiver)
+		receiver, ok := agent.(SteerReceiver)
 		if !ok {
 			return nil, runtimeRefusal("execution_not_ready")
 		}
 		accepted = receiver.Steer(text)
 	default:
-		receiver, ok := agent.(redirectReceiver)
+		receiver, ok := agent.(RedirectReceiver)
 		if !ok {
 			return nil, runtimeRefusal("execution_not_ready")
 		}

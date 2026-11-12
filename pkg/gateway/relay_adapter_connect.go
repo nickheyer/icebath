@@ -12,10 +12,10 @@ func (a *RelayAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 		return false, &PyError{"RuntimeError", "RelayAdapter has no transport configured"}
 	}
 	a.transport.SetInboundHandler(a.onInbound)
-	if setter, ok := a.transport.(interface{ SetInterruptInboundHandler(RelayInterruptHandler) }); ok {
+	if setter, ok := a.transport.(relayInterruptHandlerSetter); ok {
 		setter.SetInterruptInboundHandler(a.OnInterrupt)
 	}
-	if setter, ok := a.transport.(interface{ SetPassthroughHandler(RelayPassthroughHandler) }); ok {
+	if setter, ok := a.transport.(relayPassthroughHandlerSetter); ok {
 		setter.SetPassthroughHandler(a.onPassthrough)
 	}
 	connected, err := a.transport.Connect(ctx)
@@ -31,7 +31,7 @@ func (a *RelayAdapter) Connect(ctx context.Context, isReconnect bool) (bool, err
 		return false, nil
 	}
 	a.applyDescriptor(descriptor)
-	if _, ok := a.transport.(interface{ AuthRevoked() bool }); ok {
+	if _, ok := a.transport.(relayRevocationSource); ok {
 		a.startRevocationMonitor(ctx)
 	}
 	return true, nil
@@ -49,7 +49,7 @@ func (a *RelayAdapter) startRevocationMonitor(ctx context.Context) {
 
 // Polls the transport until revocation latches, then marks the adapter fatally disabled and notifies
 func (a *RelayAdapter) watchForRevocation(ctx context.Context, pollIntervalS float64) {
-	revoker, ok := a.transport.(interface{ AuthRevoked() bool })
+	revoker, ok := a.transport.(relayRevocationSource)
 	if !ok {
 		return
 	}

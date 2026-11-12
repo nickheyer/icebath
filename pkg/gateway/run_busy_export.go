@@ -63,9 +63,9 @@ func (b *BasePlatformAdapter) MergePendingMessage(sessionKey string, event *Mess
 	MergePendingMessageEvent(lazyAttr(&b.pendingMessages), sessionKey, event, mergeText)
 }
 
-// Adapter class that streams natively and needs approval confirmations sent directly
-type NativeStreamingAdapter interface {
-	SupportsNativeStreaming() bool
+// Whether the adapter class sets SUPPORTS_NATIVE_STREAMING, false for an adapter without the base class
+func AdapterSupportsNativeStreaming(adapter PlatformAdapter) bool {
+	return adapter != nil && adapter.Base() != nil && adapter.Base().Traits.SupportsNativeStreaming
 }
 
 // Text and seconds to live of a handler reply, an ephemeral reply unwrapped under the adapter's ttl rules

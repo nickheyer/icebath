@@ -341,3 +341,30 @@ func TestManualCompressReportsTheGatewaysCommittedSummary(t *testing.T) {
 		t.Fatalf("after %v count %d", result.AfterMessages, a.compressor.compressionCount)
 	}
 }
+
+func TestInterimTextReachesTheInterimCallbackOrThePrinter(t *testing.T) {
+	interim := func() []any {
+		return []any{scriptFrame("message.interim", map[string]any{"text": "checking the logs", "already_streamed": true}),
+			scriptFrame("message.interim", map[string]any{"text": "   "}), completeFrame("done")}
+	}
+	type call struct {
+		text     any
+		streamed bool
+	}
+	var calls []call
+	var printed []string
+	a, _ := makeScriptedAgent(t, &scriptedClient{script: interim()}, gatewayAgentOptions{
+		InterimAssistantCallback: func(text any, alreadyStreamed bool) { calls = append(calls, call{text, alreadyStreamed}) }})
+	a.SetPrintFn(func(text string) { printed = append(printed, text) })
+	runTurn(t, a, "q")
+	if !reflect.DeepEqual(calls, []call{{"checking the logs", true}, {"   ", false}}) || len(printed) != 0 {
+		t.Fatalf("calls %v printed %v", calls, printed)
+	}
+	printed = nil
+	plain, _ := makeScriptedAgent(t, &scriptedClient{script: interim()}, gatewayAgentOptions{})
+	plain.SetPrintFn(func(text string) { printed = append(printed, text) })
+	runTurn(t, plain, "q")
+	if !reflect.DeepEqual(printed, []string{"checking the logs"}) {
+		t.Fatalf("printed %v", printed)
+	}
+}

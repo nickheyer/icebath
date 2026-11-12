@@ -13,6 +13,9 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -464,4 +467,46 @@ func sslLocalErrorRepr(err error) string {
 		text = text[i+len("tls: "):]
 	}
 	return "SSLError(1, " + pyrepr.Repr("[SSL] "+text+" "+sslLine) + ")"
+}
+
+// Verify bundle requests merges from the environment, REQUESTS_CA_BUNDLE then CURL_CA_BUNDLE, empty keeping the default
+func EnvCABundle() string {
+	if bundle := os.Getenv("REQUESTS_CA_BUNDLE"); bundle != "" {
+		return bundle
+	}
+	return os.Getenv("CURL_CA_BUNDLE")
+}
+
+// OpenSSL capath entry names, a subject hash and a sequence number
+var hashedCertName = regexp.MustCompile(`^[0-9a-f]{8}\.[0-9]+$`)
+
+// TLS config verifying against a bundle file or hashed capath directory, the OSError requests raises for a missing path
+func VerifyTLSConfig(bundle string) (*tls.Config, error) {
+	info, err := os.Stat(bundle)
+	if bundle == "" || err != nil {
+		return nil, fmt.Errorf("Could not find a suitable TLS CA certificate bundle, invalid path: %s", bundle)
+	}
+	pool := x509.NewCertPool()
+	if !info.IsDir() {
+		raw, err := os.ReadFile(bundle)
+		if err != nil {
+			return nil, err
+		}
+		if !pool.AppendCertsFromPEM(raw) {
+			return nil, errors.New("[X509: NO_CERTIFICATE_OR_CRL_FOUND] no certificate or crl found " + sslLine)
+		}
+		return &tls.Config{RootCAs: pool}, nil
+	}
+	entries, err := os.ReadDir(bundle)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if hashedCertName.MatchString(entry.Name()) {
+			if raw, err := os.ReadFile(filepath.Join(bundle, entry.Name())); err == nil {
+				pool.AppendCertsFromPEM(raw)
+			}
+		}
+	}
+	return &tls.Config{RootCAs: pool}, nil
 }

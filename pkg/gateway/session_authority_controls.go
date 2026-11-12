@@ -512,7 +512,7 @@ func (a *SessionAuthority) AdoptAgent(sessionID string, generation int64, agent 
 		requestHardInterrupt(agent)
 	}
 	if hasSteers && latched.generation == generation {
-		if receiver, ok := agent.(steerReceiver); ok {
+		if receiver, ok := agent.(SteerReceiver); ok {
 			for _, text := range latched.texts {
 				receiver.Steer(text)
 			}

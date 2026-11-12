@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"time"
 
@@ -66,7 +67,7 @@ func submitQueued(c *CLI, store *gatewaycli.GatewaySessionStore, text string) (s
 	}
 	state := queueState(c, store)
 	state.Lock()
-	state.QueuedInputs[admission] = text
+	state.QueuedInputs.Set(admission, text)
 	state.QueuedAt[admission] = state.PendingSeq
 	state.Unlock()
 	return admission, nil
@@ -86,21 +87,26 @@ func queuedRows(c *CLI, store *gatewaycli.GatewaySessionStore) []queuedRow {
 		text     string
 	}
 	rows := map[string]ordered{}
+	var order []string
+	put := func(admission string, row ordered) {
+		if _, has := rows[admission]; !has {
+			order = append(order, admission)
+		}
+		rows[admission] = row
+	}
 	state.Lock()
 	pending := append([]any{}, state.Pending...)
-	inputs := map[string]any{}
-	for k, v := range state.QueuedInputs {
-		inputs[k] = v
-	}
+	inputs := state.QueuedInputs.Copy()
 	state.Unlock()
 	for _, raw := range pending {
 		row, isDict := raw.(map[string]any)
 		if isDict && row["status"] == "queued" && pyrepr.Truthy(row["admission_id"]) {
 			seq, _ := pyIntValue(orZero(row["sequence"]))
-			rows[pyrepr.Str(row["admission_id"])] = ordered{seq, strOrEmpty(row["text"])}
+			put(pyrepr.Str(row["admission_id"]), ordered{seq, strOrEmpty(row["text"])})
 		}
 	}
-	for admission, text := range inputs {
+	for _, admission := range inputs.Keys {
+		text, _ := inputs.Get(admission)
 		raw, err := store.Call(c.ctx, "prompt.receipt", map[string]any{"session_id": c.sessionID, "admission_id": admission})
 		if err != nil {
 			if !isGatewayClientError(err) {
@@ -108,32 +114,29 @@ func queuedRows(c *CLI, store *gatewaycli.GatewaySessionStore) []queuedRow {
 			}
 			slog.Debug(fmt.Sprintf("prompt.receipt %s failed: %s", admission, err.Error()))
 			if _, has := rows[admission]; !has {
-				rows[admission] = ordered{1 << 62, pyrepr.Str(text)}
+				put(admission, ordered{1 << 62, pyrepr.Str(text)})
 			}
 			continue
 		}
 		receipt, _ := pyjson.Plain(raw).(map[string]any)
 		if receipt["status"] == "queued" {
 			seq, _ := pyIntValue(orZero(receipt["sequence"]))
-			rows[admission] = ordered{seq, pyrepr.Str(text)}
+			put(admission, ordered{seq, pyrepr.Str(text)})
 			continue
 		}
-		delete(rows, admission)
+		if _, has := rows[admission]; has {
+			delete(rows, admission)
+			order = slices.DeleteFunc(order, func(listed string) bool { return listed == admission })
+		}
 		state.Lock()
 		state.Missed[admission] = true
 		state.Unlock()
 	}
 	out := make([]queuedRow, 0, len(rows))
-	for admission, row := range rows {
-		out = append(out, queuedRow{admission, row.text})
+	for _, admission := range order {
+		out = append(out, queuedRow{admission, rows[admission].text})
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := rows[out[i].admission], rows[out[j].admission]
-		if a.sequence != b.sequence {
-			return a.sequence < b.sequence
-		}
-		return out[i].admission < out[j].admission
-	})
+	sort.SliceStable(out, func(i, j int) bool { return rows[out[i].admission].sequence < rows[out[j].admission].sequence })
 	return out
 }
 
@@ -143,7 +146,7 @@ func publishedQueue(c *CLI, store *gatewaycli.GatewaySessionStore) []string {
 	state.Lock()
 	defer state.Unlock()
 	for admission := range state.QueuedAt {
-		if _, kept := state.QueuedInputs[admission]; !kept {
+		if _, kept := state.QueuedInputs.Get(admission); !kept {
 			delete(state.QueuedAt, admission)
 		}
 	}
@@ -160,7 +163,8 @@ func publishedQueue(c *CLI, store *gatewaycli.GatewaySessionStore) []string {
 		}
 	}
 	var fresh []string
-	for admission, text := range state.QueuedInputs {
+	for _, admission := range state.QueuedInputs.Keys {
+		text, _ := state.QueuedInputs.Get(admission)
 		at, has := state.QueuedAt[admission]
 		if !known[admission] && has && at >= state.PendingSeq {
 			fresh = append(fresh, pyrepr.Str(text))
@@ -197,14 +201,14 @@ func ownQueueHead(state *gatewaycli.SessionState) string {
 		})
 		head = pyrepr.Str(queued[0]["admission_id"])
 	} else {
-		for admission := range state.QueuedInputs {
+		for _, admission := range state.QueuedInputs.Keys {
 			if at, has := state.QueuedAt[admission]; !listed[admission] && has && at >= state.PendingSeq {
 				head = admission
 				break
 			}
 		}
 	}
-	if _, queuedHere := state.QueuedInputs[head]; !queuedHere {
+	if _, queuedHere := state.QueuedInputs.Get(head); !queuedHere {
 		return ""
 	}
 	if _, adopted := state.Adopted[head]; adopted {
@@ -311,7 +315,7 @@ func cancelQueued(c *CLI, store *gatewaycli.GatewaySessionStore, admission strin
 	state.Lock()
 	defer state.Unlock()
 	if receipt["status"] == "terminal" && receipt["outcome"] == "cancelled" {
-		delete(state.QueuedInputs, admission)
+		state.QueuedInputs.Delete(admission)
 		delete(state.Missed, admission)
 		return "cancelled", nil
 	}
@@ -333,10 +337,10 @@ func replaceQueued(c *CLI, store *gatewaycli.GatewaySessionStore, admission, tex
 	state := queueState(c, store)
 	state.Lock()
 	defer state.Unlock()
-	delete(state.QueuedInputs, admission)
+	state.QueuedInputs.Delete(admission)
 	added := strOrEmpty(receipt["admission_id"])
 	if added != "" {
-		state.QueuedInputs[added] = text
+		state.QueuedInputs.Set(added, text)
 		state.QueuedAt[added] = state.PendingSeq
 	}
 	return added, nil

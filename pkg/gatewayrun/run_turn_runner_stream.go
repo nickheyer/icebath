@@ -120,7 +120,7 @@ func (t *TurnRunner) buildStreamConsumer(ctx context.Context, scfg gateway.Strea
 		return err
 	}
 	supportsIncremental := adapter.Base() == nil || adapter.Base().Traits.SupportsMessageEditing
-	if native, ok := adapter.(gateway.NativeStreamingAdapter); ok && native.SupportsNativeStreaming() {
+	if gateway.AdapterSupportsNativeStreaming(adapter) {
 		supportsIncremental = true
 	}
 	consumerStreamDeltas := wantStreamDeltas && supportsIncremental

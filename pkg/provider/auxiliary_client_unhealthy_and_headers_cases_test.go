@@ -195,7 +195,7 @@ func TestAuxUnhealthyCacheCustomFallbackAuthFailureQuarantinesFailedEndpoint(t *
 	hostedURL, localURL := "https://hosted.example/v1", "http://127.0.0.1:8080/v1"
 	hosted := auxScriptedCallClient(hostedURL, "hosted", auxAuth401("expired hosted key"))
 	prevCustom, prevRefresh := auxResolveCustomRuntimeFn, auxRefreshProviderCredentialsFn
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) { return localURL, "", "", nil }
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) { return localURL, "", "", nil }
 	auxRefreshProviderCredentialsFn = func(context.Context, string, string) bool { return false }
 	t.Cleanup(func() { auxResolveCustomRuntimeFn, auxRefreshProviderCredentialsFn = prevCustom, prevRefresh })
 	result, err := auxCallFallbackCandidate(ctx, hosted, "hosted-model", "fallback_chain[0](custom)", auxFallbackRequest{
@@ -212,7 +212,7 @@ func TestAuxUnhealthyCacheCustomFallbackAuthFailureQuarantinesFailedEndpoint(t *
 func auxFixedCustomBase(t *testing.T, base string) {
 	t.Helper()
 	prev := auxResolveCustomRuntimeFn
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) { return base, "", "", nil }
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) { return base, "", "", nil }
 	t.Cleanup(func() { auxResolveCustomRuntimeFn = prev })
 }
 

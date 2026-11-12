@@ -260,6 +260,8 @@ var closedSessionActivity = struct {
 
 // Detaches one live session from the registry as the teardown claim, stamping its closing state and sid
 func popSessionByID(ctx context.Context, sid string) *tuigateway.Session {
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
 	session := tuigateway.PopSessionRecord(sid)
 	if session == nil {
 		return nil
@@ -303,6 +305,8 @@ var pendingWSReaps = struct {
 
 // Cancels the pending orphan reap of a session whose client came back
 func cancelWSOrphanReap(sid string) {
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
 	pendingWSReaps.Lock()
 	timer := pendingWSReaps.timers[sid]
 	delete(pendingWSReaps.timers, sid)

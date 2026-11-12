@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 const facadeConfig = "# hand-tuned\nmodel:\n  default: my-org/custom-model\ndisplay:\n  skin: mono\nterminal:\n  backend: docker\n"
@@ -292,7 +294,7 @@ func TestSaveConfigStripsManagedKeysAndPreservesEnvTemplates(t *testing.T) {
 	if strings.Contains(string(data), "sk-secret") || !strings.Contains(string(data), "${FACADE_KEY}") {
 		t.Fatalf("plaintext secret written back: %s", data)
 	}
-	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 && !containerOrChmodSkipped() {
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 && !home.ContainerOrChmodSkipped() {
 		t.Fatalf("mode %v", info.Mode().Perm())
 	}
 }

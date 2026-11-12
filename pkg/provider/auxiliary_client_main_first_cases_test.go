@@ -335,7 +335,7 @@ func TestResolveVisionCustomProviderCustomMainNoRuntimeFallsBackToConfiguredEndp
 	auxFakeTaskRoute(t, auxTaskRoute{Provider: "auto"})
 	prev := auxResolveCustomRuntimeFn
 	t.Cleanup(func() { auxResolveCustomRuntimeFn = prev })
-	auxResolveCustomRuntimeFn = func(context.Context) (string, string, string, error) {
+	auxResolveCustomRuntimeFn = func(context.Context) (string, any, string, error) {
 		return "https://configured.example/v1", "sk-configured", "chat_completions", nil
 	}
 	mock := &auxCallFakeClient{base: "https://configured.example/v1", key: "sk-configured"}

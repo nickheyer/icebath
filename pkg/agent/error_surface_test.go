@@ -140,6 +140,7 @@ func TestModelCausedCodesStayOnTheProviderLayerAndRuntimeCodesOnGateway(t *testi
 }
 
 func TestResultAndErrorSurfaceCarryTheUsageWindowSentence(t *testing.T) {
+	caseHome(t)
 	saved := billingOrEntitlementMessage
 	t.Cleanup(func() { billingOrEntitlementMessage = saved })
 	billingOrEntitlementMessage = func(context.Context, string, string, string, string, bool) string {

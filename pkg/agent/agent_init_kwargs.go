@@ -34,6 +34,14 @@ func agentKwargText(value any) string {
 }
 
 // Keyword value as a list of texts, None reading as nil
+// Key keyword as given, a callable token source kept callable and None read as empty
+func agentKwargKey(value any) any {
+	if _, ok := callableCredential(value); ok {
+		return value
+	}
+	return agentKwargText(value)
+}
+
 func agentKwargTexts(name string, value any) ([]string, error) {
 	switch v := value.(type) {
 	case nil:
@@ -124,7 +132,7 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "base_url":
 		o.BaseURL = agentKwargText(value)
 	case "api_key":
-		o.APIKey = agentKwargText(value)
+		o.APIKey = agentKwargKey(value)
 	case "provider":
 		o.Provider = agentKwargText(value)
 	case "api_mode":

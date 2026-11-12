@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"log/slog"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -641,7 +640,7 @@ func (l *doLoop) nousRateLimitGuard() (*DoError, bool, error) {
 	}
 	var msg string
 	if anonymous {
-		msg = strings.ReplaceAll(FreeTierRateLimitChat, "{reset}", FriendlyWait(int(math.Ceil(remaining.Seconds()))))
+		msg = strings.ReplaceAll(FreeTierRateLimitChat, "{reset}", FriendlyWait(remaining.Seconds()))
 	} else {
 		msg = fmt.Sprintf("Your Nous account has hit its rate limit; it resets in %s.", FormatSeconds(remaining.Seconds()))
 	}
@@ -656,7 +655,7 @@ func (l *doLoop) nousRateLimitGuard() (*DoError, bool, error) {
 	de := &DoError{Failure: FailNousRateLimited, Reason: ReasonRateLimit, Retryable: true, Message: msg, Summary: msg, Route: l.route}
 	if anonymous {
 		de.FreeTierKind = "rate_limited"
-		de.WelcomeHint = strings.ReplaceAll(FreeTierRateLimitCard, "{reset}", FriendlyWait(int(math.Ceil(remaining.Seconds()))))
+		de.WelcomeHint = strings.ReplaceAll(FreeTierRateLimitCard, "{reset}", FriendlyWait(remaining.Seconds()))
 	}
 	return de, false, nil
 }

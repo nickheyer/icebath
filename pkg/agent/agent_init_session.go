@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -26,6 +27,14 @@ var loadToolDefinitions = func(ctx context.Context, env *tools.Env, o tools.Defi
 	return tools.Default.ToolDefinitions(ctx, env, o)
 }
 
+// Plugin discovery the tool snapshot runs first, hermes_cli.plugins.discover_plugins
+var discoverPluginsAtLoad = func(ctx context.Context) { plugins.DiscoverPlugins(ctx, false) }
+
+// Availability of every toolset's requirements, the model_tools.check_toolset_requirements the banner reads
+var loadToolsetRequirements = func(ctx context.Context, env *tools.Env) map[string]bool {
+	return tools.Default.CheckToolsetRequirements(ctx, env)
+}
+
 // Session tool surface with the disabled toolsets pinned, kanban guidance and the startup tool banner
 func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 	provider.RecoverLeftCoreAtStartup(ctx, nil, false)
@@ -35,7 +44,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 				runAgentLog().Warn(fmt.Sprintf("Plugin discovery failed during agent setup: %v", r))
 			}
 		}()
-		plugins.DiscoverPlugins(ctx, false)
+		discoverPluginsAtLoad(ctx)
 	}()
 	generation := tools.Default.Generation()
 	a.toolSnapshotGeneration = &generation
@@ -74,7 +83,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 			_, _ = fmt.Fprintf(statusStdout, "   ❌ Disabled toolsets: %s\n", strings.Join(disabled, ", "))
 		}
 		var missing []string
-		for name, available := range tools.Default.CheckToolsetRequirements(ctx, a.env) {
+		for name, available := range loadToolsetRequirements(ctx, a.env) {
 			if !available {
 				missing = append(missing, name)
 			}
@@ -164,14 +173,21 @@ func setSessionStateDefaults(a *AIAgent) {
 	a.persistDisabled = false
 }
 
-// Display, LM Studio load mode, streaming switch and tool loop guardrails from the config
-func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) {
+// Display, fast window, LM Studio load mode, streaming switch and tool loop guardrails, a non mapping agent section raising
+func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) error {
 	a.showCommentary = pyrepr.Truthy(cfgValue(cfgDict(agentCfg, "display"), "show_commentary", true))
-	a.fastAutoSeconds = 60
-	if section, ok := agentCfg["agent"].(map[string]any); ok {
-		if v, present := section["fast_auto_seconds"]; present {
-			a.fastAutoSeconds, _ = pyNumber(v)
+	var window any = float64(provider.DefaultFastWindowSeconds)
+	switch section := agentCfg["agent"].(type) {
+	case map[string]any:
+		window = cfgValue(section, "fast_auto_seconds", window)
+	default:
+		if pyrepr.Truthy(section) {
+			return fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(section))
 		}
+	}
+	a.fastAutoSeconds = float64(provider.DefaultFastWindowSeconds)
+	if seconds, err := pyint.Float(window); err == nil {
+		a.fastAutoSeconds = seconds
 	}
 	modelSection := cfgDict(agentCfg, "model")
 	loadMode := strings.ToLower(strings.TrimSpace(cfgText(firstTruthy(modelSection["lmstudio_load_mode"], "explicit"))))
@@ -191,6 +207,7 @@ func applyDisplayConfig(a *AIAgent, agentCfg map[string]any, platform string) {
 	guardrails, _ := agentCfg["tool_loop_guardrails"].(map[string]any)
 	cfg := tools.ToolCallGuardrailConfigFromMap(guardrails, platform)
 	a.toolGuardrails = tools.NewToolCallGuardrailController(&cfg)
+	return nil
 }
 
 // Memory manager scoping options, the CLI warn and status callbacks, title and gateway identity
