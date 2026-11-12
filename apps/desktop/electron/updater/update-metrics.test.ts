@@ -15,7 +15,7 @@ afterEach((): void => {
 })
 
 function tempDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-update-metrics-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'icebath-update-metrics-'))
   dirs.push(dir)
 
   return dir

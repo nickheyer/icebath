@@ -26,7 +26,7 @@ func (e *ArgparseError) Error() string { return e.Msg }
 
 // Usage line followed by the prog error line, the text ArgumentParser.error writes to stderr
 func (e *ArgparseError) Stderr() string {
-	return "usage: " + e.Cmd.UseLine() + "\n" + e.Cmd.CommandPath() + ": error: " + e.Msg
+	return argparseUsage(e.Cmd) + e.Cmd.CommandPath() + ": error: " + e.Msg
 }
 
 // Option strings of a flag joined by slashes, the name argparse gives an optional action

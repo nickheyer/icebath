@@ -118,7 +118,7 @@ class Socket {
         ? { shell: 'fish', cwd: '/work', terminalId: this.url.searchParams.get('attach') || `shell-${Socket.instances.length}`, closed: this.url.searchParams.get('action') === 'close' }
         : { shell: 'fish' }
 
-      this.onmessage?.({ data: '\u0000HERMES_TERMINAL_META:' + JSON.stringify(metadata) } as MessageEvent)
+      this.onmessage?.({ data: '\u0000ICEBATH_TERMINAL_META:' + JSON.stringify(metadata) } as MessageEvent)
 
       if ('closed' in metadata && metadata.closed) {this.close()}
     })

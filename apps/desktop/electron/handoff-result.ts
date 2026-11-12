@@ -2,7 +2,7 @@
  * Consume the detached update hand-off's result file (#82328 follow-up).
  *
  * scripts/desktop-update/windows.ps1 runs hidden/detached — the user never sees its
- * console. It writes ICEBATH_HOME/.hermes-update-result.json on every exit
+ * console. It writes ICEBATH_HOME/.icebath-update-result.json on every exit
  * path; the relaunched Desktop reads it exactly once on boot and surfaces
  * failures (a silent failed update looks identical to "nothing happened",
  * which is how the 2026-08-09 'closed the app then nothing' report was
@@ -78,7 +78,7 @@ function toReleaseHolders(raw: unknown): ReleaseHolder[] {
 }
 
 export function handoffResultPath(hermesHome: string): string {
-  return path.join(hermesHome, '.hermes-update-result.json')
+  return path.join(hermesHome, '.icebath-update-result.json')
 }
 
 /** Read, parse, then consume the result file; null when absent or unparseable (a JSON `null` body is

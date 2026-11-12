@@ -31,11 +31,11 @@ test('desktop stamp uses the admitted checkout rather than the dispatch SHA', ()
     git('add', 'feature')
     git('commit', '-qm', 'feature')
     const feature = git('rev-parse', 'HEAD')
-    const runtime = { repoDir: 'app', toolsDir: 'tools', storePython: 'tools/python/bin/python3', sitePackages: 'venv/site-packages', commands: { hermes: 'bin/hermes' } }
+    const runtime = { repoDir: 'app', toolsDir: 'tools', storePython: 'tools/python/bin/python3', sitePackages: 'venv/site-packages', commands: { hermes: 'bin/icebath' } }
     const build = path.join(repo, 'apps/desktop/build')
     fs.mkdirSync(path.join(build, 'agent-payload/app'), { recursive: true })
     fs.mkdirSync(path.join(build, 'agent-payload/bin'), { recursive: true })
-    fs.writeFileSync(path.join(build, 'agent-payload/bin/hermes'), 'launcher fixture')
+    fs.writeFileSync(path.join(build, 'agent-payload/bin/icebath'), 'launcher fixture')
     fs.writeFileSync(path.join(build, 'agent-payload/manifest.json'), JSON.stringify({ target: 'darwin-arm64', launchers: ['icebath'], runtime }))
     const out = path.join(build, 'install-stamp.json')
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GITHUB_') && !key.startsWith('ICEBATH_PAYLOAD_') && !key.startsWith('ICEBATH_BUILD_')))
@@ -52,7 +52,7 @@ test('desktop stamp uses the admitted checkout rather than the dispatch SHA', ()
     assert.equal(stamp.tag, null)
     assert.equal(stamp.updateMechanism, 'external')
     assert.equal(stamp.bundleEnv, undefined)
-    assert.deepEqual(stamp.runtime, { ...runtime, commands: { hermes: `bin/hermes-${feature.slice(0, 7)}` } })
+    assert.deepEqual(stamp.runtime, { ...runtime, commands: { hermes: `bin/icebath-${feature.slice(0, 7)}` } })
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(build, 'agent-payload/app/install-stamp.json'), 'utf8')), stamp)
     // A commit bundle records its baked defaults/clears as data so the smoke
     // driver can replay them without running the app.

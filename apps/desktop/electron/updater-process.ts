@@ -364,7 +364,7 @@ export function resolveUpdateScriptHandoff(
  *
  * Replaces the in-app posix updater: the Desktop spawns the script detached
  * and QUITS, the script waits it out, runs `icebath update`, swaps/relaunches
- * the app, and writes .hermes-update-result.json. With the app gone before
+ * the app, and writes .icebath-update-result.json. With the app gone before
  * the update starts, the ICEBATH_DESKTOP_CHILD_PID reaper-exclusion dance is
  * unnecessary — there are no live desktop backends to spare.
  *

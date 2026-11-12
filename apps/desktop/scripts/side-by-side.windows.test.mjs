@@ -117,10 +117,10 @@ foreach ($asset in @(@('Square44x44Logo.png',44,44), @('Square150x150Logo.png',1
     fs.rmSync(manifestDir, { recursive: true, force: true })
     fs.mkdirSync(path.join(manifestDir, 'bin'), { recursive: true })
     fs.copyFileSync(path.join(process.env.SystemRoot, 'System32/where.exe'), path.join(manifestDir, 'bin/icebath.exe'))
-    fs.copyFileSync(path.join(process.env.SystemRoot, 'System32/where.exe'), path.join(manifestDir, 'bin/hermes-acp.exe'))
+    fs.copyFileSync(path.join(process.env.SystemRoot, 'System32/where.exe'), path.join(manifestDir, 'bin/icebath-acp.exe'))
     fs.writeFileSync(path.join(manifestDir, 'manifest.json'), JSON.stringify({
-      target: `win32-${process.arch}`, launchers: ['icebath', 'hermes-acp'],
-      runtime: { commands: { hermes: 'bin/icebath.exe', 'hermes-acp': 'bin/hermes-acp.exe' } },
+      target: `win32-${process.arch}`, launchers: ['icebath', 'icebath-acp'],
+      runtime: { commands: { hermes: 'bin/icebath.exe', 'icebath-acp': 'bin/icebath-acp.exe' } },
     }))
     // Fresh processes match the per-build module cache boundary. No fabricated
     // product identity/config; these are the production hook and generators.

@@ -11,7 +11,7 @@ import { sanitizeTextForSpeech } from './speech-text'
 // halves stay in lockstep. Policy: identifier-dense tokens are silence,
 // never hardcoded English placeholder words (#86602); ordinary prose,
 // emails, dates and ratios pass verbatim.
-const corpusPath = resolve(__dirname, '../../../../tests/fixtures/identifier_speech_corpus.json')
+const corpusPath = resolve(__dirname, '../../../../pkg/tools/testdata/identifier_speech_corpus.json')
 
 const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as {
   identifier_tokens: [string, string[], string[]][]

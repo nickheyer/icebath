@@ -159,7 +159,7 @@ func TestCLIBundlesTreeMatchesBuildBundlesParser(t *testing.T) {
 	var help bytes.Buffer
 	c.Root.SetArgs([]string{"bundles", "create", "--help"})
 	c.Root.SetOut(&help)
-	if err := c.Root.Execute(); err != nil || !strings.Contains(help.String(), "\nPositional Arguments:\n  name   Bundle name (becomes the /slash command)\n\nFlags:\n") {
+	if err := c.Root.Execute(); err != nil || !strings.Contains(help.String(), "\npositional arguments:\n  name                  Bundle name (becomes the /slash command)\n\noptions:\n") {
 		t.Fatalf("%v %q", err, help.String())
 	}
 }

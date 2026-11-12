@@ -10,7 +10,7 @@ const ALIASES: Record<string, string> = {
   ares: 'ember',
   default: 'nous',
   gold: 'classic',
-  hermes: 'classic',
+  icebath: 'classic',
   'nous-light': 'nous'
 }
 

@@ -2,7 +2,7 @@
  * A room holding the default bot and a real (pre-reservation) `icebath`
  * profile: the stored member descriptors must keep the roster's claim, or
  * every reader that re-derives handles from them (the turn prompt, mention
- * parsing, the next re-persist) tells both bots they are @hermes.
+ * parsing, the next re-persist) tells both bots they are @icebath.
  */
 
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -29,7 +29,7 @@ vi.mock('./shared', () => ({ getPluginCtx: () => null, ID: 'hermes-bots' }))
 
 beforeEach(() => $groupChats.set({}))
 
-it('keeps @default and @hermes apart in a room whose live roster rows are gone', () => {
+it('keeps @default and @icebath apart in a room whose live roster rows are gone', () => {
   const live = claimDefaultHandles<RosterRow>(
     ['default', 'icebath', 'researcher'].map(name => ({ connectionId: 'local', name }))
   )
@@ -40,7 +40,7 @@ it('keeps @default and @hermes apart in a room whose live roster rows are gone',
 
   for (const members of [stored, repersisted]) {
     expect(members.map(member => botMentionTag(member))).toEqual(['default', 'icebath', 'researcher'])
-    expect([...parseGroupChatMentions('@hermes please review', members).mentioned]).toEqual([
+    expect([...parseGroupChatMentions('@icebath please review', members).mentioned]).toEqual([
       groupMemberKey(members[1])
     ])
     expect([...parseGroupChatMentions('@default please review', members).mentioned]).toEqual([
@@ -50,7 +50,7 @@ it('keeps @default and @hermes apart in a room whose live roster rows are gone',
     const header = (viewer: number) =>
       buildGroupChatTurnPrompt({ groupName: 'g', members, viewer: members[viewer], deltaLines: [] }).split('\n')[0]
 
-    expect(header(0)).toMatch(/You are @default, one participant in a group chat with @hermes \[on local\], @researcher/)
-    expect(header(1)).toMatch(/You are @hermes, one participant in a group chat with @default \[on local\], @researcher/)
+    expect(header(0)).toMatch(/You are @default, one participant in a group chat with @icebath \[on local\], @researcher/)
+    expect(header(1)).toMatch(/You are @icebath, one participant in a group chat with @default \[on local\], @researcher/)
   }
 })

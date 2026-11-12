@@ -7,7 +7,7 @@ import { clearWebappSession, seedWebappSession } from '@/test/webapp-session'
 
 import { installBrowserDesktopBridge } from './browser-desktop-bridge'
 
-const META = '\u0000HERMES_TERMINAL_META:'
+const META = '\u0000ICEBATH_TERMINAL_META:'
 
 class Socket {
   static OPEN = 1

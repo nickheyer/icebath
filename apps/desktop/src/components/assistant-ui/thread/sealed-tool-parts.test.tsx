@@ -77,7 +77,7 @@ describe('tool parts sealed without a result', () => {
   })
 
   it('renders a sealed delivery terminal call as the generic row, not a pending notice', async () => {
-    const command = 'icebath -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Icebath (@hermes): hi"'
+    const command = 'icebath -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Icebath (@icebath): hi"'
     const { container } = render(<Harness message={sealedMessage('terminal', { command })} />)
 
     expect(await screen.findByText('Result unavailable')).toBeTruthy()

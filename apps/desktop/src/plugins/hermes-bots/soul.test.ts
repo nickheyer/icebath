@@ -69,7 +69,7 @@ describe('appending the protocol to an existing SOUL', () => {
     expect(once).toMatch(/I am the default profile on this machine/)
     expect(once).toMatch(/`researcher` — research specialist/)
     // The primary profile addresses itself by its callable alias.
-    expect(once).toMatch(/@hermes/)
+    expect(once).toMatch(/@icebath/)
     expect(once).not.toMatch(/@default/)
 
     const twice = ensureMessagingProtocol(once, 'default', roster)

@@ -293,7 +293,7 @@ describe('toChatMessages', () => {
     ])
 
     expect(chatMessageText(message)).toBe(
-      "[Audio: tts_20260501_222725.mp3](#media:%2FUsers%2Fbrooklyn%2F.hermes%2Fcache%2Faudio%2Ftts_20260501_222725.mp3)\n\nhow's that sound?"
+      "[Audio: tts_20260501_222725.mp3](#media:%2FUsers%2Fbrooklyn%2F.icebath%2Fcache%2Faudio%2Ftts_20260501_222725.mp3)\n\nhow's that sound?"
     )
   })
 

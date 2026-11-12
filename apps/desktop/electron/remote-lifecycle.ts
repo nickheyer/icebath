@@ -227,7 +227,7 @@ async function locateHermes(ssh, remoteHermesPath) {
     const err: any = new Error(
       `The Icebath path you set is not an executable on the remote host: "${remoteHermesPath}". ` +
         'Check the path (it must be the full path to the `icebath` binary on the remote, e.g. ' +
-        '~/icebath-agent/.venv/bin/hermes), or clear it to auto-detect.'
+        '~/icebath-agent/.venv/bin/icebath), or clear it to auto-detect.'
     )
 
     err.kind = 'hermes-not-found'
@@ -248,9 +248,9 @@ async function locateHermes(ssh, remoteHermesPath) {
 
   // Fallback candidates when the login-shell probe misses: the installer's
   // command locations (scripts/install.sh) — per-user, root/FHS, legacy venv.
-  candidates.push('~/.local/bin/hermes')
-  candidates.push('/usr/local/bin/hermes')
-  candidates.push('~/.icebath/icebath-agent/venv/bin/hermes')
+  candidates.push('~/.local/bin/icebath')
+  candidates.push('/usr/local/bin/icebath')
+  candidates.push('~/.icebath/icebath-agent/venv/bin/icebath')
 
   for (const candidate of candidates) {
     if (!candidate) {
@@ -1163,7 +1163,7 @@ function buildSpawnCommand(hermesPath, profile, opts: any = {}) {
   const detachedShell: string = `eval "exec $1>&-"; ${dashCmd} </dev/null >> ${logPath} 2>&1 & echo $!`
   // The inner shell backgrounds Icebath and reports its PID; backgrounding the
   // launcher too adds its unrelated PID to the value published in the lock.
-  const detachedSpawn: string = `child=$("$(command -v setsid || echo nohup)" sh -c ${shq(detachedShell)} hermes-update-child "$1")`
+  const detachedSpawn: string = `child=$("$(command -v setsid || echo nohup)" sh -c ${shq(detachedShell)} icebath-update-child "$1")`
 
   if (!opts.ownershipId || !opts.lockMetadata) {
     return withRemoteUpdateMutex(

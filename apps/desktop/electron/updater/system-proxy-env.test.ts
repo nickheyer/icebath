@@ -116,7 +116,7 @@ describe('update child proxy env from the system proxy (#123387)', () => {
   })
 
   it("keeps a fork origin and the user's package mirrors direct when the system sends them direct (S2)", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-update-hosts-'))
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'icebath-update-hosts-'))
 
     try {
       fs.mkdirSync(path.join(root, '.git'))

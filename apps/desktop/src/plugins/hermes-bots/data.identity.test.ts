@@ -72,7 +72,7 @@ beforeEach(() => {
 })
 
 describe('the @handle a bot answers to', () => {
-  it('presents the primary profile as @hermes — "default" never surfaces in the UI', () => {
+  it('presents the primary profile as @icebath — "default" never surfaces in the UI', () => {
     expect(botHandle('default')).toBe('icebath')
     expect(botHandle('ops')).toBe('ops')
   })
@@ -131,11 +131,11 @@ describe('resolving @mentions against the roster', () => {
     expect(resolveRosterMentions('ping @bob-mac-mini', roster, live).map(bot => bot.name)).toEqual(['bob'])
   })
 
-  it('never treats @hermes in your own chat as a handoff to yourself', () => {
-    expect(resolveRosterMentions('@hermes do it', roster, { connectionId: 'local', name: 'default' })).toEqual([])
+  it('never treats @icebath in your own chat as a handoff to yourself', () => {
+    expect(resolveRosterMentions('@icebath do it', roster, { connectionId: 'local', name: 'default' })).toEqual([])
     // From ANOTHER bot's chat the same tag is a real handoff.
     expect(
-      resolveRosterMentions('@hermes do it', roster, { connectionId: 'mac-mini', name: 'dixie' }).map(bot => bot.name)
+      resolveRosterMentions('@icebath do it', roster, { connectionId: 'mac-mini', name: 'dixie' }).map(bot => bot.name)
     ).toEqual(['default'])
   })
 
@@ -253,7 +253,7 @@ describe('roster search narrows without re-ranking', () => {
       'agency-audio-designer',
       'agency-ai-engineer'
     ])
-    expect(filterBots(roster, meta, '@hermes').map(bot => bot.name)).toEqual(['default'])
+    expect(filterBots(roster, meta, '@icebath').map(bot => bot.name)).toEqual(['default'])
     expect(filterBots(roster, meta, 'default').map(bot => bot.name)).toEqual(['default'])
   })
 

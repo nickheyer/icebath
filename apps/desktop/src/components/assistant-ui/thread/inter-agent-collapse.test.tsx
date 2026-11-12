@@ -80,7 +80,7 @@ function Harness({ messages }: { messages: ThreadMessage[] }) {
   )
 }
 
-const DELIVERY = 'Message from 🤖 Icebath (@hermes): please check the build'
+const DELIVERY = 'Message from 🤖 Icebath (@icebath): please check the build'
 
 /** This bot's own `message_agent` dispatch to a teammate (a Bot Chat turn). */
 function dispatch(id: string, target: string): ThreadMessage {
@@ -104,14 +104,14 @@ function dispatch(id: string, target: string): ThreadMessage {
 
 describe('inter-agent collapse gate', () => {
   it('keeps the report after a relayed answer to this bot\u2019s own dispatch expanded', async () => {
-    // Bot Mode round trip seen from the DISPATCHING bot: it messaged @hermes,
+    // Bot Mode round trip seen from the DISPATCHING bot: it messaged @icebath,
     // the answer came back as an inbound "Message from" row, and the next
     // assistant message is its report to the human — not a reply to icebath.
     render(
       <Harness
         messages={[
           user('u1', 'ask icebath for the list'),
-          dispatch('a0', '@Hermes'),
+          dispatch('a0', '@Icebath'),
           user('u2', DELIVERY),
           assistant('a1', 'here is the list icebath sent', false)
         ]}
@@ -140,12 +140,12 @@ describe('inter-agent collapse gate', () => {
       <Harness
         messages={[
           user('u1', 'ask icebath for the list'),
-          dispatch('a0', '@Hermes'),
+          dispatch('a0', '@Icebath'),
           user('u2', DELIVERY),
           assistant('a1', 'here is the list icebath sent', false),
           user('u3', 'ok thanks'),
           assistant('a2', 'anytime', false),
-          user('u4', 'Message from 🤖 Icebath (@hermes): unsolicited: build broke'),
+          user('u4', 'Message from 🤖 Icebath (@icebath): unsolicited: build broke'),
           assistant('a3', 'on it, checking the build', false)
         ]}
       />

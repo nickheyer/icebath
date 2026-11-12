@@ -291,3 +291,32 @@ func TestBundledPluginsDirHonoursOverride(t *testing.T) {
 		t.Fatalf("default = %s", GetBundledPluginsDir())
 	}
 }
+
+func TestAppliesHereEvaluatesTheMarkerAgainstThePluginInterpreter(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	host, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	python := pm.VenvPython(filepath.Join(repo, "venv"))
+	if err := os.MkdirAll(filepath.Dir(python), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(host, python); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pm.PatchRepoRoot(repo))
+	for req, want := range map[string]bool{
+		"a>=1; python_version >= '0'":                    true,
+		"a>=1; python_version < '0'":                     false,
+		"a; extra == 'cli'":                              false,
+		"a; python_version >= '0' and extra == 'cli'":    false,
+		"a; python_version < '0' or os_name != 'riscos'": true,
+		"a; platform_machine ~= 'x86'":                   true,
+	} {
+		if got := appliesHere(context.Background(), req); got != want {
+			t.Errorf("%q applies %v, want %v", req, got, want)
+		}
+	}
+}

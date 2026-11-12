@@ -7,7 +7,8 @@
     "apps/*",
     "ui-tui",
     "ui-tui/packages/*",
-    "web"
+    "web",
+    "tests-js"
   ],
   "scripts": {
     "postinstall": "echo '✅ Node dependencies installed. Run: icebath --help'",

@@ -1745,7 +1745,7 @@ export const jaOverrides = {
       },
       MATRIX_HOMESERVER: { label: 'ホームサーバー URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'アクセストークン' },
-      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@icebath:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '許可する Matrix ユーザー ID',
         help: '推奨。@user:server 形式のユーザー ID（1 欄に 1 件）。'

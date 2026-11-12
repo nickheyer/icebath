@@ -98,7 +98,7 @@ test('canImportHermesCli returns false when binary does not exist', async () => 
 })
 
 test('explicit Icebath override is authoritative', () => {
-  assert.equal(shouldTrustHermesOverride('/nix/store/abc/bin/hermes'), true)
+  assert.equal(shouldTrustHermesOverride('/nix/store/abc/bin/icebath'), true)
 })
 
 test('empty Icebath override is not authoritative', () => {

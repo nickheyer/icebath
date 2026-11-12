@@ -992,7 +992,7 @@ describe('browser-hosted Desktop bridge', () => {
           this.readyState = FakeWebSocket.OPEN
           this.onopen?.()
           this.onmessage?.({
-            data: '\u0000HERMES_TERMINAL_META:{"shell":"powershell.exe"}'
+            data: '\u0000ICEBATH_TERMINAL_META:{"shell":"powershell.exe"}'
           } as MessageEvent)
         })
       }
@@ -1080,7 +1080,7 @@ describe('browser-hosted Desktop bridge', () => {
         queueMicrotask(() => {
           this.readyState = 1
           this.onopen?.()
-          this.onmessage?.({ data: '\u0000HERMES_TERMINAL_META:{"shell":"sh"}' } as MessageEvent)
+          this.onmessage?.({ data: '\u0000ICEBATH_TERMINAL_META:{"shell":"sh"}' } as MessageEvent)
         })
       }
 
@@ -1120,7 +1120,7 @@ describe('browser-hosted Desktop bridge', () => {
           this.readyState = PromptWebSocket.OPEN
           this.onopen?.()
           this.onmessage?.({
-            data: '\u0000HERMES_TERMINAL_META:{"shell":"fish"}'
+            data: '\u0000ICEBATH_TERMINAL_META:{"shell":"fish"}'
           } as MessageEvent)
           const bytes = new TextEncoder().encode('host shell ready')
           this.onmessage?.({ data: bytes.buffer } as MessageEvent)

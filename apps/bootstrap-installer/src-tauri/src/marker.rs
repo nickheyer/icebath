@@ -559,7 +559,7 @@ pub(crate) fn should_heal_self_marker_refusal(
 }
 
 /// `hermes_cli/update_lock.py::CHECKOUT_LOCK_NAME` (no checkout) / `GIT_CHECKOUT_LOCK_NAME`.
-const CHECKOUT_LOCK_NAME: &str = ".hermes-update.lock";
+const CHECKOUT_LOCK_NAME: &str = ".icebath-update.lock";
 const GIT_CHECKOUT_LOCK_NAME: &str = "hermes-update.lock";
 
 /// `update_lock.py::_WINDOWS_LOCK_OFFSET`: the byte msvcrt locks, far past the holder record.

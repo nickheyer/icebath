@@ -24,9 +24,9 @@ describe('agent message detection', () => {
   })
 
   it('recognizes a relayed sender re-stamped @handle@connection, keeping the bare handle for the avatar', () => {
-    // The receiving gateway re-stamps a relayed "@hermes" as "@hermes@<connection>"
+    // The receiving gateway re-stamps a relayed "@icebath" as "@icebath@<connection>"
     // (#103731) — still an agent notice, and the avatar resolves by profile handle.
-    const m = AGENT_MESSAGE_RE.exec('Message from 🤖 icebath (@hermes@Cloud-1): status?')
+    const m = AGENT_MESSAGE_RE.exec('Message from 🤖 icebath (@icebath@Cloud-1): status?')
 
     expect(m?.[1]?.trim()).toBe('icebath')
     expect(m?.[2]).toBe('icebath')

@@ -26,7 +26,7 @@ export const A2A_PREFIX_RE = /^Message from (?:agent '[^']+'|🤖[^:]+):\s*/i
  *  starts with the delivery prefix is a bot-to-bot message — the receiving
  *  bot's row should show WHO sent it, not present it as the human's chat.
  *  `roster` + `connectionId` name the sender's row on the receiver's source,
- *  so its handle follows the roster (a real 'icebath' profile keeps @hermes). */
+ *  so its handle follows the roster (a real 'icebath' profile keeps @icebath). */
 export function previewKind(
   preview: null | string | undefined,
   roster: readonly Partial<RosterRow>[] = [],
@@ -45,7 +45,7 @@ export function previewKind(
   if (match) {
     // The captured name is whatever the delivery prefix carried — a raw
     // profile name. Map it the way every other surface does so the primary
-    // profile reads @hermes, never @default (#89484).
+    // profile reads @icebath, never @default (#89484).
     const sender = (match[1] || match[2] || '').trim().toLowerCase()
 
     const row = roster.find(

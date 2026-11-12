@@ -30,7 +30,7 @@ describe('isVoiceStopCommand', () => {
   })
 
   it('matches stop commands addressed to Icebath', () => {
-    for (const phrase of ['icebath stop', 'hey hermes stop', 'hey hermes, stop', 'ok stop', 'okay stop']) {
+    for (const phrase of ['hermes stop', 'hey hermes stop', 'hey hermes, stop', 'ok stop', 'okay stop']) {
       expect(isVoiceStopCommand(phrase, { mode: 'default' })).toBe(true)
     }
   })
@@ -49,7 +49,7 @@ describe('isVoiceStopCommand', () => {
   })
 
   it('does not match bare address words or empty input', () => {
-    for (const phrase of ['', '  ', 'icebath', 'hey hermes', 'ok', 'okay', 'hey']) {
+    for (const phrase of ['', '  ', 'hermes', 'hey hermes', 'ok', 'okay', 'hey']) {
       expect(isVoiceStopCommand(phrase, { mode: 'default' })).toBe(false)
     }
   })
@@ -65,7 +65,7 @@ describe('isVoiceStopCommand', () => {
 
     expect(isVoiceStopCommand('отбой', config)).toBe(true)
     expect(isVoiceStopCommand('Стоп!', config)).toBe(true)
-    expect(isVoiceStopCommand('icebath отбой', config)).toBe(true)
+    expect(isVoiceStopCommand('hermes отбой', config)).toBe(true)
     expect(isVoiceStopCommand('stop the docker container', config)).toBe(false)
     // Built-in English extras are NOT active when the key is set.
     expect(isVoiceStopCommand('goodbye', config)).toBe(false)

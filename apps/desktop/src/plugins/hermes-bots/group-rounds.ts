@@ -59,7 +59,7 @@ export function parseGroupChatMentions(text: unknown, members: GroupMember[]) {
   for (const member of members) {
     const title = String(member.title || '').trim()
     // Normalize legacy "default" handles without aliasing device-qualified
-    // defaults to @hermes: that would retarget the primary tag by roster order.
+    // defaults to @icebath: that would retarget the primary tag by roster order.
     const handle = String(botHandle(member.name, member) || '').trim()
 
     const forms = new Set([

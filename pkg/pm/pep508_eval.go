@@ -3,9 +3,11 @@ package pm
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // UndefinedMarkerError is packaging's UndefinedComparison or UndefinedEnvironmentName raised while evaluating a marker
@@ -149,34 +151,193 @@ func comparePEP440(a, b *pep440Version) int {
 	return 0
 }
 
-// Copy of a version without its local label
-func (v *pep440Version) public() *pep440Version {
-	out := *v
-	out.local = nil
-	return &out
-}
-
-// Copy holding only the epoch and release, packaging's base_version
-func (v *pep440Version) base() *pep440Version {
-	return &pep440Version{epoch: v.epoch, release: v.release}
-}
-
 // Pre release or development release, packaging's is_prerelease
 func (v *pep440Version) isPrerelease() bool { return v.pre != nil || v.hasDev }
 
-// Segments packaging's _version_split yields for the canonical text of a public version
-func (v *pep440Version) split() []string {
-	out := append([]string{v.epoch}, v.release...)
-	if v.pre != nil {
-		out = append(out, v.pre[0]+v.pre[1])
+// Release with trailing zeros dropped down to one segment, the range engine's trimmed release
+func rangeTrimmedRelease(release []string) []string {
+	end := len(release)
+	for end > 1 && release[end-1] == "0" {
+		end--
 	}
-	if v.hasPost {
-		out = append(out, "post"+v.post)
+	return release[:end]
+}
+
+// Decimal text of a normalized non negative integer plus one
+func decimalIncrement(n string) string {
+	digits := []byte(n)
+	for i := len(digits) - 1; i >= 0; i-- {
+		if digits[i] != '9' {
+			digits[i]++
+			return string(digits)
+		}
+		digits[i] = '0'
 	}
-	if v.hasDev {
-		out = append(out, "dev"+v.dev)
+	return "1" + string(digits)
+}
+
+// Reports equal pre release segments, both absent counting as equal
+func samePre(a, b []string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
 	}
-	return out
+	return a[0] == b[0] && a[1] == b[1]
+}
+
+// Reports a version sharing the boundary version's epoch, release up to trailing zeros and pre release
+func releaseFamily(boundary, v *pep440Version) bool {
+	if v.epoch != boundary.epoch {
+		return false
+	}
+	trimmed := rangeTrimmedRelease(boundary.release)
+	if len(v.release) < len(trimmed) {
+		return false
+	}
+	for i, segment := range trimmed {
+		if v.release[i] != segment {
+			return false
+		}
+	}
+	for _, segment := range v.release[len(trimmed):] {
+		if segment != "0" {
+			return false
+		}
+	}
+	return samePre(v.pre, boundary.pre)
+}
+
+// Reports a version in the boundary version's local family, same release, pre, post and dev
+func localFamily(boundary, v *pep440Version) bool {
+	return releaseFamily(boundary, v) && v.hasPost == boundary.hasPost && v.post == boundary.post &&
+		v.hasDev == boundary.hasDev && v.dev == boundary.dev
+}
+
+// Where a range bound sits, on its version or just past the version's locals or its post releases
+type boundKind int
+
+const (
+	boundExact boundKind = iota
+	boundAfterLocals
+	boundAfterPosts
+)
+
+// One end of a version range, a nil version standing for an unbounded end
+type versionBound struct {
+	version   *pep440Version
+	kind      boundKind
+	inclusive bool
+}
+
+// One interval of versions between a lower and an upper bound
+type versionInterval struct{ lower, upper versionBound }
+
+// Whether a version lies at or above a lower bound
+func (b versionBound) above(v *pep440Version) bool {
+	switch {
+	case b.version == nil:
+		return true
+	case b.kind == boundAfterPosts:
+		return comparePEP440(b.version, v) < 0 && !releaseFamily(b.version, v)
+	case b.kind == boundAfterLocals:
+		return comparePEP440(b.version, v) < 0 && !localFamily(b.version, v)
+	case b.inclusive:
+		return comparePEP440(b.version, v) <= 0
+	}
+	return comparePEP440(b.version, v) < 0
+}
+
+// Whether a version lies at or below an upper bound
+func (b versionBound) below(v *pep440Version) bool {
+	switch {
+	case b.version == nil:
+		return true
+	case b.kind == boundAfterLocals:
+		return comparePEP440(b.version, v) >= 0 || localFamily(b.version, v)
+	case b.inclusive:
+		return comparePEP440(b.version, v) >= 0
+	}
+	return comparePEP440(b.version, v) > 0
+}
+
+// Release dev0 version over the given epoch and release segments
+func releaseDev0(epoch string, release []string) *pep440Version {
+	return &pep440Version{epoch: epoch, release: release, dev: "0", hasDev: true}
+}
+
+// Smallest version of the next release prefix, 1.2 giving 1.3.dev0
+func nextPrefixDev0(v *pep440Version) *pep440Version {
+	release := append(append([]string{}, v.release[:len(v.release)-1]...), decimalIncrement(v.release[len(v.release)-1]))
+	return releaseDev0(v.epoch, release)
+}
+
+// Packaging's 0.dev0, below which an exclusive upper bound admits nothing
+var minimumVersion = releaseDev0("0", []string{"0"})
+
+// Intervals a wildcard equality or inequality covers, 1.2.* spanning 1.2.dev0 up to 1.3.dev0
+func wildcardIntervals(op string, base *pep440Version) []versionInterval {
+	lower, upper := releaseDev0(base.epoch, base.release), nextPrefixDev0(base)
+	if op == "==" {
+		return []versionInterval{{versionBound{version: lower, inclusive: true}, versionBound{version: upper}}}
+	}
+	return []versionInterval{{versionBound{}, versionBound{version: lower}}, {versionBound{version: upper, inclusive: true}, versionBound{}}}
+}
+
+// Intervals a standard operator covers, the local flag telling whether the clause names a local label
+func standardIntervals(op string, v *pep440Version, hasLocal bool) []versionInterval {
+	switch op {
+	case ">=":
+		return []versionInterval{{versionBound{version: v, inclusive: true}, versionBound{}}}
+	case "<=":
+		return []versionInterval{{versionBound{}, versionBound{version: v, kind: boundAfterLocals, inclusive: true}}}
+	case ">":
+		if v.hasDev {
+			next := *v
+			next.dev, next.local = decimalIncrement(v.dev), nil
+			return []versionInterval{{versionBound{version: &next, inclusive: true}, versionBound{}}}
+		}
+		if v.hasPost {
+			next := *v
+			next.post, next.dev, next.hasDev, next.local = decimalIncrement(v.post), "0", true, nil
+			return []versionInterval{{versionBound{version: &next, inclusive: true}, versionBound{}}}
+		}
+		return []versionInterval{{versionBound{version: v, kind: boundAfterPosts}, versionBound{}}}
+	case "<":
+		bound := v
+		if !v.isPrerelease() {
+			dev0 := *v
+			dev0.dev, dev0.hasDev, dev0.local = "0", true, nil
+			bound = &dev0
+		}
+		if comparePEP440(bound, minimumVersion) <= 0 {
+			return nil
+		}
+		return []versionInterval{{versionBound{}, versionBound{version: bound}}}
+	case "~=":
+		prefix := *v
+		prefix.release = v.release[:len(v.release)-1]
+		return []versionInterval{{versionBound{version: v, inclusive: true}, versionBound{version: nextPrefixDev0(&prefix)}}}
+	}
+	upper := versionBound{version: v, kind: boundAfterLocals, inclusive: true}
+	if hasLocal {
+		upper.kind = boundExact
+	}
+	if op == "==" {
+		return []versionInterval{{versionBound{version: v, inclusive: true}, upper}}
+	}
+	return []versionInterval{{versionBound{}, versionBound{version: v}}, {versionBound{version: upper.version, kind: upper.kind}, versionBound{}}}
+}
+
+// Whether a version falls inside any of the sorted, non overlapping intervals
+func intervalsContain(intervals []versionInterval, v *pep440Version) bool {
+	for _, interval := range intervals {
+		if !interval.lower.above(v) {
+			return false
+		}
+		if interval.upper.below(v) {
+			return true
+		}
+	}
+	return false
 }
 
 // Parses a version that a validated specifier carries, failing when the text is not a version
@@ -191,129 +352,60 @@ func mustSpecVersion(text string) (*pep440Version, error) {
 	return v, nil
 }
 
-// Prefix match of a wildcard equality, both sides padded with zero release segments
-func wildcardEqual(prospective *pep440Version, spec string) (bool, error) {
-	specV, err := mustSpecVersion(strings.TrimSuffix(spec, ".*"))
+// Direct comparison answer for simple clauses on a version without a local label, decided false when ranges must answer
+func fastSpecifierMatch(s pySpecifier, v *pep440Version) (match, decided bool, err error) {
+	if strings.HasSuffix(s.version, ".*") || v.local != nil {
+		return false, false, nil
+	}
+	switch s.op {
+	case ">=", "<=", "==", "!=", "<", ">":
+	default:
+		return false, false, nil
+	}
+	specV, err := mustSpecVersion(s.version)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	left, right := prospective.public().split(), specV.split()
-	digits := func(parts []string) int {
-		n := 0
-		for n < len(parts) && isASCIIDigits(parts[n]) {
-			n++
-		}
-		return n
+	c := comparePEP440(v, specV)
+	switch s.op {
+	case ">=":
+		return c >= 0, true, nil
+	case "<=":
+		return c <= 0, true, nil
+	case "==":
+		return c == 0, true, nil
+	case "!=":
+		return c != 0, true, nil
 	}
-	pad := func(parts []string, have, want int) []string {
-		if want <= have {
-			return parts
-		}
-		out := append([]string{}, parts[:have]...)
-		for i := have; i < want; i++ {
-			out = append(out, "0")
-		}
-		return append(out, parts[have:]...)
+	if v.epoch == specV.epoch && slices.Equal(rangeTrimmedRelease(v.release), rangeTrimmedRelease(specV.release)) {
+		return false, false, nil
 	}
-	ld, rd := digits(left), digits(right)
-	left = pad(left, ld, rd)
-	if len(left) > len(right) {
-		left = left[:len(right)]
+	if s.op == "<" {
+		return c < 0, true, nil
 	}
-	if len(left) != len(right) {
-		return false, nil
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false, nil
-		}
-	}
-	return true, nil
+	return c > 0, true, nil
 }
 
 // Whether a version satisfies one clause with prereleases admitted, an unparsable version matching nothing
 func (s pySpecifier) contains(item string) (bool, error) {
 	if s.op == "===" {
-		return strings.ToLower(item) == strings.ToLower(s.version), nil
+		return pystr.Lower(item) == pystr.Lower(s.version), nil
 	}
-	prospective, ok, err := parsePEP440(item)
+	parsed, ok, err := parsePEP440(item)
+	if err != nil || !ok {
+		return false, err
+	}
+	if match, decided, err := fastSpecifierMatch(s, parsed); err != nil || decided {
+		return match, err
+	}
+	specV, err := mustSpecVersion(strings.TrimSuffix(s.version, ".*"))
 	if err != nil {
 		return false, err
 	}
-	if !ok {
-		return false, nil
+	if strings.HasSuffix(s.version, ".*") {
+		return intervalsContain(wildcardIntervals(s.op, specV), parsed), nil
 	}
-	switch s.op {
-	case "==", "!=":
-		var equal bool
-		if strings.HasSuffix(s.version, ".*") {
-			if equal, err = wildcardEqual(prospective, s.version); err != nil {
-				return false, err
-			}
-		} else {
-			specV, err := mustSpecVersion(s.version)
-			if err != nil {
-				return false, err
-			}
-			candidate := prospective
-			if specV.local == nil {
-				candidate = prospective.public()
-			}
-			equal = comparePEP440(candidate, specV) == 0
-		}
-		return equal == (s.op == "=="), nil
-	case "~=":
-		specV, err := mustSpecVersion(s.version)
-		if err != nil {
-			return false, err
-		}
-		if comparePEP440(prospective.public(), specV) < 0 {
-			return false, nil
-		}
-		prefix := strings.Join(specV.release[:len(specV.release)-1], ".") + ".*"
-		if specV.epoch != "0" {
-			prefix = specV.epoch + "!" + prefix
-		}
-		return wildcardEqual(prospective, prefix)
-	case "<=", ">=":
-		specV, err := mustSpecVersion(s.version)
-		if err != nil {
-			return false, err
-		}
-		c := comparePEP440(prospective.public(), specV)
-		if s.op == "<=" {
-			return c <= 0, nil
-		}
-		return c >= 0, nil
-	case "<":
-		specV, err := mustSpecVersion(s.version)
-		if err != nil {
-			return false, err
-		}
-		if comparePEP440(prospective, specV) >= 0 {
-			return false, nil
-		}
-		if !specV.isPrerelease() && prospective.isPrerelease() && comparePEP440(prospective.base(), specV.base()) == 0 {
-			return false, nil
-		}
-		return true, nil
-	case ">":
-		specV, err := mustSpecVersion(s.version)
-		if err != nil {
-			return false, err
-		}
-		if comparePEP440(prospective, specV) <= 0 {
-			return false, nil
-		}
-		if !specV.hasPost && prospective.hasPost && comparePEP440(prospective.base(), specV.base()) == 0 {
-			return false, nil
-		}
-		if prospective.local != nil && comparePEP440(prospective.base(), specV.base()) == 0 {
-			return false, nil
-		}
-		return true, nil
-	}
-	return false, &PyError{Class: "ValueError", Message: "unknown specifier operator " + pyrepr.StrRepr(s.op)}
+	return intervalsContain(standardIntervals(s.op, specV, strings.Contains(s.version, "+")), parsed), nil
 }
 
 // Whether a version satisfies every clause of a specifier set with prereleases admitted
@@ -405,6 +497,30 @@ func evaluateMarkerList(markers markerList, env map[string]string) (bool, error)
 	return false, nil
 }
 
+// Keys packaging's default_environment reports for the running interpreter
+var defaultEnvironmentKeys = map[string]bool{"implementation_name": true, "implementation_version": true, "os_name": true,
+	"platform_machine": true, "platform_release": true, "platform_system": true, "platform_version": true,
+	"python_full_version": true, "platform_python_implementation": true, "python_version": true, "sys_platform": true}
+
+// Reports a marker naming an interpreter default key that the environment leaves unset
+func markerNeedsDefaults(markers markerList, environment map[string]string) bool {
+	for _, marker := range markers {
+		switch m := marker.(type) {
+		case markerList:
+			if markerNeedsDefaults(m, environment) {
+				return true
+			}
+		case markerItem:
+			for _, operand := range []markerVar{m.lhs, m.rhs} {
+				if _, set := environment[operand.value]; operand.variable && defaultEnvironmentKeys[operand.value] && !set {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // Marker evaluation in packaging's metadata context, the environment overriding defaults and extra canonicalized
 func evaluateMarker(markers markerList, defaults, environment map[string]string) (bool, error) {
 	env := map[string]string{"extra": ""}
@@ -423,11 +539,40 @@ func evaluateMarker(markers markerList, defaults, environment map[string]string)
 	return evaluateMarkerList(markers, env)
 }
 
+// InvalidMarkerError is packaging's InvalidMarker raised for marker text that does not parse
+type InvalidMarkerError struct{ Message string }
+
+func (e *InvalidMarkerError) Error() string { return e.Message }
+
+// Parses a standalone marker expression like packaging Marker, extra and set membership literals canonicalized
+func parseMarker(text string) (markerList, error) {
+	t := &pepTokenizer{src: []rune(text), source: text}
+	markers, err := parseMarkerTokens(t)
+	if err == nil {
+		_, _, err = t.expect("END", "end of marker expression")
+	}
+	if err != nil {
+		if syntax, ok := err.(*ParserSyntaxError); ok {
+			return nil, &InvalidMarkerError{Message: syntax.Error()}
+		}
+		return nil, err
+	}
+	return normalizeExtras(markers).(markerList), nil
+}
+
 // EvaluateMarker evaluates a PEP 508 marker string in process, the environment over defaults like Marker.evaluate
 func EvaluateMarker(marker string, defaults, environment map[string]string) (bool, error) {
-	req, err := ParseRequirement("gate ; " + marker)
+	markers, err := parseMarker(marker)
 	if err != nil {
 		return false, err
 	}
-	return evaluateMarker(req.Marker, defaults, environment)
+	return evaluateMarker(markers, defaults, environment)
+}
+
+// MarkerHolds evaluates the requirement's marker over the environment laid on the defaults, true when it carries none
+func (r *pyRequirement) MarkerHolds(defaults, environment map[string]string) (bool, error) {
+	if len(r.Marker) == 0 {
+		return true, nil
+	}
+	return evaluateMarker(r.Marker, defaults, environment)
 }

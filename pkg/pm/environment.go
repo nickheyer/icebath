@@ -64,11 +64,12 @@ type uvResult struct {
 	Stderr string
 }
 
-// uvTimeoutError is a uv child that outlived its deadline, carrying the output tail seen so far
+// uvTimeoutError is a uv child that outlived its deadline, carrying the output tail and raw stderr seen so far
 type uvTimeoutError struct {
 	Argv    []string
 	Timeout time.Duration
 	Tail    string
+	Stderr  []byte
 }
 
 func (e *uvTimeoutError) Error() string {
@@ -767,7 +768,10 @@ func runCaptured(ctx context.Context, command []string, cwd string, env map[stri
 		case <-timer.C:
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			return uvResult{}, &uvTimeoutError{Argv: command, Timeout: timeout}
+			if !gotErr {
+				errData = <-errCh
+			}
+			return uvResult{}, &uvTimeoutError{Argv: command, Timeout: timeout, Stderr: errData}
 		case <-ctx.Done():
 			timer.Stop()
 			_ = cmd.Process.Kill()

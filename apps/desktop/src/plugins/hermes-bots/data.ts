@@ -1103,7 +1103,7 @@ export function mergeMultiSourceRoster(
     profiles.push({
       name: profile,
       // A remote row's title/display_name ride the union enumeration; without
-      // them a remote default titled "CoS Bot" only ever tags as @hermes(-device)
+      // them a remote default titled "CoS Bot" only ever tags as @icebath(-device)
       // and its title slug is unknown to the composer (#103731).
       ...(agent.profileMetadata || {}),
       handle: agent.handle,
@@ -1196,7 +1196,7 @@ function claimableRowHandle(bot: Partial<RosterRow>): string {
 }
 
 /** Mark each default row whose source also lists a real `icebath` profile, so
- *  that profile keeps @hermes and the roster never shows two (the backend's
+ *  that profile keeps @icebath and the roster never shows two (the backend's
  *  `tools/bot_mode_probe._handle` applies the same rule). Rows group by
  *  connection; rows without one are the active source. */
 export function claimDefaultHandles<T extends Partial<RosterRow>>(rows: T[]): T[] {
@@ -1216,7 +1216,7 @@ export function claimDefaultHandles<T extends Partial<RosterRow>>(rows: T[]): T[
  *  reduces to the mention charset two ways: slugified ("Research Buddy" →
  *  research-buddy, the form autocomplete inserts) and collapsed
  *  (researchbuddy). Reserved tokens are dropped so a bot renamed "Icebath"
- *  can never hijack the primary profile's @hermes alias. */
+ *  can never hijack the primary profile's @icebath alias. */
 export function mentionNameForms(value: null | string | undefined): string[] {
   const name = String(value || '')
     .trim()

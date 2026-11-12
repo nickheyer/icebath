@@ -414,7 +414,78 @@ func trackerAt(t *testing.T) (*ThreadParticipationTracker, string) {
 	prev := threadTrackerStatePath
 	threadTrackerStatePath = func(context.Context, string) string { return path }
 	t.Cleanup(func() { threadTrackerStatePath = prev })
-	return NewThreadParticipationTracker(context.Background(), "matrix", 0), path
+	return NewThreadParticipationTracker(context.Background(), "matrix", DefaultMaxTrackedThreads), path
+}
+
+func TestThreadParticipationTrackerInit(t *testing.T) {
+	ctx := context.Background()
+	t.Run("reads_the_home_state_file_in_order_without_duplicates", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("ICEBATH_HOME", dir)
+		os.WriteFile(filepath.Join(dir, "discord_threads.json"), []byte(`["b", 7, "b", true, null, 1.5]`), 0o600)
+		tracker := NewThreadParticipationTracker(ctx, "discord", DefaultMaxTrackedThreads)
+		if got := tracker.threads.Keys(); !slices.Equal(got, []string{"b", "7", "True", "None", "1.5"}) {
+			t.Fatalf("loaded %v", got)
+		}
+	})
+	for name, body := range map[string]*string{
+		"missing_file":        nil,
+		"empty_file":          new(""),
+		"not_a_list":          new(`{"a": 1}`),
+		"malformed_json":      new(`["a",`),
+		"second_bom":          new("\xef\xbb\xbf\xef\xbb\xbf[\"a\"]"),
+		"invalid_utf8":        new("[\"\xff\"]"),
+		"utf16_with_bom":      new("\xff\xfe[\x00\"\x00a\x00\"\x00]\x00"),
+		"utf16_without_bom":   new("[\x00\"\x00a\x00\"\x00]\x00"),
+		"lone_bom_start_only": new("\xef\xbb"),
+	} {
+		t.Run("load_is_empty_for_"+name, func(t *testing.T) {
+			tracker, path := trackerAt(t)
+			if body != nil {
+				os.WriteFile(path, []byte(*body), 0o600)
+			}
+			tracker = NewThreadParticipationTracker(ctx, "matrix", DefaultMaxTrackedThreads)
+			if n := tracker.threads.Len(); n != 0 {
+				t.Fatalf("loaded %v", tracker.threads.Keys())
+			}
+		})
+	}
+	for name, tc := range map[string]struct {
+		max  int
+		want string
+	}{
+		"zero_keeps_every_id":           {0, `["t1", "t2", "t3"]`},
+		"negative_drops_the_oldest_ids": {-1, `["t2", "t3"]`},
+		"negative_past_the_size":        {-5, `[]`},
+		"positive_keeps_the_newest":     {1, `["t3"]`},
+	} {
+		t.Run("max_tracked_"+name, func(t *testing.T) {
+			_, path := trackerAt(t)
+			os.WriteFile(path, []byte(`["t1", "t2"]`), 0o600)
+			tracker := NewThreadParticipationTracker(ctx, "matrix", tc.max)
+			if err := tracker.Mark(ctx, "t3"); err != nil {
+				t.Fatal(err)
+			}
+			if raw, _ := os.ReadFile(path); string(raw) != tc.want {
+				t.Fatalf("persisted %s", raw)
+			}
+		})
+	}
+}
+
+func TestMessageDeduplicatorInit(t *testing.T) {
+	d := NewMessageDeduplicator(DefaultDedupMaxSize, DefaultDedupTTLSeconds)
+	if d.seen.Len() != 0 || d.maxSize != 2000 || d.ttl != 300 {
+		t.Fatalf("defaults %d %v", d.maxSize, d.ttl)
+	}
+	now := 1000.0
+	fixedDedupClock(t, &now)
+	forever := NewMessageDeduplicator(1000, math.Inf(1))
+	forever.IsDuplicate("m")
+	now += 1e9
+	if !forever.IsDuplicate("m") {
+		t.Fatal("an infinite ttl must keep every id a duplicate")
+	}
 }
 
 func TestThreadTrackerMarkOffLoop(t *testing.T) {

@@ -18,7 +18,7 @@ describe('a method the backend says it does not provide', () => {
     const text = describeRpcError(unavailable)
 
     expect(text).toContain('groups.no_such_verb')
-    expect(text).not.toMatch(/out of sync|different versions|\/update|hermes update/)
+    expect(text).not.toMatch(/out of sync|different versions|\/update|icebath update/)
   })
 
   it('keeps the skew warning for a schema the backend rejects', () => {

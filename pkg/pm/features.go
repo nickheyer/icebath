@@ -1,12 +1,14 @@
 package pm
 
 import (
+	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"time"
 
@@ -193,12 +195,48 @@ func optInExtras(repoDir string) ([]string, error) {
 	return sortedSet(names), nil
 }
 
-//go:embed feature_probe.py
-var featureProbeSource string
+// Probe the target interpreter runs to resolve every anchor against the selected tree's site directories
+const featureProbeSource = `
+import contextlib, importlib.util, json, os, site, sys, sysconfig
+base, anchors = sys.argv[1], json.loads(sys.argv[2])
+paths = sysconfig.get_paths(vars={"base": base, "platbase": base})
+sites = dict.fromkeys(paths[key] for key in ("purelib", "platlib"))
+if not any(os.path.isdir(path) for path in sites):
+    raise RuntimeError("target dependency tree has no site-packages")
+result = {}
+with contextlib.redirect_stdout(sys.stderr):
+    for path in sites:
+        site.addsitedir(path)
+    for anchor in anchors:
+        try:
+            result[anchor] = importlib.util.find_spec(anchor) is not None
+        except (ImportError, ValueError):
+            result[anchor] = False
+print(json.dumps(result))
+`
 
 // Runs a feature inventory child, replaced by tests the way they patch subprocess run
 var runFeatureProbe = func(ctx context.Context, argv []string, cwd string) (uvResult, error) {
 	return runCaptured(ctx, argv, cwd, pyEnviron(), 60*time.Second)
+}
+
+// Failure detail like subprocess errors give it, the captured stderr when nonempty and the exception text otherwise
+func featureProbeDetail(result uvResult, err error) string {
+	var timeout *uvTimeoutError
+	if errors.As(err, &timeout) {
+		if len(timeout.Stderr) == 0 {
+			return pystr.Strip(pyExceptionText(err))
+		}
+		if runtime.GOOS == "windows" {
+			text, _ := decodeUTF8Replace(timeout.Stderr, true)
+			return pystr.Strip(universalNewlines(text))
+		}
+		return pyrepr.BytesRepr(bytes.Trim(timeout.Stderr, " \t\n\r\x0b\x0c"))
+	}
+	if result.Stderr != "" {
+		return pystr.Strip(result.Stderr)
+	}
+	return pystr.Strip(pyExceptionText(err))
 }
 
 // Extras whose every anchor the target tree resolves, probed in one isolated interpreter process
@@ -221,14 +259,10 @@ func InstalledExtras(ctx context.Context, repoDir, venvDir, python string) ([]st
 	argv := []string{python, "-B", "-I", "-S", "-c", featureProbeSource, resolvePath(venvDir), string(asciiEscape(pySeparators(encoded)))}
 	result, err := runFeatureProbe(ctx, argv, repoDir)
 	if err == nil && result.Code != 0 {
-		err = fmt.Errorf("Command %s returned non-zero exit status %d.", pyrepr.Repr(argv), result.Code)
+		err = fmt.Errorf("Command '%s' returned non-zero exit status %d.", pyrepr.Repr(argv), result.Code)
 	}
 	if err != nil {
-		detail := pystr.Strip(result.Stderr)
-		if detail == "" {
-			detail = pystr.Strip(pyExceptionText(err))
-		}
-		return nil, &FeatureProbeError{Message: fmt.Sprintf("feature inventory failed on %s: %s", python, detail)}
+		return nil, &FeatureProbeError{Message: fmt.Sprintf("feature inventory failed on %s: %s", python, featureProbeDetail(result, err))}
 	}
 	doc, err := loadJSON([]byte(result.Stdout))
 	if err != nil {

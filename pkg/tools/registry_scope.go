@@ -361,7 +361,7 @@ func (r *Registry) PluginScopeForModule(current, module string) (string, error) 
 			return s, nil
 		}
 	}
-	return "", fmt.Errorf("plugin module %q is active in multiple profiles and cannot register outside one of those scopes", module)
+	return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s is active in multiple profiles and cannot register outside one of those scopes.", pyrepr.StrRepr(owner))}
 }
 
 // RegisterScoped registers a plugin owned tool into a profile overlay under the override policy

@@ -282,7 +282,7 @@ export const zhHantCommandCenter = {
       MATTERMOST_ALLOWED_USERS: { label: '允許的使用者 ID', help: '建議設定。Mattermost 使用者 ID（每格一個）。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '存取 Token' },
-      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@icebath:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '允許的 Matrix 使用者 ID',
         help: '建議設定。@user:server 格式的使用者 ID（每格一個）。'

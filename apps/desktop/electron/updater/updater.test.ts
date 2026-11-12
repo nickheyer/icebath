@@ -17,7 +17,7 @@ describe('build stamp → update ownership', () => {
     toolsDir: 'tools',
     storePython: 'tools/python/python',
     sitePackages: 'deps',
-    commands: { hermes: 'bin/hermes' }
+    commands: { hermes: 'bin/icebath' }
   }
 
   it.each([

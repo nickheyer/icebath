@@ -117,9 +117,9 @@ def marker_verdict(raw):
  * CHECKOUT lock is free (update_lock._reclaim_dead): a killed updater's
  * completion/build child still holding it answers HELD and keeps the marker.
  * The checkouts probed are `<marker dir>/icebath-agent` plus the checkout of
- * each `icebath` executable argument (`<root>/venv/bin/hermes`, symlinks
+ * each `icebath` executable argument (`<root>/venv/bin/icebath`, symlinks
  * resolved). Then it either prints the verdict (no payload: the relaunch probe)
- * or runs the payload as `sh -c payload hermes-update-mutex <fd>` still holding
+ * or runs the payload as `sh -c payload icebath-update-mutex <fd>` still holding
  * the lock. A refused payload exits 75 with the verdict on stderr. The probe
  * skips the lock when there is no marker, so it never creates files on a clean host.
  */
@@ -145,8 +145,8 @@ def read_marker():
     except FileNotFoundError:return None
 
 def checkout_lock(root):
-    # hermes_cli/update_lock.py::checkout_lock_path: <git common dir>/hermes-update.lock, else <root>/.hermes-update.lock.
-    plain=os.path.join(root,'.hermes-update.lock');dot=os.path.join(root,'.git')
+    # hermes_cli/update_lock.py::checkout_lock_path: <git common dir>/hermes-update.lock, else <root>/.icebath-update.lock.
+    plain=os.path.join(root,'.icebath-update.lock');dot=os.path.join(root,'.git')
     try:
         if os.path.isdir(dot):gitdir=dot
         elif os.path.isfile(dot):
@@ -187,7 +187,7 @@ if hold(fd):
             except FileNotFoundError:pass
 if payload is None or verdict!='CLEAR':
     print(verdict,file=sys.stderr if payload else sys.stdout);sys.exit(75 if payload else 0)
-sys.exit(subprocess.run(['sh','-c',payload,'hermes-update-mutex',str(fd)],pass_fds=(fd,)).returncode)
+sys.exit(subprocess.run(['sh','-c',payload,'icebath-update-mutex',str(fd)],pass_fds=(fd,)).returncode)
 `
 
 /**
@@ -237,7 +237,7 @@ export const WINDOWS_MARKER_JUDGE_PS = [
  */
 export const WINDOWS_CHECKOUT_LOCK_PS = [
   'function Get-CheckoutLockPath([string]$root){',
-  '$plain=[IO.Path]::Combine($root,".hermes-update.lock");$dot=[IO.Path]::Combine($root,".git");$gitdir=$null',
+  '$plain=[IO.Path]::Combine($root,".icebath-update.lock");$dot=[IO.Path]::Combine($root,".git");$gitdir=$null',
   'try{',
   'if([IO.Directory]::Exists($dot)){$gitdir=$dot}elseif([IO.File]::Exists($dot)){$text=[IO.File]::ReadAllText($dot).Trim();if($text.StartsWith("gitdir:")){$gitdir=[IO.Path]::Combine($root,$text.Substring(7).Trim())}}',
   'if($gitdir){$common=[IO.Path]::Combine($gitdir,"commondir");if([IO.File]::Exists($common)){$gitdir=[IO.Path]::Combine($gitdir,[IO.File]::ReadAllText($common).Trim())}}',

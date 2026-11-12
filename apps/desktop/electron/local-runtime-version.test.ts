@@ -25,7 +25,7 @@ describe('local client version source', (): void => {
     })
 
     await expect(resolveLocalRuntimeVersion('/isolated/hermes', '/isolated/home', {
-      launcher: '/isolated/hermes/.icebath/bin/hermes',
+      launcher: '/isolated/hermes/.icebath/bin/icebath',
       run
     })).resolves.toBe('0.21.5+6644.gb412ee9')
     expect(run).toHaveBeenCalledTimes(1)
@@ -37,7 +37,7 @@ describe('local client version source', (): void => {
     })
 
     await expect(resolveLocalRuntimeVersion('/isolated/hermes', '/isolated/home', {
-      launcher: '/isolated/hermes/.icebath/bin/hermes',
+      launcher: '/isolated/hermes/.icebath/bin/icebath',
       run
     })).resolves.toBe('')
   })

@@ -3115,7 +3115,7 @@ export const frOverrides = {
       },
       MATRIX_USER_ID: {
         label: "ID d'utilisateur du bot",
-        placeholder: '@hermes:example.org'
+        placeholder: '@icebath:example.org'
       },
       MATRIX_ALLOWED_USERS: {
         label: "IDs d'utilisateurs Matrix autorisés",

@@ -109,7 +109,7 @@ import { $subagentsBySession, type SubagentProgress } from '@/store/subagents'
 import { $retainedTodosBySession, $todosBySession, clearSessionTodos } from '@/store/todos'
 import { loadTranscriptTail, saveTranscriptTail } from '@/store/transcript-tail-cache'
 
-import sessionResumeActiveTurn from '../../../../../../tests/fixtures/session-resume-active-turn.json'
+import sessionResumeActiveTurn from '../../../../../../pkg/tuiserver/testdata/session-resume-active-turn.json'
 import { deferred } from '../../../test/deferred'
 import { NEW_CHAT_ROUTE, sessionRoute } from '../../routes'
 import type { ClientSessionState } from '../../types'

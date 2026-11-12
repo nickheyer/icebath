@@ -245,7 +245,7 @@ describe('buildToolView browser_navigate title', () => {
     )
 
     expect(view.status).toBe('error')
-    expect(view.title).toContain('icebath-agent.nousresearch.com/docs')
+    expect(view.title).toContain('hermes-agent.nousresearch.com/docs')
   })
 
   it('shows opened title on success', () => {
@@ -259,7 +259,7 @@ describe('buildToolView browser_navigate title', () => {
     )
 
     expect(view.status).toBe('success')
-    expect(view.title).toContain('icebath-agent.nousresearch.com/docs')
+    expect(view.title).toContain('hermes-agent.nousresearch.com/docs')
   })
 })
 

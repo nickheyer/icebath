@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -228,7 +229,11 @@ func persistPluginToolsetKeys(ctx context.Context) {
 	}
 	sort.Strings(keys)
 	portable := sortedKeys(GetPluginManager(ctx).GetPortableMCPServers())
-	data, err := json.Marshal(map[string]any{"toolset_keys": keys, "portable_mcp": portable})
+	payload := pyjson.NewObject()
+	payload.Set("toolset_keys", keys)
+	payload.Set("portable_mcp", portable)
+	text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	data := []byte(text)
 	if err == nil {
 		path := pluginToolsetKeysCachePath(ctx)
 		if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {

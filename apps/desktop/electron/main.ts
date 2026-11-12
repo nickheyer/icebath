@@ -1316,7 +1316,7 @@ const VENV_ROOT = path.join(ACTIVE_ICEBATH_ROOT, 'venv')
 // We deliberately put the marker INSIDE ACTIVE_ICEBATH_ROOT (not alongside)
 // so that deleting the checkout to start fresh also deletes the marker --
 // avoids the confusing "marker exists but checkout is gone" state.
-const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_ICEBATH_ROOT, '.hermes-bootstrap-complete')
+const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_ICEBATH_ROOT, '.icebath-bootstrap-complete')
 const BOOTSTRAP_MARKER_SCHEMA_VERSION = 1
 
 const DESKTOP_CONNECTION_CONFIG_PATH = path.join(app.getPath('userData'), 'connection.json')
@@ -4501,7 +4501,7 @@ function runningAppBundle() {
 // macOS/Linux update hand-off: spawn the repo-owned posix orchestrator
 // (scripts/desktop-update/posix.sh) detached and QUIT. The script waits us
 // out, runs `icebath update`, swaps/relaunches the app bundle, and writes
-// .hermes-update-result.json for the relaunched Desktop to surface. It shows
+// .icebath-update-result.json for the relaunched Desktop to surface. It shows
 // its own tiny shim window (or nothing, headless) — this process only needs
 // to leave. Checkouts that predate the script get the manual card once.
 function readJson(filePath) {
@@ -17240,7 +17240,7 @@ function canonicalizeInstallPath(p: string): string {
 
 /** True when the runtime checkout was created by a bootstrap installer
  *  (install.sh / install.ps1 / the desktop first-launch bootstrap): those all
- *  finish by writing `.hermes-bootstrap-complete` into the checkout root, and
+ *  finish by writing `.icebath-bootstrap-complete` into the checkout root, and
  *  `icebath update` preserves the file, so a manual clone never grows one. A
  *  missing checkout (sealed bundled payloads, remote backends) is not
  *  installer-created. */

@@ -802,7 +802,7 @@ test('helper command enters through the launcher module dispatch and quotes path
 
   const encoded = command.split(' ').pop()!
   const script = Buffer.from(encoded, 'base64').toString('utf16le')
-  assert.match(script, /bin\\hermes\.exe' '--run-module' 'hermes_cli\.windows_ssh_runtime' 'inspect'/)
+  assert.match(script, /bin\\icebath\.exe' '--run-module' 'hermes_cli\.windows_ssh_runtime' 'inspect'/)
   assert.match(script, /Icebath''s/)
   assert.match(script, /C:\\x y\\hermes\.exe/)
 })

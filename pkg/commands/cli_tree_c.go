@@ -60,7 +60,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	mcp := c.newCmd(root, "mcp", "Manage MCP server connections",
 		"Manage MCP server connections.\n\nMCP servers provide additional tools via the Model Context Protocol.\nUse 'icebath mcp add' to connect to a new server. Running Icebath itself as an\nMCP server is the mcp-serve plugin: `icebath plugins install mcp-serve`.")
 	mAdd := c.newCmd(mcp, "add", "Add an MCP server (discovery-first install)", "")
-	c.pos(mAdd, p("name"), pRem("args"))
+	c.pos(mAdd, p("name"), pRem("args").withHelp("Arguments for stdio command; must be the last option"))
 	mAdd.Long = "Add an MCP server. Everything after --args (or --) is the stdio command argv; it must be the last option."
 	sf(mAdd, "url", "", "", "HTTP/SSE endpoint URL")
 	sf(mAdd, "command", "", "", "Stdio command (e.g. npx)")
@@ -236,7 +236,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	bf(desktop, "source", "", "Launch via `electron .` against apps/desktop/dist instead of the packaged app")
 	bf(desktop, "build-only", "", "Build the desktop app but do not launch it (used by the installer's --update flow)")
 	bf(desktop, "fake-boot", "", "Enable deterministic desktop boot delays for validating startup UI")
-	bf(desktop, "ignore-existing", "", "Skip the installed Icebath runtime (~/.icebath/icebath) so no local backend starts and Desktop offers connect or install instead. --icebath-root and the bundled runtime still win; a runtime installed during this launch is used.")
+	bf(desktop, "ignore-existing", "", "Skip the installed Icebath runtime (~/.icebath/icebath-agent) so no local backend starts and Desktop offers connect or install instead. --icebath-root and the bundled runtime still win; a runtime installed during this launch is used.")
 	sf(desktop, "icebath-root", "", "", "Override the Icebath source root used by Desktop (sets ICEBATH_DESKTOP_ICEBATH_ROOT)")
 	sf(desktop, "cwd", "", "", "Initial project directory for Desktop chat sessions (sets ICEBATH_DESKTOP_CWD)")
 	bf(desktop, "skip-build", "", "Skip npm install/package and launch the existing unpacked app from apps/desktop/release")

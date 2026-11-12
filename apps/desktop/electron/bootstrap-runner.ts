@@ -99,7 +99,7 @@ function readExistingPinnedCommit(activeRoot: string | null | undefined): string
   }
 
   try {
-    const raw = fs.readFileSync(path.join(activeRoot, '.hermes-bootstrap-complete'), 'utf8')
+    const raw = fs.readFileSync(path.join(activeRoot, '.icebath-bootstrap-complete'), 'utf8')
     const parsed = JSON.parse(raw)
 
     return parsed && isPinnedCommit(parsed.pinnedCommit) ? parsed.pinnedCommit : null

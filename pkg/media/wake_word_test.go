@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -18,25 +19,30 @@ var wakeHermesGates = map[string]string{
 	"wake-openwakeword": "(platform_machine != 'ARM64' or sys_platform != 'win32') and (platform_machine != 'x86_64' or sys_platform != 'darwin')",
 }
 
-// packaging default_environment values the in process gate evaluation falls back on
-var wakeMarkerDefaults = map[string]string{
-	"python_version": "3.12", "python_full_version": "3.12.0", "implementation_name": "cpython",
-	"platform_python_implementation": "CPython", "os_name": "posix", "sys_platform": "linux",
-	"platform_system": "Linux", "platform_machine": "x86_64",
-}
-
-// Installs a gate table evaluated in process like packaging Marker.evaluate, malformed markers ungated
+// Installs a gate table evaluated in process like packaging Marker.evaluate
 func wakeInProcessGates(t *testing.T, gates map[string]string) {
 	t.Helper()
 	savedGates := pm.SwapPlatformGates(gates)
-	savedEval := pm.SwapGateEvaluator(func(_ context.Context, marker string, environment map[string]string) bool {
-		ok, err := pm.EvaluateMarker(marker, wakeMarkerDefaults, environment)
-		return err != nil || ok
-	})
-	t.Cleanup(func() {
-		pm.SwapPlatformGates(savedGates)
-		pm.SwapGateEvaluator(savedEval)
-	})
+	t.Cleanup(func() { pm.SwapPlatformGates(savedGates) })
+}
+
+// Points the core tree's venv interpreter at the host Python, whose marker environment gates fall back on
+func wakeHostInterpreter(t *testing.T) {
+	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	host, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	python := pm.VenvPython(filepath.Join(repo, "venv"))
+	if err := os.MkdirAll(filepath.Dir(python), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(host, python); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pm.PatchRepoRoot(repo))
 }
 
 // extra_supported bound to a marker environment with no anchor importable
@@ -47,9 +53,10 @@ func wakeSupportedOn(system, machine string) func(string) (bool, error) {
 	}
 }
 
-// Pins the STT and TTS probes and empties the platform gates
+// Pins the STT and TTS probes and empties the platform gates under a private home
 func wakeVoiceLoopReady(t *testing.T, stt, tts bool) {
 	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	swap(t, &wakeSTTReady, func(context.Context) bool { return stt })
 	swap(t, &wakeTTSReady, func(context.Context) bool { return tts })
 	savedGates := pm.SwapPlatformGates(map[string]string{})
@@ -461,6 +468,7 @@ func TestRequirementsRejectUnsupportedEngineWithoutAttemptingInstall(t *testing.
 		for _, provider := range []string{"openwakeword", "oww", "local"} {
 			t.Run(capture+"-"+provider, func(t *testing.T) {
 				wakeVoiceLoopReady(t, true, true)
+				wakeHostInterpreter(t)
 				wakeInProcessGates(t, map[string]string{"wake-openwakeword": "python_version < '0'"})
 				savedImportable := pm.SwapAnchorImportable(func(context.Context, string) bool { return false })
 				t.Cleanup(func() { pm.SwapAnchorImportable(savedImportable) })

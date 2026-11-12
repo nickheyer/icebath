@@ -477,9 +477,7 @@ func TestSVLegacySelectionCarriesWhatTheOldVenvHeld(t *testing.T) {
 	repo := svRepo(t)
 	saved := platformGatesCache.gates
 	platformGatesCache.gates = map[string]string{"matrix": "sys_platform == 'nowhere'"}
-	savedGate := evaluateGate
-	evaluateGate = func(context.Context, string, map[string]string) bool { return false }
-	t.Cleanup(func() { platformGatesCache.gates, evaluateGate = saved, savedGate })
+	t.Cleanup(func() { platformGatesCache.gates = saved })
 	site := filepath.Join(repo, "venv", "lib", "python3.11", "site-packages")
 	sttMkdir(t, filepath.Join(site, "telegram"))
 	writeFile(t, filepath.Join(site, "fal_client.py"), nil, 0o666)

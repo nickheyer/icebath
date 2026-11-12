@@ -337,7 +337,7 @@ describe.skipIf(process.platform === 'win32')('gate over a dead marker (R6)', ()
 
     assert.equal(await probe(), false)
     assert.deepEqual(helperCalls(home), [], 'nothing to ask: the boot path spawns no helper')
-    fs.writeFileSync(path.join(root, '.hermes-update.lock'), '')
+    fs.writeFileSync(path.join(root, '.icebath-update.lock'), '')
     assert.equal(await probe(), true, 'the lock file exists: only the script can tell whether it is held')
     assert.equal(helperCalls(home).length, 1)
   })

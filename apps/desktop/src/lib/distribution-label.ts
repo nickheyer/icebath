@@ -18,7 +18,7 @@ import type { DesktopVersionInfo } from '@/global'
  *                    managed checkout underneath does.
  * `installedByScript` refines an external/git install into "installed by
  * install.sh / install.ps1" vs a manual clone — those checkouts carry the
- * bootstrap installers' `.hermes-bootstrap-complete` receipt.
+ * bootstrap installers' `.icebath-bootstrap-complete` receipt.
  *
  * `icebath desktop` packs the app from a source checkout with the same
  * `bootstrap` payload the installer shell carries. Released shells are

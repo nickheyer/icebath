@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 const MAX = 1000
 const dir = process.env.ICEBATH_HOME ?? join(homedir(), '.icebath')
-const file = join(dir, '.hermes_history')
+const file = join(dir, '.icebath_history')
 
 let cache: string[] | null = null
 

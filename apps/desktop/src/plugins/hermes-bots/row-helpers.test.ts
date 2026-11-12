@@ -4,7 +4,7 @@
  *
  * Two bug classes are pinned:
  *  - #89484 — the bot-to-bot badge rendered the raw captured profile name, so
- *    the primary profile surfaced as @default instead of @hermes;
+ *    the primary profile surfaced as @default instead of @icebath;
  *  - the "6d ago" class — canonical Bot Chats are hidden from session lists,
  *    so a bot DM'd all day read as a week idle because its newest VISIBLE
  *    session was a week old. Liveness keys off `botActivitySession`, and
@@ -67,7 +67,7 @@ describe('previewKind classifies a roster preview', () => {
     expect(fromBot("Message from agent 'researcher': here is the paper")).toBe('researcher')
   })
 
-  it('surfaces the primary profile as @hermes, never @default (#89484)', () => {
+  it('surfaces the primary profile as @icebath, never @default (#89484)', () => {
     expect(fromBot("Message from agent 'default': deploy is green")).toBe('icebath')
     expect(fromBot("Message from agent 'ops': deploy is green")).toBe('ops')
   })

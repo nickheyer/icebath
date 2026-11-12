@@ -7,15 +7,15 @@ import { expect, test } from 'vitest'
 import { HermesGateway } from './client'
 
 // The canonical dispatcher refuses any key outside CanonicalBotDeliverParams (4001
-// invalid_params, handler never called). Read that closed set from the Python contract so the
+// invalid_params, handler never called). Read that closed set from the Go contract so the
 // fixture owner refuses exactly what the real one does.
 function canonicalDeliverKeys(): Set<string> {
-  const source = readFileSync(join(process.cwd(), '..', '..', 'tui_gateway/contracts/canonical_projections.py'), 'utf8')
-  const body = source.match(/class CanonicalBotDeliverParams\(Params\):\n((?: {4}\w+:.*\n)+)/)
+  const source = readFileSync(join(process.cwd(), '..', '..', 'pkg/tuigateway/contracts_canonical_projections.go'), 'utf8')
+  const body = source.match(/var CanonicalBotDeliverParams = pydantic\.NewModel\("CanonicalBotDeliverParams", ParamsConfig,\n((?:\tpydantic\.\w+\("\w+".*\n)+)\)/)
 
-  expect(body, 'CanonicalBotDeliverParams must exist in canonical_projections.py').toBeTruthy()
+  expect(body, 'CanonicalBotDeliverParams must exist in contracts_canonical_projections.go').toBeTruthy()
 
-  return new Set([...body![1].matchAll(/^ {4}(\w+):/gm)].map(match => match[1]))
+  return new Set([...body![1].matchAll(/^\tpydantic\.(?:Req|Def)\("(\w+)"/gm)].map(match => match[1]))
 }
 
 test('a Bot Relay delivery on a canonical dial carries only keys the owner admits, sender as a bot author', async () => {

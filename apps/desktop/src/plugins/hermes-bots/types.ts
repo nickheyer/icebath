@@ -105,7 +105,7 @@ export interface RosterRow {
   ghost?: boolean
   handle?: string
   /** A default row whose source also has a real (pre-reservation) `icebath`
-   *  profile: that profile keeps @hermes and this row answers to @default.
+   *  profile: that profile keeps @icebath and this row answers to @default.
    *  Set by `claimDefaultHandles`. */
   hermesHandleTaken?: boolean
   has_avatar?: boolean

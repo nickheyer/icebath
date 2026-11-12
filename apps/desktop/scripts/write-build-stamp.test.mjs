@@ -96,7 +96,7 @@ const baseStamp = {
 
 const runtime = {
   repoDir: 'app', toolsDir: 'tools', storePython: 'tools/python/bin/python3',
-  sitePackages: 'venv/lib/python3.14/site-packages', commands: { hermes: 'bin/hermes' }
+  sitePackages: 'venv/lib/python3.14/site-packages', commands: { hermes: 'bin/icebath' }
 }
 
 test('bundled stamp carries the builder contract and refuses an unstaged payload', () => {

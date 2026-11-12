@@ -11,7 +11,6 @@ import { sessionCwd } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { t } from '../i18n/runtime.js'
 
-import { pythonHelperPath } from './pythonHelpers.js'
 
 export interface ImageAttachment { path: string; mime: string }
 export interface StagedImage extends ImageAttachment { name: string; remainder?: string }
@@ -75,10 +74,9 @@ async function resolveImagePath(raw: string, base: string): Promise<{ path: stri
 async function extractClipboardImage(path: string): Promise<boolean> {
   const root = process.env.ICEBATH_PYTHON_SRC_ROOT ?? resolve(import.meta.dirname, '../../..')
 
-  const python = process.env.ICEBATH_PYTHON?.trim() || process.env.PYTHON?.trim() ||
-    (process.platform === 'win32' ? 'python' : 'python3')
+  const python = process.env.ICEBATH_PYTHON?.trim() || 'icebath'
 
-  const { stdout } = await promisify(execFile)(python, [pythonHelperPath('clipboard_image.py', root), path],
+  const { stdout } = await promisify(execFile)(python, ['tui-clipboard-image', path],
     { cwd: root, env: { ...process.env, PYTHONPATH: root, ICEBATH_PYTHON_SRC_ROOT: root }, timeout: 15_000, windowsHide: true })
 
   return stdout.trim() === 'true'

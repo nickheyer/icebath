@@ -1439,7 +1439,7 @@ export const GROUP_CHAT_MAX_MEMBERS = 6
  *  (community report, Aug 21 2026: renamed default still read "Icebath is
  *  thinking…" in group rooms). The untitled primary profile is literally
  *  named "default" — render it as Icebath (matching displayName and the
- *  @hermes handle) so the main agent never loses its name in rooms.
+ *  @icebath handle) so the main agent never loses its name in rooms.
  *
  *  Accepts either a member key (`connectionId::profile`, what the activity
  *  feed records) or a raw profile name (legacy rooms, the round prompt).

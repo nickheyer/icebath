@@ -3107,7 +3107,7 @@ export const deOverrides = {
       },
       MATRIX_USER_ID: {
         label: 'Bot-Benutzer-ID',
-        placeholder: '@hermes:example.org'
+        placeholder: '@icebath:example.org'
       },
       MATRIX_ALLOWED_USERS: {
         label: 'Erlaubte Matrix-Benutzer-IDs',

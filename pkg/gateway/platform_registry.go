@@ -499,6 +499,11 @@ func pluginScopeForModule(ctx context.Context, module string) (string, error) {
 	return tools.Default.PluginScopeForModule(home.Dir(ctx), module)
 }
 
+// Plugin scope of the module that defined a callable registered outside the plugin context
+func pluginScopeFromCallable(ctx context.Context, fn any) (string, error) {
+	return pluginScopeForModule(ctx, callableModule(fn))
+}
+
 // Plugin scope of the code that called the registry method
 func callerPluginScope(ctx context.Context) (string, error) {
 	pc, _, _, ok := runtime.Caller(2)
@@ -520,12 +525,12 @@ func (r *PlatformRegistry) Register(ctx context.Context, entry *PlatformEntry, s
 			return err
 		}
 		if scope == "" {
-			if scope, err = pluginScopeForModule(ctx, callableModule(entry.AdapterFactory)); err != nil {
+			if scope, err = pluginScopeFromCallable(ctx, entry.AdapterFactory); err != nil {
 				return err
 			}
 		}
 		if scope == "" {
-			if scope, err = pluginScopeForModule(ctx, callableModule(entry.CheckFn)); err != nil {
+			if scope, err = pluginScopeFromCallable(ctx, entry.CheckFn); err != nil {
 				return err
 			}
 		}

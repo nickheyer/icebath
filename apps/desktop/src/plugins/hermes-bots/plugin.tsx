@@ -141,7 +141,7 @@ export default {
     // query cache — useRoster keeps it ≤5s stale and the popover must answer
     // synchronously per keystroke. Multi-source rosters contribute their
     // precomputed @name-device handles via botHandle. The active profile is
-    // excluded (a bot doesn't @ itself); 'default' surfaces as @hermes.
+    // excluded (a bot doesn't @ itself); 'default' surfaces as @icebath.
     ctx.register({
       id: 'mention-completions',
       area: COMPOSER_AREAS.atCompletions,
@@ -832,7 +832,7 @@ export default {
               // Same resolver as the cached path — renamed bots (display_name
               // / ui_meta title) stay taggable when the roster cache is cold.
               // The same handle claim the pane applies: a real 'icebath'
-              // profile keeps @hermes, so the default must not answer it too.
+              // profile keeps @icebath, so the default must not answer it too.
               mentionedBots = resolveRosterMentions(text, claimDefaultHandles(res?.profiles ?? []), live).map(bot => ({
                 ...bot,
                 remoteSource: false

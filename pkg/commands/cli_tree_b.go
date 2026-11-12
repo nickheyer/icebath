@@ -102,7 +102,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	c.pos(del, pAny("urls"))
 
 	backup := c.newCmd(root, "backup", "Back up Icebath home directory to a zip file",
-		"Create a zip archive of your entire Icebath configuration, skills, sessions, and data (excludes the icebath codebase). Use --quick for a fast snapshot of just critical state files.")
+		"Create a zip archive of your entire Icebath configuration, skills, sessions, and data (excludes the icebath-agent codebase). Use --quick for a fast snapshot of just critical state files.")
 	sf(backup, "output", "o", "", "Output path for the zip file (default: ~/icebath-backup-<timestamp>.zip)")
 	bf(backup, "quick", "q", "Quick snapshot: only critical state files (config, state.db, .env, auth, cron)")
 	sf(backup, "label", "l", "", "Label for the snapshot (only used with --quick)")

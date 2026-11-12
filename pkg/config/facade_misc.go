@@ -17,17 +17,23 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 )
 
-// Directory holding the icebath source tree this binary was built from
+// Source tree of a build that kept its paths, else the directory holding the running binary
 func GetProjectRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return ""
+	if _, file, _, ok := runtime.Caller(0); ok && filepath.IsAbs(file) {
+		root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			return resolved
+		}
 	}
-	root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		return resolved
+	exe, err := os.Executable()
+	if err != nil {
+		wd, _ := os.Getwd()
+		return wd
 	}
-	return root
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	return filepath.Dir(exe)
 }
 
 // Container mode metadata the NixOS activation wrote, nil when off, inside the container or in dev mode

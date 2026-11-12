@@ -4,6 +4,8 @@ import (
 	"context"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type contentObjectPart struct {
@@ -42,6 +44,22 @@ func TestFlattenMessageTextSkipsMediaAndStringifiesScalars(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 	if got := FlattenMessageText(map[string]any{"output_text": "x"}, "\n"); got != "x" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFlattenMessageTextReadsEveryMappingKind(t *testing.T) {
+	ordered := pyjson.NewObject()
+	ordered.Set("type", "text")
+	ordered.Set("text", "ordered text")
+	content := []any{
+		ordered,
+		map[string]string{"type": "text", "text": "string map"},
+		map[any]any{"content": "any map", 3: "skipped"},
+		map[string]string{"type": "image", "text": "hidden"},
+		map[int]string{1: "no string keys"},
+	}
+	if got := FlattenMessageText(content, "|"); got != "ordered text|string map|any map" {
 		t.Fatalf("got %q", got)
 	}
 }

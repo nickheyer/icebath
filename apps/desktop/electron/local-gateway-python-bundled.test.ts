@@ -33,7 +33,7 @@ test.skipIf(process.platform === 'win32')('a bundled payload mints tickets with 
     source: 'ci', distribution: 'desktop-app', updateMechanism: 'microsoft-store', baseVersion: null,
     displayVersion: null, distance: null, payload: 'bundled', tag: 'v1.0.0',
     runtime: { repoDir: 'app', toolsDir: 'tools', storePython: 'tools/python/bin/python3',
-      sitePackages: 'venv/site-packages', commands: { hermes: 'bin/hermes' } }
+      sitePackages: 'venv/site-packages', commands: { hermes: 'bin/icebath' } }
   } as unknown as InstallStamp
 
   const payload = bundledPayload(resources, stamp)!

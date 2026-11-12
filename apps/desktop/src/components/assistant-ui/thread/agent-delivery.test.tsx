@@ -7,7 +7,7 @@ import { deliveryTargetFromCommand, replyTextFromResult } from './agent-delivery
 // (the canonical Bot Mode command shape) and the reply extraction.
 describe('delivery command detection', () => {
   it('matches the canonical delivery command', () => {
-    const cmd = 'icebath -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Icebath (@hermes): hi there"'
+    const cmd = 'icebath -p turqoise chat --in ~ -c "Bot Chat" -Q -q "Message from 🤖 Icebath (@icebath): hi there"'
 
     expect(deliveryTargetFromCommand(cmd)).toBe('turqoise')
   })

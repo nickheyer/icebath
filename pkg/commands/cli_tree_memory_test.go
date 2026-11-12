@@ -159,6 +159,7 @@ func TestMemorySubparsersParseThroughTheTree(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(h, "memories", "USER.md")); err != nil {
 		t.Fatalf("rejected reset touched USER.md: %v", err)
 	}
+	t.Setenv("COLUMNS", "200")
 	for argv, want := range map[string][]string{
 		"memory --help":       {"Only one external provider can be active at a time.", "Interactive provider selection and configuration", "Show current memory provider config", "Disable external provider (built-in only)", "Erase all built-in memory (MEMORY.md and USER.md)"},
 		"memory setup --help": {"Provider to configure directly (e.g. honcho), skipping the picker"},

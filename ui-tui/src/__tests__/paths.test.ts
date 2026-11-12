@@ -99,7 +99,7 @@ describe('fmtProjectCwdBranch', () => {
   })
 
   it('keeps the project visible when space is tight', () => {
-    expect(fmtProjectCwdBranch('/Users/bb/proj', 'main', 'icebath-agent', 12)).toBe('icebath-agent')
+    expect(fmtProjectCwdBranch('/Users/bb/proj', 'main', 'icebath-agent', 13)).toBe('icebath-agent')
   })
 })
 

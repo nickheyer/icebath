@@ -53,7 +53,7 @@ func nousLoginFlags(cmd *cobra.Command, suffix string) {
 	sf(cmd, "inference-url", "", "", "Inference API base URL"+suffix+" (default: production inference API)")
 	sf(cmd, "client-id", "", "", "OAuth client id to use"+suffix+" (default: icebath-cli)")
 	sf(cmd, "scope", "", "", "OAuth scope to request"+suffix)
-	bf(cmd, "no-browser", "", "Do not attempt to open the browser automatically"+suffix)
+	bf(cmd, "no-browser", "", "Do not attempt to open the browser automatically"+ternary(suffix != "", " during Nous login", ""))
 	ff(cmd, "timeout", "", 15.0, "HTTP request timeout in seconds"+suffix+" (default: 15)")
 	sf(cmd, "ca-bundle", "", "", "Path to CA bundle PEM file for"+ternary(suffix != "", " Nous", "")+" TLS verification")
 	bf(cmd, "insecure", "", "Disable TLS verification"+suffix+" (testing only)")

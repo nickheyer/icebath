@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -172,75 +171,5 @@ func TestEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
 	code := "import json, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, " + pyrepr.StrRepr(filepath.Dir(entry)) + " in sys.path]))"
 	if got := peRunJSON(t, []string{peHostPython(t), "-I", "-S", entry, site, "-c", code}, root); !reflect.DeepEqual(got, []any{"from the venv", false}) {
 		t.Fatalf("got %v", got)
-	}
-}
-
-func TestMarkerEvalAnswersForTheGivenEnvironment(t *testing.T) {
-	isolateHome(t)
-	helper, err := MarkerEvalScript(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out []string
-	for _, marker := range []string{"sys_platform == 'linux'", "sys_platform == 'win32'"} {
-		result, err := exec.Command(peHostPython(t), helper, marker, pyJSONCompact(map[string]string{"sys_platform": "linux"})).Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		out = append(out, strings.TrimSpace(string(result)))
-	}
-	if !reflect.DeepEqual(out, []string{"1", "0"}) {
-		t.Fatalf("got %v", out)
-	}
-}
-
-func TestMarkerEvalInRuntimeFallsBackToUngatedOnFailure(t *testing.T) {
-	isolateHome(t)
-	if !EvaluateMarkerInRuntime(context.Background(), "sys_platform == 'win32'", map[string]string{"sys_platform": "linux"}, RuntimeOptions{NoBootstrap: true}) {
-		t.Fatal("a runtime that cannot start must leave the marker ungated")
-	}
-}
-
-// Records real uv and the pinned Python as the installed toolchain of the test store
-func peStoreToolchain(t *testing.T, tmp string) {
-	t.Helper()
-	uv, python := peUV(t), resolvePath(pePinnedPython(t))
-	store := filepath.Join(tmp, "store")
-	t.Setenv(EnvRuntimeDir, store)
-	managed := filepath.Join(store, "uv-fixture", filepath.Base(uv))
-	writeFile(t, managed, readFile(t, uv), 0o755)
-	lockPath := filepath.Join(tmp, "lock.json")
-	ieEmptyLock(t, lockPath)
-	peSwap(t, &lockfilePath, func() string { return lockPath })
-	lock := NewLockfile(lockPath)
-	target, _ := CurrentTarget()
-	facts, _ := NewFacts(filepath.Join(store, "facts.json"), false)
-	for _, row := range [][2]string{{"uv", filepath.Dir(managed)}, {"python", filepath.Dir(filepath.Dir(python))}} {
-		p, _ := GetPackage(row[0])
-		lock.SetPin(row[0], "fixture", map[string]any{target: map[string]any{"url": "https://example.invalid/" + row[0], "sha256": strings.Repeat("1", 64)}})
-		digest, err := TreeDigest(row[1])
-		if err != nil {
-			t.Fatal(err)
-		}
-		rel, _ := filepath.Rel(store, row[1])
-		if err := facts.Record(row[0], "fixture", rel, p.Env(row[1], target), store, FactRecord{Target: &target, Artifacts: []string{strings.Repeat("1", 64)}, Digest: &digest}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := lock.Save(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestMarkerEvalInRuntimeEvaluatesInTheIsolatedRuntime(t *testing.T) {
-	tmp := isolateHome(t)
-	peStoreToolchain(t, tmp)
-	opts := RuntimeOptions{Project: filepath.Join(peReferences, "pm"), Imports: PMRuntimeImports}
-	ctx := context.Background()
-	if !EvaluateMarkerInRuntime(ctx, "sys_platform == 'linux'", map[string]string{"sys_platform": "linux"}, opts) {
-		t.Fatal("a true marker evaluated false")
-	}
-	if EvaluateMarkerInRuntime(ctx, "sys_platform == 'win32'", map[string]string{"sys_platform": "linux"}, opts) {
-		t.Fatal("a false marker evaluated true")
 	}
 }

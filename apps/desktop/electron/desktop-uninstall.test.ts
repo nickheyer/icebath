@@ -167,7 +167,7 @@ test('resolveRemovableAppPath ignores an APPIMAGE inherited from another AppImag
 test('resolveRemovableAppPath finds the unpacked dir on Linux', () => {
   assert.equal(resolveRemovableAppPath('/opt/hermes/linux-unpacked/hermes', 'linux', {}), '/opt/hermes/linux-unpacked')
   // A system-package install (/usr/bin) → null, left to apt/dnf.
-  assert.equal(resolveRemovableAppPath('/usr/bin/hermes', 'linux', {}), null)
+  assert.equal(resolveRemovableAppPath('/usr/bin/icebath', 'linux', {}), null)
 })
 
 test('resolveRemovableAppPath returns null for an empty exe path', () => {

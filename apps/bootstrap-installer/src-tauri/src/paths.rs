@@ -199,11 +199,11 @@ fn repair_macos_installer_helper(_path: &Path) {}
 
 /// Where the bootstrap-complete marker lives (existence-only for the Rust
 /// installer fast path; JSON schema-checked by the Electron app). Per main.ts:
-///   const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_ICEBATH_ROOT, '.hermes-bootstrap-complete')
+///   const BOOTSTRAP_COMPLETE_MARKER = path.join(ACTIVE_ICEBATH_ROOT, '.icebath-bootstrap-complete')
 /// We don't always know ACTIVE_ICEBATH_ROOT until install.ps1 reports it, so
 /// this is a probe helper, not a definitive path.
 pub fn likely_bootstrap_marker(install_root: &Path) -> PathBuf {
-    install_root.join(".hermes-bootstrap-complete")
+    install_root.join(".icebath-bootstrap-complete")
 }
 
 /// Initializes tracing to bootstrap-installer.log under ICEBATH_HOME/logs/.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"io"
 	"os"
 	"regexp"
 	"sort"
@@ -142,7 +143,7 @@ const rootEpilog = `Examples:
     icebath gateway stop           Stop the gateway service
     icebath gateway status         Show gateway status
     icebath -p <profile> <cmd>     Run any command against a named profile's
-                                   home (also --profile) — e.g. icebath -p coder gateway stop
+                                  home (also --profile) — e.g. icebath -p coder gateway stop
     icebath -s icebath-agent-dev,github-auth
     icebath -w                     Start in isolated git worktree
     icebath sessions list          List past sessions
@@ -152,7 +153,7 @@ const rootEpilog = `Examples:
     icebath logs -f                Follow agent.log in real time
     icebath logs errors            View errors.log
     icebath logs --since 1h        Lines from the last hour
-    icebath debug share            Upload debug report for support
+    icebath debug share             Upload debug report for support
     icebath console                Open the safe Icebath command console
     icebath update                 Update to latest version
     icebath dashboard              Start web UI dashboard (port 9119)
@@ -180,6 +181,8 @@ func NewCLI() *CLI {
 {{.Annotations.epilog}}
 {{end}}`)
 	c.Root = root
+	cliRegistry.Store(root, c)
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) { io.WriteString(cmd.OutOrStdout(), argparseHelp(cmd)) })
 	root.Args = c.groupArgs()
 	root.FParseErrWhitelist.UnknownFlags = true
 	root.SetFlagErrorFunc(argparseFlagError)
@@ -247,9 +250,9 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	f.Bool("native", false, "With --tui: use native terminal scrollback and disable mouse tracking")
 	c.inherited(root, "native")
 	c.aliasFlag(root, "tui-native", "native")
-	f.Bool("cli", false, "Force the classic REPL (overrides display.interface=tui)")
+	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
 	c.inherited(root, "cli")
-	f.Bool("dev", false, "With --tui: run the TUI from sources (skip dist build)")
+	f.Bool("dev", false, "With --tui: run TypeScript sources via tsx (skip dist build)")
 	c.inherited(root, "dev")
 	pf := root.PersistentFlags()
 	pf.StringP("profile", "p", "", "Run against a named profile's home (consumed before parsing, also carried over on relaunch)")
@@ -321,9 +324,9 @@ func (c *CLI) addChat(root *cobra.Command) {
 	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking")
 	c.inherited(chat, "native")
 	c.aliasFlag(chat, "tui-native", "native")
-	f.Bool("cli", false, "Force the classic REPL (overrides display.interface=tui)")
+	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
 	c.inherited(chat, "cli")
-	f.Bool("dev", false, "With --tui: run the TUI from sources (skip dist build)")
+	f.Bool("dev", false, "With --tui: run TypeScript sources via tsx (skip dist build)")
 	c.inherited(chat, "dev")
 	c.chatArgparseShape(chat)
 }

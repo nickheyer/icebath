@@ -39,7 +39,7 @@ test('desktop payload exposes only identity-qualified launchers while preserving
     for (const cliName of ['icebath-canary', 'hermes-abcdef1', 'hermes-1234567']) {
       const payload = path.join(root, cliName)
       fs.mkdirSync(path.join(payload, 'bin'), { recursive: true })
-      const commands = { hermes: 'bin/icebath.exe', 'hermes-acp': 'bin/hermes-acp.exe' }
+      const commands = { hermes: 'bin/icebath.exe', 'icebath-acp': 'bin/icebath-acp.exe' }
       for (const [name, file] of Object.entries(commands)) fs.writeFileSync(path.join(payload, file), `PE bytes for ${name}`)
       fs.writeFileSync(path.join(payload, 'manifest.json'), JSON.stringify({
         target: 'win32-x64', launchers: Object.keys(commands), runtime: { commands }

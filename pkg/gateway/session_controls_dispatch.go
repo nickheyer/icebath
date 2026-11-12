@@ -139,7 +139,7 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		}
 	}
 	verbs := c.handlers()
-	scoped := ownerScope(ctx, a, true)
+	scoped := ownerScope(ctx, a, false)
 	var result any
 	var err error
 	switch {

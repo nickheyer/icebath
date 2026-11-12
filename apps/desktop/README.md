@@ -236,7 +236,7 @@ Boot logs land in `ICEBATH_HOME/logs/desktop.log` (includes backend output and r
 
 ```bash
 # Force a clean first-launch setup
-rm "$HOME/.icebath/icebath-agent/.hermes-bootstrap-complete"
+rm "$HOME/.icebath/icebath-agent/.icebath-bootstrap-complete"
 # Rebuild a broken Python venv
 rm -rf "$HOME/.icebath/icebath-agent/venv"
 # Reset a stuck macOS microphone prompt (macOS only)
@@ -247,7 +247,7 @@ tccutil reset Microphone com.nousresearch.hermes
 
 ```powershell
 # Force a clean first-launch setup
-Remove-Item "$env:LOCALAPPDATA\hermes\icebath-agent\.hermes-bootstrap-complete"
+Remove-Item "$env:LOCALAPPDATA\hermes\icebath-agent\.icebath-bootstrap-complete"
 # Rebuild a broken Python venv
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\hermes\icebath-agent\venv"
 ```

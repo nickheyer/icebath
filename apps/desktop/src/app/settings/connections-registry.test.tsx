@@ -253,7 +253,7 @@ describe('ConnectionsRegistrySection', () => {
     fireEvent.change(screen.getByPlaceholderText('Homelab'), { target: { value: 'Build host' } })
     fireEvent.change(screen.getByPlaceholderText('user@host:22'), { target: { value: 'dev@build.test:2222' } })
     fireEvent.change(screen.getByPlaceholderText('auto-detect'), {
-      target: { value: '/opt/hermes/bin/hermes' }
+      target: { value: '/opt/hermes/bin/icebath' }
     })
     fireEvent.click(screen.getByText('Save connection').closest('button')!)
 
@@ -262,7 +262,7 @@ describe('ConnectionsRegistrySection', () => {
       host: 'dev@build.test:2222',
       kind: 'ssh',
       label: 'Build host',
-      remoteHermesPath: '/opt/hermes/bin/hermes'
+      remoteHermesPath: '/opt/hermes/bin/icebath'
     })
   })
 
@@ -276,7 +276,7 @@ describe('ConnectionsRegistrySection', () => {
           id: 'build-host',
           kind: 'ssh',
           label: 'Build host',
-          remoteHermesPath: '/opt/hermes/bin/hermes',
+          remoteHermesPath: '/opt/hermes/bin/icebath',
           tokenPreview: null,
           tokenSet: false,
           user: 'dev'
@@ -290,7 +290,7 @@ describe('ConnectionsRegistrySection', () => {
     await screen.findByText('Build host')
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
     const pathInput = screen.getByPlaceholderText('auto-detect') as HTMLInputElement
-    expect(pathInput.value).toBe('/opt/hermes/bin/hermes')
+    expect(pathInput.value).toBe('/opt/hermes/bin/icebath')
     fireEvent.change(pathInput, { target: { value: '   ' } })
     fireEvent.click(screen.getByText('Save connection').closest('button')!)
 

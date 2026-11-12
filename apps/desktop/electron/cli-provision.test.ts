@@ -69,7 +69,7 @@ test('repairs owned dangling CLI links without changing foreign or live entries'
     const foreign = path.join(root, 'removed-other-tool', 'icebath')
     const otherName = path.join(root, 'old', 'agent-payload', 'bin', 'other')
 
-    for (const destination of [source, foreign, otherName, 'agent-payload/bin/hermes']) {
+    for (const destination of [source, foreign, otherName, 'agent-payload/bin/icebath']) {
       fs.unlinkSync(target)
       fs.symlinkSync(destination, target)
       const original = fs.readlinkSync(target)
@@ -115,13 +115,13 @@ test('qualified CLI paths expose their filenames, not shared canonical command k
       const acp: string = `${cli}-acp`
       fs.writeFileSync(cli, name)
       fs.writeFileSync(acp, `${name}-acp`)
-      provisionCliLinks({ hermes: cli, 'hermes-acp': acp }, binDir, (): void => {})
+      provisionCliLinks({ hermes: cli, 'icebath-acp': acp }, binDir, (): void => {})
       assert.equal(fs.readlinkSync(path.join(binDir, name)), cli)
       assert.equal(fs.readlinkSync(path.join(binDir, `${name}-acp`)), acp)
     }
 
     assert.equal(fs.readFileSync(plain, 'utf8'), 'stable command')
-    assert.equal(fs.existsSync(path.join(binDir, 'hermes-acp')), false)
+    assert.equal(fs.existsSync(path.join(binDir, 'icebath-acp')), false)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
@@ -131,7 +131,7 @@ test('a failed link swap preserves its source and target, then provisions later 
   const { root, binDir, source } = fixture()
   const target = path.join(binDir, 'icebath')
   const oldSource = path.join(root, 'old', 'agent-payload', 'bin', 'icebath')
-  const acpSource = path.join(path.dirname(source), 'hermes-acp')
+  const acpSource = path.join(path.dirname(source), 'icebath-acp')
   const messages: string[] = []
   let swaps = 0
 
@@ -147,7 +147,7 @@ test('a failed link swap preserves its source and target, then provisions later 
     }
 
     fs.writeFileSync(acpSource, 'ACP command\n')
-    provisionCliLinks({ hermes: source, 'hermes-acp': acpSource }, binDir, message => messages.push(message), {
+    provisionCliLinks({ hermes: source, 'icebath-acp': acpSource }, binDir, message => messages.push(message), {
       ...fs,
       renameSync: (from, to) => {
         swaps += 1
@@ -159,8 +159,8 @@ test('a failed link swap preserves its source and target, then provisions later 
     assert.equal(swaps, 1)
     assert.equal(fs.readlinkSync(target), oldSource)
     assert.equal(fs.readFileSync(source, 'utf8'), 'payload command\n')
-    assert.equal(fs.readlinkSync(path.join(binDir, 'hermes-acp')), acpSource)
-    assert.deepEqual(fs.readdirSync(binDir).sort(), ['icebath', 'hermes-acp'])
+    assert.equal(fs.readlinkSync(path.join(binDir, 'icebath-acp')), acpSource)
+    assert.deepEqual(fs.readdirSync(binDir).sort(), ['icebath', 'icebath-acp'])
     assert.ok(messages.some(message => message.includes('icebath') && message.includes('ENOENT')))
     assert.ok(messages.some(message => message.includes('linked 1')))
   } finally {

@@ -1305,13 +1305,13 @@ fn release_checkout_lock(holder: std::fs::File, install: &Path) {
 #[test]
 fn checkout_lock_path_follows_the_git_common_dir() {
     // update_lock.py::checkout_lock_path: <common git dir>/hermes-update.lock, else
-    // <root>/.hermes-update.lock.
+    // <root>/.icebath-update.lock.
     let dir = unique_tmp_dir("checkout-lock-path");
     let plain = dir.join("plain");
     std::fs::create_dir_all(&plain).unwrap();
     assert_eq!(
         checkout_lock_path(&plain),
-        plain.join(".hermes-update.lock")
+        plain.join(".icebath-update.lock")
     );
 
     let repo = dir.join("repo");
@@ -1448,7 +1448,7 @@ fn self_owned_marker_never_heals_while_the_checkout_lock_is_held() {
     let install = install_root_of(&marker);
     let me = std::process::id();
     std::fs::write(&marker, v2_body(me, 123, ct_of(me))).unwrap();
-    let holder = hold_checkout_lock(&install.join(".hermes-update.lock"));
+    let holder = hold_checkout_lock(&install.join(".icebath-update.lock"));
 
     assert!(
         !should_heal_self_marker_refusal(Some(UPDATE_EXIT_CONCURRENT), &marker, &install),

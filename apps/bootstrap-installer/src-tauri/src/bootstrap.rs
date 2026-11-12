@@ -1272,7 +1272,7 @@ mod tests {
         let receipt = format!(
             "\u{feff}{{\"schemaVersion\":1,\"pinnedCommit\":\"{head}\",\"pinnedBranch\":\"main\",\"completedAt\":\"2026-01-01T00:00:00.000Z\"}}"
         );
-        std::fs::write(root.join(".hermes-bootstrap-complete"), receipt).unwrap();
+        std::fs::write(root.join(".icebath-bootstrap-complete"), receipt).unwrap();
         let marker = write_bootstrap_complete_marker(&root, &pin).unwrap();
         assert_eq!(marker["pinnedCommit"], head);
         let _ = std::fs::remove_dir_all(&root);
@@ -1289,8 +1289,8 @@ mod tests {
 
         write_bootstrap_complete_marker(&root, &pin).expect("marker write should succeed");
 
-        let marker_path = root.join(".hermes-bootstrap-complete");
-        let tmp_path = root.join(".hermes-bootstrap-complete.tmp");
+        let marker_path = root.join(".icebath-bootstrap-complete");
+        let tmp_path = root.join(".icebath-bootstrap-complete.tmp");
         assert!(
             marker_path.is_file(),
             "final marker must exist after atomic publish"
@@ -1313,7 +1313,7 @@ mod tests {
         // final marker would still enable the fast path.
         let root = unique_tmp_dir("marker-existence-only");
         make_release_tree(&root);
-        std::fs::write(root.join(".hermes-bootstrap-complete"), b"").unwrap();
+        std::fs::write(root.join(".icebath-bootstrap-complete"), b"").unwrap();
 
         assert!(
             hermes_is_installed(&root),
@@ -1342,11 +1342,11 @@ mod tests {
             "error should mention the marker path: {msg}"
         );
         assert!(
-            !not_a_dir.join(".hermes-bootstrap-complete").exists(),
+            !not_a_dir.join(".icebath-bootstrap-complete").exists(),
             "failed write must not leave a final marker that enables the fast path"
         );
         assert!(
-            !not_a_dir.join(".hermes-bootstrap-complete.tmp").exists(),
+            !not_a_dir.join(".icebath-bootstrap-complete.tmp").exists(),
             "failed write must not leave a temp marker sibling either"
         );
         let _ = std::fs::remove_dir_all(&base);

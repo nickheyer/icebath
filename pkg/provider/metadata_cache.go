@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // In memory TTL of the OpenRouter catalog
@@ -199,22 +200,40 @@ func ttlMemoGet(path, key string, ttl time.Duration, tsKey, valueKey string) any
 	return value
 }
 
-// Writes a key into a TTL memo file and drops expired siblings
-func ttlMemoPut(path, key string, value any, ttl time.Duration, tsKey, valueKey, what string) {
-	now := float64(wallNow().Unix())
-	data := map[string]any{}
-	for k, v := range loadJSONDict(path) {
-		entry, ok := v.(map[string]any)
-		if !ok {
-			continue
-		}
-		stamp, _ := config.AsFloat(entry[tsKey])
-		if now-stamp < ttl.Seconds() {
-			data[k] = entry
+// Writes a key into a TTL memo file in file order, dropping expired siblings, as json.dump indent 0 with compact separators
+func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Duration, tsKey, valueKey, what string, tsFirst bool) {
+	now := float64(wallNow().UnixNano()) / 1e9
+	data := pyjson.NewObject()
+	if raw, err := os.ReadFile(path); err == nil {
+		if existing, err := pyjson.LoadsDict(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))); err == nil {
+			for _, k := range existing.Keys {
+				entry, ok := existing.Vals[k].(*pyjson.Object)
+				if !ok {
+					continue
+				}
+				stamp := 0.0
+				if v, has := entry.Get(tsKey); has {
+					if stamp, ok = config.AsFloat(v); !ok {
+						metadataLog.Debug("failed to save "+what, "error", "could not convert "+tsKey+" to float")
+						return
+					}
+				}
+				if now-stamp < ttl.Seconds() {
+					data.Set(k, entry)
+				}
+			}
 		}
 	}
-	data[key] = map[string]any{tsKey: now, valueKey: value}
-	if err := atomicJSONWrite(path, data); err != nil {
+	entry := pyjson.NewObject()
+	if tsFirst {
+		entry.Set(tsKey, now)
+		entry.Set(valueKey, value)
+	} else {
+		entry.Set(valueKey, value)
+		entry.Set(tsKey, now)
+	}
+	data.Set(key, entry)
+	if err := config.AtomicJSONWriteWith(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
 		metadataLog.Debug("failed to save "+what, "error", err)
 	}
 }
@@ -228,7 +247,7 @@ func localProbeDiskGet(ctx context.Context, kind, key string) any {
 }
 
 func localProbeDiskPut(ctx context.Context, kind, key string, value any) {
-	ttlMemoPut(localProbeDiskCachePath(ctx), kind+":"+key, value, localProbeDiskTTL, "ts", "value", "local probe disk cache")
+	ttlMemoPut(ctx, localProbeDiskCachePath(ctx), kind+":"+key, value, localProbeDiskTTL, "ts", "value", "local probe disk cache", false)
 }
 
 func modelMetadataCachePath(ctx context.Context) string {
@@ -303,7 +322,7 @@ func endpointDiskCacheGet(ctx context.Context, normalized string) (map[string]ma
 }
 
 func endpointDiskCachePut(ctx context.Context, normalized string, cache map[string]map[string]any) {
-	ttlMemoPut(endpointMetadataCachePath(ctx), normalized, cache, endpointModelCacheTTL, "at", "models", "endpoint model metadata disk cache")
+	ttlMemoPut(ctx, endpointMetadataCachePath(ctx), normalized, cache, endpointModelCacheTTL, "at", "models", "endpoint model metadata disk cache", true)
 }
 
 // Publishes a models catalog in the memo and sweeps expired entries

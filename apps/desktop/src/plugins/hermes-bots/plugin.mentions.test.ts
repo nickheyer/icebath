@@ -256,7 +256,7 @@ describe('@-mention completions', () => {
     expect(provide('').map(item => item.insert)).toContain('@default-vera')
   })
 
-  it('surfaces default as @hermes and prefix-filters on the handle', async () => {
+  it('surfaces default as @icebath and prefix-filters on the handle', async () => {
     const { provide } = await contributions({
       focused: 'researcher',
       profiles: [
@@ -266,7 +266,7 @@ describe('@-mention completions', () => {
       ]
     })
 
-    expect(provide('').map(item => item.insert)).toEqual(expect.arrayContaining(['@hermes', '@writer-homelab']))
+    expect(provide('').map(item => item.insert)).toEqual(expect.arrayContaining(['@icebath', '@writer-homelab']))
     expect(provide('wri').map(item => item.insert)).toEqual(['@writer-homelab'])
   })
 
@@ -308,7 +308,7 @@ describe('@-mention completions', () => {
 
   /** Local default plus two remote defaults, each titled on its own host
    *  (#103731). Order-flipped so a Map-last-wins slip in the resolver or the
-   *  picker would surface as a retargeted local @hermes. */
+   *  picker would surface as a retargeted local @icebath. */
   const REMOTE_DEFAULTS: Array<Record<string, unknown>> = [
     {
       connectionId: 'vps',
@@ -337,24 +337,24 @@ describe('@-mention completions', () => {
       profiles: [...REMOTE_DEFAULTS].reverse().concat([{ name: 'researcher' }, { name: 'default' }])
     }
   ])(
-    'lists titled remote defaults under their slug, qualified on collision, and keeps @hermes local ($label)',
+    'lists titled remote defaults under their slug, qualified on collision, and keeps @icebath local ($label)',
     async ({ profiles }) => {
       const { handler, provide } = await contributions({ focused: 'researcher', profiles })
       const inserts = provide('').map(item => item.insert)
 
       // Both remote defaults tag as "CoS Bot" — the bare slug names neither, so
-      // the picker pins each to its connection; the local default stays @hermes.
-      expect(inserts).toEqual(expect.arrayContaining(['@hermes', '@cos-bot@vps', '@cos-bot@wsl']))
+      // the picker pins each to its connection; the local default stays @icebath.
+      expect(inserts).toEqual(expect.arrayContaining(['@icebath', '@cos-bot@vps', '@cos-bot@wsl']))
       expect(inserts).not.toContain('@cos-bot')
-      expect(inserts.filter(insert => insert === '@hermes')).toHaveLength(1)
+      expect(inserts.filter(insert => insert === '@icebath')).toHaveLength(1)
 
       const qualified = await handler({ text: 'ask @cos-bot@wsl for the plan' })
       expect(qualified.text).toMatch(/message_agent target: "default@wsl"/)
       expect(qualified.text).not.toMatch(/default@vps/)
 
-      // A bare @hermes is this machine's default in either roster order.
-      const local = await handler({ text: '@hermes summarize' })
-      expect(local.text).toMatch(/@hermes = agent profile "default"/)
+      // A bare @icebath is this machine's default in either roster order.
+      const local = await handler({ text: '@icebath summarize' })
+      expect(local.text).toMatch(/@icebath = agent profile "default"/)
       expect(local.text).not.toMatch(/message_agent target: "default@/)
     }
   )
@@ -573,12 +573,12 @@ describe('the local default when a real icebath profile exists', () => {
     })
 
     const toDefault = (await handler({ text: 'please ask @default to review' })).text
-    const toHermes = (await handler({ text: 'please ask @hermes to review' })).text
+    const toHermes = (await handler({ text: 'please ask @icebath to review' })).text
 
     // message_agent maps 'icebath' to the real icebath profile, so the default must never be handed it.
     expect(toDefault).toMatch(/@default = agent profile "default"/)
     expect(toDefault).not.toMatch(/message_agent target: "icebath"/)
-    expect(toHermes).toMatch(/@hermes = agent profile "icebath"/)
+    expect(toHermes).toMatch(/@icebath = agent profile "icebath"/)
     expect(toHermes).not.toMatch(/agent profile "default"/)
   })
 })

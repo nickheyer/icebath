@@ -12,7 +12,7 @@ var contentNonTextPartTypes = map[string]bool{"image": true, "image_url": true, 
 
 var contentTextKeys = []string{"text", "content", "input_text", "output_text", "summary_text"}
 
-// Value under key for a mapping, else the same named attribute of a struct, nil when absent
+// Value under key for any mapping, else the same named attribute of a struct, nil when absent
 func partField(value any, key string) any {
 	switch m := value.(type) {
 	case nil:
@@ -22,6 +22,32 @@ func partField(value any, key string) any {
 	case pyObject:
 		v, _ := m.get(key)
 		return v
+	case interface{ Get(string) (any, bool) }:
+		v, _ := m.Get(key)
+		return v
+	case pyrepr.Mapping:
+		for k, v := range m.PyItems() {
+			if k == any(key) {
+				return v
+			}
+		}
+		return nil
+	}
+	if rv := reflect.ValueOf(value); rv.Kind() == reflect.Map {
+		kt := rv.Type().Key()
+		var k reflect.Value
+		switch {
+		case kt.Kind() == reflect.String:
+			k = reflect.ValueOf(key).Convert(kt)
+		case kt.Kind() == reflect.Interface && reflect.TypeOf(key).Implements(kt):
+			k = reflect.ValueOf(key)
+		default:
+			return nil
+		}
+		if v := rv.MapIndex(k); v.IsValid() {
+			return v.Interface()
+		}
+		return nil
 	}
 	return attrOf(value, key)
 }

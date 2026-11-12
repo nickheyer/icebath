@@ -131,13 +131,20 @@ func markerEnvironment() map[string]string {
 	return map[string]string{"sys_platform": sysPlatform(), "platform_system": system, "platform_machine": platformMachine(), "os_name": osName}
 }
 
-// Marker evaluation through the locked PM runtime, which ships packaging
-var evaluateGate func(ctx context.Context, marker string, environment map[string]string) bool
-
-func init() {
-	evaluateGate = func(ctx context.Context, marker string, environment map[string]string) bool {
-		return EvaluateMarkerInRuntime(ctx, marker, environment, RuntimeOptions{Project: RepoRoot(), Imports: PMRuntimeImports})
+// Gate verdict over the environment laid on the interpreter's defaults, a marker that fails to parse or evaluate leaving the extra ungated
+func evaluateGate(ctx context.Context, marker string, environment map[string]string) (bool, error) {
+	markers, err := parseMarker(marker)
+	if err != nil {
+		return true, nil
 	}
+	var defaults map[string]string
+	if markerNeedsDefaults(markers, environment) {
+		if defaults, err = loaderMarkerEnvironment(ctx); err != nil {
+			return false, err
+		}
+	}
+	ok, err := evaluateMarker(markers, defaults, environment)
+	return err != nil || ok, nil
 }
 
 // Reports an extra installable here, an installed anchor set beating its platform gate
@@ -164,7 +171,7 @@ func extraSupported(ctx context.Context, extra string, environment map[string]st
 	if environment == nil {
 		environment = markerEnvironment()
 	}
-	return evaluateGate(ctx, marker, environment), nil
+	return evaluateGate(ctx, marker, environment)
 }
 
 // ExtraSupported reports an extra installable on this machine, an installed anchor set beating its platform gate
@@ -183,13 +190,6 @@ func SwapPlatformGates(gates map[string]string) map[string]string {
 	defer platformGatesCache.Unlock()
 	saved := platformGatesCache.gates
 	platformGatesCache.gates = gates
-	return saved
-}
-
-// SwapGateEvaluator installs the gate marker evaluator, returning the one it replaced
-func SwapGateEvaluator(fn func(ctx context.Context, marker string, environment map[string]string) bool) func(ctx context.Context, marker string, environment map[string]string) bool {
-	saved := evaluateGate
-	evaluateGate = fn
 	return saved
 }
 

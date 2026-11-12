@@ -1314,7 +1314,7 @@ func sessionSearchInlineExecutor(ctx context.Context, host ExecutorHost, args ma
 
 var sessionSearchSchema = map[string]any{
 	"name": "session_search",
-	"description": "Search or read past icebath conversations (FTS5), or scroll inside one. Four shapes, picked by args: `query` = discovery " +
+	"description": "Search or read past Icebath conversations (FTS5), or scroll inside one. Four shapes, picked by args: `query` = discovery " +
 		"(top-N matching sessions, top result fully hydrated); `session_id` + " +
 		"`around_message_id` = scroll (window of messages around an anchor); " +
 		"`session_id` alone = read a whole session — how you resolve an " +

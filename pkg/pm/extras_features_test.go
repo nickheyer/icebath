@@ -49,17 +49,16 @@ func svHostMarkers(t *testing.T) map[string]string {
 	return env
 }
 
-// Evaluates gates in process with the packaging port over the given defaults, malformed markers ungated
-func svInProcessGates(t *testing.T, defaults map[string]string) {
+// Points the core tree's venv interpreter at the host Python, whose marker environment gates fall back on
+func svHostInterpreter(t *testing.T, repo string) map[string]string {
 	t.Helper()
-	peSwap(t, &evaluateGate, func(_ context.Context, marker string, environment map[string]string) bool {
-		req, err := ParseRequirement("gate ; " + marker)
-		if err != nil {
-			return true
-		}
-		ok, err := evaluateMarker(req.Marker, defaults, environment)
-		return err != nil || ok
-	})
+	peSwap(t, &repoRoot, func() string { return repo })
+	python := VenvPython(filepath.Join(repo, "venv"))
+	sttMkdir(t, filepath.Dir(python))
+	if err := os.Symlink(peHostPython(t), python); err != nil {
+		t.Fatal(err)
+	}
+	return svHostMarkers(t)
 }
 
 // Anchors importable exactly when listed, the sys.modules fakes of the Python tests
@@ -88,9 +87,8 @@ func TestSVExtraSupportedUngatedExtraIsTrue(t *testing.T) {
 }
 
 func TestSVEnsureImportRaisesOnGatedOffExtra(t *testing.T) {
-	isolateHome(t)
-	defaults := svHostMarkers(t)
-	svInProcessGates(t, defaults)
+	tmp := isolateHome(t)
+	defaults := svHostInterpreter(t, sttMkdir(t, filepath.Join(tmp, "repo")))
 	svGates(t, map[string]string{"gated-extra": "python_full_version < '" + defaults["python_full_version"] + "'"})
 	svImportable(t, nil)
 	synced := svSynced(t)
@@ -107,9 +105,7 @@ func TestSVEnsureImportRaisesOnGatedOffExtra(t *testing.T) {
 func TestSVSyncRefusesPythonGatedExtraBeforeTouchingEnvironment(t *testing.T) {
 	tmp := isolateHome(t)
 	repo := sttMkdir(t, filepath.Join(tmp, "repo"))
-	peSwap(t, &repoRoot, func() string { return repo })
-	defaults := svHostMarkers(t)
-	svInProcessGates(t, defaults)
+	defaults := svHostInterpreter(t, repo)
 	svGates(t, map[string]string{"unavailable-engine": "python_full_version < '" + defaults["python_full_version"] + "'"})
 	svImportable(t, map[string]bool{"unavailable_engine": true})
 	ctx := context.Background()
@@ -141,7 +137,6 @@ func TestSVDeclaredExtraGatesMatchDependencySelection(t *testing.T) {
 	isolateHome(t)
 	repo := svRealPyproject(t)
 	defaults := svHostMarkers(t)
-	svInProcessGates(t, defaults)
 	data, err := loadPyproject(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -185,7 +180,6 @@ func TestSVDeclaredExtraGatesMatchDependencySelection(t *testing.T) {
 func TestSVFasterWhisperTargetsAreGated(t *testing.T) {
 	isolateHome(t)
 	svRealPyproject(t)
-	svInProcessGates(t, svHostMarkers(t))
 	targets := map[string]map[string]string{
 		"win32-arm64": {"sys_platform": "win32", "platform_system": "Windows", "platform_machine": "ARM64", "os_name": "nt"},
 		"darwin-x64":  {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "x86_64", "os_name": "posix"},
@@ -517,16 +511,9 @@ func TestExtraSupportedExport(t *testing.T) {
 func TestExtraSupportedInAndGateSwaps(t *testing.T) {
 	ctx := context.Background()
 	savedGates := SwapPlatformGates(map[string]string{"gated-export-extra": "sys_platform == 'win32'"})
-	var seen []map[string]string
-	savedEval := SwapGateEvaluator(func(_ context.Context, marker string, environment map[string]string) bool {
-		seen = append(seen, environment)
-		ok, err := EvaluateMarker(marker, nil, environment)
-		return err != nil || ok
-	})
 	savedImportable := SwapAnchorImportable(func(context.Context, string) bool { return false })
 	t.Cleanup(func() {
 		SwapPlatformGates(savedGates)
-		SwapGateEvaluator(savedEval)
 		SwapAnchorImportable(savedImportable)
 	})
 	for platform, want := range map[string]bool{"win32": true, "linux": false} {
@@ -537,9 +524,6 @@ func TestExtraSupportedInAndGateSwaps(t *testing.T) {
 	}
 	if got, err := ExtraSupportedIn(ctx, "gated-export-extra", map[string]string{"sys_platform": "linux"}, func(string) bool { return true }); err != nil || !got {
 		t.Fatalf("an installed anchor set must beat the gate, got %v, %v", got, err)
-	}
-	if len(seen) != 2 || seen[0]["sys_platform"] == seen[1]["sys_platform"] {
-		t.Fatalf("evaluator saw %v", seen)
 	}
 	if anchorImportable(ctx, "anything") {
 		t.Fatal("swapped importability probe not installed")

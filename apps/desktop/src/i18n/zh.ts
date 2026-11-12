@@ -2580,7 +2580,7 @@ export const zhOverrides = {
       MATTERMOST_ALLOWED_USERS: { label: '允许的用户 ID', help: '推荐。Mattermost 用户 ID（每格一个）。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '访问令牌' },
-      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@icebath:example.org' },
       MATRIX_ALLOWED_USERS: { label: '允许的 Matrix 用户 ID', help: '推荐。@user:server 格式的用户 ID（每格一个）。' },
       SIGNAL_HTTP_URL: {
         label: 'Signal 桥接 URL',

@@ -723,6 +723,17 @@ func titleStore(db any) any {
 	return db
 }
 
+// Recorder billing the title call to the session, a session store adapted from its state usage row
+func titleUsageRecorder(db any) provider.AuxUsageRecorder {
+	switch v := db.(type) {
+	case provider.AuxUsageRecorder:
+		return v
+	case SessionStore:
+		return auxUsageRecorderFor(v)
+	}
+	return nil
+}
+
 // True when the session already carries an llm or user title, or the check fails
 func hasUpgradedTitle(ctx context.Context, db any, sessionID string) (upgraded bool) {
 	defer func() {
@@ -885,8 +896,7 @@ func autoTitleSession(ctx context.Context, db any, sessionID, userMessage string
 			})
 		}
 		ctx = provider.WithPortalConversationContext(ctx, conversationID)
-		recorder, _ := db.(provider.AuxUsageRecorder)
-		ctx = provider.SetAccountingContext(ctx, recorder, sessionID)
+		ctx = provider.SetAccountingContext(ctx, titleUsageRecorder(db), sessionID)
 		title, source := generateTitleFn(ctx, userMessage, generateTitleOptions{FailureCallback: o.FailureCallback, MainRuntime: o.MainRuntime,
 			RuntimeValidator: o.RuntimeValidator, TitlePreview: o.TitlePreview}), state.TitleSourceLLM
 		if title != "" && isProvisionalGreetingTitle(title) {

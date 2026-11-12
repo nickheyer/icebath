@@ -46,7 +46,7 @@ interface TerminalState {
   stateListeners: Set<(state: HermesTerminalState) => void>
 }
 
-const META = '\u0000HERMES_TERMINAL_META:'
+const META = '\u0000ICEBATH_TERMINAL_META:'
 // 4410 also ends a shell the server closed (expiry, a deleted profile, shutdown); only a shell
 // that exited by itself (`exit`, Ctrl-D) carries this reason (pty_session.WS_CLOSE_PROCESS_EXITED_REASON).
 const PROCESS_EXITED_REASON = 'Process exited'

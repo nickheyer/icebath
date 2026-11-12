@@ -1970,7 +1970,7 @@ export const ruOverrides = {
       },
       MATRIX_HOMESERVER: { label: 'URL homeserver', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'Токен доступа' },
-      MATRIX_USER_ID: { label: 'ID пользователя бота', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ID пользователя бота', placeholder: '@icebath:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: 'Разрешённые ID пользователей Matrix',
         help: 'Рекомендуется. ID пользователей (по одному в поле) в формате @user:server.'

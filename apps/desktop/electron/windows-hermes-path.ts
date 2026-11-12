@@ -90,7 +90,7 @@ export interface ResolveVenvHermesCommandDeps {
 
 /**
  * If `command` is a Windows venv `icebath`/`icebath.exe` console-script shim
- * (i.e. `<venvRoot>/Scripts/hermes(.exe)`), resolve it to the underlying
+ * (i.e. `<venvRoot>/Scripts/icebath(.exe)`), resolve it to the underlying
  * venv python invoked as `python -m hermes_cli.main <backendArgs>` — but
  * ONLY after smoke-testing that interpreter with canImportHermesCli(). A
  * venv whose update died mid-`pip install` still has python.exe + icebath.exe

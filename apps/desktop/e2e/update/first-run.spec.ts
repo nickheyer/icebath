@@ -73,7 +73,7 @@ test('a healthy local install opens straight to chat on every launch: no setup c
         if (launch === 2) {
           // A usable install the Desktop bootstrap never stamped (a CLI install from before the
           // marker, or one whose marker was lost): usability, not the marker, decides.
-          fs.rmSync(path.join(facts.checkout, '.hermes-bootstrap-complete'), { force: true })
+          fs.rmSync(path.join(facts.checkout, '.icebath-bootstrap-complete'), { force: true })
         }
 
         const installer = startInstallerSampler(facts)

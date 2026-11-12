@@ -85,7 +85,7 @@ function ownedLock(devServer?: string): Record<string, unknown> {
     pid: 333,
     port: 40000,
     profile: '',
-    hermesPath: '~/.local/bin/hermes',
+    hermesPath: '~/.local/bin/icebath',
     hermesHome: '~/.icebath',
     logPath: spawnLogPath(OWNERSHIP_ID, SPAWN_NONCE),
     tokenFingerprint: fingerprintToken(REUSE_TOKEN),

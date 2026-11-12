@@ -81,7 +81,7 @@ func TestModelsReturnsHermesAgent(t *testing.T) {
 		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
 	}
 	first := models[0].(map[string]any)
-	if first["id"] != "icebath-agent" || first["owned_by"] != "hermes" {
+	if first["id"] != "icebath-agent" || first["owned_by"] != "icebath" {
 		t.Fatalf("model = %v", first)
 	}
 }

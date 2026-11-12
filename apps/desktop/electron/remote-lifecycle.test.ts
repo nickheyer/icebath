@@ -77,7 +77,7 @@ function ownedLock(over: any = {}) {
     pid: 333,
     port: 40000,
     profile: '',
-    hermesPath: '~/.local/bin/hermes',
+    hermesPath: '~/.local/bin/icebath',
     hermesHome: '~/.icebath',
     logPath: spawnLogPath(OWNERSHIP_ID, SPAWN_NONCE),
     tokenFingerprint: fingerprintToken('stored-token'),
@@ -328,8 +328,8 @@ test('locateHermes throws (no silent fallback) when an EXPLICIT path is not exec
   // command -v WOULD find a different install, but an explicit path must not
   // silently fall back to it — that is the "connected to the wrong icebath" bug.
   const ssh = fakeSsh([
-    [/command -v icebath/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/command -v icebath/, '/home/u/.local/bin/icebath\n'],
+    [/\[ -x .*\.local\/bin\/icebath/, 'OK']
   ])
 
   await assert.rejects(
@@ -345,11 +345,11 @@ test('locateHermes throws (no silent fallback) when an EXPLICIT path is not exec
 
 test('locateHermes falls back to the login-shell command -v probe', async () => {
   const ssh = fakeSsh([
-    [/command -v icebath/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/command -v icebath/, '/home/u/.local/bin/icebath\n'],
+    [/\[ -x .*\.local\/bin\/icebath/, 'OK']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/icebath')
 })
 
 test('locateHermes preserves an installer wrapper instead of resolving its interpreter', async () => {
@@ -359,14 +359,14 @@ test('locateHermes preserves an installer wrapper instead of resolving its inter
   // `<python> serve --help` failed outright (#74411). The wrapper itself is
   // executable and forwards args correctly — return it untouched.
   const ssh = fakeSsh([
-    [/command -v icebath/, '/home/u/.local/bin/hermes\n'],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK'],
+    [/command -v icebath/, '/home/u/.local/bin/icebath\n'],
+    [/\[ -x .*\.local\/bin\/icebath/, 'OK'],
     // If the removed python3 wrapper-parser were ever reintroduced, this rule
     // would reward it with an interpreter path and the assertions below fail.
     [/python3 -c/, '/home/u/.icebath/icebath-agent/venv/bin/python\n']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '/home/u/.local/bin/icebath')
   assert.ok(
     !ssh.calls.some(cmd => cmd.includes('python3 -c')),
     'locateHermes must not shell out to a python3 parser to rewrite the launcher'
@@ -376,29 +376,29 @@ test('locateHermes preserves an installer wrapper instead of resolving its inter
 test('locateHermes returns an explicit remoteHermesPath unchanged', async () => {
   // The override half of #74411: an explicit remoteHermesPath pointing at a
   // wrapper was also canonicalized to its interpreter, so overriding to
-  // ~/.local/bin/hermes changed nothing for affected users.
+  // ~/.local/bin/icebath changed nothing for affected users.
   const ssh = fakeSsh([
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK'],
+    [/\[ -x .*\.local\/bin\/icebath/, 'OK'],
     [/python3 -c/, '/home/u/.icebath/icebath-agent/venv/bin/python\n']
   ])
 
-  assert.equal(await locateHermes(ssh, '~/.local/bin/hermes'), '~/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, '~/.local/bin/icebath'), '~/.local/bin/icebath')
   assert.ok(!ssh.calls.some(cmd => cmd.includes('python3 -c')), 'an explicit remoteHermesPath must never be rewritten')
 })
 
-test('locateHermes falls back to ~/.local/bin/hermes when the login-shell probe misses', async () => {
+test('locateHermes falls back to ~/.local/bin/icebath when the login-shell probe misses', async () => {
   // ~/.local/bin is the non-root installer's command location (scripts/install.sh).
   const ssh = fakeSsh([
     [/command -v icebath/, ''],
-    [/\[ -x .*\.local\/bin\/hermes/, 'OK']
+    [/\[ -x .*\.local\/bin\/icebath/, 'OK']
   ])
 
-  assert.equal(await locateHermes(ssh, ''), '~/.local/bin/hermes')
+  assert.equal(await locateHermes(ssh, ''), '~/.local/bin/icebath')
 })
 
 test('locateHermes tries the conventional venv path last', async () => {
-  const ssh = fakeSsh([[/\[ -x .*venv\/bin\/hermes/, 'OK']])
-  assert.equal(await locateHermes(ssh, ''), '~/.icebath/icebath-agent/venv/bin/hermes')
+  const ssh = fakeSsh([[/\[ -x .*venv\/bin\/icebath/, 'OK']])
+  assert.equal(await locateHermes(ssh, ''), '~/.icebath/icebath-agent/venv/bin/icebath')
 })
 
 test('locateHermes throws a hermes-not-found error with an install hint', async () => {
@@ -618,7 +618,7 @@ test('pidIsOurDashboard accepts the venv entrypoint an installer wrapper execs i
   ])
 
   assert.equal(
-    await pidIsOurDashboard(ssh, 5, SPAWN_NONCE, '~/.local/bin/hermes', '/Users/cd9c/.icebath', OWNERSHIP_ID, 'ops'),
+    await pidIsOurDashboard(ssh, 5, SPAWN_NONCE, '~/.local/bin/icebath', '/Users/cd9c/.icebath', OWNERSHIP_ID, 'ops'),
     true
   )
   assert.match(ownershipProbe, /icebath-agent.*venv.*bin.*icebath/)
@@ -984,7 +984,7 @@ test.skipIf(process.platform === 'win32')(
   'detached backend does not inherit the update mutex descriptor',
   async (): Promise<void> => {
     const shell: string = (await exec('command -v bash', { shell: 'bash' })).stdout.trim()
-    const directory: string = await mkdtemp(path.join(os.tmpdir(), 'hermes-update-mutex-'))
+    const directory: string = await mkdtemp(path.join(os.tmpdir(), 'icebath-update-mutex-'))
     const hermesPath: string = path.join(directory, 'icebath')
     const reportPath: string = path.join(directory, 'descriptor-report')
     const logPath: string = path.join(directory, 'spawn.log')
@@ -998,7 +998,7 @@ report=${expandRemotePath(reportPath)}
 for fd in /proc/$$/fd/*; do
   target=$(readlink "$fd" 2>/dev/null || true)
   case "$target" in
-    *hermes-update-in-progress.lock) printf '%s\\n' "$target" >> "$report.tmp" ;;
+    *icebath-update-in-progress.lock) printf '%s\\n' "$target" >> "$report.tmp" ;;
   esac
 done
 mv "$report.tmp" "$report"
@@ -1582,12 +1582,12 @@ test('connect() preserves an owned backend when a reuse transport throws', async
 })
 
 test('validateRemotePath accepts absolute POSIX paths', () => {
-  assert.doesNotThrow(() => validateRemotePath('/usr/bin/hermes'))
-  assert.doesNotThrow(() => validateRemotePath('/home/user/.icebath/icebath-agent/venv/bin/hermes'))
+  assert.doesNotThrow(() => validateRemotePath('/usr/bin/icebath'))
+  assert.doesNotThrow(() => validateRemotePath('/home/user/.icebath/icebath-agent/venv/bin/icebath'))
 })
 
 test('validateRemotePath accepts ~/ prefix paths', () => {
-  assert.doesNotThrow(() => validateRemotePath('~/bin/hermes'))
+  assert.doesNotThrow(() => validateRemotePath('~/bin/icebath'))
   assert.doesNotThrow(() => validateRemotePath('~/.icebath/logs/desktop-ssh.log'))
   assert.doesNotThrow(() => validateRemotePath('~'))
 })
@@ -1600,14 +1600,14 @@ test('validateRemotePath accepts paths with spaces and quotes', () => {
 
 test('validateRemotePath rejects relative paths', () => {
   assert.throws(() => validateRemotePath('icebath'), /absolute|relative/i)
-  assert.throws(() => validateRemotePath('./bin/hermes'), /absolute|relative/i)
+  assert.throws(() => validateRemotePath('./bin/icebath'), /absolute|relative/i)
   assert.throws(() => validateRemotePath('../etc/passwd'), /absolute|relative/i)
 })
 
 test('validateRemotePath rejects NUL and newline', () => {
-  assert.throws(() => validateRemotePath('/usr/bin/hermes\x00'), /unsafe/i)
-  assert.throws(() => validateRemotePath('/usr/bin/hermes\n'), /unsafe/i)
-  assert.throws(() => validateRemotePath('/usr/bin/hermes\r'), /unsafe/i)
+  assert.throws(() => validateRemotePath('/usr/bin/icebath\x00'), /unsafe/i)
+  assert.throws(() => validateRemotePath('/usr/bin/icebath\n'), /unsafe/i)
+  assert.throws(() => validateRemotePath('/usr/bin/icebath\r'), /unsafe/i)
 })
 
 test('validateRemotePath preserves shell metacharacters as path data', () => {
@@ -1625,8 +1625,8 @@ test('expandRemotePath expands ~/ to "$HOME"/', () => {
 })
 
 test('expandRemotePath returns quoted absolute paths unchanged', () => {
-  const result = expandRemotePath('/usr/local/bin/hermes')
-  assert.ok(result.includes('/usr/local/bin/hermes'))
+  const result = expandRemotePath('/usr/local/bin/icebath')
+  assert.ok(result.includes('/usr/local/bin/icebath'))
   assert.ok(!result.includes('eval'))
 })
 

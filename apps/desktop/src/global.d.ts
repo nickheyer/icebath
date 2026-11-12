@@ -899,7 +899,7 @@ export interface DesktopVersionInfo {
    *  a managed checkout; the Distribution label keys on it. */
   payload?: 'bootstrap' | 'bundled' | 'light'
   /** True when the runtime checkout carries the bootstrap installers'
-   *  `.hermes-bootstrap-complete` receipt — install.sh / install.ps1 (or the
+   *  `.icebath-bootstrap-complete` receipt — install.sh / install.ps1 (or the
    *  desktop first-launch bootstrap) created it, a manual clone did not. */
   installedByScript?: boolean
   /** sha16 of the canonical install-root path — the per-install channel key and

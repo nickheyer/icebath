@@ -31,7 +31,7 @@ test('POSIX relaunch gate reaches a verdict over a transport that refuses a larg
     }
   }
 
-  await assertRemoteInstallUpdateClear(ssh, '/home/alice/.icebath', '~/.local/bin/hermes')
+  await assertRemoteInstallUpdateClear(ssh, '/home/alice/.icebath', '~/.local/bin/icebath')
   assert.equal(calls.length, 1)
   assert.equal(calls[0].stdinData, REMOTE_MARKER_GATE_PY)
   assert.ok(!calls[0].command.includes('marker_verdict'), 'the judge must not be inlined in argv')

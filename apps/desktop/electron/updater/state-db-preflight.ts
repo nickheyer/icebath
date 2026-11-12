@@ -34,7 +34,7 @@ interface StateDbPreflight {
   home: string
   log: (message: string) => void
   /**
-   * The installation launcher of a PM-managed checkout (`.icebath/bin/hermes`).
+   * The installation launcher of a PM-managed checkout (`.icebath/bin/icebath`).
    * A managed checkout carries no venv of its own — the launcher owns
    * interpreter and generation selection there — so the snapshot runs through
    * it exactly like the update check does (`readSourceUpdate`).

@@ -752,7 +752,7 @@ test('terminal status without its durable receipt fails instead of claiming succ
 
   const target = {
     platform: 'Linux' as const,
-    hermesPath: '~/.local/bin/hermes',
+    hermesPath: '~/.local/bin/icebath',
     hermesHome: '~/.icebath',
     ssh: { exec: async () => observation({ marker: 'absent', exitCode: 0 }) }
   }
@@ -775,7 +775,7 @@ test('live or malformed remote markers fail actionably at bounded update and rec
 
     const target = {
       platform: 'Linux' as const,
-      hermesPath: '~/.local/bin/hermes',
+      hermesPath: '~/.local/bin/icebath',
       hermesHome: '~/.icebath',
       ssh: { exec: async () => observation({ marker, ...(marker === 'live' ? { markerPid: 44 } : {}) }) }
     }
@@ -800,7 +800,7 @@ test('a journaled launch requires correlated terminal proof or an observed live-
 
   const target = {
     platform: 'Linux' as const,
-    hermesPath: '~/.local/bin/hermes',
+    hermesPath: '~/.local/bin/icebath',
     hermesHome: '~/.icebath',
     ssh: { exec: async () => observation({ marker: 'absent' }) }
   }
@@ -834,7 +834,7 @@ test('remote launch intent fences crash recovery even before the local journal r
 
   const target = {
     platform: 'Linux' as const,
-    hermesPath: '~/.local/bin/hermes',
+    hermesPath: '~/.local/bin/icebath',
     hermesHome: '~/.icebath',
     ssh: { exec: async () => observation({ marker: 'absent', launchIntent: 'present' }) }
   }

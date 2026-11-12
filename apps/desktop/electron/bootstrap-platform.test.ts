@@ -22,7 +22,7 @@ test('isWindowsBinaryPathInWsl blocks Windows binary types on WSL', () => {
   assert.equal(isWindowsBinaryPathInWsl('/mnt/c/Tools/icebath.cmd', { isWsl: true }), true)
   assert.equal(isWindowsBinaryPathInWsl('/mnt/c/Tools/icebath.bat', { isWsl: true }), true)
   assert.equal(isWindowsBinaryPathInWsl('/mnt/c/Tools/install.ps1', { isWsl: true }), true)
-  assert.equal(isWindowsBinaryPathInWsl('/usr/local/bin/hermes', { isWsl: true }), false)
+  assert.equal(isWindowsBinaryPathInWsl('/usr/local/bin/icebath', { isWsl: true }), false)
   assert.equal(isWindowsBinaryPathInWsl('/mnt/c/Tools/icebath.exe', { isWsl: false }), false)
 })
 

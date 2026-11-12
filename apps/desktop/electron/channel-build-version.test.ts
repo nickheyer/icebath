@@ -251,7 +251,7 @@ test('channel stamps verify the real checkout and retain source version and nati
     }
 
     const provenance: InstallStamp = resolveStamp({ env, repoRoot: dir })
-    const payload: StampPayload = { runtime: { repoDir: 'repo', commands: { hermes: 'bin/hermes' } } }
+    const payload: StampPayload = { runtime: { repoDir: 'repo', commands: { hermes: 'bin/icebath' } } }
     const built: InstallStamp = buildStampPayload(provenance, env, 'darwin', payload)
     assert.equal(built.source, 'channel-build')
     assert.equal(built.updateMechanism, 'electron-updater')

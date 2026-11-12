@@ -92,7 +92,7 @@ func (a *APIServerAdapter) handleModels(ctx context.Context, request *gateway.We
 		modelName = resolveModelName(ctx, "")
 	}
 	model := func(id, root string, parent any) *pyjson.Object {
-		return pyjson.ObjectOf("id", id, "object", "model", "created", now, "owned_by", "hermes", "permission", []any{},
+		return pyjson.ObjectOf("id", id, "object", "model", "created", now, "owned_by", "icebath", "permission", []any{},
 			"root", root, "parent", parent)
 	}
 	models := []any{model(modelName, modelName, nil)}

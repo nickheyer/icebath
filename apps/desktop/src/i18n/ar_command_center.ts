@@ -351,7 +351,7 @@ export const arCommandCenter = {
       },
       MATRIX_USER_ID: {
         label: 'معرّف مستخدم البوت',
-        placeholder: '@hermes:example.org'
+        placeholder: '@icebath:example.org'
       },
       MATRIX_ALLOWED_USERS: {
         label: 'معرّفات مستخدمي Matrix المسموح بهم',

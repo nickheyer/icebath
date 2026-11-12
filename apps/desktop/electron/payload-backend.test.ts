@@ -71,7 +71,7 @@ test('ticket minting runs the payload python, never the CLI shim', () => {
     storePython: '/p/tools/python',
     repoDir: '/p/repo',
     sitePackages: '/p/venv/site-packages',
-    shim: '/p/bin/hermes'
+    shim: '/p/bin/icebath'
   }
 
   const runtime = payloadTicketRuntime(payload)

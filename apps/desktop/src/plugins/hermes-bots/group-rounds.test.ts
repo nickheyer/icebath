@@ -102,7 +102,7 @@ describe('routing', () => {
     expect(parsed.mentioned.size).toBe(1)
   })
 
-  it('resolves @hermes to the default member', async () => {
+  it('resolves @icebath to the default member', async () => {
     const { rounds } = await loadRoom()
 
     const members: GroupMember[] = [
@@ -110,7 +110,7 @@ describe('routing', () => {
       { name: 'builder', title: '' }
     ]
 
-    const parsed = rounds.parseGroupChatMentions('@hermes take a look', members)
+    const parsed = rounds.parseGroupChatMentions('@icebath take a look', members)
 
     expect(parsed.mentioned.has('default')).toBe(true)
     expect(parsed.mentioned.size).toBe(1)
@@ -253,7 +253,7 @@ describe('routing', () => {
     const { formatGroupChatLine } = await import('./group-round-prompt')
     const local: GroupMember = { connectionId: 'central', connectionLabel: 'Central', name: 'default', title: '' }
 
-    room.rounds.sendToGroupChat('Core', [local], '@hermes status?')
+    room.rounds.sendToGroupChat('Core', [local], '@icebath status?')
     await settle(room, 'Core')
 
     const reply = log(room, 'Core').find(entry => entry.from.kind === 'member')
@@ -278,11 +278,11 @@ describe('routing', () => {
     const room = await loadRoom({ turn: ({ n }) => `Reply ${n} from this device.` })
     const local: GroupMember = { connectionId: 'local', connectionLabel: 'This device', name: 'default', title: '' }
 
-    room.rounds.sendToGroupChat('Core', [local], '@hermes status?')
+    room.rounds.sendToGroupChat('Core', [local], '@icebath status?')
     await settle(room, 'Core')
 
     expect(room.gateway.calls).toHaveLength(1)
-    expect(log(room, 'Core').map(entry => entry.text)).toEqual(['@hermes status?', 'Reply 1 from this device.'])
+    expect(log(room, 'Core').map(entry => entry.text)).toEqual(['@icebath status?', 'Reply 1 from this device.'])
   })
 
   // Two Desktops label the same gateway differently ("Central" here, "Studio"
@@ -299,7 +299,7 @@ describe('routing', () => {
       title: ''
     }
 
-    room.rounds.sendToGroupChat('Core', [local], '@hermes status?')
+    room.rounds.sendToGroupChat('Core', [local], '@icebath status?')
     await settle(room, 'Core')
 
     const reply = log(room, 'Core').find(entry => entry.from.kind === 'member') as GroupMessage
@@ -964,7 +964,7 @@ describe('threads', () => {
 })
 
 describe('turn prompt', () => {
-  it('addresses the default profile as @hermes', async () => {
+  it('addresses the default profile as @icebath', async () => {
     const { rounds } = await loadRoom()
     const { buildGroupChatTurnPrompt } = await import('./group-round-prompt')
 
@@ -980,7 +980,7 @@ describe('turn prompt', () => {
       viewer: { name: 'default', title: '' }
     })
 
-    expect(own).toMatch(/You are @hermes,/)
+    expect(own).toMatch(/You are @icebath,/)
     expect(own).not.toMatch(/@default\b/)
 
     const peer = buildGroupChatTurnPrompt({
@@ -990,11 +990,11 @@ describe('turn prompt', () => {
       viewer: { name: 'builder', title: '' }
     })
 
-    expect(peer).toMatch(/group chat with @hermes/)
+    expect(peer).toMatch(/group chat with @icebath/)
   })
 
   // #89720: a renamed primary is @bobby to the roster, autocomplete and the
-  // mention resolver; introducing it to itself as @hermes made it treat
+  // mention resolver; introducing it to itself as @icebath made it treat
   // `@bobby …` as someone else's message and pass.
   it('introduces a renamed primary by the same @tag the room resolves', async () => {
     const { rounds } = await loadRoom()

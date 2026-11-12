@@ -49,7 +49,7 @@ interface Corpus {
   release: unknown[]
 }
 
-const CORPUS_PATH = path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'update_marker_corpus.json')
+const CORPUS_PATH = path.resolve(__dirname, '..', '..', '..', 'pkg', 'selfupdate', 'updaterecord', 'testdata', 'update_marker_corpus.json')
 const corpus: Corpus = JSON.parse(fs.readFileSync(CORPUS_PATH, 'utf8'))
 
 afterEach(cleanupMarkerFixtures)

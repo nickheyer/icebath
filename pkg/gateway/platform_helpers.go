@@ -1,14 +1,12 @@
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -22,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -324,7 +323,8 @@ func StripMarkdown(text string, keepLinkTargets bool) string {
 	return pystr.Strip(pyreSub(newlineSqueezeRE, text, "\n\n"))
 }
 
-const defaultMaxTrackedThreads = 500
+// Default cap on tracked threads of a platform tracker
+const DefaultMaxTrackedThreads = 500
 
 // Persisted set of threads the bot took part in, one json file per platform
 type ThreadParticipationTracker struct {
@@ -337,18 +337,15 @@ type ThreadParticipationTracker struct {
 
 // State file of a platform's tracker under the active home, replaced by tests at this seam
 var threadTrackerStatePath = func(ctx context.Context, platform string) string {
-	return filepath.Join(home.Dir(ctx), platform+"_threads.json")
+	return pypath.PathJoin(home.Dir(ctx), platform+"_threads.json")
 }
 
 var helpersAtomicJSONWrite = func(ctx context.Context, path string, data any) error {
 	return config.AtomicJSONWriteWith(ctx, path, data)
 }
 
-// Tracker loaded from its state file, maxTracked zero meaning the default of 500
+// Tracker seeded in file order from the platform state file, keeping at most maxTracked ids on persist
 func NewThreadParticipationTracker(ctx context.Context, platform string, maxTracked int) *ThreadParticipationTracker {
-	if maxTracked == 0 {
-		maxTracked = defaultMaxTrackedThreads
-	}
 	t := &ThreadParticipationTracker{platform: platform, maxTracked: maxTracked, threads: pydict.New[string, struct{}]()}
 	for _, id := range t.load(ctx) {
 		t.threads.Set(id, struct{}{})
@@ -362,7 +359,11 @@ func (t *ThreadParticipationTracker) load(ctx context.Context) []string {
 	if err != nil {
 		return nil
 	}
-	data, err := pyjson.LoadsBytes(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+	text, err := pystr.DecodeUTF8SigFile(raw)
+	if err != nil {
+		return nil
+	}
+	data, err := pyjson.Loads(text)
 	list, ok := data.([]any)
 	if err != nil || !ok {
 		return nil
@@ -381,7 +382,7 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 	t.mu.Lock()
 	list := t.threads.Keys()
 	if len(list) > t.maxTracked {
-		list = list[len(list)-t.maxTracked:]
+		list = list[pyNegativeSliceStart(len(list), t.maxTracked):]
 		t.threads = pydict.New[string, struct{}]()
 		for _, id := range list {
 			t.threads.Set(id, struct{}{})
@@ -393,6 +394,17 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 		payload[i] = id
 	}
 	return helpersAtomicJSONWrite(ctx, threadTrackerStatePath(ctx, t.platform), payload)
+}
+
+// Start index Python takes for seq[-n:] over a sequence of the given size, any sign of n
+func pyNegativeSliceStart(size, n int) int {
+	switch {
+	case n > 0:
+		return max(size-n, 0)
+	case n < 0:
+		return min(-n, size)
+	}
+	return 0
 }
 
 // Records the id in memory, true when a persist is still owed

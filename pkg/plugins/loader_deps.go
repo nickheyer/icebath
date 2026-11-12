@@ -246,22 +246,12 @@ func appliesHere(ctx context.Context, req string) bool {
 	if err != nil || len(parsed.Marker) == 0 {
 		return true
 	}
-	bare := *parsed
-	bare.Marker = nil
-	full, err := parsed.String()
-	if err != nil {
-		return true
-	}
-	prefix, err := bare.String()
-	if err != nil || !strings.HasPrefix(full, prefix) {
-		return true
-	}
-	marker := strings.TrimLeft(full[len(prefix):], " ;")
 	env, err := pluginMarkerEnvironment(ctx)
 	if err != nil {
 		return true
 	}
-	return pm.EvaluateMarkerInRuntime(ctx, marker, env, pm.RuntimeOptions{Project: pm.RepoRoot(), Imports: pm.PMRuntimeImports})
+	ok, err := parsed.MarkerHolds(env, nil)
+	return err != nil || ok
 }
 
 // Whether every requirement is installed in the dependency environment PM currently selects
