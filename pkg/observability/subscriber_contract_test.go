@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/tarzst"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -344,7 +345,15 @@ func TestSkillSubscriberContractAcceptsOnlyBoundedMarks(t *testing.T) {
 
 func TestSkillEventFieldsAreBoundedAndRejectMalformedUsage(t *testing.T) {
 	prev := BundledSkillTreesHook
-	BundledSkillTreesHook = func() (fs.FS, fs.FS) { return os.DirFS("../skills/bundled"), os.DirFS("../skills/optional") }
+	bundled, err := os.ReadFile("../skills/bundled.tar.zst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	optional, err := os.ReadFile("../skills/optional.tar.zst")
+	if err != nil {
+		t.Fatal(err)
+	}
+	BundledSkillTreesHook = func() (fs.FS, fs.FS) { return tarzst.NewFS(bundled, ""), tarzst.NewFS(optional, "") }
 	SetCatalogSource("bundled_skill_names", bundledSkillNames)
 	t.Cleanup(func() { BundledSkillTreesHook = prev; SetCatalogSource("bundled_skill_names", bundledSkillNames) })
 	got, ok := SkillLifecycleFields(map[string]any{"action": "patched", "provenance": "agent_created", "skill_name": "privacy-canary"})

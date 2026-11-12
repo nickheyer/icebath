@@ -49,6 +49,29 @@ type SkillsPromptOptions struct {
 // One index row as name and description
 type indexRow struct{ name, desc string }
 
+// Cold start skills prompt snapshot file of the home
+func skillsPromptSnapshotPath(home string) string {
+	return filepath.Join(home, skillsSnapshotFilename)
+}
+
+// Indexes each loadable entry by load name under its category, project tier rows labelled project
+func labelVisibleEntries(visibleEntries []catalogEntry, skillsByCategory map[string][]indexRow) {
+	for _, entry := range visibleEntries {
+		if entry.LoadName == "" {
+			continue
+		}
+		desc := entry.Description
+		if entry.Tier == TierProject {
+			desc = pystr.Strip("[project] " + desc)
+		}
+		category := entry.Category
+		if category == "" {
+			category = "general"
+		}
+		skillsByCategory[category] = append(skillsByCategory[category], indexRow{entry.LoadName, desc})
+	}
+}
+
 // Drops the in process skills prompt cache and with disk also the home snapshot file
 func ClearSkillsSystemPromptCache(home string, disk bool) {
 	skillsPromptCache.mu.Lock()
@@ -58,7 +81,7 @@ func ClearSkillsSystemPromptCache(home string, disk bool) {
 	if !disk {
 		return
 	}
-	p := filepath.Join(home, skillsSnapshotFilename)
+	p := skillsPromptSnapshotPath(home)
 	if fi, err := os.Lstat(p); err == nil && fi.IsDir() {
 		slog.Debug(fmt.Sprintf("Could not remove skills prompt snapshot: [Errno 21] Is a directory: %s", pyrepr.StrRepr(p)))
 		return
@@ -102,7 +125,7 @@ func pruneIndexDirs(_ string, names []string, hasSkillMD bool) []string {
 
 // Disk snapshot when it parses, carries the current version, and its manifest matches
 func loadSkillsSnapshot(home string, manifest *pyjson.Object) *pyjson.Object {
-	text, err := readSkillMDStrict(filepath.Join(home, skillsSnapshotFilename))
+	text, err := readSkillMDStrict(skillsPromptSnapshotPath(home))
 	if err != nil {
 		return nil
 	}
@@ -557,21 +580,13 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 	}
 	resolved := s.resolveSkillCatalog(entries)
 	byCategory := map[string][]indexRow{}
-	unloadableSet := map[string]bool{}
+	var visibleEntries []catalogEntry
 	for _, e := range resolved {
-		if !e.Visible || e.Status == "shadowed" || isDisabledEntry(e, disabled) {
-			continue
+		if e.Visible && e.Status != "shadowed" && !isDisabledEntry(e, disabled) {
+			visibleEntries = append(visibleEntries, e)
 		}
-		if e.LoadName == "" {
-			unloadableSet[e.Name] = true
-			continue
-		}
-		desc := e.Description
-		if e.Tier == TierProject {
-			desc = pystr.Strip("[project] " + desc)
-		}
-		byCategory[e.Category] = append(byCategory[e.Category], indexRow{e.LoadName, desc})
 	}
+	labelVisibleEntries(visibleEntries, byCategory)
 	if len(pluginRows) > 0 {
 		listed := map[string]bool{}
 		for _, rs := range byCategory {
@@ -595,8 +610,14 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 			list[i] = c.entry
 		}
 		snap.Set("skills", list)
-		if err := config.AtomicJSONWrite(home.WithOverride(ctx, s.Home), filepath.Join(s.Home, skillsSnapshotFilename), snap); err != nil {
+		if err := config.AtomicJSONWrite(home.WithOverride(ctx, s.Home), skillsPromptSnapshotPath(s.Home), snap); err != nil {
 			s.logger().Debug(fmt.Sprintf("Could not write skills prompt snapshot: %v", err))
+		}
+	}
+	unloadableSet := map[string]bool{}
+	for _, e := range visibleEntries {
+		if e.LoadName == "" {
+			unloadableSet[e.Name] = true
 		}
 	}
 	var unloadable []string

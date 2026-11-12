@@ -573,8 +573,16 @@ func NewSessionStore(ctx context.Context, sessionsDir string, config *GatewayCon
 		spooledDropSessions: map[string]bool{}, dirtyTranscripts: map[string]*transcriptQueue{},
 		transcriptAppendFailures: map[string]int{}}
 	s.routingHome = home.Dir(ctx)
-	_, _ = s.openSessionDBForActiveScope(ctx, "")
+	s.openOrNil(ctx, "")
 	return s
+}
+
+// Map behind the field, created when missing so a store built without the constructor stays writable
+func lazyMap[K comparable, V any](field *map[K]V) map[K]V {
+	if *field == nil {
+		*field = map[K]V{}
+	}
+	return *field
 }
 
 // Pins the session database for every later read, nil selecting the JSONL fallback
@@ -618,10 +626,11 @@ func (s *SessionStore) GetOrCreateSession(ctx context.Context, source *SessionSo
 		return nil, err
 	}
 	s.inflightMu.Lock()
-	slot, joined := s.inflightSessions[sessionKey]
+	inflight := lazyMap(&s.inflightSessions)
+	slot, joined := inflight[sessionKey]
 	if !joined {
 		slot = &sessionFlight{done: make(chan struct{})}
-		s.inflightSessions[sessionKey] = slot
+		inflight[sessionKey] = slot
 	}
 	s.inflightMu.Unlock()
 	if joined {

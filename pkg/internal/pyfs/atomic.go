@@ -39,16 +39,18 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
-	var mode os.FileMode
+	var mode uint32
 	modeSet := false
 	if forced != nil {
-		mode, modeSet = *forced, true
+		mode, modeSet = posixModeBits(*forced), true
 	} else if _, err := os.Stat(path); err != nil {
-		mode, modeSet = defaultNewFileMode()
+		var fresh os.FileMode
+		fresh, modeSet = defaultNewFileMode()
+		mode = posixModeBits(fresh)
 	}
-	var owner *fileOwner
+	var owner *FileOwner
 	if preserveOwner {
-		owner = ownerOf(path)
+		owner = PreserveFileOwner(path)
 	}
 	publish := publishPath(path)
 	linkDir := filepath.Dir(path)
@@ -66,8 +68,8 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 		os.Remove(tmpName)
 		return err
 	}
-	if modeSet && canFchmod {
-		if err := tmp.Chmod(mode); err != nil {
+	if modeSet {
+		if err := fchmodStaged(tmp, mode); err != nil {
 			return fail(err)
 		}
 	}
@@ -85,12 +87,7 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 		os.Remove(tmpName)
 		return err
 	}
-	if owner != nil {
-		os.Chown(publish, owner.uid, owner.gid)
-	}
-	if modeSet {
-		os.Chmod(publish, mode)
-	}
+	restoreFileMetadata(publish, owner, mode, modeSet)
 	return nil
 }
 
@@ -140,8 +137,8 @@ func atomicReplace(tmp, target string) error {
 	if err == nil {
 		return nil
 	}
-	contended := isContendedReplaceError(err)
-	if !isCrossDeviceError(err) && !contended {
+	contended := IsContendedReplaceError(err)
+	if !IsCrossDeviceError(err) && !contended {
 		return err
 	}
 	if contended {
@@ -151,11 +148,11 @@ func atomicReplace(tmp, target string) error {
 			if retryErr == nil {
 				return nil
 			}
-			if isCrossDeviceError(retryErr) {
+			if IsCrossDeviceError(retryErr) {
 				contended = false
 				break
 			}
-			if !isContendedReplaceError(retryErr) {
+			if !IsContendedReplaceError(retryErr) {
 				return retryErr
 			}
 		}

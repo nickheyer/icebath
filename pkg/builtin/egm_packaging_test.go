@@ -32,7 +32,7 @@ var egmPackRepo = filepath.Join("testdata", "elephant-goldfish-model")
 func egmRepoPath(rel string) string {
 	switch first, _, _ := strings.Cut(rel, "/"); first {
 	case "skills", "agents", "resources", "docs", "assets", ".codex-plugin", "plugin.json", "README.md", "LICENSE", "TESTING.md":
-		return filepath.Join("payload", "elephant-goldfish-model", filepath.FromSlash(rel))
+		return filepath.Join(payloadTestDir, "elephant-goldfish-model", filepath.FromSlash(rel))
 	}
 	return filepath.Join(egmPackRepo, filepath.FromSlash(rel))
 }

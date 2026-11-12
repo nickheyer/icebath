@@ -8,11 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-const exampleDashboardFixture = "testdata/hermes/tests/fixtures/plugins/example-dashboard"
+// Archive of the hermes example dashboard plugin fixture
+const exampleDashboardFixture = "testdata/example-dashboard.tar.zst"
 
 // Copies the example dashboard fixture into the user plugins dir of home and enables it, the launch cache dropped
 func installExamplePlugin(t *testing.T, h string) {
@@ -22,8 +24,9 @@ func installExamplePlugin(t *testing.T, h string) {
 	if err := os.MkdirAll(dst, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	fixture := hermetic.UnpackTarZst(t, exampleDashboardFixture)
 	for _, name := range []string{"manifest.json", "plugin_api.py"} {
-		raw, err := os.ReadFile(filepath.Join(exampleDashboardFixture, "dashboard", name))
+		raw, err := os.ReadFile(filepath.Join(fixture, "dashboard", name))
 		if err != nil {
 			t.Fatal(err)
 		}

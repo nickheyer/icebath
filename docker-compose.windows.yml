@@ -1,0 +1,30 @@
+# Docker Desktop on Windows has no host networking, so the dashboard binds all
+# interfaces inside the container and is published on loopback only.
+#   docker compose -f docker-compose.windows.yml up -d
+services:
+  gateway:
+    image: ghcr.io/nickheyer/icebath:latest
+    container_name: icebath
+    restart: unless-stopped
+    volumes:
+      - ${USERPROFILE}/.icebath:/opt/data
+    environment:
+      - ICEBATH_UID=10000
+      - ICEBATH_GID=10000
+    command: ["gateway", "run"]
+
+  dashboard:
+    image: ghcr.io/nickheyer/icebath:latest
+    container_name: icebath-dashboard
+    restart: unless-stopped
+    depends_on:
+      - gateway
+    volumes:
+      - ${USERPROFILE}/.icebath:/opt/data
+    environment:
+      - ICEBATH_UID=10000
+      - ICEBATH_GID=10000
+      - ICEBATH_DASHBOARD_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:9119:9119"
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open", "--insecure"]

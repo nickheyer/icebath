@@ -49,10 +49,10 @@ func TestEmbeddedPayloadEqualsManifest(t *testing.T) {
 	}
 }
 
-// Manifest rows equal the payload tree on disk, executable for an owner exec bit or a shebang
+// Manifest rows equal the unpacked payload archive, executable for an owner exec bit or a shebang
 func TestManifestEqualsPayloadTree(t *testing.T) {
 	var lines []string
-	err := filepath.WalkDir("payload", func(p string, d fs.DirEntry, err error) error {
+	err := filepath.WalkDir(payloadTestDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.Type().IsRegular() {
 			return err
 		}
@@ -64,7 +64,7 @@ func TestManifestEqualsPayloadTree(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel("payload", p)
+		rel, _ := filepath.Rel(payloadTestDir, p)
 		mode := "0644"
 		if info.Mode()&0o100 != 0 || strings.HasPrefix(string(data), "#!") {
 			mode = "0755"

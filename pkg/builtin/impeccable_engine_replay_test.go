@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
 const (
@@ -53,6 +55,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	builtinTestCache = cache
+	payloadTestDir = filepath.Join(cache, "payload")
+	if err := tarzst.Extract(payloadArchive, payloadTestDir); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	impeccablePayloadRoot = filepath.Join(payloadTestDir, "impeccable")
 	code := m.Run()
 	os.RemoveAll(cache)
 	os.Exit(code)

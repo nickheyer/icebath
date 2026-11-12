@@ -64,5 +64,10 @@ func LocalDesktopTurn(ctx context.Context, runner AuthorityRunner, source *Sessi
 	if !marked {
 		return scope, nil
 	}
-	return tools.WithServingLocalDesktop(scope, true), nil
+	return servingLocalDesktopWithin(scope), nil
+}
+
+// Scope also marked as work for the local Desktop app
+func servingLocalDesktopWithin(scope context.Context) context.Context {
+	return tools.WithServingLocalDesktop(scope, true)
 }

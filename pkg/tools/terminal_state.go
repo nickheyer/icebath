@@ -655,7 +655,11 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	if dockerEnv == nil {
 		dockerEnv = map[string]any{}
 	}
-	cwd, hostCwd := resolveConfigCwd(env, policy, envType, mountDockerCwd)
+	cwd, hostPath := resolveConfigCwd(env, policy, envType, mountDockerCwd)
+	var hostCwd any
+	if hostPath != "" {
+		hostCwd = hostPath
+	}
 	timeout, err := parseTerminalInt(policy, "TERMINAL_TIMEOUT", "180")
 	if err != nil {
 		return nil, err

@@ -2110,27 +2110,12 @@ func configuredProviderTimeout(providers map[string]any, provider, model, modelK
 
 // Environment float with an ICEBATH prefixed name, the default when unset or unparseable
 func envFloat(name string, def float64) float64 {
-	v := strings.TrimSpace(os.Getenv(name))
-	if v == "" {
-		return def
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return def
-	}
-	return f
+	return config.EnvFloat(name, def)
 }
 
+// Environment integer with an ICEBATH prefixed name, the default when unset or no Python int literal
 func envInt(name string, def int) int {
-	v := strings.TrimSpace(os.Getenv(name))
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
+	return int(config.EnvInt(name, int64(def)))
 }
 
 func envTruthy(name string) bool {

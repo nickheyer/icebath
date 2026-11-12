@@ -308,9 +308,9 @@ func toolResultObserverFields(toolName, result string) (string, string, string) 
 	return "ok", "", ""
 }
 
-// EmitPostToolCall fires the post tool call observers deriving ok or error fields when status is empty
+// EmitPostToolCall fires the post tool call observers unless an outer executor owns the event
 func (d *Dispatcher) EmitPostToolCall(ctx context.Context, env *Env, ev PostToolCallEvent) {
-	if !d.hasHook("post_tool_call") {
+	if PostToolCallHookSuppressed(ctx) || !d.hasHook("post_tool_call") {
 		return
 	}
 	if ev.Status == "" {

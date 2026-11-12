@@ -133,7 +133,7 @@
 - [x] hermes_platform/host/runtime.py  defs 7/7  cases 0/0
 - [ ] hermes_platform/host/summary.py  defs 7/11  cases 0/8
 
-### 5. pkg/provider: 38% (5137 of 13305 rows closed, defs 5119/5839, cases 18/7466, 68 of 334 files completed)
+### 5. pkg/provider: 38% (5140 of 13305 rows closed, defs 5119/5839, cases 21/7466, 68 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
 - [ ] agent/account_usage.py  defs 43/51  cases 0/42
 - [ ] agent/account_usage_cache.py  defs 7/12  cases 0/12
@@ -251,7 +251,7 @@
 - [ ] agent/retry_utils.py  defs 7/11  cases 0/13
 - [x] agent/route_binding.py  defs 3/3  cases 0/0
 - [ ] agent/sdk_transform_bypass.py  defs 3/3  cases 0/13
-- [ ] agent/secret_scope.py  defs 26/28  cases 0/92
+- [ ] agent/secret_scope.py  defs 26/28  cases 3/92
 - [x] agent/secret_sources/__init__.py  defs 0/0  cases 0/0
 - [ ] agent/secret_sources/_cache.py  defs 18/20  cases 0/11
 - [ ] agent/secret_sources/base.py  defs 20/23  cases 0/14
@@ -1275,10 +1275,10 @@
 - [ ] tools/wake_word_engines.py  defs 20/26  cases 0/0
 - [ ] tools/xai_video_tools.py  defs 7/8  cases 0/0
 
-### 17. pkg/agent: 41% (2098 of 5109 rows closed, defs 2094/2307, cases 4/2802, 24 of 127 files completed)
+### 17. pkg/agent: 41% (2120 of 5109 rows closed, defs 2103/2307, cases 17/2802, 25 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
-- [ ] agent/acp_client.py  defs 9/34  cases 0/35
-- [ ] agent/acp_openai_bridge.py  defs 1/8  cases 0/13
+- [ ] agent/acp_client.py  defs 11/34  cases 0/35
+- [x] agent/acp_openai_bridge.py  defs 8/8  cases 13/13
 - [ ] agent/activity_tracking.py  defs 5/6  cases 0/8
 - [ ] agent/agent_init.py  defs 61/61  cases 0/28
 - [ ] agent/agent_init_compression_notice.py  defs 6/6  cases 0/3
@@ -1972,7 +1972,7 @@
 - [ ] hermes_cli/tips.py  defs 6/6  cases 0/3
 - [x] hermes_cli/turn_exit.py  defs 2/2  cases 0/0
 
-### 22. cmd/icebath: 39% (2488 of 6304 rows closed, defs 2480/2863, cases 8/3441, 28 of 161 files completed)
+### 22. cmd/icebath: 39% (2500 of 6304 rows closed, defs 2488/2863, cases 12/3441, 28 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
 - [ ] cli.py  defs 52/60  cases 0/146
 - [ ] hermes_cli/__init__.py  defs 0/2  cases 0/5
@@ -2134,7 +2134,7 @@
 - [ ] registration_lifecycle.py  defs 7/8  cases 0/0
 - [ ] run_agent.py  defs 82/84  cases 0/489
 - [ ] trajectory_compressor.py  defs 9/47  cases 0/20
-- [ ] utils.py  defs 48/56  cases 0/142
+- [ ] utils.py  defs 56/56  cases 4/142
 
 ### 23. arena: 51% (2605 of 5014 rows closed, defs 2597/2766, cases 8/2248, 30 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
@@ -2254,7 +2254,7 @@
 - [ ] tui_gateway/ws.py  defs 25/28  cases 0/60
 - [x] tui_gateway/ws_legacy_fallback.py  defs 8/8  cases 0/0
 
-### 24. gateway: 38% (11781 of 30473 rows closed, defs 11437/15496, cases 344/14977, 157 of 760 files completed)
+### 24. gateway: 38% (11822 of 30473 rows closed, defs 11457/15496, cases 365/14977, 157 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [x] acp_adapter/__main__.py  defs 0/0  cases 0/0
 - [x] acp_adapter/auth.py  defs 2/2  cases 3/3
@@ -2349,7 +2349,7 @@
 - [ ] gateway/platforms/api_server_runs.py  defs 62/70  cases 0/60
 - [x] gateway/platforms/api_server_store.py  defs 1/1  cases 0/0
 - [ ] gateway/platforms/api_server_turn_boundary.py  defs 2/2  cases 0/2
-- [ ] gateway/platforms/base.py  defs 294/306  cases 0/544
+- [ ] gateway/platforms/base.py  defs 306/306  cases 4/544
 - [ ] gateway/platforms/base_exec_approval.py  defs 8/10  cases 0/0
 - [x] gateway/platforms/base_log_safety.py  defs 1/1  cases 0/0
 - [x] gateway/platforms/base_post_delivery.py  defs 1/1  cases 0/0
@@ -2445,7 +2445,7 @@
 - [ ] gateway/runtime_footer.py  defs 7/7  cases 0/18
 - [ ] gateway/runtime_ownership.py  defs 24/26  cases 3/22
 - [ ] gateway/scale_to_zero.py  defs 14/14  cases 0/22
-- [ ] gateway/session.py  defs 59/64  cases 0/324
+- [ ] gateway/session.py  defs 64/64  cases 0/324
 - [ ] gateway/session_a2a.py  defs 5/7  cases 0/4
 - [x] gateway/session_acp_lifecycle.py  defs 4/4  cases 0/0
 - [x] gateway/session_active_list.py  defs 2/2  cases 0/0
@@ -2525,7 +2525,7 @@
 - [ ] gateway/session_operator.py  defs 2/2  cases 0/1
 - [ ] gateway/session_pending_controls.py  defs 5/6  cases 0/0
 - [ ] gateway/session_persistence.py  defs 37/40  cases 0/14
-- [ ] gateway/session_policy.py  defs 67/70  cases 0/169
+- [ ] gateway/session_policy.py  defs 70/70  cases 4/169
 - [ ] gateway/session_policy_credentials.py  defs 14/19  cases 0/0
 - [ ] gateway/session_policy_refresh.py  defs 13/16  cases 0/29
 - [ ] gateway/session_producer_lifecycle.py  defs 8/11  cases 0/0
@@ -2553,7 +2553,7 @@
 - [x] gateway/session_sudo_prompt.py  defs 2/2  cases 0/0
 - [ ] gateway/session_surface.py  defs 7/10  cases 0/0
 - [x] gateway/session_tool_events.py  defs 2/2  cases 0/0
-- [ ] gateway/session_transcript.py  defs 30/33  cases 0/37
+- [ ] gateway/session_transcript.py  defs 30/33  cases 1/37
 - [ ] gateway/session_tui_config.py  defs 14/19  cases 0/6
 - [ ] gateway/session_tui_ops.py  defs 13/14  cases 0/12
 - [ ] gateway/session_tui_reads.py  defs 8/10  cases 0/0
@@ -2689,7 +2689,7 @@
 - [ ] hermes_cli/journey.py  defs 19/22  cases 0/3
 - [ ] hermes_cli/main_container.py  defs 1/2  cases 0/0
 - [x] hermes_cli/observability/__init__.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/observability/relay_shared_metrics.py  defs 113/120  cases 0/62
+- [ ] hermes_cli/observability/relay_shared_metrics.py  defs 113/120  cases 7/62
 - [ ] hermes_cli/observability/shared_metrics.py  defs 41/44  cases 0/23
 - [ ] hermes_cli/observability/shared_metrics_busy.py  defs 18/23  cases 0/9
 - [ ] hermes_cli/observability/shared_metrics_catalog.py  defs 20/26  cases 0/0
@@ -2789,7 +2789,7 @@
 - [x] hermes_cli/web_routers/uploads.py  defs 1/1  cases 0/0
 - [ ] hermes_cli/web_routers/webapp.py  defs 11/16  cases 0/0
 - [ ] hermes_cli/web_routers/webapp_access.py  defs 5/11  cases 0/0
-- [ ] hermes_cli/web_server.py  defs 38/43  cases 0/758
+- [ ] hermes_cli/web_server.py  defs 38/43  cases 5/758
 - [x] hermes_cli/web_server_app.py  defs 4/4  cases 0/0
 - [x] hermes_cli/web_server_boundary.py  defs 15/15  cases 0/0
 - [ ] hermes_cli/web_server_chat.py  defs 25/26  cases 0/7

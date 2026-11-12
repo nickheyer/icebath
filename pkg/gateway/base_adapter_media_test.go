@@ -95,8 +95,8 @@ func TestBaseSendImageFallsBackToCaptionedText(t *testing.T) {
 	if err != nil || res.Success || res.Error != "Not supported" {
 		t.Fatalf("%+v", res)
 	}
-	if _, ok := any(a).(MessageDeleter); ok {
-		t.Fatal("base adapter reports a message delete")
+	if deleted, err := a.DeleteMessage(context.Background(), "c", "m"); deleted || err != nil || AdapterOverridesBaseMethod(a, "DeleteMessage") {
+		t.Fatalf("base adapter reports a message delete %v %v", deleted, err)
 	}
 	if _, ok, _ := a.CreateHandoffThread(context.Background(), "c", "n"); ok {
 		t.Fatal("base handoff thread created")

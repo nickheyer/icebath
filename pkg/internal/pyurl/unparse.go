@@ -43,18 +43,11 @@ func (u URL) Hostname() string {
 
 // Lowercased hostname of a base URL that may lack a scheme, the urlparse ValueError on a bad netloc
 func BaseURLHostname(baseURL string) (string, error) {
-	raw := strings.TrimSpace(baseURL)
-	if raw == "" {
-		return "", nil
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "//" + raw
-	}
-	u, err := Parse(raw)
+	u, err := parseBaseURL(baseURL)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimRight(strings.ToLower(u.Hostname()), "."), nil
+	return hostnameOf(u), nil
 }
 
 // Reports whether the base URL hostname is the domain or one of its subdomains
@@ -63,6 +56,6 @@ func BaseURLHostMatches(baseURL, domain string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	domain = strings.TrimRight(strings.ToLower(strings.TrimSpace(domain)), ".")
+	domain = strings.TrimRight(pystr.Lower(pystr.Strip(domain)), ".")
 	return host != "" && domain != "" && (host == domain || strings.HasSuffix(host, "."+domain)), nil
 }

@@ -66,12 +66,9 @@ func dockerRestoreBackups(backups []dockerBackup) ([]string, error) {
 	return restored, nil
 }
 
+// Whether an environment variable is set to a truthy spelling
 func envVarEnabled(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
+	return isTruthyString(os.Getenv(name))
 }
 
 // Migrates a container volume config at boot, backing up first and restoring when the pass fails or stalls

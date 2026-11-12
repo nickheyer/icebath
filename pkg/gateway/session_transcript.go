@@ -89,9 +89,10 @@ func (s *SessionStore) AdvanceCompressionSession(ctx context.Context, sessionKey
 func (s *SessionStore) followReroutes(sessionID string) string {
 	s.reroutesMu.Lock()
 	defer s.reroutesMu.Unlock()
+	reroutes := lazyMap(&s.transcriptReroutes)
 	seen := map[string]bool{}
 	for {
-		next, ok := s.transcriptReroutes[sessionID]
+		next, ok := reroutes[sessionID]
 		if !ok || seen[sessionID] {
 			return sessionID
 		}
@@ -206,8 +207,9 @@ func (s *SessionStore) markSpooledDropSessions(sessionIDs map[string]bool) {
 	}
 	s.transcriptRetryMu.Lock()
 	defer s.transcriptRetryMu.Unlock()
+	spooled := lazyMap(&s.spooledDropSessions)
 	for sid := range sessionIDs {
-		s.spooledDropSessions[sid] = true
+		spooled[sid] = true
 	}
 }
 
@@ -290,7 +292,7 @@ func (s *SessionStore) enqueueTranscriptMessage(ctx context.Context, sessionID s
 		oldest := pending.items[0]
 		pending.items = pending.items[1:]
 		if spoolPath := spoolDropped(ctx, sessionID, oldest.message); spoolPath != "" {
-			s.spooledDropSessions[sessionID] = true
+			lazyMap(&s.spooledDropSessions)[sessionID] = true
 			slog.Warn(fmt.Sprintf("Session DB transcript pending queue full for %s (cap=%d); spooled oldest "+
 				"message to %s for replay after DB recovery", sessionID, transcriptMaxPendingPerSession, spoolPath))
 		} else {
@@ -453,7 +455,7 @@ func (s *SessionStore) appendToTranscriptSerialized(ctx context.Context, session
 			}
 			if ownerKey != "" {
 				s.mu.Lock()
-				s.sessionOwnerHints[childID] = ownerKey
+				lazyMap(&s.sessionOwnerHints)[childID] = ownerKey
 				s.mu.Unlock()
 			}
 			if rerouteErr := s.appendTranscriptMessage(ctx, childID, msg.message); rerouteErr != nil {
@@ -541,7 +543,7 @@ func (s *SessionStore) spoolStalledBacklog(ctx context.Context, sessionID, queue
 	}
 	if spooled > 0 {
 		s.transcriptRetryMu.Lock()
-		s.spooledDropSessions[sessionID] = true
+		lazyMap(&s.spooledDropSessions)[sessionID] = true
 		if pending != nil {
 			pending.items = pending.items[spooled:]
 			if len(pending.items) == 0 {

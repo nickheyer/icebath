@@ -14,8 +14,11 @@ import (
 // Upstream impeccable checkout files the cases read beyond the skill and plugin subtrees the payload ships
 var impeccableRepoRoot = filepath.Join("testdata", "impeccable")
 
-// Payload copy of the impeccable checkout holding its shipped skill and plugin subtrees
-var impeccablePayloadRoot = filepath.Join("payload", "impeccable")
+// Unpacked copy of the embedded payload archive the cases read as a tree, set by TestMain
+var payloadTestDir string
+
+// Payload copy of the impeccable checkout holding its shipped skill and plugin subtrees, set by TestMain
+var impeccablePayloadRoot string
 
 // Checkout path of a slash relative file, the skill and plugin subtrees read from the payload copy
 func impeccableRepoPath(rel string) string {

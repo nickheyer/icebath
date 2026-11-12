@@ -12,12 +12,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -569,27 +569,14 @@ func publishPath(target string) string {
 	return target
 }
 
-func isCrossDeviceReplaceError(err error) bool {
-	return errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EBUSY)
-}
-
-// Windows sharing, lock or access refusal on a rename another handle holds
-func isContendedReplaceError(err error) bool {
-	var errno syscall.Errno
-	if runtime.GOOS != "windows" || !errors.As(err, &errno) {
-		return false
-	}
-	return errno == 5 || errno == 32 || errno == 33
-}
-
 // Renames tmp onto target, copying across devices and rewriting in place after a contended Windows rename
 func atomicReplaceFile(tmp, target string) error {
 	err := os.Rename(tmp, target)
 	if err == nil {
 		return nil
 	}
-	contended := isContendedReplaceError(err)
-	if !isCrossDeviceReplaceError(err) && !contended {
+	contended := pyfs.IsContendedReplaceError(err)
+	if !pyfs.IsCrossDeviceError(err) && !contended {
 		return err
 	}
 	if contended {
@@ -599,11 +586,11 @@ func atomicReplaceFile(tmp, target string) error {
 			if retryErr == nil {
 				return nil
 			}
-			if isCrossDeviceReplaceError(retryErr) {
+			if pyfs.IsCrossDeviceError(retryErr) {
 				contended = false
 				break
 			}
-			if !isContendedReplaceError(retryErr) {
+			if !pyfs.IsContendedReplaceError(retryErr) {
 				return retryErr
 			}
 		}

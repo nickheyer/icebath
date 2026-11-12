@@ -3,7 +3,6 @@ package skills
 import (
 	"bytes"
 	"context"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
 // Bundled tree fixture with one categorized skill, one top level skill and a category description
@@ -120,15 +120,16 @@ func TestOptOutSeedsEssentialSkillsOnlyAndRemovesPristine(t *testing.T) {
 
 func TestEmbeddedExecPathsMatchSourceTree(t *testing.T) {
 	found := map[string]bool{}
-	for _, top := range []string{"bundled", "optional"} {
-		filepath.WalkDir(top, func(p string, d fs.DirEntry, err error) error {
-			if err == nil && d.Type().IsRegular() {
-				if st, _ := d.Info(); st.Mode().Perm()&0o100 != 0 {
-					found[filepath.ToSlash(p)] = true
-				}
+	for top, archive := range map[string][]byte{"bundled": bundledArchive, "optional": optionalArchive} {
+		files, err := tarzst.Decode(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if f.Mode.Perm()&0o100 != 0 {
+				found[top+"/"+f.Path] = true
 			}
-			return nil
-		})
+		}
 	}
 	if !reflect.DeepEqual(found, embeddedExecPaths) {
 		t.Fatal("embed_modes.go is stale against the source tree")

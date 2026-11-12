@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -499,7 +500,7 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	model, fine := data["model"].(string)
-	if !fine || strings.TrimSpace(model) == "" {
+	if !fine || pystr.Strip(model) == "" {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	p.Model = &model

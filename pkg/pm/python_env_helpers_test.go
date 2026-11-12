@@ -22,7 +22,8 @@ import (
 )
 
 // Upstream checkout files the cases read, under testdata and resolved before any test changes directory
-var peReferences, _ = filepath.Abs(filepath.Join("testdata", "hermes"))
+// Recorded hermes tree the pm cases read, unpacked by TestMain from testdata/hermes.tar.zst into a private directory
+var peReferences string
 
 // User cache directory read before any test moves HOME
 var peCacheRoot, _ = os.UserCacheDir()

@@ -167,8 +167,12 @@ func (b *BasePlatformAdapter) ExecApprovalActions(ctx context.Context, allowPerm
 
 // Whether the adapter overrides the prompt hook with native approval buttons
 func (b *BasePlatformAdapter) SupportsExecApprovalButtons() bool {
-	_, ok := b.Self().(ExecApprovalPromptSender)
-	return ok
+	return AdapterOverridesBaseMethod(b.Self(), "SendExecApprovalPrompt")
+}
+
+// Native button rendering of an approval prompt, not supported on the base without buttons
+func (b *BasePlatformAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *ExecApprovalPrompt) (SendResult, error) {
+	return SendResult{Success: false, Error: "Not supported"}, nil
 }
 
 // Interactive approval prompt rendered natively by the adapter, not supported without buttons
@@ -181,10 +185,7 @@ func (b *BasePlatformAdapter) SendExecApproval(ctx context.Context, chatID, comm
 		Description: desc, SmartDenied: smartDenied, RequestID: requestID,
 		Text:    b.FormatExecApproval(ctx, command, &desc, smartDenied),
 		Actions: b.ExecApprovalActions(ctx, allowPermanent, allowSession, smartDenied)}
-	if sender, ok := b.Self().(ExecApprovalPromptSender); ok {
-		return sender.SendExecApprovalPrompt(ctx, prompt)
-	}
-	return SendResult{Success: false, Error: "Not supported"}, nil
+	return b.Self().SendExecApprovalPrompt(ctx, prompt)
 }
 
 // Clamped picker page of options with page, total_pages, start, end, total and page_info

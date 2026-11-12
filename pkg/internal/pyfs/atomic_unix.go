@@ -8,8 +8,6 @@ import (
 	"syscall"
 )
 
-const canFchmod = true
-
 // Mode a plain create gives a new file under the process umask
 func defaultNewFileMode() (os.FileMode, bool) {
 	current := syscall.Umask(0o077)
@@ -21,25 +19,25 @@ func defaultNewFileMode() (os.FileMode, bool) {
 func platformNewlines(s string) string { return s }
 
 // Contended rename retries only exist on Windows
-func isContendedReplaceError(err error) bool { return false }
+func IsContendedReplaceError(err error) bool { return false }
 
 // Cross device and busy target renames fall back to a copy
-func isCrossDeviceError(err error) bool {
+func IsCrossDeviceError(err error) bool {
 	return errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EBUSY)
 }
 
-// Owning uid and gid of an existing file
-type fileOwner struct{ uid, gid int }
-
-// Owner of path on POSIX hosts, nil when it cannot be read
-func ownerOf(path string) *fileOwner {
-	st, err := os.Stat(path)
+// Sets all twelve permission bits on the open staged file through fchmod before it is published
+func fchmodStaged(f *os.File, mode uint32) error {
+	conn, err := f.SyscallConn()
 	if err != nil {
-		return nil
+		return err
 	}
-	sys, ok := st.Sys().(*syscall.Stat_t)
-	if !ok {
-		return nil
+	var chmodErr error
+	if err := conn.Control(func(fd uintptr) { chmodErr = syscall.Fchmod(int(fd), mode&0o7777) }); err != nil {
+		return err
 	}
-	return &fileOwner{uid: int(sys.Uid), gid: int(sys.Gid)}
+	if chmodErr != nil {
+		return &os.PathError{Op: "chmod", Path: f.Name(), Err: chmodErr}
+	}
+	return nil
 }

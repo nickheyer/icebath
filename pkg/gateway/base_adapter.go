@@ -168,6 +168,7 @@ type PlatformAdapter interface {
 	HandleMessage(ctx context.Context, event *MessageEvent) error
 	CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error)
 	EditMessage(ctx context.Context, chatID, messageID, content string, finalize bool) (SendResult, error)
+	DeleteMessage(ctx context.Context, chatID, messageID string) (bool, error)
 	SendPrivateNotice(ctx context.Context, chatID string, userID *string, content, replyTo string, metadata map[string]any) (SendResult, error)
 	SendTyping(ctx context.Context, chatID string, metadata map[string]any) error
 	StopTyping(ctx context.Context, chatID string, metadata map[string]any) error
@@ -185,6 +186,7 @@ type PlatformAdapter interface {
 	EAEscape(text string) string
 	ExecApprovalCmdBudget(description string, smartDenied bool) int
 	SendExecApproval(ctx context.Context, chatID, command, sessionKey string, description *string, metadata map[string]any, allowPermanent, allowSession, smartDenied bool, requestID *string) (SendResult, error)
+	SendExecApprovalPrompt(ctx context.Context, prompt *ExecApprovalPrompt) (SendResult, error)
 	SendSlashConfirm(ctx context.Context, chatID, title, message, sessionKey, confirmID string, metadata map[string]any) (SendResult, error)
 	SendClarify(ctx context.Context, chatID, question string, choices []string, clarifyID, sessionKey string, metadata map[string]any) (SendResult, error)
 	EmitWarning(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, logicalPlatform Platform) (*SendResult, error)
@@ -344,9 +346,19 @@ func NewBasePlatformAdapter(config *PlatformConfig, platform Platform, self Plat
 	b.autoTTSEnabledChats = map[string]struct{}{}
 	b.autoTTSDisabledChats = map[string]struct{}{}
 	b.statusText = map[string]string{}
+	b.activeSessions = map[string]*InterruptEvent{}
+	b.pendingMessages = map[string]*MessageEvent{}
+	b.requeueCounts = map[string]int{}
+	b.sessionTasks = map[string]*adapterTask{}
 	b.busyTextMode = "interrupt"
 	b.busyTextDebounceSeconds = DefaultBusyTextDebounceSeconds
 	b.busyTextHardCapSeconds = DefaultBusyTextHardCapSeconds
+	b.textDebounce = map[string]*TextDebounceState{}
+	b.backgroundTasks = map[*adapterTask]struct{}{}
+	b.postDeliveryCallbacks = map[string]postDeliveryEntry{}
+	b.expectedCancelledTasks = map[*adapterTask]struct{}{}
+	b.streamingTTSCompletedTurns = map[string]struct{}{}
+	b.typingPaused = map[string]struct{}{}
 	return b
 }
 

@@ -845,13 +845,14 @@ func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryDa
 			if s.persistedRoutingGeneration >= revision {
 				return nil
 			}
-			if persisted, ok := s.fastPersistedEntries[sessionKey]; ok && persisted.revision >= revision {
+			fastPersisted := lazyMap(&s.fastPersistedEntries)
+			if persisted, ok := fastPersisted[sessionKey]; ok && persisted.revision >= revision {
 				return nil
 			}
 			if err := saver.SaveGatewayRoutingEntry(ctx, sessionKey, entryJSON, s.routingScope()); err != nil {
 				return err
 			}
-			s.fastPersistedEntries[sessionKey] = fastPersistedEntry{revision: revision, entryJSON: entryJSON}
+			fastPersisted[sessionKey] = fastPersistedEntry{revision: revision, entryJSON: entryJSON}
 			return nil
 		}()
 		if saveErr == nil {

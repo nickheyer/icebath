@@ -17,14 +17,14 @@ func AtomicWriteBytes(ctx context.Context, path string, content []byte, prefix s
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
-	var perm os.FileMode
+	var perm uint32
 	permSet := false
 	if mode != nil {
-		perm, permSet = *mode, true
-	} else if st, err := os.Stat(path); err == nil {
-		perm, permSet = st.Mode().Perm(), true
-	} else {
-		perm, permSet = defaultNewFileMode()
+		perm, permSet = posixModeBits(*mode), true
+	} else if perm, permSet = PreserveFileMode(path); !permSet {
+		var fresh os.FileMode
+		fresh, permSet = defaultNewFileMode()
+		perm = posixModeBits(fresh)
 	}
 	publish := publishPath(path)
 	linkDir := filepath.Dir(path)
@@ -42,8 +42,8 @@ func AtomicWriteBytes(ctx context.Context, path string, content []byte, prefix s
 		os.Remove(tmpName)
 		return err
 	}
-	if permSet && canFchmod {
-		if err := tmp.Chmod(perm); err != nil {
+	if permSet {
+		if err := fchmodStaged(tmp, perm); err != nil {
 			return fail(err)
 		}
 	}
@@ -61,9 +61,7 @@ func AtomicWriteBytes(ctx context.Context, path string, content []byte, prefix s
 		os.Remove(tmpName)
 		return err
 	}
-	if permSet {
-		os.Chmod(publish, perm)
-	}
+	restoreFileMetadata(publish, nil, perm, permSet)
 	if fsyncDir {
 		FsyncDirectory(filepath.Dir(publish))
 	}

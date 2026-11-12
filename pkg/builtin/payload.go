@@ -2,7 +2,7 @@ package builtin
 
 import (
 	"crypto/sha256"
-	"embed"
+	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -16,10 +16,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
-//go:embed all:payload
-var payloadFS embed.FS
+//go:embed payload.tar.zst
+var payloadArchive []byte
+
+// Embedded plugin projects served under payload like the tree they were packed from
+var payloadFS = tarzst.NewFS(payloadArchive, "payload")
 
 //go:embed payload_manifest.txt
 var payloadManifest string

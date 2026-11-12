@@ -137,10 +137,11 @@ func (s *SessionStore) claimLegacySlackKey(legacyKey string) bool {
 	}
 	s.legacySlackClaimMu.Lock()
 	defer s.legacySlackClaimMu.Unlock()
-	if s.claimedLegacySlackKeys[legacyKey] {
+	claimed := lazyMap(&s.claimedLegacySlackKeys)
+	if claimed[legacyKey] {
 		return false
 	}
-	s.claimedLegacySlackKeys[legacyKey] = true
+	claimed[legacyKey] = true
 	return true
 }
 

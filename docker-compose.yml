@@ -1,0 +1,30 @@
+# Gateway and dashboard on the host network, sharing ~/.icebath as the data volume.
+# Files land owned by your host user when ICEBATH_UID and ICEBATH_GID match it:
+#   ICEBATH_UID=$(id -u) ICEBATH_GID=$(id -g) docker compose up -d
+services:
+  gateway:
+    build: .
+    image: icebath
+    container_name: icebath
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ~/.icebath:/opt/data
+    environment:
+      - ICEBATH_UID=${ICEBATH_UID:-10000}
+      - ICEBATH_GID=${ICEBATH_GID:-10000}
+    command: ["gateway", "run"]
+
+  dashboard:
+    image: icebath
+    container_name: icebath-dashboard
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - gateway
+    volumes:
+      - ~/.icebath:/opt/data
+    environment:
+      - ICEBATH_UID=${ICEBATH_UID:-10000}
+      - ICEBATH_GID=${ICEBATH_GID:-10000}
+    command: ["dashboard", "--host", "127.0.0.1", "--no-open"]

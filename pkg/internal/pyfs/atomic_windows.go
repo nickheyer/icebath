@@ -9,8 +9,6 @@ import (
 	"syscall"
 )
 
-const canFchmod = false
-
 // Windows synthesizes mode bits so a new file gets no explicit mode
 func defaultNewFileMode() (os.FileMode, bool) { return 0, false }
 
@@ -18,7 +16,7 @@ func defaultNewFileMode() (os.FileMode, bool) { return 0, false }
 func platformNewlines(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
 
 // Access denied, sharing and lock violations a held target reports on rename
-func isContendedReplaceError(err error) bool {
+func IsContendedReplaceError(err error) bool {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {
 		return false
@@ -27,7 +25,7 @@ func isContendedReplaceError(err error) bool {
 }
 
 // Not same device and busy target renames fall back to a copy, as Python maps them to EXDEV and EBUSY
-func isCrossDeviceError(err error) bool {
+func IsCrossDeviceError(err error) bool {
 	var errno syscall.Errno
 	if errors.As(err, &errno) && (errno == 17 || errno == 170) {
 		return true
@@ -35,8 +33,7 @@ func isCrossDeviceError(err error) bool {
 	return errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EBUSY)
 }
 
-// Owning uid and gid of an existing file
-type fileOwner struct{ uid, gid int }
-
-// Windows files carry no POSIX owner to preserve
-func ownerOf(string) *fileOwner { return nil }
+// Toggles the read only attribute of the open staged file from the owner write bit like os.fchmod on Windows
+func fchmodStaged(f *os.File, mode uint32) error {
+	return f.Chmod(os.FileMode(mode & 0o777))
+}

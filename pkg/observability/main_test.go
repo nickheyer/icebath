@@ -18,7 +18,14 @@ func TestMain(m *testing.M) {
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 	tools.ProfileSecrets = emptyProfileSecrets{}
-	os.Exit(m.Run())
+	scratchHome, err := os.MkdirTemp("", "icebath-observability-home-")
+	if err != nil {
+		os.Exit(1)
+	}
+	os.Setenv("ICEBATH_HOME", scratchHome)
+	code := m.Run()
+	os.RemoveAll(scratchHome)
+	os.Exit(code)
 }
 
 // Profile secret source with no managed keys and no secret scope

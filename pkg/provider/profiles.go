@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // Wire protocols routed by providers whose adapters register their own mode constants
@@ -338,34 +340,20 @@ func Label(providerID string) string {
 
 // Hostname returns the lowercase host of a URL without port, userinfo, or trailing dot
 func Hostname(rawURL string) string {
-	raw := strings.TrimSpace(rawURL)
-	if raw == "" {
-		return ""
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "//" + raw
-	}
-	u, err := url.Parse(raw)
+	host, err := pyurl.BaseURLHostname(rawURL)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	return host
 }
 
-// URLPath returns the URL path lowercased without a trailing slash
+// URLPath returns the URL path lowercased without a trailing slash, empty for a bare host or a bad netloc
 func URLPath(rawURL string) string {
-	raw := strings.TrimSpace(rawURL)
-	if raw == "" {
-		return ""
-	}
-	if !strings.Contains(raw, "://") {
-		raw = "//" + raw
-	}
-	u, err := url.Parse(raw)
+	path, err := pyurl.BaseURLPath(rawURL)
 	if err != nil {
 		return ""
 	}
-	return strings.TrimRight(strings.ToLower(u.Path), "/")
+	return path
 }
 
 // URLPort returns the port of a URL or -1 when it cannot be parsed

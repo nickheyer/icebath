@@ -54,7 +54,7 @@ func (b *BasePlatformAdapter) unwrapEphemeral(ctx context.Context, response any)
 	} else {
 		ttl = b.ephemeralSystemTTLDefault(ctx)
 	}
-	if _, deletes := b.Self().(MessageDeleter); ttl > 0 && !deletes {
+	if ttl > 0 && !AdapterOverridesBaseMethod(b.Self(), "DeleteMessage") {
 		ttl = 0
 	}
 	return reply.Text(), ttl

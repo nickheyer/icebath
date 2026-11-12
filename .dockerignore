@@ -1,0 +1,16 @@
+.git
+.gitignore
+**/node_modules
+**/.venv
+dist/
+references/
+dev/
+site/
+tests-js/
+apps/desktop/dist
+apps/desktop/dist-webapp
+apps/desktop/build
+ui-tui/dist
+cmd/icebath/web_dist
+.env
+**/.DS_Store

@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -66,7 +67,7 @@ func TestScanSkillVerdicts(t *testing.T) {
 }
 
 func TestEmbeddedTreesCarryIcebathNames(t *testing.T) {
-	data, err := os.ReadFile("bundled/autonomous-ai-agents/icebath-agent/SKILL.md")
+	data, err := fs.ReadFile(BundledFS(), "autonomous-ai-agents/icebath-agent/SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -139,6 +139,11 @@ func (b *BasePlatformAdapter) canMergeTextDebounceEvents(existing, event *Messag
 	return true
 }
 
+// Busy text debounce states by session key, created on first use, the caller holding the adapter lock
+func (b *BasePlatformAdapter) textDebounceStore() map[string]*TextDebounceState {
+	return lazyAttr(&b.textDebounce)
+}
+
 // Remaining bounded debounce delay of a session, zero when nothing is buffered
 func (b *BasePlatformAdapter) textDebounceDelay(sessionKey string) float64 {
 	b.mu.Lock()
@@ -183,7 +188,7 @@ func (b *BasePlatformAdapter) queueTextDebounce(ctx context.Context, sessionKey 
 	state = b.textDebounce[sessionKey]
 	if state == nil {
 		state = &TextDebounceState{Event: event, FirstTS: now, LastTS: now}
-		lazyAttr(&b.textDebounce)[sessionKey] = state
+		b.textDebounceStore()[sessionKey] = state
 	} else {
 		if event.Text != "" {
 			state.Event.Text = appendText(state.Event.Text, event.Text)

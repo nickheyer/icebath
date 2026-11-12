@@ -18,9 +18,14 @@ func (b *BasePlatformAdapter) EditMessage(ctx context.Context, chatID, messageID
 	return SendResult{Success: false, Error: "Not supported"}, nil
 }
 
-// Adapter that can delete a sent message, the base without it reporting false
+// Adapter that can delete a sent message, the base reporting false
 type MessageDeleter interface {
 	DeleteMessage(ctx context.Context, chatID, messageID string) (bool, error)
+}
+
+// Deletion of a sent message, false on platforms without a deletion API so callers leave it
+func (b *BasePlatformAdapter) DeleteMessage(ctx context.Context, chatID, messageID string) (bool, error) {
+	return false, nil
 }
 
 // Default seconds before a system notice is auto deleted from display ephemeral system ttl, zero keeping it
@@ -47,11 +52,7 @@ func (b *BasePlatformAdapter) ScheduleEphemeralDelete(ctx context.Context, chatI
 		if ephemeralDeleteWait(tctx, float64(max(1, ttlSeconds))) != nil {
 			return nil
 		}
-		deleter, ok := self.(MessageDeleter)
-		if !ok {
-			return nil
-		}
-		if _, err := deleter.DeleteMessage(tctx, chatID, messageID); err != nil {
+		if _, err := self.DeleteMessage(tctx, chatID, messageID); err != nil {
 			slog.Debug(fmt.Sprintf("[%s] Ephemeral delete failed for %s/%s: %v", self.Name(), chatID, messageID, err))
 		}
 		return nil

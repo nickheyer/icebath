@@ -97,7 +97,8 @@ func detachedEntry(ctx context.Context, store *SessionStore, source *SessionSour
 		}
 	}
 	store.mu.Lock()
-	store.sessionOwnerHints[sessionID], store.sessionOwnerHints[tip] = key, key
+	hints := lazyMap(&store.sessionOwnerHints)
+	hints[sessionID], hints[tip] = key, key
 	store.mu.Unlock()
 	now := sessionNow()
 	createdAt := pyDatetime{T: now.T.Add(-time.Second)}

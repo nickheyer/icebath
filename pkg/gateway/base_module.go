@@ -628,6 +628,11 @@ var (
 	}
 )
 
+// Response body read under the inbound media cap, an oversized declared length rejected before any chunk
+func ReadHTTPBodyWithLimit(ctx context.Context, resp *http.Response, mediaType string) ([]byte, error) {
+	return readBodyWithLimit(ctx, resp.Body, resp.Header.Get("Content-Length"), mediaType, func() {})
+}
+
 // Streams the body under the inbound media cap, rejecting an oversized declared length early
 func readBodyWithLimit(ctx context.Context, body io.Reader, contentLength, mediaType string, idle func()) ([]byte, error) {
 	h := home.Dir(ctx)
@@ -635,7 +640,7 @@ func readBodyWithLimit(ctx context.Context, body io.Reader, contentLength, media
 	if contentLength != "" {
 		if n, ok := pyint.Parse(contentLength); !ok {
 			slog.Debug(fmt.Sprintf("Ignoring invalid Content-Length for inbound %s: %s", mediaType, pyrepr.Repr(contentLength)))
-		} else if !n.IsInt64() && n.Sign() > 0 && maxBytes > 0 {
+		} else if !n.IsInt64() && n.Sign() > 0 && maxBytes != 0 {
 			return nil, &mediacache.ValueError{Msg: fmt.Sprintf("Inbound %s payload is too large (%s bytes > %d bytes)", mediaType, n.String(), maxBytes)}
 		} else if n.IsInt64() {
 			if err := mediacache.ValidateInboundMediaSize(ctx, h, n.Int64(), mediaType, &maxBytes); err != nil {
