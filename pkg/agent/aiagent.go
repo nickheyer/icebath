@@ -135,7 +135,7 @@ type AIAgent struct {
 	enabledToolsets                    []string
 	disabledToolsets                   []string
 	configuredDisabledToolsets         []string
-	maxTokens                          int
+	maxTokens                          *int
 	reasoningConfig                    map[string]any
 	serviceTier                        string
 	requestOverrides                   map[string]any
@@ -283,6 +283,8 @@ type AIAgent struct {
 	credits                            *provider.CreditsCapture
 	creditsMu                          sync.Mutex
 	sessionMessages                    []*state.Message
+	sessionMessageOrigins              map[*state.Message]map[string]any
+	sharedRowStamps                    map[*state.Message]map[string]any
 	codexReasoningReplayEnabled        bool
 	codexReasoningReplayRejected       bool
 	memoryWriteOrigin                  string
@@ -443,7 +445,7 @@ type AIAgentOptions struct {
 	NoticeClearCallback                any
 	EventCallback                      func(string, map[string]any)
 	ReactionCallback                   func(string)
-	MaxTokens                          int
+	MaxTokens                          *int
 	ReasoningConfig                    map[string]any
 	ServiceTier                        string
 	RequestOverrides                   map[string]any

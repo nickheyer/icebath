@@ -11,6 +11,7 @@ import (
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	if h, probing := os.LookupEnv(sessionListenerProbeEnv); probing {
 		os.Exit(runSessionListenerProbe(h))

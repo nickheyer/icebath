@@ -103,7 +103,7 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		return refusalReply(rid, 4001, "runtime_draining", refusalData(err)), nil
 	}
 	if profile, isStr := params.GetOr("profile", nil).(string); isStr && profile != "" {
-		routed, err := c.siblingFor(ctx, profile)
+		routed, err := connectionSiblingFor(c, ctx, profile)
 		if err != nil {
 			var refusal *state.RuntimeStoreError
 			if !errors.As(err, &refusal) {

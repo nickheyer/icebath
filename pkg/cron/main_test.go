@@ -15,10 +15,12 @@ import (
 // Dispatches the scratch prune and external worker entries, a worker child running the real job path
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	home.DispatchScratchPruneEntry(context.Background())
 	dispatchLedgerChild()
 	SetupWorkerLogging = func(string, string) error { return nil }
+	WorkerProcessBoot = func() {}
 	RegisterWorkerConfigHooks = func(context.Context, string, slog.Level) {}
 	if len(os.Args) > 1 && os.Args[1] == ExternalWorkerEntry {
 		runOneJobSeam = runOneJob

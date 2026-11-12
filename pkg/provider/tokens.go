@@ -16,10 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Rough chars per token ratio for ASCII text
-const CharsPerToken = 4
+const CharsPerToken = tools.ModelCharsPerToken
 
 // Flat per image token price before a route calibrates it from usage
 const DefaultImageTokenCost = 1500

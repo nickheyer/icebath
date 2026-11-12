@@ -53,6 +53,26 @@ func runLedgerChild(ctx context.Context, l *Ledger, mode, arg string) error {
 			return err
 		}
 		fmt.Println(recText(r, "id"))
+	case "create-running-direct":
+		r, err := l.Create(ctx, arg, "direct", nil)
+		if err != nil {
+			return err
+		}
+		if _, err := l.MarkRunning(ctx, recText(r, "id")); err != nil {
+			return err
+		}
+		fmt.Println(recText(r, "id"))
+	case "create-running-hold":
+		r, err := l.Create(ctx, arg, "receipt-fixture", nil)
+		if err != nil {
+			return err
+		}
+		if _, err := l.MarkRunning(ctx, recText(r, "id")); err != nil {
+			return err
+		}
+		fmt.Println(recText(r, "id"))
+		_, err = io.Copy(io.Discard, os.Stdin)
+		return err
 	case "recover":
 		n, err := l.RecoverInterrupted(ctx)
 		if err != nil {

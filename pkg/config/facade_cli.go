@@ -831,7 +831,7 @@ func pySafeDump(value any) string {
 }
 
 func dumpScalar(v any) string {
-	out, err := yaml.Marshal(v)
+	out, err := yaml.Marshal(v) // config-writer ok renders a value for display and never writes it to disk
 	if err != nil {
 		return PyStr(v)
 	}

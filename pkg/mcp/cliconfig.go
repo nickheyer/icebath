@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"regexp"
 	"sort"
@@ -863,7 +864,13 @@ func probeFailureReason(err error) string {
 }
 
 // Extension install failure class of a failed probe from its tag or error type, never its message
-func ProbeFailureClass(err error) string {
+func ProbeFailureClass(err error) (class string) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			slog.Debug("MCP probe failure not classified", "panic", recovered)
+			class = "connect_failed"
+		}
+	}()
 	var tagged interface{ FailureClass() string }
 	if errors.As(err, &tagged) {
 		if c := tagged.FailureClass(); c != "" {

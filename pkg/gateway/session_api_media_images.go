@@ -42,7 +42,7 @@ func apiImageURLs(content []any) ([]string, error) {
 }
 
 // Stages every inline data image deterministically and commits the bytes as immutable media
-func commitAPIImages(ctx context.Context, content []any) ([]any, error) {
+func CommitAPIImages(ctx context.Context, content []any) ([]any, error) {
 	urls, err := apiImageURLs(content)
 	if err != nil {
 		return nil, err
@@ -89,11 +89,11 @@ func commitAPIImages(ctx context.Context, content []any) ([]any, error) {
 		}
 		staged = append(staged, path)
 	}
-	return captureNativeMedia(ctx, staged)
+	return CaptureNativeMedia(ctx, staged)
 }
 
 // Transient content keeping its pixels with the committed reference of each inline image appended to its text
-func restoreAPIImages(ctx context.Context, content []any, media []any) ([]any, error) {
+func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, error) {
 	paths, err := restoreNativeMedia(ctx, media)
 	if err != nil {
 		return nil, err

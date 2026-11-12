@@ -845,6 +845,13 @@ func StripLaunchProfileEnv(env *Env, child map[string]string, targetHome string)
 	for _, k := range profileSecrets().ManagedDotenvKeys() {
 		managed[strings.ToUpper(k)] = true
 	}
+	deployment, err := config.DeploymentEnvNames(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	for _, k := range deployment {
+		managed[k] = true
+	}
 	residue := map[string]bool{}
 	consider := func(key string) {
 		upper := strings.ToUpper(key)

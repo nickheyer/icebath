@@ -446,7 +446,7 @@ func writeCustomEndpoint(ctx context.Context, cfg map[string]any, body *pyjson.O
 	setConfigKey(providers, endpointID, entry)
 	setConfigKey(cfg, "providers", providers)
 	if body.GetOr("make_default", false) == true {
-		result, err := provider.ValidatedMainModelSelection(ctx, cfg, endpointID, model, baseURL, "", nil)
+		result, err := validatedMainModelSelection(ctx, cfg, endpointID, model, baseURL)
 		if err != nil {
 			return "", nil, asHTTPError(err)
 		}
@@ -586,7 +586,7 @@ func upsertCustomEndpoint(ctx context.Context, profile string, body *pyjson.Obje
 		return nil, err
 	}
 	if created {
-		observability.RecordProviderSetupDone(ctx, observability.WebSetupSurface(), "custom", h, true)
+		recordCustomEndpointSetup(ctx, h)
 	}
 	resp.Set("ok", true)
 	resp.Set("id", endpointID)
@@ -638,7 +638,7 @@ func activateCustomEndpoint(ctx context.Context, profile, endpointID string) (*p
 	if !held {
 		current = map[string]any{}
 	}
-	result, err := provider.ValidatedMainModelSelection(lctx, cfg, providerKey, model, baseURL, "", nil)
+	result, err := validatedMainModelSelection(lctx, cfg, providerKey, model, baseURL)
 	if err != nil {
 		return nil, asHTTPError(err)
 	}
@@ -668,6 +668,16 @@ func activateCustomEndpoint(ctx context.Context, profile, endpointID string) (*p
 	}
 	return pyjson.ObjectOf("ok", true, "provider", providerKey, "model", model), nil
 }
+
+// Main model validation and setup recording of the custom endpoint routes, the module names hermes tests patch
+var (
+	validatedMainModelSelection = func(ctx context.Context, cfg map[string]any, providerName, model, baseURL string) (provider.ModelSwitchResult, error) {
+		return provider.ValidatedMainModelSelection(ctx, cfg, providerName, model, baseURL, "", nil)
+	}
+	recordCustomEndpointSetup = func(ctx context.Context, h string) {
+		observability.RecordProviderSetupDone(ctx, observability.WebSetupSurface(), "custom", h, true)
+	}
+)
 
 // Removes a custom endpoint, its main slot mirror and its .env key
 func deleteCustomEndpoint(ctx context.Context, profile, endpointID string) (*pyjson.Object, error) {

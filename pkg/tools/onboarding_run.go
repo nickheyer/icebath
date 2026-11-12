@@ -33,8 +33,11 @@ func onboardingExplicitRun() (bool, bool) {
 	return value, ok
 }
 
-// OnboardingLatchFirstInstall records on a fresh install's first desktop boot that onboarding is due and the trial reserved
-func OnboardingLatchFirstInstall(ctx context.Context) (bool, error) {
+// First install latch of every desktop boot, replaced by a case as the hermes cases patch latch_first_install
+var OnboardingLatchFirstInstall = onboardingLatchFirstInstall
+
+// Records on a fresh install's first desktop boot that onboarding is due and the trial reserved
+func onboardingLatchFirstInstall(ctx context.Context) (bool, error) {
 	if _, explicit := onboardingExplicitRun(); explicit || !InstallStateProbe(ctx).Fresh() {
 		return false, nil
 	}
@@ -47,8 +50,11 @@ func OnboardingLatchFirstInstall(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// SetOnboardingRun persists onboarding.run, and with the mark the profile build offered flag, in the root config as one write
-func SetOnboardingRun(ctx context.Context, value bool, markProfileOffered bool) error {
+// SetOnboardingRun persists onboarding.run, replaced by a case as the hermes cases patch onboarding_run.set_run
+var SetOnboardingRun = setOnboardingRun
+
+// Writes onboarding.run, and with the mark the profile build offered flag, in the root config as one write
+func setOnboardingRun(ctx context.Context, value bool, markProfileOffered bool) error {
 	root := home.Root()
 	doc, err := config.ReadUser(root)
 	if err != nil {

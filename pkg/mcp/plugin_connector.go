@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -118,7 +119,6 @@ func CallToolForPlugin(ctx context.Context, server, tool string, timeout float64
 
 // Platform declaration of a portable server declaration, the app name labelling the parse
 func portableDeclaration(decl plugins.AgentPluginServerDeclaration) (*tools.PlatformDeclaration, error) {
-	name, _ := decl.App["name"].(string)
 	var app, requires any
 	if decl.App != nil {
 		app = decl.App
@@ -126,7 +126,7 @@ func portableDeclaration(decl plugins.AgentPluginServerDeclaration) (*tools.Plat
 	if decl.Requires != nil {
 		requires = decl.Requires
 	}
-	return tools.ParsePlatformDeclaration(name, app, requires, "plugin.json extension server")
+	return tools.ParsePlatformDeclaration(decl.Name, app, requires, "plugin.json extension server "+pyrepr.Repr(decl.Name))
 }
 
 // Install time availability verdict of a portable server declaration

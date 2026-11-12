@@ -39,7 +39,16 @@ func objectJob(obj *pyjson.Object) (*Job, error) {
 		return nil, err
 	}
 	job := &Job{}
-	return job, json.Unmarshal(raw, job)
+	if err := json.Unmarshal(raw, job); err != nil {
+		return nil, err
+	}
+	if id, ok := job.Extra["execution_id"]; ok {
+		if err := json.Unmarshal(id, &job.ExecutionID); err != nil {
+			return nil, err
+		}
+		delete(job.Extra, "execution_id")
+	}
+	return job, nil
 }
 
 // Cancel source over the owner's per admission latch, reporting no reason of its own

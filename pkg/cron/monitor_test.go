@@ -61,10 +61,15 @@ func TestMonitorCreateAndUpdateInvariants(t *testing.T) {
 	}
 }
 
-func TestMonitorHashAndDiffCap(t *testing.T) {
+func TestHashIsExactBytes(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if hashMonitorOutput("a\nb") != hashMonitorOutput("a\nb") || hashMonitorOutput("a\nb") == hashMonitorOutput("a\nb ") {
 		t.Fatal("hash must be exact bytes")
 	}
+}
+
+func TestUnifiedDiffIsCapped(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var oldL, newL []string
 	for i := 0; i < 5000; i++ {
 		oldL = append(oldL, fmt.Sprintf("line %d", i))

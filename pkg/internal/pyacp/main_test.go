@@ -10,5 +10,6 @@ import (
 // Blocks external HTTP then runs the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	os.Exit(m.Run())
 }

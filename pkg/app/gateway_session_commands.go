@@ -123,7 +123,7 @@ var gatewaySettings = map[string]func(c *CLI, arg string){
 	"refine": nil, "review": watchGatewayReviewer, "cron": nil, "toolsets": nil,
 }
 
-// Whether a form is answered only once its work is done, a cron write, its reads and an unclosed quote keeping the deadline
+// Whether a form waits for its work, true for a cron write and false for cron reads or unclosed quotes
 func gatewaySettingUnbounded(canonical, arg string) bool {
 	if canonical != "cron" {
 		return false
@@ -215,9 +215,13 @@ func gatewayRollback(c *CLI, connection *gatewaycli.GatewayConnection, command s
 		}
 	}
 	restoreAll := len(args) != len(words)
+	wd, werr := os.Getwd()
+	if werr != nil {
+		panic(werr)
+	}
 	cwd, ok := os.LookupEnv("TERMINAL_CWD")
 	if !ok {
-		cwd, _ = os.Getwd()
+		cwd = wd
 	}
 	sid := c.sessionID
 	err := func() error {

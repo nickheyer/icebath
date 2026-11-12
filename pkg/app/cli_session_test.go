@@ -22,7 +22,7 @@ func oneShotCalls(t *testing.T, query string) []map[string]any {
 		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
 	t.Cleanup(func() { SetCLIConfig(nil) })
 	var calls []map[string]any
-	patchTurn(t, func(_ context.Context, _ *GatewayAgent, _ any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ cliAgent, _ any, o agent.RunConversationOptions) (map[string]any, error) {
 		_, envSet := os.LookupEnv(provider.TurnAuthorEnvName)
 		calls = append(calls, map[string]any{"turn_author": o.TurnAuthor, "env_author_set": envSet})
 		return map[string]any{"final_response": "done", "completed": true}, nil

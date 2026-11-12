@@ -19,7 +19,9 @@ func TestLazyCronStoresImportAgainstPreUpgradeSqliteUtil(t *testing.T) {
 		{"delivery_queue", func(s *Store) error { _, err := openDeliveryQueue(s).GetStatus(ctx, "exec"); return err }},
 	} {
 		t.Run(tc.store, func(t *testing.T) {
-			s := openCronStore(filepath.Join(t.TempDir(), "home"), nil)
+			h := filepath.Join(t.TempDir(), "home")
+			t.Setenv("ICEBATH_HOME", h)
+			s := openCronStore(h, nil)
 			if err := tc.first(s); err != nil {
 				t.Fatalf("first open of the %s store in a fresh process failed: %v", tc.store, err)
 			}
@@ -28,7 +30,9 @@ func TestLazyCronStoresImportAgainstPreUpgradeSqliteUtil(t *testing.T) {
 }
 
 func TestOccurrencesResolveFireClaimConstantsWithoutCachedJobsExports(t *testing.T) {
-	s := openCronStore(filepath.Join(t.TempDir(), "home"), nil)
+	h := filepath.Join(t.TempDir(), "home")
+	t.Setenv("ICEBATH_HOME", h)
+	s := openCronStore(h, nil)
 	if completedOccurrence(s, &Job{ID: "job"}, "2026-01-01T00:00:00+00:00") {
 		t.Fatal("an empty ledger proved a completed occurrence")
 	}

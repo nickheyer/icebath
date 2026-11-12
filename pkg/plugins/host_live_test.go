@@ -278,6 +278,12 @@ func liveHome(t *testing.T, python string, plugins map[string]string) (string, *
 // Temp home holding directory plugins enabled under the given isolation, with the child launched by python
 func liveHomeIsolated(t *testing.T, python string, plugins map[string]string, isolation string) (string, *Manager) {
 	t.Helper()
+	return liveHomeLoadedIn(t, python, plugins, isolation, nil)
+}
+
+// Temp home like liveHomeIsolated whose first discovery runs in the context wrap derives from the home context
+func liveHomeLoadedIn(t *testing.T, python string, plugins map[string]string, isolation string, wrap func(context.Context) context.Context) (string, *Manager) {
+	t.Helper()
 	installHostEnvHooks()
 	root := t.TempDir()
 	h := filepath.Join(root, ".icebath")
@@ -306,7 +312,11 @@ func liveHomeIsolated(t *testing.T, python string, plugins map[string]string, is
 			m.pluginHostInstance.Shutdown()
 		}
 	})
-	m.DiscoverAndLoad(homeCtx(h), false)
+	loadCtx := homeCtx(h)
+	if wrap != nil {
+		loadCtx = wrap(loadCtx)
+	}
+	m.DiscoverAndLoad(loadCtx, false)
 	return h, m
 }
 
@@ -336,7 +346,7 @@ func loadedError(m *Manager, key string) string {
 }
 
 // Port of test_plugin_runs_out_of_process_with_ctx_round_trips_and_survives_host_crash
-func TestLivePluginRunsOutOfProcessAndSurvivesHostCrash(t *testing.T) {
+func TestPluginRunsOutOfProcessWithCtxRoundTripsAndSurvivesHostCrash(t *testing.T) {
 	for label, python := range liveInterpreters(t) {
 		t.Run(label, func(t *testing.T) {
 			ls := installLiveServices(t)
@@ -542,7 +552,7 @@ func TestLivePluginSDKCallsReachIcebath(t *testing.T) {
 }
 
 // Port of test_managed_scope_pins_host_isolation_over_the_profiles_own_config
-func TestLiveManagedScopePinsHostIsolationOverTheProfilesOwnConfig(t *testing.T) {
+func TestManagedScopePinsHostIsolationOverTheProfilesOwnConfig(t *testing.T) {
 	managed := t.TempDir()
 	writeFile(t, filepath.Join(managed, "config.yaml"), "plugins:\n  isolation: host\n")
 	t.Setenv(config.EnvManagedDir, managed)
@@ -575,7 +585,7 @@ register_provider(HostModel(name="hostmodel", base_url="https://hostmodel.exampl
 `
 
 // Port of test_model_provider_profile_data_is_local_and_overrides_run_in_the_host
-func TestLiveModelProviderProfileDataIsLocalAndOverridesRunInTheHost(t *testing.T) {
+func TestModelProviderProfileDataIsLocalAndOverridesRunInTheHost(t *testing.T) {
 	h, m := liveHome(t, liveInterpreters(t)["system"], map[string]string{})
 	pluginDir := filepath.Join(h, "plugins", "model-providers", "hostmodel")
 	if err := os.MkdirAll(pluginDir, 0o755); err != nil {

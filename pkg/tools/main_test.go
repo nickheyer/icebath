@@ -25,6 +25,7 @@ func testSecretEnvName(name string) bool {
 // Dispatches the child modes, installs the secret env doubles, then runs the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	asyncDelegationChildEntry()
 	DispatchDDGSWorkerEntry()

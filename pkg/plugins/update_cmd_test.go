@@ -20,20 +20,28 @@ type catWorldT struct {
 	sha1, sha2    string
 	pin, requires string
 	pluginsDir    string
+	name, tier    string
+	category      string
 }
 
 // File repo with two commits, a catalog entry pinned to the first, offline catalog seams and a real core
 func catWorld(t *testing.T) *catWorldT {
 	t.Helper()
+	return catWorldNamed(t, "cat-plugin", "def register(ctx):\n    pass\n", "def register(ctx):\n    pass  # v2\n")
+}
+
+// Catalog world of one named plugin whose two commits carry the given __init__.py bodies, at tier community
+func catWorldNamed(t *testing.T, name, v1, v2 string) *catWorldT {
+	t.Helper()
 	c6RequireGit(t)
 	root, h := pubWorld(t)
 	w := &catWorldT{ctx: home.WithOverride(context.Background(), h), root: root, h: h, repo: filepath.Join(root, "repo"),
-		pluginsDir: filepath.Join(h, "plugins")}
-	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: cat-plugin\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), "def register(ctx):\n    pass\n")
+		pluginsDir: filepath.Join(h, "plugins"), name: name, tier: "community", category: "tools"}
+	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: "+name+"\nversion: 1.0.0\ndescription: d\n")
+	c6Write(t, filepath.Join(w.repo, "__init__.py"), v1)
 	c6Git(t, w.repo, "init", "-q")
 	w.sha1 = c6Commit(t, w.repo, "v1")
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), "def register(ctx):\n    pass  # v2\n")
+	c6Write(t, filepath.Join(w.repo, "__init__.py"), v2)
 	w.sha2 = c6Commit(t, w.repo, "v2")
 	w.pin = w.sha1
 	savedURL, savedClient, savedTree, savedScan, savedVersion := LiveCatalogURL, liveCatalogClient, inTreeCatalogEntries, scanOnInstallEnabled, RunningVersion
@@ -43,8 +51,8 @@ func catWorld(t *testing.T) *catWorldT {
 	LiveCatalogURL = "http://127.0.0.1:9/nope"
 	liveCatalogClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, errors.New("offline") })}
 	inTreeCatalogEntries = func() []*PluginCatalogEntry {
-		return []*PluginCatalogEntry{{Name: "cat-plugin", Repo: "file://" + filepath.ToSlash(w.repo), Sha: w.pin, Description: "d",
-			Maintainer: "t", Tier: "community", Category: "tools", RequiresIcebath: w.requires}}
+		return []*PluginCatalogEntry{{Name: w.name, Repo: "file://" + filepath.ToSlash(w.repo), Sha: w.pin, Description: "d",
+			Maintainer: "t", Tier: w.tier, Category: w.category, RequiresIcebath: w.requires}}
 	}
 	scanOnInstallEnabled = func(string) bool { return false }
 	txOAuthSurface(t)

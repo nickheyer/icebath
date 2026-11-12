@@ -361,7 +361,7 @@ func (c *CLI) confirmExpensiveModelSwitch(result *provider.ModelSwitchResult) bo
 	}
 	selection := c.oneTurnSelectionContext
 	if selection == nil {
-		selection = selectionContextForAgent(c.agent)
+		selection = selectionContextForAgent(agentGateway(c.agent))
 	}
 	baseURL, apiKey := result.BaseURL, result.APIKey
 	if baseURL == "" {
@@ -408,7 +408,7 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 			providers = append(providers, m)
 		}
 	}
-	mergeGatewayPreflightWarning(c.ctx, c.agent, result, append([]map[string]any(nil), c.conversationHistory...), providers, c.agent.ConfigContextLength())
+	mergeGatewayPreflightWarning(c.ctx, agentGateway(c.agent), result, append([]map[string]any(nil), c.conversationHistory...), providers, c.agent.ConfigContextLength())
 }
 
 // Stages a switch onto the CLI fields then swaps the live agent, rolling the CLI back when the swap fails
@@ -896,7 +896,7 @@ func (c *CLI) oneTurnSelectionContextFor() *provider.SelectionContext {
 	if c.agent != nil {
 		c.agent.refreshStats(nil)
 	}
-	if live := selectionContextForAgent(c.agent); live != nil {
+	if live := selectionContextForAgent(agentGateway(c.agent)); live != nil {
 		return live
 	}
 	if c.sessionDB == nil || c.sessionID == "" {

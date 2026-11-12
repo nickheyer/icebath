@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -21,6 +20,9 @@ import (
 type CronExecutionUnknown struct{ Msg string }
 
 func (e *CronExecutionUnknown) Error() string { return e.Msg }
+
+// Python class name of the unverified admission error
+func (e *CronExecutionUnknown) PyTypeName() string { return "CronExecutionUnknown" }
 
 // Admission journal of one fire keyed by the sha256 of the JSON pair of job and request ids
 func (s *Store) journalPath(jobID, requestID string) string {
@@ -54,18 +56,9 @@ func replayableCompletions(s *Store, jobID string, completions []string) []strin
 	return out
 }
 
-// Writes a journal record as two space indented JSON in a private atomic file
-func writeAdmissionJournal(path string, record any) error {
-	text, err := pyjson.Dumps(record, pyjson.Indent(2), pyjson.EnsureASCII(false))
-	if err != nil {
-		return err
-	}
-	if !utf8.ValidString(text) {
-		if text, err = pyjson.Dumps(record, pyjson.Indent(2), pyjson.EnsureASCII(true)); err != nil {
-			return err
-		}
-	}
-	return config.AtomicWrite(path, []byte(text), 0o600)
+// Writes a journal record as two space indented JSON in a private atomic file whose rename is synced
+func (s *Store) writeAdmissionJournal(ctx context.Context, path string, record any) error {
+	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, pyjson.Indent(2))
 }
 
 // Pauses the job for an unverified admission and records that exact pause on the fire journal
@@ -97,7 +90,7 @@ func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason 
 		return &pyTypeError{msg: "'" + pyTypeName(decoded) + "' object does not support item assignment"}
 	}
 	record.Set("pause_recorded", pauseIdentity(paused))
-	return writeAdmissionJournal(journal, record)
+	return s.writeAdmissionJournal(ctx, journal, record)
 }
 
 // Python TypeError raised by an operation on the wrong value type
@@ -121,7 +114,8 @@ func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {
 	if !pyrepr.Equal(strOrNull(job.PausedAt), at) || !pyrepr.Equal(strOrNull(job.PausedReason), reason) {
 		return nil
 	}
-	if _, err := s.resumeJob(home.WithOverride(ctx, s.home), jobID); err != nil && isOSError(err) {
+	var oneShotPast *ValueError
+	if _, err := s.resumeJob(home.WithOverride(ctx, s.home), jobID); err != nil && !errors.As(err, &oneShotPast) {
 		return err
 	}
 	return nil

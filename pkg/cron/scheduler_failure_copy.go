@@ -8,6 +8,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -161,7 +162,7 @@ func inactivityNotice(h, jobName, jobID string) string {
 
 // One time notice when the pre run configuration check refused to start the job
 func blockedConfigNotice(jobName, reason string) string {
-	reason = strings.TrimRight(reason, " \t\n\r\x0b\x0c")
+	reason = pystr.Rstrip(reason)
 	if reason != "" && !strings.ContainsAny(reason[len(reason)-1:], ".!?") {
 		reason += "."
 	}

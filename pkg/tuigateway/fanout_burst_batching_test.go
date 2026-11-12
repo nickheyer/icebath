@@ -93,7 +93,7 @@ func TestTheDrainSendsAQueuedBacklogAsOneBatch(t *testing.T) {
 	}
 	fanout.WriteOverflow(burstDelta("0"), overflow)
 	awaitFirstSend(t, socket)
-	backlog := fanoutMaxPendingFrames - 1
+	backlog := FanoutMaxPendingFrames - 1
 	want := []string{"0"}
 	for index := 1; index <= backlog; index++ {
 		fanout.WriteOverflow(burstDelta(strconv.Itoa(index)), overflow)

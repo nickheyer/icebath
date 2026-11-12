@@ -43,6 +43,9 @@ func init() {
 		return reply
 	}
 	gateway.SlashConfirmResolve = gatewayrun.SlashConfirmResolve
+	gateway.CommandBusyPolicy = func(name string) (bool, bool) {
+		return commands.ShouldBypassActiveSession(name), commands.IsInterruptThenDispatch(name)
+	}
 	gatewayrun.SlashConfirmClearIfStale = func(sessionKey string) bool {
 		return commands.Confirms.ClearIfStale(sessionKey, commands.ConfirmTimeout)
 	}

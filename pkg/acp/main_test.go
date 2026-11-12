@@ -16,6 +16,7 @@ import (
 // Blocks external HTTP, installs the wiring hooks, keeps the model inventory offline and isolates the home for the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	NewSurfaceLabelReader = func(db *state.SessionDB) RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }
 	NewPreparedMutations = func() PreparedMutations { return app.NewACPMutations() }
 	SlashMutation, ModelRefusalText, ConfirmationTitle = app.ACPSlashMutation, app.ACPModelRefusalText, app.ACPConfirmationTitle

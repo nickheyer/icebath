@@ -19,6 +19,7 @@ var realKanbanRoot string
 // Captures the real kanban root before sandboxing ICEBATH_HOME and installs the write guard on connect
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	realKanbanRoot = captureRealKanbanRoot()
 	installTestGatewayStatusProbes()
 	sandbox, err := os.MkdirTemp("", "kanban-home-")

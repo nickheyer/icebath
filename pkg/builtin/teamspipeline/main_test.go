@@ -9,5 +9,6 @@ import (
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	os.Exit(m.Run())
 }

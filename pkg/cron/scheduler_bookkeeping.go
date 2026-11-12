@@ -63,10 +63,10 @@ func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwne
 	if !job.NoAgent {
 		opts.ExecutionID = strPtr(executionID)
 	}
-	if !d.success && job.run.modelUnreachable {
-		opts.ModelUnreachable = true
+	if !d.success {
+		opts.ModelUnreachable = job.run.modelUnreachable
+		job.run.modelUnreachable = false
 	}
-	job.run.modelUnreachable = false
 	if unreachableRetryIsRetryRun(s, job) {
 		opts.LadderRung = true
 	}
@@ -91,7 +91,7 @@ func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwne
 		return false, err
 	}
 	if !marked {
-		if marked, err = s.markJobRun(ctx, job.ID, d.success, opts); err != nil {
+		if marked, err = markJobRunSeam(s, ctx, job.ID, d.success, opts); err != nil {
 			return false, err
 		}
 	}

@@ -2,9 +2,9 @@ package tuiserver
 
 import (
 	"context"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -55,8 +55,8 @@ func themeRequest(ctx context.Context, sid string, payload map[string]any) any {
 	case map[string]any:
 		return map[string]any{"success": true, "picked": picked}
 	}
-	if said, isText := result.GetOr("said", nil).(string); isText && strings.TrimSpace(said) != "" {
-		return map[string]any{"said": strings.TrimSpace(said)}
+	if said, isText := result.GetOr("said", nil).(string); isText && pystr.Strip(said) != "" {
+		return map[string]any{"said": pystr.Strip(said)}
 	}
 	return map[string]any{"cancelled": true}
 }

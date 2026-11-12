@@ -469,8 +469,9 @@ func (m *Manager) HasEnabledPortableMCP(rawConfig map[string]any) bool {
 		}
 		var found bool
 		if callGuarded(func() error {
-			found = len(discoverPortableMCP(mf.Path, filepath.Join(m.home, "plugin-data", namespace), &[]AgentPluginDiagnostic{}, false)) > 0
-			return nil
+			servers, err := discoverPortableMCP(mf.Path, filepath.Join(m.home, "plugin-data", namespace), &[]AgentPluginDiagnostic{}, false)
+			found = len(servers) > 0
+			return err
 		}) == nil && found {
 			return true
 		}

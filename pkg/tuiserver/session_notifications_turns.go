@@ -32,7 +32,7 @@ func notifSubmit(ctx context.Context, rid, sid string, session *tuigateway.Sessi
 func notifRID() string { return fmt.Sprintf("__notif__%d", time.Now().UnixMilli()) }
 
 // Runs the claimed agent turn for one notification event
-func notifDispatchEvent(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any, text string) {
+var notifDispatchEvent = func(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any, text string) {
 	env := configEnv(ctx)
 	claim, claimed, err := tools.ClaimEventDelivery(env, evt, "tui-poller")
 	if err != nil {
@@ -210,8 +210,13 @@ func notifDispatchCompletions(ctx context.Context, sid string, session *tuigatew
 	}
 }
 
+// Ready snapshot router of the notification paths, the routing below
+var notifHandleReady func(ctx context.Context, sid string, session *tuigateway.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool)
+
+func init() { notifHandleReady = notifRouteReady }
+
 // Routes one ready snapshot, one turn per completion run, handing back what this pass did not route
-func notifHandleReady(ctx context.Context, sid string, session *tuigateway.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool) {
+func notifRouteReady(ctx context.Context, sid string, session *tuigateway.Session, events []map[string]any, emitted map[string]bool, registry *tools.ProcessRegistry, format func(map[string]any) string, deferred *[]map[string]any, owned bool) {
 	var completions []tools.DrainedNotification
 	handBack := registry.CompletionQueue.Put
 	if deferred != nil {

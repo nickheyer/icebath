@@ -86,6 +86,7 @@ func TestResolveMissingMoAPresetHasActionableError(t *testing.T) {
 }
 
 func TestMissingMoAPresetIsNonRetryable(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	_, err := ResolveMoAPreset(map[string]any{}, "old")
 	result := ClassifyError(ClassifyInput{Err: err, Provider: "moa", Model: "old"})
 	if result.Reason != ReasonModelNotFound || result.Retryable || result.ShouldFallback {

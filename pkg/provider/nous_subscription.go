@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/home"
 	"io"
 	"sort"
 	"strings"
@@ -960,8 +961,11 @@ func init() {
 	}
 }
 
-// Credential environment of a tool env, its home, secrets and logger
+// Credential environment of a tool env, its home, secrets and logger, the process home when no env is bound
 func toolsPoolEnv(env *tools.Env) PoolEnv {
+	if env == nil {
+		return credentialLifecycleEnv(context.Background(), home.Process())
+	}
 	pe := credentialLifecycleEnv(context.Background(), env.Home)
 	if env.Secrets != nil {
 		pe.Secrets = env.Secrets

@@ -8,9 +8,13 @@ import (
 // Agent package doubles every test starts with, the factory stays unregistered until a test installs one
 func init() {
 	SetRequestHardInterrupt(func(a CronAgent, reason, toolReason string) {
-		if f, ok := a.(*fakeCronAgent); ok {
-			f.HardInterrupt(reason, toolReason)
+		if hard, ok := a.(interface {
+			HardInterrupt(reason, toolReason string)
+		}); ok {
+			hard.HardInterrupt(reason, toolReason)
+			return
 		}
+		a.Interrupt(reason)
 	})
 	SetFormatTurnCompletionExplanation(func(_ context.Context, reason string, cause, model *string) string { return "" })
 	SetCleanupStaleAsyncClients(func() {})

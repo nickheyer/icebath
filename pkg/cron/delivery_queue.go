@@ -381,10 +381,10 @@ func (q *DeliveryQueue) Drain(ctx context.Context, send DeliverySend, limit int)
 			}()
 			job := row["job"].(*Job)
 			errText := callDeliverySend(send, job, recText(row, "content"), recInt(row, "for_failure") != 0)
-			_, suppressed := job.Extra["_notification_all_targets_suppressed"]
-			if suppressed {
+			suppressed := job.run.notificationAllTargetsSuppressed
+			if raw, stored := job.Extra["_notification_all_targets_suppressed"]; stored && !suppressed {
 				var flag any
-				suppressed = json.Unmarshal(job.Extra["_notification_all_targets_suppressed"], &flag) == nil && truthyJSON(flag)
+				suppressed = json.Unmarshal(raw, &flag) == nil && truthyJSON(flag)
 			}
 			ok, err := deliveryFinish(q, ctx, id, errText, suppressed)
 			if err != nil {

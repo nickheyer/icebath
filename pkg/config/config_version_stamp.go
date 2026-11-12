@@ -171,7 +171,7 @@ func StampMissingConfig(ctx context.Context, h string, hooks StampHooks) (bool, 
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		return false, err
 	}
-	if err := writeDocument(path, cfg); err != nil {
+	if err := AtomicConfigReplace(ctx, h, path, cfg, ""); err != nil {
 		return false, err
 	}
 	return true, os.Chmod(path, 0o600)

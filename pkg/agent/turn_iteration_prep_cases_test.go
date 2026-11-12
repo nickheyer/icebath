@@ -309,7 +309,7 @@ func TestTruncatedToolCallBoost(t *testing.T) {
 		}
 	})
 	t.Run("test_small_explicit_max_tokens_ladder_still_capped_at_floor", func(t *testing.T) {
-		if budgets := toolCallBudgets(&AIAgent{maxTokens: 4096}, 0); !reflect.DeepEqual(budgets, []int{8192, 16384, 32768, 32768}) {
+		if budgets := toolCallBudgets(&AIAgent{maxTokens: iptr(4096)}, 0); !reflect.DeepEqual(budgets, []int{8192, 16384, 32768, 32768}) {
 			t.Fatalf("budgets %v", budgets)
 		}
 	})

@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -547,6 +548,18 @@ func hostCtxMethods() []string {
 	return sortedKeys(names)
 }
 
+// Unsupported registrars the parent serves for a plugin loaded under in process isolation, none under host isolation
+func hostInProcessCtxMethods(ctx context.Context) map[string]bool {
+	served := map[string]bool{}
+	if IsolationMode(ctx, nil) != IsolationInProcess {
+		return served
+	}
+	for name := range HostInProcessObjectBases {
+		served[name] = true
+	}
+	return served
+}
+
 // Imports a plugin in the child and replays its registrations onto the plugin context
 func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint, predeclared bool) (string, error) {
 	ch, err := h.ensureStarted(ctx)
@@ -554,14 +567,16 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 		return "", err
 	}
 	key := mf.ID()
+	served := hostInProcessCtxMethods(ctx)
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
+	pctx.hostInProcess = served
 	h.loading = key
 	h.stateMu.Unlock()
 	params := map[string]any{
 		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": nilIfEmpty(moduleName),
 		"entrypoint": entrypoint, "predeclared": predeclared, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
-		"ctx_methods": anyList(hostCtxMethods()),
+		"ctx_methods": anyList(hostCtxMethods()), "in_process_ctx_methods": anyList(sortedKeys(served)),
 	}
 	result, err := ch.Call(ctx, "load", params, 0)
 	h.stateMu.Lock()
@@ -590,13 +605,16 @@ func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context,
 		return "", err
 	}
 	key := mf.ID()
+	served := hostInProcessCtxMethods(ctx)
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
+	pctx.hostInProcess = served
 	h.loading = key
 	h.stateMu.Unlock()
 	params := map[string]any{
 		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": moduleName,
 		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf), "ctx_methods": anyList(hostCtxMethods()),
+		"in_process_ctx_methods": anyList(sortedKeys(served)),
 	}
 	result, err := ch.Call(ctx, "load_tools", params, 0)
 	h.stateMu.Lock()
@@ -776,7 +794,7 @@ func (h *PluginHost) unload(key string) error {
 	return nil
 }
 
-// Drops a module and its submodules from the interpreter of a running child, failing when it does not answer in time
+// Drops a module and its submodules from a running child, failing when it does not answer in time
 func (h *PluginHost) evictModules(moduleName string) error {
 	h.mu.Lock()
 	ch := h.channel
@@ -809,7 +827,6 @@ func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, para
 	h.mu.Lock()
 	ch := h.channel
 	current := h.generation
-	released := h.releases
 	h.mu.Unlock()
 	if ch == nil {
 		return nil, h.unavailableAsExit(&PluginHostUnavailable{Reason: "not started"})
@@ -817,10 +834,11 @@ func (h *PluginHost) callIn(ctx context.Context, forcedBase, method string, para
 	if generation != nil && *generation != current {
 		return nil, h.unavailableAsExit(&PluginHostUnavailable{Reason: "this object belonged to a plugin host process that has exited"})
 	}
+	h.mu.Lock()
+	released := h.releases
+	h.releases = nil
+	h.mu.Unlock()
 	if len(released) > 0 {
-		h.mu.Lock()
-		h.releases = nil
-		h.mu.Unlock()
 		refs := make([]any, len(released))
 		for i, r := range released {
 			refs[i] = r
@@ -934,12 +952,18 @@ func (h *PluginHost) serveCtx(ctx context.Context, params map[string]any) (any, 
 		return nil, err
 	}
 	method := wireStr(params["method"])
+	h.stateMu.Lock()
+	served := c.hostInProcess[method]
+	h.stateMu.Unlock()
 	_, unsupported := HostUnsupportedCtxMethods[method]
 	_, skipped := HostSkippedCtxMethods[method]
-	if strings.HasPrefix(method, "_") || unsupported || skipped || method == "on_unload" || method == "spawn_task" {
+	if strings.HasPrefix(method, "_") || (unsupported && !served) || skipped || method == "on_unload" || method == "spawn_task" {
 		return nil, &PluginHostUnsupported{Msg: fmt.Sprintf("ctx.%s() cannot be called across the plugin host", method)}
 	}
 	base := HostObjectBases[method]
+	if served {
+		base = HostInProcessObjectBases[method]
+	}
 	resolve := func(ref map[string]any) (any, error) { return h.resolveRef(ref, base) }
 	rawArgs, err := wireDecode(listOrEmpty(params["args"]), resolve)
 	if err != nil {
@@ -1161,6 +1185,8 @@ type HostedObject struct {
 	local    map[string]any
 	TypeName string
 	Base     string
+	// Identity the child judged from the class alone for an object an in process registrar received
+	Identity map[string]any
 }
 
 // Async flag and signature of one hosted object method
@@ -1204,6 +1230,9 @@ func (h *PluginHost) objectProxy(ref map[string]any, base string, reload func(co
 	}
 	for _, name := range listOrEmpty(ref["live"]) {
 		o.live[wireStr(name)] = true
+	}
+	if identity, ok := ref["identity"].(map[string]any); ok {
+		o.Identity = identity
 	}
 	o.slot.track(o)
 	return o
@@ -1249,7 +1278,7 @@ func (o *HostedObject) HasMethod(name string) bool {
 // Async flag of a declared method
 func (o *HostedObject) MethodIsAsync(name string) bool { return o.methods[name].Async }
 
-// Whether the provider class replaces a method of its base, every declared method under host isolation where hermes sees its proxy class
+// Whether the provider class replaces a base method, every declared method under host isolation
 func (o *HostedObject) OverridesBase(ctx context.Context, method string) (bool, error) {
 	if !strings.Contains(o.Base, ":") || IsolationMode(ctx, nil) == IsolationHost {
 		_, declared := o.methods[method]
@@ -1275,6 +1304,19 @@ func (o *HostedObject) Call(ctx context.Context, method string, args []any, kwar
 	}
 	return o.host.callIn(ctx, o.liveClientBase(), "obj_invoke", map[string]any{"ref": ref, "method": method, "args": o.host.encodeArgs(nonNilArgs(args)),
 		"kwargs": o.host.encodeArgs(nonNilKwargs(kwargs))}, &generation, 0, declaredReturn(o.Base, method))
+}
+
+// Runs one login backend operation on the object in the child, which type checks its result
+func (o *HostedObject) LoginBackendCall(ctx context.Context, op string, params map[string]any) (any, error) {
+	ref, generation, err := o.addr(ctx)
+	if err != nil {
+		return nil, err
+	}
+	payload := map[string]any{"ref": ref, "op": op}
+	for k, v := range params {
+		payload[k] = v
+	}
+	return o.host.call(ctx, "login_backend", payload, &generation, 0, nil)
 }
 
 // Takes the next item of a for loop over the object in the child, ok false once it raises StopIteration
@@ -1380,13 +1422,10 @@ func holdsLiveHandle(value any) bool {
 	return found
 }
 
-// Reports whether obj is a proxy whose code runs in the plugin host
+// Reports whether obj is a provider object proxy whose methods run in the plugin host
 func IsHostedObject(obj any) bool {
-	switch obj.(type) {
-	case *HostedObject, *HostedCallable, *HostedProfile:
-		return true
-	}
-	return false
+	o, ok := obj.(*HostedObject)
+	return ok && o != nil
 }
 
 // Plugin output and child logs into the plugin log tagged with the profile
@@ -1394,7 +1433,7 @@ func pumpHostStderr(stream io.Reader, label string) {
 	r := bufio.NewReader(stream)
 	for {
 		raw, err := r.ReadBytes('\n')
-		if line := strings.TrimRight(strings.ToValidUTF8(string(raw), "�"), " \t\r\n"); line != "" {
+		if line := pystr.Rstrip(pystr.DecodeUTF8Replace(raw)); line != "" {
 			logInfo(fmt.Sprintf("plugin host [%s]: %s", label, line))
 		}
 		if err != nil {

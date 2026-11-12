@@ -80,14 +80,14 @@ func TestFailedTurnBoundaryIsIdempotentOnTheDurableTailAndSkipsContextOverflow(t
 		{"role": "tool", "tool_call_id": "t1", "content": "removed", "stored": false},
 	})
 	ctx := context.Background()
-	closeDurableFailedTurn(ctx, a, map[string]any{"completed": false, "failed": true, "failure_reason": "context_overflow",
+	CloseDurableFailedTurn(ctx, a, map[string]any{"completed": false, "failed": true, "failure_reason": "context_overflow",
 		"messages": append([]*state.Message(nil), messages...)})
 	if role, _ := db.LatestConversationRole(ctx, "s1"); len(closureStored(t, db)) != 1 || role != "user" {
 		t.Fatalf("context overflow wrote a boundary, tail %q", role)
 	}
 	failed := map[string]any{"completed": false, "failed": true, "failure_reason": "server_error", "messages": messages, "current_turn_user_idx": 0}
-	closeDurableFailedTurn(ctx, a, failed)
-	closeDurableFailedTurn(ctx, a, failed)
+	CloseDurableFailedTurn(ctx, a, failed)
+	CloseDurableFailedTurn(ctx, a, failed)
 	if stored := closureStored(t, db); len(stored) != 2 {
 		t.Fatalf("stored rows %v", stored)
 	}
@@ -103,7 +103,7 @@ func TestFailedTurnBoundaryIsIdempotentOnTheDurableTailAndSkipsContextOverflow(t
 func TestFailedTurnBoundaryKeepsTheErrorCardForRehydration(t *testing.T) {
 	db, a, messages := closureFixture(t, "acp", "opencode-go", "deepseek-v4.1-flash", []map[string]any{{"role": "user", "content": "say hello"}})
 	result := map[string]any{"completed": false, "failed": true, "failure_reason": "timeout", "error": "Connection error.", "messages": messages}
-	closeDurableFailedTurn(context.Background(), a, result)
+	CloseDurableFailedTurn(context.Background(), a, result)
 	out := result["messages"].([]*state.Message)
 	meta := out[len(out)-1].DisplayMetadata
 	surface, _ := meta["error_surface"].(map[string]any)
@@ -126,8 +126,8 @@ func TestFailedTurnAfterAToolRowIsClosedWithItsErrorCard(t *testing.T) {
 	})
 	failed := map[string]any{"completed": false, "failed": true, "failure_reason": "rate_limit", "error": "429 Too Many Requests",
 		"messages": messages, "current_turn_user_idx": 0}
-	closeDurableFailedTurn(context.Background(), a, failed)
-	closeDurableFailedTurn(context.Background(), a, failed)
+	CloseDurableFailedTurn(context.Background(), a, failed)
+	CloseDurableFailedTurn(context.Background(), a, failed)
 	stored := closureStored(t, db)
 	var roles []string
 	for _, row := range stored {

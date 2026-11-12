@@ -191,18 +191,7 @@ func (c *CLI) ensureGatewaySession() error {
 	held := c.resumed && c.activeSessionLease != nil
 	recordShellHookConsent(c)
 	return c.leaseHandedOver(held, func() error {
-		var typedAPIKey, typedToolsets, explicitIgnoreRules any
-		if c.typedAPIKey != "" {
-			typedAPIKey = c.typedAPIKey
-		}
-		if c.typedToolsets != nil {
-			typedToolsets = toAnyList(c.typedToolsets)
-		}
-		if c.explicitIgnoreRules {
-			explicitIgnoreRules = true
-		}
-		sid, err := store.OpenSession(c.ctx, gatewaycli.OpenSessionCLI{SessionID: c.sessionID, Resumed: c.resumed,
-			TypedAPIKey: typedAPIKey, TypedToolsets: typedToolsets, ExplicitIgnoreRules: explicitIgnoreRules}, launch)
+		sid, err := store.OpenSession(c.ctx, c.gatewayOpenRequest(), launch)
 		if err != nil {
 			return err
 		}
@@ -218,6 +207,22 @@ func (c *CLI) ensureGatewaySession() error {
 		}
 		return nil
 	})
+}
+
+// Attributes of this CLI the store reads when it opens the gateway session
+func (c *CLI) gatewayOpenRequest() gatewaycli.OpenSessionCLI {
+	var typedAPIKey, typedToolsets, explicitIgnoreRules any
+	if c.typedAPIKey != "" {
+		typedAPIKey = c.typedAPIKey
+	}
+	if c.typedToolsets != nil {
+		typedToolsets = toAnyList(c.typedToolsets)
+	}
+	if c.explicitIgnoreRules {
+		explicitIgnoreRules = true
+	}
+	return gatewaycli.OpenSessionCLI{SessionID: c.sessionID, Resumed: c.resumed,
+		TypedAPIKey: typedAPIKey, TypedToolsets: typedToolsets, ExplicitIgnoreRules: explicitIgnoreRules}
 }
 
 // Id for a new or branched session, a session the gateway created once this CLI's gateway session is open

@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -120,13 +121,18 @@ func (w *execWorker) Poll() *int {
 	}
 }
 
-// Runs one handed off payload and leaves through the binary's exit hooks when argv carries the entry
+// Boots a marked worker's dependencies, then runs one handed off payload when argv carries the entry
 func DispatchExternalWorkerEntry(exit func(code int)) {
 	externalWorkerEntryDispatched.Store(true)
+	if err := workerBootstrap(context.Background()); err != nil {
+		fmt.Fprint(os.Stderr, tracebackFrames(err)+exceptionOnlyLine(err))
+		exit(1)
+		return
+	}
 	if len(os.Args) < 2 || os.Args[1] != ExternalWorkerEntry {
 		return
 	}
-	_ = os.Unsetenv(workerMarker)
+	finishWorkerBoot()
 	fs := flag.NewFlagSet(ExternalWorkerEntry, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	payload := fs.String("external-worker-file", "", "")
@@ -188,7 +194,7 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 	}
 	scoped := s.installFireSecretScope(ctx)
 	toolEnv := tools.ToolEnvFrom(scoped)
-	workerEnv, err := tools.BuildSubprocessEnv(scoped, toolEnv, tools.SubprocessEnvOptions{
+	workerEnv, err := buildWorkerSubprocessEnv(scoped, toolEnv, tools.SubprocessEnvOptions{
 		ScrubSecrets: multiplexActive, InheritProfileHome: true, Extra: map[string]string{"ICEBATH_HOME": s.home},
 	})
 	if err != nil {
@@ -198,8 +204,12 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 	for _, presence := range []string{"ICEBATH_INTERACTIVE", "ICEBATH_GATEWAY_SESSION", "ICEBATH_EXEC_ASK"} {
 		delete(workerEnv, presence)
 	}
+	repoRoot := pm.RepoRoot()
+	if workerEnv, err = pinHermesTreeOnPythonpath(s, ctx, workerEnv, repoRoot); err != nil {
+		return false, err
+	}
 	workerEnv[workerMarker] = "1"
-	proc, pid, err := spawnExternalWorker(dispatch.Argv, filepath.Dir(exe), workerEnv, stderrPath)
+	proc, pid, err := spawnExternalWorkerSeam(dispatch.Argv, repoRoot, workerEnv, stderrPath)
 	if err != nil {
 		_ = os.Remove(payloadPath)
 		_ = os.Remove(stderrPath)
@@ -287,6 +297,12 @@ func writeExclusiveSynced(path string, body []byte) error {
 	return werr
 }
 
+// Subprocess env builder and worker spawn the launch looks up at call time, swapped by tests like the patched Popen
+var (
+	buildWorkerSubprocessEnv = tools.BuildSubprocessEnv
+	spawnExternalWorkerSeam  = spawnExternalWorker
+)
+
 // Starts the detached worker with stderr captured to its file and stdin and stdout on the null device
 func spawnExternalWorker(argv []string, dir string, env map[string]string, stderrPath string) (workerProcess, int, error) {
 	stderrFile, err := os.OpenFile(stderrPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
@@ -336,12 +352,15 @@ func (s *Store) waitForExternalCronWorker(ctx context.Context, proc workerProces
 			_ = os.Remove(stale)
 		}
 	}()
-	ok, err := s.waitForExternalCronWorkerBody(ctx, proc, executionID, stderrPath)
+	ok, err := waitForExternalCronWorkerBodySeam(s, ctx, proc, executionID, stderrPath)
 	if err != nil {
 		return false, &externalWorkerPostHandoffError{msg: err.Error(), cause: err}
 	}
 	return ok, nil
 }
+
+// Worker waiter body, the scheduler._wait_for_external_cron_worker_body name the post handoff case patches
+var waitForExternalCronWorkerBodySeam = (*Store).waitForExternalCronWorkerBody
 
 // Wakes on worker exit, true once the attempt is terminal, an error naming the exit when it died unterminalized
 func (s *Store) waitForExternalCronWorkerBody(ctx context.Context, proc workerProcess, executionID string, stderrPath *string) (bool, error) {

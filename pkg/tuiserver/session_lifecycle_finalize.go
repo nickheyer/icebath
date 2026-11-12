@@ -364,11 +364,18 @@ func teardownSession(ctx context.Context, session *tuigateway.Session, endReason
 	})
 	suppress(func() {
 		scoped := sessionProfileRuntimeScope(ctx, session, true)
-		if a := sessionAgent(session); a != nil {
+		if a, _ := session.Get("agent").(agentCloser); a != nil {
 			_ = a.CloseContext(scoped)
 		}
 	})
 }
+
+// Close surface teardown drives on whatever agent the session holds
+type agentCloser interface {
+	CloseContext(ctx context.Context) error
+}
+
+var _ agentCloser = (*agent.AIAgent)(nil)
 
 // Stores a worker on a session that is still live under sid, else closes it
 func attachWorker(sid string, session *tuigateway.Session, worker any) {

@@ -189,10 +189,42 @@ func RegisterInlineToolExecutor(name string, fn InlineToolExecutor) {
 	inlineExecutorsMu.Unlock()
 }
 
+func init() {
+	RegisterInlineToolExecutor("delegate_task", func(ctx context.Context, host ExecutorHost, args map[string]any, _ InlineToolContext) (string, error) {
+		return host.DispatchDelegateTask(ctx, args)
+	})
+}
+
+// Registered executor for the name wrapped to coerce its args against the registry schema, nil when none
 func inlineToolExecutor(name string) InlineToolExecutor {
 	inlineExecutorsMu.RLock()
-	defer inlineExecutorsMu.RUnlock()
-	return inlineToolExecutors[name]
+	fn := inlineToolExecutors[name]
+	inlineExecutorsMu.RUnlock()
+	if fn == nil {
+		return nil
+	}
+	return func(ctx context.Context, host ExecutorHost, args map[string]any, ictx InlineToolContext) (string, error) {
+		return fn(ctx, host, CoerceToolArgs(ctx, Default, host.Env(), name, args), ictx)
+	}
+}
+
+// Names the concurrent path runs inline before it consults the memory manager
+var invokeToolPreMemoryManagerNames = map[string]bool{"todo_list": true, "session_search": true, "memory": true}
+
+// Inline executor of the concurrent path, the three pre memory names, memory manager tools, then the rest but message_agent
+func (e *Executor) resolveInvokeToolExecutor(name string) InlineToolExecutor {
+	if invokeToolPreMemoryManagerNames[name] {
+		return inlineToolExecutor(name)
+	}
+	if mm := e.Host.MemoryManager(); mm != nil && mm.HasTool(name) {
+		return func(ctx context.Context, host ExecutorHost, args map[string]any, _ InlineToolContext) (string, error) {
+			return mm.HandleToolCall(ctx, name, args, host.GatewaySessionKey()), nil
+		}
+	}
+	if name == "message_agent" {
+		return nil
+	}
+	return inlineToolExecutor(name)
 }
 
 // ExecutorHost is the live agent state the executors read and mutate
@@ -1938,17 +1970,8 @@ func (e *Executor) dispatchRegistry(ctx context.Context, name string, args map[s
 
 // Resolves inline agent level tools then the registry for the concurrent path
 func (e *Executor) invokeTool(ctx context.Context, name string, args map[string]any, rawArgs, taskID, toolCallID string, messages *[]*state.Message, trace []map[string]any) (string, error) {
-	if inline := inlineToolExecutor(name); inline != nil {
+	if inline := e.resolveInvokeToolExecutor(name); inline != nil {
 		return inline(ctx, e.Host, args, InlineToolContext{TaskID: taskID, ToolCallID: toolCallID, Messages: messages})
-	}
-	if name == "delegate_task" {
-		return e.Host.DispatchDelegateTask(ctx, args)
-	}
-	if fn, ok := e.Host.ContextEngineTool(name); ok {
-		return fn(ctx, args, messages)
-	}
-	if mm := e.Host.MemoryManager(); mm != nil && mm.HasTool(name) {
-		return mm.HandleToolCall(ctx, name, args, e.Host.GatewaySessionKey()), nil
 	}
 	return e.dispatchRegistry(ctx, name, args, rawArgs, taskID, toolCallID, trace), nil
 }

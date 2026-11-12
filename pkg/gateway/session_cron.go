@@ -138,6 +138,12 @@ func admitLocalDelivery(ctx context.Context, a *SessionAuthority, chatID, text s
 	return admitRouteWake(ctx, a.Runner, adapter, source, text, "cron", metadata)
 }
 
+// Python TypeError or AttributeError of a stored terminal result that is not a mapping
+type cronResultShapeError struct{ typeName, msg string }
+
+func (e *cronResultShapeError) Error() string      { return e.msg }
+func (e *cronResultShapeError) PyTypeName() string { return e.typeName }
+
 // Python KeyError of a missing mapping key
 type pyKeyError struct{ key string }
 
@@ -240,6 +246,16 @@ func paramsKeysAre(params map[string]any, keys ...string) bool {
 	return true
 }
 
+// Fresh admission guard, the membership test a case answers the way a str subclass overrides __contains__
+var cronExecutionIDHasColon = func(executionID string) bool { return strings.Contains(executionID, ":") }
+
+// Replaces the fresh admission colon guard and returns the one it replaced
+func SwapCronExecutionIDGuard(guard func(executionID string) bool) func(executionID string) bool {
+	prev := cronExecutionIDHasColon
+	cronExecutionIDHasColon = guard
+	return prev
+}
+
 // Staged creation receipt of a fresh cron session, or the ref of an exact retry restored from the store
 func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any) (*pyjson.Object, *SessionRef, string, error) {
 	if !paramsKeysAre(params, "job_id", "request_id", "extra_prompt") {
@@ -268,7 +284,7 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 		}
 		return nil, &ref, requestID, nil
 	}
-	if strings.Contains(executionID, ":") {
+	if cronExecutionIDHasColon(executionID) {
 		return nil, nil, "", runtimeRefusal("invalid_params")
 	}
 	hooks := cronOwnerHooks()
@@ -454,14 +470,22 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 		if err != nil {
 			return nil, err
 		}
-		if savedObj, ok := saved.(*pyjson.Object); ok && savedObj != nil {
-			inner, _ := savedObj.Get("result")
-			innerObj, _ := inner.(*pyjson.Object)
-			if innerObj != nil {
-				result, _ = innerObj.Get("cron_result")
-				if f, _ := innerObj.Get("cron_job_flags"); pyTruthy(f) {
-					flags = f
-				}
+		if pyTruthy(saved) {
+			savedObj, ok := saved.(*pyjson.Object)
+			if !ok {
+				return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(saved))}
+			}
+			inner, found := savedObj.Get("result")
+			if !found {
+				return nil, &pyKeyError{key: "result"}
+			}
+			innerObj, ok := inner.(*pyjson.Object)
+			if !ok {
+				return nil, &cronResultShapeError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(inner))}
+			}
+			result, _ = innerObj.Get("cron_result")
+			if f, _ := innerObj.Get("cron_job_flags"); pyTruthy(f) {
+				flags = f
 			}
 		}
 		if result == nil {
@@ -519,17 +543,30 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 		return nil, err
 	}
 	held, _ := adapters.Get(PlatformLocal)
-	policy := held.(*LocalSessionAdapter).Policies[sid]
+	policy, ok := held.(*LocalSessionAdapter).Policies[sid]
+	if !ok {
+		return nil, &pyKeyError{key: sid}
+	}
 	frozenValue, err := pyjson.Loads(policy.RequestJSON)
 	if err != nil {
 		return nil, err
 	}
-	frozen := frozenValue.(*pyjson.Object)
-	frozenExtra, _ := frozen.Get("extra_prompt")
+	frozen, ok := frozenValue.(*pyjson.Object)
+	if !ok {
+		return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(frozenValue))}
+	}
+	frozenExtra, found := frozen.Get("extra_prompt")
+	if !found {
+		return nil, &pyKeyError{key: "extra_prompt"}
+	}
 	if !pyjson.Equal(frozenExtra, params["extra_prompt"]) {
 		return nil, runtimeRefusal("admission_conflict")
 	}
-	stateOut["job"], _ = frozen.Get("cron_job")
+	cronJob, found := frozen.Get("cron_job")
+	if !found {
+		return nil, &pyKeyError{key: "cron_job"}
+	}
+	stateOut["job"] = cronJob
 	stateOut["session_id"] = sid
 	stateOut["admission_id"] = admissionID
 	return stateOut, nil

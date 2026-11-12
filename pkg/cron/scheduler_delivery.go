@@ -1112,6 +1112,12 @@ func (s *Store) deliverViaLiveAdapter(ctx context.Context, t *targetDelivery, cl
 	return delivered
 }
 
+// Platform send without the gateway, the tools.send_message_tool._send_to_platform name delivery imports at call time
+var sendToPlatform = messagetools.SendToPlatform
+
+// Durable handoff a worker waits on, the delivery_queue.enqueue_and_wait name delivery imports at call time
+var enqueueAndWait = (*DeliveryQueue).EnqueueAndWait
+
 // Standalone platform send without the gateway, the result mapping or the error text
 func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content string, media []gateway.MediaRef) (map[string]any, *string) {
 	job := t.job
@@ -1144,7 +1150,7 @@ func (s *Store) standaloneSend(ctx context.Context, t *targetDelivery, content s
 		if t.threadID != "" {
 			thread = strPtr(t.threadID)
 		}
-		r, err := messagetools.SendToPlatform(sendCtx, t.platform, t.pconfig, t.chatID, content, messagetools.SendOptions{ThreadID: thread, MediaFiles: media})
+		r, err := sendToPlatform(sendCtx, t.platform, t.pconfig, t.chatID, content, messagetools.SendOptions{ThreadID: thread, MediaFiles: media})
 		ch <- outcome{r, err}
 	}()
 	var o outcome
@@ -1221,8 +1227,16 @@ func (s *Store) queueForLiveReconnect(ctx context.Context, t *targetDelivery, co
 
 var errNotQueued = errors.New("not queued")
 
-// Standalone fallback of a target the live lane did not deliver, relay targets fail closed
+// Standalone fallback of a target the live lane did not deliver
 func (s *Store) deliverStandalone(ctx context.Context, t *targetDelivery, content string, media []gateway.MediaRef, targetErrors, deliveryErrors *[]string) {
+	deliverStandaloneDoor(s, ctx, t, content, media, targetErrors, deliveryErrors)
+}
+
+// Standalone send every target takes, the name a case replaces the way pytest patches _deliver_standalone
+var deliverStandaloneDoor = (*Store).sendStandalone
+
+// Sends a target through the standalone lane, relay targets failing closed
+func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content string, media []gateway.MediaRef, targetErrors, deliveryErrors *[]string) {
 	job := t.job
 	if t.isRelay() {
 		if len(*targetErrors) == 0 {
@@ -1327,6 +1341,7 @@ func (s *Store) unresolvedDeliveryOutcome(job *Job, forFailure bool) *string {
 func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, adapters, loop any, forFailure bool) (*string, error) {
 	job.run.botChatDeliveryReceipts = nil
 	job.run.notificationAllTargetsSuppressed = false
+	delete(job.Extra, "_notification_all_targets_suppressed")
 	targets := resolveDeliveryTargets(ctx, s, job, forFailure)
 	if len(targets) == 0 {
 		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
@@ -1336,7 +1351,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	if external != "" && adapters == nil && job.ExecutionID != nil && external == *job.ExecutionID && anyNonBotChat(targets) {
 		s.recordDeliveryVerification(home.WithOverride(ctx, s.home), job, nil)
 		q := openDeliveryQueue(s)
-		errText, err := q.EnqueueAndWait(ctx, external, job, content, forFailure, nil)
+		errText, err := enqueueAndWait(q, ctx, external, job, content, forFailure, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1395,7 +1410,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 		return nil, err
 	}
 	mirrorText = s.redactCronPayload(pystr.Strip(mirrorText), "mirror payload")
-	gwCfg, err := gateway.LoadGatewayConfig(ctx)
+	gwCfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		msg := fmt.Sprintf("failed to load gateway config: %v", err)
 		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))

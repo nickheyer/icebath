@@ -10,7 +10,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -77,10 +76,10 @@ func (s *Store) preflightCheckProviderKey(ctx context.Context, job *Job, cfg con
 	if err == nil || !errors.As(err, &authErr) {
 		return nil
 	}
-	if !authErr.ReloginRequired && authErr.Code == provider.CodexRateLimitedCode {
+	if provider.IsRateLimitedAuthError(authErr) {
 		return nil
 	}
-	msg := fmt.Sprintf("provider credential missing: %v %s. Set the provider API key in .env (or `icebath setup`) for that home, or pin a working provider via `icebath cron edit %s --provider <p>`.", err, s.credentialStoreScopeLabel(ctx), job.ID)
+	msg := fmt.Sprintf("provider credential missing: %v %s. Set the provider API key in .env (or `icebath setup`) for that home, or pin a working provider via `icebath cron edit %s --provider <p>`.", authErr, s.credentialStoreScopeLabel(ctx), job.ID)
 	return &msg
 }
 
@@ -140,7 +139,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 			return &msg
 		}
 		if connected == nil {
-			cfg, err := gateway.LoadGatewayConfig(ctx)
+			cfg, err := loadGatewayConfig(ctx)
 			if err != nil {
 				s.log.Debug("preflight: gateway config unavailable — skipping delivery credential check")
 				return nil
@@ -218,8 +217,10 @@ func (s *Store) emptyRequestedMCPToolsets(ctx context.Context, job *Job, cfg con
 	for _, name := range reconnecting {
 		if !reconnectingWarned.keys[[2]string{jobID, name}] {
 			unwarned = append(unwarned, name)
-			reconnectingWarned.keys[[2]string{jobID, name}] = true
 		}
+	}
+	for _, name := range unwarned {
+		reconnectingWarned.keys[[2]string{jobID, name}] = true
 	}
 	reconnectingWarned.Unlock()
 	if len(unwarned) > 0 {

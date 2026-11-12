@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"maps"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,142 +14,37 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/remote"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 )
 
-const (
-	planeIDPToken  = "plane-token-1"
-	planeNousToken = "nous-access-token-1"
-	planeInstance  = "inst-0001"
-	planeClientID  = "agent-client"
-	planeSecret    = "agent-secret"
-)
-
-type planeRequest struct{ method, profile, auth string }
-
-// Config plane double serving one upper document and per profile values over the remote wire contract
-type bootPlane struct {
-	mu            sync.Mutex
-	upper         map[string]any
-	values        map[string]map[string]any
-	failStatus    int
-	requests      []planeRequest
-	nousRefreshes int
-	onGet         func()
-	url           string
-	home          string
-}
-
-func newBootPlane(t *testing.T) *bootPlane {
-	p := &bootPlane{upper: map[string]any{}, values: map[string]map[string]any{}}
-	srv := httptest.NewServer(http.HandlerFunc(p.serve))
-	t.Cleanup(srv.Close)
-	p.url = srv.URL
-	return p
-}
-
-func planeMerge(base, over map[string]any) map[string]any {
-	out := maps.Clone(base)
-	for k, v := range over {
-		if bm, ok := out[k].(map[string]any); ok {
-			if om, ok := v.(map[string]any); ok {
-				out[k] = planeMerge(bm, om)
-				continue
+// Remote deployment env pointing at the plane, the IdP client credentials only when idp is set
+func bootPlaneEnv(p *configplane.Plane, idp bool) map[string]string {
+	env := remoteplane.Env(p)
+	if !idp {
+		for k := range env {
+			if strings.HasPrefix(k, "GATEWAY_RELAY_IDP_") {
+				delete(env, k)
 			}
 		}
-		out[k] = v
-	}
-	return out
-}
-
-func planeSend(w http.ResponseWriter, status int, body map[string]any) {
-	w.Header().Set("Content-Type", "application/json")
-	if etag, ok := body["etag"].(string); ok {
-		w.Header().Set("ETag", etag)
-	}
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func (p *bootPlane) serve(w http.ResponseWriter, r *http.Request) {
-	raw, _ := io.ReadAll(r.Body)
-	if r.Method == "GET" && p.onGet != nil {
-		p.onGet()
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	switch r.URL.Path {
-	case "/api/oauth/token":
-		p.nousRefreshes++
-		planeSend(w, 200, map[string]any{"access_token": planeNousToken, "refresh_token": "nous-refresh-2", "token_type": "Bearer", "expires_in": 3600})
-		return
-	case "/token":
-		if !strings.Contains(string(raw), "client_secret="+planeSecret) {
-			planeSend(w, 401, map[string]any{"error": "invalid_client"})
-			return
-		}
-		planeSend(w, 200, map[string]any{"access_token": planeIDPToken, "token_type": "Bearer", "expires_in": 3600})
-		return
-	}
-	profile := r.URL.Query().Get("profile")
-	if profile == "" {
-		profile = "default"
-	}
-	p.requests = append(p.requests, planeRequest{r.Method, profile, r.Header.Get("Authorization")})
-	if p.failStatus != 0 {
-		planeSend(w, p.failStatus, map[string]any{"error": "unavailable", "message": "plane outage"})
-		return
-	}
-	if auth := r.Header.Get("Authorization"); auth != "Bearer "+planeIDPToken && auth != "Bearer "+planeNousToken {
-		planeSend(w, 401, map[string]any{"error": "unauthorized", "message": "bad token"})
-		return
-	}
-	if r.Header.Get("X-Hermes-Instance-Id") != planeInstance {
-		planeSend(w, 403, map[string]any{"error": "config_agent_unknown", "message": "unknown instance"})
-		return
-	}
-	levels := []any{map[string]any{"kind": "tenant", "version": 1, "writerConfigVersion": nil},
-		map[string]any{"kind": "profile", "version": 1, "writerConfigVersion": config.LatestConfigVersion()}}
-	planeSend(w, 200, map[string]any{"instanceId": planeInstance, "profile": profile, "config": planeMerge(p.upper, p.values[profile]),
-		"locks": []any{}, "provenance": map[string]any{}, "levels": levels, "profileVersion": 1, "recordVersion": 1,
-		"etag": fmt.Sprintf(`"%d"`, len(p.requests))})
-}
-
-func (p *bootPlane) gets() []planeRequest {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	var out []planeRequest
-	for _, r := range p.requests {
-		if r.method == "GET" {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-func (p *bootPlane) env(idp bool) map[string]string {
-	env := map[string]string{config.BackendEnv: "remote", remote.URLEnv: p.url, remote.InstanceEnv: planeInstance}
-	if idp {
-		env["GATEWAY_RELAY_IDP_TOKEN_URL"] = p.url + "/token"
-		env["GATEWAY_RELAY_IDP_CLIENT_ID"] = planeClientID
-		env["GATEWAY_RELAY_IDP_CLIENT_SECRET"] = planeSecret
 	}
 	return env
 }
 
 // Temp profile home served by a fresh remote backend with the deployment in the process env
-func setupBootPlane(t *testing.T, idp bool) *bootPlane {
+func setupBootPlane(t *testing.T, idp bool) *configplane.Plane {
 	restoreProcessEnv(t)
-	p := newBootPlane(t)
-	p.home = filepath.Join(t.TempDir(), "home")
-	if err := os.MkdirAll(p.home, 0o755); err != nil {
+	p := configplane.New(t, remoteplane.Rules())
+	p.Home = filepath.Join(t.TempDir(), "home")
+	if err := os.MkdirAll(p.Home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_HOME", p.home)
+	t.Setenv("ICEBATH_HOME", p.Home)
 	for _, name := range append(remote.PlaneCredentialEnvNames, config.BackendEnv) {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
-	for k, v := range p.env(idp) {
+	for k, v := range bootPlaneEnv(p, idp) {
 		t.Setenv(k, v)
 	}
 	saved := remote.BootRetryDelays
@@ -166,30 +57,30 @@ func setupBootPlane(t *testing.T, idp bool) *bootPlane {
 	return p
 }
 
-func loadDotenv(p *bootPlane) error {
-	_, err := LoadIcebathDotenv(context.Background(), DotenvLoadOptions{Home: p.home})
+func loadDotenv(p *configplane.Plane) error {
+	_, err := LoadIcebathDotenv(context.Background(), DotenvLoadOptions{Home: p.Home})
 	return err
 }
 
 // The dotenv load boots the profile fetch once per process per profile
-func TestRemoteBootFetchRunsInsideLoadIcebathDotenv(t *testing.T) {
+func TestBootFetchRunsInsideLoadHermesDotenv(t *testing.T) {
 	p := setupBootPlane(t, true)
-	if err := loadDotenv(p); err != nil || len(p.gets()) != 1 {
-		t.Fatalf("first load %v gets %d", err, len(p.gets()))
+	if err := loadDotenv(p); err != nil || len(p.Gets()) != 1 {
+		t.Fatalf("first load %v gets %d", err, len(p.Gets()))
 	}
-	if err := loadDotenv(p); err != nil || len(p.gets()) != 1 {
-		t.Fatalf("second load %v gets %d", err, len(p.gets()))
+	if err := loadDotenv(p); err != nil || len(p.Gets()) != 1 {
+		t.Fatalf("second load %v gets %d", err, len(p.Gets()))
 	}
 }
 
 // An outage through the dotenv load retries twice and then refuses to start
 func TestRemoteDotenvBootRetriesThenExitsOnOutage(t *testing.T) {
 	p := setupBootPlane(t, true)
-	p.failStatus = 503
+	p.FailStatus = 503
 	err := loadDotenv(p)
 	var unavailable *config.ConfigBackendUnavailable
-	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "does not start") || len(p.gets()) != 3 {
-		t.Fatalf("load %v gets %d", err, len(p.gets()))
+	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "does not start") || len(p.Gets()) != 3 {
+		t.Fatalf("load %v gets %d", err, len(p.Gets()))
 	}
 }
 
@@ -199,8 +90,8 @@ func TestRemoteDotenvBootDoesNotRetryARefusal(t *testing.T) {
 	t.Setenv(remote.InstanceEnv, "someone-else")
 	err := loadDotenv(p)
 	var unavailable *config.ConfigBackendUnavailable
-	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "config_agent_unknown") || len(p.gets()) != 1 {
-		t.Fatalf("load %v gets %d", err, len(p.gets()))
+	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "config_agent_unknown") || len(p.Gets()) != 1 {
+		t.Fatalf("load %v gets %d", err, len(p.Gets()))
 	}
 }
 
@@ -266,49 +157,49 @@ func TestCloudAgentFirstRemoteReadCompletesCold(t *testing.T) {
 	}{{"valid-token", false, ""}, {"token-refreshed-at-boot", true, ""}, {"home-provider-plugin", false, "model-providers"}, {"flat-provider-plugin", false, "flat"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := setupBootPlane(t, false)
-			t.Setenv("HOME", filepath.Dir(p.home))
+			t.Setenv("HOME", filepath.Dir(p.Home))
 			if tc.layout != "" {
-				dir := filepath.Join(p.home, "plugins", "probe")
+				dir := filepath.Join(p.Home, "plugins", "probe")
 				if tc.layout == "model-providers" {
-					dir = filepath.Join(p.home, "plugins", "model-providers", "probe")
+					dir = filepath.Join(p.Home, "plugins", "model-providers", "probe")
 				}
 				os.MkdirAll(dir, 0o755)
 				os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte("name: probe\nkind: model-provider\nversion: 0.0.1\n"), 0o644)
 			}
-			p.upper = map[string]any{"display": map[string]any{"skin": "ares"}}
-			token, offset := planeNousToken, time.Hour
+			p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+			token, offset := configplane.NousToken, time.Hour
 			if tc.expired {
 				token, offset = "expired-token", -time.Hour
 			}
 			auth := map[string]any{"version": 1, "active_provider": "nous", "providers": map[string]any{"nous": map[string]any{
-				"access_token": token, "refresh_token": "nous-refresh-1", "client_id": "icebath-cli-vps", "portal_base_url": p.url,
+				"access_token": token, "refresh_token": "nous-refresh-1", "client_id": "icebath-cli-vps", "portal_base_url": p.URL,
 				"expires_at": time.Now().Add(offset).UTC().Format("2006-01-02T15:04:05+00:00")}}}
 			raw, _ := json.Marshal(auth)
-			os.WriteFile(filepath.Join(p.home, "auth.json"), raw, 0o600)
+			os.WriteFile(filepath.Join(p.Home, "auth.json"), raw, 0o600)
 			var skin any
 			var err error
 			withinBound(t, 60*time.Second, func() {
 				var tree config.Tree
-				tree, err = config.LoadContext(context.Background(), p.home, os.LookupEnv)
+				tree, err = config.LoadContext(context.Background(), p.Home, os.LookupEnv)
 				skin = tree.Get("display.skin")
 			})
 			if err != nil || skin != "ares" {
 				t.Fatalf("load %v skin %v", err, skin)
 			}
-			gets := p.gets()
+			gets := p.Gets()
 			for _, g := range gets {
-				if g.auth != "Bearer "+planeNousToken {
-					t.Fatalf("auth %q", g.auth)
+				if g.Auth != "Bearer "+configplane.NousToken {
+					t.Fatalf("auth %q", g.Auth)
 				}
 			}
 			want := 0
 			if tc.expired {
 				want = 1
 			}
-			if len(gets) == 0 || p.nousRefreshes != want {
-				t.Fatalf("gets %d refreshes %d", len(gets), p.nousRefreshes)
+			if len(gets) == 0 || p.NousRefreshes != want {
+				t.Fatalf("gets %d refreshes %d", len(gets), p.NousRefreshes)
 			}
-			if _, err := os.Stat(filepath.Join(p.home, "config.yaml")); err == nil {
+			if _, err := os.Stat(filepath.Join(p.Home, "config.yaml")); err == nil {
 				t.Fatal("config.yaml written")
 			}
 		})
@@ -316,19 +207,20 @@ func TestCloudAgentFirstRemoteReadCompletesCold(t *testing.T) {
 }
 
 // A concurrent first reader waits for the deployment bootstrap instead of reading the local config.yaml
-func TestRemoteConcurrentFirstReaderWaitsForTheBootstrap(t *testing.T) {
+func TestConcurrentFirstReaderWaitsForTheBootstrap(t *testing.T) {
 	p := setupBootPlane(t, true)
 	managed := filepath.Join(t.TempDir(), "managed")
 	os.MkdirAll(managed, 0o755)
 	t.Setenv("ICEBATH_MANAGED_DIR", managed)
 	var lines strings.Builder
-	for k, v := range p.env(true) {
+	for k, v := range bootPlaneEnv(p, true) {
 		fmt.Fprintf(&lines, "%s=%s\n", k, v)
 		os.Unsetenv(k)
 	}
-	os.WriteFile(filepath.Join(p.home, ".env"), []byte(lines.String()), 0o600)
-	os.WriteFile(filepath.Join(p.home, "config.yaml"), []byte("display:\n  personality: forbidden-local\n"), 0o644)
-	p.values["default"] = map[string]any{"display": map[string]any{"personality": "remote"}}
+	os.WriteFile(filepath.Join(p.Home, ".env"), []byte(lines.String()), 0o600)
+	os.WriteFile(filepath.Join(p.Home, "config.yaml"), []byte("display:\n  personality: forbidden-local\n"), 0o644)
+	p.Profile("default").Values = map[string]any{"display": map[string]any{"personality": "remote"}}
+	p.Profile("default").Version = 1
 	entered, resume := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	config.ResetBootstrapForTests()
@@ -355,7 +247,7 @@ func TestRemoteConcurrentFirstReaderWaitsForTheBootstrap(t *testing.T) {
 	<-entered
 	go func() {
 		defer close(concurrentDone)
-		doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.home, "config.yaml"))
+		doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.Home, "config.yaml"))
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
@@ -444,24 +336,24 @@ func (b refusingBackend) Locked(context.Context, string, string) (string, bool, 
 	return "", false, b.refuse()
 }
 
-func writeNousAuth(t *testing.T, p *bootPlane, token string, offset time.Duration) {
+func writeNousAuth(t *testing.T, p *configplane.Plane, token string, offset time.Duration) {
 	t.Helper()
 	auth := map[string]any{"version": 1, "active_provider": "nous", "providers": map[string]any{"nous": map[string]any{
-		"access_token": token, "refresh_token": "nous-refresh-1", "client_id": "icebath-cli-vps", "portal_base_url": p.url,
+		"access_token": token, "refresh_token": "nous-refresh-1", "client_id": "icebath-cli-vps", "portal_base_url": p.URL,
 		"expires_at": time.Now().Add(offset).UTC().Format("2006-01-02T15:04:05+00:00")}}}
 	raw, _ := json.Marshal(auth)
-	if err := os.WriteFile(filepath.Join(p.home, "auth.json"), raw, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(p.Home, "auth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // Resolving the Nous token of the cloud credential path needs no config, under a backend refusing every read
-func TestResolvingTheNousTokenReadsNoConfig(t *testing.T) {
+func TestImportingAuthAndResolvingTheNousTokenReadNoConfig(t *testing.T) {
 	p := setupBootPlane(t, false)
-	dir := filepath.Join(p.home, "plugins", "model-providers", "probe")
+	dir := filepath.Join(p.Home, "plugins", "model-providers", "probe")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte("name: probe\nkind: model-provider\nversion: 0.0.1\n"), 0o644)
-	writeNousAuth(t, p, planeNousToken, time.Hour)
+	writeNousAuth(t, p, configplane.NousToken, time.Hour)
 	refusingOnce.Do(func() {
 		config.RegisterConfigBackend(refusingKind, func() config.ConfigBackend { return refusingBackend{} })
 	})
@@ -471,23 +363,23 @@ func TestResolvingTheNousTokenReadsNoConfig(t *testing.T) {
 	refusingMu.Lock()
 	refusingReads = 0
 	refusingMu.Unlock()
-	token, err := remoteConfigNousToken(context.Background(), p.home)
+	token, err := remoteConfigNousToken(context.Background(), p.Home)
 	refusingMu.Lock()
 	reads := refusingReads
 	refusingMu.Unlock()
-	if err != nil || token != planeNousToken || reads != 0 {
+	if err != nil || token != configplane.NousToken || reads != 0 {
 		t.Fatalf("token %q %v reads %d", token, err, reads)
 	}
 }
 
 // Resolving the Nous credential on another goroutine while a profile fetch is in flight never waits for it
-func TestColdAuthOnAnotherGoroutineNeverWaitsForTheFetch(t *testing.T) {
+func TestColdAuthImportOnAnotherThreadNeverWaitsForTheFetch(t *testing.T) {
 	p := setupBootPlane(t, true)
-	p.upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
 	inFetch, resolved := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	var waited bool
-	p.onGet = func() {
+	p.OnGet = func() {
 		once.Do(func() {
 			close(inFetch)
 			select {
@@ -499,16 +391,16 @@ func TestColdAuthOnAnotherGoroutineNeverWaitsForTheFetch(t *testing.T) {
 	}
 	go func() {
 		<-inFetch
-		_, _ = remoteConfigNousToken(context.Background(), p.home)
+		_, _ = remoteConfigNousToken(context.Background(), p.Home)
 		close(resolved)
 	}()
-	if _, err := remote.GetRemoteBackend().Version(context.Background(), p.home); err != nil {
+	if _, err := remote.GetRemoteBackend().Version(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
 	if !waited {
 		t.Fatal("the cold auth resolution waited for the fetch in flight")
 	}
-	tree, err := config.LoadContext(context.Background(), p.home, os.LookupEnv)
+	tree, err := config.LoadContext(context.Background(), p.Home, os.LookupEnv)
 	if err != nil || tree.Get("display.skin") != "ares" {
 		t.Fatalf("load %v %v", err, tree.Get("display.skin"))
 	}

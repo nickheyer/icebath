@@ -282,7 +282,7 @@ func captureRoomInput(ctx context.Context, name string, data []byte) (any, error
 	if err := output.Close(); err != nil {
 		return nil, err
 	}
-	references, err := captureNativeMedia(ctx, []string{path})
+	references, err := CaptureNativeMedia(ctx, []string{path})
 	if err != nil {
 		return nil, err
 	}

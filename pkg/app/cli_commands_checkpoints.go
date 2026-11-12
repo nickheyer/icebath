@@ -196,7 +196,7 @@ func (c *CLI) printDiffText(text string) {
 		c.consolePrintRenderable(&pyrich.Text{Plain: text})
 		return
 	}
-	fmt.Println(text)
+	fmt.Fprintln(console().Out, text)
 }
 
 // Handles /snapshot with list, create, restore and prune subcommands

@@ -18,7 +18,7 @@ func (f rpcClientFunc) RPC(_ context.Context, method string, params map[string]a
 func (f rpcClientFunc) Close() error { return nil }
 
 // Gateway connector and owner lookup replaced for one test
-func stubCanonicalDoors(t *testing.T, connect func(context.Context) (cronRPCClient, error), owner func(string) (any, bool)) {
+func replaceCanonicalDoors(t *testing.T, connect func(context.Context) (cronRPCClient, error), owner func(string) (any, bool)) {
 	t.Helper()
 	savedConnect, savedOwner, savedOp := connectGateway, cronOwnerForHome, cronOwnerOperation
 	t.Cleanup(func() { connectGateway, cronOwnerForHome, cronOwnerOperation = savedConnect, savedOwner, savedOp })
@@ -37,7 +37,7 @@ func (e *gatewayClientError) PyTypeName() string { return "GatewayClientError" }
 func TestAgentCronIsTransportOnlyAndRefusesWithoutOwner(t *testing.T) {
 	s, _ := newTestStore(t)
 	var calls []string
-	stubCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
+	replaceCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
 		calls = append(calls, "connect")
 		return nil, &gatewayClientError{"owner_unavailable"}
 	}, nil)
@@ -50,7 +50,7 @@ func TestAgentCronIsTransportOnlyAndRefusesWithoutOwner(t *testing.T) {
 func TestOwnerTickerUsesDirectAdmissionWithoutLoopback(t *testing.T) {
 	s, _ := newTestStore(t)
 	authority := &struct{ name string }{"owner"}
-	stubCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
+	replaceCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
 		t.Fatal("loopback connect")
 		return nil, nil
 	}, func(string) (any, bool) { return authority, true })
@@ -73,7 +73,7 @@ func TestOwnerTickerUsesDirectAdmissionWithoutLoopback(t *testing.T) {
 
 func TestLostCronAckRetainsIdentityInsteadOfReportingFailure(t *testing.T) {
 	s, _ := newTestStore(t)
-	stubCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
+	replaceCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
 		return rpcClientFunc(func(string, map[string]any) (map[string]any, error) {
 			return nil, &gatewayClientError{"Gateway disconnected"}
 		}), nil
@@ -93,5 +93,34 @@ func TestLostCronAckRetainsIdentityInsteadOfReportingFailure(t *testing.T) {
 	raw, _ := os.ReadFile(records[0])
 	if json.Unmarshal(raw, &record) != nil || record.Params["request_id"] != "fire" {
 		t.Fatalf("record %s", raw)
+	}
+}
+
+func TestDirectRetryReusesGeneratedFireIdentity(t *testing.T) {
+	for _, initial := range []struct {
+		name string
+		id   *string
+	}{{"empty", nil}, {"execution_id_none", nil}} {
+		t.Run(initial.name, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			var requests []string
+			replaceCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
+				return rpcClientFunc(func(_ string, params map[string]any) (map[string]any, error) {
+					requests = append(requests, params["request_id"].(string))
+					return nil, &gatewayClientError{"disconnected"}
+				}), nil
+			}, nil)
+			job := &Job{ID: "direct-fire", ExecutionID: initial.id}
+			for range 2 {
+				_, err := s.runCanonicalJob(context.Background(), job, nil, nil, nil)
+				var unknown *CronExecutionUnknown
+				if !errors.As(err, &unknown) {
+					t.Fatalf("err = %v", err)
+				}
+			}
+			if len(requests) != 2 || requests[0] != requests[1] {
+				t.Fatalf("requests = %v", requests)
+			}
+		})
 	}
 }

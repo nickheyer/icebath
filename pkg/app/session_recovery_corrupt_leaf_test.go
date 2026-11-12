@@ -19,6 +19,7 @@ import (
 // One long session whose messages span many b-tree pages, vacuumed into a rollback journal file
 func recoveryMakePageSpanningSource(t *testing.T, path string, messageCount int) (int64, int64, bool) {
 	t.Helper()
+	caseHome(t)
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, path, false)
 	if err != nil {

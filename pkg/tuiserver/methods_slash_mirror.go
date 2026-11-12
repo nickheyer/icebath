@@ -35,7 +35,7 @@ func compressLiveWithFeedback(ctx context.Context, sid string, session *tuigatew
 	scope := sessionProfileRuntimeScope(ctx, session, true)
 	if request.Preview {
 		preview := slashRows(slashHistorySnapshot(session))
-		result, err := agent.CompressNow(scope, a, preview, request, agent.CompressNowOptions{})
+		result, err := compressNow(scope, a, preview, request, agent.CompressNowOptions{})
 		if err != nil {
 			return "", err
 		}

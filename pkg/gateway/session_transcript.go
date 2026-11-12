@@ -19,11 +19,15 @@ import (
 // Persisted history that cannot be read safely for the session
 type TranscriptReadError struct {
 	SessionID string
+	Cause     error
 }
 
 func (e *TranscriptReadError) Error() string {
 	return "transcript read failed for session " + e.SessionID
 }
+
+// Read failure the error was raised from
+func (e *TranscriptReadError) Unwrap() error { return e.Cause }
 
 // Latest compression continuation of the session, the id itself without a store or on a failed lookup
 func (s *SessionStore) compressionTipForSessionID(ctx context.Context, sessionID string) string {
@@ -118,7 +122,7 @@ func (s *SessionStore) LoadTranscript(ctx context.Context, sessionID string) ([]
 	}
 	if err != nil {
 		slog.Error(fmt.Sprintf("Transcript read failed for session %s; refusing to treat the conversation as empty: %v", sessionID, err))
-		return nil, &TranscriptReadError{SessionID: sessionID}
+		return nil, &TranscriptReadError{SessionID: sessionID, Cause: err}
 	}
 	out := make([]any, len(messages))
 	for i, m := range messages {
@@ -806,7 +810,7 @@ func (s *SessionStore) HasInputOwner(ctx context.Context, sessionID, owner strin
 		return false, nil
 	}()
 	if err != nil {
-		return false, &TranscriptReadError{SessionID: sessionID}
+		return false, &TranscriptReadError{SessionID: sessionID, Cause: err}
 	}
 	return found, nil
 }

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-type turnRun func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error)
+type turnRun func(ctx context.Context, a cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error)
 
 // Replaces the credential, route, agent build and conversation steps of a turn the way hermes tests patch them
 func patchTurn(t *testing.T, run turnRun) {
@@ -93,14 +94,14 @@ func chatCLI(t *testing.T) *CLI {
 func TestUnacknowledgedInterruptMessageIsRequeuedNotDropped(t *testing.T) {
 	c := chatCLI(t)
 	c.interruptQueue.Put("urgent new message")
-	patchTurn(t, func(context.Context, *GatewayAgent, any, agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(context.Context, cliAgent, any, agent.RunConversationOptions) (map[string]any, error) {
 		time.Sleep(500 * time.Millisecond)
 		return map[string]any{"final_response": "turn finished normally", "messages": []map[string]any{{"role": "user", "content": "original"},
 			{"role": "assistant", "content": "turn finished normally"}}, "api_calls": 1, "completed": true, "partial": true, "response_previewed": true}, nil
 	})
 	var interrupts []string
 	prev := interruptTurnAgent
-	interruptTurnAgent = func(a *GatewayAgent, message string) {
+	interruptTurnAgent = func(a cliAgent, message string) {
 		interrupts = append(interrupts, message)
 		prev(a, message)
 	}
@@ -122,7 +123,7 @@ func TestChatPersistsCleanInputWhenAQueuedNoteChangesApiMessage(t *testing.T) {
 	c := chatCLI(t)
 	var gotMessage any
 	var gotOptions agent.RunConversationOptions
-	patchTurn(t, func(_ context.Context, _ *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		gotMessage, gotOptions = message, o
 		return doneResult(), nil
 	})
@@ -137,7 +138,7 @@ func TestChatPreservesCleanMultimodalInputWhenNoteChangesApiMessage(t *testing.T
 	c := chatCLI(t)
 	var gotMessage any
 	var gotOptions agent.RunConversationOptions
-	patchTurn(t, func(_ context.Context, _ *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(_ context.Context, _ cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		gotMessage, gotOptions = message, o
 		return doneResult(), nil
 	})
@@ -182,7 +183,7 @@ func TestChatMultimodalNotePersistsCleanInputOnce(t *testing.T) {
 	}
 	c.pendingModelSwitchNote = "[MODEL SWITCH NOTE]"
 	var gotMessage, gotPersist any
-	patchTurn(t, func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(ctx context.Context, a cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		gotMessage, gotPersist = message, o.PersistUserMessage
 		return a.RunConversation(ctx, message, o)
 	})
@@ -215,10 +216,10 @@ func TestChatClearsPreviousTurnPersistenceOverrideBeforeStaging(t *testing.T) {
 	c := chatCLI(t)
 	c.agent.SetPendingCLIUserMessage(map[string]any{"role": "user", "content": "previous clean prompt", "timestamp": 123.0})
 	var stagedMessage map[string]any
-	patchTurn(t, func(_ context.Context, a *GatewayAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
-		a.mu.Lock()
-		stagedMessage = a.pendingCLIUserMessage
-		a.mu.Unlock()
+	patchTurn(t, func(_ context.Context, a cliAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
+		a.gateway().mu.Lock()
+		stagedMessage = a.gateway().pendingCLIUserMessage
+		a.gateway().mu.Unlock()
 		return doneResult(), nil
 	})
 	c.chat("new prompt", nil, false)
@@ -239,10 +240,10 @@ func TestChatSubmitsAtReferencesUnexpanded(t *testing.T) {
 	t.Chdir(dir)
 	var gotMessage any
 	var staged map[string]any
-	patchTurn(t, func(_ context.Context, a *GatewayAgent, message any, _ agent.RunConversationOptions) (map[string]any, error) {
-		a.mu.Lock()
-		gotMessage, staged = message, a.pendingCLIUserMessage
-		a.mu.Unlock()
+	patchTurn(t, func(_ context.Context, a cliAgent, message any, _ agent.RunConversationOptions) (map[string]any, error) {
+		a.gateway().mu.Lock()
+		gotMessage, staged = message, a.gateway().pendingCLIUserMessage
+		a.gateway().mu.Unlock()
 		return doneResult(), nil
 	})
 	c.chat("inspect @file:example.py", nil, false)
@@ -256,9 +257,14 @@ func TestChatTurnAdoptsChainAddedAfterTheCliOpenedAndKeepsItOnTornConfig(t *test
 	one := 1
 	compact := true
 	c := configuredCLI(t, map[string]any{"tool_progress": "all"}, CLIOptions{Compact: &compact, MaxTurns: &one})
-	c.agent = offlineAgent(t, c)
+	chainOwner, err := agent.NewAIAgent(c.ctx, agent.AIAgentOptions{Model: "test/model", APIKey: "k", BaseURL: "http://127.0.0.1:9/v1",
+		Provider: "openai", Platform: "cli", QuietMode: true, SkipContextFiles: true, SkipMemory: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.agent = chainHoldingAgent{offlineAgent(t, c), chainOwner}
 	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
-	patchTurn(t, func(context.Context, *GatewayAgent, any, agent.RunConversationOptions) (map[string]any, error) {
+	patchTurn(t, func(context.Context, cliAgent, any, agent.RunConversationOptions) (map[string]any, error) {
 		return doneResult(), nil
 	})
 	fallback := []map[string]any{{"provider": "xai-oauth", "model": "grok-4.6"}}
@@ -270,13 +276,26 @@ func TestChatTurnAdoptsChainAddedAfterTheCliOpenedAndKeepsItOnTornConfig(t *test
 		c.chat("hello", nil, false)
 	}
 	turn("fallback_providers:\n  - provider: xai-oauth\n    model: grok-4.6\n")
+	if !reflect.DeepEqual(chainOwner.FallbackChain(), fallback) || !reflect.DeepEqual(chainOwner.FallbackModel(), fallback[0]) {
+		t.Fatalf("agent chain %v model %v", chainOwner.FallbackChain(), chainOwner.FallbackModel())
+	}
 	if !reflect.DeepEqual(c.fallbackModel, fallback) {
 		t.Fatalf("cli chain %v", c.fallbackModel)
 	}
 	turn("fallback_providers: [\n  - provider: {{{\n")
-	if !reflect.DeepEqual(c.fallbackModel, fallback) {
-		t.Fatalf("a torn config wiped the chain: cli %v", c.fallbackModel)
+	if !reflect.DeepEqual(chainOwner.FallbackChain(), fallback) {
+		t.Fatalf("a torn config wiped the agent chain %v", chainOwner.FallbackChain())
 	}
+}
+
+// Agent whose fallback chain lives on an AIAgent, the attributes the hermes case reads off cli.agent
+type chainHoldingAgent struct {
+	*GatewayAgent
+	chain *agent.AIAgent
+}
+
+func (a chainHoldingAgent) ApplyFallbackChain(chain []map[string]any) {
+	a.chain.ApplyFallbackChain(chain)
 }
 
 // Arms a voice TTS turn against a recording speaker and reports the turn and whether the speaker started
@@ -409,5 +428,47 @@ func TestCliChatRegistersSecretCaptureCallback(t *testing.T) {
 	registered := skills.SecretCaptureCallback()
 	if registered == nil || reflect.ValueOf(registered).Pointer() != reflect.ValueOf(skills.SecretCaptureFunc(c.secretCaptureCallback)).Pointer() {
 		t.Fatal("chat must register the CLI secret capture callback")
+	}
+}
+
+func TestDiscardSaysWhenAnotherLostTurnStillBlocksTheChat(t *testing.T) {
+	c, client, _, rec := idleNotifyCLI(t)
+	c.gatewaySessionOpen = true
+	var mu sync.Mutex
+	pending := []any{}
+	for _, id := range []string{"a1", "a2"} {
+		pending = append(pending, map[string]any{"admission_id": id, "status": "unknown", "execution_generation": 4})
+	}
+	client.mu.Lock()
+	client.override = func(method string, params map[string]any) (any, bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch method {
+		case "session.resume":
+			return wireValue(t, map[string]any{"pending": append([]any{}, pending...)}), true, nil
+		case "prompt.resolve_unknown":
+			kept := []any{}
+			for _, row := range pending {
+				if row.(map[string]any)["admission_id"] != params["admission_id"] {
+					kept = append(kept, row)
+				}
+			}
+			pending = kept
+			return wireValue(t, map[string]any{}), true, nil
+		}
+		return nil, false, nil
+	}
+	client.mu.Unlock()
+	c.handleDiscardCommand("/discard a1")
+	c.handleDiscardCommand("/discard a2")
+	printed := rec.plain()
+	if len(printed) != 2 {
+		t.Fatalf("printed %q", printed)
+	}
+	if strings.Contains(printed[0], "send messages again") || !strings.Contains(printed[0], "/discard") {
+		t.Fatalf("first %q", printed)
+	}
+	if !strings.Contains(printed[1], "send messages again") {
+		t.Fatalf("second %q", printed)
 	}
 }

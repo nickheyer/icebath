@@ -35,6 +35,8 @@ func runTestChild() {
 		}
 	case "sleep":
 		time.Sleep(30 * time.Second)
+	case "session-lease-holder":
+		sessionLeaseHolderChild()
 	}
 	os.Exit(0)
 }

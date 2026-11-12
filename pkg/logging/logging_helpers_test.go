@@ -27,6 +27,7 @@ var secretPattern = regexp.MustCompile(`sk-[A-Za-z0-9_-]{10,}`)
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	dir, err := os.MkdirTemp("", "icebath-logging-home-")
 	if err != nil {
 		panic(err)

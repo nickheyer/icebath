@@ -258,7 +258,7 @@ type reviewRuntime struct {
 	Provider, Model, APIKey, BaseURL, APIMode, Command string
 	CredentialPool                                     *provider.Pool
 	RequestOverrides                                   map[string]any
-	MaxTokens                                          int
+	MaxTokens                                          *int
 	Args                                               []string
 	Routed                                             bool
 }

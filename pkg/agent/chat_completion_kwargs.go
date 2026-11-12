@@ -39,6 +39,15 @@ func hostMatches(url, domain string) bool {
 }
 
 // Python None for an unset optional integer
+// Python value of an optional int, None when unset and zero kept as zero
+func intPtrOrNone(n *int) any {
+	if n == nil {
+		return nil
+	}
+	return *n
+}
+
+// Python None for a zero int
 func intOrNone(n int) any {
 	if n == 0 {
 		return nil
@@ -209,7 +218,7 @@ func (a *AIAgent) buildAnthropicKwargs(ctx context.Context, apiMessages, toolsFo
 	}
 	maxTokens := a.consumeEphemeralMaxOutput()
 	if maxTokens == nil {
-		maxTokens = intOrNone(a.maxTokens)
+		maxTokens = intPtrOrNone(a.maxTokens)
 	}
 	t := a.getTransport("")
 	prepared, err := a.prepareAnthropicMessagesForAPI(ctx, anyRows(apiMessages))
@@ -234,7 +243,7 @@ func (a *AIAgent) buildBedrockKwargs(apiMessages, toolsForAPI []map[string]any, 
 		region = "us-east-1"
 	}
 	return buildWithTransport(a.getTransport(""), a.model, apiMessages, toolsForAPI, map[string]any{
-		"max_tokens": intOrNone(a.maxTokens), "region": region, "guardrail_config": dictOrNone(a.bedrockGuardrailConfig),
+		"max_tokens": intPtrOrNone(a.maxTokens), "region": region, "guardrail_config": dictOrNone(a.bedrockGuardrailConfig),
 		"reasoning_config": dictOrNone(reasoningConfig),
 	})
 }
@@ -267,7 +276,7 @@ func (a *AIAgent) buildCodexKwargs(ctx context.Context, apiMessages, toolsForAPI
 	}
 	maxTokens := a.consumeEphemeralMaxOutput()
 	if maxTokens == nil {
-		maxTokens = intOrNone(a.maxTokens)
+		maxTokens = intPtrOrNone(a.maxTokens)
 	}
 	t := a.getTransport("")
 	prepared, err := a.prepareMessagesForNonVisionModel(ctx, anyRows(apiMessages))
@@ -352,7 +361,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		prefsOrNone = prefs
 	}
 	params := map[string]any{
-		"base_url": a.baseURL, "timeout": a.resolvedAPICallTimeout(ctx), "max_tokens": intOrNone(a.maxTokens),
+		"base_url": a.baseURL, "timeout": a.resolvedAPICallTimeout(ctx), "max_tokens": intPtrOrNone(a.maxTokens),
 		"ephemeral_max_output_tokens": ephemeral, "max_tokens_param_fn": func(n int) map[string]any { return a.maxTokensParam(ctx, n) },
 		"reasoning_config": dictOrNone(reasoningConfig), "request_overrides": requestOverrides, "session_id": a.sessionID,
 		"cache_scope_id": cacheScopeID, "ollama_num_ctx": intOrNone(a.ollamaNumCtx), "provider_preferences": prefsOrNone,

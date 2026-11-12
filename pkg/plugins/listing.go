@@ -85,7 +85,10 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		source := catalogAnnotation(h, e.Dir)
+		source, err := catalogAnnotation(h, e.Dir)
+		if err != nil {
+			return err
+		}
 		if source == "" {
 			source = pinAnnotation(h, e.Name, pins)
 		}
@@ -93,7 +96,11 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 			source = e.Source
 		}
 		var removed any
-		if reason, ok := removedAnnotation(h, e.Name, e.Dir, removedEntries); ok {
+		reason, ok, err := removedAnnotation(h, e.Name, e.Dir, removedEntries)
+		if err != nil {
+			return err
+		}
+		if ok {
 			removed = reason
 		}
 		rows = append(rows, listRow{e.Name, status, e.Version, e.Description, source, removed})

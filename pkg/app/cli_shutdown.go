@@ -67,7 +67,7 @@ func armExitWatchdog(ctx context.Context, timeoutS float64, fromSignal bool) {
 }
 
 // Logs the memory shutdown at the session boundary, the gateway running the providers of a gateway session
-func shutdownAgentMemoryProvider(a *GatewayAgent) {
+func shutdownAgentMemoryProvider(a cliAgent) {
 	if a == nil {
 		return
 	}
@@ -140,7 +140,7 @@ func notifySessionFinalizeMessages(ctx context.Context, sessionID, platform, rea
 }
 
 // Returns the agent and session id of a one shot run, the agent's id winning over the CLI's
-func oneshotAgentAndSession(c *CLI) (*GatewayAgent, string) {
+func oneshotAgentAndSession(c *CLI) (cliAgent, string) {
 	a := c.agent
 	sid := ""
 	if a != nil {
@@ -187,7 +187,7 @@ func flushOneShotSessionStore(c *CLI) {
 	if a == nil || sessionID == "" || sessionHandedOff(sessionID) {
 		return
 	}
-	db := a.sessionDB
+	db := a.gateway().sessionDB
 	if db == nil {
 		db = c.sessionDB
 	}

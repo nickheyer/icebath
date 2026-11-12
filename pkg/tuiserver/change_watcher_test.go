@@ -75,10 +75,7 @@ func watcherHomeFixture(t *testing.T) (string, *watchEvents) {
 	}
 	t.Setenv("ICEBATH_HOME", h)
 	prevHome, prevBroadcast := hermesHome, broadcastGlobalEvent
-	servedProfileMu.Lock()
-	prevServed := servedProfileHomes
-	servedProfileHomes = map[string]bool{}
-	servedProfileMu.Unlock()
+	isolateProfileHosting(t)
 	hermesHome = h
 	changeState.Lock()
 	changeState.sigs, changeState.checkedAt, changeState.broadcastAt = map[string]any{}, map[string]float64{}, map[string]float64{}
@@ -100,9 +97,6 @@ func watcherHomeFixture(t *testing.T) (string, *watchEvents) {
 	}
 	t.Cleanup(func() {
 		hermesHome, broadcastGlobalEvent = prevHome, prevBroadcast
-		servedProfileMu.Lock()
-		servedProfileHomes = prevServed
-		servedProfileMu.Unlock()
 	})
 	return h, events
 }

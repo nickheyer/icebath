@@ -6,296 +6,20 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-const (
-	petManifestURL     = "https://petdex.dev/api/manifest"
-	petManifestTimeout = 10 * time.Second
-	petManifestTTL     = 300 * time.Second
-	petDownloadTimeout = 60 * time.Second
-	petUserAgent       = "icebath-agent-petdex"
-)
-
-// One pet row of the public petdex manifest
-type petManifestEntry struct {
-	slug, displayName, kind, submittedBy, spritesheetURL, petJSONURL, zipURL string
-}
-
-// Raised when the manifest cannot be fetched or parsed
-type petManifestError struct{ msg string }
-
-func (e *petManifestError) Error() string      { return e.msg }
-func (e *petManifestError) PyTypeName() string { return "ManifestError" }
-
-var petManifestCache struct {
-	mu      sync.Mutex
-	at      time.Time
-	entries []petManifestEntry
-	warm    bool
-}
-
-// Manifest row from its dict with the display name, kind and URLs defaulted
-func petManifestEntryOf(d *pyjson.Object) petManifestEntry {
-	text := func(key string) string { return pyrepr.Str(d.GetOr(key, "")) }
-	orText := func(key string, fallback any) string {
-		v := d.GetOr(key, "")
-		if !pyrepr.Truthy(v) {
-			v = fallback
-		}
-		return pyrepr.Str(v)
-	}
-	return petManifestEntry{slug: pystr.Strip(text("slug")), displayName: orText("displayName", d.GetOr("slug", "")),
-		kind: orText("kind", "pet"), submittedBy: orText("submittedBy", ""), spritesheetURL: orText("spritesheetUrl", ""),
-		petJSONURL: orText("petJsonUrl", ""), zipURL: orText("zipUrl", "")}
-}
-
-// SSRF vetted GET following redirects with the petdex user agent, raising on HTTP errors
-func petHTTPGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Duration) (*pyhttpx.Response, error) {
-	if !tools.IsSafeURL(env, rawURL) {
-		return nil, &appValueError{"Pet store URL failed the SSRF safety check: " + rawURL}
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", petUserAgent)
-	resp, err := pyhttpx.Do(tools.NewSSRFSafeClient(env, timeout, true), req, timeout)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.New(resp.StatusErrorText(rawURL))
-	}
-	return resp, nil
-}
-
-// Every approved pet of the public manifest, cached for five minutes unless forced
-func petFetchManifest(ctx context.Context, env *tools.Env, force bool) ([]petManifestEntry, error) {
-	petManifestCache.mu.Lock()
-	if !force && petManifestCache.warm && time.Since(petManifestCache.at) < petManifestTTL {
-		entries := petManifestCache.entries
-		petManifestCache.mu.Unlock()
-		return entries, nil
-	}
-	petManifestCache.mu.Unlock()
-	payload, err := func() (any, error) {
-		if !tools.IsSafeURL(env, petManifestURL) {
-			return nil, &petManifestError{"Pet manifest URL failed the SSRF safety check: " + petManifestURL}
-		}
-		resp, err := petHTTPGet(ctx, env, petManifestURL, petManifestTimeout)
-		if err != nil {
-			return nil, err
-		}
-		return resp.JSON()
-	}()
-	if err != nil {
-		return nil, &petManifestError{"could not fetch petdex manifest: " + petErrText(err)}
-	}
-	var pets []any
-	if obj, ok := payload.(*pyjson.Object); ok {
-		pets, _ = obj.GetOr("pets", nil).([]any)
-	}
-	if pets == nil {
-		return nil, &petManifestError{"petdex manifest had no 'pets' array"}
-	}
-	entries := []petManifestEntry{}
-	for _, raw := range pets {
-		if d, ok := raw.(*pyjson.Object); ok {
-			if e := petManifestEntryOf(d); e.slug != "" && e.spritesheetURL != "" {
-				entries = append(entries, e)
-			}
-		}
-	}
-	petManifestCache.mu.Lock()
-	petManifestCache.at, petManifestCache.entries, petManifestCache.warm = time.Now(), entries, true
-	petManifestCache.mu.Unlock()
-	return entries, nil
-}
-
-// str of a fetch failure, the httpx text for transport errors
-func petErrText(err error) string {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return pyhttpx.ErrorText(err)
-	}
-	return pyrepr.ExceptionMessage(err)
-}
-
-// Manifest entry of a slug compared case insensitively, nil when not listed
-func petFindEntry(ctx context.Context, env *tools.Env, slug string) (*petManifestEntry, error) {
-	slug = pystr.Lower(pystr.Strip(slug))
-	entries, err := petFetchManifest(ctx, env, false)
-	if err != nil {
-		return nil, err
-	}
-	for i := range entries {
-		if pystr.Lower(entries[i].slug) == slug {
-			return &entries[i], nil
-		}
-	}
-	return nil, nil
-}
-
-// Whether a URL host is petdex.dev or one of its subdomains
-func petIsPetdexHost(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return false
-	}
-	host := pystr.Lower(u.Hostname())
-	return host == "petdex.dev" || strings.HasSuffix(host, ".petdex.dev")
-}
-
-// One bare path segment of a slug, empty when it has none
-func petSafeSlug(slug string) string {
-	segment := filepath.Base(pystr.Strip(slug))
-	if segment == "." || segment == ".." || segment == string(filepath.Separator) || pystr.Strip(slug) == "" {
-		return ""
-	}
-	return segment
-}
-
-// Installed pet of a slug only when its spritesheet exists, the failure text as a store error otherwise
-func petUsable(h, slug, failure string) (*pet.InstalledPet, error) {
-	p, err := pet.LoadPet(h, slug)
-	if err != nil {
-		return nil, err
-	}
-	if p != nil && p.Exists() {
-		return p, nil
-	}
-	if failure != "" {
-		return nil, &pet.StoreError{Msg: failure}
-	}
-	return nil, nil
-}
-
-// Streams a URL to a file through a part file so a failed download never leaves a truncated sheet
-func petDownload(ctx context.Context, env *tools.Env, rawURL, dest string) error {
-	err := func() error {
-		resp, err := petHTTPGet(ctx, env, rawURL, petDownloadTimeout)
-		if err != nil {
-			return err
-		}
-		tmp := dest + ".part"
-		if err := os.WriteFile(tmp, resp.Content, 0o666); err != nil {
-			return err
-		}
-		return os.Rename(tmp, dest)
-	}()
-	if err != nil {
-		return &pet.StoreError{Msg: "download failed for " + rawURL + ": " + petErrText(err)}
-	}
-	return nil
-}
-
-// Downloads a manifest pet into the pets dir, idempotent unless forced
-func petInstall(ctx context.Context, env *tools.Env, h, slug string, force bool) (*pet.InstalledPet, error) {
-	slug = petSafeSlug(slug)
-	if slug == "" {
-		return nil, &pet.StoreError{Msg: "invalid pet slug"}
-	}
-	if !force {
-		if existing, err := petUsable(h, slug, ""); err != nil || existing != nil {
-			return existing, err
-		}
-	}
-	entry, err := petFindEntry(ctx, env, slug)
-	if err != nil {
-		return nil, err
-	}
-	if entry == nil {
-		return nil, &pet.StoreError{Msg: "pet '" + slug + "' is not in the petdex manifest"}
-	}
-	if !petIsPetdexHost(entry.spritesheetURL) {
-		return nil, &pet.StoreError{Msg: "refusing non-petdex spritesheet host for '" + slug + "'"}
-	}
-	root, err := pet.PetsDir(h)
-	if err != nil {
-		return nil, err
-	}
-	directory := filepath.Join(root, slug)
-	if err := os.MkdirAll(directory, 0o777); err != nil {
-		return nil, err
-	}
-	ext := ".webp"
-	if head, _, _ := strings.Cut(pystr.Lower(entry.spritesheetURL), "?"); strings.HasSuffix(head, ".png") {
-		ext = ".png"
-	}
-	spritePath := filepath.Join(directory, "spritesheet"+ext)
-	if err := petDownload(ctx, env, entry.spritesheetURL, spritePath); err != nil {
-		return nil, err
-	}
-	meta := pyjson.NewObject()
-	if entry.petJSONURL != "" && petIsPetdexHost(entry.petJSONURL) {
-		if resp, err := petHTTPGet(ctx, env, entry.petJSONURL, petDownloadTimeout); err == nil {
-			if data, err := resp.JSON(); err == nil {
-				if d, ok := data.(*pyjson.Object); ok {
-					meta = d
-				}
-			}
-		}
-	}
-	if meta.Len() == 0 {
-		meta = pyjson.ObjectOf("id", slug, "displayName", entry.displayName, "description", "")
-	}
-	meta.Set("spritesheetPath", filepath.Base(spritePath))
-	if _, ok := meta.Get("id"); !ok {
-		meta.Set("id", slug)
-	}
-	if _, ok := meta.Get("displayName"); !ok {
-		meta.Set("displayName", entry.displayName)
-	}
-	text, err := pyjson.Dumps(meta, pyjson.Indent(2))
-	if err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(directory, "pet.json"), []byte(text), 0o666); err != nil {
-		return nil, err
-	}
-	return petUsable(h, slug, "install of '"+slug+"' did not produce a spritesheet")
-}
-
-// Deletes an installed pet and its cached thumbnail, true when the directory is gone
-func petRemove(h, slug string) (bool, error) {
-	slug = petSafeSlug(slug)
-	if slug == "" {
-		return false, nil
-	}
-	root, err := pet.PetsDir(h)
-	if err != nil {
-		return false, err
-	}
-	if thumbs := filepath.Join(root, ".thumbs"); os.MkdirAll(thumbs, 0o777) == nil {
-		os.Remove(filepath.Join(thumbs, slug+".png"))
-	}
-	directory := filepath.Join(root, slug)
-	if st, err := os.Stat(directory); err != nil || !st.IsDir() {
-		return false, nil
-	}
-	os.RemoveAll(directory)
-	_, err = os.Stat(directory)
-	return err != nil, nil
-}
 
 // One icebath pets invocation with its home, namespace, output and tool environment
 type petsRun struct {
@@ -427,20 +151,20 @@ func (r *petsRun) cmdList() (int, error) {
 		}
 		return 0, nil
 	}
-	entries, err := petFetchManifest(r.ctx, r.env, false)
+	entries, err := pet.FetchManifest(r.ctx, r.env, false)
 	if err != nil {
-		var me *petManifestError
+		var me *pet.ManifestError
 		if errors.As(err, &me) {
-			r.errf("✗ %s", me.msg)
+			r.errf("✗ %s", me.Msg)
 			return 1, nil
 		}
 		return 1, err
 	}
 	query := pystr.Lower(pystr.Strip(nsText(r.ns, "query")))
 	if query != "" {
-		var filtered []petManifestEntry
+		var filtered []pet.ManifestEntry
 		for _, e := range entries {
-			if strings.Contains(pystr.Lower(e.slug), query) || strings.Contains(pystr.Lower(e.displayName), query) {
+			if strings.Contains(pystr.Lower(e.Slug), query) || strings.Contains(pystr.Lower(e.DisplayName), query) {
 				filtered = append(filtered, e)
 			}
 		}
@@ -466,10 +190,10 @@ func (r *petsRun) cmdList() (int, error) {
 	r.printf("petdex gallery — %d pet(s)%s:", len(entries), matching)
 	for _, e := range shown {
 		mark := " "
-		if installed[e.slug] {
+		if installed[e.Slug] {
 			mark = "✓"
 		}
-		r.printf("  %s %s %s  (%s)", mark, padRight(e.slug, 28), e.displayName, e.kind)
+		r.printf("  %s %s %s  (%s)", mark, padRight(e.Slug, 28), e.DisplayName, e.Kind)
 	}
 	if limit != 0 && len(entries) > limit {
 		r.printf("  … %d more (use --limit 0 or --query to filter)", len(entries)-limit)
@@ -480,10 +204,10 @@ func (r *petsRun) cmdList() (int, error) {
 
 func (r *petsRun) cmdInstall() (int, error) {
 	slug := pystr.Strip(nsText(r.ns, "slug"))
-	p, err := petInstall(r.ctx, r.env, r.h, slug, nsTruthy(r.ns, "force"))
+	p, err := pet.InstallPet(r.ctx, r.env, r.h, slug, nsTruthy(r.ns, "force"))
 	if err != nil {
 		var se *pet.StoreError
-		var me *petManifestError
+		var me *pet.ManifestError
 		if errors.As(err, &se) || errors.As(err, &me) {
 			r.errf("✗ install failed: %s", err.Error())
 			return 1, nil
@@ -508,7 +232,7 @@ func (r *petsRun) cmdInstall() (int, error) {
 
 func (r *petsRun) cmdRemove() (int, error) {
 	slug := pystr.Strip(nsText(r.ns, "slug"))
-	removed, err := petRemove(r.h, slug)
+	removed, err := pet.RemovePet(r.h, slug)
 	if err != nil {
 		return 1, err
 	}
@@ -861,11 +585,11 @@ func (r *petsRun) togglePetDisplay() (bool, *string, *string, error) {
 
 // Prints a slice of the public petdex gallery as the CLI and TUI text fallback
 func (r *petsRun) printPetGallery(limit int) error {
-	entries, err := petFetchManifest(r.ctx, r.env, false)
+	entries, err := pet.FetchManifest(r.ctx, r.env, false)
 	if err != nil {
-		var me *petManifestError
+		var me *pet.ManifestError
 		if errors.As(err, &me) {
-			r.printf("(._.) Couldn't reach the petdex gallery: %s", me.msg)
+			r.printf("(._.) Couldn't reach the petdex gallery: %s", me.Msg)
 			return nil
 		}
 		return err
@@ -885,10 +609,10 @@ func (r *petsRun) printPetGallery(limit int) error {
 	r.printf("(^o^)/ petdex gallery — first %d of %d:", len(shown), len(entries))
 	for _, e := range shown {
 		mark := "○"
-		if installed[e.slug] {
+		if installed[e.Slug] {
 			mark = "●"
 		}
-		r.printf("  %s %s %s", mark, padRight(e.slug, 24), e.displayName)
+		r.printf("  %s %s %s", mark, padRight(e.Slug, 24), e.DisplayName)
 	}
 	r.printf("  /pet <slug> to adopt · /pet to toggle")
 	return nil

@@ -27,6 +27,7 @@ func relayHome(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
+	resetHostingLatch(t)
 	return h
 }
 
@@ -443,5 +444,21 @@ func TestLiveRelayForwardsSenderToCanonicalAuthority(t *testing.T) {
 		"author": map[string]any{"id": "bot:coder", "name": "coder", "is_bot": true}}}}
 	if !reflect.DeepEqual(submitted, want) {
 		t.Fatalf("submitted %v", submitted)
+	}
+}
+
+func TestLegacyRelayRequiresIdentityWithoutSpawning(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	forwarded := 0
+	swapRelayDeliver(t, func(context.Context, string, map[string]any) (map[string]any, error) {
+		forwarded++
+		return map[string]any{}, nil
+	})
+	result := pyjson.Plain(relayCall(context.Background(), "bot_relay.deliver", 1, map[string]any{"profile": "default", "message": "hello"})).(map[string]any)
+	if got := relayErrorData(result)["reason"]; got != "invalid_params" {
+		t.Fatalf("deliver answered %v", result)
+	}
+	if forwarded != 0 {
+		t.Fatalf("forwarded %d deliveries", forwarded)
 	}
 }

@@ -160,10 +160,10 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 }
 
 // Install directory whose installer record names a catalog entry, empty when none or ambiguous
-func catalogInstalledDir(h, name string) string {
+func catalogInstalledDir(h, name string) (string, error) {
 	metadata, err := readInstallMetadata(h)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	var hits []string
 	for key := range metadata {
@@ -171,14 +171,18 @@ func catalogInstalledDir(h, name string) string {
 		if st, err := os.Stat(target); err != nil || !st.IsDir() {
 			continue
 		}
-		if record := readCatalogSidecar(h, target); record != nil && record["catalog_name"] == name {
+		record, err := readCatalogSidecar(h, target)
+		if err != nil {
+			return "", err
+		}
+		if record != nil && record["catalog_name"] == name {
 			hits = append(hits, target)
 		}
 	}
 	if len(hits) == 1 {
-		return hits[0]
+		return hits[0], nil
 	}
-	return ""
+	return "", nil
 }
 
 // Plugin entry for a key or manifest name, else a unique bare leaf, else the catalog name it was installed under
@@ -209,9 +213,9 @@ func FindPluginEntry(h, name string) (*PluginEntry, error) {
 		}
 		return nil, nil
 	}
-	installed := catalogInstalledDir(h, name)
+	installed, err := catalogInstalledDir(h, name)
 	if installed == "" {
-		return nil, nil
+		return nil, err
 	}
 	for i := range entries {
 		if entries[i].Dir != "" && filepath.Clean(entries[i].Dir) == filepath.Clean(installed) {

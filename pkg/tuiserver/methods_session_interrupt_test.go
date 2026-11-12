@@ -88,6 +88,7 @@ func TestACorrectionRpcDuringTheTaskDisqualifiesIt(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := freeTierHome(t)
 			a := freeTierAgent(t, true)
+			armFreeTier(t, ctx)
 			session := freeTierSession(a, nil)
 			tuigateway.SetSessionRecord("sid", session)
 			defer tuigateway.SetSessionRecord("sid", nil)

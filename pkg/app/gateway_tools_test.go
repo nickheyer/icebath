@@ -208,9 +208,9 @@ func TestStopTypedMidTurnInterruptsTheTurnThenStopsProcesses(t *testing.T) {
 	gw.mu.Lock()
 	gw.stopGate = release
 	gw.mu.Unlock()
-	var stops []*GatewayAgent
+	var stops []cliAgent
 	prev := requestHardInterrupt
-	requestHardInterrupt = func(a *GatewayAgent) { stops = append(stops, a) }
+	requestHardInterrupt = func(a cliAgent) { stops = append(stops, a) }
 	t.Cleanup(func() { requestHardInterrupt = prev })
 	c := bareCLI()
 	c.agentRunning, c.agent = true, a

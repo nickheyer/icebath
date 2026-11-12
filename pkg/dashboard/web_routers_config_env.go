@@ -62,8 +62,8 @@ func webReadRawConfig(ctx context.Context) (map[string]any, error) {
 	return config.ReadRawConfig(ctx, home.Dir(ctx))
 }
 
-// Saves a config map into the home in ctx
-func webSaveConfig(ctx context.Context, cfg map[string]any, opts config.SaveOptions) error {
+// Saves a config map into the home in ctx, the save_config name hermes tests patch
+var webSaveConfig = func(ctx context.Context, cfg map[string]any, opts config.SaveOptions) error {
 	return config.SaveConfig(ctx, home.Dir(ctx), cfg, opts)
 }
 

@@ -32,3 +32,11 @@ func (a *AIAgent) SetSessionTitleHint(hint string) { a.sessionTitleHint = hint }
 
 // Whether the context cwd came from the app launch rather than user intent
 func (a *AIAgent) SetContextCwdIsLaunchArtifact(launch bool) { a.contextCwdIsLaunchArtifact = launch }
+
+// Builds this turn's user row the way the prologue does, adopting the staged submit row by identity
+func (a *AIAgent) StageTurnUserMessage(userMessage, persistUserMessage any) (map[string]any, map[string]any) {
+	return stageTurnUserMessage(a, userMessage, persistUserMessage, nil, nil, "", nil)
+}
+
+// Points the persist override at the live row of this turn's user message
+func (a *AIAgent) SetPersistUserMessageIdx(idx int) { a.persistUserMessageIdx = &idx }

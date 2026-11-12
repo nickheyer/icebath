@@ -40,6 +40,14 @@ func cliLines(text, pad string) []string {
 
 // Decoded reply of the cronjob tool called the way the CLI calls it
 func (s *Store) cronAPI(ctx context.Context, a *cronjobArgs) *pyjson.Object {
+	return cronAPIDoor(s, ctx, a)
+}
+
+// Cronjob tool call every CLI command makes, the name a case replaces the way pytest patches _cron_api
+var cronAPIDoor = cronAPICall
+
+// Runs the cronjob tool with the CLI defaults and decodes its JSON object reply
+func cronAPICall(s *Store, ctx context.Context, a *cronjobArgs) *pyjson.Object {
 	if a.Paused == nil {
 		a.Paused = false
 	}

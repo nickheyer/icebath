@@ -69,3 +69,53 @@ func TestTheJobListStillShowsALiveRunBehindARefusedTrigger(t *testing.T) {
 		t.Fatalf("finished run still live %v", listed[0].LiveExecution)
 	}
 }
+
+// Fire marked running, cancelled by the operator and booked through the cancelled-run tail
+func cancelledRun(t *testing.T, s *Store, job *Job) string {
+	t.Helper()
+	ctx := context.Background()
+	ledger := openExecutionsLedger(s)
+	created, err := ledger.Create(ctx, job.ID, "test", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fire := created["id"].(string)
+	if _, err := ledger.MarkRunning(ctx, fire); err != nil {
+		t.Fatal(err)
+	}
+	mustRequestCancel(t, s, fire, strPtr("operator asked"))
+	if err := s.finishCancelledRun(ctx, mustGet(t, s, job.ID), fire, nil); err != nil {
+		t.Fatal(err)
+	}
+	return fire
+}
+
+func TestReceiptRecoveryDoesNotReplayACancelledAgentRun(t *testing.T) {
+	s, _ := newTestStore(t)
+	var calls []string
+	var job *Job
+	receiptPeer(t, func(method string, _ map[string]any) (map[string]any, error) {
+		calls = append(calls, method)
+		return map[string]any{"status": "terminal", "job": job, "result": []any{false, "doc", "", "stopped"}}, nil
+	})
+	job = mustCreate(t, s, CreateJobOptions{Prompt: prompt("report"), Schedule: "every 1h", Deliver: prompt("local")})
+	fire := cancelledRun(t, s, job)
+	journal := s.journalPath(job.ID, fire)
+	writeTestFile(t, journal, `{"params": {"job_id": "`+job.ID+`", "request_id": "`+fire+`", "extra_prompt": null}, "receipt": {"session_id": "s", "admission_id": "a"}}`)
+	booked := mustGet(t, s, job.ID)
+	mustReconcile(t, s)
+	after := mustGet(t, s, job.ID)
+	if len(calls) != 0 {
+		t.Fatalf("calls = %v", calls)
+	}
+	if deref(after.LastStatus) != deref(booked.LastStatus) || *after.Repeat != *booked.Repeat || after.FailureStreak != booked.FailureStreak {
+		t.Fatalf("after %q %+v %d booked %q %+v %d", deref(after.LastStatus), *after.Repeat, after.FailureStreak,
+			deref(booked.LastStatus), *booked.Repeat, booked.FailureStreak)
+	}
+	if row := executionRow(t, s, fire); row["status"] != "cancelled" {
+		t.Fatalf("status = %v", row["status"])
+	}
+	if journalExists(journal) {
+		t.Fatal("journal kept")
+	}
+}

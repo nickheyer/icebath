@@ -36,8 +36,7 @@ var (
 func providerRegistry() *homeScopedRegistry {
 	authRegistryOnce.Do(func() {
 		reg := &homeScopedRegistry{rows: map[string]*Profile{}, builtin: map[string]bool{}}
-		rows := append(registryRows(), moaVirtualRow())
-		for _, r := range rows {
+		for _, r := range registryRows() {
 			p := r.profile()
 			normalizeRegisteredProfile(&p)
 			reg.keys = append(reg.keys, p.Name)

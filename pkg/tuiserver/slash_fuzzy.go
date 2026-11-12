@@ -25,7 +25,7 @@ var slashTiers = []struct {
 
 // Lowercased value followed by its alphanumeric words
 func tokenizeSearchText(value string) []string {
-	normalized := strings.ToLower(value)
+	normalized := pystr.Lower(value)
 	out := []string{normalized}
 	for _, t := range slashTokenSplit.Split(normalized, -1) {
 		if t != "" {
@@ -37,7 +37,7 @@ func tokenizeSearchText(value string) []string {
 
 // Query trimmed, stripped of leading slashes and lowercased
 func normalizeSlashSearchQuery(query string) string {
-	return strings.ToLower(strings.TrimLeft(pystr.Strip(query), "/"))
+	return pystr.Lower(strings.TrimLeft(pystr.Strip(query), "/"))
 }
 
 // Best tier of any field plus offset, infinity on a miss

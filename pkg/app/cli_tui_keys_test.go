@@ -17,13 +17,14 @@ func handlerRig() (*ptApplication, *ptEvent) {
 }
 
 func TestDraftIsClearedBeforeARunningTurnIsInterrupted(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	for name, handler := range map[string]func(*CLI) ptHandler{
 		"_tui_handle_ctrl_c": func(c *CLI) ptHandler { return c.tuiHandleCtrlC },
 		"_tui_handle_ctrl_q": func(c *CLI) ptHandler { return c.tuiHandleCtrlQ },
 	} {
-		var interrupts []*GatewayAgent
+		var interrupts []cliAgent
 		prev := requestHardInterrupt
-		requestHardInterrupt = func(a *GatewayAgent) { interrupts = append(interrupts, a) }
+		requestHardInterrupt = func(a cliAgent) { interrupts = append(interrupts, a) }
 		c := &CLI{ctx: context.Background(), agentRunning: true, agent: &GatewayAgent{ctx: context.Background()}}
 		app, event := handlerRig()
 		_ = app.buffer.setText("half typed follow-up")

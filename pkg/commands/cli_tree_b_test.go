@@ -112,3 +112,54 @@ func TestImportParserTakesTheZipfileAndForce(t *testing.T) {
 		t.Fatalf("missing zipfile: %v", err)
 	}
 }
+
+// verify reads its defaults as the hermes parser does, port and phase None, both timeouts floats
+func TestVerifyParserBuildsTheHermesDefaults(t *testing.T) {
+	ns, err := bNamespace(t, "verify", []string{"verify"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ns["path"] != nil || ns["port"] != nil || ns["phase"] != nil || ns["timeout"] != 600.0 || ns["ready_timeout"] != 60.0 ||
+		ns["detect_only"] != false || ns["save"] != false || ns["skip_start"] != false || ns["json"] != false {
+		t.Fatalf("defaults %v", ns)
+	}
+	ns, err = bNamespace(t, "verify", []string{"verify", "proj", "--phase", "build", "--phase", "test", "--port", "0", "--timeout", "5", "--json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	phases, _ := ns["phase"].([]string)
+	if ns["path"] != "proj" || ns["port"] != 0 || !slices.Equal(phases, []string{"build", "test"}) || ns["timeout"] != 5.0 || ns["json"] != true {
+		t.Fatalf("given %v", ns)
+	}
+	if _, err := bNamespace(t, "verify", []string{"verify", "--phase", "deploy"}); err == nil {
+		t.Fatal("phase accepts only its choices")
+	}
+	c := NewCLI()
+	cmd := c.find("verify")
+	if cmd.Short != "Detect a project's run recipe and smoke-test it" || cmd.Flags().Lookup("timeout").Usage != "Per-phase timeout in seconds (default: 600)" ||
+		cmd.Flags().Lookup("ready-timeout").Usage != "Readiness poll timeout in seconds (default: 60)" {
+		t.Fatalf("help %q %q", cmd.Short, cmd.Flags().Lookup("timeout").Usage)
+	}
+}
+
+// hooks attaches list, test, revoke and doctor with the hermes aliases and test options
+func TestHooksParserAttachesEveryAction(t *testing.T) {
+	c := NewCLI()
+	for path, aliases := range map[string][]string{"hooks list": {"ls"}, "hooks test": nil, "hooks revoke": {"remove", "rm"}, "hooks doctor": nil} {
+		cmd := c.find(path)
+		if cmd == nil || !slices.Equal(cmd.Aliases, aliases) {
+			t.Fatalf("%s %v", path, cmd)
+		}
+	}
+	ns, err := bNamespace(t, "hooks test", []string{"hooks", "test", "pre_tool_call", "--for-tool", "terminal", "--payload-file", "p.json"})
+	if err != nil || ns["event"] != "pre_tool_call" || ns["for_tool"] != "terminal" || ns["payload_file"] != "p.json" {
+		t.Fatalf("test %v %v", ns, err)
+	}
+	ns, err = bNamespace(t, "hooks revoke", []string{"hooks", "rm", "/bin/hook.sh"})
+	if err != nil || ns["command"] != "/bin/hook.sh" {
+		t.Fatalf("revoke %v %v", ns, err)
+	}
+	if !strings.Contains(c.find("hooks").Long, "~/.icebath/shell-hooks-allowlist.json") {
+		t.Fatal("hooks description")
+	}
+}

@@ -399,7 +399,7 @@ func (a *AIAgent) modelOutputLimit() int {
 // Output budget for truncation retry n, base doubled n times within the failed cap and the model limit, zero args unset
 func (a *AIAgent) boostedOutputCap(requestedCap, n, base int) int {
 	if base == 0 {
-		base = a.maxTokens
+		base = a.maxTokensOrZero()
 		if base == 0 {
 			base = requestedCap
 		}
@@ -721,7 +721,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 		if !hasContent && codexFinishReason(response) == "incomplete" {
 			a.ephemeralReasoningOff = true
 			observed := pyIntOf(orEmptyString(state.ToolCallField(state.ToolCallField(response, "usage"), "output_tokens")))
-			base := a.maxTokens
+			base := a.maxTokensOrZero()
 			if base == 0 {
 				base = observed
 			}

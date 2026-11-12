@@ -8,6 +8,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/roundtrip"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -118,7 +119,7 @@ func TestP6NullSectionSurvivesEverySurface(t *testing.T) {
 				target []string
 			}{
 				{"cli_set", func(t *testing.T) {
-					if err := config.SetConfigValue(ctx, h, "terminal.timeout", "4242", false, config.ConfigCommandSources{}); err != nil {
+					if err := config.SetConfigValue(ctx, h, "terminal.timeout", "4242", false, commands.ConfigCommandSources(h)); err != nil {
 						t.Fatalf("[%s] cli_set: %v", ctxName, err)
 					}
 				}, []string{"terminal", "timeout"}},
@@ -130,8 +131,8 @@ func TestP6NullSectionSurvivesEverySurface(t *testing.T) {
 				}, []string{"display", "skin"}},
 				{"dashboard_put", func(t *testing.T) {
 					resp := appJSON(t, c, "PUT", "/api/config", pyjson.ObjectOf("config", pyjson.ObjectOf("display", pyjson.ObjectOf("skin", "ares"))))
-					if resp.StatusCode != 200 {
-						t.Fatalf("[%s] PUT /api/config: %s", ctxName, resp.Text())
+					if resp.Status != 200 {
+						t.Fatalf("[%s] PUT /api/config: %s", ctxName, resp.Body)
 					}
 				}, []string{"display", "skin"}},
 			}

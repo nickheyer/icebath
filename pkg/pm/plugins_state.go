@@ -272,6 +272,11 @@ func providerFromConfig(homeDir string, config map[string]any, installing string
 	return name, nil
 }
 
+// Spellings of a plugin directory and key that other packages match against plugins.disabled
+func PluginSpellings(pluginDir, key string) (map[string]bool, error) {
+	return pluginSpellings(pluginDir, key)
+}
+
 // Every name a plugins list may use for a plugin, its key and leaf, its dir name and its readable manifest name
 func pluginSpellings(pluginDir, key string) (map[string]bool, error) {
 	names := map[string]bool{filepath.Base(pluginDir): true}

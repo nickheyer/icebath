@@ -9,6 +9,7 @@ import (
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	DispatchMeetBotEntry(context.Background())
 	os.Exit(m.Run())
 }

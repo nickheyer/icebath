@@ -179,6 +179,7 @@ func TestLoadNamedWarnsOnFailureOrNoInstance(t *testing.T) {
 // Runs a Python driver with the embedded plugin SDK and child package on its import path
 func runSDKDriver(t *testing.T, script string, args ...string) string {
 	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	sdk, err := pluginSDKPythonPath(context.Background())
 	if err != nil {
 		t.Fatal(err)

@@ -231,30 +231,40 @@ func clampOutputCap(r *overflowRecovery, availableOut, oldCtx int) (PhaseVerdict
 	if exhausted, err := r.countAttempt(false); err != nil || exhausted != nil {
 		return derefVerdict(exhausted), err
 	}
-	if deferred := r.compressForOutputCap(requestInputEstimate); deferred != nil {
+	deferred, err := r.compressForOutputCap(requestInputEstimate)
+	if err != nil {
+		return PhaseVerdict{}, err
+	}
+	if deferred != nil {
 		return *deferred, nil
 	}
 	r.retry.RestartWithCompressedMessages = true
 	return r.done("break", nil), nil
 }
 
-// Output cap compression that never turns the error fatal, any failure logged so the retry rides max tokens alone
-func (r *overflowRecovery) compressForOutputCap(requestInputEstimate int) (deferred *PhaseVerdict) {
+// Output cap compression that never turns the error fatal, a keyboard interrupt still ends the turn
+func (r *overflowRecovery) compressForOutputCap(requestInputEstimate int) (deferred *PhaseVerdict, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			if isUserInterruptPanic(rec) {
 				panic(rec)
 			}
-			deferred = nil
+			if e, ok := rec.(error); ok && tools.IsKeyboardInterrupt(r.ctx, e) {
+				panic(rec)
+			}
+			deferred, err = nil, nil
 			conversationLoopLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
 		}
 	}()
-	v, _, _, err := r.compressScoredByTokens(requestInputEstimate, false)
-	if err != nil {
+	v, _, _, cerr := r.compressScoredByTokens(requestInputEstimate, false)
+	if cerr != nil {
+		if tools.IsKeyboardInterrupt(r.ctx, cerr) {
+			return nil, cerr
+		}
 		conversationLoopLog().Warn(fmt.Sprintf("%sOutput-cap compression hit an error; retrying on max_tokens only.", r.a.logPrefix))
-		return nil
+		return nil, nil
 	}
-	return v
+	return v, nil
 }
 
 // Adopts a context length the provider error reports, false when it reports none and the window stays
@@ -303,7 +313,7 @@ func recoverContextLength(r *overflowRecovery, errorMsg string) (PhaseVerdict, e
 	}
 	newCtx, adopted := adoptProviderContextLimit(r.ctx, a, errorMsg, oldCtx)
 	window := a.contextCompressor.Base().ContextLength
-	requestTokens := r.requestTokens() + max(0, a.maxTokens)
+	requestTokens := r.requestTokens() + max(0, a.maxTokensOrZero())
 	if provider.IsLocalEndpoint(a.baseURL) && !quotedTokenCountRe.MatchString(errorMsg) && window > 0 &&
 		float64(requestTokens) < float64(window)*unexplainedRejectionFraction {
 		return r.failWithCopy("server_context_rejection", map[string]any{"model": a.model, "tokens": requestTokens, "window": window}, overflowFailure{

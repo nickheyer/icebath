@@ -80,7 +80,7 @@ func onbRecordString(record map[string]any, key string) string {
 // Unix seconds now as a float
 func onbNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// Applies the event and writes the result at the compression tip in one transaction, closing the install flag when the run ended
+// Applies the event at the compression tip in one transaction, closing the install flag when the run ended
 func onbTransition(ctx context.Context, db OnboardingStore, sessionID string, event OnboardingEvent) (*OnboardingStep, error) {
 	var step *OnboardingStep
 	wasActive := false
@@ -124,8 +124,11 @@ func onbCloseInstallFlag(ctx context.Context) error {
 	return nil
 }
 
-// StartOnboarding writes a fresh run record and marks the install as mid onboarding
-func StartOnboarding(ctx context.Context, db *state.DB, sessionID string, facts OnboardingFacts) (map[string]any, error) {
+// Run record writer of every start, replaced by a case as the hermes cases patch onboarding_record.start
+var StartOnboarding = startOnboarding
+
+// Writes a fresh run record and marks the install as mid onboarding
+func startOnboarding(ctx context.Context, db *state.DB, sessionID string, facts OnboardingFacts) (map[string]any, error) {
 	record := NewOnboardingRecord(facts, onbNow(), state.NewUID())
 	if err := db.PatchModelConfig(sessionID, map[string]any{OnboardingRecordKey: record}); err != nil {
 		return nil, err

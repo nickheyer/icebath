@@ -27,6 +27,22 @@ func TestCatalogSeedRegistersAllEntries(t *testing.T) {
 	}
 }
 
+// TestCatalog test_no_catalog_prompt_bakes_in_absolute_script_path
+func TestCatalogNoCatalogPromptBakesInAbsoluteScriptPath(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	for _, entry := range Catalog {
+		prompt := ""
+		for _, kv := range entry.JobSpec {
+			if kv[0] == "prompt" {
+				prompt = kv[1]
+			}
+		}
+		if strings.Contains(prompt, classifyItemsScriptPath()) {
+			t.Fatal(entry.Key)
+		}
+	}
+}
+
 // TestCommandHandler test_bare_lists_pending
 func TestCommandHandlerBareListsPending(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")

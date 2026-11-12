@@ -221,15 +221,22 @@ func setupBuildRecord(env PoolEnv, other bool) *SetupRecord {
 
 // Settles an interrupted claim, inventories, records and broadcasts once per process, a second call returns the record
 func RunFreeTierBootstrap(env PoolEnv, announce bool) *SetupRecord {
+	return runFreeTierBootstrap(env, announce, func() {})
+}
+
+// The bootstrap run, began called once the run holds or waits on the started mark
+func runFreeTierBootstrap(env PoolEnv, announce bool, began func()) *SetupRecord {
 	setupMu.Lock()
 	if setupRecord != nil {
 		record := setupRecord
 		setupMu.Unlock()
+		began()
 		return record
 	}
 	if setupStarted {
 		done := setupDone
 		setupMu.Unlock()
+		began()
 		timer := time.NewTimer(SetupReadyWait)
 		select {
 		case <-done:
@@ -245,6 +252,7 @@ func RunFreeTierBootstrap(env PoolEnv, announce bool) *SetupRecord {
 	}
 	setupStarted = true
 	setupMu.Unlock()
+	began()
 
 	settled := setupSettleInstall(env)
 	record := setupBuildRecord(env, setupInventoryFn(env))
@@ -277,7 +285,7 @@ func setupSettleInstall(env PoolEnv) bool {
 	return settled
 }
 
-// Retries the install settle steps once at a time for a boot that could not settle, rebuilding the record on success
+// Retries the install settle steps of a boot that could not settle, rebuilding the record on success
 func ResettleAfterFailedBoot(env PoolEnv) {
 	setupMu.Lock()
 	unsettled := setupRecord != nil && !setupSettled
@@ -323,13 +331,22 @@ func setupBroadcast(env PoolEnv, record *SetupRecord) {
 	}
 }
 
-// Runs the bootstrap on its own goroutine and returns a channel closed when it finishes
+// Runs the bootstrap on its own goroutine once it is marked started, a raised failure logged as a thread exception
 func StartBackgroundBootstrap(env PoolEnv) <-chan struct{} {
-	finished := make(chan struct{})
+	finished, started := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	began := func() { once.Do(func() { close(started) }) }
 	go func() {
 		defer close(finished)
-		RunFreeTierBootstrap(env, true)
+		defer began()
+		defer func() {
+			if failure := recover(); failure != nil {
+				env.log().Error("Exception in thread free-tier-bootstrap", "error", failure)
+			}
+		}()
+		runFreeTierBootstrap(env, true, began)
 	}()
+	<-started
 	return finished
 }
 
@@ -597,7 +614,7 @@ func NoteConnectedAppsSeen(env PoolEnv, rows []any) {
 	}
 }
 
-// Seconds until the offer is due with zero meaning now, false when none is pending or the user is not eligible
+// Seconds until the offer is due, zero meaning now, false when none is pending or the user is ineligible
 func OfferDueIn(env PoolEnv, kind string) (int, bool, error) {
 	state, err := freeTierOfferRead(kind)
 	if err != nil {

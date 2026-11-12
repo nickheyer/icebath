@@ -6,6 +6,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
+// Registers the authority as this process's cron owner of its store home while loop lives
+func BindCronOwner(loop context.Context, a *SessionAuthority) { bindCronOwner(loop, a) }
+
 // Drops the authority's cron owner binding of its store home when it still holds it
 func UnbindCronOwner(a *SessionAuthority) { unbindCronOwner(a) }
 

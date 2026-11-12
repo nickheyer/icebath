@@ -86,7 +86,7 @@ func recordingHome(t *testing.T, kind string) (string, *recordingBackend) {
 	return h, backend
 }
 
-func TestPipelineLoadConfigConsultsTheBackend(t *testing.T) {
+func TestPipelinesConsultTheBackendLoadConfig(t *testing.T) {
 	h, backend := recordingHome(t, "recording_load")
 	tree, err := LoadContext(context.Background(), h, processLookup)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestPipelineLoadConfigConsultsTheBackend(t *testing.T) {
 	}
 }
 
-func TestPipelineRawPrimitivesConsultTheBackend(t *testing.T) {
+func TestPipelinesConsultTheBackendRawPrimitives(t *testing.T) {
 	h, backend := recordingHome(t, "recording_raw")
 	ctx := context.Background()
 	raw, err := ReadRawConfig(ctx, h)
@@ -116,7 +116,7 @@ func TestPipelineRawPrimitivesConsultTheBackend(t *testing.T) {
 	}
 }
 
-func TestPipelineEffectiveLoaderConsultsTheBackend(t *testing.T) {
+func TestPipelinesConsultTheBackendEffectiveLoader(t *testing.T) {
 	h, backend := recordingHome(t, "recording_effective")
 	doc, err := LoadUserEffective(filepath.Join(h, "config.yaml"), processLookup)
 	if err != nil || doc["model"].(map[string]any)["default"] != "my-model" {

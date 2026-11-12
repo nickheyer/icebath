@@ -168,8 +168,9 @@ func gitClone(ctx context.Context, url, dest string) error {
 	if githubShorthandRe.MatchString(url) {
 		url = "https://" + strings.TrimRight(url, "/")
 	}
-	code, stderr, err := provider.RunGitWithCredentialFallback(ctx, []string{"git", "clone", "--depth", "1", url, dest}, url,
-		tools.NoninteractiveGitEnv(nil))
+	res, err := provider.RunGitWithCredentialFallback(ctx, []string{"git", "clone", "--depth", "1", url, dest}, url,
+		tools.NoninteractiveGitEnv(nil), nil)
+	code, stderr := res.Code, res.Stderr
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
 			return distErr("git is required for git-URL installs")

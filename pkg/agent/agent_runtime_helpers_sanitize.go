@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -473,7 +474,7 @@ func dropEmptyToolCallsArrays(messages []map[string]any) []map[string]any {
 	dropped := 0
 	for _, msg := range messages {
 		if tcs, has := msg["tool_calls"]; msg["role"] == "assistant" && has {
-			if l, ok := tcs.([]any); !ok || len(l) == 0 {
+			if rv := reflect.ValueOf(tcs); rv.Kind() != reflect.Slice || rv.Len() == 0 {
 				cp := shallowDict(msg)
 				delete(cp, "tool_calls")
 				msg = cp

@@ -316,3 +316,42 @@ func TestEnsureSDKUsesDeclaredExtrasAndReportsRestart(t *testing.T) {
 		}
 	}
 }
+
+// Drives the SSH wizard with scripted answers and the connection test declined
+func runSSHWizard(t *testing.T, env *Env, answers []string) {
+	t.Helper()
+	i := 0
+	console := &fakeSetupConsole{
+		prompt: func(string, string, bool) string { i++; return answers[i-1] },
+		yesNo:  func(string, bool) bool { return false },
+	}
+	withSetupConsole(t, console)
+	if err := newTerminalSetup(t, env).backendSSH(map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSshPortResetTo22RemovesSavedPort(t *testing.T) {
+	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
+	t.Setenv("TERMINAL_SSH_PORT", "")
+	os.Unsetenv("TERMINAL_SSH_PORT")
+	if err := config.SaveEnvValue(env.Home, "TERMINAL_SSH_PORT", "2222"); err != nil {
+		t.Fatal(err)
+	}
+	runSSHWizard(t, env, []string{"host.example.com", "me", "22", "/tmp/key"})
+	if v, ok, err := config.GetEnvValue(context.Background(), env.Home, "TERMINAL_SSH_PORT"); err != nil || ok {
+		t.Fatalf("TERMINAL_SSH_PORT = %q %v %v", v, ok, err)
+	}
+}
+
+func TestSshPortNonDefaultStillSaves(t *testing.T) {
+	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
+	t.Setenv("TERMINAL_SSH_PORT", "")
+	os.Unsetenv("TERMINAL_SSH_PORT")
+	runSSHWizard(t, env, []string{"host.example.com", "me", "2222", "/tmp/key"})
+	if v, ok, err := config.GetEnvValue(context.Background(), env.Home, "TERMINAL_SSH_PORT"); err != nil || !ok || v != "2222" {
+		t.Fatalf("TERMINAL_SSH_PORT = %q %v %v", v, ok, err)
+	}
+}

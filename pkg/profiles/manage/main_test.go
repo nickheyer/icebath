@@ -13,6 +13,7 @@ import (
 // Runs a scratch prune child entry first, then installs gateway hook fixtures since pkg/gateway is not linked
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if len(os.Args) > 1 && os.Args[1] == mcpStdioFixtureArg {
 		os.Exit(runMCPStdioFixture(os.Stdin, os.Stdout))
 	}

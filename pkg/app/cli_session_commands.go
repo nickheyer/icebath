@@ -506,9 +506,7 @@ func (c *CLI) publishTruncatedHistory(truncated []map[string]any) {
 	if c.agent == nil {
 		return
 	}
-	c.agent.mu.Lock()
-	c.agent.sessionMessages = c.conversationHistory
-	c.agent.mu.Unlock()
+	c.agent.setSessionMessages(c.conversationHistory)
 }
 
 // Drops the last exchange and returns the user text to send again, false when nothing can be retried
@@ -689,7 +687,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		}
 	}
 	if request.Preview {
-		result, err := compressNowOnGateway(c.ctx, c.agent, c.conversationHistory, request)
+		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agent), c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}
@@ -713,7 +711,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		default:
 			printLines(c.t("cli.session.compress_plain", map[string]any{"count": originalCount}))
 		}
-		result, err := compressNowOnGateway(c.ctx, c.agent, c.conversationHistory, request)
+		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agent), c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}

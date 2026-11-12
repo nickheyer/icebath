@@ -344,7 +344,7 @@ type CLI struct {
 	fallbackModel            []map[string]any
 
 	activeAgentRouteSignature  string
-	agent                      *GatewayAgent
+	agent                      cliAgent
 	toolCallbacksInstalled     bool
 	app                        tuiApplication
 	conversationHistory        []map[string]any

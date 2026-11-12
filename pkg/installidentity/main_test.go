@@ -16,6 +16,7 @@ const raceHelperEnv = "ICEBATH_INSTALL_ID_RACE"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if spec := os.Getenv(raceHelperEnv); spec != "" {
 		os.Exit(raceFirstInstallID(spec))
 	}

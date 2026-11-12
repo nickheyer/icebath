@@ -105,12 +105,12 @@ func TestRejectedBatchPublishesNothing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home.Dir(ctx), "config.yaml"), []byte("gateway:\n  max_inbound_media_bytes: 3072\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	first, err := captureNativeMedia(ctx, []string{stagedImage(t, ctx, "owned.png", 512)})
+	first, err := CaptureNativeMedia(ctx, []string{stagedImage(t, ctx, "owned.png", 512)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	owned := rowString(first[0].(*pyjson.Object), "path")
-	_, err = captureNativeMedia(ctx, []string{stagedImage(t, ctx, "owned.png", 512), stagedImage(t, ctx, "a.png", 2*1024), stagedImage(t, ctx, "b.png", 2*1024)})
+	_, err = CaptureNativeMedia(ctx, []string{stagedImage(t, ctx, "owned.png", 512), stagedImage(t, ctx, "a.png", 2*1024), stagedImage(t, ctx, "b.png", 2*1024)})
 	if !isRuntimeRefusal(err, "invalid_params") {
 		t.Fatalf("over budget batch: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestEqualBytesUnderDifferentBasenamesAreFullyReleased(t *testing.T) {
 	}
 	var rows []*pyjson.Object
 	for _, name := range []string{"a.png", "b.png"} {
-		media, err := captureNativeMedia(ctx, []string{stagedImage(t, ctx, name, 64)})
+		media, err := CaptureNativeMedia(ctx, []string{stagedImage(t, ctx, name, 64)})
 		if err != nil {
 			t.Fatal(err)
 		}

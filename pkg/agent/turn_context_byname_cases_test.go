@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"reflect"
 	"testing"
@@ -46,6 +47,7 @@ func TestMemoryQueryText(t *testing.T) {
 }
 
 func TestPrologueStamping(t *testing.T) {
+	caseHome(t)
 	t.Run("test_stamps_api_content_from_plugin_context", func(t *testing.T) {
 		a := prologueAgent(t)
 		db := blockDB(t, "state.db")
@@ -63,6 +65,51 @@ func TestPrologueStamping(t *testing.T) {
 		}
 		if last := rows[len(rows)-1]; last["content"] != "hello" || last["api_content"] != "hello\n\nPLUGIN-CTX" {
 			t.Fatalf("early persist row %v", last)
+		}
+	})
+	t.Run("test_no_stamp_without_injections", func(t *testing.T) {
+		a := prologueAgent(t)
+		db := blockDB(t, "state.db")
+		a.sessionDB = db
+		patchPluginHooks(t, func(string, map[string]any) []any { return []any{} })
+		tc := prologueBuild(t, a, nil)
+		if msg := tc.Messages[tc.CurrentTurnUserIdx]; msg.APIContent != "" {
+			t.Fatalf("sidecar %q", msg.APIContent)
+		}
+		rows, err := db.GetMessagesAsConversation(context.Background(), a.sessionID, state.ConversationOptions{})
+		if err != nil || len(rows) == 0 {
+			t.Fatalf("stored rows %v %v", rows, err)
+		}
+		if sidecar, ok := rows[len(rows)-1]["api_content"]; ok && sidecar != nil {
+			t.Fatalf("early persist sidecar %v", sidecar)
+		}
+	})
+	t.Run("test_no_stamp_for_codex_app_server", func(t *testing.T) {
+		a := prologueAgent(t)
+		a.apiMode = "codex_app_server"
+		patchPluginHooks(t, func(string, map[string]any) []any { return []any{map[string]any{"context": "PLUGIN-CTX"}} })
+		tc := prologueBuild(t, a, nil)
+		if msg := tc.Messages[tc.CurrentTurnUserIdx]; msg.APIContent != "" {
+			t.Fatalf("sidecar %q", msg.APIContent)
+		}
+	})
+	t.Run("test_appends_context_part_for_multimodal_turn", func(t *testing.T) {
+		a := prologueAgent(t)
+		patchPluginHooks(t, func(string, map[string]any) []any { return []any{map[string]any{"context": "PLUGIN-CTX"}} })
+		blocks := []any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:img"}}}
+		tc := prologueBuild(t, a, func(r *TurnContextRequest) { r.UserMessage = blocks })
+		msg := tc.Messages[tc.CurrentTurnUserIdx]
+		var parts []map[string]any
+		raw, err := json.Marshal(msg.Content)
+		if err == nil {
+			err = json.Unmarshal(raw, &parts)
+		}
+		if err != nil || len(parts) < 2 {
+			t.Fatalf("content %#v %v", msg.Content, err)
+		}
+		if !reflect.DeepEqual(parts[0], map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:img"}}) ||
+			!reflect.DeepEqual(parts[len(parts)-1], map[string]any{"type": "text", "text": "PLUGIN-CTX"}) || msg.APIContent != "" {
+			t.Fatalf("parts %v sidecar %q", parts, msg.APIContent)
 		}
 	})
 }

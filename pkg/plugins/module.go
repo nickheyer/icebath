@@ -77,6 +77,7 @@ type Services struct {
 	ActiveSessionPolicy               func(ctx context.Context) (platform, cwd string, ok bool)
 	GatewayRunnerRef                  func() PlatformActionRunner
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
+	ParseCostPolicy                   func(costs, spendLimit, costUnit any, where string) error
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
 }
 

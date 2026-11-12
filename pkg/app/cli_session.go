@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -21,6 +23,35 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
+
+// Agent that flushes its live transcript under its persist lock before the session ends
+type closePersister interface {
+	PersistActiveSessionBeforeClose(ctx context.Context, readCLIHistory func() []map[string]any) bool
+}
+
+var _ closePersister = (*agent.AIAgent)(nil)
+
+// Flushes the agent's in memory turn before the session row ends, adopting the agent's session id afterwards
+func (c *CLI) persistActiveSessionBeforeClose() {
+	persister, ok := c.agent.(closePersister)
+	if !ok {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			cliLogger.Debug(fmt.Sprintf("Could not persist active CLI session before close: %v", r))
+		}
+	}()
+	if !persister.PersistActiveSessionBeforeClose(c.ctx, func() []map[string]any { return c.conversationHistory }) {
+		return
+	}
+	if sid := c.agent.SessionID(); sid != "" {
+		c.uiMu.Lock()
+		c.sessionID = sid
+		c.uiMu.Unlock()
+		c.writeTerminalBreadcrumb()
+	}
+}
 
 // Records this terminal's live session so a later bare -c in this terminal resumes it
 func (c *CLI) writeTerminalBreadcrumb() {

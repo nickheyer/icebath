@@ -20,6 +20,7 @@ const fakeSubprocessChild = "ICEBATH_MCP_FAKE_SUBPROCESS_CHILD"
 // Dispatches fake subprocess modes, installs the bridge state of a bridgeless process and pins fresh launch env children
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if os.Getenv(connectorsLoadChild) != "" {
 		os.Exit(0)
 	}

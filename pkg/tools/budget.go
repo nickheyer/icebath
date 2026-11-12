@@ -5,6 +5,9 @@ import (
 	"math"
 )
 
+// Characters per token of every rough model estimate, the one ratio provider, media and agent derive theirs from
+const ModelCharsPerToken = 4
+
 const (
 	DefaultResultSizeChars    = 100000
 	DefaultTurnBudgetChars    = 200000
@@ -83,7 +86,7 @@ func BudgetForContextWindow(env *Env, contextLength int) BudgetConfig {
 		cfg.MCPResultSize = mcpResultSize
 		return cfg
 	}
-	windowChars := contextLength * CharsPerToken
+	windowChars := contextLength * ModelCharsPerToken
 	return BudgetConfig{
 		DefaultResultSize: max(minResultSizeChars, min(int(float64(windowChars)*perResultWindowFraction), DefaultResultSizeChars)),
 		TurnBudget:        max(minTurnBudgetChars, min(int(float64(windowChars)*perTurnWindowFraction), DefaultTurnBudgetChars)),

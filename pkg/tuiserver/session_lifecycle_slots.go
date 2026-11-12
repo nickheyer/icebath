@@ -11,8 +11,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
+// Cap slot claim of a session, the first turn claim below
+var ensureActiveSessionSlot func(ctx context.Context, sid string, session *tuigateway.Session) *activesessions.Refusal
+
+func init() { ensureActiveSessionSlot = ensureActiveSessionSlotClaim }
+
 // Claims the cap slot of a session on its first real turn, nil when it holds one now
-func ensureActiveSessionSlot(ctx context.Context, sid string, session *tuigateway.Session) *activesessions.Refusal {
+func ensureActiveSessionSlotClaim(ctx context.Context, sid string, session *tuigateway.Session) *activesessions.Refusal {
 	if canonical := canonicalLedgerRefusal(ctx, session); canonical != nil {
 		return canonical
 	}

@@ -304,7 +304,7 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 		if pyrepr.Truthy(media) && mediaList == nil {
 			return nil, &PyError{Kind: "TypeError", Msg: "'" + jsonValueTypeName(media) + "' object is not iterable"}
 		}
-		restored, err := restoreAPIImages(ctx, parts, mediaList)
+		restored, err := RestoreAPIImages(ctx, parts, mediaList)
 		if err != nil {
 			return nil, err
 		}

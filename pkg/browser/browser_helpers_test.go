@@ -16,6 +16,7 @@ var extraChildModes = map[string]func() int{}
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	removeRoot := startChildGuard()
 	claimPrivateDir = func(string) bool { return false }

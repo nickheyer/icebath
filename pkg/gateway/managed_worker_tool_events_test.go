@@ -48,7 +48,7 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("claim %v %v", row, err)
 	}
-	if err := a.stampClaim(ctx, testRef, live, row); err != nil {
+	if err := a.StampClaim(ctx, testRef, live, row); err != nil {
 		t.Fatal(err)
 	}
 	var frames []*pyjson.Object

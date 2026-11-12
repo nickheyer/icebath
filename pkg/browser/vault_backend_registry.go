@@ -72,6 +72,11 @@ func StaticLoginBackendName(provider any) (string, error) {
 	if !ok || providerregistry.IsNil(provider) {
 		return "", &providerregistry.ValueError{Message: "login backend must subclass LoginBackend"}
 	}
+	if hosted, ok := backend.(hostedLoginBackend); ok {
+		if _, _, _, refusal := hosted.identity(); refusal != "" {
+			return "", &providerregistry.ValueError{Message: refusal}
+		}
+	}
 	name, prefix, needsUnlock, plain := staticLoginIdentity(backend)
 	if !plain {
 		return "", &providerregistry.ValueError{Message: "login backend name and prefix must be plain string attributes"}
@@ -135,12 +140,34 @@ type loginBackendScopedRegistry struct {
 	providerregistry.ScopedRegistry
 }
 
+func (r loginBackendScopedRegistry) Accepts(provider any) bool {
+	return r.ScopedRegistry.Accepts(adaptHostedLoginBackend(provider))
+}
+
+func (r loginBackendScopedRegistry) ProviderName(provider any) string {
+	return r.ScopedRegistry.ProviderName(adaptHostedLoginBackend(provider))
+}
+
 func (loginBackendScopedRegistry) Identity(provider any) error {
-	_, err := StaticLoginBackendName(provider)
+	_, err := StaticLoginBackendName(adaptHostedLoginBackend(provider))
 	return err
 }
 
+// Registered provider of a slot, a hosted backend answered as the host object the plugin context handed over
+func (r loginBackendScopedRegistry) Snapshot(name, scope string) any {
+	held := r.ScopedRegistry.Snapshot(name, scope)
+	if hosted, ok := held.(hostedLoginBackend); ok {
+		return hosted.obj
+	}
+	return held
+}
+
+func (r loginBackendScopedRegistry) Restore(name string, current, replacement any, scope string) bool {
+	return r.ScopedRegistry.Restore(name, adaptHostedLoginBackend(current), adaptHostedLoginBackend(replacement), scope)
+}
+
 func (loginBackendScopedRegistry) Register(provider any, scope string) (bool, error) {
+	provider = adaptHostedLoginBackend(provider)
 	backend, ok := provider.(LoginBackend)
 	if !ok || providerregistry.IsNil(provider) {
 		return false, &providerregistry.ValueError{Message: "login backend must subclass LoginBackend"}
@@ -154,6 +181,11 @@ func (loginBackendScopedRegistry) Register(provider any, scope string) (bool, er
 // Plugin facing registry that register_login_backend writes into
 func LoginBackendScopedRegistry() plugins.ScopedRegistry {
 	return loginBackendScopedRegistry{loginBackendRegistry.Scoped()}
+}
+
+// Backend registered under the name in the scope, nil when none is
+func LoginBackendProvider(ctx context.Context, name, scope string) LoginBackend {
+	return loginBackendRegistry.GetProvider(ctx, name, scope)
 }
 
 // Clears every plugin login backend registration, for tests only

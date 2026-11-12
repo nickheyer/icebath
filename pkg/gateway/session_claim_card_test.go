@@ -39,10 +39,10 @@ func TestStampClaimPublishesTheCardAndAnOrdinaryClaimStaysEmpty(t *testing.T) {
 			published = append(published, payload.(*pyjson.Object))
 		}
 	}}] = true
-	if err := a.stampClaim(ctx, testRef, live, pyjson.ObjectOf("generation", 9, "admission_id", "adm-9", "payload", claimCardAutomation())); err != nil {
+	if err := a.StampClaim(ctx, testRef, live, pyjson.ObjectOf("generation", 9, "admission_id", "adm-9", "payload", claimCardAutomation())); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.stampClaim(ctx, testRef, live, pyjson.ObjectOf("generation", 10, "admission_id", "adm-10",
+	if err := a.StampClaim(ctx, testRef, live, pyjson.ObjectOf("generation", 10, "admission_id", "adm-10",
 		"payload", pyjson.ObjectOf("text", "typed"))); err != nil {
 		t.Fatal(err)
 	}

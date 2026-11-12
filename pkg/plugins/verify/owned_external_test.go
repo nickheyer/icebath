@@ -32,6 +32,7 @@ const (
 // Dispatches the prune entry and the server, owner and tree child modes before the suite runs
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	if out := os.Getenv(envGrandchild); out != "" {
 		recordAndIdle(out, "grandchild")

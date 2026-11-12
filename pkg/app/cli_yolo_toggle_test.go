@@ -14,6 +14,7 @@ const yoloSessionKey = "test-cli-yolo-session"
 // Clears the bypass state around a case and returns a stand in CLI bound to the session id
 func yoloStandIn(t *testing.T, sessionID string) *CLI {
 	t.Helper()
+	caseHome(t)
 	t.Setenv("ICEBATH_YOLO_MODE", "")
 	t.Cleanup(tools.SwapYoloModeFrozen(false))
 	for _, key := range []string{yoloSessionKey, "default", sessionID} {

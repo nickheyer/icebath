@@ -38,3 +38,15 @@ func BlockExternalHTTP() {
 		}
 	})
 }
+
+var dnsOnce sync.Once
+
+// Fails every DNS lookup of the test binary so transports built outside the default one stay offline too
+func BlockExternalDNS() {
+	dnsOnce.Do(func() {
+		net.DefaultResolver.PreferGo = true
+		net.DefaultResolver.Dial = func(_ context.Context, _, address string) (net.Conn, error) {
+			return nil, fmt.Errorf("DNS disabled in tests: %s", address)
+		}
+	})
+}

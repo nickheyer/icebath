@@ -32,6 +32,7 @@ var (
 // Runs the helper modes of the binary, builds icebath once when the lab tools exist, then the tests
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	RunHelper()
 	if Missing("Xvfb", "import") == nil {
 		Icebath()

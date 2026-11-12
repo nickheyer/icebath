@@ -369,7 +369,7 @@ func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEv
 		scope := leaseScope(ctx)
 		owned := scope != nil && scope.authority != nil
 		work := func(context.Context) (any, error) {
-			return captureNativeMedia(context.WithoutCancel(ctx), frozen.MediaURLs)
+			return CaptureNativeMedia(context.WithoutCancel(ctx), frozen.MediaURLs)
 		}
 		var capture *trackedTask
 		if owned {
@@ -510,7 +510,7 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	if len(event.MediaURLs) > 0 {
 		if media == nil {
-			if media, err = captureNativeMedia(ctx, event.MediaURLs); err != nil {
+			if media, err = CaptureNativeMedia(ctx, event.MediaURLs); err != nil {
 				return nil, err
 			}
 		}

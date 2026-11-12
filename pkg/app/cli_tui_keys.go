@@ -18,7 +18,7 @@ import (
 )
 
 // Hard interrupt of a running agent, swapped by tests
-var requestHardInterrupt = func(a *GatewayAgent) { a.HardInterrupt() }
+var requestHardInterrupt = func(a cliAgent) { a.HardInterrupt() }
 
 // Sleeps for a number of seconds
 func sleepSeconds(s float64) { time.Sleep(time.Duration(s * float64(time.Second))) }
@@ -151,6 +151,23 @@ func (c *CLI) commandPaletteOpen() bool {
 	return c.commandPaletteState != nil
 }
 
+// Reports whether a command waits on its own gateway socket
+func (c *CLI) gatewayCommandWaitOpen() bool {
+	c.uiMu.Lock()
+	defer c.uiMu.Unlock()
+	return c.gatewayCommandWait != nil
+}
+
+// Stops the wait of a command running on its own gateway socket
+func (c *CLI) stopGatewayCommandWait() {
+	c.uiMu.Lock()
+	wake := c.gatewayCommandWait
+	c.uiMu.Unlock()
+	if wake != nil {
+		wake.Set()
+	}
+}
+
 // Clears every overlay that blocks the agent, true when one was open
 func (c *CLI) tuiClearBlockingOverlays(e *ptEvent) bool {
 	c.uiMu.Lock()
@@ -196,7 +213,8 @@ func (c *CLI) tuiHandleCtrlC(e *ptEvent) {
 	if c.tuiCancelForegroundUI(e, []tuiCloser{
 		{c.slashConfirmOpen, func() { c.submitSlashConfirmResponse("cancel") }},
 		{c.modelPickerOpen, c.closeModelPicker},
-		{c.commandPaletteOpen, c.closeCommandPalette}}) {
+		{c.commandPaletteOpen, c.closeCommandPalette},
+		{c.gatewayCommandWaitOpen, c.stopGatewayCommandWait}}) {
 		return
 	}
 	cleared := c.tuiClearBlockingOverlays(e)

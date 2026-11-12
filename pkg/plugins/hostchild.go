@@ -70,6 +70,11 @@ var HostObjectBases = map[string]string{
 	"register_memory_provider":               "agent.memory_provider:MemoryProvider",
 }
 
+// Unsupported registrars the parent serves for an in process plugin, mapped to the base their object subclasses
+var HostInProcessObjectBases = map[string]string{
+	"register_login_backend": "agent.vault_backends.base:LoginBackend",
+}
+
 // Provider bases a category loader hands back as hosted objects though no ctx registration names them
 var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend"}
 
@@ -97,6 +102,7 @@ func hostIsolationSource() string {
 	}
 	fmt.Fprintf(&b, "HOST_REMOTE_FACADES: frozenset[str] = frozenset({%s})\n\n", strings.Join(quoted, ", "))
 	dict("HOST_OBJECT_BASES", HostObjectBases)
+	dict("HOST_IN_PROCESS_OBJECT_BASES", HostInProcessObjectBases)
 	results := make([]string, len(HostResultObjectBases))
 	for i, ref := range HostResultObjectBases {
 		results[i] = config.PyRepr(ref) + ","

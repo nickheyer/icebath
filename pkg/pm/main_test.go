@@ -18,6 +18,7 @@ const sleepChild = "ICEBATH_PM_SLEEP_CHILD"
 // Dispatches the child modes the launcher cases run the test binary in before the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if root := os.Getenv(republishChild); root != "" {
 		written, err := EnsureInstallLaunchers(context.Background(), root, root)
 		fmt.Printf("published %d %d\n", len(written), len(windowsBinLaunchers))

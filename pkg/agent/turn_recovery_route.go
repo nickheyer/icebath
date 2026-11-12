@@ -89,13 +89,9 @@ func isGenuineNousRateLimit(ctx context.Context, a *AIAgent, apiError error, err
 		merged = map[string]any{}
 	}
 	maps.Copy(merged, classifiedCtx)
-	resetAt := time.Time{}
-	if epoch, ok := provider.ParseAbsoluteTimestamp(merged["reset_at"]); ok {
-		resetAt = time.Unix(0, int64(epoch*1e9))
-	}
 	guard := &provider.NousRateGuard{Home: home.Dir(ctx), Anonymous: anonymous}
-	if err := guard.Record(headers, resetAt, 300*time.Second); err != nil {
-		conversationLoopLog().Debug(fmt.Sprintf("nous rate guard record failed: %v", err))
+	if err := guard.Record(headers, provider.ContextResetAt(merged), 300*time.Second); err != nil {
+		provider.LogNousRateLimitWriteFailure(err)
 	}
 	return true
 }

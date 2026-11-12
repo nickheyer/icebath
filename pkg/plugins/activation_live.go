@@ -146,9 +146,9 @@ func pluginSkills(ctx context.Context, pluginKey string) []any {
 // Registered name of a catalog plugin skill written catalog name colon skill, false when not installed here
 func CatalogPluginSkill(ctx context.Context, written string) (string, bool, error) {
 	catalogName, bare, _ := strings.Cut(written, ":")
-	target := catalogInstalledDir(home.Dir(ctx), catalogName)
+	target, err := catalogInstalledDir(home.Dir(ctx), catalogName)
 	if target == "" {
-		return "", false, nil
+		return "", false, err
 	}
 	resolvedTarget, err := pypath.Resolve(target)
 	if err != nil {

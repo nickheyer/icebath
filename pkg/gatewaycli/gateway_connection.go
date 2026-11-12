@@ -308,7 +308,8 @@ type GatewayConnection struct {
 	client            ConnectionClient
 	live              *liveSocket
 	looping           bool
-	thread            *memory.ContextThread
+	thread            loopThread
+	runner            loopRunner
 	ready             pythread.Event
 	err               error
 	stop              chan struct{}
@@ -331,9 +332,28 @@ var (
 
 // Connection dialing through connect, the home owner when connect is nil
 func NewGatewayConnection(connect ConnectFunc) *GatewayConnection {
-	return &GatewayConnection{connect: connect, Events: gateway.NewEventQueue(0), states: map[string]*SessionState{},
+	c := &GatewayConnection{connect: connect, Events: gateway.NewEventQueue(0), states: map[string]*SessionState{},
 		side: map[string]*gateway.EventQueue{}, commands: map[*pythread.Event]bool{}}
+	c.runner = c
+	return c
 }
+
+// Thread running the socket loop, started, probed for life and joined by Start and Close
+type loopThread interface {
+	Start()
+	Alive() bool
+	Join(timeout time.Duration)
+}
+
+// Body the loop thread runs, looked up on the instance the way Python resolves its run attribute
+type loopRunner interface {
+	run(ctx context.Context)
+}
+
+var (
+	_ loopThread = (*memory.ContextThread)(nil)
+	_ loopRunner = (*GatewayConnection)(nil)
+)
 
 // Process wide connection, replaced once the previous one is final
 func SharedGatewayConnection() *GatewayConnection {
@@ -454,7 +474,7 @@ func (c *GatewayConnection) Start(ctx context.Context, timeout time.Duration) er
 				c.ready.Clear()
 				c.closed = false
 			}
-			thread = memory.SpawnContextThread(ctx, "icebath-gateway-loop", c.run)
+			thread = memory.SpawnContextThread(ctx, "icebath-gateway-loop", c.runner.run)
 			c.thread = thread
 			c.mu.Unlock()
 			thread.Start()
@@ -879,7 +899,7 @@ func (a *commandAnswer) settled() bool {
 	return a.done
 }
 
-// One request with no answer deadline on a socket of its own, given up with CallStopped once wake is set
+// One request with no answer deadline on its own socket, CallStopped once wake is set, the cause once ctx ends
 func (c *GatewayConnection) CallUntil(ctx context.Context, method string, wake *pythread.Event, params map[string]any) (any, error) {
 	if c.onLoop(ctx) {
 		return nil, &LoopThreadError{Msg: "GatewayConnection.call_until() on the gateway loop thread would deadlock"}
@@ -899,12 +919,18 @@ func (c *GatewayConnection) CallUntil(ctx context.Context, method string, wake *
 	c.commands[wake] = true
 	c.sideLock.Unlock()
 	thread.Start()
-	wake.Wait(-1)
+	select {
+	case <-wake.Waiter():
+	case <-ctx.Done():
+	}
 	wake.Set()
 	thread.Join(10 * time.Second)
 	c.sideLock.Lock()
 	delete(c.commands, wake)
 	c.sideLock.Unlock()
+	if ctx.Err() != nil {
+		return nil, context.Cause(ctx)
+	}
 	if answer.settled() {
 		return answer.result, answer.err
 	}

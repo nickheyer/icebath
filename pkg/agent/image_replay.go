@@ -264,10 +264,10 @@ func (a *AIAgent) turnReplayWindow(ctx context.Context) int {
 	}
 	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
 	if err != nil {
-		tree = nil
+		panic(err)
 	}
 	keep := ResolveReplayRecentImages(map[string]any(tree))
-	if keep > 0 && tools.DecideImageInputMode(ctx, a.env, provider, model, "") != "native" {
+	if keep > 0 && tools.DecideImageInputModeWithConfig(ctx, a.env, provider, model, map[string]any(tree), "") != "native" {
 		keep = 0
 	}
 	a.imageReplayWindow = &imageReplayWindow{turnTimestamp: a.currentTurnTimestamp, provider: provider, model: model, keep: keep}

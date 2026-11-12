@@ -45,7 +45,7 @@ func TestRoutingToDifferentModelMarksRoutedAndResolvesCredentials(t *testing.T) 
 	})
 	rt := resolveReviewRuntime(context.Background(), costControlAgent("openai-codex", "gpt-5.5"), reviewCfg("openrouter", "google/gemini-3-flash-preview"))
 	if !rt.Routed || rt.Provider != "openrouter" || rt.Model != "google/gemini-3-flash-preview" || rt.APIKey != "or-key" ||
-		rt.CredentialPool != pool || rt.MaxTokens != 0 ||
+		rt.CredentialPool != pool || rt.MaxTokens != nil ||
 		!reflect.DeepEqual(rt.RequestOverrides, map[string]any{"extra_body": map[string]any{"store": false}}) {
 		t.Fatalf("runtime %+v", rt)
 	}
@@ -55,9 +55,9 @@ func TestUnroutedRuntimeKeepsParentPoolAndOverrides(t *testing.T) {
 	a := costControlAgent("openai-codex", "gpt-5.5")
 	a.credentialPool = &provider.Pool{}
 	a.requestOverrides = map[string]any{"service_tier": "priority"}
-	a.maxTokens = 4096
+	a.maxTokens = iptr(4096)
 	rt := resolveReviewRuntime(context.Background(), a, map[string]any{})
-	if rt.CredentialPool != a.credentialPool || !reflect.DeepEqual(rt.RequestOverrides, map[string]any{"service_tier": "priority"}) || rt.MaxTokens != 4096 {
+	if rt.CredentialPool != a.credentialPool || !reflect.DeepEqual(rt.RequestOverrides, map[string]any{"service_tier": "priority"}) || *rt.MaxTokens != 4096 {
 		t.Fatalf("runtime %+v", rt)
 	}
 }

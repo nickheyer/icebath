@@ -1,10 +1,11 @@
 package agent
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
 
+	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -18,18 +19,27 @@ const (
 
 var sentenceTerminals = []string{".", "!", "?", "。", "！", "？"}
 
-var trailingContinueIntentRe = regexp.MustCompile(`(?i)(?:\blet me now\b|\bi(?:['\x{2019}])?ll now\b|\bi will now\b` +
-	`|\bnow i(?:['\x{2019}]ll| will)\b|\bnext[,:] i\b)` +
-	`[^.!?\n]{0,100}[.:\x{2026}]?\s*$`)
+var trailingContinueIntentRe = mustPyIgnoreCase(`(?:\blet me now\b|\bi(?:['\u2019])?ll now\b|\bi will now\b` +
+	`|\bnow i(?:['\u2019]ll| will)\b|\bnext[,:] i\b)` +
+	`[^.!?\n]{0,100}[.:\u2026]?\s*$`)
 
-var promotedReasoningPlanTailRe = regexp.MustCompile(`(?i)(?:^|[.!?:\x{3002}\x{ff01}\x{ff1f}\x{2014}\x{2013}\n]\s*|\x{2026}\s*)` +
-	`(?:let(?:['\x{2019}]s| me)\b|i(?:['\x{2019}]ll| will| need to| should| am going to|['\x{2019}]m going to)\b` +
-	`|next[,:]? i\b|now i(?:['\x{2019}]ll| will| need to)\b|first[,:]? i(?:['\x{2019}]ll| will| need to)\b` +
-	`|\x{0e08}\x{0e30}\x{0e43}\x{0e2b}\x{0e49}\x{0e1c}\x{0e21}|\x{0e1c}\x{0e21}\x{0e08}\x{0e30}` +
-	`|\x{0e15}\x{0e48}\x{0e2d}\x{0e44}\x{0e1b}(?:\x{0e08}\x{0e30}|\x{0e1c}\x{0e21}\x{0e08}\x{0e30})` +
-	`|\x{0e02}\x{0e2d}(?:\x{0e40}\x{0e23}\x{0e34}\x{0e48}\x{0e21}|\x{0e25}\x{0e2d}\x{0e07}|\x{0e15}\x{0e23}\x{0e27}\x{0e08}|\x{0e41}\x{0e01}\x{0e49}|\x{0e2a}\x{0e48}\x{0e07}|\x{0e17}\x{0e33}|\x{0e14}\x{0e39})` +
-	`|\x{0e08}\x{0e30}(?:\x{0e40}\x{0e23}\x{0e34}\x{0e48}\x{0e21}|\x{0e25}\x{0e2d}\x{0e07}|\x{0e15}\x{0e23}\x{0e27}\x{0e08}|\x{0e41}\x{0e01}\x{0e49}|\x{0e2a}\x{0e48}\x{0e07}|\x{0e17}\x{0e33}|\x{0e14}\x{0e39}|\x{0e23}\x{0e31}\x{0e19}|\x{0e22}\x{0e34}\x{0e07}))` +
-	`[^.!?\n\x{3002}\x{ff01}\x{ff1f}]{0,160}(?:[.:\x{2026}]+)?\s*$`)
+var promotedReasoningPlanTailRe = mustPyIgnoreCase(`(?:^|[.!?:\u3002\uff01\uff1f\u2014\u2013\n]\s*|\u2026\s*)` +
+	`(?:let(?:['\u2019]s| me)\b|i(?:['\u2019]ll| will| need to| should| am going to|['\u2019]m going to)\b` +
+	`|next[,:]? i\b|now i(?:['\u2019]ll| will| need to)\b|first[,:]? i(?:['\u2019]ll| will| need to)\b` +
+	`|\u0e08\u0e30\u0e43\u0e2b\u0e49\u0e1c\u0e21|\u0e1c\u0e21\u0e08\u0e30` +
+	`|\u0e15\u0e48\u0e2d\u0e44\u0e1b(?:\u0e08\u0e30|\u0e1c\u0e21\u0e08\u0e30)` +
+	`|\u0e02\u0e2d(?:\u0e40\u0e23\u0e34\u0e48\u0e21|\u0e25\u0e2d\u0e07|\u0e15\u0e23\u0e27\u0e08|\u0e41\u0e01\u0e49|\u0e2a\u0e48\u0e07|\u0e17\u0e33|\u0e14\u0e39)` +
+	`|\u0e08\u0e30(?:\u0e40\u0e23\u0e34\u0e48\u0e21|\u0e25\u0e2d\u0e07|\u0e15\u0e23\u0e27\u0e08|\u0e41\u0e01\u0e49|\u0e2a\u0e48\u0e07|\u0e17\u0e33|\u0e14\u0e39|\u0e23\u0e31\u0e19|\u0e22\u0e34\u0e07))` +
+	`[^.!?\n\u3002\uff01\uff1f]{0,160}(?:[.:\u2026]+)?\s*$`)
+
+// Python re.IGNORECASE pattern with Python matching semantics, panicking on a bad pattern
+func mustPyIgnoreCase(pattern string) *regexp2.Regexp {
+	re, err := pyre.CompileIgnoreCase(pattern)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
 
 var (
 	intentAckOn  = map[string]bool{"true": true, "always": true, "yes": true, "on": true}
@@ -95,7 +105,7 @@ func trailingContinueIntent(text string) bool {
 	if n := len([]rune(t)); n == 0 || n > trailingContinueIntentMaxChars {
 		return false
 	}
-	return trailingContinueIntentRe.MatchString(lastRunes(t, 160))
+	return pyReSearch(trailingContinueIntentRe, lastRunes(t, 160))
 }
 
 // Whether promoted reasoning ends on a first person plan to act
@@ -104,7 +114,7 @@ func promotedReasoningAnnouncesAction(text string) bool {
 	if t == "" {
 		return false
 	}
-	return promotedReasoningPlanTailRe.MatchString(lastRunes(t, 240))
+	return pyReSearch(promotedReasoningPlanTailRe, lastRunes(t, 240))
 }
 
 // Intent ack continuation mode off, codex_only or all from the agent setting and live route

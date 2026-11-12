@@ -16,15 +16,21 @@ func closeLateSessionDBResult(result func() (*state.DB, error)) {
 	}
 }
 
+// Session finalization and agent teardown the scheduler looks up at call time, swapped by tests
+var (
+	finalizeCronSessionSeam = (*Store).finalizeCronSession
+	teardownCronAgentSeam   = (*Store).teardownCronAgent
+)
+
 // True when the agent goroutine still runs and will finalize the session and tear the agent down itself
 func deferTeardownToRunningWorker(s *Store, future *agentFuture, sessionDB *state.DB, a CronAgent, jobID, jobName, cronSessionID, workdir string) bool {
 	if future == nil || future.Done() {
 		return false
 	}
 	future.addDoneCallback(func() {
-		defer s.teardownCronAgent(a, jobID, nil)
+		defer teardownCronAgentSeam(s, a, jobID, nil)
 		if sessionDB != nil {
-			s.finalizeCronSession(context.Background(), sessionDB, a, jobID, jobName, cronSessionID, workdir)
+			finalizeCronSessionSeam(s, context.Background(), sessionDB, a, jobID, jobName, cronSessionID, workdir)
 		}
 	})
 	return true

@@ -242,7 +242,7 @@ func AdmitAPISteps(ctx context.Context, adapter APITurnAdapter, turn *APITurn) W
 			return admitAPIPayload(ctx, run, authority, adapter, sid, requestID, payload, settings, declaredKey, turn)
 		}
 		leaseCtx, _, dropLease := captureLease(ctx, nil)
-		media, err := commitAPIImages(leaseCtx, content)
+		media, err := CommitAPIImages(leaseCtx, content)
 		if err != nil {
 			dropLease()
 			return nil, err

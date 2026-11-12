@@ -78,7 +78,7 @@ func firePreAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, apiKwa
 		"provider": a.provider, "base_url": a.baseURL, "api_mode": a.apiMode, "api_call_count": s.APICallCount,
 		"retry_count": s.RetryCount, "request_messages": requestList, "system_prompt": systemPromptForHooks(apiKwargs, requestMessages),
 		"message_count": len(apiMessages), "tool_count": len(a.tools), "approx_input_tokens": s.ApproxTokens,
-		"request_char_count": s.TotalChars, "max_tokens": a.maxTokens, "started_at": s.APIStartTime,
+		"request_char_count": s.TotalChars, "max_tokens": intPtrOrNone(a.maxTokens), "started_at": s.APIStartTime,
 		"middleware_trace": append([]any{}, trace...), "request": a.apiRequestPayloadForHook(apiKwargs),
 	})
 }

@@ -62,6 +62,9 @@ func (e *CompressionLockHeld) Error() string {
 	return "Compression lock held: " + holder
 }
 
+// Manual compaction core of every compress route, replaced only where a hermes case replaces compress_now
+var compressNow = agent.CompressNow
+
 // Manual compression refused because a turn already holds the session
 type CompressionBusy struct{ Msg string }
 
@@ -114,7 +117,7 @@ func compressSessionHistory(ctx context.Context, session *tuigateway.Session, fo
 	}
 	result, err := func() (agent.CompressResult, error) {
 		defer clearSessionContext(env)
-		return agent.CompressNow(scoped, a, historyAsMessages(beforeMessages), request, agent.CompressNowOptions{TaskID: taskID,
+		return compressNow(scoped, a, historyAsMessages(beforeMessages), request, agent.CompressNowOptions{TaskID: taskID,
 			SnapshotIsCurrent: func() (bool, error) {
 				unlock := lockHistory(session)
 				defer unlock()

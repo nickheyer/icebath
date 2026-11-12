@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,17 +22,17 @@ const legacySoul = "# Beta identity\n\n## Messaging other agents\nKEEP THIS PROF
 
 type migratorKey struct{}
 
-func setProfile(p *stubPlane, name string, values map[string]any, version int, writer any) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	prof := p.profile(name)
-	prof.values, prof.version, prof.writer = values, version, writer
+func setProfile(p *configplane.Plane, name string, values map[string]any, version int, writer any) {
+	p.Mu.Lock()
+	defer p.Mu.Unlock()
+	prof := p.Profile(name)
+	prof.Values, prof.Version, prof.Writer = values, version, writer
 }
 
-func profileValues(p *stubPlane, name string) map[string]any {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return config.Clone(p.profile(name).values).(map[string]any)
+func profileValues(p *configplane.Plane, name string) map[string]any {
+	p.Mu.Lock()
+	defer p.Mu.Unlock()
+	return config.Clone(p.Profile(name).Values).(map[string]any)
 }
 
 func siblingWithLegacySoul(t *testing.T, h string) string {
@@ -64,7 +65,7 @@ func TestEditDuringAnInMemoryMigrationNeverSendsTheMigration(t *testing.T) {
 	}
 	setProfile(p, "default", map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 1, 46)
 	b := testBackend()
-	if _, err := b.state(context.Background(), p.home); err != nil {
+	if _, err := b.state(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
 	stepsRan, resume := make(chan struct{}), make(chan struct{})
@@ -87,7 +88,7 @@ func TestEditDuringAnInMemoryMigrationNeverSendsTheMigration(t *testing.T) {
 	go func() {
 		defer close(done)
 		ctx := context.WithValue(WithReadScope(context.Background()), migratorKey{}, true)
-		_, failure = config.ReadConfigDoc(ctx, filepath.Join(p.home, "config.yaml"))
+		_, failure = config.ReadConfigDoc(ctx, filepath.Join(p.Home, "config.yaml"))
 	}()
 	waitOrFail(t, stepsRan)
 	err := setValue(p, "display.personality", "pirate")
@@ -96,16 +97,16 @@ func TestEditDuringAnInMemoryMigrationNeverSendsTheMigration(t *testing.T) {
 	if err != nil || failure != nil {
 		t.Fatalf("edit %v migrator %v", err, failure)
 	}
-	patches := p.patches()
+	patches := p.Patches()
 	if len(patches) != 1 {
 		t.Fatalf("patches %d", len(patches))
 	}
-	raw, _ := json.Marshal(patches[0].body)
-	if _, has := patches[0].body["unset"]; has || strings.Contains(string(raw), "compression") {
+	raw, _ := json.Marshal(patches[0].Body)
+	if _, has := patches[0].Body["unset"]; has || strings.Contains(string(raw), "compression") {
 		t.Fatalf("migration sent %s", raw)
 	}
 	mustEqualJSON(t, "stored", profileValues(p, "default")["compression"], map[string]any{"threshold_tokens": 256000})
-	later, err := config.ReadRawConfig(context.Background(), p.home)
+	later, err := config.ReadRawConfig(context.Background(), p.Home)
 	if err != nil || later["display"].(map[string]any)["personality"] != "pirate" {
 		t.Fatalf("later %v %v", later, err)
 	}
@@ -121,11 +122,11 @@ func TestProfileAddedWhileThePollerIteratesDoesNotKillIt(t *testing.T) {
 	p := setupPlane(t)
 	b := testBackend()
 	ctx := context.Background()
-	st, err := b.state(ctx, p.home)
+	st, err := b.state(ctx, p.Home)
 	if err != nil {
 		t.Fatal(err)
 	}
-	work := filepath.Join(p.home, "profiles", "work")
+	work := filepath.Join(p.Home, "profiles", "work")
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestSettingAValueThatOldSchemaMigrationRewritesIsRefused(t *testing.T) {
 	}
 	ctx := context.Background()
 	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "old"}}, 1, 46)
-	if _, err := config.ReadRawConfig(ctx, p.home); err != nil {
+	if _, err := config.ReadRawConfig(ctx, p.Home); err != nil {
 		t.Fatal(err)
 	}
 	var notice bytes.Buffer
@@ -170,13 +171,13 @@ func TestSettingAValueThatOldSchemaMigrationRewritesIsRefused(t *testing.T) {
 	config.FacadeNoticeOut = &notice
 	defer func() { config.FacadeNoticeOut = prev }()
 	value := "256000"
-	err := config.ConfigCommand(ctx, p.home, config.ConfigArgs{Command: "set", Key: "compression.threshold_tokens", Value: &value}, cmdSources())
+	err := config.ConfigCommand(ctx, p.Home, config.ConfigArgs{Command: "set", Key: "compression.threshold_tokens", Value: &value}, cmdSources())
 	var exit *config.ConfigExit
 	if !errors.As(err, &exit) || exit.Code != 1 || !strings.Contains(notice.String(), "compression.threshold_tokens") ||
 		!strings.Contains(notice.String(), "schema v46") {
 		t.Fatalf("set %v %q", err, notice.String())
 	}
-	if len(p.patches()) != 0 {
+	if len(p.Patches()) != 0 {
 		t.Fatal("sent")
 	}
 	var valueErr *config.ConfigValueError
@@ -188,28 +189,28 @@ func TestSettingAValueThatOldSchemaMigrationRewritesIsRefused(t *testing.T) {
 	}
 	mustEqualJSON(t, "stored", profileValues(p, "default")["compression"], map[string]any{"threshold_tokens": 300000})
 	ResetForTests()
-	doc, err := config.ReadRawConfig(ctx, p.home)
+	doc, err := config.ReadRawConfig(ctx, p.Home)
 	if err != nil || doc["compression"].(map[string]any)["threshold_tokens"] != 300000 {
 		t.Fatalf("read back %v %v", doc, err)
 	}
 }
 
 // Another writer adds terminal.persistent between our read and our first PATCH, which then gets a 409
-func absentSectionRace(t *testing.T, p *stubPlane) {
+func absentSectionRace(t *testing.T, p *configplane.Plane) {
 	t.Helper()
 	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise"}}, 1, nil)
-	if _, err := testBackend().ReadUserDoc(context.Background(), p.home); err != nil {
+	if _, err := testBackend().ReadUserDoc(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
 	original := request
 	var raced atomic.Bool
 	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
 		if method == "PATCH" && raced.CompareAndSwap(false, true) {
-			p.mu.Lock()
-			prof := p.profile("default")
-			prof.values["terminal"] = map[string]any{"persistent": true}
-			prof.version++
-			p.mu.Unlock()
+			p.Mu.Lock()
+			prof := p.Profile("default")
+			prof.Values["terminal"] = map[string]any{"persistent": true}
+			prof.Version++
+			p.Mu.Unlock()
 		}
 		return original(ctx, method, h, profile, etag, body, token)
 	}
@@ -232,11 +233,11 @@ func TestCASRetryKeepsASiblingAddedToASectionTheDocLacked(t *testing.T) {
 				t.Fatal(err)
 			}
 			mustEqualJSON(t, "terminal", profileValues(p, "default")["terminal"], map[string]any{"persistent": true, "timeout": 321})
-			patches := p.patches()
+			patches := p.Patches()
 			if len(patches) != 2 {
 				t.Fatalf("patches %d", len(patches))
 			}
-			retry := patches[1].body
+			retry := patches[1].Body
 			if _, has := retry["unset"]; has || retry["expectedVersion"] != 2 {
 				t.Fatalf("retry %v", retry)
 			}
@@ -249,12 +250,12 @@ func TestCASRetryKeepsASiblingAddedToASectionTheDocLacked(t *testing.T) {
 func TestCASRetryOfANewEmptySectionKeepsAConcurrentOne(t *testing.T) {
 	p := setupPlane(t)
 	absentSectionRace(t, p)
-	err := testBackend().WriteChanges(context.Background(), p.home, config.Changes{Set: []config.KeyValue{{Key: "terminal", Value: map[string]any{}}}})
+	err := testBackend().WriteChanges(context.Background(), p.Home, config.Changes{Set: []config.KeyValue{{Key: "terminal", Value: map[string]any{}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	mustEqualJSON(t, "terminal", profileValues(p, "default")["terminal"], map[string]any{"persistent": true})
-	if n := len(p.patches()); n != 1 {
+	if n := len(p.Patches()); n != 1 {
 		t.Fatalf("patches %d", n)
 	}
 }
@@ -263,11 +264,11 @@ func TestCASRetryOfANewEmptySectionKeepsAConcurrentOne(t *testing.T) {
 func TestExplicitSectionReplacementStaysAReplacement(t *testing.T) {
 	p := setupPlane(t)
 	setProfile(p, "default", map[string]any{"terminal": map[string]any{"persistent": true, "timeout": 3}}, 1, nil)
-	if err := testBackend().WriteChanges(context.Background(), p.home, config.Changes{Unset: []string{"terminal"}}); err != nil {
+	if err := testBackend().WriteChanges(context.Background(), p.Home, config.Changes{Unset: []string{"terminal"}}); err != nil {
 		t.Fatal(err)
 	}
-	patches := p.patches()
-	mustEqualJSON(t, "unset", patches[len(patches)-1].body["unset"], []any{"terminal"})
+	patches := p.Patches()
+	mustEqualJSON(t, "unset", patches[len(patches)-1].Body["unset"], []any{"terminal"})
 	if _, has := profileValues(p, "default")["terminal"]; has {
 		t.Fatal("terminal kept")
 	}
@@ -276,16 +277,16 @@ func TestExplicitSectionReplacementStaysAReplacement(t *testing.T) {
 // Reading a profile stamped 40 migrates it in memory without rewriting a sibling profile SOUL.md
 func TestRemoteReadMigrationChangesNoLocalFile(t *testing.T) {
 	p := setupPlane(t)
-	soul := siblingWithLegacySoul(t, p.home)
+	soul := siblingWithLegacySoul(t, p.Home)
 	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "old"}}, 1, 40)
-	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.home, "config.yaml"))
+	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.Home, "config.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := pyInt(doc.(map[string]any)["_config_version"]); v != config.LatestConfigVersion() {
 		t.Fatalf("version %v", doc.(map[string]any)["_config_version"])
 	}
-	if mustRead(t, soul) != legacySoul || len(p.patches()) != 0 {
+	if mustRead(t, soul) != legacySoul || len(p.Patches()) != 0 {
 		t.Fatal("local file rewritten or sent")
 	}
 }
@@ -294,41 +295,41 @@ func TestRemoteReadMigrationChangesNoLocalFile(t *testing.T) {
 func TestRefusedWriteValidationChangesNoLocalFile(t *testing.T) {
 	p := setupPlane(t)
 	setProfile(p, "default", map[string]any{}, 1, 40)
-	if _, err := config.ReadRawConfig(context.Background(), p.home); err != nil {
+	if _, err := config.ReadRawConfig(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
-	soul := siblingWithLegacySoul(t, p.home)
+	soul := siblingWithLegacySoul(t, p.Home)
 	var valueErr *config.ConfigValueError
 	if err := writeKey(p, "compression.threshold_tokens", 256000); !errors.As(err, &valueErr) || valueErr.Code != "config_migration_conflict" {
 		t.Fatalf("write %v", err)
 	}
-	if mustRead(t, soul) != legacySoul || len(p.patches()) != 0 {
+	if mustRead(t, soul) != legacySoul || len(p.Patches()) != 0 {
 		t.Fatal("local file rewritten or sent")
 	}
 }
 
 // Plane document change the poll lands, run once from the credential lookup of the next write
-func pollBeforeWrite(t *testing.T, p *stubPlane, change func(prof *stubProfile)) {
+func pollBeforeWrite(t *testing.T, p *configplane.Plane, change func(prof *configplane.Profile)) {
 	t.Helper()
 	t.Setenv(idpEnvPrefix+"TOKEN_URL", "")
 	var armed atomic.Bool
 	b := testBackend()
 	RegisterNousAccessToken(func(ctx context.Context, h string) (string, error) {
 		if armed.CompareAndSwap(true, false) {
-			p.mu.Lock()
-			prof := p.profile("default")
+			p.Mu.Lock()
+			prof := p.Profile("default")
 			change(prof)
-			prof.version++
-			p.mu.Unlock()
+			prof.Version++
+			p.Mu.Unlock()
 			st, err := b.state(ctx, h)
 			if err != nil || !b.pollOne(st) {
 				t.Errorf("poll %v", err)
 			}
 		}
-		return stubNousToken, nil
+		return configplane.NousToken, nil
 	})
 	t.Cleanup(func() { RegisterNousAccessToken(nil) })
-	if _, err := config.ReadRawConfig(context.Background(), p.home); err != nil {
+	if _, err := config.ReadRawConfig(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
 	armed.Store(true)
@@ -338,21 +339,21 @@ func pollBeforeWrite(t *testing.T, p *stubPlane, change func(prof *stubProfile))
 func TestPollBetweenReadAndSaveSendsOnlyTheCallersEdit(t *testing.T) {
 	p := setupPlane(t)
 	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1, nil)
-	pollBeforeWrite(t, p, func(prof *stubProfile) {
-		prof.values["display"].(map[string]any)["compact"] = true
-		prof.values["terminal"] = map[string]any{"timeout": 321}
+	pollBeforeWrite(t, p, func(prof *configplane.Profile) {
+		prof.Values["display"].(map[string]any)["compact"] = true
+		prof.Values["terminal"] = map[string]any{"timeout": 321}
 	})
 	if err := setValue(p, "display.personality", "pirate"); err != nil {
 		t.Fatal(err)
 	}
-	patches := p.patches()
+	patches := p.Patches()
 	if len(patches) != 1 {
 		t.Fatalf("patches %v", patches)
 	}
-	if unset, _ := patches[0].body["unset"].([]any); len(unset) != 0 {
+	if unset, _ := patches[0].Body["unset"].([]any); len(unset) != 0 {
 		t.Fatalf("unset %v", unset)
 	}
-	mustEqualJSON(t, "set", patches[0].body["set"], map[string]any{"display.personality": "pirate"})
+	mustEqualJSON(t, "set", patches[0].Body["set"], map[string]any{"display.personality": "pirate"})
 	mustEqualJSON(t, "stored", profileValues(p, "default"), map[string]any{
 		"display": map[string]any{"personality": "pirate", "compact": true}, "terminal": map[string]any{"timeout": 321}})
 }
@@ -362,41 +363,41 @@ func TestPollBetweenReadAndAtomicConfigWriteSendsOnlyTheCallersEdit(t *testing.T
 	p := setupPlane(t)
 	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1, nil)
 	ctx := context.Background()
-	path := filepath.Join(p.home, "config.yaml")
+	path := filepath.Join(p.Home, "config.yaml")
 	raw, err := config.ReadUserConfigRaw(ctx, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw["display"].(map[string]any)["personality"] = "pirate"
-	p.mu.Lock()
-	prof := p.profile("default")
-	prof.values["display"].(map[string]any)["compact"] = true
-	prof.version++
-	p.mu.Unlock()
+	p.Mu.Lock()
+	prof := p.Profile("default")
+	prof.Values["display"].(map[string]any)["compact"] = true
+	prof.Version++
+	p.Mu.Unlock()
 	b := testBackend()
-	st, err := b.state(ctx, p.home)
+	st, err := b.state(ctx, p.Home)
 	if err != nil || !b.pollOne(st) {
 		t.Fatalf("poll %v", err)
 	}
-	if err := config.AtomicConfigWrite(ctx, p.home, path, raw, ""); err != nil {
+	if err := config.AtomicConfigWrite(ctx, p.Home, path, raw, ""); err != nil {
 		t.Fatal(err)
 	}
-	patches := p.patches()
+	patches := p.Patches()
 	if len(patches) != 1 {
 		t.Fatalf("patches %v", patches)
 	}
-	mustEqualJSON(t, "set", patches[0].body["set"], map[string]any{"display.personality": "pirate"})
+	mustEqualJSON(t, "set", patches[0].Body["set"], map[string]any{"display.personality": "pirate"})
 	mustEqualJSON(t, "display", profileValues(p, "default")["display"], map[string]any{"personality": "pirate", "compact": true})
 }
 
-func legacyProfile(t *testing.T, p *stubPlane) int {
+func legacyProfile(t *testing.T, p *configplane.Plane) int {
 	t.Helper()
 	latest := config.LatestConfigVersion()
 	if latest <= 46 {
 		t.Fatal("latest version too old")
 	}
 	setProfile(p, "default", map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 1, 46)
-	if _, err := testBackend().state(context.Background(), p.home); err != nil {
+	if _, err := testBackend().state(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
 	return latest
@@ -450,7 +451,7 @@ func TestConcurrentReaderNeverSeesTheUnmigratedDoc(t *testing.T) {
 	p := setupPlane(t)
 	latest := legacyProfile(t, p)
 	entered, resume := pauseFirstMigration(t)
-	cfg := filepath.Join(p.home, "config.yaml")
+	cfg := filepath.Join(p.Home, "config.yaml")
 	done, first, failure := startMigrator(func(ctx context.Context) (any, error) { return config.ReadConfigDoc(ctx, cfg) })
 	waitOrFail(t, entered)
 	second, err := config.ReadConfigDoc(context.Background(), cfg)
@@ -461,7 +462,7 @@ func TestConcurrentReaderNeverSeesTheUnmigratedDoc(t *testing.T) {
 	}
 	assertMigrated(t, second, latest)
 	assertMigrated(t, *first, latest)
-	if len(p.patches()) != 0 {
+	if len(p.Patches()) != 0 {
 		t.Fatal("sent")
 	}
 }
@@ -471,7 +472,7 @@ func TestConcurrentReadonlyReaderNeverSeesTheUnmigratedDoc(t *testing.T) {
 	p := setupPlane(t)
 	latest := legacyProfile(t, p)
 	entered, resume := pauseFirstMigration(t)
-	cfg := filepath.Join(p.home, "config.yaml")
+	cfg := filepath.Join(p.Home, "config.yaml")
 	done, _, failure := startMigrator(func(ctx context.Context) (any, error) { return config.ReadConfigDocReadonly(ctx, cfg) })
 	waitOrFail(t, entered)
 	doc, err := config.ReadConfigDocReadonly(context.Background(), cfg)
@@ -489,7 +490,7 @@ func TestWriterDuringAMigrationSendsOnlyItsEdit(t *testing.T) {
 	legacyProfile(t, p)
 	entered, resume := pauseFirstMigration(t)
 	done, _, failure := startMigrator(func(ctx context.Context) (any, error) {
-		return config.ReadConfigDoc(ctx, filepath.Join(p.home, "config.yaml"))
+		return config.ReadConfigDoc(ctx, filepath.Join(p.Home, "config.yaml"))
 	})
 	waitOrFail(t, entered)
 	err := setValue(p, "display.personality", "pirate")
@@ -498,11 +499,11 @@ func TestWriterDuringAMigrationSendsOnlyItsEdit(t *testing.T) {
 	if err != nil || *failure != nil {
 		t.Fatalf("edit %v migrator %v", err, *failure)
 	}
-	patches := p.patches()
+	patches := p.Patches()
 	if len(patches) != 1 {
 		t.Fatalf("patches %d", len(patches))
 	}
-	body := patches[0].body
+	body := patches[0].Body
 	raw, _ := json.Marshal(body)
 	_, unset := body["unset"]
 	_, stamp := body["writerConfigVersion"]
@@ -510,7 +511,7 @@ func TestWriterDuringAMigrationSendsOnlyItsEdit(t *testing.T) {
 		t.Fatalf("body %s", raw)
 	}
 	mustEqualJSON(t, "stored", profileValues(p, "default")["compression"], map[string]any{"threshold_tokens": 256000})
-	later, err := config.ReadRawConfig(context.Background(), p.home)
+	later, err := config.ReadRawConfig(context.Background(), p.Home)
 	if err != nil || later["display"].(map[string]any)["personality"] != "pirate" {
 		t.Fatalf("later %v %v", later, err)
 	}
@@ -522,7 +523,7 @@ func TestPollInstallingANewerDocMidReadIsMigratedBeforeItIsReturned(t *testing.T
 	p := setupPlane(t)
 	latest := legacyProfile(t, p)
 	b := testBackend()
-	st, _ := b.state(context.Background(), p.home)
+	st, _ := b.state(context.Background(), p.Home)
 	real := complete
 	var polled atomic.Bool
 	complete = func(b *remoteBackend, ctx context.Context, state *profileState) error {
@@ -543,7 +544,7 @@ func TestPollInstallingANewerDocMidReadIsMigratedBeforeItIsReturned(t *testing.T
 		return err
 	}
 	t.Cleanup(func() { complete = real })
-	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.home, "config.yaml"))
+	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.Home, "config.yaml"))
 	if err != nil || !polled.Load() {
 		t.Fatalf("read %v polled %v", err, polled.Load())
 	}
@@ -578,14 +579,14 @@ func TestMigrationRecursionStillSeesItsPrivateCopy(t *testing.T) {
 		}
 	}
 	t.Cleanup(func() { runMigrations = real })
-	doc, err := config.ReadRawConfig(context.Background(), p.home)
+	doc, err := config.ReadRawConfig(context.Background(), p.Home)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(seen) != 1 || seen[0] != latest-1 {
 		t.Fatalf("seen %v", seen)
 	}
-	if _, has := doc["old_key"]; has || doc["new_key"] != 2 || len(p.patches()) != 0 {
+	if _, has := doc["old_key"]; has || doc["new_key"] != 2 || len(p.Patches()) != 0 {
 		t.Fatalf("doc %v", doc)
 	}
 }

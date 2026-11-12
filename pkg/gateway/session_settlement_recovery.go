@@ -265,7 +265,7 @@ func releaseSettledMedia(ctx context.Context, a *SessionAuthority, row *pyjson.O
 }
 
 // Commits a turn's result off the stream lock and publishes its completion, the claim reading started until then
-func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
+func CommitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *TurnSettlement) error {
 	prepared, err := prepareResult(row, response, outcome, captured)
 	if err != nil {
 		return err
@@ -306,10 +306,10 @@ func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Commits the captured result, retrying a transient storage failure a bounded number of times
-func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
+func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *TurnSettlement) error {
 	for attempt := 0; ; attempt++ {
 		task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
-			return nil, commitAndPublish(taskCtx, a, live, ref, row, response, outcome, captured, settlement)
+			return nil, CommitAndPublish(taskCtx, a, live, ref, row, response, outcome, captured, settlement)
 		})
 		_, err := task.wait()
 		if err == nil {

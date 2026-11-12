@@ -244,6 +244,8 @@ func guardScope(t *testing.T, defaultModel string) {
 	t.Helper()
 	h := sessionCaseScope(t)
 	useSharedDB(t, nil)
+	swapVar(t, &scheduleAgentBuild, func(context.Context, string, float64) {})
+	swapVar(t, &registerSessionCwd, func(context.Context, *tuigateway.Session) {})
 	config := "model:\n  default: " + defaultModel + "\n  provider: anthropic\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)

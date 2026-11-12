@@ -43,6 +43,23 @@ type Portal struct {
 	calls         []string
 	tokenRequests []map[string]any
 	minted        int
+	gateClosed    bool
+	createStatus  int
+	createBody    map[string]any
+}
+
+// Answers every create with this status and body in place of a mint, status zero restoring the mint
+func (p *Portal) SetCreateResponse(status int, body map[string]any) {
+	p.mu.Lock()
+	p.createStatus, p.createBody = status, body
+	p.mu.Unlock()
+}
+
+// Closes or reopens the anonymous gate, a closed gate refusing every request as an invalid shared secret
+func (p *Portal) SetGateClosed(closed bool) {
+	p.mu.Lock()
+	p.gateClosed = closed
+	p.mu.Unlock()
 }
 
 // Fake NAS anonymous surface behind a trusted TLS portal with home, stores and portal env isolated
@@ -116,10 +133,16 @@ func (p *Portal) answer(r *http.Request, raw []byte) (int, map[string]any) {
 	if strings.HasPrefix(path, "/api/anonymous/") && r.Header.Get("x-anonymous-api-secret") == "" {
 		return 401, map[string]any{"error": "invalid_shared_secret"}
 	}
+	if p.gateClosed {
+		return 401, map[string]any{"error": "invalid_shared_secret"}
+	}
 	switch path {
 	case "/api/anonymous/create":
 		if len(raw) > 0 && !json.Valid(raw) {
 			return 0, nil
+		}
+		if p.createStatus != 0 {
+			return p.createStatus, p.createBody
 		}
 		p.minted++
 		return 201, CreateBody(p.minted)

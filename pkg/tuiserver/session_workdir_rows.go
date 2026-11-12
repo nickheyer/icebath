@@ -72,8 +72,13 @@ func emitSettledSessionInfo(ctx context.Context, sid string, session *tuigateway
 	tuigateway.Emit(ctx, "session.info", sid, sessionInfo(ctx, a, session))
 }
 
+// Session cwd registration, the agent and terminal binding below
+var registerSessionCwd func(ctx context.Context, session *tuigateway.Session)
+
+func init() { registerSessionCwd = registerSessionCwdBinding }
+
 // Pushes the session cwd into the agent, its subdirectory hints and the terminal task overrides of the routed home
-func registerSessionCwd(ctx context.Context, session *tuigateway.Session) {
+func registerSessionCwdBinding(ctx context.Context, session *tuigateway.Session) {
 	if session == nil || len(session.Fields()) == 0 {
 		return
 	}

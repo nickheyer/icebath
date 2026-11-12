@@ -71,7 +71,8 @@ func recordPrints(t *testing.T) *printRecorder {
 
 // A CLI built without its constructor, the attribute defaults hermes reads through getattr filled in
 func bareCLI() *CLI {
-	c := &CLI{ctx: context.Background(), timestampFormat: "%H:%M", userMessagePreviewFirstLines: 2, userMessagePreviewLastLines: 2,
+	turnCtx, cancel := context.WithCancelCause(context.Background())
+	c := &CLI{ctx: context.Background(), turnCtx: turnCtx, turnCancel: func() { cancel(tools.ErrKeyboardInterrupt) }, timestampFormat: "%H:%M", userMessagePreviewFirstLines: 2, userMessagePreviewLastLines: 2,
 		finalResponseMarkdown: "raw", pendingEditSnapshots: map[string]*tools.LocalEditSnapshot{}, pendingToolInfo: map[string][]map[string]any{}}
 	c.resetStreamStateLocked()
 	return c

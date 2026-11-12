@@ -146,6 +146,8 @@ class RemotePluginContext:
     def __init__(self, runtime: HostRuntime, plugin_key: str, info: dict[str, Any]):
         self._runtime, self._plugin_key = runtime, plugin_key
         self._methods = set(info.get("ctx_methods") or ())
+        # Registrars Icebath serves because the plugin loads under in_process isolation
+        self._in_process = frozenset(info.get("in_process_ctx_methods") or ())
         self._facades: dict[str, RemoteFacade] = {}
         self.manifest = types.SimpleNamespace(**(info.get("manifest") or {}))
         self.plugin_id = info.get("plugin_id") or plugin_key
@@ -157,7 +159,7 @@ class RemotePluginContext:
         from icebath_cli.plugin_isolation import (
             HOST_REMOTE_FACADES, HOST_SKIPPED_CTX_METHODS, HOST_UNSUPPORTED_CTX_METHODS,
         )
-        if name in HOST_UNSUPPORTED_CTX_METHODS:
+        if name in HOST_UNSUPPORTED_CTX_METHODS and name not in self._in_process:
             def unsupported(*_args: Any, **_kwargs: Any) -> Any:
                 raise PluginHostUnsupported(
                     f"ctx.{name}() cannot run in the plugin host: {HOST_UNSUPPORTED_CTX_METHODS[name]}")
@@ -325,18 +327,31 @@ class HostRuntime:
                                                         "kwargs": encode(dict(kwargs), refs)}),
                       self.resolve_from_parent)
 
-    def _send_call(self, method: str, plugin_key: str, payload: dict[str, Any], *, allow_objects: bool) -> Any:
+    def _send_call(self, method: str, plugin_key: str, payload: dict[str, Any], *, allow_objects: bool,
+                   refs: Optional[Callable[[Any], Optional[dict]]] = None) -> Any:
         self._flush_parent_releases()
-        refs = functools.partial(self.ref_for, plugin_key, allow_objects=allow_objects)
+        if refs is None:
+            refs = functools.partial(self.ref_for, plugin_key, allow_objects=allow_objects)
         payload = {**payload, "plugin": plugin_key,
                    "args": encode(list(payload.pop("args", ())), refs),
                    "kwargs": encode(dict(payload.pop("kwargs", {})), refs)}
         return decode(self.channel.call(method, payload), self.resolve_from_parent)
 
     def ctx_call(self, plugin_key: str, method: str, *args: Any, **kwargs: Any) -> Any:
-        from icebath_cli.plugin_isolation import HOST_OBJECT_BASES
+        from icebath_cli.plugin_isolation import HOST_IN_PROCESS_OBJECT_BASES, HOST_OBJECT_BASES
+        if method in HOST_IN_PROCESS_OBJECT_BASES:
+            # In process registrars judge the object from its class alone: none of its code runs before Icebath admits it
+            return self._send_call("ctx", plugin_key, {"method": method, "args": args, "kwargs": kwargs},
+                                   allow_objects=False, refs=functools.partial(self._judged_ref, plugin_key))
         return self._send_call("ctx", plugin_key, {"method": method, "args": args, "kwargs": kwargs},
                                allow_objects=method in HOST_OBJECT_BASES)
+
+    def _judged_ref(self, plugin_key: str, value: Any) -> Optional[dict]:
+        """Unread ref of a plugin object carrying its statically judged login backend identity"""
+        if isinstance(value, (type, threading.Event)) or not _is_provider_object(value):
+            return self.ref_for(plugin_key, value, allow_objects=False)
+        return {"__object__": self._remember(plugin_key, value), "methods": {}, "live": [],
+                "type": type(value).__name__, "identity": _login_backend_identity(value)}
 
     def facade_call(self, plugin_key: str, facade: str, method: str, *args: Any, _probe: bool = False,
                     **kwargs: Any) -> Any:
@@ -760,6 +775,48 @@ class HostRuntime:
         name = str(params["method"])
         return getattr(type(obj), name, None) is not getattr(_import_base(str(params["base"])), name, None)
 
+    def op_login_backend(self, params: dict[str, Any]) -> Any:
+        """One call of a login backend an in process plugin registered, its value copied and type checked here as
+        ``agent.vault_backends.plugin.PluginLoginBackend`` does: ``{"invalid": True}`` for a value of the wrong type."""
+        ref = int(params["ref"])
+        backend = self.refs.get(ref)
+        if backend is None:
+            raise LookupError(f"plugin host object {ref} was released")
+        op = str(params["op"])
+        if op == "list_items":
+            items = [_login_meta_copy(m) for m in backend.list_items()]
+            return {"invalid": True} if any(m is _LOGIN_INVALID for m in items) else {"value": items}
+        if op == "get_meta":
+            meta = backend.get_meta(params["handle"])
+            value = None if meta is None else _login_meta_copy(meta)
+        elif op == "resolve_password":
+            value = _login_text(backend.resolve_password(params["handle"]))
+        elif op == "resolve_otp":
+            otp = backend.resolve_otp(params["handle"])
+            value = None if otp is None else _login_text(otp)
+        elif op == "resolve_secret":
+            secret = backend.resolve_secret(params["handle"])
+            value = _LOGIN_INVALID
+            if isinstance(secret, dict):
+                copied = {_login_text(k): _login_text(v) for k, v in secret.items()}
+                if _LOGIN_INVALID not in copied and _LOGIN_INVALID not in copied.values():
+                    value = copied
+        elif op == "fill_enter":
+            context = backend.fill_context()
+            context.__enter__()
+            return {"value": self._remember(self.owners.get(ref, ""), context)}
+        elif op == "fill_exit":
+            with self._lock:
+                context = self.refs.pop(int(params["context"]), None)
+                self.owners.pop(int(params["context"]), None)
+            if context is None:
+                raise LookupError(f"plugin host object {params['context']} was released")
+            context.__exit__(None, None, None)
+            return {"value": None}
+        else:
+            raise ValueError(f"unknown login backend operation {op!r}")
+        return {"invalid": True} if value is _LOGIN_INVALID else {"value": value}
+
     def op_obj_next(self, params: dict[str, Any]) -> Any:
         """One step of a for loop over a host object, StopIteration answering done and each item encoded as a result"""
         ref = int(params["ref"])
@@ -876,7 +933,7 @@ _HANDLERS: dict[str, Callable[[HostRuntime, dict[str, Any]], Any]] = {
     "provider_module_release": HostRuntime.op_provider_module_release,
     "invoke": HostRuntime.op_invoke,
     "obj_invoke": HostRuntime.op_obj_invoke, "obj_getattr": HostRuntime.op_obj_getattr, "obj_next": HostRuntime.op_obj_next,
-    "obj_overrides": HostRuntime.op_obj_overrides,
+    "obj_overrides": HostRuntime.op_obj_overrides, "login_backend": HostRuntime.op_login_backend,
     "obj_setattr": HostRuntime.op_obj_setattr, "unload": HostRuntime.op_unload,
     "evict_modules": HostRuntime.op_evict_modules,
     "release": HostRuntime.op_release, "event": HostRuntime.op_event, "config_schema": HostRuntime.op_config_schema,
@@ -1069,6 +1126,50 @@ def _provider_base(value: Any) -> Optional[type]:
         if isinstance(base, type) and isinstance(value, base):
             return base
     return None
+
+
+_LOGIN_INVALID = object()
+_LOGIN_TEXT_FIELDS = ("id", "kind", "label", "created_at")
+_LOGIN_OPTIONAL_TEXT_FIELDS = ("origin", "identifier", "identifier_type")
+
+
+def _login_text(value: Any) -> Any:
+    """An exact ``str`` copy (a subclass's methods never run outside the guard), or the invalid marker."""
+    return str.__str__(value) if isinstance(value, str) else _LOGIN_INVALID
+
+
+def _login_meta_copy(meta: Any) -> Any:
+    """Fields of a login backend's ``VaultItemMeta`` copied for Icebath, or the invalid marker for a wrong type."""
+    from agent.vault_store import VAULT_KINDS, VaultItemMeta
+    if not isinstance(meta, VaultItemMeta):
+        return _LOGIN_INVALID
+    fields = {f: _login_text(getattr(meta, f)) for f in _LOGIN_TEXT_FIELDS}
+    for f in _LOGIN_OPTIONAL_TEXT_FIELDS:
+        value = getattr(meta, f)
+        fields[f] = None if value is None else _login_text(value)
+    has_otp, origins = meta.has_otp, meta.allowed_origins
+    if not isinstance(origins, tuple) or type(has_otp) is not bool:
+        return _LOGIN_INVALID
+    allowed = [_login_text(o) for o in origins]
+    if _LOGIN_INVALID in fields.values() or _LOGIN_INVALID in allowed or fields["kind"] not in VAULT_KINDS:
+        return _LOGIN_INVALID
+    return {**fields, "has_otp": has_otp, "allowed_origins": allowed}
+
+
+def _login_backend_identity(provider: Any) -> dict[str, Any]:
+    """Name, prefix and needs_unlock of a login backend read without running its code, or the fixed refusal,
+    as ``agent.vault_backend_registry.static_name`` judges them before Icebath checks the namespace."""
+    cls = type(provider)
+    base = sys.modules.get("agent.vault_backends.base")
+    if base is None or not issubclass(cls, base.LoginBackend):
+        return {"error": "login backend must subclass LoginBackend"}
+    if cls.__getattribute__ is not object.__getattribute__ or any("__class__" in vars(k) for k in cls.__mro__[:-1]):
+        return {"error": "login backend must not override attribute access"}
+    name, prefix = inspect.getattr_static(provider, "name", None), inspect.getattr_static(provider, "prefix", None)
+    if type(name) is not str or type(prefix) is not str:
+        return {"error": "login backend name and prefix must be plain string attributes"}
+    return {"name": name, "prefix": prefix,
+            "needs_unlock": inspect.getattr_static(provider, "needs_unlock", False) is not False}
 
 
 def _is_provider_object(value: Any) -> bool:

@@ -10,7 +10,10 @@ import (
 
 // Argparse style vars of a parsed invocation, every parser level from the root down with named positionals
 func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
-	ns, given := map[string]any{}, map[string]bool{}
+	ns, given := map[string]any{"command": nil}, map[string]bool{}
+	if path := strings.Fields(c.pathOf(cmd)); len(path) > 0 {
+		ns["command"] = path[0]
+	}
 	var chain []*cobra.Command
 	for level := cmd; level != nil; level = level.Parent() {
 		chain = append([]*cobra.Command{level}, chain...)
@@ -67,12 +70,6 @@ func (c *CLI) Namespace(cmd *cobra.Command, args []string) map[string]any {
 		default:
 			ns[s.Name] = nil
 		}
-	}
-	path := strings.Fields(c.pathOf(cmd))
-	if len(path) > 0 {
-		ns["command"] = path[0]
-	} else {
-		ns["command"] = nil
 	}
 	return ns
 }

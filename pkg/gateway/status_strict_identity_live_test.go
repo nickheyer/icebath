@@ -19,6 +19,7 @@ const lockHolderEnv = "ICEBATH_GATEWAY_TEST_LOCK_HOLDER"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	DispatchGatewayRestartWatcherEntry(context.Background())
 	if os.Getenv(lockHolderEnv) == "1" {
 		os.Exit(runGatewayLockHolder())

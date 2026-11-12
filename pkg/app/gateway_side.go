@@ -25,8 +25,19 @@ func gatewayConnectionFor(c *CLI) *gatewaycli.GatewayConnection {
 	return store.Connection
 }
 
+// Connection a side task is admitted and awaited through, the gateway connection or a wrapper of it
+type sideTaskConnection interface {
+	CallTagged(ctx context.Context, method string, params map[string]any, o gatewaycli.CallOptions) (any, int, error)
+	SideWaiter(taskID string) *gateway.EventQueue
+	DropSideWaiter(taskID string)
+	Closed() bool
+	Epoch() int
+}
+
+var _ sideTaskConnection = (*gatewaycli.GatewayConnection)(nil)
+
 // Admits a side task on the owner, returning its task id and the wait for its answer
-func gatewaySideStart(ctx context.Context, connection *gatewaycli.GatewayConnection, sessionID, verb, text string) (string, func() (string, error), error) {
+func gatewaySideStart(ctx context.Context, connection sideTaskConnection, sessionID, verb, text string) (string, func() (string, error), error) {
 	raw, epoch, err := connection.CallTagged(ctx, "prompt."+verb, map[string]any{"session_id": sessionID, "text": text}, gatewaycli.CallOptions{})
 	if err != nil {
 		return "", nil, err

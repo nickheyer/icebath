@@ -444,6 +444,7 @@ func init() {
 			}
 			return *answer, nil
 		}),
+		"register_login_backend":                 providerRegistrar("register_login_backend", "provider", (*Context).RegisterLoginBackend),
 		"register_image_gen_provider":            providerRegistrar("register_image_gen_provider", "provider", (*Context).RegisterImageGenProvider),
 		"register_video_gen_provider":            providerRegistrar("register_video_gen_provider", "provider", (*Context).RegisterVideoGenProvider),
 		"register_web_search_provider":           providerRegistrar("register_web_search_provider", "provider", (*Context).RegisterWebSearchProvider),

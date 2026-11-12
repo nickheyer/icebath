@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -33,9 +34,9 @@ func (b *PluginLoginBackend) IsUnlocked() bool    { return true }
 // Ownership decided here, so the plugin's own Owns is never consulted
 func (b *PluginLoginBackend) Owns(handle string) bool { return strings.HasPrefix(handle, b.prefix) }
 
-// Runs one plugin call, a returned error or panic replaced by the fixed failure text
+// Runs one plugin call, a returned error or panic replaced by the fixed failure text and a hosted wrong type by the invalid text
 func (b *PluginLoginBackend) call(fn func() (any, error)) (result any, err error) {
-	failed := false
+	failed, invalid := false, false
 	func() {
 		defer func() {
 			if recover() != nil {
@@ -44,12 +45,17 @@ func (b *PluginLoginBackend) call(fn func() (any, error)) (result any, err error
 		}()
 		var callErr error
 		result, callErr = fn()
-		if callErr != nil {
+		if errors.Is(callErr, errHostedLoginInvalid) {
+			invalid = true
+		} else if callErr != nil {
 			failed = true
 		}
 	}()
 	if failed {
 		return nil, &PluginBackendError{fmt.Sprintf("The %s login backend failed.", b.name)}
+	}
+	if invalid {
+		return nil, b.require(false)
 	}
 	return result, nil
 }

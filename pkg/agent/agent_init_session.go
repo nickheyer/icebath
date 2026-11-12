@@ -144,8 +144,8 @@ func initSessionState(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if o.ReasoningConfig != nil {
 		reasoning = o.ReasoningConfig
 	}
-	if o.MaxTokens != 0 {
-		maxTokens = o.MaxTokens
+	if o.MaxTokens != nil {
+		maxTokens = *o.MaxTokens
 	}
 	a.sessionInitModelConfig = map[string]any{"max_iterations": a.maxIterations, "reasoning_config": reasoning, "max_tokens": maxTokens}
 	if tools.YoloModeFrozen() {

@@ -22,6 +22,36 @@ func (a *AIAgent) SpawnBackgroundReview(ctx context.Context, messagesSnapshot []
 	a.spawnBackgroundReview(ctx, messagesSnapshot, reviewMemory, reviewSkills, focus, explicit)
 }
 
+// Agent the review chokepoint is bound to, the attributes the spawn wrapper reads on its self
+type BackgroundReviewSelf interface {
+	BackgroundReviewDelegateDepth() int
+	BackgroundReviewShouldDefer(ctx context.Context, taskCfg map[string]any) bool
+	EnqueueBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, taskCfg map[string]any, explicit bool)
+	SpawnBackgroundReviewNow(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, taskCfg map[string]any, explicit bool)
+}
+
+var _ BackgroundReviewSelf = (*AIAgent)(nil)
+
+// Subagent depth that keeps automatic reviews off a delegated agent
+func (a *AIAgent) BackgroundReviewDelegateDepth() int { return a.delegateDepth }
+
+// Whether an automatic review of this agent waits for machine idle on the managed local runtime
+func (a *AIAgent) BackgroundReviewShouldDefer(ctx context.Context, taskCfg map[string]any) bool {
+	return reviewShouldDefer(ctx, a, taskCfg)
+}
+
+// Queues the review for machine idle under this agent's session key
+func (a *AIAgent) EnqueueBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, taskCfg map[string]any, explicit bool) {
+	enqueueIdleReview(ctx, a, reviewQueueKey(a), backgroundReviewKwargs{messagesSnapshot: messagesSnapshot, reviewMemory: reviewMemory,
+		reviewSkills: reviewSkills, focus: focus, taskCfg: taskCfg, explicit: explicit})
+}
+
+// Starts the review fork of this agent at once
+func (a *AIAgent) SpawnBackgroundReviewNow(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, taskCfg map[string]any, explicit bool) {
+	a.spawnBackgroundReviewNow(ctx, backgroundReviewKwargs{messagesSnapshot: messagesSnapshot, reviewMemory: reviewMemory,
+		reviewSkills: reviewSkills, focus: focus, taskCfg: taskCfg, explicit: explicit})
+}
+
 // Review run installed on the agent, nil when none is
 func (a *AIAgent) CurrentBackgroundReviewRun() *BackgroundReviewRun {
 	return currentBackgroundReviewRun(a)

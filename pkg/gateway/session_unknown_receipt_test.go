@@ -55,7 +55,7 @@ func TestDiscardClosureFailureKeepsUnknownFenceAndRetryIsExact(t *testing.T) {
 			if err := os.WriteFile(source, []byte("image"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			references, err := captureNativeMedia(ctx, []string{source})
+			references, err := CaptureNativeMedia(ctx, []string{source})
 			if err != nil {
 				t.Fatal(err)
 			}

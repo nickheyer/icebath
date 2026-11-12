@@ -1,18 +1,27 @@
 package plugins
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"runtime"
 	"strings"
+	"unicode/utf8"
 
-	"gopkg.in/yaml.v3"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Schema ids of the portable Agent Plugins v1 manifests
@@ -30,7 +39,8 @@ var portableStdioFields = map[string]bool{"type": true, "command": true, "args":
 var portableRemoteFields = map[string]bool{"type": true, "url": true, "headers": true}
 var portablePluginNameRe = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$`)
 var portableSkillNameRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
-var portablePlaceholderRe = regexp.MustCompile(`\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}`)
+var portableVarRe = regexp.MustCompile(`\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}`)
+var frontmatterEndRe = regexp.MustCompile(`\n---\s*\n`)
 var headerNameRe = regexp.MustCompile("^[!#$%&'*+\\-.^_`|~0-9A-Za-z]+$")
 var serverDeclarationKeys = map[string]bool{"app": true, "requires": true, "liveness": true, "trust": true, "timeout": true, "costs": true, "spend_limit": true, "cost_unit": true}
 var serverPolicyKeys = map[string]bool{"trust": true, "timeout": true, "costs": true, "spend_limit": true, "cost_unit": true}
@@ -61,6 +71,7 @@ type AgentPluginSkill struct {
 
 // One desktop app declaration of a portable package server
 type AgentPluginServerDeclaration struct {
+	Name     string
 	App      map[string]any
 	Requires map[string]any
 	Liveness map[string]any
@@ -78,22 +89,6 @@ type AgentPluginPackage struct {
 	MCPServers         map[string]map[string]any
 	ServerDeclarations map[string]AgentPluginServerDeclaration
 	Diagnostics        []AgentPluginDiagnostic
-}
-
-// Reports whether a path resolves inside root
-func insideRoot(path, root string) bool {
-	rr, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return false
-	}
-	target := path
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		target = r
-	} else if a, err := filepath.Abs(path); err == nil {
-		target = a
-	}
-	rel, err := filepath.Rel(rr, target)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Reports whether every item is a string
@@ -120,93 +115,6 @@ func stringMap(v any) bool {
 	return true
 }
 
-// Parsed JSON object of a file
-func readJSONObject(path, label string) (map[string]any, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
-	}
-	var v any
-	if err := json.Unmarshal(stripBOM(raw), &v); err != nil {
-		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
-	}
-	m := asMap(v)
-	if m == nil {
-		return nil, agentErr("%s must contain a JSON object", label)
-	}
-	return m, nil
-}
-
-// Validated plugin.json mapping with unknown fields dropped as diagnostics
-func validatePortableManifest(root string) (map[string]any, []AgentPluginDiagnostic, error) {
-	path := filepath.Join(root, "plugin.json")
-	st, err := os.Stat(path)
-	if err != nil || !st.Mode().IsRegular() || !insideRoot(path, root) {
-		return nil, nil, agentErr("plugin.json must be a regular file within the plugin root")
-	}
-	manifest, err := readJSONObject(path, "plugin.json")
-	if err != nil {
-		return nil, nil, err
-	}
-	var diags []AgentPluginDiagnostic
-	var unknown []string
-	for k := range manifest {
-		if !portablePluginFields[k] {
-			unknown = append(unknown, k)
-		}
-	}
-	sort.Strings(unknown)
-	for _, k := range unknown {
-		diags = append(diags, AgentPluginDiagnostic{"manifest", "ignored unknown top-level field: " + k})
-		delete(manifest, k)
-	}
-	if manifest["$schema"] != PluginSchemaV1 {
-		return nil, nil, agentErr("plugin.json declares an unsupported or missing Agent Plugins schema")
-	}
-	name, _ := manifest["name"].(string)
-	if name == "" || len(name) > 64 || !portablePluginNameRe.MatchString(name) || strings.Contains(name, "--") || strings.Contains(name, "..") {
-		return nil, nil, agentErr("plugin.json name does not satisfy v1 constraints")
-	}
-	for _, f := range []string{"version", "description", "homepage", "repository", "license"} {
-		if v, ok := manifest[f]; ok {
-			if _, isStr := v.(string); !isStr {
-				return nil, nil, agentErr("plugin.json %s must be a string", f)
-			}
-		}
-	}
-	if kw, ok := manifest["keywords"]; ok {
-		items, isList := kw.([]any)
-		if !isList || !allStrings(items) {
-			return nil, nil, agentErr("plugin.json keywords must be an array of strings")
-		}
-	}
-	if a, ok := manifest["author"]; ok {
-		am := asMap(a)
-		if am == nil {
-			return nil, nil, agentErr("plugin.json author must be an object")
-		}
-		for k, v := range am {
-			if _, isStr := v.(string); !portableAuthorFields[k] || !isStr {
-				return nil, nil, agentErr("plugin.json author may contain only string name, email, and url fields")
-			}
-		}
-	}
-	if ext, ok := manifest["extensions"]; ok {
-		em := asMap(ext)
-		if em == nil {
-			diags = append(diags, AgentPluginDiagnostic{"manifest", "ignored non-object extensions field"})
-			delete(manifest, "extensions")
-		} else {
-			for _, v := range em {
-				if asMap(v) == nil {
-					return nil, nil, agentErr("plugin.json extension namespace values must be objects")
-				}
-			}
-		}
-	}
-	return normalizeAnyMaps(manifest), diags, nil
-}
-
 // The icebath vendor extension mapping of a portable manifest
 func manifestVendorExtension(manifest map[string]any) map[string]any {
 	if m := asMap(asMap(manifest["extensions"])[portableExtension]); m != nil {
@@ -220,154 +128,14 @@ func manifestConfigSchema(manifest map[string]any) any {
 	return manifestVendorExtension(manifest)["config_schema"]
 }
 
-// Frontmatter mapping of a SKILL.md file
-func parseSkillFrontmatter(path string) (map[string]any, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	content := string(stripBOM(raw))
-	if !strings.HasPrefix(content, "---") {
-		return nil, errors.New("missing YAML frontmatter")
-	}
-	rest := content[3:]
-	end := regexp.MustCompile(`\n---\s*\n`).FindStringIndex(rest)
-	if end == nil {
-		return nil, errors.New("unterminated YAML frontmatter")
-	}
-	var parsed any
-	if err := yaml.Unmarshal([]byte(rest[:end[0]]), &parsed); err != nil {
-		return nil, fmt.Errorf("invalid YAML frontmatter: %v", err)
-	}
-	m := asMap(parsed)
-	if m == nil {
-		return nil, errors.New("YAML frontmatter must be an object")
-	}
-	return normalizeAnyMaps(m), nil
-}
-
-// Validation problem of a skill frontmatter, empty when valid
-func validSkillFrontmatter(fm map[string]any, dirName string) string {
-	name, _ := fm["name"].(string)
-	if name != dirName || name == "" || len(name) > 64 || !portableSkillNameRe.MatchString(name) {
-		return "name must match the directory and satisfy Agent Skills constraints"
-	}
-	desc, ok := fm["description"].(string)
-	if !ok || desc == "" || len(desc) > 1024 {
-		return "description must be a non-empty string of at most 1024 characters"
-	}
-	if v, ok := fm["license"]; ok {
-		if _, isStr := v.(string); !isStr {
-			return "license must be a string"
-		}
-	}
-	if v, ok := fm["compatibility"]; ok {
-		s, isStr := v.(string)
-		if !isStr || len(s) == 0 || len(s) > 500 {
-			return "compatibility must be a string of 1 to 500 characters"
-		}
-	}
-	if v, ok := fm["metadata"]; ok && !stringMap(v) {
-		return "metadata must map string keys to string values"
-	}
-	if v, ok := fm["allowed-tools"]; ok {
-		if _, isStr := v.(string); !isStr {
-			return "allowed-tools must be a string"
-		}
-	}
-	return ""
-}
-
-// Skills under the package skills directory with invalid ones reported
-func discoverPortableSkills(root string, diags *[]AgentPluginDiagnostic) []AgentPluginSkill {
-	skillsRoot := filepath.Join(root, "skills")
-	st, err := os.Lstat(skillsRoot)
-	if err != nil {
-		return nil
-	}
-	if real, err := os.Stat(skillsRoot); err != nil || !real.IsDir() || !insideRoot(skillsRoot, root) {
-		_ = st
-		*diags = append(*diags, AgentPluginDiagnostic{"skills", "skills must be an in-root directory"})
-		return nil
-	}
-	entries, err := os.ReadDir(skillsRoot)
-	if err != nil {
-		*diags = append(*diags, AgentPluginDiagnostic{"skills", "cannot list skills: " + err.Error()})
-		return nil
-	}
-	var skills []AgentPluginSkill
-	for _, e := range entries {
-		child := filepath.Join(skillsRoot, e.Name())
-		skillMD := filepath.Join(child, "SKILL.md")
-		cst, err := os.Stat(child)
-		if err != nil || !cst.IsDir() {
-			continue
-		}
-		mst, err := os.Stat(skillMD)
-		if err != nil {
-			continue
-		}
-		problem := ""
-		var fm map[string]any
-		if !mst.Mode().IsRegular() || !insideRoot(skillMD, root) {
-			problem = "SKILL.md must be a regular in-root file"
-		} else if fm, err = parseSkillFrontmatter(skillMD); err != nil {
-			problem = "invalid SKILL.md: " + err.Error()
-		} else {
-			problem = validSkillFrontmatter(fm, e.Name())
-		}
-		if problem != "" {
-			*diags = append(*diags, AgentPluginDiagnostic{"skill:" + e.Name(), problem})
-			continue
-		}
-		rootReal, _ := filepath.EvalSymlinks(child)
-		mdReal, _ := filepath.EvalSymlinks(skillMD)
-		desc, _ := fm["description"].(string)
-		skills = append(skills, AgentPluginSkill{Name: e.Name(), Description: desc, Root: rootReal, SkillMD: mdReal, Frontmatter: fm})
-	}
-	return skills
-}
-
 // Value with PLUGIN_ROOT and PLUGIN_DATA placeholders expanded
-func expandPlaceholders(value, pluginRoot, dataRoot string) string {
-	return portablePlaceholderRe.ReplaceAllStringFunc(value, func(m string) string {
+func expandPortableVars(value, pluginRoot, dataRoot string) string {
+	return portableVarRe.ReplaceAllStringFunc(value, func(m string) string {
 		if strings.Contains(m, "PLUGIN_ROOT") {
 			return pluginRoot
 		}
 		return dataRoot
 	})
-}
-
-// Resolved path scoped to the plugin root or the data root
-func resolveScopedPath(value, pluginRoot, dataRoot string, expand bool) (string, error) {
-	expanded := value
-	if expand {
-		expanded = expandPlaceholders(value, pluginRoot, dataRoot)
-	}
-	var base, candidate string
-	switch {
-	case strings.HasPrefix(value, "./"):
-		base, candidate = pluginRoot, filepath.Join(pluginRoot, expanded[2:])
-	case value == "${PLUGIN_ROOT}" || strings.HasPrefix(value, "${PLUGIN_ROOT}/"):
-		base, candidate = pluginRoot, expanded
-	case value == "${PLUGIN_DATA}" || strings.HasPrefix(value, "${PLUGIN_DATA}/"):
-		base, candidate = dataRoot, expanded
-	default:
-		return "", errors.New("path must start with ./, ${PLUGIN_ROOT}, or ${PLUGIN_DATA}")
-	}
-	resolved := filepath.Clean(candidate)
-	if r, err := filepath.EvalSymlinks(resolved); err == nil {
-		resolved = r
-	}
-	baseResolved := filepath.Clean(base)
-	if r, err := filepath.EvalSymlinks(base); err == nil {
-		baseResolved = r
-	}
-	rel, err := filepath.Rel(baseResolved, resolved)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("path escapes its resolved root")
-	}
-	return resolved, nil
 }
 
 // Reports whether a headers value is a well formed header mapping
@@ -393,13 +161,276 @@ func validHeaders(v any) bool {
 	return true
 }
 
-// Validated remote MCP url, http allowed on loopback only
+// Reports whether path resolves under root resolved strictly, false when either resolution fails
+func insideRoot(path, root string) bool {
+	resolved, err := pypath.Resolve(path)
+	if err != nil {
+		return false
+	}
+	rootResolved, err := pypath.Realpath(pypath.PathStr(root), pypath.StrictAll)
+	if err != nil {
+		return false
+	}
+	_, ok := pypath.PathRelativeTo(resolved, pypath.PathStr(rootResolved))
+	return ok
+}
+
+// Ordered JSON object of a utf-8-sig file, read and decode failures named under label
+func readJSONObject(path, label string) (*pyjson.Object, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, agentErr("%s is not valid readable JSON: %s", label, pyfs.OSErrorText(err))
+	}
+	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	if err != nil {
+		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
+	}
+	value, err := pyjson.Loads(text)
+	if err != nil {
+		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
+	}
+	obj, ok := value.(*pyjson.Object)
+	if !ok {
+		return nil, agentErr("%s must contain a JSON object", label)
+	}
+	return obj, nil
+}
+
+// Validated plugin.json mapping with unknown fields dropped as diagnostics
+func validatePortableManifest(root string) (map[string]any, []AgentPluginDiagnostic, error) {
+	path := filepath.Join(root, "plugin.json")
+	if st, err := os.Stat(path); !insideRoot(path, root) || err != nil || !st.Mode().IsRegular() {
+		return nil, nil, agentErr("plugin.json must be a regular file within the plugin root")
+	}
+	obj, err := readJSONObject(path, "plugin.json")
+	if err != nil {
+		return nil, nil, err
+	}
+	manifest := pyjson.Plain(obj).(map[string]any)
+	var diags []AgentPluginDiagnostic
+	for _, k := range sortedKeys(manifest) {
+		if !portablePluginFields[k] {
+			diags = append(diags, AgentPluginDiagnostic{"manifest", "ignored unknown top-level field: " + k})
+			delete(manifest, k)
+		}
+	}
+	if manifest["$schema"] != PluginSchemaV1 {
+		return nil, nil, agentErr("plugin.json declares an unsupported or missing Agent Plugins schema")
+	}
+	name, isStr := manifest["name"].(string)
+	if n := utf8.RuneCountInString(name); !isStr || n < 1 || n > 64 || !portablePluginNameRe.MatchString(name) ||
+		strings.Contains(name, "--") || strings.Contains(name, "..") {
+		return nil, nil, agentErr("plugin.json name does not satisfy v1 constraints")
+	}
+	for _, f := range []string{"version", "description", "homepage", "repository", "license"} {
+		if v, ok := manifest[f]; ok {
+			if _, isStr := v.(string); !isStr {
+				return nil, nil, agentErr("plugin.json %s must be a string", f)
+			}
+		}
+	}
+	if kw, ok := manifest["keywords"]; ok {
+		if items, isList := kw.([]any); !isList || !allStrings(items) {
+			return nil, nil, agentErr("plugin.json keywords must be an array of strings")
+		}
+	}
+	if a, ok := manifest["author"]; ok {
+		author, isMap := a.(map[string]any)
+		if !isMap {
+			return nil, nil, agentErr("plugin.json author must be an object")
+		}
+		for k, v := range author {
+			if _, isStr := v.(string); !portableAuthorFields[k] || !isStr {
+				return nil, nil, agentErr("plugin.json author may contain only string name, email, and url fields")
+			}
+		}
+	}
+	if ext, ok := manifest["extensions"]; ok {
+		if extensions, isMap := ext.(map[string]any); !isMap {
+			diags = append(diags, AgentPluginDiagnostic{"manifest", "ignored non-object extensions field"})
+			delete(manifest, "extensions")
+		} else {
+			for _, v := range extensions {
+				if _, isMap := v.(map[string]any); !isMap {
+					return nil, nil, agentErr("plugin.json extension namespace values must be objects")
+				}
+			}
+		}
+	}
+	return manifest, diags, nil
+}
+
+// Frontmatter mapping of a SKILL.md file, failing with the Python ValueError texts
+func parseSkillFrontmatter(path string) (map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	content, err := pycodecs.Decode(raw, "utf-8-sig")
+	if err != nil {
+		return nil, err
+	}
+	content = strings.TrimLeft(content, "\ufeff")
+	if !strings.HasPrefix(content, "---") {
+		return nil, errors.New("missing YAML frontmatter")
+	}
+	end := frontmatterEndRe.FindStringIndex(content[3:])
+	if end == nil {
+		return nil, errors.New("unterminated YAML frontmatter")
+	}
+	parsed, err := config.SafeLoad(content[3 : end[0]+3])
+	if err != nil {
+		return nil, fmt.Errorf("invalid YAML frontmatter: %v", err)
+	}
+	m, ok := parsed.(map[string]any)
+	if !ok {
+		return nil, errors.New("YAML frontmatter must be an object")
+	}
+	return m, nil
+}
+
+// Validation problem of a skill frontmatter, empty when valid
+func validSkillFrontmatter(fm map[string]any, dirName string) string {
+	name, isStr := fm["name"].(string)
+	if n := utf8.RuneCountInString(name); !isStr || name != dirName || n < 1 || n > 64 || !portableSkillNameRe.MatchString(name) || strings.Contains(name, "--") {
+		return "name must match the directory and satisfy Agent Skills constraints"
+	}
+	desc, isStr := fm["description"].(string)
+	if n := utf8.RuneCountInString(desc); !isStr || n < 1 || n > 1024 {
+		return "description must be a non-empty string of at most 1024 characters"
+	}
+	if v, ok := fm["license"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return "license must be a string"
+		}
+	}
+	if v, ok := fm["compatibility"]; ok {
+		s, isStr := v.(string)
+		if n := utf8.RuneCountInString(s); !isStr || n < 1 || n > 500 {
+			return "compatibility must be a string of 1 to 500 characters"
+		}
+	}
+	if v, ok := fm["metadata"]; ok && !stringMap(v) {
+		return "metadata must map string keys to string values"
+	}
+	if v, ok := fm["allowed-tools"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return "allowed-tools must be a string"
+		}
+	}
+	return ""
+}
+
+// Text of a SKILL.md read or parse failure as the Python exception str
+func skillReadErrorText(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pyfs.OSErrorText(err)
+	}
+	return err.Error()
+}
+
+// Skills under the package skills directory sorted by name, invalid ones reported as diagnostics
+func discoverPortableSkills(root string, diags *[]AgentPluginDiagnostic) ([]AgentPluginSkill, error) {
+	skillsRoot := filepath.Join(root, "skills")
+	if _, err := os.Lstat(skillsRoot); err != nil {
+		return nil, nil
+	}
+	if st, err := os.Stat(skillsRoot); !insideRoot(skillsRoot, root) || err != nil || !st.IsDir() {
+		*diags = append(*diags, AgentPluginDiagnostic{"skills", "skills must be an in-root directory"})
+		return nil, nil
+	}
+	entries, err := os.ReadDir(skillsRoot)
+	if err != nil {
+		*diags = append(*diags, AgentPluginDiagnostic{"skills", "cannot list skills: " + pyfs.OSErrorText(err)})
+		return nil, nil
+	}
+	var skills []AgentPluginSkill
+	for _, e := range entries {
+		child := filepath.Join(skillsRoot, e.Name())
+		skillMD := filepath.Join(child, "SKILL.md")
+		if cst, err := os.Stat(child); err != nil || !cst.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(skillMD); err != nil {
+			continue
+		}
+		problem := ""
+		var fm map[string]any
+		if mst, err := os.Stat(skillMD); !insideRoot(skillMD, root) || err != nil || !mst.Mode().IsRegular() {
+			problem = "SKILL.md must be a regular in-root file"
+		} else if fm, err = parseSkillFrontmatter(skillMD); err != nil {
+			problem = "invalid SKILL.md: " + skillReadErrorText(err)
+		} else {
+			problem = validSkillFrontmatter(fm, e.Name())
+		}
+		if problem != "" {
+			*diags = append(*diags, AgentPluginDiagnostic{"skill:" + e.Name(), problem})
+			continue
+		}
+		rootReal, err := pypath.Realpath(child, pypath.StrictAll)
+		if err != nil {
+			return nil, err
+		}
+		mdReal, err := pypath.Realpath(skillMD, pypath.StrictAll)
+		if err != nil {
+			return nil, err
+		}
+		skills = append(skills, AgentPluginSkill{Name: e.Name(), Description: fm["description"].(string), Root: rootReal,
+			SkillMD: mdReal, Frontmatter: maps.Clone(fm)})
+	}
+	return skills, nil
+}
+
+// Resolved path scoped to the plugin root or the data root, refusing one that escapes its root
+func resolveScopedPath(value, pluginRoot, dataRoot string, expand bool) (string, error) {
+	expanded := value
+	if expand {
+		expanded = expandPortableVars(value, pluginRoot, dataRoot)
+	}
+	var base, candidate string
+	switch {
+	case strings.HasPrefix(value, "./"):
+		base, candidate = pluginRoot, pathJoin(pluginRoot, expanded[2:])
+	case value == "${PLUGIN_ROOT}" || strings.HasPrefix(value, "${PLUGIN_ROOT}/"):
+		base, candidate = pluginRoot, expanded
+	case value == "${PLUGIN_DATA}" || strings.HasPrefix(value, "${PLUGIN_DATA}/"):
+		base, candidate = dataRoot, expanded
+	default:
+		return "", errors.New("path must start with ./, ${PLUGIN_ROOT}, or ${PLUGIN_DATA}")
+	}
+	resolved, err := pypath.Resolve(candidate)
+	if err != nil {
+		return "", errors.New("path escapes its resolved root")
+	}
+	baseResolved, err := pypath.Resolve(base)
+	if err != nil {
+		return "", errors.New("path escapes its resolved root")
+	}
+	if _, ok := pypath.PathRelativeTo(resolved, baseResolved); !ok {
+		return "", errors.New("path escapes its resolved root")
+	}
+	return resolved, nil
+}
+
+// Path joined the pathlib way, an absolute second part replacing the first
+func pathJoin(base, rest string) string {
+	if filepath.IsAbs(rest) {
+		return rest
+	}
+	if rest == "" {
+		return base
+	}
+	return strings.TrimRight(base, string(filepath.Separator)) + string(filepath.Separator) + rest
+}
+
+// Validated remote MCP url, absolute http or https without user info or fragment, http on loopback only
 func validateRemoteURL(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok || s == "" {
 		return "", errors.New("url must be a non-empty string")
 	}
-	u, err := url.Parse(s)
+	u, err := pyurl.Split(s)
 	if err != nil {
 		return "", fmt.Errorf("url is not parseable: %v", err)
 	}
@@ -407,7 +438,7 @@ func validateRemoteURL(v any) (string, error) {
 	if scheme != "http" && scheme != "https" {
 		return "", errors.New("url scheme must be http or https")
 	}
-	if u.User != nil {
+	if strings.Contains(u.Netloc, "@") {
 		return "", errors.New("url must not contain user information")
 	}
 	if u.Fragment != "" {
@@ -418,15 +449,15 @@ func validateRemoteURL(v any) (string, error) {
 		return "", errors.New("url must have a host")
 	}
 	if scheme == "http" && host != "localhost" {
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
+		ip, parsed := pyipaddress.IPAddress(host)
+		if !parsed || !pyipaddress.IsLoopback(ip) {
 			return "", errors.New("non-loopback url must use https")
 		}
 	}
 	return s, nil
 }
 
-// Native MCP config of a portable streamable-http server entry
+// Native MCP config of a portable streamable-http server entry with strict redirect headers
 func translateRemoteServer(cfg map[string]any) (map[string]any, error) {
 	for k := range cfg {
 		if !portableRemoteFields[k] {
@@ -441,13 +472,13 @@ func translateRemoteServer(cfg map[string]any) (map[string]any, error) {
 		return nil, errors.New("invalid headers")
 	}
 	out := map[string]any{"url": u, "strict_redirect_headers": true}
-	if h := asMap(cfg["headers"]); len(h) > 0 {
-		out["headers"] = h
+	if h, ok := cfg["headers"].(map[string]any); ok && len(h) > 0 {
+		out["headers"] = maps.Clone(h)
 	}
 	return out, nil
 }
 
-// Native MCP config of a portable stdio server entry
+// Native MCP config of a portable stdio server entry, the data root created when asked
 func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, createData bool) (map[string]any, error) {
 	for k := range cfg {
 		if !portableStdioFields[k] {
@@ -465,7 +496,7 @@ func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, creat
 			return nil, err
 		}
 		command = resolved
-	case strings.ContainsAny(command, " \t\n\r"):
+	case strings.ContainsFunc(command, pystr.IsSpace):
 		return nil, errors.New("command must contain one executable token")
 	case strings.ContainsAny(command, `/\`) || command == "." || command == "..":
 		return nil, errors.New("command must be a bare executable or begin with ./")
@@ -483,9 +514,12 @@ func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, creat
 		if !stringMap(raw) {
 			return nil, errors.New("env must map string keys to string values")
 		}
-		env = asMap(raw)
+		env = raw.(map[string]any)
 	}
 	for k := range env {
+		if runtime.GOOS == "windows" {
+			k = strings.ToUpper(k)
+		}
 		if k == "PLUGIN_ROOT" || k == "PLUGIN_DATA" {
 			return nil, errors.New("PLUGIN_ROOT and PLUGIN_DATA are reserved")
 		}
@@ -503,114 +537,166 @@ func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, creat
 		cwdPath = resolved
 	}
 	if createData {
-		if err := os.MkdirAll(dataRoot, 0o700); err != nil {
+		if err := os.MkdirAll(dataRoot, 0o777); err != nil {
 			return nil, err
 		}
-		if rel, err := filepath.Rel(dataRoot, cwdPath); err == nil && !strings.HasPrefix(rel, "..") {
-			if err := os.MkdirAll(cwdPath, 0o700); err != nil {
+		if _, under := pypath.PathRelativeTo(cwdPath, dataRoot); under {
+			if err := os.MkdirAll(cwdPath, 0o777); err != nil {
 				return nil, err
 			}
 		}
 	}
 	outEnv := map[string]any{}
 	for k, v := range env {
-		outEnv[k] = expandPlaceholders(v.(string), pluginRoot, dataRoot)
+		outEnv[k] = expandPortableVars(v.(string), pluginRoot, dataRoot)
 	}
 	outEnv["PLUGIN_ROOT"] = pluginRoot
 	outEnv["PLUGIN_DATA"] = dataRoot
 	outArgs := make([]any, 0, len(args))
 	for _, a := range args {
-		outArgs = append(outArgs, expandPlaceholders(a.(string), pluginRoot, dataRoot))
+		outArgs = append(outArgs, expandPortableVars(a.(string), pluginRoot, dataRoot))
 	}
 	return map[string]any{"command": command, "args": outArgs, "env": outEnv, "cwd": cwdPath}, nil
 }
 
-// Translated mcp.json servers of a package, file level problems reported as one diagnostic
-func discoverPortableMCP(root, dataRoot string, diags *[]AgentPluginDiagnostic, createData bool) map[string]map[string]any {
+// Refusal of a portable sse entry, naming a malformed remote entry first
+func rejectSSE(server map[string]any) (map[string]any, error) {
+	for k := range server {
+		if !portableRemoteFields[k] {
+			return nil, errors.New("invalid remote entry")
+		}
+	}
+	if u, ok := server["url"].(string); !ok || u == "" || !validHeaders(server["headers"]) {
+		return nil, errors.New("invalid remote entry")
+	}
+	return nil, errors.New("portable sse transport is not supported")
+}
+
+// Text of a server translation failure as the Python exception str
+func translateErrorText(err error) string {
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		return pyfs.OSErrorText(err)
+	}
+	return err.Error()
+}
+
+// Translated mcp.json servers in file order, file level problems reported as one diagnostic
+func discoverPortableMCP(root, dataRoot string, diags *[]AgentPluginDiagnostic, createData bool) (map[string]map[string]any, error) {
 	path := filepath.Join(root, "mcp.json")
 	if _, err := os.Lstat(path); err != nil {
-		return map[string]map[string]any{}
+		return map[string]map[string]any{}, nil
 	}
-	fail := func(msg string) map[string]map[string]any {
+	fail := func(msg string) (map[string]map[string]any, error) {
 		*diags = append(*diags, AgentPluginDiagnostic{"mcp", msg})
-		return map[string]map[string]any{}
+		return map[string]map[string]any{}, nil
 	}
-	st, err := os.Stat(path)
-	if err != nil || !st.Mode().IsRegular() || !insideRoot(path, root) {
+	if st, err := os.Stat(path); !insideRoot(path, root) || err != nil || !st.Mode().IsRegular() {
 		return fail("mcp.json must be a regular in-root file")
 	}
 	cfg, err := readJSONObject(path, "mcp.json")
 	if err != nil {
 		return fail(err.Error())
 	}
-	if len(cfg) != 2 || cfg["$schema"] == nil || cfg["mcpServers"] == nil {
+	_, hasSchema := cfg.Vals["$schema"]
+	_, hasServers := cfg.Vals["mcpServers"]
+	if len(cfg.Keys) != 2 || !hasSchema || !hasServers {
 		return fail("mcp.json has an invalid top-level shape")
 	}
-	if cfg["$schema"] != MCPSchemaV1 {
+	if cfg.Vals["$schema"] != MCPSchemaV1 {
 		return fail("mcp.json declares an unsupported schema")
 	}
-	servers := asMap(cfg["mcpServers"])
-	if servers == nil {
+	servers, ok := cfg.Vals["mcpServers"].(*pyjson.Object)
+	if !ok {
 		return fail("mcpServers must be an object")
 	}
 	out := map[string]map[string]any{}
-	for _, name := range orderedMapKeys(servers, jsonObjectKeyOrder(path, "mcpServers")) {
-		server := asMap(servers[name])
+	for _, name := range servers.Keys {
+		server, isMap := pyjson.Plain(servers.Vals[name]).(map[string]any)
 		var translated map[string]any
 		var terr error
-		switch {
-		case name == "" || server == nil:
+		if name == "" || !isMap {
 			terr = errors.New("invalid server entry")
-		default:
-			switch server["type"] {
-			case "stdio":
-				translated, terr = translateStdioServer(server, root, dataRoot, createData)
-			case "streamable-http":
-				translated, terr = translateRemoteServer(server)
-			case "sse":
-				terr = errors.New("portable sse transport is not supported")
+		} else {
+			switch kind := server["type"].(type) {
+			case []any, map[string]any:
+				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("unhashable type: '%s'", pyTypeName(kind))}
 			default:
-				terr = errors.New("unknown MCP server type")
+				switch kind {
+				case "stdio":
+					translated, terr = translateStdioServer(server, root, dataRoot, createData)
+				case "streamable-http":
+					translated, terr = translateRemoteServer(server)
+				case "sse":
+					translated, terr = rejectSSE(server)
+				default:
+					terr = errors.New("unknown MCP server type")
+				}
 			}
 		}
 		if terr != nil {
-			*diags = append(*diags, AgentPluginDiagnostic{"mcp:" + name, terr.Error()})
+			*diags = append(*diags, AgentPluginDiagnostic{"mcp:" + name, translateErrorText(terr)})
 			continue
 		}
 		out[name] = translated
 	}
-	return out
+	return out, nil
 }
 
-// Vendor server declarations keyed by mcp.json server name
-func portableServerDeclarations(manifest map[string]any, servers map[string]map[string]any, diags *[]AgentPluginDiagnostic) (map[string]AgentPluginServerDeclaration, error) {
-	raw, present := manifestVendorExtension(manifest)["servers"]
-	out := map[string]AgentPluginServerDeclaration{}
+// Vendor extension servers mapping of a manifest as the Python chained get reads it, raising on a non mapping link
+func vendorServers(manifest map[string]any) (any, error) {
+	extensions, present := manifest["extensions"]
 	if !present {
-		return out, nil
+		return map[string]any{}, nil
 	}
-	rawServers := asMap(raw)
-	if rawServers == nil {
+	ext, ok := extensions.(map[string]any)
+	if !ok {
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(extensions))}
+	}
+	namespace, present := ext[portableExtension]
+	if !present {
+		return map[string]any{}, nil
+	}
+	ns, ok := namespace.(map[string]any)
+	if !ok {
+		return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("'%s' object has no attribute 'get'", pyTypeName(namespace))}
+	}
+	servers, present := ns["servers"]
+	if !present {
+		return map[string]any{}, nil
+	}
+	return servers, nil
+}
+
+// Vendor server declarations keyed by mcp.json server name in manifest order, policy only entries skipped
+func portableServerDeclarations(manifest map[string]any, servers map[string]map[string]any, order []string, diags *[]AgentPluginDiagnostic) (map[string]AgentPluginServerDeclaration, error) {
+	raw, err := vendorServers(manifest)
+	if err != nil {
+		return nil, err
+	}
+	rawServers, ok := raw.(map[string]any)
+	if !ok {
 		return nil, agentErr("extension '%s'.servers must be an object", portableExtension)
 	}
-	for name, entry := range rawServers {
+	out := map[string]AgentPluginServerDeclaration{}
+	for _, name := range orderedMapKeys(rawServers, order) {
 		if _, ok := servers[name]; !ok {
 			return nil, agentErr("server declaration '%s' has no matching mcp.json server", name)
 		}
-		decl := asMap(entry)
-		if decl == nil {
+		decl, ok := rawServers[name].(map[string]any)
+		if !ok {
 			return nil, agentErr("server declaration '%s' must be an object", name)
 		}
 		var unknown []string
-		for k := range decl {
+		for _, k := range sortedKeys(decl) {
 			if !serverDeclarationKeys[k] {
 				unknown = append(unknown, k)
 			}
 		}
 		if len(unknown) > 0 {
-			sort.Strings(unknown)
 			if diags != nil {
-				*diags = append(*diags, AgentPluginDiagnostic{"server:" + name, fmt.Sprintf("ignored unknown keys %v (needs a newer icebath)", unknown)})
+				*diags = append(*diags, AgentPluginDiagnostic{"server:" + name,
+					fmt.Sprintf("ignored unknown keys %s (needs a newer Icebath)", pyrepr.Repr(stringsAny(unknown)))})
 			}
 			kept := map[string]any{}
 			for k, v := range decl {
@@ -635,82 +721,90 @@ func portableServerDeclarations(manifest map[string]any, servers map[string]map[
 				policyOnly = false
 			}
 		}
-		if policyOnly {
+		if len(decl) > 0 && policyOnly {
 			continue
 		}
-		app := asMap(decl["app"])
-		req := asMap(decl["requires"])
-		if decl["app"] != nil && app == nil {
-			return nil, agentErr("plugin.json extension server '%s' app must be an object", name)
-		}
-		if decl["requires"] != nil && req == nil {
-			return nil, agentErr("plugin.json extension server '%s' requires must be an object", name)
+		if _, err := tools.ParsePlatformDeclaration(name, decl["app"], decl["requires"], "plugin.json extension server "+pyrepr.Repr(name)); err != nil {
+			return nil, agentErr("%s", err.Error())
 		}
 		var live map[string]any
-		if decl["liveness"] != nil {
-			live = asMap(decl["liveness"])
-			if live == nil {
+		if raw := decl["liveness"]; raw != nil {
+			if live, ok = raw.(map[string]any); !ok {
 				return nil, agentErr("server declaration '%s' liveness must be an object", name)
 			}
+			live = maps.Clone(live)
 		}
-		out[name] = AgentPluginServerDeclaration{App: app, Requires: req, Liveness: live}
+		app, _ := decl["app"].(map[string]any)
+		req, _ := decl["requires"].(map[string]any)
+		out[name] = AgentPluginServerDeclaration{Name: name, App: app, Requires: req, Liveness: live}
 	}
 	return out, nil
 }
 
-// Per server trust narrowing a package declares, only untrusted survives
-func portableServerTrust(manifest map[string]any, servers map[string]map[string]any) (map[string]string, error) {
-	out := map[string]string{}
-	for name, entry := range asMap(manifestVendorExtension(manifest)["servers"]) {
-		decl := asMap(entry)
-		if decl == nil {
+// Declared server entries in manifest order, a non mapping servers value yielding none
+func declaredServerEntries(manifest map[string]any, servers map[string]map[string]any, order []string) ([]string, map[string]map[string]any, error) {
+	raw, err := vendorServers(manifest)
+	if err != nil {
+		return nil, nil, err
+	}
+	rawServers, ok := raw.(map[string]any)
+	if !ok {
+		return nil, nil, nil
+	}
+	var names []string
+	entries := map[string]map[string]any{}
+	for _, name := range orderedMapKeys(rawServers, order) {
+		decl, ok := rawServers[name].(map[string]any)
+		if _, known := servers[name]; !ok || !known {
 			continue
 		}
-		raw, ok := decl["trust"]
+		names = append(names, name)
+		entries[name] = decl
+	}
+	return names, entries, nil
+}
+
+// Per server trust narrowing a package declares, only untrusted survives
+func portableServerTrust(manifest map[string]any, servers map[string]map[string]any, order []string) (map[string]string, error) {
+	names, entries, err := declaredServerEntries(manifest, servers, order)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, name := range names {
+		value, ok := entries[name]["trust"]
 		if !ok {
 			continue
 		}
-		if _, known := servers[name]; !known {
-			continue
-		}
-		switch raw {
+		switch value {
 		case "full":
 		case "untrusted":
 			out[name] = "untrusted"
 		default:
-			return nil, agentErr("server declaration '%s' trust must be 'untrusted' or 'full', not %v", name, raw)
+			return nil, agentErr("server declaration '%s' trust must be 'untrusted' or 'full', not %s", name, pyrepr.Repr(value))
 		}
 	}
 	return out, nil
 }
 
-// Per server call deadlines a package declares
-func portableServerTimeouts(manifest map[string]any, servers map[string]map[string]any) (map[string]float64, error) {
+// Largest timeout threading accepts on this platform, threading.TIMEOUT_MAX
+const threadingTimeoutMax = 9223372036.0
+
+// Per server call deadlines a package declares, positive seconds within the platform wait limit
+func portableServerTimeouts(manifest map[string]any, servers map[string]map[string]any, order []string) (map[string]float64, error) {
+	names, entries, err := declaredServerEntries(manifest, servers, order)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]float64{}
-	for name, entry := range asMap(manifestVendorExtension(manifest)["servers"]) {
-		decl := asMap(entry)
-		if decl == nil {
-			continue
-		}
-		raw, ok := decl["timeout"]
+	for _, name := range names {
+		value, ok := entries[name]["timeout"]
 		if !ok {
 			continue
 		}
-		if _, known := servers[name]; !known {
-			continue
-		}
-		var f float64
-		switch n := raw.(type) {
-		case int:
-			f = float64(n)
-		case int64:
-			f = float64(n)
-		case float64:
-			f = n
-		default:
-			return nil, agentErr("server declaration '%s' timeout must be positive seconds within the platform wait limit", name)
-		}
-		if f <= 0 || f > 1e9 {
+		_, isBool := value.(bool)
+		f, numeric := pyNumber(value)
+		if isBool || !numeric || !(f > 0 && f <= threadingTimeoutMax) {
 			return nil, agentErr("server declaration '%s' timeout must be positive seconds within the platform wait limit", name)
 		}
 		out[name] = f
@@ -718,27 +812,30 @@ func portableServerTimeouts(manifest map[string]any, servers map[string]map[stri
 	return out, nil
 }
 
-// Per server cost policies translated to the native tool_costs keys
-func portableServerCosts(manifest map[string]any, servers map[string]map[string]any) (map[string]map[string]any, error) {
+// Per server cost policies validated by the mcp cost parser and translated to the native tool_costs keys
+func portableServerCosts(manifest map[string]any, servers map[string]map[string]any, order []string) (map[string]map[string]any, error) {
+	names, entries, err := declaredServerEntries(manifest, servers, order)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]map[string]any{}
-	for name, entry := range asMap(manifestVendorExtension(manifest)["servers"]) {
-		decl := asMap(entry)
-		if decl == nil {
-			continue
-		}
-		if _, known := servers[name]; !known {
-			continue
-		}
+	for _, name := range names {
 		declared := map[string]any{}
 		for _, k := range []string{"costs", "spend_limit", "cost_unit"} {
-			if v, ok := decl[k]; ok {
+			if v, ok := entries[name][k]; ok {
 				declared[k] = v
 			}
 		}
 		if len(declared) == 0 {
 			continue
 		}
-		if err := validateCostPolicy(declared["costs"], declared["spend_limit"], declared["cost_unit"], fmt.Sprintf("server declaration '%s'", name)); err != nil {
+		parse, err := needService("ParseCostPolicy", func(s *Services) func(costs, spendLimit, costUnit any, where string) error {
+			return s.ParseCostPolicy
+		})
+		if err != nil {
+			return nil, err
+		}
+		if err := parse(declared["costs"], declared["spend_limit"], declared["cost_unit"], fmt.Sprintf("server declaration '%s'", name)); err != nil {
 			return nil, agentErr("%s", err.Error())
 		}
 		if c, ok := declared["costs"]; ok {
@@ -750,58 +847,11 @@ func portableServerCosts(manifest map[string]any, servers map[string]map[string]
 	return out, nil
 }
 
-// Shape check of a declared cost table and spend limit
-func validateCostPolicy(costs, spendLimit, unit any, where string) error {
-	if costs != nil {
-		m := asMap(costs)
-		if m == nil {
-			return fmt.Errorf("%s costs must map tool names to non-negative numbers", where)
-		}
-		for tool, v := range m {
-			f, ok := toFloat(v)
-			if tool == "" || !ok || f < 0 {
-				return fmt.Errorf("%s costs must map tool names to non-negative numbers", where)
-			}
-		}
-	}
-	if spendLimit != nil {
-		f, ok := toFloat(spendLimit)
-		if !ok || f < 0 {
-			return fmt.Errorf("%s spend_limit must be a non-negative number", where)
-		}
-		if costs == nil {
-			return fmt.Errorf("%s spend_limit needs a costs table", where)
-		}
-	}
-	if unit != nil {
-		s, ok := unit.(string)
-		if !ok || strings.TrimSpace(s) == "" {
-			return fmt.Errorf("%s cost_unit must be a non-empty string", where)
-		}
-	}
-	return nil
-}
-
-// Float of a numeric JSON or YAML value
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	}
-	return 0, false
-}
-
-// Resolved root with its validated manifest and diagnostics
+// Strictly resolved root directory with its validated manifest and diagnostics
 func validatePortableRoot(pluginRoot string) (string, map[string]any, []AgentPluginDiagnostic, error) {
-	root, err := filepath.EvalSymlinks(pluginRoot)
+	root, err := pypath.Realpath(pypath.PathStr(pluginRoot), pypath.StrictAll)
 	if err != nil {
-		return "", nil, nil, agentErr("plugin root must be a directory")
+		return "", nil, nil, err
 	}
 	if st, err := os.Stat(root); err != nil || !st.IsDir() {
 		return "", nil, nil, agentErr("plugin root must be a directory")
@@ -819,36 +869,43 @@ func LoadAgentPlugin(pluginRoot, dataRoot string) (*AgentPluginPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolvedData := filepath.Clean(dataRoot)
-	if abs, err := filepath.Abs(resolvedData); err == nil {
-		resolvedData = abs
+	resolvedData, err := pypath.Resolve(dataRoot)
+	if err != nil {
+		return nil, err
 	}
-	skills := discoverPortableSkills(root, &diags)
-	servers := discoverPortableMCP(root, resolvedData, &diags, true)
-	trust, err := portableServerTrust(manifest, servers)
+	skills, err := discoverPortableSkills(root, &diags)
+	if err != nil {
+		return nil, err
+	}
+	servers, err := discoverPortableMCP(root, resolvedData, &diags, true)
+	if err != nil {
+		return nil, err
+	}
+	order := jsonObjectKeyOrder(filepath.Join(root, "plugin.json"), "extensions", portableExtension, "servers")
+	trust, err := portableServerTrust(manifest, servers, order)
 	if err != nil {
 		return nil, err
 	}
 	for name, tier := range trust {
-		servers[name]["trust"] = tier
+		servers[name] = withKey(servers[name], "trust", tier)
 	}
-	timeouts, err := portableServerTimeouts(manifest, servers)
+	timeouts, err := portableServerTimeouts(manifest, servers, order)
 	if err != nil {
 		return nil, err
 	}
 	for name, t := range timeouts {
-		servers[name]["timeout"] = t
+		servers[name] = withKey(servers[name], "timeout", t)
 	}
-	costs, err := portableServerCosts(manifest, servers)
+	costs, err := portableServerCosts(manifest, servers, order)
 	if err != nil {
 		return nil, err
 	}
 	for name, c := range costs {
-		for k, v := range c {
-			servers[name][k] = v
-		}
+		merged := maps.Clone(servers[name])
+		maps.Copy(merged, c)
+		servers[name] = merged
 	}
-	decls, err := portableServerDeclarations(manifest, servers, &diags)
+	decls, err := portableServerDeclarations(manifest, servers, order, &diags)
 	if err != nil {
 		return nil, err
 	}
@@ -858,6 +915,13 @@ func LoadAgentPlugin(pluginRoot, dataRoot string) (*AgentPluginPackage, error) {
 		Name: manifest["name"].(string), Version: version, Description: desc, Root: root, DataRoot: resolvedData,
 		Manifest: manifest, Skills: skills, MCPServers: servers, ServerDeclarations: decls, Diagnostics: diags,
 	}, nil
+}
+
+// Copy of a server config with one key set, the dict unpacking merge of the Python
+func withKey(server map[string]any, key string, value any) map[string]any {
+	out := maps.Clone(server)
+	out[key] = value
+	return out
 }
 
 // Validated root plugin.json without discovering components

@@ -55,18 +55,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	bf(doctor, "live", "", "Opt-in: run one bounded, read-only real-call health probe per configured tool backend (Firecrawl/FAL/browser/MCP/TTS/STT) after the static checks. Makes real network calls.")
 	sf(doctor, "ack", "", "", "Acknowledge a security advisory by ID and exit. After ack, the advisory will no longer trigger startup banners. Run `icebath doctor` first to see active advisories and their IDs.")
 
-	verify := c.newCmd(root, "verify", "Detect a project's run recipe and smoke-test it",
-		"Detect how the current project is built, tested, and started (or load the saved manifest at .icebath/environment.json), then run a verification pass: bootstrap -> build -> test -> start in background -> poll readiness -> teardown.")
-	c.pos(verify, pOpt("path"))
-	bf(verify, "detect-only", "", "Only detect and print the recipe as JSON; run nothing")
-	bf(verify, "save", "", "Save the recipe as .icebath/environment.json in the project")
-	bf(verify, "skip-start", "", "Run command phases but skip starting the app / readiness poll")
-	af(verify, "phase", "", "Run only the given phase(s); repeatable")
-	c.choice(verify, "phase", "bootstrap", "build", "test", "start")
-	inf(verify, "port", "", 0, "Override the port used for the readiness poll")
-	ff(verify, "timeout", "", 600, "Per-phase timeout in seconds (default: 600)")
-	ff(verify, "ready-timeout", "", 60, "Readiness poll timeout in seconds (default: 60)")
-	jsonFlag(verify, "Emit a machine-readable JSON result")
+	c.addVerify(root)
 
 	security := c.newCmd(root, "security", "Supply-chain audit (OSV.dev) for venv, plugins, and MCP servers",
 		"On-demand vulnerability scan against OSV.dev. Covers the Icebath venv (installed PyPI dists), Python deps declared by plugins under ~/.icebath/plugins/, and pinned npx/uvx MCP servers in config.yaml. Does NOT scan globally-installed packages or editor/browser extensions.")

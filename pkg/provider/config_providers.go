@@ -1110,6 +1110,9 @@ func ProviderCatalog() []ProviderDescriptor {
 		if hasProf {
 			authType = prof.AuthType
 		}
+		if overlay, ok := icebathOverlays[entry.Slug]; authType == "" && ok {
+			authType = overlay.AuthType
+		}
 		if authType == "" {
 			authType = AuthTypeAPIKey
 		}

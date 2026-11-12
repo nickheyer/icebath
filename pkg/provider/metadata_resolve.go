@@ -447,7 +447,13 @@ type ContextLengthRequest struct {
 }
 
 // GetModelContextLength resolves the window through config, caches, probes, catalogs and defaults
-func GetModelContextLength(ctx context.Context, req ContextLengthRequest) int {
+var GetModelContextLength func(ctx context.Context, req ContextLengthRequest) int
+
+// Installs the resolver after package init so the MoA member walk can call back through it
+func init() { GetModelContextLength = getModelContextLength }
+
+// Window through config, caches, probes, catalogs and defaults behind the replaceable resolver
+func getModelContextLength(ctx context.Context, req ContextLengthRequest) int {
 	if ctx == nil {
 		ctx = context.Background()
 	}

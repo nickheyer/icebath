@@ -10,7 +10,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -113,7 +112,7 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 		if err := os.MkdirAll(root, 0o777); err != nil {
 			return err
 		}
-		return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), journal, record, 0o600)
+		return s.writeAdmissionJournal(ctx, journal, record)
 	}
 	paramMap := map[string]any{"job_id": job.ID, "request_id": requestID, "extra_prompt": extraVal}
 	observe := func(call func(op string, data map[string]any) (map[string]any, error)) (jobRunOutcome, error) {
@@ -135,7 +134,11 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 			case "missing":
 				failure := canonicalFailure(job.ID, err)
 				record.Set("refusal", []any{false, failure.Output, "", *failure.Error})
-				record.Set("job", job)
+				snapshot, jerr := jobObject(job)
+				if jerr != nil {
+					return jobRunOutcome{}, jerr
+				}
+				record.Set("job", snapshot)
 				if serr := save(); serr != nil {
 					return jobRunOutcome{}, serr
 				}
@@ -207,10 +210,6 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 	if err == nil {
 		return out, nil
 	}
-	var unknown *CronExecutionUnknown
-	if errors.As(err, &unknown) && !attempted {
-		return jobRunOutcome{}, err
-	}
 	if attempted {
 		return jobRunOutcome{}, &CronExecutionUnknown{Msg: fmt.Sprintf("Cron execution unverified; reconcile %s: %v", journal, err)}
 	}
@@ -261,7 +260,7 @@ func (s *Store) reconcilePendingJournals(ctx context.Context, allowConnect bool)
 	sort.Strings(journals)
 	for _, journal := range journals {
 		if err := s.reconcileJournal(ctx, journal, allowConnect); err != nil {
-			s.log.Warn(fmt.Sprintf("Cron receipt recovery deferred: %s: %v", journal, err))
+			s.log.Warn(fmt.Sprintf("Cron receipt recovery deferred: %s", journal), "error", err)
 		}
 	}
 	return nil
@@ -344,7 +343,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 				return err
 			}
 			record.Set("pause_recorded", pauseIdentity(paused))
-			return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), journal, record, 0o600)
+			return s.writeAdmissionJournal(ctx, journal, record)
 		}
 		return nil
 	}

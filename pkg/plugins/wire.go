@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -346,15 +347,14 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 			return rec, nil
 		}
 		if raw, ok := v["__bytes__"]; ok {
-			s, _ := raw.(string)
-			b, err := base64.StdEncoding.DecodeString(s)
-			if err != nil {
-				return nil, &HostBuiltinError{Type: "ValueError", Message: err.Error()}
-			}
-			return b, nil
+			return wireDecodeBytes(raw)
 		}
 		if raw, ok := v["__opaque__"]; ok {
-			return &Opaque{TypeName: wireStr(raw), Text: wireStr(v["repr"])}, nil
+			text := ""
+			if pyrepr.Truthy(v["repr"]) {
+				text = config.PyStr(v["repr"])
+			}
+			return &Opaque{TypeName: config.PyStr(raw), Text: text}, nil
 		}
 		_, c := v["__callable__"]
 		_, o := v["__object__"]
@@ -375,6 +375,23 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 		return out, nil
 	}
 	return value, nil
+}
+
+// Bytes of a __bytes__ payload decoded like base64.b64decode, raising its binascii.Error, ValueError or TypeError
+func wireDecodeBytes(raw any) (any, error) {
+	s, ok := raw.(string)
+	if !ok {
+		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", config.PyTypeName(raw)), Bases: []string{"Exception", "BaseException"}}
+	}
+	b, err := pybase64.B64Decode(s)
+	var binErr *pybase64.Error
+	switch {
+	case errors.As(err, &binErr):
+		return nil, &HostBuiltinError{Type: "Error", Message: binErr.Msg, Bases: []string{"ValueError", "Exception", "BaseException"}}
+	case err != nil:
+		return nil, &HostBuiltinError{Type: "ValueError", Message: err.Error(), Bases: []string{"Exception", "BaseException"}}
+	}
+	return b, nil
 }
 
 // One parameter of a peer signature, kind numbered like inspect.Parameter kinds
@@ -600,11 +617,11 @@ func (c *Channel) dispatchFrame(line []byte) {
 	parsed, err := pyJSONLoads(line)
 	message, ok := parsed.(map[string]any)
 	if err != nil || !ok {
-		text := string(line)
-		if r := []rune(text); len(r) > 200 {
-			text = string(r[:200])
+		text := pyrepr.BytesRepr(line)
+		if len(text) > 200 {
+			text = text[:200]
 		}
-		logWarn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, config.PyRepr(text)))
+		logWarn(fmt.Sprintf("%s: dropped a malformed frame: %s", c.name, text))
 		return
 	}
 	if _, isRequest := message["method"]; isRequest {

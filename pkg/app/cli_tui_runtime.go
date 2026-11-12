@@ -24,8 +24,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Chat turn a submitted input runs, the method itself in production
+var tuiChat = (*CLI).chat
+
 // Worker draining pending input, running idle housekeeping between inputs and dispatching each one
 func (c *CLI) tuiProcessLoop() {
+	c.tuiProcessLoopWith(c.tuiProcessOneInput, c.tuiIdleTick)
+}
+
+// Input loop over the given dispatch and idle steps, the instance attributes the Python loop calls through
+func (c *CLI) tuiProcessLoopWith(processOne func(any), idleTick func()) {
 	var held *ownQueueHold
 	for !c.exitRequested() {
 		func() {
@@ -43,7 +51,7 @@ func (c *CLI) tuiProcessLoop() {
 				var userInput any
 				held, userInput = c.tuiHoldStep(held)
 				if userInput != nil {
-					c.tuiProcessOneInput(userInput)
+					processOne(userInput)
 				}
 				return
 			}
@@ -53,13 +61,13 @@ func (c *CLI) tuiProcessLoop() {
 				running := c.agentRunning
 				c.uiMu.Unlock()
 				if !running {
-					c.tuiIdleTick()
+					idleTick()
 				}
 				return
 			}
 			held = beginOwnQueueHold(c, userInput)
 			if held == nil {
-				c.tuiProcessOneInput(userInput)
+				processOne(userInput)
 			}
 		}()
 	}
@@ -197,7 +205,7 @@ func (c *CLI) tuiProcessOneInput(queued any) {
 		_ = app.Invalidate()
 	}
 	defer c.tuiAfterTurn()
-	c.chat(message, submitImages, isVoice)
+	tuiChat(c, message, submitImages, isVoice)
 }
 
 // Dispatches a slash command, returning the agent seed it left to run as a chat turn
@@ -484,6 +492,7 @@ func (c *CLI) tuiShutdown() {
 	browser.SetSaveLoginPromptCallback(c.ctx, nil)
 	browser.SetCodePromptCallback(c.ctx, nil)
 	lockVaultSessions(c)
+	c.persistActiveSessionBeforeClose()
 	if sid := c.closingSessionID(); c.sessionDB != nil && sid != "" {
 		if err := c.sessionDB.EndSession(c.ctx, sid, "cli_close"); err != nil {
 			cliLogger.Debug(fmt.Sprintf("Could not close session in DB: %v", err))

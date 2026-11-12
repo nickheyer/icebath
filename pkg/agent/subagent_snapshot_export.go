@@ -16,6 +16,11 @@ func NewProgressParentForTests(cb func(event, name, preview string, args, extra 
 	return &AIAgent{toolProgressCallback: toolProgressFn(cb)}
 }
 
+// Parent agent of one durable conversation whose lineage resolves through the given session store
+func NewLineageParentForTests(sessionID string, db SessionStore) *AIAgent {
+	return &AIAgent{sessionID: sessionID, sessionDB: db}
+}
+
 // Registers a running child under its subagent id with the exact owner authority it reports to
 func RegisterChild(ctx context.Context, child, parent *AIAgent, goal, ownerSessionID string, ownerTransport, ownerSessionRecord any) string {
 	return registerChild(ctx, child, parent, goal, ownerSessionID, ownerTransport, ownerSessionRecord)

@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"strings"
 	"testing"
 	"time"
@@ -13,10 +14,10 @@ import (
 func TestMigrationOfAReplacedDocDoesNotTouchTheReplacement(t *testing.T) {
 	p := setupPlane(t)
 	latest := config.LatestConfigVersion()
-	prof := p.profile("default")
-	prof.values, prof.writer = map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 46
+	prof := p.Profile("default")
+	prof.Values, prof.Writer = map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 46
 	b := testBackend()
-	st, err := b.state(context.Background(), p.home)
+	st, err := b.state(context.Background(), p.Home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,13 +35,13 @@ func TestMigrationOfAReplacedDocDoesNotTouchTheReplacement(t *testing.T) {
 	t.Cleanup(func() { runMigrations = saved })
 	readErr := make(chan error, 1)
 	go func() {
-		_, err := config.ReadRawConfig(context.Background(), p.home)
+		_, err := config.ReadRawConfig(context.Background(), p.Home)
 		readErr <- err
 	}()
 	waitOrFail(t, entered)
-	p.mu.Lock()
-	prof.writer, prof.version = latest, 1
-	p.mu.Unlock()
+	p.Mu.Lock()
+	prof.Writer, prof.Version = latest, 1
+	p.Mu.Unlock()
 	if !b.pollOne(st) {
 		t.Fatal("poll did not install")
 	}
@@ -56,8 +57,8 @@ func TestMigrationOfAReplacedDocDoesNotTouchTheReplacement(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("reader stuck")
 	}
-	doc, err := config.ReadRawConfig(context.Background(), p.home)
-	if err != nil || doc["_config_version"] != latest || len(p.patches()) != 0 {
+	doc, err := config.ReadRawConfig(context.Background(), p.Home)
+	if err != nil || doc["_config_version"] != latest || len(p.Patches()) != 0 {
 		t.Fatalf("doc %v %v", doc, err)
 	}
 	mustEqualJSON(t, "kept", doc["compression"], map[string]any{"threshold_tokens": 256000})
@@ -86,32 +87,32 @@ func TestPlaneRefusalsKeepThePlaneCode(t *testing.T) {
 	}
 }
 
-func multiGroupPlane(p *stubPlane) {
-	p.upper = map[string]any{"terminal": map[string]any{"backend": "docker"}, "model": map[string]any{"default": "hermes-4"}}
-	p.upperLocks = []map[string]any{{"path": "terminal.backend", "level": "group", "groupId": "g-sec"}}
-	p.groups = []map[string]any{{"groupId": "g-sec", "priority": 10, "version": 3}, {"groupId": "g-eng", "priority": 5, "version": 1}}
-	p.groupProvenance = map[string]any{"terminal": map[string]any{"backend": "g-sec"}}
+func multiGroupPlane(p *configplane.Plane) {
+	p.Upper = map[string]any{"terminal": map[string]any{"backend": "docker"}, "model": map[string]any{"default": "hermes-4"}}
+	p.UpperLocks = []map[string]any{{"path": "terminal.backend", "level": "group", "groupId": "g-sec"}}
+	p.Groups = []map[string]any{{"groupId": "g-sec", "priority": 10, "version": 3}, {"groupId": "g-eng", "priority": 5, "version": 1}}
+	p.GroupProvenance = map[string]any{"terminal": map[string]any{"backend": "g-sec"}}
 }
 
 func TestMultiGroupResponseFieldsAreIgnoredAndGroupLockRefusesClientSide(t *testing.T) {
 	p := setupPlane(t)
 	multiGroupPlane(p)
 	ctx := context.Background()
-	doc, err := config.ReadRawConfig(ctx, p.home)
+	doc, err := config.ReadRawConfig(ctx, p.Home)
 	if err != nil || doc["terminal"].(map[string]any)["backend"] != "docker" || doc["model"].(map[string]any)["default"] != "hermes-4" {
 		t.Fatalf("doc %v %v", doc, err)
 	}
-	if level, ok, _ := testBackend().Locked(ctx, p.home, "terminal.backend"); !ok || level != "group" {
+	if level, ok, _ := testBackend().Locked(ctx, p.Home, "terminal.backend"); !ok || level != "group" {
 		t.Fatalf("locked %v %v", level, ok)
 	}
 	var locked *config.ConfigLockedError
-	if err := writeKey(p, "terminal.backend", "local"); !errors.As(err, &locked) || locked.Path != "terminal.backend" || locked.LockedBy != "group" || len(p.patches()) != 0 {
+	if err := writeKey(p, "terminal.backend", "local"); !errors.As(err, &locked) || locked.Path != "terminal.backend" || locked.LockedBy != "group" || len(p.Patches()) != 0 {
 		t.Fatalf("err %v", err)
 	}
 	if err := writeKey(p, "model.default", "hermes-5"); err != nil {
 		t.Fatal(err)
 	}
-	mustEqualJSON(t, "set", p.patches()[0].body["set"], map[string]any{"model.default": "hermes-5"})
+	mustEqualJSON(t, "set", p.Patches()[0].Body["set"], map[string]any{"model.default": "hermes-5"})
 }
 
 func TestPlaneGroupLockRefusalMapsToLockedError(t *testing.T) {
@@ -127,45 +128,45 @@ func TestEtagIsOpaqueAndEchoedVerbatim(t *testing.T) {
 	p := setupPlane(t)
 	multiGroupPlane(p)
 	opaque := `W/"v2:any-bytes/at all"`
-	p.etagOverride = opaque
+	p.EtagOverride = opaque
 	ctx := context.Background()
-	if _, err := config.ReadRawConfig(ctx, p.home); err != nil {
+	if _, err := config.ReadRawConfig(ctx, p.Home); err != nil {
 		t.Fatal(err)
 	}
 	b := testBackend()
-	st, _ := b.state(ctx, p.home)
+	st, _ := b.state(ctx, p.Home)
 	if b.pollOne(st) || st.lastError != "" {
 		t.Fatalf("poll changed %q", st.lastError)
 	}
-	gets := p.gets()
-	if gets[len(gets)-1].ifNoneMatch != opaque {
-		t.Fatalf("etag %q", gets[len(gets)-1].ifNoneMatch)
+	gets := p.Gets()
+	if gets[len(gets)-1].IfNoneMatch != opaque {
+		t.Fatalf("etag %q", gets[len(gets)-1].IfNoneMatch)
 	}
 }
 
 func TestStubPlaneDeepMergeFollowsContract62(t *testing.T) {
 	upper := map[string]any{"display": map[string]any{"personality": "concise"}, "model": "a", "tags": []any{1, 2}}
-	mustEqualJSON(t, "null over mapping", stubDeepMerge(upper, map[string]any{"display": nil}), upper)
-	if stubDeepMerge(upper, map[string]any{"model": nil})["model"] != nil {
+	mustEqualJSON(t, "null over mapping", configplane.DeepMerge(upper, map[string]any{"display": nil}), upper)
+	if configplane.DeepMerge(upper, map[string]any{"model": nil})["model"] != nil {
 		t.Fatal("null over scalar")
 	}
-	mustEqualJSON(t, "list", stubDeepMerge(upper, map[string]any{"tags": []any{3}})["tags"], []any{3})
+	mustEqualJSON(t, "list", configplane.DeepMerge(upper, map[string]any{"tags": []any{3}})["tags"], []any{3})
 }
 
 func TestCASRetryOfADocumentWriteReplaysOnlyItsOwnEdit(t *testing.T) {
 	p := setupPlane(t)
-	prof := p.profile("default")
-	prof.values, prof.version = map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1
+	prof := p.Profile("default")
+	prof.Values, prof.Version = map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1
 	original := request
 	raced := false
 	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
 		if method == "PATCH" && !raced {
 			raced = true
-			p.mu.Lock()
-			prof.values["display"].(map[string]any)["compact"] = true
-			prof.values["terminal"] = map[string]any{"timeout": 321}
-			prof.version++
-			p.mu.Unlock()
+			p.Mu.Lock()
+			prof.Values["display"].(map[string]any)["compact"] = true
+			prof.Values["terminal"] = map[string]any{"timeout": 321}
+			prof.Version++
+			p.Mu.Unlock()
 		}
 		return original(ctx, method, h, profile, etag, body, token)
 	}
@@ -173,13 +174,13 @@ func TestCASRetryOfADocumentWriteReplaysOnlyItsOwnEdit(t *testing.T) {
 	if err := setValue(p, "display.personality", "pirate"); err != nil {
 		t.Fatal(err)
 	}
-	mustEqualJSON(t, "values", prof.values, map[string]any{"display": map[string]any{"personality": "pirate", "compact": true}, "terminal": map[string]any{"timeout": 321}})
-	patches := p.patches()
-	if len(patches) != 2 || patches[0].body["expectedVersion"] != 1 || patches[1].body["expectedVersion"] != 2 {
+	mustEqualJSON(t, "values", prof.Values, map[string]any{"display": map[string]any{"personality": "pirate", "compact": true}, "terminal": map[string]any{"timeout": 321}})
+	patches := p.Patches()
+	if len(patches) != 2 || patches[0].Body["expectedVersion"] != 1 || patches[1].Body["expectedVersion"] != 2 {
 		t.Fatalf("patches %v", patches)
 	}
-	if _, has := patches[1].body["unset"]; has || strings.Contains(pyStrOf(patches[1].body), "compact") {
-		t.Fatalf("retry body %v", patches[1].body)
+	if _, has := patches[1].Body["unset"]; has || strings.Contains(pyStrOf(patches[1].Body), "compact") {
+		t.Fatalf("retry body %v", patches[1].Body)
 	}
 }
 

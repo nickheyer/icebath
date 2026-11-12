@@ -159,6 +159,35 @@ func setResetFromVendorHeaders(ctx map[string]any, lowered map[string]string, no
 	}
 }
 
+// Value of the first key whose value is truthy, else the value of the last key, Python's a or b or c
+func firstTruthyField(m map[string]any, keys ...string) any {
+	var v any
+	for _, k := range keys {
+		if v = m[k]; pyTruthy(v) {
+			return v
+		}
+	}
+	return v
+}
+
+// Float of a Python int or float value, bools counting as ints
+func pyNumber(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case bool:
+		if n {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
 // ExtractAPIErrorContext pulls reason, message, and reset_at out of a provider error body, headers, and text
 func ExtractAPIErrorContext(err error) map[string]any {
 	ctx := map[string]any{}
@@ -176,23 +205,15 @@ func ExtractAPIErrorContext(err error) map[string]any {
 		payload = nested
 	}
 	if payload != nil {
-		for _, key := range []string{"code", "type", "error"} {
-			if s, ok := payload[key].(string); ok && strings.TrimSpace(s) != "" {
-				ctx["reason"] = strings.TrimSpace(s)
-				break
-			}
+		if s, ok := firstTruthyField(payload, "code", "type", "error").(string); ok && strings.TrimSpace(s) != "" {
+			ctx["reason"] = strings.TrimSpace(s)
 		}
-		message := stringField(payload, "message")
-		if message == "" {
-			message = stringField(payload, "error_description")
+		message := firstTruthyField(payload, "message", "error_description")
+		if s, ok := payload["error"].(string); ok && !pyTruthy(message) {
+			message = s
 		}
-		if message == "" {
-			if s, ok := payload["error"].(string); ok {
-				message = s
-			}
-		}
-		if strings.TrimSpace(message) != "" {
-			ctx["message"] = strings.TrimSpace(message)
+		if s, ok := message.(string); ok && strings.TrimSpace(s) != "" {
+			ctx["message"] = strings.TrimSpace(s)
 		}
 		for _, key := range []string{"resets_at", "reset_at"} {
 			if v, ok := payload[key]; ok && v != nil && v != "" {
@@ -201,7 +222,7 @@ func ExtractAPIErrorContext(err error) map[string]any {
 			}
 		}
 		if _, has := ctx["reset_at"]; !has {
-			if secs, ok := payload["resets_in_seconds"].(float64); ok {
+			if secs, ok := pyNumber(payload["resets_in_seconds"]); ok {
 				ctx["reset_at"] = float64(now.UnixNano())/1e9 + secs
 			}
 		}
@@ -1476,13 +1497,9 @@ func (l *doLoop) genuineNousRateLimit(apiErr *APIError, errorContext map[string]
 	for k, v := range cl.Context {
 		merged[k] = v
 	}
-	resetAt := time.Time{}
-	if epoch, ok := ParseAbsoluteTimestamp(merged["reset_at"]); ok {
-		resetAt = time.Unix(0, int64(epoch*1e9))
-	}
 	guard := &NousRateGuard{Home: l.opts.Home, Anonymous: anonymous, Now: l.now}
-	if err := guard.Record(headers, resetAt, 300*time.Second); err != nil {
-		l.log.Debug(fmt.Sprintf("nous rate guard record failed: %v", err))
+	if err := guard.Record(headers, ContextResetAt(merged), 300*time.Second); err != nil {
+		LogNousRateLimitWriteFailure(err)
 	}
 	return true
 }

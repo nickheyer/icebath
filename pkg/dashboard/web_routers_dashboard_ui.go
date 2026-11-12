@@ -256,7 +256,11 @@ func getPluginsCatalog(ctx context.Context, req *Request) (any, error) {
 				installed[alias] = info
 			}
 		}
-		out = configJSON(plugins.InstalledCatalogState(ctx, installed, order))
+		state, err := plugins.InstalledCatalogState(ctx, installed, order)
+		if err != nil {
+			return err
+		}
+		out = configJSON(state)
 		return nil
 	})
 	if err != nil {

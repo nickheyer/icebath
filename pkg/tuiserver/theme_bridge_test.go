@@ -59,3 +59,17 @@ func TestPickOutcomes(t *testing.T) {
 		})
 	}
 }
+
+func TestTheSessionCallbacksReachTheBridge(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	fake := installBridge(t)
+	fake.answers = []string{`{"success": true}`}
+	got := agentCbs(context.Background(), "s1").Theme(map[string]any{"accent": "violet"})
+	if !reflect.DeepEqual(objectMap(got.(*pyjson.Object)), map[string]any{"success": true}) {
+		t.Fatalf("theme callback = %v", got)
+	}
+	want := []bridgeCall{{event: "theme.apply", sid: "s1", payload: map[string]any{"accent": "violet"}, timeout: themeTimeoutS}}
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("calls = %+v", fake.calls)
+	}
+}

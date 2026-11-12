@@ -16,6 +16,7 @@ import (
 // Three dated sessions of nine messages vacuumed into one rollback journal file whose schema page is then damaged
 func lfMakeSchemaUnreadableSource(t *testing.T, path string) (int64, int64) {
 	t.Helper()
+	caseHome(t)
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, path, false)
 	if err != nil {
@@ -65,6 +66,7 @@ func lfMakeSchemaUnreadableSource(t *testing.T, path string) (int64, int64) {
 }
 
 func TestLostAndFoundLaneRecoversSchemaUnreadableSource(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	if _, ok := findSQLite3CLI(); !ok {
 		t.Skip("sqlite3 CLI not on PATH; .recover is a shell-only feature")

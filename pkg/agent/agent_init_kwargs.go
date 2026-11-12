@@ -244,7 +244,11 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 			o.ReactionCallback = cb
 		}
 	case "max_tokens":
-		o.MaxTokens, err = agentKwargInt(name, value)
+		if value != nil {
+			var n int
+			n, err = agentKwargInt(name, value)
+			o.MaxTokens = &n
+		}
 	case "reasoning_config":
 		o.ReasoningConfig, err = agentKwargDict(name, value)
 	case "service_tier":

@@ -163,7 +163,7 @@ func (s *Store) recordStaleRelease(job *Job, jobID string, age, allowance float6
 	}
 	msg := fmt.Sprintf("Stale in-flight claim force-released after %.1fm (allowance %.1fm); previous run never released "+
 		"the scheduler in-flight guard", age/60, allowance/60)
-	if _, err := s.markJobRun(context.Background(), jobID, false, MarkOptions{Error: &msg}); err != nil {
+	if _, err := markJobRunSeam(s, context.Background(), jobID, false, MarkOptions{Error: &msg}); err != nil {
 		s.log.Warn(fmt.Sprintf("Could not record forced release for job %s: %v", jobID, err))
 	}
 }
@@ -303,7 +303,7 @@ func markRunningJobsInterrupted(ctx context.Context, reason string, onlyOwners m
 		}
 		s := openCronStore(f.home, nil)
 		msg := reason
-		ok, err := s.markJobRun(ctx, f.key.JobID, false, MarkOptions{Error: &msg, ExpectedFireOwner: f.owner})
+		ok, err := markJobRunSeam(s, ctx, f.key.JobID, false, MarkOptions{Error: &msg, ExpectedFireOwner: f.owner})
 		if err != nil {
 			s.log.Warn(fmt.Sprintf("Failed to mark job %s interrupted: %v", f.key.JobID, err))
 			continue

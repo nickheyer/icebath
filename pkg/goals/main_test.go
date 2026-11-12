@@ -17,6 +17,7 @@ var testSecretEnvSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CR
 // Installs the wiring hook doubles the real auxiliary client path reaches, then runs the suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = func(name string) bool {
 		upper := strings.ToUpper(name)

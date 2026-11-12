@@ -96,7 +96,7 @@ type classicTurnRunner interface {
 }
 
 // Outcome of one settlement attempt, the committed row and the reply it carries once it landed
-type turnSettlement struct {
+type TurnSettlement struct {
 	Settled  *pyjson.Object
 	Response any
 }
@@ -335,7 +335,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 			Guard: a.admissionGate(nil, false), CheckHead: true, Head: head})
 		return claimWrite{row, moved}, err
 	}, func(taskCtx context.Context, written any) (any, error) {
-		return written, a.stampClaim(taskCtx, ref, live, written.(claimWrite).row)
+		return written, a.StampClaim(taskCtx, ref, live, written.(claimWrite).row)
 	}, false, nil)
 	if err != nil {
 		return claimAttempt{}, err
@@ -348,7 +348,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 }
 
 // Stamps the claim's execution on the stream in the same tracked task as its commit
-func (a *SessionAuthority) stampClaim(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) error {
+func (a *SessionAuthority) StampClaim(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) error {
 	if row == nil {
 		return nil
 	}
@@ -561,17 +561,22 @@ func (a *SessionAuthority) clearClaim(live *LiveSession, sessionID string) {
 	a.mu.Unlock()
 }
 
+// Drops the session's executing generation under its event stream lock once a claimed turn returns
+func (a *SessionAuthority) EndExecution(live *LiveSession, sessionID string) {
+	live.EventStream.Lock.Lock()
+	defer live.EventStream.Lock.Unlock()
+	a.mu.Lock()
+	delete(a.executing, sessionID)
+	a.mu.Unlock()
+}
+
 // Runs the claimed admission, its reply and outcome, a lost managed worker settling or pausing the FIFO
 func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) (any, string, error) {
 	if live.ReviewRun != nil && !live.ReviewRun.RequestDone() {
 		cancelLiveReviewForTurn(live)
 	}
 	response, err := executeFiniteAdmission(ctx, a, ref, row)
-	live.EventStream.Lock.Lock()
-	a.mu.Lock()
-	delete(a.executing, ref.SessionID)
-	a.mu.Unlock()
-	live.EventStream.Lock.Unlock()
+	a.EndExecution(live, ref.SessionID)
 	if err == nil {
 		return response, "completed", nil
 	}
@@ -613,7 +618,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 		a.mu.Lock()
 		captured := a.PendingResults[admissionID]
 		a.mu.Unlock()
-		settlement := turnSettlement{}
+		settlement := TurnSettlement{}
 		err := settleWithRetry(ctx, a, live, ref, row, *response, outcome, captured, &settlement)
 		if settlement.Settled != nil {
 			*settled, *response = settlement.Settled, settlement.Response

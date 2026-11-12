@@ -26,7 +26,12 @@ type backgroundReviewKwargs struct {
 
 // Spawns or idle queues a background review, skipping automatic ones for subagents or when disabled
 func (a *AIAgent) spawnBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool) {
-	if !explicit && focus == nil && a.delegateDepth > 0 {
+	SpawnBackgroundReviewOn(ctx, a, messagesSnapshot, reviewMemory, reviewSkills, focus, explicit)
+}
+
+// Decides when the review of self runs and spawns it, the snapshot cloned structurally at this single chokepoint
+func SpawnBackgroundReviewOn(ctx context.Context, self BackgroundReviewSelf, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool) {
+	if !explicit && focus == nil && self.BackgroundReviewDelegateDepth() > 0 {
 		return
 	}
 	var taskCfg map[string]any
@@ -37,15 +42,12 @@ func (a *AIAgent) spawnBackgroundReview(ctx context.Context, messagesSnapshot []
 		}
 		taskCfg = cfg
 	}
-	kw := backgroundReviewKwargs{
-		messagesSnapshot: cloneBackgroundReviewMessages(messagesSnapshot), reviewMemory: reviewMemory,
-		reviewSkills: reviewSkills, focus: focus, taskCfg: taskCfg, explicit: explicit,
-	}
-	if focus == nil && !explicit && reviewShouldDefer(ctx, a, taskCfg) {
-		enqueueIdleReview(ctx, a, reviewQueueKey(a), kw)
+	snapshot := cloneBackgroundReviewMessages(messagesSnapshot)
+	if focus == nil && !explicit && self.BackgroundReviewShouldDefer(ctx, taskCfg) {
+		self.EnqueueBackgroundReview(ctx, snapshot, reviewMemory, reviewSkills, focus, taskCfg, explicit)
 		return
 	}
-	a.spawnBackgroundReviewNow(ctx, kw)
+	self.SpawnBackgroundReviewNow(ctx, snapshot, reviewMemory, reviewSkills, focus, taskCfg, explicit)
 }
 
 // Starts the review worker goroutine, replaced by tests that capture or run the worker inline

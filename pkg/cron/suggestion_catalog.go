@@ -2,12 +2,18 @@ package cron
 
 import (
 	"context"
-
+	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
+
+// Absolute path of the urgency classifier script shipped beside the cron package of the install
+func classifyItemsScriptPath() string {
+	return filepath.Join(pm.RepoRoot(), "cron", "scripts", "classify_items.py")
+}
 
 // Curated starter automation offered as a suggestion with its stable dedup key and create_job spec
 type CatalogEntry struct {

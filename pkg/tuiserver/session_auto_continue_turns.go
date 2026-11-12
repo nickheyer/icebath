@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -108,8 +108,8 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuigate
 }
 
 // Interrupts a busy turn on its own goroutine, never under the history lock, at most one per session
-func interruptBusySession(ctx context.Context, sid string, session *tuigateway.Session, a *agent.AIAgent) {
-	useAgent := a != nil
+func interruptBusySession(ctx context.Context, sid string, session *tuigateway.Session, a any) {
+	interrupter, useAgent := a.(interface{ Interrupt(string) })
 	if !useAgent && !sessionUsesComputeHost(ctx, session, loadCfg(ctx)) {
 		return
 	}
@@ -129,7 +129,7 @@ func interruptBusySession(ctx context.Context, sid string, session *tuigateway.S
 		}()
 		suppress(func() {
 			if useAgent {
-				a.Interrupt("")
+				interrupter.Interrupt("")
 				return
 			}
 			supervisor, err := getComputeHostSupervisor(ctx, loadCfg(ctx))
@@ -225,13 +225,22 @@ func replaceQueuedUserRowForTurn(ctx context.Context, session *tuigateway.Sessio
 	return fresh
 }
 
+// Agent object the session holds whatever its type, nil for none or a nil pointer
+func sessionAgentObject(session *tuigateway.Session) any {
+	a := session.Get("agent")
+	if v := reflect.ValueOf(a); v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
+	}
+	return a
+}
+
 // Applies display.busy_input_mode to a mid turn prompt, nil when the turn ended and the caller retries idle
 func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuigateway.Session, text any, transport any, queued bool, turnAuthor map[string]any, displayKind string) map[string]any {
 	mode := "queue"
 	if !queued {
 		mode = loadBusyInputMode(ctx)
 	}
-	a := sessionAgent(session)
+	a := sessionAgentObject(session)
 	if (mode == "steer" || mode == "interrupt") && sessionCompressionInFlight(ctx, session) {
 		mode = "queue"
 	}
@@ -256,9 +265,14 @@ func handleBusySubmit(ctx context.Context, rid any, sid string, session *tuigate
 		supported := false
 		switch mode {
 		case "steer":
-			method, status, supported = "steer", "steered", true
+			_, steers := a.(interface{ Steer(string) bool })
+			method, status, supported = "steer", "steered", steers
 		case "interrupt":
-			method, status, supported = "redirect", "redirected", a.SupportsActiveTurnRedirect()
+			r, redirects := a.(interface {
+				Redirect(string) bool
+				SupportsActiveTurnRedirect() bool
+			})
+			method, status, supported = "redirect", "redirected", redirects && r.SupportsActiveTurnRedirect()
 		}
 		if method != "" && supported {
 			if resp := acTryCorrection(rid, session, a, method, plainText, status); resp != nil {

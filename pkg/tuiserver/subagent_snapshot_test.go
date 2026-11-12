@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -392,5 +394,104 @@ func TestAnyAttachPathCarriesSubagentAuthorityWithoutRegistrySync(t *testing.T) 
 	}
 	if !child.IsInterrupted() || agent.CloseSubagentSteering("child", child) != "go" {
 		t.Fatal("the attached transport did not steer and stop the child exactly once")
+	}
+}
+
+// Subagent ids of one session's roster in roster order
+func subagentSnapshotOrder(t *testing.T, sessionID string, via tuigateway.Transport) []string {
+	t.Helper()
+	ids := []string{}
+	for _, row := range subagentSnapshotResult(t, via, "subagent.list", map[string]any{"session_id": sessionID})["subagents"].([]any) {
+		ids = append(ids, row.(map[string]any)["subagent_id"].(string))
+	}
+	return ids
+}
+
+func TestListFollowsTheConversationAcrossUISidAndCompressionRotation(t *testing.T) {
+	owner, transport := subagentSnapshotRuntime(t)
+	ctx := context.Background()
+	db, err := state.NewSessionDB(ctx, filepath.Join(t.TempDir(), "state.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.CreateSession(state.NewSession{ID: "conv", Source: "tui", Model: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AppendMessage(ctx, "conv", map[string]any{"role": "user", "content": "hi"}, state.AppendGuards{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EndSession("conv", "compression"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateSession(state.NewSession{ID: "conv2", Source: "tui", Model: "test", ParentSessionID: "conv"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AppendMessage(ctx, "conv2", map[string]any{"role": "user", "content": "continued"}, state.AppendGuards{}); err != nil {
+		t.Fatal(err)
+	}
+	parent := agent.NewLineageParentForTests("conv", db)
+	owner.Set("agent", parent)
+	child := agent.NewSubagentChildForTests("child", 1, "", "test", "")
+	agent.RegisterChild(ctx, child, parent, "owned task", "ui-owner", transport, owner)
+	defer agent.UnregisterSubagent("child", nil)
+	liveSession := func(key string) *tuigateway.Session {
+		return tuigateway.NewSession(map[string]any{"session_key": key, "history": []any{}, "transport": transport,
+			"agent": agent.NewLineageParentForTests(key, db)})
+	}
+	t.Cleanup(func() {
+		for _, sid := range []string{"ui-new", "ui-new2", "ui-other"} {
+			tuigateway.SetSessionRecord(sid, nil)
+		}
+	})
+	tuigateway.SetSessionRecord("ui-owner", nil)
+	tuigateway.SetSessionRecord("ui-new", liveSession("conv"))
+	if got := subagentSnapshotOrder(t, "ui-new", transport); !slices.Equal(got, []string{"child"}) {
+		t.Fatalf("reminted sid roster %v", got)
+	}
+	tuigateway.SetSessionRecord("ui-new", nil)
+	tuigateway.SetSessionRecord("ui-new2", liveSession("conv2"))
+	tuigateway.SetSessionRecord("ui-other", liveSession("unrelated"))
+	if got := subagentSnapshotOrder(t, "ui-new2", transport); !slices.Equal(got, []string{"child"}) {
+		t.Fatalf("rotated key roster %v", got)
+	}
+	if got := subagentSnapshotOrder(t, "ui-other", transport); len(got) != 0 {
+		t.Fatalf("foreign conversation roster %v", got)
+	}
+	if _, failed := subagentSnapshotCall(&frameRecorder{}, "subagent.list", map[string]any{"session_id": "ui-new2"})["error"]; !failed {
+		t.Fatal("a foreign transport read the roster")
+	}
+	if got := subagentSnapshotResult(t, transport, "subagent.interrupt", map[string]any{"session_id": "ui-new2", "subagent_id": "child"})["found"]; got != false {
+		t.Fatalf("rotated sid interrupt found %v", got)
+	}
+	if child.IsInterrupted() {
+		t.Fatal("the rotated sid stopped the child")
+	}
+}
+
+func TestListSurfacesFailedDelegationsThatOutlivedTheLiveRoster(t *testing.T) {
+	_, transport := subagentSnapshotRuntime(t)
+	env := &tools.Env{Home: home.Dir(context.Background())}
+	for _, row := range [][2]string{{"d-mine", "ui-owner"}, {"d-foreign", "other"}} {
+		if err := tools.PersistDispatch(env, map[string]any{"delegation_id": row[0], "session_key": "", "origin_ui_session_id": row[1],
+			"parent_session_id": nil, "dispatched_at": float64(time.Now().UnixNano()) / 1e9, "goal": row[0] + " goal"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tools.PersistCompletion(env, map[string]any{"delegation_id": row[0], "status": "error", "completed_at": float64(time.Now().UnixNano()) / 1e9},
+			map[string]any{"status": "error", "error": "interrupted: waiting for model response"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := subagentSnapshotResult(t, transport, "subagent.list", nil)
+	if !pyjson.Equal(snapshot["subagents"], []any{}) {
+		t.Fatalf("live roster %v", snapshot["subagents"])
+	}
+	got := [][3]any{}
+	for _, row := range snapshot["delegations"].([]any) {
+		d := row.(map[string]any)
+		got = append(got, [3]any{d["delegation_id"], d["goal"], d["status"]})
+	}
+	if len(got) != 1 || got[0] != [3]any{"d-mine", "d-mine goal", "error"} {
+		t.Fatalf("delegations %v", got)
 	}
 }

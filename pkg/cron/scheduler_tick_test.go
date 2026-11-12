@@ -33,7 +33,7 @@ func makeTickDue(t *testing.T, s *Store, id string) string {
 	return due
 }
 
-func stubGateway(t *testing.T, state, reason string) *int {
+func gatewayProbeDouble(t *testing.T, state, reason string) *int {
 	probes := 0
 	discoverGatewayEndpoint = func(context.Context, string, time.Duration) gateway.ObservedEndpoint {
 		probes++
@@ -59,7 +59,7 @@ func tickStoredJob(t *testing.T, s *Store, id string) *Job {
 
 func TestTickWithoutGatewaySkipsAgentJobsWithoutDrift(t *testing.T) {
 	s, buf := newTestStore(t)
-	stubGateway(t, "absent", "")
+	gatewayProbeDouble(t, "absent", "")
 	resetRan()
 	agent := mustCreate(t, s, CreateJobOptions{Prompt: prompt("summarise inbox"), Schedule: "every 1h", Name: prompt("agent"), Deliver: prompt("local")})
 	other := mustCreate(t, s, CreateJobOptions{Prompt: prompt("digest"), Schedule: "every 1h", Name: prompt("agent-2"), Deliver: prompt("local")})
@@ -91,7 +91,7 @@ func TestTickWithoutGatewaySkipsAgentJobsWithoutDrift(t *testing.T) {
 
 func TestTickHoldsAgentJobsWhileGatewayIsStarting(t *testing.T) {
 	s, _ := newTestStore(t)
-	stubGateway(t, "starting", "runtime_lock")
+	gatewayProbeDouble(t, "starting", "runtime_lock")
 	resetRan()
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h", Deliver: prompt("local")})
 	due := makeTickDue(t, s, job.ID)
@@ -106,7 +106,7 @@ func TestTickHoldsAgentJobsWhileGatewayIsStarting(t *testing.T) {
 
 func TestReadyGatewayAndRemoteURLDispatchAgentJobs(t *testing.T) {
 	s, _ := newTestStore(t)
-	probes := stubGateway(t, "ready", "")
+	probes := gatewayProbeDouble(t, "ready", "")
 	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("x"), Schedule: "every 1h"})
 	kept, err := refuseAgentJobsWithoutGateway(t.Context(), s, []*Job{job})
 	if err != nil || len(kept) != 1 || *probes != 1 {
@@ -120,7 +120,7 @@ func TestReadyGatewayAndRemoteURLDispatchAgentJobs(t *testing.T) {
 
 func TestNoAgentJobsStillFireWithoutAGateway(t *testing.T) {
 	s, _ := newTestStore(t)
-	probes := stubGateway(t, "absent", "")
+	probes := gatewayProbeDouble(t, "absent", "")
 	resetRan()
 	job := mustCreate(t, s, CreateJobOptions{Schedule: "every 1h", Name: prompt("script"), Script: "fire.sh", NoAgent: true, Deliver: prompt("local")})
 	makeTickDue(t, s, job.ID)
@@ -256,5 +256,21 @@ func TestASweepWaitsInsteadOfRunningBesideTheRunningOne(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the waiting sweep never ran")
+	}
+}
+
+func TestHeadlessReceiptRecoveryNeverConnectsOrSpawns(t *testing.T) {
+	s, _ := newTestStore(t)
+	job := mustCreate(t, s, CreateJobOptions{Prompt: prompt("summarise inbox"), Schedule: "every 1h", Name: prompt("agent"), Deliver: prompt("local")})
+	journal := writeFireJournal(t, s, job.ID, "prepared-fire")
+	replaceCanonicalDoors(t, func(context.Context) (cronRPCClient, error) {
+		t.Fatal("headless recovery must not connect/ensure a gateway")
+		return nil, nil
+	}, func(string) (any, bool) { return nil, false })
+	if err := realReconcilePending(context.Background(), s, false); err != nil {
+		t.Fatal(err)
+	}
+	if !journalExists(journal) {
+		t.Fatal("deferred evidence stays durable for the next live owner")
 	}
 }

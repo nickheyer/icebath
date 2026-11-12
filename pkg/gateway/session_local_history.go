@@ -61,6 +61,9 @@ func historyRowSize(row map[string]any) (int, error) {
 	return pystr.Len(text), nil
 }
 
+// History reader of every resume and replay, replaced by a case as the hermes cases patch display_rows
+var DisplayRows = displayRows
+
 // Live row ids, display rows and truncation of a physical transcript, the live ids read first
 func displayRows(ctx context.Context, db *state.SessionDB, target string) (map[int64]bool, []map[string]any, bool, error) {
 	liveRows, err := db.GetMessagesAsConversation(ctx, target, state.ConversationOptions{IncludeRowIDs: true})
@@ -133,7 +136,7 @@ func prepareHistory(ctx context.Context, a *SessionAuthority, ref SessionRef) (*
 	if err != nil {
 		return nil, err
 	}
-	live, display, truncated, err := displayRows(ctx, a.DB, target)
+	live, display, truncated, err := DisplayRows(ctx, a.DB, target)
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +227,7 @@ func localHistory(ctx context.Context, a *SessionAuthority, ref SessionRef, prep
 	var truncated bool
 	if prepared != nil && prepared.target == target {
 		readLive, display, truncated = prepared.live, prepared.display, prepared.truncated
-	} else if readLive, display, truncated, err = displayRows(ctx, db, target); err != nil {
+	} else if readLive, display, truncated, err = DisplayRows(ctx, db, target); err != nil {
 		return nil, err
 	}
 	live, err := db.GetMessagesAsConversation(ctx, target, state.ConversationOptions{IncludeRowIDs: true})
@@ -243,7 +246,7 @@ func localHistory(ctx context.Context, a *SessionAuthority, ref SessionRef, prep
 		appended = appended || !readLive[id]
 	}
 	if !subset {
-		if _, display, truncated, err = displayRows(ctx, db, target); err != nil {
+		if _, display, truncated, err = DisplayRows(ctx, db, target); err != nil {
 			return nil, err
 		}
 		if live, err = db.GetMessagesAsConversation(ctx, target, state.ConversationOptions{IncludeRowIDs: true}); err != nil {

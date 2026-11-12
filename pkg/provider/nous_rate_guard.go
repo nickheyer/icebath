@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -290,7 +291,31 @@ func (g *NousRateGuard) Record(h http.Header, resetAt time.Time, defaultCooldown
 	if err := os.MkdirAll(filepath.Dir(g.statePath()), 0o700); err != nil {
 		return err
 	}
-	return config.AtomicWrite(g.statePath(), raw, 0o600)
+	if err := config.AtomicWrite(g.statePath(), raw, 0o600); err != nil {
+		return err
+	}
+	nousRateGuardLog().Info(fmt.Sprintf("Nous rate limit recorded: resets in %.0fs (at %.0f)", st.ResetSeconds, st.ResetAt))
+	return nil
+}
+
+func nousRateGuardLog() *slog.Logger { return slog.Default().With("logger", "agent.nous_rate_guard") }
+
+// Reset a 429 context carries as a Python int or float or as the classifier instant, zero for any other value
+func ContextResetAt(errorContext map[string]any) time.Time {
+	if at, ok := errorContext["reset_at"].(time.Time); ok {
+		return at
+	}
+	epoch, ok := pyNumber(errorContext["reset_at"])
+	if !ok {
+		return time.Time{}
+	}
+	sec, frac := math.Modf(epoch)
+	return time.Unix(int64(sec), int64(frac*1e9))
+}
+
+// Logs a cooldown write that failed, the way the guard swallows it
+func LogNousRateLimitWriteFailure(err error) {
+	nousRateGuardLog().Debug(fmt.Sprintf("Failed to write Nous rate limit state: %s", err))
 }
 
 // Remaining returns the time until the shared reset and removes an expired file

@@ -39,7 +39,7 @@ type MonitorOutcome struct {
 
 // Hex sha256 of the exact UTF-8 bytes of a monitor output
 func hashMonitorOutput(output string) string {
-	sum := sha256.Sum256([]byte(output))
+	sum := sha256.Sum256(pystr.EncodeUTF8Replace(output))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -71,9 +71,11 @@ func (s *Store) readLastMonitorOutput(jobID string) string {
 	if err == nil {
 		var raw []byte
 		if raw, err = os.ReadFile(path); err == nil {
-			return strings.TrimPrefix(pystr.DecodeUTF8Replace(raw), "\ufeff")
-		}
-		if errors.Is(err, fs.ErrNotExist) {
+			var text string
+			if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
+				return text
+			}
+		} else if errors.Is(err, fs.ErrNotExist) {
 			return ""
 		}
 	}

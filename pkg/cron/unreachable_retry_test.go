@@ -7,6 +7,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"reflect"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -232,5 +234,148 @@ func dstJob(next time.Time) map[string]any {
 		"schedule":    map[string]any{"kind": "interval", "minutes": 60},
 		"next_run_at": FormatISO(next), "last_run_at": nil, "enabled": true, "state": "scheduled",
 		"repeat": map[string]any{"times": nil, "completed": 0}, "deliver": "local",
+	}
+}
+
+func TestLadderRerunsDoNotSpendExtraRepeatBudget(t *testing.T) {
+	for _, rungTail := range []string{"finish", "crash", "worker", "ownership_lost"} {
+		t.Run(rungTail, func(t *testing.T) {
+			t.Setenv("ICEBATH_HOME", t.TempDir())
+			ladderRerunsDoNotSpendExtraRepeatBudget(t, rungTail)
+		})
+	}
+}
+
+// One tail of the ladder repeat budget case, the claimed snapshot recorded after its natural slot moved
+func ladderRerunsDoNotSpendExtraRepeatBudget(t *testing.T, rungTail string) {
+	s := newClockStore(t, nil, time.UTC)
+	ctx := context.Background()
+	var clockMu sync.Mutex
+	clock := time.Now().UTC()
+	s.clk.nowFn = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return clock }
+	var runs []*Job
+	prevRunOne, prevRunJob, prevCrash, prevGet := runOneJobSeam, runJobSeam, deliverCrashFailureSeam, getExecution
+	t.Cleanup(func() {
+		runOneJobSeam, runJobSeam, deliverCrashFailureSeam, getExecution = prevRunOne, prevRunJob, prevCrash, prevGet
+	})
+	runOneJobSeam = func(_ context.Context, _ *Store, j *Job, _ runOneJobOptions) (bool, error) {
+		runs = append(runs, j)
+		return true, nil
+	}
+	runJobSeam = func(context.Context, *Store, *Job, runJobOptions) (jobRunOutcome, error) {
+		return jobRunOutcome{}, errors.New("boom")
+	}
+	deliverCrashFailureSeam = func(*Store, context.Context, *Job, string, any, any) (*string, string) {
+		return nil, "suppressed"
+	}
+	jobID := mustCreate(t, s, CreateJobOptions{Prompt: prompt("digest"), Schedule: "every 24h", Repeat: 2}).ID
+	completed := func() int {
+		j := mustGet(t, s, jobID)
+		if j.Repeat == nil {
+			t.Fatal("repeat dropped")
+		}
+		return j.Repeat.Completed
+	}
+	var held []bool
+	for rung := 0; rung < 1+len(UnreachableRetryDelaysSeconds); rung++ {
+		next := nextRunTime(t, mustGet(t, s, jobID))
+		clockMu.Lock()
+		clock = next.Add(time.Second)
+		clockMu.Unlock()
+		dueJobs, err := s.getDueJobs(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var due *Job
+		for _, d := range dueJobs {
+			if d.ID == jobID {
+				due = d
+			}
+		}
+		if due == nil {
+			t.Fatalf("rung %d not due", rung)
+		}
+		execution, err := openExecutionsLedger(s).Create(ctx, jobID, "builtin", due.ScheduledInstant)
+		if err != nil {
+			t.Fatal(err)
+		}
+		executionID := execution["id"].(string)
+		fired := due.Clone()
+		fired.ExecutionID, fired.ScheduledInstant = &executionID, due.ScheduledInstant
+		if ok, err := s.processDueJob(ctx, fired, nil, nil, false); err != nil || !ok {
+			t.Fatalf("rung %d processed %v err %v", rung, ok, err)
+		}
+		run := runs[len(runs)-1]
+		if rungTail == "crash" && len(held) > 0 {
+			if ok, err := s.runOneJobBody(ctx, run, runOneJobOptions{}, nil, nil, nil, nil); err != nil || ok {
+				t.Fatalf("crashed rung processed %v err %v", ok, err)
+			}
+			if completed() != 1 {
+				t.Fatal("a crashed rung must not count")
+			}
+			return
+		}
+		if rungTail == "worker" && len(held) > 0 {
+			getExecution = func(context.Context, *Store, string) (map[string]any, error) {
+				return map[string]any{"status": "unknown", "error": "worker died"}, nil
+			}
+			if ok, err := s.recordUnknownWorkerOutcome(ctx, run, nil, nil, nil); err != nil || !ok {
+				t.Fatalf("worker outcome %v err %v", ok, err)
+			}
+			if completed() != 1 {
+				t.Fatal("a dead-worker rung must not count")
+			}
+			return
+		}
+		if rungTail == "ownership_lost" && len(held) > 0 {
+			cancelled := &latchEvent{}
+			cancelled.Set()
+			runJobSeam = func(context.Context, *Store, *Job, runJobOptions) (jobRunOutcome, error) {
+				return jobRunOutcome{Success: true, Output: "out", FinalResponse: "done"}, nil
+			}
+			if ok, err := s.runOneJobBody(ctx, run, runOneJobOptions{}, nil, nil, cancelled, nil); err != nil || !ok {
+				t.Fatalf("interrupted rung processed %v err %v", ok, err)
+			}
+			j := mustGet(t, s, jobID)
+			if j.LastError == nil || *j.LastError != ownershipLostInterrupted {
+				t.Fatalf("last error %v", j.LastError)
+			}
+			if completed() != 1 {
+				t.Fatal("an interrupted rung must not count")
+			}
+			return
+		}
+		run.run.modelUnreachable = true
+		willRetry, err := unreachableRetryWillRetry(s, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, willRetry)
+		owner := run.FireClaim.By
+		if ok, err := s.finishCompletedRun(ctx, &runDelivery{job: run, success: false, err: prompt("ConnectError: dns")}, &owner, executionID, false); err != nil || !ok {
+			t.Fatalf("rung %d finished %v err %v", rung, ok, err)
+		}
+		if completed() != 1 {
+			t.Fatal("only the occurrence itself counts")
+		}
+	}
+	j := mustGet(t, s, jobID)
+	if j.State != "scheduled" || j.UnreachableRetry != nil {
+		t.Fatalf("state %s ladder %+v", j.State, j.UnreachableRetry)
+	}
+	clockMu.Lock()
+	now := clock
+	clockMu.Unlock()
+	if nextRunTime(t, j).Sub(now) <= 23*time.Hour {
+		t.Fatalf("next run %v", j.NextRunAt)
+	}
+	if want := []bool{true, true, true, false}; !reflect.DeepEqual(held, want) {
+		t.Fatalf("held %v", held)
+	}
+	edited := runs[1].Clone()
+	one := 1
+	edited.Repeat = &Repeat{Times: &one, Completed: 1}
+	if willRetry, err := unreachableRetryWillRetry(s, edited); err != nil || willRetry {
+		t.Fatalf("edited rung held %v err %v", willRetry, err)
 	}
 }

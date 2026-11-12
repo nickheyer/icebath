@@ -151,7 +151,7 @@ func TestFailureDeliveryLaneAndLegacySchema(t *testing.T) {
 	}
 }
 
-func TestWaitTimeoutFencesInflightAndDefersPending(t *testing.T) {
+func TestWaitTimeoutMarksInflightDeliveryUnknownWithoutRetry(t *testing.T) {
 	_, q, ctx := pointDeliveryDB(t)
 	zero := 0.0
 	mustEnqueue(t, q, ctx, "exec-inflight", &Job{ID: "job-inflight"}, "result", false)
@@ -159,53 +159,72 @@ func TestWaitTimeoutFencesInflightAndDefersPending(t *testing.T) {
 		t.Fatal("claim")
 	}
 	errText, err := q.EnqueueAndWait(ctx, "exec-inflight", &Job{ID: "job-inflight"}, "result", false, &zero)
-	if err != nil || errText == nil || !strings.Contains(*errText, "outcome is unknown") || mustStatus(t, q, ctx, "exec-inflight")["status"] != "unknown" {
+	if err != nil || errText == nil || !strings.Contains(*errText, "outcome is unknown") {
 		t.Fatal(errText, err)
+	}
+	if status := mustStatus(t, q, ctx, "exec-inflight"); status == nil || status["status"] != "unknown" {
+		t.Fatal(status)
 	}
 	var sends []recordedSend
-	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 0 {
-		t.Fatal("fenced row resent")
-	}
-	origin := "origin"
-	errText, err = q.EnqueueAndWait(ctx, "exec-3", &Job{ID: "job-3", Deliver: &origin}, "result", false, &zero)
-	if err != nil || errText != nil || mustStatus(t, q, ctx, "exec-3")["status"] != "pending" {
-		t.Fatal(errText, err)
-	}
-	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 1 || len(sends) != 1 || sends[0].job.ID != "job-3" || *sends[0].job.Deliver != "origin" {
-		t.Fatal(sends)
-	}
-	errText, err = q.EnqueueAndWait(ctx, "exec-3", &Job{ID: "job-3"}, "again", false, &zero)
-	if err != nil || errText != nil {
-		t.Fatal("terminal row must answer at once", errText, err)
+	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 0 || len(sends) != 0 {
+		t.Fatal("fenced row resent", sends)
 	}
 }
 
-func TestDeadDeliveryOwnerBecomesUnknownAndFailureIsRedacted(t *testing.T) {
+func TestDeadDeliveryOwnerBecomesUnknownAndIsNotRetried(t *testing.T) {
 	_, q, ctx := pointDeliveryDB(t)
 	mustEnqueue(t, q, ctx, "exec-1", &Job{ID: "job-1"}, "brief", false)
 	if row, _ := q.ClaimNext(ctx); row == nil {
 		t.Fatal("claim")
 	}
 	prevID, prevLive := deliveryProcessID, deliveryOwnerIsLive
+	t.Cleanup(func() { deliveryProcessID, deliveryOwnerIsLive = prevID, prevLive })
 	deliveryProcessID = "replacement-gateway"
 	deliveryOwnerIsLive = func(int64, any) (bool, error) { return false, nil }
-	n, err := q.RecoverAbandoned(ctx)
-	deliveryProcessID, deliveryOwnerIsLive = prevID, prevLive
-	if n != 1 || err != nil {
+	if n, err := q.RecoverAbandoned(ctx); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
 	var sends []recordedSend
-	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 0 || len(sends) != 0 || mustStatus(t, q, ctx, "exec-1")["status"] != "unknown" {
-		t.Fatal("dead owner row resent")
+	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 0 || len(sends) != 0 {
+		t.Fatal("dead owner row resent", sends)
 	}
+	if status := mustStatus(t, q, ctx, "exec-1"); status["status"] != "unknown" {
+		t.Fatal(status)
+	}
+}
+
+func TestDeliveryFailureIsTerminalNotRetriedAndRedacted(t *testing.T) {
+	_, q, ctx := pointDeliveryDB(t)
+	mustEnqueue(t, q, ctx, "exec-1", &Job{ID: "job-1"}, "brief", false)
 	refusal := "request failed: https://example.test/?token=TOKEN123"
-	mustEnqueue(t, q, ctx, "exec-2", &Job{ID: "job-2"}, "brief", false)
+	var sends []recordedSend
 	if mustDrain(t, q, ctx, recorder(&sends, &refusal)) != 1 || mustDrain(t, q, ctx, recorder(&sends, &refusal)) != 0 || len(sends) != 1 {
 		t.Fatal(sends)
 	}
-	st := mustStatus(t, q, ctx, "exec-2")
-	if st["status"] != "failed" || strings.Contains(st["error"].(string), "TOKEN123") || !strings.Contains(st["error"].(string), "token=***") {
+	st := mustStatus(t, q, ctx, "exec-1")
+	if st == nil || st["status"] != "failed" || strings.Contains(st["error"].(string), "TOKEN123") || !strings.Contains(st["error"].(string), "token=***") {
 		t.Fatal(st)
+	}
+}
+
+func TestWaitTimeoutLeavesUnclaimedDeliveryQueuedForNextGateway(t *testing.T) {
+	_, q, ctx := pointDeliveryDB(t)
+	zero := 0.0
+	job := &Job{ID: "job-3", Deliver: prompt("origin")}
+	errText, err := q.EnqueueAndWait(ctx, "exec-3", job, "result", false, &zero)
+	if err != nil || errText != nil {
+		t.Fatal(errText, err)
+	}
+	if status := mustStatus(t, q, ctx, "exec-3"); status == nil || status["status"] != "pending" {
+		t.Fatal(status)
+	}
+	var sends []recordedSend
+	if mustDrain(t, q, ctx, recorder(&sends, nil)) != 1 || len(sends) != 1 || sends[0].job.ID != "job-3" || deref(sends[0].job.Deliver) != "origin" ||
+		sends[0].content != "result" || sends[0].forFailure {
+		t.Fatal(sends)
+	}
+	if status := mustStatus(t, q, ctx, "exec-3"); status["status"] != "delivered" {
+		t.Fatal(status)
 	}
 }
 

@@ -32,6 +32,7 @@ func runOccurrenceChild(ctx context.Context, s *Store, mode, arg string) error {
 	case "external-worker":
 		SetupWorkerLogging = func(string, string) error { return nil }
 		RegisterWorkerConfigHooks = func(context.Context, string, slog.Level) {}
+		WorkerProcessBoot = func() {}
 		DispatchExternalWorkerEntry(os.Exit)
 		return errors.New("the external worker entry did not dispatch")
 	case "fire":

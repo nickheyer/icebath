@@ -19,6 +19,7 @@ const testModeEnv = "ICEBATH_HOME_TEST_MODE"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	DispatchScratchPruneEntry(context.Background())
 	if mode := os.Getenv(testModeEnv); mode != "" {
 		os.Exit(runTestMode(mode, os.Args[1:]))

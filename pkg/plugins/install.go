@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -191,6 +191,9 @@ func promptPluginEnvVars(ctx context.Context, h string, manifest map[string]any,
 		}
 		value, err := read("  " + name + ": ")
 		if err != nil {
+			if !promptAborted(err) {
+				return err
+			}
 			console.Print(fmt.Sprintf("\n[dim]  Skipped (you can set these later in %s/.env)[/dim]", shownHome))
 			return nil
 		}
@@ -206,6 +209,11 @@ func promptPluginEnvVars(ctx context.Context, h string, manifest map[string]any,
 	}
 	console.Print("")
 	return nil
+}
+
+// Whether a prompt ended at end of input or a user interrupt, the EOFError and KeyboardInterrupt of the prompt
+func promptAborted(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, cliui.ErrEOF) || errors.Is(err, cliui.ErrInterrupt) || err.Error() == "KeyboardInterrupt"
 }
 
 // Refuses a manifest needing a newer manifest version or core than this installer
@@ -247,6 +255,9 @@ func osStrerror(err error) string {
 	return err.Error()
 }
 
+// Mode change of the readability repair, the os.chmod a case replaces to make the repair fail
+var osChmod = os.Chmod
+
 // Repairs or refuses a tree with entries the installer could not read back
 func ensureTreeReadable(root, pluginsDir string) error {
 	paths := []string{root}
@@ -269,7 +280,7 @@ func ensureTreeReadable(root, pluginsDir string) error {
 				if st.IsDir() {
 					add = 0o500
 				}
-				os.Chmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)|add)
+				osChmod(path, st.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky)|add)
 			}
 		}
 		if err := probeReadable(path); err != nil {
@@ -294,12 +305,11 @@ func refuseUnavailablePortablePlugin(ctx context.Context, pluginName, tree, appT
 	if err != nil {
 		return &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' is unavailable: %v.", pluginName, err), FailureClass: "manifest_invalid"}
 	}
-	names := make([]string, 0, len(pkg.ServerDeclarations))
+	declared := make(map[string]any, len(pkg.ServerDeclarations))
 	for name := range pkg.ServerDeclarations {
-		names = append(names, name)
+		declared[name] = true
 	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range orderedMapKeys(declared, jsonObjectKeyOrder(filepath.Join(tree, "plugin.json"), "extensions", portableExtension, "servers")) {
 		svc := installedServices()
 		if svc == nil || svc.ServerAvailabilityReason == nil {
 			return &ServiceMissingError{Name: "ServerAvailabilityReason"}
@@ -379,14 +389,14 @@ func cloneAtReviewedCommit(ctx context.Context, h, tmpClone, gitURL, requestedRe
 	return head, nil
 }
 
-// Install inputs, an empty Ref or ReviewedPin or InspectedSha means none was given
+// Install inputs, an empty Ref or ReviewedPin or InspectedSha means none was given, NoPythonDeps the --no-deps refusal
 type installCoreOptions struct {
 	Force             bool
 	AcceptCaution     *bool
 	Ref               string
 	ScanDecision      func(scan any) bool
 	ReviewedPin       string
-	PythonDeps        bool
+	NoPythonDeps      bool
 	AssumeDepsConsent bool
 	Catalog           map[string]any
 	AllowRemoved      bool
@@ -465,7 +475,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 // Clone, check, scan and publication of one install inside its temporary directory
 func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL, subdir, source, requestedRevision string,
 	oldMetadata map[string]any, opts installCoreOptions) (string, error) {
-	installedRevision, err := cloneAtReviewedCommit(ctx, h, tmpClone, gitURL, requestedRevision, opts.InspectedSha, subdir, opts.Catalog != nil)
+	installedRevision, err := cloneAtReviewedCommit(ctx, h, tmpClone, gitURL, requestedRevision, opts.InspectedSha, subdir, len(opts.Catalog) > 0)
 	if err != nil {
 		return "", err
 	}
@@ -534,7 +544,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 	if _, err := scanMergedTree(h, tmpTarget, identifier, merged, scanOptions{Force: force, ScanDecision: opts.ScanDecision, ReviewedPin: atReviewedPin}); err != nil {
 		return "", err
 	}
-	if !opts.PythonDeps {
+	if opts.NoPythonDeps {
 		active, err := activePluginTree(ctx, target, true)
 		if err != nil {
 			return "", err
@@ -569,7 +579,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 		}
 		record["update_url"] = url
 	}
-	if opts.Catalog != nil {
+	if len(opts.Catalog) > 0 {
 		block := map[string]any{}
 		for k, v := range opts.Catalog {
 			block[k] = v
@@ -608,7 +618,12 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 }
 
 // Failure class of a publication from the error type at the raise site
-func publishFailureClass(err error) string {
+func publishFailureClass(err error) (class string) {
+	defer func() {
+		if recover() != nil {
+			class = "deps_failed"
+		}
+	}()
 	var opErr *PluginOperationError
 	if errors.As(err, &opErr) && opErr.FailureClass != "" && opErr.FailureClass != "other" {
 		return opErr.FailureClass
@@ -633,6 +648,9 @@ func publishFailureClass(err error) string {
 	return "deps_failed"
 }
 
+// Shared metrics recorder of plugin installs, the module attribute the hermes cases replace
+var recordExtensionInstall = observability.RecordExtensionInstall
+
 // Runs one install attempt and records it as a shared metrics extension install
 func recordedInstall(ctx context.Context, h string, install func() (string, map[string]any, string, error), catalogName, identifier string) (string, map[string]any, string, error) {
 	source := "url"
@@ -648,11 +666,11 @@ func recordedInstall(ctx context.Context, h string, install func() (string, map[
 	}
 	target, manifest, installedName, err := install()
 	if err != nil {
-		observability.RecordExtensionInstall(ctx, "plugin", source, name, "failed", nil, nil, err)
+		recordExtensionInstall(ctx, "plugin", source, name, "failed", nil, nil, err)
 		return "", nil, "", err
 	}
 	if _, ok := before[installedName]; !ok {
-		observability.RecordExtensionInstall(ctx, "plugin", source, name, "success", nil, nil, nil)
+		recordExtensionInstall(ctx, "plugin", source, name, "success", nil, nil, nil)
 	}
 	return target, manifest, installedName, nil
 }
@@ -730,7 +748,7 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 				ScanDecision: decide, PythonDeps: !opts.NoDeps, AssumeDepsConsent: opts.YesDeps})
 		}
 		return installPluginCore(ctx, identifier, installCoreOptions{Force: opts.Force, Ref: opts.Ref, ScanDecision: decide,
-			PythonDeps: !opts.NoDeps, AllowRemoved: opts.AllowRemoved, AssumeDepsConsent: opts.YesDeps})
+			NoPythonDeps: opts.NoDeps, AllowRemoved: opts.AllowRemoved, AssumeDepsConsent: opts.YesDeps})
 	}, catalogName, identifier)
 	var opErr *PluginOperationError
 	if errors.As(err, &opErr) {
@@ -907,11 +925,14 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 
 // Installed, not enabled tree of a catalog entry at the approved commit, ok false otherwise
 func catalogInstallOnDisk(ctx context.Context, h, catalogName, ref, inspectedSha string) (string, map[string]any, string, bool, error) {
-	target := catalogInstalledDir(h, catalogName)
+	target, err := catalogInstalledDir(h, catalogName)
 	if target == "" {
-		return "", nil, "", false, nil
+		return "", nil, "", false, err
 	}
-	record := catalogInstallRecord(h, target)
+	record, err := catalogInstallRecord(h, target)
+	if err != nil {
+		return "", nil, "", false, err
+	}
 	installedSha := strings.ToLower(pyStrOr(record["sha"]))
 	if ref != "" && installedSha != strings.ToLower(ref) {
 		return "", nil, "", false, nil
@@ -990,7 +1011,7 @@ func placeTree(ctx context.Context, h string, entry *PluginCatalogEntry, identif
 			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: force, Ref: ref, PythonDeps: true,
 				AssumeDepsConsent: assumeDepsConsent, InspectedSha: inspectedSha})
 		}
-		return installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref, PythonDeps: true,
+		return installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref,
 			AssumeDepsConsent: assumeDepsConsent, InspectedSha: inspectedSha})
 	}, catalogName, identifier)
 	var blocked *PluginScanBlocked

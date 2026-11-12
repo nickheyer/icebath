@@ -220,7 +220,7 @@ func ConfigureMCPToolsInteractive(ctx context.Context, env *tools.Env, ui Termin
 	return configureMCPToolsInteractive(ctx, env, ui, cfg)
 }
 
-// Adds or removes toolset keys from a platform's saved toolsets
+// Adds or removes toolset keys from a platform's saved toolsets and writes the config
 func applyToolsetChange(ctx context.Context, cfg config.Tree, platform string, names []string, action string) error {
 	pluginKeys := tools.PluginToolsetKeys(ctx)
 	enabled := tools.Default.PlatformTools(ctx, "", cfg, platform, tools.PlatformToolsOptions{PluginToolsetKeys: pluginKeys})
@@ -231,7 +231,10 @@ func applyToolsetChange(ctx context.Context, cfg config.Tree, platform string, n
 			enabled[n] = true
 		}
 	}
-	return tools.Default.SavePlatformTools(ctx, "", cfg, platform, enabled, pluginKeys)
+	if err := tools.Default.SavePlatformTools(ctx, "", cfg, platform, enabled, pluginKeys); err != nil {
+		return err
+	}
+	return config.Save(home.Dir(ctx), cfg)
 }
 
 // ApplyToolsetChange adds or removes toolset keys from a platform's saved toolsets for callers outside the package

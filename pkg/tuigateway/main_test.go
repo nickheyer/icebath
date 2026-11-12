@@ -12,6 +12,7 @@ import (
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	BindIdentity(testIsAuthenticatedIdentity, func() string { return testHostOwner })
 	os.Exit(m.Run())

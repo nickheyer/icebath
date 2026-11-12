@@ -20,6 +20,7 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	dir, err := os.MkdirTemp("", "gatewayrun-home-")
 	if err != nil {

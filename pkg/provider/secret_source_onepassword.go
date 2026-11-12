@@ -4,10 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 const (
@@ -98,18 +101,14 @@ func opRefsFingerprint(references map[string]string) string {
 
 // FindOp resolves a usable op binary, a pinned path is used verbatim and never falls back to PATH
 func FindOp(binaryPath string) string {
-	if binaryPath != "" {
-		info, err := os.Stat(binaryPath)
-		if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
-			return ""
-		}
-		return binaryPath
+	found := binaryPath
+	if found == "" {
+		found, _ = pyshutil.Which("op", nil)
 	}
-	found, err := exec.LookPath("op")
-	if err != nil {
+	if found == "" || (binaryPath != "" && !pyfs.Access(binaryPath, 1)) {
 		return ""
 	}
-	return found
+	return pypath.PathStr(found)
 }
 
 func opScrub(text string) string {

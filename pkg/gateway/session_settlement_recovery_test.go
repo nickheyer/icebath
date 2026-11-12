@@ -128,7 +128,7 @@ func claimedOnRealStore(t *testing.T, principal string, earlier func(ctx context
 	if err != nil || row == nil {
 		t.Fatalf("claim %v %v", row, err)
 	}
-	if err := a.stampClaim(ctx, testRef, live, row); err != nil {
+	if err := a.StampClaim(ctx, testRef, live, row); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, db, a, live, row
@@ -142,8 +142,8 @@ func appendTurnRow(t *testing.T, ctx context.Context, db *state.SessionDB, field
 	}
 }
 
-// Settles one claimed admission through commitAndPublish with the cause recorded on its result
-func settleOnRealStore(t *testing.T, cause, principal string) (context.Context, *state.SessionDB, *SessionAuthority, *pyjson.Object, *[]*pyjson.Object, *turnSettlement) {
+// Settles one claimed admission through CommitAndPublish with the cause recorded on its result
+func settleOnRealStore(t *testing.T, cause, principal string) (context.Context, *state.SessionDB, *SessionAuthority, *pyjson.Object, *[]*pyjson.Object, *TurnSettlement) {
 	t.Helper()
 	ctx, db, a, live, row := claimedOnRealStore(t, principal, nil)
 	appendTurnRow(t, ctx, db, map[string]any{"role": "user", "content": "please work"})
@@ -154,8 +154,8 @@ func settleOnRealStore(t *testing.T, cause, principal string) (context.Context, 
 	if cause != "" {
 		result.Set("interrupt_message", cause)
 	}
-	settlement := &turnSettlement{}
-	if err := commitAndPublish(ctx, a, live, testRef, row, "partial reply", "interrupted", pyjson.ObjectOf("result", result), settlement); err != nil {
+	settlement := &TurnSettlement{}
+	if err := CommitAndPublish(ctx, a, live, testRef, row, "partial reply", "interrupted", pyjson.ObjectOf("result", result), settlement); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, db, a, row, frames, settlement
@@ -236,7 +236,7 @@ func TestAnEarlierTurnsFailedBoundaryIsKeptAndTheRestartNoticeAppended(t *testin
 		appendTurnRow(t, ctx, db, map[string]any{"role": "assistant", "content": failedTurnNotice, "display_kind": failedTurnDisplayKind})
 	})
 	result := pyjson.ObjectOf("final_response", "", "interrupted", true, "completed", false, "interrupt_message", "Gateway restarting")
-	if err := commitAndPublish(ctx, a, live, testRef, row, "", "interrupted", pyjson.ObjectOf("result", result), &turnSettlement{}); err != nil {
+	if err := CommitAndPublish(ctx, a, live, testRef, row, "", "interrupted", pyjson.ObjectOf("result", result), &TurnSettlement{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := failedTurnNotices(t, ctx, db); !slices.Equal(got, []string{failedTurnNotice, restartInterruptNotice}) {
@@ -266,7 +266,7 @@ func TestUserStopIsNotRelabelledWhenShutdownStartsDuringSettlement(t *testing.T)
 	}
 	settled := make(chan error, 1)
 	go func() {
-		settled <- commitAndPublish(ctx, a, live, testRef, row, "", "interrupted", captured, &turnSettlement{})
+		settled <- CommitAndPublish(ctx, a, live, testRef, row, "", "interrupted", captured, &TurnSettlement{})
 	}()
 	select {
 	case err := <-settled:

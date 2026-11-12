@@ -323,14 +323,14 @@ func TestFailEmptyResponseAndNewlines(t *testing.T) {
 
 func TestInactivityWatchdogLoopStopsOnDoneAndFiresOnIdle(t *testing.T) {
 	stop := make(chan struct{})
-	if inactivityWatchdogLoop(func() (float64, error) { return 0, nil }, 10, time.Millisecond, stop, func() bool { return true }, nil) {
+	if inactivityWatchdogLoop(func() (float64, error) { return 0, nil }, 10, time.Millisecond, chanStop(stop), func() bool { return true }, nil) {
 		t.Fatal("a finished run timed out")
 	}
-	if !inactivityWatchdogLoop(func() (float64, error) { return 50, nil }, 10, time.Millisecond, stop, func() bool { return false }, nil) {
+	if !inactivityWatchdogLoop(func() (float64, error) { return 50, nil }, 10, time.Millisecond, chanStop(stop), func() bool { return false }, nil) {
 		t.Fatal("idle past the limit did not fire")
 	}
 	close(stop)
-	if inactivityWatchdogLoop(func() (float64, error) { return 50, nil }, 10, time.Hour, stop, func() bool { return false }, nil) {
+	if inactivityWatchdogLoop(func() (float64, error) { return 50, nil }, 10, time.Hour, chanStop(stop), func() bool { return false }, nil) {
 		t.Fatal("a stopped watchdog fired")
 	}
 }

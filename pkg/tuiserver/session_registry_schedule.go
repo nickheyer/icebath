@@ -19,8 +19,13 @@ var (
 // Fresh durable session key in the timestamp plus hex shape the store mints
 func newSessionKey() string { return state.NewSessionID() }
 
+// Deferred agent build scheduler, the delayed timer below
+var scheduleAgentBuild func(ctx context.Context, sid string, delay float64)
+
+func init() { scheduleAgentBuild = scheduleAgentBuildTimer }
+
 // Starts the agent build of a deferred session after a short delay, off the response path
-func scheduleAgentBuild(ctx context.Context, sid string, delay float64) {
+func scheduleAgentBuildTimer(ctx context.Context, sid string, delay float64) {
 	ctx = context.WithoutCancel(ctx)
 	time.AfterFunc(time.Duration(delay*float64(time.Second)), func() {
 		defer func() {

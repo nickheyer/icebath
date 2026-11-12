@@ -13,9 +13,11 @@ import (
 
 const auxOpenAIAliasVisionYAML = "auxiliary:\n  vision:\n    provider: openai\n    model: gpt-4o-mini\n"
 
-// Temp home with the config and every credential env var cleared
+// Temp home with the config, every credential env var and the module level models.dev registry cleared
 func auxVisionIsolatedHome(t *testing.T, configYAML string) context.Context {
 	t.Helper()
+	ResetModelsDevCache()
+	t.Cleanup(ResetModelsDevCache)
 	for _, kv := range os.Environ() {
 		if k, v, ok := strings.Cut(kv, "="); ok && (strings.HasSuffix(k, "_API_KEY") || strings.HasSuffix(k, "_TOKEN")) {
 			t.Setenv(k, v)

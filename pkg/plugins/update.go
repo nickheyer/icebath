@@ -100,7 +100,11 @@ func recloneUpdate(ctx context.Context, h, target, source string, previousRevisi
 // Updates one installed plugin with progress and consent prompts, true when it moved
 func updateOne(ctx context.Context, name, target string, console *Console, interactive, force bool) (bool, error) {
 	h := home.Dir(ctx)
-	if sidecar := catalogInstallRecord(h, target); len(sidecar) > 0 {
+	sidecar, err := catalogInstallRecord(h, target)
+	if err != nil {
+		return false, err
+	}
+	if len(sidecar) > 0 {
 		return cmdUpdateCatalog(ctx, name, target, sidecar, console, interactive)
 	}
 	var decision func(scan any) bool
@@ -423,7 +427,11 @@ func DashboardUpdateUserPlugin(ctx context.Context, name string, acceptCapabilit
 
 // Catalog re pin answer or the git pull output of one dashboard update
 func dashboardUpdateStep(ctx context.Context, h, name, target string, acceptCapabilities, force bool) (map[string]any, string, error) {
-	if sidecar := catalogInstallRecord(h, target); len(sidecar) > 0 {
+	sidecar, err := catalogInstallRecord(h, target)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(sidecar) > 0 {
 		var consent func(map[string][]string) bool
 		if acceptCapabilities {
 			consent = func(map[string][]string) bool { return true }

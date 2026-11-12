@@ -111,8 +111,13 @@ func notifOtherProfileSessionOwns(ctx context.Context, sid string, session *tuig
 	return false
 }
 
+// Ownership gate of addressed notifications, the proof check below
+var sessionOwnsNotificationEvent func(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any) bool
+
+func init() { sessionOwnsNotificationEvent = sessionOwnsNotificationEventProof }
+
 // Whether this session provably owns the event, the fail closed gate for addressed notifications
-func sessionOwnsNotificationEvent(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any) bool {
+func sessionOwnsNotificationEventProof(ctx context.Context, sid string, session *tuigateway.Session, evt map[string]any) bool {
 	if truthy(session.Get("_finalized")) {
 		return false
 	}

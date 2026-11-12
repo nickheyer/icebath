@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -22,14 +21,14 @@ import (
 // Type, message and the provider fields of an API error for the request dump
 func apiErrorDebugInfo(err error) *pyjson.Object {
 	info := pyjson.NewObject()
-	typeName := fmt.Sprintf("%T", err)
-	if i := strings.LastIndex(typeName, "."); i >= 0 {
-		typeName = typeName[i+1:]
-	}
-	info.Set("type", strings.TrimPrefix(typeName, "*"))
-	info.Set("message", err.Error())
+	typeName := apiErrorClassName(err)
 	var apiErr *provider.APIError
-	if !errors.As(err, &apiErr) {
+	if errors.As(err, &apiErr) && apiErr.StatusCode != 0 {
+		typeName = provider.SDKStatusClass(apiErr.StatusCode)
+	}
+	info.Set("type", typeName)
+	info.Set("message", err.Error())
+	if apiErr == nil {
 		return info
 	}
 	if apiErr.StatusCode != 0 {

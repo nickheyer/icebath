@@ -171,6 +171,11 @@ func closeSessionByID(ctx context.Context, sid, endReason string, predicate func
 	return teardownPoppedSession(ctx, session, endReason)
 }
 
+// Activity clock surface the orphan reaper reads on whatever agent the session holds
+type activitySummarizer interface{ GetActivitySummary() map[string]any }
+
+var _ activitySummarizer = (*agent.AIAgent)(nil)
+
 // Whether a detached running turn's activity clock is still fresh, so the reaper keeps healthy work alive
 func wsOrphanTurnActivityIsFresh(session *tuigateway.Session) (fresh bool) {
 	stale := wsOrphanActivityStaleS()
@@ -187,7 +192,7 @@ func wsOrphanTurnActivityIsFresh(session *tuigateway.Session) (fresh bool) {
 		age := float64(monotonicNS()-stamp) / 1e9
 		return 0 <= age && age < stale
 	}
-	a := sessionAgent(session)
+	a, _ := session.Get("agent").(activitySummarizer)
 	if a == nil {
 		return false
 	}
@@ -205,7 +210,7 @@ func wsOrphanTurnActivityIsFresh(session *tuigateway.Session) (fresh bool) {
 }
 
 // Reaps a session after the grace window when it is still orphaned, re-arming across host sleep
-func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expected *time.Timer) {
+func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expected *wsReapTimer) {
 	grace := wsOrphanReapGraceS()
 	if grace <= 0 {
 		return
@@ -214,13 +219,11 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 	if delayS != nil {
 		graceS = max(0, *delayS)
 	}
-	armedMonotonic := pythread.Monotonic()
-	armedWall := nowSeconds()
-	var timer *time.Timer
-	reap := func() {
-		slept := (nowSeconds() - armedWall) - (pythread.Monotonic() - armedMonotonic)
+	var timer *wsReapTimer
+	reap := func(monotonic, wall float64) {
+		slept := (wall - timer.armedWall) - (monotonic - timer.armedMonotonic)
 		if slept > wsOrphanReapSleepSlackS {
-			if rearm := max(0, graceS-(pythread.Monotonic()-armedMonotonic)); rearm > 0 {
+			if rearm := max(0, graceS-(monotonic-timer.armedMonotonic)); rearm > 0 {
 				scheduleWSOrphanReap(ctx, sid, &rearm, timer)
 				return
 			}
@@ -327,15 +330,14 @@ func scheduleWSOrphanReap(ctx context.Context, sid string, delayS *float64, expe
 		return
 	}
 	prior := pendingWSReaps.timers[sid]
-	timer = time.AfterFunc(time.Hour*24*365*100, reap)
-	timer.Stop()
+	timer = newWSReapTimer(graceS, reap)
 	pendingWSReaps.timers[sid] = timer
 	pendingWSReaps.Unlock()
 	sessionsLock.Unlock()
 	if prior != nil {
-		suppress(func() { prior.Stop() })
+		suppress(prior.cancel)
 	}
-	timer.Reset(time.Duration(graceS * float64(time.Second)))
+	timer.start()
 }
 
 // System wide monotonic clock in nanoseconds, comparable across local processes like perf_counter_ns

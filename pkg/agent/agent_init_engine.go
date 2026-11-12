@@ -76,8 +76,8 @@ func selectContextEngine(ctx context.Context, agentCfg map[string]any) ContextEn
 
 // Output reservation of the compressor, the native Gemini default when the agent sets none
 func compressorMaxTokens(a *AIAgent) any {
-	if a.maxTokens != 0 {
-		return a.maxTokens
+	if a.maxTokens != nil {
+		return *a.maxTokens
 	}
 	switch strings.ToLower(strings.TrimSpace(a.provider)) {
 	case "gemini", "google", "google-gemini", "google-ai-studio":

@@ -15,6 +15,7 @@ import (
 // Dispatches the fake llama-server, scratch prune and tools MCP server entries so a child runs its mode instead
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	dispatchFakeLlamaServerEntry()
 	home.DispatchScratchPruneEntry(context.Background())
 	installLocalStackProbeDoubles()
@@ -22,6 +23,7 @@ func TestMain(m *testing.M) {
 	DispatchCodexToolsMCPServerEntry()
 	dispatchLeftCoreAgentStartEntry()
 	dispatchMoAPresetProbeEntry()
+	dispatchRemoteBootChildEntry()
 	os.Exit(m.Run())
 }
 
@@ -42,6 +44,8 @@ func installLocalStackProbeDoubles() {
 	FasterWhisperImportable = func() bool { return false }
 	ManagedImageRoute = func(any, any) string { return "" }
 	tools.VisionCapabilities = VisionCapabilities{}
+	tools.CredentialPools = XAICredentialPoolSource()
+	tools.NousAccount = NousAccountSource()
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 }

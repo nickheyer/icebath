@@ -108,7 +108,7 @@ func TestPrivateCloneFallsBackToAuthAfterCredentialRequiredError(t *testing.T) {
 		return BasicAuth{"alice", "s3cret"}, true, nil
 	})
 	dest := filepath.Join(dir, "clone")
-	code, stderr, err := RunGitWithCredentialFallback(context.Background(), []string{"git", "clone", "--depth", "1", target, dest}, target, tools.NoninteractiveGitEnv(nil))
+	code, stderr, err := runFallback(context.Background(), []string{"git", "clone", "--depth", "1", target, dest}, target, tools.NoninteractiveGitEnv(nil))
 	if err != nil || code != 0 {
 		t.Fatalf("clone: %d %v %s", code, err, stderr)
 	}
@@ -165,7 +165,7 @@ func TestPublicCloneAttemptsAnonymouslyWhenCredentialResolves(t *testing.T) {
 		}
 		return BasicAuth{}, false, nil
 	})
-	code, stderr, err := RunGitWithCredentialFallback(context.Background(), []string{"git", "clone", target, filepath.Join(dir, "clone")}, target, tools.NoninteractiveGitEnv(nil))
+	code, stderr, err := runFallback(context.Background(), []string{"git", "clone", target, filepath.Join(dir, "clone")}, target, tools.NoninteractiveGitEnv(nil))
 	if err != nil || code != 0 {
 		t.Fatalf("clone: %d %v %s", code, err, stderr)
 	}
@@ -197,7 +197,7 @@ func TestRefFetchAndUpdatePullAttachCredentialOnlyAfterAnonymousRefusal(t *testi
 					return BasicAuth{"x-access-token", "ghp_fake"}, true, nil
 				})
 				patch(t, &iterAuth, fixedCreds(Credential{"gh auth token", BasicAuth{"x-access-token", "ghp_fake"}}))
-				code, stderr, err := RunGitWithCredentialFallback(context.Background(), []string{"git", verb, "origin"}, publicURL, map[string]string{})
+				code, stderr, err := runFallback(context.Background(), []string{"git", verb, "origin"}, publicURL, map[string]string{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -246,7 +246,7 @@ func TestAnonymousAttemptFailsFastUnderInheritedAskpass(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	code, stderr, err := RunGitWithCredentialFallback(ctx, []string{"git", "clone", url, filepath.Join(dir, "dest")}, url, tools.NoninteractiveGitEnv(nil))
+	code, stderr, err := runFallback(ctx, []string{"git", "clone", url, filepath.Join(dir, "dest")}, url, tools.NoninteractiveGitEnv(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestRejectedEnvTokenFallsBackToTheNextOwnedCredential(t *testing.T) {
 		return refusedRun(), nil
 	})
 	url := "https://github.com/acme/private.git"
-	code, _, err := RunGitWithCredentialFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
+	code, _, err := runFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -323,7 +323,7 @@ func TestEveryCredentialRejectedNamesTheDeadEnvToken(t *testing.T) {
 		Credential{"gh auth token", BasicAuth{"x-access-token", "gho_dead_too"}}))
 	patch(t, &runProcess, func(context.Context, runSpec) (runResult, error) { return refusedRun(), nil })
 	url := "https://github.com/acme/private.git"
-	code, stderr, err := RunGitWithCredentialFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
+	code, stderr, err := runFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
 	if err != nil || code == 0 || !strings.Contains(stderr, "GITHUB_TOKEN/GH_TOKEN in your .env was rejected") {
 		t.Fatalf("code %d err %v stderr %q", code, err, stderr)
 	}
@@ -335,7 +335,7 @@ func TestEveryCredentialRejectedNamesTheDeadEnvToken(t *testing.T) {
 		}
 		return refusedRun(), nil
 	})
-	_, stderr, err = RunGitWithCredentialFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
+	_, stderr, err = runFallback(context.Background(), []string{"git", "clone", url, "dest"}, url, tools.NoninteractiveGitEnv(nil))
 	if err != nil || len(calls) != 2 || !strings.Contains(stderr, "not found") || strings.Contains(stderr, "hint:") {
 		t.Fatalf("calls %d err %v stderr %q", len(calls), err, stderr)
 	}
@@ -391,7 +391,7 @@ func TestIterGitBasicAuthOrderDedupAndScopedSecretErrors(t *testing.T) {
 	unscoped := errors.New("UnscopedSecretError")
 	SetSecretReader(func(context.Context, string) (string, error) { return "", unscoped })
 	patch(t, &runProcess, func(context.Context, runSpec) (runResult, error) { return refusedRun(), nil })
-	if _, _, err := RunGitWithCredentialFallback(context.Background(), []string{"git", "clone"}, "https://github.com/a/b", nil); !errors.Is(err, unscoped) {
+	if _, _, err := runFallback(context.Background(), []string{"git", "clone"}, "https://github.com/a/b", nil); !errors.Is(err, unscoped) {
 		t.Fatalf("unscoped secret error swallowed: %v", err)
 	}
 	SetSecretReader(nil)
@@ -431,4 +431,10 @@ func TestWithGitAuthAppendsExtraheaderAndOriginShapes(t *testing.T) {
 			t.Errorf("%q: want %v", text, want)
 		}
 	}
+}
+
+// Exit code and stderr of a fallback run through the default runner
+func runFallback(ctx context.Context, argv []string, url string, env map[string]string) (int, string, error) {
+	r, err := RunGitWithCredentialFallback(ctx, argv, url, env, nil)
+	return r.Code, r.Stderr, err
 }

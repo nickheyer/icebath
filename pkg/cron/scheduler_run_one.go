@@ -76,6 +76,13 @@ func (c *chanCancel) Reason() string { return "" }
 // Run one job as the tick and providers reach it, swapped by tests like a patched scheduler.run_one_job
 var runOneJobSeam = runOneJob
 
+// Scheduler module names the Python cases patch, mark_job_run, _launch_external_cron_worker and claim_dispatch
+var (
+	markJobRunSeam               = (*Store).markJobRun
+	launchExternalCronWorkerSeam = (*Store).launchExternalCronWorker
+	claimDispatchSeam            = (*Store).claimDispatch
+)
+
 // Run job as the run one job body reaches it, swapped by tests like a patched scheduler.run_job
 var runJobSeam = func(ctx context.Context, s *Store, job *Job, o runJobOptions) (jobRunOutcome, error) {
 	return s.runJob(ctx, job, o)
@@ -94,7 +101,7 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 	executionID := *job.ExecutionID
 	observability.NoteCronExecution(job)
 	if os.Getenv(externalWorkerEnv) != executionID {
-		handedOff, handoffErr := s.launchExternalCronWorker(ctx, job)
+		handedOff, handoffErr := launchExternalCronWorkerSeam(s, ctx, job)
 		if handoffErr != nil {
 			var postErr *externalWorkerPostHandoffError
 			postHandoff := errors.As(handoffErr, &postErr)
@@ -120,14 +127,14 @@ func runOneJob(ctx context.Context, s *Store, job *Job, o runOneJobOptions) (boo
 			var deliveryError, deliveryOutcome *string
 			if !postHandoff {
 				var outcome string
-				deliveryError, outcome = s.deliverCrashFailure(s.installFireSecretScope(ctx), job, errText, o.Adapters, o.Loop)
+				deliveryError, outcome = deliverCrashFailureSeam(s, s.installFireSecretScope(ctx), job, errText, o.Adapters, o.Loop)
 				deliveryOutcome = &outcome
 			}
 			mark := MarkOptions{Error: &errText, DeliveryError: deliveryError, LadderRung: unreachableRetryIsRetryRun(s, job)}
 			if owner != "" {
 				mark.ExpectedFireOwner = &owner
 			}
-			_, markErr := s.markJobRun(ctx, job.ID, false, mark)
+			_, markErr := markJobRunSeam(s, ctx, job.ID, false, mark)
 			_, finishErr := ledger.Finish(ctx, executionID, false, &errText, deliveryOutcome, false)
 			if markErr != nil {
 				return false, markErr
@@ -193,7 +200,7 @@ func (s *Store) recordFireOwnershipLost(ctx context.Context, job *Job, fireOwner
 			return err
 		}
 		if owns {
-			if _, err := s.markJobRun(ctx, job.ID, false, MarkOptions{
+			if _, err := markJobRunSeam(s, ctx, job.ID, false, MarkOptions{
 				Error: strPtr(ownershipLostInterrupted), ExpectedFireOwner: fireOwner, LadderRung: unreachableRetryIsRetryRun(s, job),
 			}); err != nil {
 				return err
@@ -297,6 +304,14 @@ func (f *fireOwnership) sideEffectFence(ctx context.Context, fn func(ctx context
 
 // True when a transport cancel arrived or the durable claim no longer names this run's owner
 func (f *fireOwnership) lost(ctx context.Context) bool {
+	return fireOwnershipLost(f, ctx)
+}
+
+// Ownership sample every fence takes, the name a case replaces the way pytest patches _FireOwnership.lost
+var fireOwnershipLost = (*fireOwnership).sampleLost
+
+// Samples the transport cancel and the durable fire claim, latching a lost claim
+func (f *fireOwnership) sampleLost(ctx context.Context) bool {
 	if f.transportCancelled() {
 		return true
 	}
@@ -448,6 +463,9 @@ func (s *Store) saveComposeDeliver(ctx context.Context, d *runDelivery, fence *f
 	return nil
 }
 
+// Crash failure delivery the scheduler looks up at call time, swapped by tests like a patched _deliver_crash_failure
+var deliverCrashFailureSeam = (*Store).deliverCrashFailure
+
 // Failure notice for a run that raised out of run_job, the delivery error and ledger outcome
 func (s *Store) deliverCrashFailure(ctx context.Context, job *Job, errText string, adapters, loop any) (*string, string) {
 	normalized := normalizeDeliverValue(deliveryLaneValue(job, true))
@@ -541,7 +559,9 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 	deliveryAttempted := false
 	var deliveryError *string
 	defer s.clearCancel(executionID)
+	scoped := ctx
 	fail := func(cause error, contained bool) (bool, error) {
+		ctx := scoped
 		var unknown *CronExecutionUnknown
 		if errors.As(cause, &unknown) {
 			if perr := s.pauseForUnknown(home.WithOverride(ctx, s.home), job.ID, executionID, cause.Error()); perr != nil {
@@ -560,7 +580,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 		s.log.Error(fmt.Sprintf("Error processing job %s: %s", job.ID, errText))
 		outcome := "suppressed"
 		if contained && !deliveryAttempted && !errors.Is(cause, errFireClaimLostDuringSideEffect) && !fence.lost(ctx) {
-			deliveryError, outcome = s.deliverCrashFailure(ctx, job, errText, o.Adapters, o.Loop)
+			deliveryError, outcome = deliverCrashFailureSeam(s, ctx, job, errText, o.Adapters, o.Loop)
 		}
 		if !s.consumeInterruptedFlag(job.ID, token) {
 			if allowed, _ := s.selfRemovalDeliveryAllowed(ctx, nil, job.ID); !allowed {
@@ -568,7 +588,7 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 				if contained {
 					mark.DeliveryError = deliveryError
 				}
-				if _, merr := s.markJobRun(ctx, job.ID, false, mark); merr != nil {
+				if _, merr := markJobRunSeam(s, ctx, job.ID, false, mark); merr != nil {
 					s.log.Error(fmt.Sprintf("Failed to record interrupted run for job %s: %v", job.ID, merr))
 				}
 			}
@@ -586,7 +606,8 @@ func (s *Store) runOneJobBody(ctx context.Context, job *Job, o runOneJobOptions,
 	}()
 	processed, bodyErr := func() (bool, error) {
 		runCtx := s.installFireSecretScope(ctx)
-		claimed, err := s.claimDispatch(home.WithOverride(runCtx, s.home), job.ID)
+		scoped = runCtx
+		claimed, err := claimDispatchSeam(s, home.WithOverride(runCtx, s.home), job.ID)
 		if err != nil {
 			return false, err
 		}

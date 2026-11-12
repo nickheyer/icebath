@@ -145,6 +145,7 @@ func TestBreakdownLinesGridToggle(t *testing.T) {
 }
 
 func TestContextProvenanceFollowsTheSelectedNumber(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	pin := 100_000
 	ctx := context.Background()
 	comp := NewContextCompressor(ctx, ContextCompressorOptions{Model: "fixture", ConfigContextLength: &pin, QuietMode: true})
@@ -186,6 +187,7 @@ func TestContextProvenanceFollowsTheSelectedNumber(t *testing.T) {
 }
 
 func TestManifestMatchesWhatThePromptActuallyLoads(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	project := t.TempDir()
 	mustMkdir(t, filepath.Join(project, ".git"))

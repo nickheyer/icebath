@@ -11,7 +11,11 @@ import (
 func init() {
 	tools.OnboardingPluginNames = func(env *tools.Env) []string { return onboardingNames(envContext(env)) }
 	tools.CatalogInstalledDir = func(env *tools.Env, name string) string {
-		return catalogInstalledDir(home.Dir(envContext(env)), name)
+		dir, err := catalogInstalledDir(home.Dir(envContext(env)), name)
+		if err != nil {
+			panic(err)
+		}
+		return dir
 	}
 	tools.CatalogPluginSkill = func(env *tools.Env, written string) string {
 		name, ok, err := CatalogPluginSkill(envContext(env), written)

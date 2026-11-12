@@ -244,12 +244,17 @@ func ExtensionInstallFields(kind, source, name, outcome, failureClass, registry 
 }
 
 // TaggedFailureClass is the non empty class a raise site tagged on the error
-func TaggedFailureClass(err error) (string, bool) {
-	tagged, ok := err.(interface{ FailureClass() string })
-	if !ok {
+func TaggedFailureClass(err error) (class string, ok bool) {
+	tagged, implements := err.(interface{ FailureClass() string })
+	if !implements {
 		return "", false
 	}
-	class := tagged.FailureClass()
+	defer func() {
+		if recover() != nil {
+			class, ok = "", false
+		}
+	}()
+	class = tagged.FailureClass()
 	return class, class != ""
 }
 
@@ -270,10 +275,15 @@ func fromNetworkPackage(err error) bool {
 }
 
 // ExceptionFailureClass is why a raised install failed from its tag or type, never its message
-func ExceptionFailureClass(err error) string {
+func ExceptionFailureClass(err error) (class string) {
 	if tagged, ok := TaggedFailureClass(err); ok {
 		return tagged
 	}
+	defer func() {
+		if recover() != nil {
+			class = "exception:" + ownTypeName(err)
+		}
+	}()
 	mro := pyExceptionMRO(err)
 	has := func(name string) bool {
 		for _, n := range mro {
@@ -293,6 +303,15 @@ func ExceptionFailureClass(err error) string {
 		return "filesystem_error"
 	}
 	return "exception:" + mro[0]
+}
+
+// Name of the error's own dynamic type, read without running any method of the error
+func ownTypeName(err error) string {
+	t := reflect.TypeOf(err)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t.Name()
 }
 
 // ExtensionFailureClass is none on success, else the stated or raised class collapsed onto the kind's set

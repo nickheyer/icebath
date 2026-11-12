@@ -19,6 +19,7 @@ import (
 // Dispatches the scratch prune entry so a prune child never reruns this suite
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	kernelHostEntry()
 	kernelOwnerEntry()

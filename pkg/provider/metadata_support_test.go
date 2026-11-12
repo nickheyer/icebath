@@ -146,6 +146,7 @@ func resetMetadataCaches() {
 func metaTest(t *testing.T) (context.Context, *fakeTransport, string) {
 	t.Helper()
 	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", dir)
 	ctx := home.WithOverride(context.Background(), dir)
 	ft := newFakeTransport()
 	metadataTransport = ft

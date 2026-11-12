@@ -7,13 +7,12 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strconv"
-	"strings"
 
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -323,6 +322,9 @@ func runCompositeUI(ctx context.Context, ui *cliui.Console, keys, labels []strin
 	}
 	defer func() { closeScreen() }()
 	initColors := func() error {
+		if !scr.HasColors() {
+			return nil
+		}
 		gray := cliui.ColorWhite
 		if scr.Colors() > 8 {
 			gray = 8
@@ -469,14 +471,16 @@ func runCompositeUI(ctx context.Context, ui *cliui.Console, keys, labels []strin
 	return nil
 }
 
-// Python int of a stripped answer, false where int() raises ValueError
+// Python int of a stripped answer, zero past the int range and false where int() raises ValueError
 func pyIntAnswer(val string) (int, bool) {
-	text := strings.ReplaceAll(val, "_", "")
-	if text == "" || strings.HasPrefix(val, "_") || strings.HasSuffix(val, "_") || strings.Contains(val, "__") {
+	n, ok := pyint.Parse(val)
+	if !ok {
 		return 0, false
 	}
-	n, err := strconv.Atoi(text)
-	return n, err == nil
+	if !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
+		return 0, true
+	}
+	return int(n.Int64()), true
 }
 
 // Text menu standing in for the composite screen when curses is unavailable

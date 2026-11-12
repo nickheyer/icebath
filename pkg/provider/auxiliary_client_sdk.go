@@ -700,6 +700,9 @@ func auxSDKStatusClass(status int) string {
 	return "APIStatusError"
 }
 
+// SDKStatusClass is the openai SDK error class an HTTP status raises
+func SDKStatusClass(status int) string { return auxSDKStatusClass(status) }
+
 // SDK APITimeoutError raised from a transport timeout
 func auxSDKTimeoutError(cause error) *AuxSDKError {
 	return &AuxSDKError{Class: "APITimeoutError", Message: "Request timed out.", Err: cause}

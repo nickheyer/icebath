@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -38,7 +39,7 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 	p := setupPlane(t)
 	t.Setenv(idpEnvPrefix+"TOKEN_URL", "")
 	b := testBackend()
-	h := p.home
+	h := p.Home
 	var mu sync.Mutex
 	var reentries []reentry
 	count := func() int { mu.Lock(); defer mu.Unlock(); return len(reentries) }
@@ -56,7 +57,7 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 		if count() == 0 {
 			reenter(ctx)
 		}
-		return stubNousToken, nil
+		return configplane.NousToken, nil
 	})
 	t.Cleanup(func() { RegisterNousAccessToken(nil) })
 	var other *profileState
@@ -81,7 +82,7 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 		return original(ctx, method, rh, profile, etag, body, token)
 	}
 	t.Cleanup(func() { request = original })
-	p.upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
 	doc, err := b.ReadUserDoc(context.Background(), h)
 	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "ares" {
 		t.Fatalf("read %v %v", doc, err)
@@ -96,8 +97,8 @@ func TestSameThreadReentryRaisesWhileOtherThreadsWait(t *testing.T) {
 	}
 	waitOrFail(t, waited)
 	st, _ := b.state(context.Background(), h)
-	if other != st || len(p.gets()) != 1 {
-		t.Fatalf("shared state %v gets %d", other == st, len(p.gets()))
+	if other != st || len(p.Gets()) != 1 {
+		t.Fatalf("shared state %v gets %d", other == st, len(p.Gets()))
 	}
 	if _, err := b.Version(context.Background(), h); err != nil {
 		t.Fatal(err)
@@ -156,17 +157,17 @@ func TestNothingIsLoggedUnderABackendLock(t *testing.T) {
 	original := request
 	request = func(ctx context.Context, method, h, profile, etag string, body any, token string) (Response, error) {
 		resp, err := original(ctx, method, h, profile, etag, body, token)
-		p.mu.Lock()
-		p.failStatus = 0
-		p.mu.Unlock()
+		p.Mu.Lock()
+		p.FailStatus = 0
+		p.Mu.Unlock()
 		return resp, err
 	}
 	t.Cleanup(func() { request = original })
-	p.mu.Lock()
-	p.upper = map[string]any{"display": map[string]any{"personality": "concise"}}
-	p.profile("default").values = map[string]any{"display": map[string]any{"personality": "pirate"}}
-	p.failStatus = 503
-	p.mu.Unlock()
+	p.Mu.Lock()
+	p.Upper = map[string]any{"display": map[string]any{"personality": "concise"}}
+	p.Profile("default").Values = map[string]any{"display": map[string]any{"personality": "pirate"}}
+	p.FailStatus = 503
+	p.Mu.Unlock()
 	if err := writeKey(p, "display.personality", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -188,16 +189,16 @@ func TestNothingIsLoggedUnderABackendLock(t *testing.T) {
 // A set equal to the inherited value is stored at the profile level and outlives an upper change
 func TestSetEqualToInheritedValueIsStoredAndSurvivesAnUpperChange(t *testing.T) {
 	p := setupPlane(t)
-	p.upper = map[string]any{"display": map[string]any{"skin": "ares"}}
+	p.Upper = map[string]any{"display": map[string]any{"skin": "ares"}}
 	if err := setValue(p, "display.skin", "ares"); err != nil {
 		t.Fatal(err)
 	}
 	mustEqualJSON(t, "values", profileValues(p, "default"), map[string]any{"display": map[string]any{"skin": "ares"}})
-	p.mu.Lock()
-	p.upper = map[string]any{"display": map[string]any{"skin": "slate"}}
-	p.mu.Unlock()
+	p.Mu.Lock()
+	p.Upper = map[string]any{"display": map[string]any{"skin": "slate"}}
+	p.Mu.Unlock()
 	ResetForTests()
-	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.home, "config.yaml"))
+	doc, err := config.ReadConfigDoc(context.Background(), filepath.Join(p.Home, "config.yaml"))
 	if err != nil || doc.(map[string]any)["display"].(map[string]any)["skin"] != "ares" {
 		t.Fatalf("read %v %v", doc, err)
 	}
@@ -214,7 +215,7 @@ func TestRemoteSetAndUnsetNameRemoteConfigNotALocalFile(t *testing.T) {
 	if err := setValue(p, "agent.max_turns", "7"); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.UnsetConfigValue(ctx, p.home, "agent.max_turns", cmdSources()); err != nil {
+	if err := config.UnsetConfigValue(ctx, p.Home, "agent.max_turns", cmdSources()); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
@@ -222,7 +223,7 @@ func TestRemoteSetAndUnsetNameRemoteConfigNotALocalFile(t *testing.T) {
 		!strings.Contains(text, "✓ Unset agent.max_turns from Remote Config (profile 'default' level)") || strings.Contains(text, "config.yaml") {
 		t.Fatalf("out %q", text)
 	}
-	if _, err := os.Stat(filepath.Join(p.home, "config.yaml")); err == nil {
+	if _, err := os.Stat(filepath.Join(p.Home, "config.yaml")); err == nil {
 		t.Fatal("config.yaml written")
 	}
 }

@@ -109,15 +109,17 @@ func noCurses() (cliui.Screen, func(), error) {
 	return nil, nil, fmt.Errorf("%w: setupterm: could not find terminal", cliui.ErrCursesInit)
 }
 
-func TestPickerOpenAndExitWithoutChangesWritesNothing(t *testing.T) {
+func TestOpenAndExitWithoutChangesWritesNothing(t *testing.T) {
 	_, _, run := pickerWorld(t, toggleConsole(noCurses))
 	plugins := run("plugins:\n  enabled: []\n  disabled: []\n", "")
-	if len(pubList(plugins, "enabled")) != 0 || len(pubList(plugins, "disabled")) != 0 {
+	enabled, hasEnabled := plugins["enabled"].([]any)
+	disabled, hasDisabled := plugins["disabled"].([]any)
+	if len(plugins) != 2 || !hasEnabled || !hasDisabled || len(enabled) != 0 || len(disabled) != 0 {
 		t.Fatalf("plugins %v", plugins)
 	}
 }
 
-func TestPickerWritesOnlyFlippedRows(t *testing.T) {
+func TestOnlyFlippedRowsAreWritten(t *testing.T) {
 	ctx, h, run := pickerWorld(t, toggleConsole(noCurses))
 	vtWrite(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: []\n  disabled: []\n")
 	telegram, slack := toggleRowOf(t, ctx, "platforms/telegram"), toggleRowOf(t, ctx, "platforms/slack")
@@ -281,5 +283,19 @@ func TestContextEngineDirsAndLoaderHelpers(t *testing.T) {
 	if ProbeAvailability(func() (any, error) { return nil, errors.New("boom") }) || ProbeAvailability(func() (any, error) { return nil, nil }) ||
 		ProbeAvailability(func() (any, error) { panic("raised") }) || !ProbeAvailability(func() (any, error) { return struct{}{}, nil }) {
 		t.Fatal("probe availability")
+	}
+}
+
+// Answers parse as Python int does, any script digits and single underscores, huge values out of range
+func TestToggleAnswerParsesLikePythonInt(t *testing.T) {
+	for raw, want := range map[string]int{"3": 3, "+2": 2, "-1": -1, "1_0": 10, "٣": 3, "99999999999999999999999": 0} {
+		if got, ok := pyIntAnswer(raw); !ok || got != want {
+			t.Fatalf("%q = %d %v", raw, got, ok)
+		}
+	}
+	for _, raw := range []string{"-_1", "1__0", "_1", "1_", "x", "1.0", ""} {
+		if _, ok := pyIntAnswer(raw); ok {
+			t.Fatalf("%q parsed", raw)
+		}
 	}
 }

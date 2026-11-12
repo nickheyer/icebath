@@ -134,9 +134,9 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 			waitUntil(t, "the fanout batch waiting for the send lock", func() bool { return transport.sendLock.waiting() == 1 })
 			switch {
 			case strings.HasPrefix(action, "overflow"):
-				savedFrames := fanoutMaxPendingFrames
-				fanoutMaxPendingFrames = 2
-				defer func() { fanoutMaxPendingFrames = savedFrames }()
+				savedFrames := FanoutMaxPendingFrames
+				FanoutMaxPendingFrames = 2
+				defer func() { FanoutMaxPendingFrames = savedFrames }()
 				for index := range 3 {
 					fanout.WriteOverflow(deltaEvent(pyStrInt(index), "session"), func(Transport) *pyjson.Object { return notice })
 				}

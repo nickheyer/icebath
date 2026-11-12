@@ -17,6 +17,7 @@ const cuChildEntry = "__selfupdate_test_child__"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if os.Getenv("ICEBATH_CUSTODY_TEST_NO_SUBREAPER") == "1" {
 		custodySubreaper = func() bool { return false }
 	}

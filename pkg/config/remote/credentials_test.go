@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,21 +32,21 @@ func (c *captureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 func idpTestEnv(t *testing.T, tokenURL string) {
 	t.Setenv(idpEnvPrefix+"TOKEN_URL", tokenURL)
-	t.Setenv(idpEnvPrefix+"CLIENT_ID", stubClientID)
-	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", stubClientSecret)
+	t.Setenv(idpEnvPrefix+"CLIENT_ID", configplane.ClientID)
+	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", configplane.ClientSecret)
 	clearIDPCache()
 }
 
 func TestBootFailsClosedOnForbiddenPlaneURLWithoutRetry(t *testing.T) {
 	p := setupPlane(t)
-	t.Setenv(URLEnv, strings.Replace(p.url, "127.0.0.1", "plane.example", 1))
+	t.Setenv(URLEnv, strings.Replace(p.URL, "127.0.0.1", "plane.example", 1))
 	var sleeps []float64
 	saved := sleep
 	sleep = func(s float64) { sleeps = append(sleeps, s) }
 	t.Cleanup(func() { sleep = saved })
-	err := testBackend().Boot(context.Background(), p.home)
+	err := testBackend().Boot(context.Background(), p.Home)
 	var unavailable *config.ConfigBackendUnavailable
-	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "https") || len(sleeps) != 0 || len(p.requests) != 0 || p.tokenRequests != 0 {
+	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "https") || len(sleeps) != 0 || len(p.Requests) != 0 || p.TokenRequests != 0 {
 		t.Fatalf("err %v sleeps %v", err, sleeps)
 	}
 }
@@ -61,7 +62,7 @@ func TestIDPSecretSentToAllowedOnPremHTTPS(t *testing.T) {
 	if !errors.As(err, &pce) || !strings.Contains(err.Error(), "no access_token") {
 		t.Fatalf("err %v", err)
 	}
-	if len(capture.seen) != 1 || capture.seen[0].URL.String() != "https://idp.corp.internal/oauth2/token" || !strings.Contains(capture.body[0], stubClientSecret) {
+	if len(capture.seen) != 1 || capture.seen[0].URL.String() != "https://idp.corp.internal/oauth2/token" || !strings.Contains(capture.body[0], configplane.ClientSecret) {
 		t.Fatalf("captured %v", capture.body)
 	}
 }
@@ -82,7 +83,7 @@ func TestIDPRedirectIsNotFollowedWithTheSecret(t *testing.T) {
 		idpTestEnv(t, idp.URL+"/token")
 		_, err := idpToken(context.Background())
 		var derr *CredentialDestinationError
-		if !errors.As(err, &derr) || derr.Retryable || len(idpSeen) != 1 || !strings.Contains(idpSeen[0], stubClientSecret) || len(targetSeen) != 0 {
+		if !errors.As(err, &derr) || derr.Retryable || len(idpSeen) != 1 || !strings.Contains(idpSeen[0], configplane.ClientSecret) || len(targetSeen) != 0 {
 			t.Fatalf("%d: %v idp %v target %v", code, err, idpSeen, targetSeen)
 		}
 		target.Close()
@@ -96,7 +97,7 @@ func TestRefusedURLNeverEchoesUserInfo(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	const userinfoURL = "https://u:p@example.com"
 	t.Setenv(URLEnv, userinfoURL)
-	t.Setenv(InstanceEnv, stubInstance)
+	t.Setenv(InstanceEnv, configplane.Instance)
 	saved := sleep
 	sleep = func(float64) {}
 	ResetForTests()
@@ -130,16 +131,16 @@ func TestRefusedURLNeverEchoesUserInfo(t *testing.T) {
 func TestRotatedIDPClientSecretFetchesANewToken(t *testing.T) {
 	p := setupPlane(t)
 	ctx := context.Background()
-	if _, err := PlaneToken(ctx, p.home); err != nil {
+	if _, err := PlaneToken(ctx, p.Home); err != nil {
 		t.Fatal(err)
 	}
-	first := p.tokenRequests
-	if _, err := PlaneToken(ctx, p.home); err != nil || p.tokenRequests != first {
+	first := p.TokenRequests
+	if _, err := PlaneToken(ctx, p.Home); err != nil || p.TokenRequests != first {
 		t.Fatalf("cache missed %v", err)
 	}
 	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", "rotated-secret")
 	var pce *PlaneCredentialError
-	if _, err := PlaneToken(ctx, p.home); !errors.As(err, &pce) || p.tokenRequests != first+1 {
-		t.Fatalf("rotation %v %d", err, p.tokenRequests)
+	if _, err := PlaneToken(ctx, p.Home); !errors.As(err, &pce) || p.TokenRequests != first+1 {
+		t.Fatalf("rotation %v %d", err, p.TokenRequests)
 	}
 }

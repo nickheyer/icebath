@@ -123,21 +123,23 @@ func TestUserOriginatedTurnPredicate(t *testing.T) {
 }
 
 func TestReanchorSkipsHandoffFallback(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		rows []map[string]any
-		ask  string
-		want int
-	}{
-		{"test_fallback_skips_standalone_handoff", []map[string]any{{"role": "system", "content": "sys"}, standaloneHandoff()}, "missing ask", -1},
-		{"test_exact_match_still_wins", []map[string]any{standaloneHandoff(), {"role": "user", "content": "live ask"}}, "live ask", 1},
-		{"test_fallback_prefers_real_user_over_handoff", []map[string]any{{"role": "user", "content": "original ask"}, standaloneHandoff()}, "rewritten ask", 0},
-		{"test_exact_live_projection_reanchors_to_composite_carrier", []map[string]any{{"role": "user", "content": "older ask"}, compositeHandoff("rewritten ask")}, "rewritten ask", 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := reanchorCurrentTurnUserIdx(rowsToMessages(tc.rows), tc.ask); got != tc.want {
-				t.Fatalf("%q got %d want %d", tc.ask, got, tc.want)
-			}
-		})
+	caseHome(t)
+	check := func(t *testing.T, rows []map[string]any, ask string, want int) {
+		t.Helper()
+		if got := reanchorCurrentTurnUserIdx(rowsToMessages(rows), ask); got != want {
+			t.Fatalf("%q got %d want %d", ask, got, want)
+		}
 	}
+	t.Run("test_fallback_skips_standalone_handoff", func(t *testing.T) {
+		check(t, []map[string]any{{"role": "system", "content": "sys"}, standaloneHandoff()}, "missing ask", -1)
+	})
+	t.Run("test_exact_match_still_wins", func(t *testing.T) {
+		check(t, []map[string]any{standaloneHandoff(), {"role": "user", "content": "live ask"}}, "live ask", 1)
+	})
+	t.Run("test_fallback_prefers_real_user_over_handoff", func(t *testing.T) {
+		check(t, []map[string]any{{"role": "user", "content": "original ask"}, standaloneHandoff()}, "rewritten ask", 0)
+	})
+	t.Run("test_exact_live_projection_reanchors_to_composite_carrier", func(t *testing.T) {
+		check(t, []map[string]any{{"role": "user", "content": "older ask"}, compositeHandoff("rewritten ask")}, "rewritten ask", 1)
+	})
 }

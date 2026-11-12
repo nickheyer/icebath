@@ -374,7 +374,8 @@ func clarifyBlock(ctx context.Context, sid string, questions []map[string]any) m
 	if result == nil {
 		return map[string]any{"answers": map[string]any{}, "outcome": "undelivered"}
 	}
-	return objectMap(result)
+	settled, _ := pyjson.Plain(result).(map[string]any)
+	return settled
 }
 
 // Ordered JSON object of a payload map

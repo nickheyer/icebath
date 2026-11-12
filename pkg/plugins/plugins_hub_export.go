@@ -25,7 +25,7 @@ func CurrentMemoryProvider(ctx context.Context) string {
 func CurrentContextEngine(ctx context.Context) string { return getCurrentContextEngine(home.Dir(ctx)) }
 
 // Kill list reason of an installed plugin of the active scope home, false when it is not removed
-func RemovedAnnotation(ctx context.Context, name, dir string, removedEntries []RemovedEntry) (string, bool) {
+func RemovedAnnotation(ctx context.Context, name, dir string, removedEntries []RemovedEntry) (string, bool, error) {
 	return removedAnnotation(home.Dir(ctx), name, dir, removedEntries)
 }
 

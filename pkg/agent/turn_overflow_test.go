@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Recovery over a gpt-5 agent with three of three compression attempts spent
@@ -252,6 +254,34 @@ func TestRetryBufferClassificationSurvivesTerminalFlush(t *testing.T) {
 			if (len(printed) > 0) == suppressed {
 				t.Fatalf("%v %s: printed %q", policy, shape, printed)
 			}
+		}
+	}
+}
+
+// Output cap compression errors fall back to the max tokens retry while a keyboard interrupt ends the turn
+func TestOutputCapCompressionErrorRetriesButInterruptPropagates(t *testing.T) {
+	for _, tc := range []struct {
+		err       error
+		interrupt bool
+	}{{errors.New("summary model down"), false}, {tools.ErrKeyboardInterrupt, true}} {
+		r := newOverflowRecovery(t)
+		r.s.CompressionAttempts = 0
+		r.a.contextCompressor = newStubEngine(100_000, 0.5)
+		saved, savedRequest := overflowCompressContext, overflowEstimateRequest
+		overflowCompressContext = func(*AIAgent, context.Context, []map[string]any, *string, compressContextOptions) ([]map[string]any, string, error) {
+			return nil, "", tc.err
+		}
+		overflowEstimateRequest = func(context.Context, []map[string]any, string, []map[string]any) int { return 1000 }
+		v, err := clampOutputCap(r, 4096, 100_000)
+		overflowCompressContext, overflowEstimateRequest = saved, savedRequest
+		if tc.interrupt {
+			if !errors.Is(err, tools.ErrKeyboardInterrupt) {
+				t.Fatalf("interrupt swallowed: %v %v", v, err)
+			}
+			continue
+		}
+		if err != nil || v.Action != "break" || !r.retry.RestartWithCompressedMessages || r.a.ephemeralMaxOutputTokens != 4032 {
+			t.Fatalf("verdict %v err %v restart %v cap %d", v, err, r.retry.RestartWithCompressedMessages, r.a.ephemeralMaxOutputTokens)
 		}
 	}
 }

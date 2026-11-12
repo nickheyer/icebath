@@ -688,6 +688,13 @@ func (f *agentFuture) addDoneCallback(cb func()) {
 	cb()
 }
 
+// Watchdog doors the Python case patches as session_activity time, threading.Thread.start and threading.Event.wait
+var (
+	newWatchdogMeter        = state.NewAwakeIdleMeter
+	startInactivityWatchdog = func(run func()) { go run() }
+	inactivityStopEvent     = func(stop <-chan struct{}) watchdogStop { return chanStop(stop) }
+)
+
 // Runs the conversation under the inactivity watchdog, claim heartbeat and fire claim cancel checks
 func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt string, job *Job, jobID, jobName, taskID string, cancel CancelSource, worker **agentFuture) (map[string]any, error) {
 	cronTimeout := s.cronInactivitySeconds(ctx)
@@ -726,6 +733,7 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 			s.log.Debug(fmt.Sprintf("Job '%s': run_claim heartbeat failed", jobName), "error", err)
 		}
 	}
+	meter := newWatchdogMeter()
 	future := newAgentFuture()
 	if worker != nil {
 		*worker = future
@@ -758,13 +766,13 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 	inactivityTimeout := false
 	var inactivityMu sync.Mutex
 	if hasLimit {
-		go func() {
-			if inactivityWatchdogLoop(idleSeconds, limit, poll, watchStop, future.Done, state.NewAwakeIdleMeter()) {
+		startInactivityWatchdog(func() {
+			if inactivityWatchdogLoop(idleSeconds, limit, poll, inactivityStopEvent(watchStop), future.Done, meter) {
 				inactivityMu.Lock()
 				inactivityTimeout = true
 				inactivityMu.Unlock()
 			}
-		}()
+		})
 	}
 	timedOutNow := func() bool {
 		inactivityMu.Lock()

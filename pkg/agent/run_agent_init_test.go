@@ -26,7 +26,7 @@ func newFixtureAgentWithConfig(t *testing.T, configYAML string, o AIAgentOptions
 		}
 	}
 	o.QuietMode, o.SkipContextFiles, o.SkipMemory = true, true, true
-	if o.APIKey == "" {
+	if o.APIKey == nil || o.APIKey == "" {
 		o.APIKey = "test-key-1234567890"
 	}
 	if o.Env == nil {
@@ -111,9 +111,9 @@ func TestPromptCachingDisableSurvivesPolicyRederivation(t *testing.T) {
 }
 
 func TestConstructorMaxTokensWinsOverConfig(t *testing.T) {
-	a := newFixtureAgentWithConfig(t, "model:\n  max_tokens: 4096\n", AIAgentOptions{Provider: "custom", Model: "claude-opus-4-6-thinking", BaseURL: "http://proxy.example/v1", MaxTokens: 8192})
-	if a.maxTokens != 8192 {
-		t.Fatalf("max tokens %d", a.maxTokens)
+	a := newFixtureAgentWithConfig(t, "model:\n  max_tokens: 4096\n", AIAgentOptions{Provider: "custom", Model: "claude-opus-4-6-thinking", BaseURL: "http://proxy.example/v1", MaxTokens: iptr(8192)})
+	if a.maxTokens == nil || *a.maxTokens != 8192 {
+		t.Fatalf("max tokens %v", a.maxTokens)
 	}
 }
 

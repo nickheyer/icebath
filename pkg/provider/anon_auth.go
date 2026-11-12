@@ -155,8 +155,11 @@ func guestAllowed(env PoolEnv) bool {
 	return pyTruthy(value)
 }
 
+// Nous state reader of every caller, replaced by a case as the hermes cases patch current_nous_state
+var currentNousState = readCurrentNousState
+
 // The profile's providers.nous state without locking or network, nil when the store is unreadable
-func currentNousState(env PoolEnv) map[string]any {
+func readCurrentNousState(env PoolEnv) map[string]any {
 	data, err := env.Store.Load()
 	if err != nil {
 		env.log().Debug(fmt.Sprintf("guest: auth store unreadable: %v", err))

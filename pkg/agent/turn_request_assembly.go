@@ -11,6 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
+// Anchored request pressure of the assembled turn, bound at module level like the hermes import
+var assemblyAnchoredContextTokens = provider.AnchoredContextTokens
+
 // Runs the MoA reference models and appends their aggregated context to the last user row, failing open
 func appendMoaContext(ctx context.Context, a *AIAgent, apiMessages []map[string]any, moaConfig map[string]any, originalUserMessage any) {
 	prompt, ok := originalUserMessage.(string)
@@ -221,7 +224,7 @@ func assembleAPIRequest(ctx context.Context, a *AIAgent, s *LoopState) error {
 	}
 	s.APIMessages, s.ToolsForAPI = anyRows(apiMessages), toolsForAPI
 	pressure := midturnRequestPressureTokens(ctx, a, s.APIMessages, effectiveSystem, approx)
-	anchored, ok := provider.AnchoredContextTokens(ctx, s.Messages, a.usageAnchor, true)
+	anchored, ok := assemblyAnchoredContextTokens(ctx, s.Messages, a.usageAnchor, true)
 	a.requestPressureAnchored = ok
 	if ok {
 		pressure = anchored

@@ -11,7 +11,7 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 	if job.ExecutionID != nil {
 		executionID = *job.ExecutionID
 	}
-	execution, err := openExecutionsLedger(s).Get(ctx, executionID)
+	execution, err := getExecution(ctx, s, executionID)
 	if err != nil {
 		return false, err
 	}
@@ -38,8 +38,8 @@ func (s *Store) recordUnknownWorkerOutcome(ctx context.Context, job *Job, errTex
 		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, text))
 		var deliveryError *string
 		scopeCtx := s.installFireSecretScope(ctx)
-		deliveryError, _ = s.deliverCrashFailure(scopeCtx, job, text, adapters, loop)
-		_, markErr := s.markJobRun(ctx, job.ID, false, MarkOptions{
+		deliveryError, _ = deliverCrashFailureSeam(s, scopeCtx, job, text, adapters, loop)
+		_, markErr := markJobRunSeam(s, ctx, job.ID, false, MarkOptions{
 			Error: &text, DeliveryError: deliveryError, ExpectedFireOwner: &owner,
 			LadderRung: unreachableRetryIsRetryRun(s, job),
 		})

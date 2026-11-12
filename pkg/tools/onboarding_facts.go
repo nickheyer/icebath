@@ -4,8 +4,11 @@ import "github.com/nickheyer/icebath/pkg/hostinfo"
 
 var onboardingOSNames = map[string]string{"darwin": "macos", "win32": "windows"}
 
-// ReadOnboardingFacts measures the safe facts a run is built from, the desktop locale preferred over the OS one
-func ReadOnboardingFacts(env *Env, factsSource, locale string) OnboardingFacts {
+// Facts reader of every run start, replaced by a case as the hermes cases patch read_facts
+var ReadOnboardingFacts = readOnboardingFacts
+
+// Measures the safe facts a run is built from, the desktop locale preferred over the OS one
+func readOnboardingFacts(env *Env, factsSource, locale string) OnboardingFacts {
 	requireOnboardingHooks()
 	host := hostinfo.HostSummary()
 	osFamily, _ := host.Machine["os_family"].(string)

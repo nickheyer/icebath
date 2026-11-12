@@ -30,7 +30,7 @@ var (
 	nonCommandSTTNames            = sttSet("local", "local_command", "groq", "openai", "mistral", "xai", "elevenlabs", "deepinfra", "none")
 	preTranscriptionMutableFields = sttSet("prompt", "language", "model")
 	whisperPromptCappedProviders  = sttSet("local", "openai", "groq", "deepinfra")
-	sttPromptCharsPerToken        = int(tools.CharsPerToken)
+	sttPromptCharsPerToken        = tools.ModelCharsPerToken
 	runCommandSTT                 = runCommandProvider
 	sttHasHook                    = plugins.HasHook
 	sttInvokeHook                 = plugins.InvokeHook

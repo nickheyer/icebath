@@ -63,7 +63,7 @@ type FanoutTransport struct {
 
 // Bounds of one peer mailbox, the frame count and the serialized bytes it may hold unsent
 var (
-	fanoutMaxPendingFrames = 16384
+	FanoutMaxPendingFrames = 16384
 	fanoutMaxPendingBytes  = 4 * 1024 * 1024
 )
 
@@ -264,7 +264,7 @@ func (f *FanoutTransport) WriteOverflow(obj *pyjson.Object, overflow func(Transp
 		if !peer.attached {
 			continue
 		}
-		if len(peer.pending) >= fanoutMaxPendingFrames || peer.pendingBytes+size > fanoutMaxPendingBytes {
+		if len(peer.pending) >= FanoutMaxPendingFrames || peer.pendingBytes+size > fanoutMaxPendingBytes {
 			slog.Warn("fanout subscriber backlog full; detaching peer")
 			f.remove(peer)
 			var notice *pyjson.Object

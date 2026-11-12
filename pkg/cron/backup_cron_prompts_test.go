@@ -53,6 +53,7 @@ func liveCronJobs(t *testing.T, path string) []map[string]any {
 
 func backupHome(t *testing.T) (string, string) {
 	h := filepath.Join(t.TempDir(), ".icebath")
+	t.Setenv("ICEBATH_HOME", h)
 	return h, filepath.Join(h, "cron", "jobs.json")
 }
 

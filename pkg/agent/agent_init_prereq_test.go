@@ -31,14 +31,14 @@ func TestCopyInitParamsLandEveryConstructorKeyword(t *testing.T) {
 	status := func(kind string, msg string) {}
 	o := AIAgentOptions{Model: "m", MaxIterations: 7, SaveTrajectories: true, QuietMode: true, ToolProgressMode: "new",
 		Platform: "telegram", PassSessionID: true, LogPrefixChars: 50, ProviderSort: "price", EnabledToolsets: []string{"web"},
-		MaxTokens: 99, ServiceTier: "priority", SideAgent: true, UserID: "u", ChatType: "dm", GatewaySessionKey: "agent:main:telegram:dm:1",
+		MaxTokens: iptr(99), ServiceTier: "priority", SideAgent: true, UserID: "u", ChatType: "dm", GatewaySessionKey: "agent:main:telegram:dm:1",
 		StatusCallback: status, ReactionCallback: func(string) {}}
 	a := &AIAgent{}
 	copyPassthroughParams(a, o)
 	copyGatewayIdentityParams(a, o)
 	copyCallbackParams(a, o)
 	if a.model != "m" || a.maxIterations != 7 || !a.saveTrajectories || !a.quietMode || a.toolProgressMode != "new" || a.platform != "telegram" ||
-		!a.passSessionID || a.logPrefixChars != 50 || a.providerSort != "price" || a.enabledToolsets[0] != "web" || a.maxTokens != 99 ||
+		!a.passSessionID || a.logPrefixChars != 50 || a.providerSort != "price" || a.enabledToolsets[0] != "web" || *a.maxTokens != 99 ||
 		a.serviceTier != "priority" || !a.sideAgent {
 		t.Fatalf("passthrough params not copied: %+v", a)
 	}

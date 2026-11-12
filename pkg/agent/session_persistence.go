@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -52,6 +52,111 @@ func rowIdentity(v any) any {
 	}
 	if m, ok := v.(*state.Message); ok && m != nil {
 		return m
+	}
+	return nil
+}
+
+// Links each message to its caller dict, a turn start first dropping links of rows no longer live
+func (a *AIAgent) shareSessionMessageOrigins(messages []*state.Message, origins []map[string]any, turnStart bool) {
+	if turnStart {
+		kept, stamps := map[*state.Message]map[string]any{}, map[*state.Message]map[string]any{}
+		for _, m := range a.sessionMessages {
+			if origin, ok := a.sessionMessageOrigins[m]; ok {
+				kept[m] = origin
+			}
+			if pending, ok := a.sharedRowStamps[m]; ok {
+				stamps[m] = pending
+			}
+		}
+		a.sessionMessageOrigins, a.sharedRowStamps = kept, stamps
+	}
+	if a.sessionMessageOrigins == nil {
+		a.sessionMessageOrigins = map[*state.Message]map[string]any{}
+	}
+	for i, m := range messages {
+		if m != nil && i < len(origins) && origins[i] != nil {
+			a.sessionMessageOrigins[m] = origins[i]
+		}
+	}
+}
+
+// Removal of a key a flush made on a shared caller dict, apart from a stored None
+type sharedStampRemoved struct{}
+
+// Keys a flush set, changed or removed on a dict, removals as sharedStampRemoved
+func flushStampDelta(before, after map[string]any) map[string]any {
+	delta := map[string]any{}
+	for k, v := range after {
+		if prior, ok := before[k]; !ok || !reflect.DeepEqual(prior, v) {
+			delta[k] = v
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			delta[k] = sharedStampRemoved{}
+		}
+	}
+	return delta
+}
+
+// Holds a close flush's stamps on a caller dict for every message sharing it until that message adopts them
+func (a *AIAgent) deferSharedRowStamps(row map[string]any, delta map[string]any) {
+	key := rowIdentity(row)
+	for m, origin := range a.sessionMessageOrigins {
+		if key == nil || rowIdentity(origin) != key {
+			continue
+		}
+		if a.sharedRowStamps == nil {
+			a.sharedRowStamps = map[*state.Message]map[string]any{}
+		}
+		pending := a.sharedRowStamps[m]
+		if pending == nil {
+			pending = map[string]any{}
+			a.sharedRowStamps[m] = pending
+		}
+		for k, v := range delta {
+			pending[k] = v
+		}
+	}
+}
+
+// Applies the stamps a close flush left on the caller dict this message shares
+func (a *AIAgent) adoptSharedRowStamps(m *state.Message) {
+	stamps, ok := a.sharedRowStamps[m]
+	if !ok || m == nil {
+		return
+	}
+	delete(a.sharedRowStamps, m)
+	d := state.MessageToDict(m)
+	for k, v := range stamps {
+		if _, removed := v.(sharedStampRemoved); removed {
+			delete(d, k)
+			continue
+		}
+		d[k] = v
+	}
+	*m = *state.MessageFromDict(d)
+}
+
+// Reports a caller dict durable when it or a message sharing it carries the persisted marker
+func (a *AIAgent) sharedDictPersisted(d map[string]any) bool {
+	defer persistLock(a)()
+	if pyTruthy(d[state.DBPersistedMarker]) {
+		return true
+	}
+	key := rowIdentity(d)
+	for m, origin := range a.sessionMessageOrigins {
+		if key != nil && m.Persisted && rowIdentity(origin) == key {
+			return true
+		}
+	}
+	return false
+}
+
+// Identity of the caller dict a live message shares, nil for a message the agent built itself
+func (a *AIAgent) sessionMessageOriginKey(key any) any {
+	if m, ok := key.(*state.Message); ok {
+		return rowIdentity(a.sessionMessageOrigins[m])
 	}
 	return nil
 }
@@ -175,31 +280,35 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 	live := a.sessionMessages
 	var rows []map[string]any
 	var keys []any
+	var lives []*state.Message
+	var origins []map[string]any
+	pending, _ := a.pendingCLIUserMessage.(map[string]any)
+	pendingKey := rowIdentity(pending)
+	pendingShared := false
 	if live == nil {
 		for _, row := range cliHistory {
-			rows, keys = append(rows, row), append(keys, rowIdentity(row))
+			rows, keys, lives, origins = append(rows, row), append(keys, rowIdentity(row)), append(lives, nil), append(origins, row)
+			pendingShared = pendingShared || (pendingKey != nil && rowIdentity(row) == pendingKey)
 		}
 	} else {
 		for _, m := range live {
 			if m != nil {
-				rows, keys = append(rows, state.MessageToDict(m)), append(keys, m)
+				rows, keys, lives, origins = append(rows, state.MessageToDict(m)), append(keys, m), append(lives, m), append(origins, nil)
+				pendingShared = pendingShared || (pendingKey != nil && a.sessionMessageOriginKey(m) == pendingKey)
 			}
 		}
 	}
-	pending, _ := a.pendingCLIUserMessage.(map[string]any)
-	pendingKey := rowIdentity(pending)
-	staged := pending != nil && !pyTruthy(pending[state.DBPersistedMarker]) && !slices.Contains(keys, pendingKey)
+	staged := pending != nil && !pendingShared
 	if staged {
-		rows, keys = append(rows, pending), append(keys, pendingKey)
+		rows, keys, lives, origins = append(rows, pending), append(keys, pendingKey), append(lives, nil), append(origins, pending)
 	}
 	if len(rows) == 0 {
 		return false
 	}
 	history := cliHistory
-	switch n := len(history); {
-	case n > 0 && pending != nil && rowIdentity(history[n-1]) == pendingKey:
+	if n := len(history); n > 0 && pending != nil && rowIdentity(history[n-1]) == pendingKey {
 		history = history[:n-1]
-	case live == nil:
+	} else if live == nil && !staged {
 		history = nil
 	}
 	if a.cachedSystemPrompt == "" {
@@ -220,7 +329,8 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 		if !(pyTruthy(last["_empty_recovery_synthetic"]) || pyTruthy(last["_empty_terminal_sentinel"])) {
 			break
 		}
-		rows, keys = rows[:len(rows)-1], keys[:len(keys)-1]
+		n := len(rows) - 1
+		rows, keys, lives, origins = rows[:n], keys[:n], lives[:n], origins[:n]
 	}
 	historyKeys := map[any]bool{}
 	for _, row := range history {
@@ -228,18 +338,37 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 			historyKeys[key] = true
 		}
 	}
+	for _, m := range lives {
+		if origin := a.sessionMessageOriginKey(m); origin != nil && historyKeys[origin] {
+			historyKeys[m] = true
+		}
+	}
+	before := make([]map[string]any, len(rows))
+	for i, row := range rows {
+		if lives[i] == nil {
+			before[i] = maps.Clone(row)
+		}
+	}
 	if _, err := a.flushRowsUnlocked(rows, keys, historyKeys, 1); err != nil {
 		sessionPersistenceLog().Debug("session flush failed", "error", err)
 	}
+	for i, row := range rows {
+		if lives[i] == nil {
+			if delta := flushStampDelta(before[i], row); len(delta) > 0 {
+				a.deferSharedRowStamps(row, delta)
+			}
+		}
+	}
 	persisted := make([]*state.Message, len(rows))
 	for i, row := range rows {
-		if m, isLive := keys[i].(*state.Message); isLive {
+		if m := lives[i]; m != nil {
 			*m = *state.MessageFromDict(row)
 			persisted[i] = m
 			continue
 		}
 		persisted[i] = state.MessageFromDict(row)
 	}
+	a.shareSessionMessageOrigins(persisted, origins, false)
 	a.sessionMessages = persisted
 	if a.sessionDB != nil {
 		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
@@ -503,7 +632,8 @@ func dbFlushCollect(a *AIAgent, rows []map[string]any, keys []any, historyKeys m
 				msg[state.ToolCallUID] = toolUID
 			}
 		}
-		currentTurn := (a.persistUserMessageIdx != nil && *a.persistUserMessageIdx == idx) || (key != nil && key == pendingKey)
+		isPending := pendingKey != nil && (key == pendingKey || a.sessionMessageOriginKey(key) == pendingKey)
+		currentTurn := (a.persistUserMessageIdx != nil && *a.persistUserMessageIdx == idx) || isPending
 		row := dbFlushRow(a, msg, currentTurn)
 		if hasUID && storeUIDs[uid] {
 			row[state.RestoredFromStore] = true
@@ -701,6 +831,7 @@ func (a *AIAgent) flushLiveMessages(messages, conversationHistory []*state.Messa
 	keys := make([]any, len(messages))
 	for i, m := range messages {
 		if m != nil {
+			a.adoptSharedRowStamps(m)
 			rows[i], keys[i] = state.MessageToDict(m), m
 		}
 	}

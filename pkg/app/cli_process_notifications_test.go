@@ -18,6 +18,7 @@ func processEvent(sid string, exitCode any) map[string]any {
 // A CLI of the display session draining the given events, every claim granted and each acknowledgement counted
 func notificationCLI(t *testing.T, mode string, events ...map[string]any) (*CLI, *int) {
 	t.Helper()
+	caseHome(t)
 	display := map[string]any{}
 	if mode != "" {
 		display["background_process_notifications"] = mode

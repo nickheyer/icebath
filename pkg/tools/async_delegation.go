@@ -2464,12 +2464,23 @@ func init() { AsyncDelegationLedger = asyncDelegationLedger{} }
 // Installs one in memory delegation record for a case of another package and hands back the removal
 func SetAsyncDelegationRecordForTests(delegationID string, record map[string]any) func() {
 	asyncRecordsMu.Lock()
+	asyncDeleteRecordLocked(delegationID)
 	asyncRecords[delegationID] = &asyncRecord{m: record}
+	asyncRecordOrder = append(asyncRecordOrder, delegationID)
 	asyncRecordsMu.Unlock()
 	return func() {
 		asyncRecordsMu.Lock()
-		delete(asyncRecords, delegationID)
+		asyncDeleteRecordLocked(delegationID)
 		asyncRecordsMu.Unlock()
+	}
+}
+
+// Gives a delegation record a case of another package installed the stop signal its child would hold
+func SetAsyncDelegationInterruptForTests(delegationID string, interrupt func() error) {
+	asyncRecordsMu.Lock()
+	defer asyncRecordsMu.Unlock()
+	if r := asyncRecords[delegationID]; r != nil {
+		r.interruptFn = interrupt
 	}
 }
 

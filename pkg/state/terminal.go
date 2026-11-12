@@ -56,7 +56,7 @@ func CompactResult(result *pyjson.Object, userMessage any) (*pyjson.Object, erro
 
 // True for a dict message whose role is user
 func userRow(message any) bool {
-	row, ok := message.(*pyjson.Object)
+	row, ok := pyjson.AsObject(message)
 	if !ok {
 		return false
 	}
@@ -71,7 +71,7 @@ func reanchorCurrentTurnUserIdx(messages []any, userMessage any) int {
 		if !userRow(messages[i]) {
 			continue
 		}
-		row := messages[i].(*pyjson.Object)
+		row, _ := pyjson.AsObject(messages[i])
 		content, _ := row.Get("content")
 		if pyjson.Equal(content, userMessage) {
 			return i

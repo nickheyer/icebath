@@ -286,7 +286,7 @@ func TestMalformedNestedValueIsMigratedNotCrashed(t *testing.T) {
 	}
 }
 
-func TestFailingStepIsSkippedWithAWarningInResultsAndTheLog(t *testing.T) {
+func TestFailingStepIsSkippedWithWarningAndConfigStillMigrates(t *testing.T) {
 	h := writeMigrationHome(t, t.TempDir(), map[string]any{"_config_version": 12, "model": map[string]any{"default": "x/y"}}, "")
 	saved := migrationLadder
 	t.Cleanup(func() { migrationLadder = saved })

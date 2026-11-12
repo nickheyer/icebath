@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -142,26 +143,36 @@ func releaseActiveSessionSlot(session *tuigateway.Session) bool {
 	if session == nil {
 		return true
 	}
-	lease, _ := session.Get("active_session_lease").(*activesessions.Lease)
-	if lease == nil {
+	lease, _ := session.Get("active_session_lease").(slotLease)
+	if real, isReal := lease.(*activesessions.Lease); lease == nil || isReal && real == nil {
 		return true
 	}
 	attempts := 1
-	if lease.TrackLiveness {
+	if lease.TracksLiveness() {
 		attempts = 3
 	}
 	if err := leaseRetry(attempts, lease.Release); err != nil {
 		logger().Warn(fmt.Sprintf("Failed to release active session slot: %s", err))
 		return false
 	}
-	if !(lease.Released() || !lease.Enabled) {
+	if !(lease.Released() || !lease.IsEnabled()) {
 		return false
 	}
-	if current, _ := session.Get("active_session_lease").(*activesessions.Lease); current == lease {
+	if session.Get("active_session_lease") == any(lease) {
 		session.Pop("active_session_lease")
 	}
 	return true
 }
+
+// Lease surface the slot release drives on whatever object the session holds
+type slotLease interface {
+	Release() error
+	Released() bool
+	IsEnabled() bool
+	TracksLiveness() bool
+}
+
+var _ slotLease = (*activesessions.Lease)(nil)
 
 // Releases the slot of a hosted room member session at the end of its turn
 func releaseHostedRoomTurnSlot(session *tuigateway.Session) {
@@ -300,8 +311,31 @@ func wsSessionIsOrphaned(session *tuigateway.Session) bool {
 // Pending WebSocket orphan reap timers by session id
 var pendingWSReaps = struct {
 	sync.Mutex
-	timers map[string]*time.Timer
-}{timers: map[string]*time.Timer{}}
+	timers map[string]*wsReapTimer
+}{timers: map[string]*wsReapTimer{}}
+
+// One orphan reap countdown with the awake and wall clocks sampled when it was armed
+type wsReapTimer struct {
+	interval       float64
+	armedMonotonic float64
+	armedWall      float64
+	callback       func(monotonic, wall float64)
+	timer          *time.Timer
+}
+
+// Unstarted countdown of interval seconds whose expiry runs callback with the clocks read at that moment
+func newWSReapTimer(interval float64, callback func(monotonic, wall float64)) *wsReapTimer {
+	r := &wsReapTimer{interval: interval, armedMonotonic: pythread.Monotonic(), armedWall: nowSeconds(), callback: callback}
+	r.timer = time.AfterFunc(time.Hour*24*365*100, func() { r.callback(pythread.Monotonic(), nowSeconds()) })
+	r.timer.Stop()
+	return r
+}
+
+// Starts the countdown of its interval
+func (r *wsReapTimer) start() { r.timer.Reset(time.Duration(r.interval * float64(time.Second))) }
+
+// Stops a countdown whose callback has not been dispatched yet
+func (r *wsReapTimer) cancel() { r.timer.Stop() }
 
 // Cancels the pending orphan reap of a session whose client came back
 func cancelWSOrphanReap(sid string) {
@@ -312,7 +346,7 @@ func cancelWSOrphanReap(sid string) {
 	delete(pendingWSReaps.timers, sid)
 	pendingWSReaps.Unlock()
 	if timer != nil {
-		timer.Stop()
+		timer.cancel()
 	}
 }
 

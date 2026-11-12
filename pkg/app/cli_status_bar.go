@@ -35,7 +35,7 @@ var (
 		"session_total_tokens", "session_api_calls"}
 	readBattery          = hostinfo.ReadBattery
 	loadStatusBarConfig  = func(c *CLI) (map[string]any, error) { return config.Load(home.Dir(c.ctx), nil) }
-	statusBarUsage       = func(c *CLI, a *GatewayAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
+	statusBarUsage       = func(c *CLI, a cliAgent) agent.StatusBarUsage { return a.StatusBarUsage(c.ctx) }
 	statusBarSnapshotFor = (*CLI).getStatusBarSnapshot
 	tuiTerminalWidthFor  = (*CLI).getTUITerminalWidth
 )

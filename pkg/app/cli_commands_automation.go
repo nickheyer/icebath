@@ -1,14 +1,18 @@
 package app
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/goals"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Handles /bundles, the installed skill bundles rendered in session
@@ -132,14 +136,91 @@ func (c *CLI) heartbeatSet(mgr agent.HeartbeatAutomation, arg string) {
 		dimLine(c.commandsT("heartbeat.set_note", nil)))
 }
 
-// Answers /refine off the gateway, where no agent exists yet, the gateway running it whenever a session is open
-func (c *CLI) handleRefineCommand(cmd string) {
-	cp(dimLine(c.commandsT("refine.nothing_yet", nil)))
+// Agent that forks its memory and skill review on demand, the AIAgent review chokepoint
+type backgroundReviewSpawner interface {
+	SpawnBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool)
 }
 
-// Answers /review off the gateway, where no agent exists yet, the gateway running it whenever a session is open
+// Agent exposing the tool names its turn may call
+type validToolNamer interface {
+	ValidToolNames() map[string]bool
+}
+
+var _ backgroundReviewSpawner = (*agent.AIAgent)(nil)
+var _ validToolNamer = (*agent.AIAgent)(nil)
+
+// Runs a command step and returns the text of any panic it raised, the except Exception of the handlers
+func raisedText(step func()) (text string, raised bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			text, raised = fmt.Sprint(r), true
+			if err, ok := r.(error); ok {
+				text = err.Error()
+			}
+		}
+	}()
+	step()
+	return "", false
+}
+
+// Starts the background memory and skill review fork on the agent with the optional focus text
+func (c *CLI) handleRefineCommand(cmd string) {
+	focus := commandArg(cmd, false)
+	a := c.agent
+	if a == nil {
+		cp(dimLine(c.commandsT("refine.nothing_yet", nil)))
+		return
+	}
+	snapshot := append([]map[string]any(nil), c.conversationHistory...)
+	if len(snapshot) == 0 {
+		cp(dimLine(c.commandsT("refine.empty", nil)))
+		return
+	}
+	spawner, ok := a.(backgroundReviewSpawner)
+	if !ok {
+		missing := fmt.Sprintf("'%s' object has no attribute '_spawn_background_review'", pyrepr.TypeName(a))
+		cp("  " + c.commandsT("refine.failed", map[string]any{"error": missing}))
+		return
+	}
+	reviewSkills := false
+	if named, ok := a.(validToolNamer); ok {
+		reviewSkills = named.ValidToolNames()["skill_manage"]
+	}
+	var focusArg *string
+	if focus != "" {
+		focusArg = &focus
+	}
+	if text, raised := raisedText(func() { spawner.SpawnBackgroundReview(c.ctx, snapshot, true, reviewSkills, focusArg, true) }); raised {
+		cp("  " + c.commandsT("refine.failed", map[string]any{"error": text}))
+		return
+	}
+	tail := ""
+	if focus != "" {
+		tail = c.commandsT("refine.focus_suffix", map[string]any{"focus": focus})
+	}
+	cp("  " + c.commandsT("refine.started", map[string]any{"focus": tail}))
+}
+
+// Dispatches an independent reviewer subagent over the recent conversation with the argument as its instructions
 func (c *CLI) handleReviewCommand(cmd string) {
-	cp(dimLine(c.commandsT("review.nothing_yet", nil)))
+	prompt := commandArg(cmd, false)
+	a := c.agent
+	if a == nil {
+		cp(dimLine(c.commandsT("review.nothing_yet", nil)))
+		return
+	}
+	snapshot := append([]map[string]any(nil), c.conversationHistory...)
+	var result *pyjson.Object
+	var rejected error
+	if text, raised := raisedText(func() { result, rejected = tools.StartReview(c.ctx, c.env, a, snapshot, prompt) }); raised {
+		cp("  " + c.commandsT("review.failed", map[string]any{"error": text}))
+		return
+	}
+	if rejected != nil {
+		cp(dimLine(rejected.Error()))
+		return
+	}
+	cp("  " + tools.FormatDispatchNote(result, prompt))
 }
 
 // Handles /goal through the shared goal dispatcher, a returned prompt queued as the next turn

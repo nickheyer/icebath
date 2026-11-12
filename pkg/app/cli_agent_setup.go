@@ -775,7 +775,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		return false
 	}
 	c.installToolCallbacks()
-	if !c.ensureRuntimeCredentials() {
+	if !ensureTurnCredentials(c) {
 		return false
 	}
 	if c.sessionDB == nil {

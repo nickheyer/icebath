@@ -30,6 +30,11 @@ func isCleanTask(result map[string]any, a *agent.AIAgent, userInput bool, displa
 
 // Records a clean free tier task for the sign in offer without ever failing the turn
 func noteTaskDone(ctx context.Context, session *tuigateway.Session, result map[string]any, a *agent.AIAgent, displayKind string) {
+	defer func() {
+		if failure := recover(); failure != nil {
+			slog.Default().With("logger", "tui_gateway.free_tier_task_done").Debug("sign-in offer task record failed", "error", failure)
+		}
+	}()
 	if !isCleanTask(result, a, pyrepr.Truthy(session.Get("_turn_user_input")), displayKind) {
 		return
 	}

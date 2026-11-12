@@ -88,7 +88,7 @@ func TestRequestShapeAccessors(t *testing.T) {
 	if a.MaxTokens() != nil {
 		t.Fatal("unset max_tokens is not None")
 	}
-	a.maxTokens = 512
+	a.maxTokens = iptr(512)
 	if mt := a.MaxTokens(); mt == nil || *mt != 512 {
 		t.Fatalf("max tokens %v", mt)
 	}

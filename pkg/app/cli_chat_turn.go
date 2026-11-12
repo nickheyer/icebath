@@ -47,11 +47,10 @@ var (
 	ensureTurnCredentials    = (*CLI).ensureRuntimeCredentials
 	resolveTurnRoute         = (*CLI).resolveTurnAgentConfig
 	initTurnAgent            = (*CLI).initAgent
-	stageAppendHook          = func() {}
-	runTurnConversation      = func(ctx context.Context, a *GatewayAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
+	runTurnConversation      = func(ctx context.Context, a cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		return a.RunConversation(ctx, message, o)
 	}
-	interruptTurnAgent = func(a *GatewayAgent, message string) { a.Interrupt() }
+	interruptTurnAgent = func(a cliAgent, message string) { a.Interrupt() }
 )
 
 // queuedInput is the composer message bundled with its image attachments, the payload the prompt submits
@@ -113,7 +112,17 @@ func (c *CLI) syncFallbackChainWithConfig() {
 		return
 	}
 	c.fallbackModel = provider.GetFallbackChain(cfg)
+	if applier, ok := c.agent.(fallbackChainApplier); ok {
+		applier.ApplyFallbackChain(c.fallbackModel)
+	}
 }
+
+// Agent that keeps its own fallback chain aligned with the configured one, the AIAgent chain owner
+type fallbackChainApplier interface {
+	ApplyFallbackChain(chain []map[string]any)
+}
+
+var _ fallbackChainApplier = (*agent.AIAgent)(nil)
 
 // Runs one user turn and returns the agent's response, false when the turn produced none
 func (c *CLI) chat(message any, images []string, voiceInput bool) (response string, ok bool) {
@@ -266,7 +275,7 @@ func (c *CLI) chatRouteImages(message any, images []string) any {
 }
 
 // Appends the staged user row to the transcript under the agent's persist lock and returns its display metadata
-func (c *CLI) chatStageUserMessage(a *GatewayAgent, message any) map[string]any {
+func (c *CLI) chatStageUserMessage(a cliAgent, message any) map[string]any {
 	staged := state.StampMessageTimestamp(map[string]any{"role": "user", "content": message}, nil)
 	var displayMetadata map[string]any
 	if n, isNotification := message.(tools.TimelineNotification); isNotification {
@@ -275,9 +284,9 @@ func (c *CLI) chatStageUserMessage(a *GatewayAgent, message any) map[string]any 
 		staged["display_kind"] = n.DisplayKind
 		staged["display_metadata"] = displayMetadata
 	}
-	a.SetPendingCLIUserMessage(staged)
-	stageAppendHook()
-	c.conversationHistory = append(append([]map[string]any{}, c.conversationHistory...), staged)
+	a.StagePendingCLIUserMessage(staged, func() {
+		c.conversationHistory = append(append([]map[string]any{}, c.conversationHistory...), staged)
+	})
 	return displayMetadata
 }
 
@@ -427,11 +436,14 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 		streamCallback = nil
 	}
 	history := append([]map[string]any{}, c.conversationHistory[:max(0, len(c.conversationHistory)-1)]...)
+	c.uiMu.Lock()
+	turnSessionID := c.sessionID
+	c.uiMu.Unlock()
 	result, err := func() (map[string]any, error) {
-		runCtx, restoreTurn := a.NotificationTurn(ctx, muted, c.sessionID)
+		runCtx, restoreTurn := a.NotificationTurn(ctx, muted, turnSessionID)
 		defer restoreTurn()
 		return runTurnConversation(runCtx, a, agentMessage, agent.RunConversationOptions{
-			ConversationHistory: history, StreamCallback: streamCallback, TaskID: c.sessionID,
+			ConversationHistory: history, StreamCallback: streamCallback, TaskID: turnSessionID,
 			PersistUserMessage: persistCleanUserMessage, MoaConfig: moaConfig, TurnAuthor: c.singleQueryTurnAuthor})
 	}()
 	if err != nil {
@@ -465,7 +477,7 @@ func (c *CLI) restoreMoaModelFields(saved map[string]string) {
 }
 
 // Failed turn result carrying the chat error copy for an error run_conversation raised
-func (c *CLI) runConversationFailure(a *GatewayAgent, err error) map[string]any {
+func (c *CLI) runConversationFailure(a cliAgent, err error) map[string]any {
 	cliLogger.Error(fmt.Sprintf("run_conversation raised: %s", err))
 	providerName, model := c.provider, c.model
 	if a.Provider() != "" {

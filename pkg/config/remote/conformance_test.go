@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,8 +154,8 @@ func TestBearerSentToAllowedPlaneOrigin(t *testing.T) {
 
 func TestIDPSecretRefusedBeforeSendForForbiddenTokenURL(t *testing.T) {
 	clearIDPCache()
-	t.Setenv(idpEnvPrefix+"CLIENT_ID", stubClientID)
-	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", stubClientSecret)
+	t.Setenv(idpEnvPrefix+"CLIENT_ID", configplane.ClientID)
+	t.Setenv(idpEnvPrefix+"CLIENT_SECRET", configplane.ClientSecret)
 	for _, url := range []string{"http://foreign.example:8443/token", "http://idp.corp.internal/token", "https://user:pw@idp.example/token", "https://idp.example/token#frag"} {
 		t.Setenv(idpEnvPrefix+"TOKEN_URL", url)
 		_, err := PlaneToken(context.Background(), t.TempDir())
@@ -185,13 +186,13 @@ func TestRedirectIsNotFollowedWithTheCredential(t *testing.T) {
 
 func TestProvenanceNeverEchoesUserInfo(t *testing.T) {
 	p := setupPlane(t)
-	t.Setenv(URLEnv, strings.Replace(p.url, "http://", "http://u:p@", 1))
-	if _, err := testBackend().ReadUserLayer(context.Background(), p.home); err == nil || strings.Contains(err.Error(), "u:p") {
+	t.Setenv(URLEnv, strings.Replace(p.URL, "http://", "http://u:p@", 1))
+	if _, err := testBackend().ReadUserLayer(context.Background(), p.Home); err == nil || strings.Contains(err.Error(), "u:p") {
 		t.Fatalf("err %v", err)
 	}
-	t.Setenv(URLEnv, p.url)
-	layer, err := testBackend().ReadUserLayer(context.Background(), p.home)
-	described := testBackend().Describe(context.Background(), p.home)
+	t.Setenv(URLEnv, p.URL)
+	layer, err := testBackend().ReadUserLayer(context.Background(), p.Home)
+	described := testBackend().Describe(context.Background(), p.Home)
 	if err != nil || !strings.HasPrefix(layer.Provenance, "remote:http://127.0.0.1:") || strings.Contains(described, "u:p") {
 		t.Fatalf("layer %v %v", layer.Provenance, err)
 	}

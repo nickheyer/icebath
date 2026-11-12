@@ -116,7 +116,8 @@ func profileSecretMapping(h string) map[string]string {
 
 // Runs a git network verb anonymously, then with each credential the user owns for the remote host
 func runGitWithCredentialFallback(ctx context.Context, argv []string, url string, env map[string]string) (int, string, error) {
-	return provider.RunGitWithCredentialFallback(ctx, argv, url, env)
+	res, err := provider.RunGitWithCredentialFallback(ctx, argv, url, env, nil)
+	return res.Code, res.Stderr, err
 }
 
 // Skill requires_apps names resolve through the platform declaration registry

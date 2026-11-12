@@ -276,7 +276,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 	for name := range servers {
 		names[name] = map[string]any{}
 	}
-	decls, err := portableServerDeclarations(manifest, names, nil)
+	decls, err := portableServerDeclarations(manifest, names, nil, nil)
 	type parsedDecl struct {
 		decl     *tools.PlatformDeclaration
 		liveness map[string]any

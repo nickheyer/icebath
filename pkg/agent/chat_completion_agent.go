@@ -314,11 +314,19 @@ func (a *AIAgent) Transport() provider.Transport { return a.getTransport("") }
 
 // Configured output cap, nil when unset
 func (a *AIAgent) MaxTokens() *int {
-	if a.maxTokens == 0 {
+	if a.maxTokens == nil {
 		return nil
 	}
-	n := a.maxTokens
+	n := *a.maxTokens
 	return &n
+}
+
+// Configured output cap read the Python max_tokens or 0 way
+func (a *AIAgent) maxTokensOrZero() int {
+	if a.maxTokens == nil {
+		return 0
+	}
+	return *a.maxTokens
 }
 
 func (a *AIAgent) IsAnthropicOAuth() bool         { return a.isAnthropicOAuth }

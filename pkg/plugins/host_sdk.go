@@ -14,7 +14,7 @@ import (
 var PluginSDKModules = []string{
 	"agent.provider_base", "agent.provider_media", "agent.image_gen_provider", "agent.video_gen_provider",
 	"agent.web_search_provider", "agent.browser_provider", "agent.terminal_env_provider", "agent.secret_sources",
-	"agent.secret_sources.base", "agent.tts_provider", "agent.transcription_provider", "agent.delegation_provider", "agent.plugin_llm", "agent.subagent_lifecycle",
+	"agent.secret_sources.base", "agent.vault_store", "agent.vault_backends", "agent.vault_backends.base", "agent.tts_provider", "agent.transcription_provider", "agent.delegation_provider", "agent.plugin_llm", "agent.subagent_lifecycle",
 	"agent.context_engine", "agent.context_references", "agent.memory_provider", "agent.secret_scope", "agent.redact",
 	"agent.compression_marker", "agent.context_compressor", "agent.process_bootstrap", "agent.proxy_bypass",
 	"agent.thread_scoped_output", "agent.codex_headers", "agent.jiter_preload", "icebath_bootstrap", "utils", "providers", "providers.base",

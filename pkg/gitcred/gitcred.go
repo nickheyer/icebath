@@ -392,8 +392,17 @@ func IsCredentialRequiredError(stderr, stdout string) bool {
 	return err == nil && ok
 }
 
+// One git subprocess run under the caller's run options, the run_kwargs of the hermes signature
+type GitRunner func(ctx context.Context, argv []string, env map[string]string) (code int, stdout, stderr string, err error)
+
+// Completed git process of a credential fallback run
+type GitResult struct {
+	Code           int
+	Stdout, Stderr string
+}
+
 // Runs a git network verb anonymously, then with each owned credential while the remote keeps refusing for credentials
-func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string, env map[string]string) (exitCode int, stderr string, err error) {
+func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string, env map[string]string, runner GitRunner) (GitResult, error) {
 	env = maps.Clone(env)
 	if env == nil {
 		env = map[string]string{}
@@ -401,31 +410,38 @@ func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string
 	delete(env, "GIT_ASKPASS")
 	delete(env, "SSH_ASKPASS")
 	run := func(e map[string]string) (runResult, error) {
-		return runProcess(ctx, runSpec{argv: argv, env: e})
+		if runner == nil {
+			return runProcess(ctx, runSpec{argv: argv, env: e})
+		}
+		code, stdout, stderr, err := runner(ctx, argv, e)
+		return runResult{code: code, stdout: stdout, stderr: stderr}, err
+	}
+	done := func(r runResult) (GitResult, error) {
+		return GitResult{Code: r.code, Stdout: r.stdout, Stderr: r.stderr}, nil
 	}
 	refused := func(r runResult) bool { return r.code != 0 && IsCredentialRequiredError(r.stderr, r.stdout) }
 	result, err := run(env)
 	if err != nil {
-		return 0, "", err
+		return GitResult{}, err
 	}
 	if result.code == 0 || url == "" || !IsCredentialRequiredError(result.stderr, result.stdout) {
-		return result.code, result.stderr, nil
+		return done(result)
 	}
 	authEnv, err := withAuth(ctx, env, url, nil)
 	if err != nil {
-		return 0, "", err
+		return GitResult{}, err
 	}
 	if maps.Equal(authEnv, env) {
-		return result.code, result.stderr, nil
+		return done(result)
 	}
 	if result, err = run(authEnv); err != nil {
-		return 0, "", err
+		return GitResult{}, err
 	}
 	sent := authHeaders(authEnv)
 	var rejected []string
 	for cred, iterErr := range iterAuth(ctx, url) {
 		if iterErr != nil {
-			return 0, "", iterErr
+			return GitResult{}, iterErr
 		}
 		if !refused(result) {
 			break
@@ -433,7 +449,7 @@ func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string
 		auth := cred.Auth
 		candidateEnv, err := withAuth(ctx, env, url, &auth)
 		if err != nil {
-			return 0, "", err
+			return GitResult{}, err
 		}
 		headers := authHeaders(candidateEnv)
 		subset := true
@@ -457,7 +473,7 @@ func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string
 		}
 		slog.Warn(fmt.Sprintf("%s rejected the credential from %s; retrying with %s", origin, from, cred.Source))
 		if result, err = run(candidateEnv); err != nil {
-			return 0, "", err
+			return GitResult{}, err
 		}
 		if refused(result) {
 			rejected = append(rejected, cred.Source)
@@ -467,5 +483,5 @@ func RunGitWithCredentialFallback(ctx context.Context, argv []string, url string
 		result.stderr += "\nhint: the GITHUB_TOKEN/GH_TOKEN in your .env was rejected by GitHub;" +
 			" replace it or remove it (gh auth login is used when it is absent)."
 	}
-	return result.code, result.stderr, nil
+	return done(result)
 }

@@ -16,7 +16,7 @@ func TestBoostedOutputCapLadders(t *testing.T) {
 		}
 		return out
 	}
-	if got := ladder(&AIAgent{maxTokens: 4096}, 0); !reflect.DeepEqual(got, []int{8192, 16384, 32768, 32768}) {
+	if got := ladder(&AIAgent{maxTokens: iptr(4096)}, 0); !reflect.DeepEqual(got, []int{8192, 16384, 32768, 32768}) {
 		t.Fatalf("small explicit max_tokens ladder %v", got)
 	}
 	for _, requested := range []int{32768, 65536} {

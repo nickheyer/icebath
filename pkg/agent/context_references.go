@@ -566,13 +566,13 @@ func readFileReference(ref ContextReference, path string, maxInlineTokens int) (
 		return &referenceExpansion{block: binaryReferenceBlock(context.Background(), ref, path)}, "", nil
 	}
 	if ref.LineStart != nil {
-		charBudget := maxInlineTokens * int(tools.CharsPerToken)
+		charBudget := maxInlineTokens * provider.CharsPerToken
 		text, oversized, err := readLineWindow(path, *ref.LineStart, ref.LineEnd, charBudget)
 		if err != nil {
 			return nil, "", err
 		}
 		if oversized >= 0 {
-			return &referenceExpansion{block: oversizedTextReferenceBlock(context.Background(), ref, path, oversized/int(tools.CharsPerToken))}, "", nil
+			return &referenceExpansion{block: oversizedTextReferenceBlock(context.Background(), ref, path, oversized/provider.CharsPerToken)}, "", nil
 		}
 		return nil, text, nil
 	}
@@ -580,8 +580,8 @@ func readFileReference(ref ContextReference, path string, maxInlineTokens int) (
 	if err != nil {
 		return nil, "", err
 	}
-	if info.Size() > int64(maxInlineTokens)*int64(tools.CharsPerToken) {
-		return &referenceExpansion{block: oversizedTextReferenceBlock(context.Background(), ref, path, int(info.Size())/int(tools.CharsPerToken))}, "", nil
+	if info.Size() > int64(maxInlineTokens)*int64(provider.CharsPerToken) {
+		return &referenceExpansion{block: oversizedTextReferenceBlock(context.Background(), ref, path, int(info.Size())/provider.CharsPerToken)}, "", nil
 	}
 	raw, err := referenceReadTextFn(path)
 	if err != nil {

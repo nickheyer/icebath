@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var botChatLegacyWarned = struct {
@@ -70,7 +73,7 @@ func (s *Store) botChatLegacyDefer(ctx context.Context, key string, job *Job, co
 	record.Set("home", target)
 	record.Set("for_failure", forFailure)
 	record.Set("sequence", time.Now().UnixNano())
-	return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), path, record, 0o600)
+	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, pyjson.Indent(2))
 }
 
 type legacyRecord struct {
@@ -95,9 +98,8 @@ func (s *Store) botChatLegacyQueued(root string) []legacyRecord {
 		}
 	}
 	sort.SliceStable(found, func(i, j int) bool {
-		si, sj := recordSequence(found[i].record), recordSequence(found[j].record)
-		if si != sj {
-			return si < sj
+		if c := recordSequence(found[i].record).Cmp(recordSequence(found[j].record)); c != 0 {
+			return c < 0
 		}
 		return filepath.Base(found[i].path) < filepath.Base(found[j].path)
 	})
@@ -109,7 +111,10 @@ func readLegacyRecord(path string) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	text := string(trimBOM(raw))
+	text, err := pystr.DecodeUTF8Sig(raw)
+	if err != nil {
+		return nil, err
+	}
 	v, err := pyjson.Loads(text)
 	if err != nil {
 		return nil, err
@@ -121,23 +126,46 @@ func readLegacyRecord(path string) (*pyjson.Object, error) {
 	return obj, nil
 }
 
-func recordSequence(r *pyjson.Object) float64 {
+// Exact sort key of a record's sequence, zero when absent the way the drain orders records
+func recordSequence(r *pyjson.Object) *big.Rat {
 	v, ok := r.Get("sequence")
 	if !ok {
-		return 0
+		return new(big.Rat)
 	}
 	switch n := v.(type) {
 	case json.Number:
-		f, _ := n.Float64()
-		return f
+		if q, ok := new(big.Rat).SetString(n.String()); ok {
+			return q
+		}
 	case float64:
-		return n
+		if math.IsInf(n, 0) {
+			return infiniteSequence(n)
+		}
+		if !math.IsNaN(n) {
+			return new(big.Rat).SetFloat64(n)
+		}
 	case int64:
-		return float64(n)
+		return new(big.Rat).SetInt64(n)
 	case int:
-		return float64(n)
+		return new(big.Rat).SetInt64(int64(n))
+	case *big.Int:
+		return new(big.Rat).SetInt(n)
+	case bool:
+		if n {
+			return big.NewRat(1, 1)
+		}
 	}
-	return 0
+	return new(big.Rat)
+}
+
+// Rational standing in for an infinite sequence, beyond every float64 a record can carry
+func infiniteSequence(n float64) *big.Rat {
+	beyond := new(big.Rat).SetFloat64(math.MaxFloat64)
+	beyond.Add(beyond, beyond)
+	if n < 0 {
+		return beyond.Neg(beyond)
+	}
+	return beyond
 }
 
 // Reason a record cannot be delivered, empty when well formed
@@ -261,7 +289,7 @@ func (s *Store) drainLegacyPendingRecords(ctx context.Context) error {
 				}
 				return err
 			}
-			return config.AtomicJSONWriteMode(home.WithOverride(ctx, s.home), item.path, item.record, 0o600)
+			return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), item.path, item.record, 0o600, pyjson.Indent(2))
 		}()
 		if errors.Is(err, errNotQueued) {
 			continue

@@ -82,17 +82,17 @@ func (t *SupervisedTickerThread) IsAlive() bool {
 	}
 }
 
-// Waits for the current ticker to end, at most timeout when given, returning at once when never started
-func (t *SupervisedTickerThread) Join(timeout *time.Duration) {
+// Waits for the current ticker to end, at most timeout when given, an error when never started
+func (t *SupervisedTickerThread) Join(timeout *time.Duration) error {
 	t.mu.Lock()
 	done := t.done
 	t.mu.Unlock()
 	if done == nil {
-		return
+		return errors.New("cannot join thread before it is started")
 	}
 	if timeout == nil {
 		<-done
-		return
+		return nil
 	}
 	timer := time.NewTimer(*timeout)
 	defer timer.Stop()
@@ -100,6 +100,7 @@ func (t *SupervisedTickerThread) Join(timeout *time.Duration) {
 	case <-done:
 	case <-timer.C:
 	}
+	return nil
 }
 
 // Respawns issued so far

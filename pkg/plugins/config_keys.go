@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Names the plugins.disabled list of a home parks
@@ -48,7 +49,7 @@ func selectedMemoryProviderManifest(h string, cfg map[string]any) *Manifest {
 		panic(&ServiceMissingError{Name: "MemoryProviderDir"})
 	}
 	dir, usable := s.MemoryProviderDir(h, name)
-	if !usable {
+	if !usable || memoryProviderExplicitlyDisabled(cfg, name, dir) {
 		return nil
 	}
 	for _, file := range []string{"plugin.yaml", "plugin.yml"} {
@@ -58,6 +59,28 @@ func selectedMemoryProviderManifest(h string, cfg map[string]any) *Manifest {
 		}
 	}
 	return nil
+}
+
+// True when a non bundled provider directory is parked in plugins.disabled under any spelling the plugin commands write
+func memoryProviderExplicitlyDisabled(cfg map[string]any, name, dir string) bool {
+	if bundledMemoryProviderDir(dir) {
+		return false
+	}
+	section, _ := cfg["plugins"].(map[string]any)
+	disabled, ok := section["disabled"].([]any)
+	if !ok {
+		return false
+	}
+	spellings, err := pm.PluginSpellings(dir, name)
+	if err != nil {
+		panic(err)
+	}
+	for _, v := range disabled {
+		if s, ok := v.(string); ok && spellings[s] {
+			return true
+		}
+	}
+	return false
 }
 
 // MCP servers the enabled portable plugins of a home declare, after discovery of that home

@@ -274,7 +274,7 @@ func admitAttachments(ctx context.Context, attachments any, admitted func() (*py
 		out.Set("attachments_v1", committed)
 		return out, nil
 	}
-	captured, err := captureNativeMedia(ctx, paths)
+	captured, err := CaptureNativeMedia(ctx, paths)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +526,7 @@ func inboundMediaLimit(ctx context.Context) int64 {
 }
 
 // Captures staged files into the content addressed store as immutable bytes, returning their references
-func captureNativeMedia(ctx context.Context, paths []string) ([]any, error) {
+func CaptureNativeMedia(ctx context.Context, paths []string) ([]any, error) {
 	references := []any{}
 	limit := inboundMediaLimit(ctx)
 	var total int64

@@ -37,8 +37,8 @@ func TestNormalStartupStillLoadsEnabledExternalSecretSource(t *testing.T) {
 
 func TestFirstConfigReadBeforeDotenvUsesTheDotenvDeployment(t *testing.T) {
 	p := setupBootPlane(t, true)
-	deployment := p.env(true)
-	managed := filepath.Join(filepath.Dir(p.home), "managed")
+	deployment := bootPlaneEnv(p, true)
+	managed := filepath.Join(filepath.Dir(p.Home), "managed")
 	if err := os.MkdirAll(managed, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -50,25 +50,25 @@ func TestFirstConfigReadBeforeDotenvUsesTheDotenvDeployment(t *testing.T) {
 			homeEnv.WriteString(name + "=" + value + "\n")
 		}
 	}
-	writeEnvBytes(t, filepath.Join(p.home, ".env"), []byte(homeEnv.String()))
-	for name := range p.env(true) {
+	writeEnvBytes(t, filepath.Join(p.Home, ".env"), []byte(homeEnv.String()))
+	for name := range bootPlaneEnv(p, true) {
 		_ = os.Unsetenv(name)
 	}
 	t.Setenv(config.BackendEnv, "remote")
 	t.Setenv(config.EnvManagedDir, managed)
 	config.InvalidateManagedCache()
 	t.Cleanup(config.InvalidateManagedCache)
-	p.upper = map[string]any{"display": map[string]any{"personality": "concise"}}
+	p.Upper = map[string]any{"display": map[string]any{"personality": "concise"}}
 	config.ResetBootstrapForTests()
 	t.Cleanup(config.ResetBootstrapForTests)
-	first, err := config.LoadContext(context.Background(), p.home, os.LookupEnv)
+	first, err := config.LoadContext(context.Background(), p.Home, os.LookupEnv)
 	if err != nil || first.Get("display.personality") != "concise" {
 		t.Fatalf("first read before the dotenv load %v %v", err, first.Get("display.personality"))
 	}
 	if err := loadDotenv(p); err != nil {
 		t.Fatal(err)
 	}
-	tree, err := config.LoadContext(context.Background(), p.home, os.LookupEnv)
+	tree, err := config.LoadContext(context.Background(), p.Home, os.LookupEnv)
 	if err != nil || tree.Get("display.personality") != "concise" {
 		t.Fatalf("read after the dotenv load %v %v", err, tree.Get("display.personality"))
 	}

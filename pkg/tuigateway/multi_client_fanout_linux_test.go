@@ -207,7 +207,7 @@ func TestBackpressureNeverBlocksLaterFramesOrOtherSubscribers(t *testing.T) {
 							t.Fatalf("frame = %s want %s", got, want)
 						}
 					}
-					for n := range fanoutMaxPendingFrames + 64 {
+					for n := range FanoutMaxPendingFrames + 64 {
 						frame := pyjson.ObjectOf("params", pyjson.ObjectOf("type", "message.delta", "n", n))
 						if !fan.Write(frame) {
 							t.Fatal("a fanout write failed")

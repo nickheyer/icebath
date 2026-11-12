@@ -225,7 +225,14 @@ func pluginCronEnvVar(ctx context.Context, platform string) (name string) {
 	return ""
 }
 
-func isKnownDeliveryPlatform(ctx context.Context, platform string) bool {
+// Gateway config loader every cron path reads at call time, swapped by tests like a patched load_gateway_config
+var loadGatewayConfig = gateway.LoadGatewayConfig
+
+// Platform lookup the preflight and resolver read at call time, swapped by tests like a patched module attribute
+var isKnownDeliveryPlatform = knownDeliveryPlatform
+
+// True for a built in delivery platform or one a plugin registers a cron home env var for
+func knownDeliveryPlatform(ctx context.Context, platform string) bool {
 	name := strings.ToLower(platform)
 	return knownDeliveryPlatforms[name] || pluginCronEnvVar(ctx, name) != ""
 }
@@ -241,7 +248,7 @@ func (s *Store) getConfigHomeChannel(ctx context.Context, platform string) (home
 			home = nil
 		}
 	}()
-	cfg, err := gateway.LoadGatewayConfig(ctx)
+	cfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
 		return nil
@@ -352,7 +359,7 @@ func (s *Store) relayFrontedConnectedPlatforms(ctx context.Context, connected ma
 func (s *Store) cronDeliveryTargets(ctx context.Context) []*pyjson.Object {
 	var targets []*pyjson.Object
 	connected := map[string]bool{}
-	if cfg, err := gateway.LoadGatewayConfig(ctx); err == nil {
+	if cfg, err := loadGatewayConfig(ctx); err == nil {
 		for _, p := range cfg.GetConnectedPlatforms(ctx) {
 			connected[string(p)] = true
 		}

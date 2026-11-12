@@ -6,13 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -54,7 +51,7 @@ func installMetadataPath(h string) string {
 }
 
 // Replaces the profile local plugin install metadata atomically with sorted two space JSON
-func writeInstallMetadata(ctx context.Context, h string, metadata map[string]any) error {
+var writeInstallMetadata = func(ctx context.Context, h string, metadata map[string]any) error {
 	text, err := pyjson.Dumps(metadata, pyjson.Indent(2), pyjson.SortKeys(true))
 	if err != nil {
 		return err
@@ -329,7 +326,7 @@ func restrictCheckoutToSubdir(ctx context.Context, repo, gitExe, subdir string) 
 }
 
 // Shallow clones the url into tmpClone, detached at the revision when given, and returns the installed HEAD sha
-func clonePluginRepo(ctx context.Context, h, tmpClone, gitURL, revision, subdir string) (string, error) {
+var clonePluginRepo = func(ctx context.Context, h, tmpClone, gitURL, revision, subdir string) (string, error) {
 	gitExe := resolveGitExecutable()
 	if gitExe == "" {
 		return "", &PluginOperationError{Msg: "git is not installed or not in PATH.", FailureClass: "git_missing"}
@@ -396,84 +393,18 @@ var runPluginGit = func(ctx context.Context, gitExe, target string, timeout time
 
 // Runs git anonymously, then with each owned credential while the remote keeps refusing for one
 func gitWithCredentialFallback(ctx context.Context, argv []string, url string, env map[string]string, cwd string, timeout time.Duration) (*gitResult, error) {
-	env = maps.Clone(env)
-	delete(env, "GIT_ASKPASS")
-	delete(env, "SSH_ASKPASS")
-	run := func(e map[string]string) (*gitResult, error) { return runGitProcess(ctx, argv, e, cwd, timeout) }
-	refused := func(r *gitResult) bool { return r.Code != 0 && gitcred.IsCredentialRequiredError(r.Stderr, r.Stdout) }
-	result, err := run(env)
-	if err != nil || result.Code == 0 || url == "" || !refused(result) {
-		return result, err
-	}
-	authEnv, err := gitcred.WithGitAuth(ctx, env, url, nil)
+	res, err := gitcred.RunGitWithCredentialFallback(ctx, argv, url, env,
+		func(ctx context.Context, argv []string, env map[string]string) (int, string, string, error) {
+			r, err := runGitProcess(ctx, argv, env, cwd, timeout)
+			if err != nil {
+				return 0, "", "", err
+			}
+			return r.Code, r.Stdout, r.Stderr, nil
+		})
 	if err != nil {
 		return nil, err
 	}
-	if maps.Equal(authEnv, env) {
-		return result, nil
-	}
-	if result, err = run(authEnv); err != nil {
-		return nil, err
-	}
-	sent := gitAuthHeaders(authEnv)
-	var rejected []string
-	for cred, iterErr := range gitcred.IterGitBasicAuth(ctx, url) {
-		if iterErr != nil {
-			return nil, iterErr
-		}
-		if !refused(result) {
-			break
-		}
-		auth := cred.Auth
-		candidate, err := gitcred.WithGitAuth(ctx, env, url, &auth)
-		if err != nil {
-			return nil, err
-		}
-		headers := gitAuthHeaders(candidate)
-		subset := true
-		for header := range headers {
-			if !sent[header] {
-				subset = false
-				break
-			}
-		}
-		if subset {
-			rejected = append(rejected, cred.Source)
-			continue
-		}
-		maps.Copy(sent, headers)
-		origin := url
-		if u, err := pyurl.Split(url); err == nil {
-			origin = u.Scheme + "://" + u.Netloc
-		}
-		from := strings.Join(rejected, ", ")
-		if from == "" {
-			from = "the stored credential"
-		}
-		slog.Warn(fmt.Sprintf("%s rejected the credential from %s; retrying with %s", origin, from, cred.Source))
-		if result, err = run(candidate); err != nil {
-			return nil, err
-		}
-		if refused(result) {
-			rejected = append(rejected, cred.Source)
-		}
-	}
-	if result.Code != 0 && slices.Contains(rejected, gitcred.EnvTokenSource) {
-		result.Stderr += "\nhint: the GITHUB_TOKEN/GH_TOKEN in your .env was rejected by GitHub;" +
-			" replace it or remove it (gh auth login is used when it is absent)."
-	}
-	return result, nil
-}
-
-// Authorization header values the auth env hands git through GIT_CONFIG_VALUE entries
-func gitAuthHeaders(env map[string]string) map[string]bool {
-	out := map[string]bool{}
-	for k, v := range env {
-		if strings.HasPrefix(k, "GIT_CONFIG_VALUE_") && strings.HasPrefix(v, "Authorization:") {
-			out[v] = true
-		}
-	}
-	return out
+	return &gitResult{Code: res.Code, Stdout: res.Stdout, Stderr: res.Stderr}, nil
 }
 
 // Spawns git with captured text output under the timeout, killing it at the deadline

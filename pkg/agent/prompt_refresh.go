@@ -18,11 +18,16 @@ const sessionEpochKey = "prompt_refresh_epoch"
 
 func promptRefreshLog() *slog.Logger { return slog.Default().With("logger", "agent.prompt_refresh") }
 
+// Store recording operator prompt refresh requests, a managed worker facade keeps none
+type promptRefreshEpochReader interface {
+	PromptRefreshEpoch(ctx context.Context, sessionID string) (int, error)
+}
+
+var _ promptRefreshEpochReader = (*state.SessionDB)(nil)
+
 // Newest refresh epoch recorded for the agent's session, zero without a request or a store
 func requestedEpoch(ctx context.Context, a *AIAgent) int {
-	reader, ok := a.sessionDB.(interface {
-		PromptRefreshEpoch(ctx context.Context, sessionID string) (int, error)
-	})
+	reader, ok := a.sessionDB.(promptRefreshEpochReader)
 	if !ok || a.sessionID == "" {
 		return 0
 	}

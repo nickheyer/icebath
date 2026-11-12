@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 	DispatchComputeHostEntry(context.Background(), func(code int) { AtExit(); os.Exit(code) })
 	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = func(pid int) (int64, bool) {
 		switch v := kanban.GatewayStatusProbes.ProcessStartTime(pid).(type) {
@@ -44,6 +45,7 @@ func TestMain(m *testing.M) {
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
 	PersistPersonality = commands.PersistPersonality
+	Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	ResolveCommand = func(name string) (ResolvedCommand, bool) {
 		d := commands.Resolve(name)
 		if d == nil {
@@ -80,7 +82,7 @@ func testAgent(t *testing.T, o agent.AIAgentOptions) *agent.AIAgent {
 	if o.BaseURL == "" {
 		o.BaseURL = "http://127.0.0.1:9/v1"
 	}
-	if o.APIKey == "" {
+	if o.APIKey == nil || o.APIKey == "" {
 		o.APIKey = "test"
 	}
 	o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = 5, true, true, true

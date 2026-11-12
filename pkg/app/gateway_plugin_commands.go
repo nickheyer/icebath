@@ -345,7 +345,7 @@ func gatewayPluginLookup(c *CLI, name string) (*bool, error) {
 	return &listed, nil
 }
 
-// Runs slash.exec with no answer deadline on a socket of its own, nil and stopped true when Ctrl+C stopped the wait
+// Runs slash.exec unbounded on its own socket, stopped on Ctrl+C, the interrupt returned after the stopped line
 func callUnbounded(c *CLI, connection *gatewaycli.GatewayConnection, name, command string) (any, bool, error) {
 	wake := &pythread.Event{}
 	c.uiMu.Lock()
@@ -363,10 +363,14 @@ func callUnbounded(c *CLI, connection *gatewaycli.GatewayConnection, name, comma
 			c.withdrawGatewayModal("clarify")
 		}
 	}()
-	raw, err := connection.CallUntil(c.ctx, "slash.exec", wake, map[string]any{"session_id": c.sessionID, "command": command})
+	raw, err := connection.CallUntil(c.turnCtx, "slash.exec", wake, map[string]any{"session_id": c.sessionID, "command": command})
 	var stopped *gatewaycli.CallStopped
-	if errors.As(err, &stopped) {
+	interrupted := errors.Is(err, tools.ErrKeyboardInterrupt)
+	if errors.As(err, &stopped) || interrupted {
 		cprint(fmt.Sprintf(gatewayStoppedLine, name))
+		if interrupted {
+			return nil, false, err
+		}
 		return nil, true, nil
 	}
 	return raw, false, err

@@ -442,6 +442,11 @@ func DecideImageInputMode(ctx context.Context, env *Env, provider, model, reques
 	return decideImageInputMode(visionCtx(ctx, env), env, provider, model, map[string]any(cfgTree(env)), requestedProvider)
 }
 
+// Native or text for a provider and model under the config tree the caller loaded
+func DecideImageInputModeWithConfig(ctx context.Context, env *Env, provider, model string, cfg map[string]any, requestedProvider string) string {
+	return decideImageInputMode(visionCtx(ctx, env), env, provider, model, cfg, requestedProvider)
+}
+
 // Native or text for the turn, an explicit auxiliary.vision backend winning in auto mode
 func decideImageInputMode(ctx context.Context, env *Env, provider, model string, cfg map[string]any, requestedProvider string) string {
 	if mode := coerceImageMode(dictOrNil(dictOrNil(cfg)["agent"])["image_input_mode"]); mode != "auto" {

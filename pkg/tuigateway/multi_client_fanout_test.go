@@ -52,7 +52,7 @@ func awaitFrameCount(t *testing.T, transport *gatedRecorder, count int) {
 // Emits frames a WebSocket peer blocks on until the slow mailbox overflows, returning the last index
 func overflowSlowPeer(t *testing.T, fan *FanoutTransport, healthy *gatedRecorder, slow Transport) int {
 	t.Helper()
-	for n := range fanoutMaxPendingFrames + 64 {
+	for n := range FanoutMaxPendingFrames + 64 {
 		if !fan.Write(pyjson.ObjectOf("params", pyjson.ObjectOf("type", "tool.progress", "n", n))) {
 			t.Fatal("fanout write failed")
 		}

@@ -42,7 +42,7 @@ func attachUsage(t *testing.T, c *CLI, spec *usageSpec) {
 	t.Helper()
 	c.agent = &GatewayAgent{ctx: context.Background()}
 	prev := statusBarUsage
-	statusBarUsage = func(*CLI, *GatewayAgent) agent.StatusBarUsage {
+	statusBarUsage = func(*CLI, cliAgent) agent.StatusBarUsage {
 		usage := agent.StatusBarUsage{Counters: map[string]int{
 			"session_input_tokens": spec.prompt, "session_output_tokens": spec.completion, "session_cache_read_tokens": spec.cacheRead,
 			"session_cache_write_tokens": spec.cacheWrite, "session_prompt_tokens": spec.prompt, "session_completion_tokens": spec.completion,

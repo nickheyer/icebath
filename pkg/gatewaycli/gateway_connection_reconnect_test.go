@@ -63,6 +63,8 @@ type fakeGateway struct {
 	lives        []*gatewayLife
 	refusals     int
 	resumeErrors []error
+	dialing      chan struct{}
+	hold         chan struct{}
 }
 
 func (g *fakeGateway) nextResumeError() error {
@@ -77,6 +79,21 @@ func (g *fakeGateway) nextResumeError() error {
 }
 
 func (g *fakeGateway) dial(context.Context) (ConnectionClient, error) {
+	g.mu.Lock()
+	dialing, hold := g.dialing, g.hold
+	g.mu.Unlock()
+	if dialing != nil {
+		select {
+		case dialing <- struct{}{}:
+		default:
+		}
+	}
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-time.After(5 * time.Second):
+		}
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.refusals > 0 {
@@ -187,6 +204,56 @@ func TestAFailedRedialIsRetriedOnTheNextCall(t *testing.T) {
 	gw.mu.Unlock()
 	_, err := conn.Call(context.Background(), "status", map[string]any{})
 	wantClientError(t, err, "Gateway starting")
+	wantStatus(t, conn, 2)
+}
+
+// Loop body that runs the connection's own and stays alive after ready until released
+type lingeringRunner struct {
+	conn     *GatewayConnection
+	released chan struct{}
+}
+
+func (r lingeringRunner) run(ctx context.Context) {
+	r.conn.run(ctx)
+	select {
+	case <-r.released:
+	case <-time.After(5 * time.Second):
+	}
+}
+
+// Loop thread whose join releases the lingering body before it waits
+type releasingThread struct {
+	loopThread
+	release func()
+}
+
+func (t releasingThread) Join(timeout time.Duration) {
+	t.release()
+	t.loopThread.Join(timeout)
+}
+
+func TestAFailedRedialIsRetriedEvenWhileItsLoopThreadIsStillExiting(t *testing.T) {
+	gw, conn := reconnectFixture(t)
+	gw.hangUp(t, conn)
+	gw.mu.Lock()
+	gw.refusals = 1
+	gw.mu.Unlock()
+	released := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(released) }) }
+	defer release()
+	conn.mu.Lock()
+	conn.runner = lingeringRunner{conn: conn, released: released}
+	conn.mu.Unlock()
+	_, err := conn.Call(context.Background(), "status", map[string]any{})
+	wantClientError(t, err, "Gateway starting")
+	conn.mu.Lock()
+	old := conn.thread
+	conn.thread = releasingThread{loopThread: old, release: release}
+	conn.mu.Unlock()
+	if !old.Alive() {
+		t.Fatal("the failed dial's loop thread ended before the next call")
+	}
 	wantStatus(t, conn, 2)
 }
 
@@ -407,5 +474,54 @@ func TestLostBefore(t *testing.T) {
 	}
 	if !strings.Contains(tagged.Error(), "disconnected") {
 		t.Fatal(tagged.Error())
+	}
+}
+
+func TestACallRacingARedialWaitsForItAndIsSent(t *testing.T) {
+	gw, conn := reconnectFixture(t)
+	gw.hangUp(t, conn)
+	gw.mu.Lock()
+	gw.dialing, gw.hold = make(chan struct{}, 1), make(chan struct{})
+	dialing, hold := gw.dialing, gw.hold
+	gw.mu.Unlock()
+	ctx := context.Background()
+	type outcome struct {
+		result any
+		err    error
+	}
+	first := make(chan outcome, 1)
+	go func() {
+		result, err := conn.Call(ctx, "status", nil)
+		first <- outcome{result, err}
+	}()
+	select {
+	case <-dialing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the redial never started")
+	}
+	second := make(chan outcome, 1)
+	go func() {
+		result, err := conn.Call(ctx, "status", nil)
+		second <- outcome{result, err}
+	}()
+	select {
+	case got := <-second:
+		t.Fatalf("the racing call answered before the redial finished: %v %v", got.result, got.err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(hold)
+	want := map[string]any{"status": "ok", "life": 2}
+	for _, ch := range []chan outcome{second, first} {
+		select {
+		case got := <-ch:
+			if got.err != nil || !reflect.DeepEqual(got.result, want) {
+				t.Fatalf("call %v %v", got.result, got.err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("a call never returned")
+		}
+	}
+	if gw.count() != 2 {
+		t.Fatalf("lives %d", gw.count())
 	}
 }

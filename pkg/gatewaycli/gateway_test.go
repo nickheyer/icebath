@@ -24,6 +24,7 @@ const lockHolderEnv = "ICEBATH_GATEWAYCLI_TEST_LOCK_HOLDER"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if os.Getenv(lockHolderEnv) == "1" {
 		if !gateway.AcquireGatewayRuntimeLock(context.Background()) {
 			fmt.Fprintln(os.Stderr, "could not acquire gateway.lock")

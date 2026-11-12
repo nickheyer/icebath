@@ -23,7 +23,7 @@ import (
 )
 
 // Interrupts the gateway turn for a shutdown signal, then sleeps the ICEBATH_SIGTERM_GRACE window
-func interruptAgentForSignal(a *GatewayAgent, sig os.Signal) {
+func interruptAgentForSignal(a cliAgent, sig os.Signal) {
 	if a == nil {
 		return
 	}
@@ -452,7 +452,7 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 				c.agent = nil
 			}
 			if c.initAgent(turnRoute.model, turnRoute.runtime, turnRoute.requestOverrides) {
-				configureQuietAgent(c.agent)
+				configureQuietAgent(agentGateway(c.agent))
 				if emitter != nil {
 					emitter.Attach(c.agent)
 				}

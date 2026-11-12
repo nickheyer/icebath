@@ -212,7 +212,7 @@ func (s *Store) primaryRoutedDeliveryPlatforms(ctx context.Context, job *Job) ma
 	if len(routed) == 0 {
 		return routed
 	}
-	gcfg, err := gateway.LoadGatewayConfig(ctx)
+	gcfg, err := loadGatewayConfig(ctx)
 	if err != nil {
 		return map[string]bool{}
 	}

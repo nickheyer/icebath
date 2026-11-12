@@ -31,7 +31,8 @@ func applyRuntimeKwargs(o *agent.AIAgentOptions, runtime map[string]any) {
 	o.RequestOverrides, _ = runtime["request_overrides"].(map[string]any)
 	if raw, ok := runtime["max_tokens"]; ok && raw != nil {
 		if n, err := pyint.Int64(raw); err == nil {
-			o.MaxTokens = int(n)
+			v := int(n)
+			o.MaxTokens = &v
 		}
 	}
 	if raw, ok := runtime["capabilities"].(map[string]any); ok {

@@ -111,6 +111,7 @@ func TestApprovalPanelAndHintFollowTheLiveCatalog(t *testing.T) {
 }
 
 func TestUnknownChoiceIdRendersVerbatim(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	if got := approvalChoiceLabel(ctx, "custom-id"); got != "custom-id" {
 		t.Fatalf("got %q", got)

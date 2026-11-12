@@ -53,6 +53,7 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"state.SpilloverSQLFilter": state.SpilloverSQLFilter != "", "state.SpilloverNamesInText": state.SpilloverNamesInText != nil,
 		"state.ReferencedSpilloverNames": state.ReferencedSpilloverNames != nil,
 		"cron.SetupWorkerLogging":        cron.SetupWorkerLogging != nil, "cron.RegisterWorkerConfigHooks": cron.RegisterWorkerConfigHooks != nil,
+		"cron.WorkerProcessBoot":      cron.WorkerProcessBoot != nil,
 		"selfupdate.LoadCronJobsHook": selfupdate.LoadCronJobsHook != nil, "gateway.CommandBusyPolicy": gateway.CommandBusyPolicy != nil,
 		"gateway.DrainProgressReporterHook": gateway.DrainProgressReporterHook != nil,
 		"gateway.RosterProfileInfo":         gateway.RosterProfileInfo != nil,

@@ -92,8 +92,10 @@ func (a *SharedRouteAdapters) Get(ctx context.Context, platform string, target m
 	}
 	key := strings.ToLower(platform)
 	var chatID, threadID *string
-	if c := pyStrOrEmpty(target["chat_id"]); c != "" {
-		chatID = &c
+	if pyTruthy(target["chat_id"]) {
+		if c := pyrepr.Str(target["chat_id"]); c != "" {
+			chatID = &c
+		}
 	}
 	if pyTruthy(target["thread_id"]) {
 		t := pyrepr.Str(target["thread_id"])

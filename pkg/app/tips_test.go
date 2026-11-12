@@ -12,6 +12,7 @@ import (
 // Clears the tip key and language caches around a test
 func freshTipCaches(t *testing.T) {
 	t.Helper()
+	caseHome(t)
 	ResetTipsCache()
 	i18n.ResetLanguageCache()
 	t.Cleanup(func() {

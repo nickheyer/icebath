@@ -63,10 +63,10 @@ func (c *CLI) handlePetCommand(cmd string) {
 		printLines(c.commandsT("pet.put_away", nil))
 	default:
 		printLines(c.commandsT("pet.fetching", map[string]any{"name": arg}))
-		installed, err := petInstall(c.ctx, c.env, r.h, arg, false)
+		installed, err := pet.InstallPet(c.ctx, c.env, r.h, arg, false)
 		if err != nil {
 			var se *pet.StoreError
-			var me *petManifestError
+			var me *pet.ManifestError
 			if errors.As(err, &se) || errors.As(err, &me) {
 				printLines(c.commandsT("pet.adopt_failed", map[string]any{"name": arg, "error": pyrepr.ExceptionMessage(err)}))
 				return

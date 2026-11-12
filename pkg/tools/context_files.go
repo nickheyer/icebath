@@ -145,7 +145,7 @@ func dynamicContextFileMaxChars(contextLength *int) int {
 	if contextLength == nil || *contextLength <= 0 {
 		return ContextFileMaxChars
 	}
-	budget := int(float64(*contextLength) * CharsPerToken * contextFileWindowFraction)
+	budget := int(float64(*contextLength*ModelCharsPerToken) * contextFileWindowFraction)
 	return max(ContextFileMaxChars, min(budget, contextFileDynamicCeiling))
 }
 

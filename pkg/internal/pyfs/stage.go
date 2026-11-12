@@ -24,8 +24,11 @@ func AtomicReplace(tmp, target string) (string, error) {
 	return publish, atomicReplace(tmp, publish)
 }
 
+// Directory flush every durable write calls, the name a case replaces the way pytest patches utils.fsync_directory
+var FsyncDirectory = fsyncDirectory
+
 // Flushes a directory entry to disk, silently skipped on Windows and on any open or sync error
-func FsyncDirectory(path string) {
+func fsyncDirectory(path string) {
 	if runtime.GOOS == "windows" {
 		return
 	}

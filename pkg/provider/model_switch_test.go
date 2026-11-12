@@ -136,9 +136,9 @@ func TestResolvePersistBehavior(t *testing.T) {
 }
 
 func TestCodexOAuthOverridesModelsDev(t *testing.T) {
-	prev := displayContextLengthFn
-	displayContextLengthFn = func(context.Context, ContextLengthRequest) int { return 272_000 }
-	t.Cleanup(func() { displayContextLengthFn = prev })
+	prev := GetModelContextLength
+	GetModelContextLength = func(context.Context, ContextLengthRequest) int { return 272_000 }
+	t.Cleanup(func() { GetModelContextLength = prev })
 	n, ok := ResolveDisplayContextLength(context.Background(), DisplayContextRequest{Model: "gpt-5.5", Provider: "openai-codex",
 		BaseURL: "https://chatgpt.com/backend-api/codex", ModelInfo: &ModelsDevEntry{ContextWindow: 1_050_000}})
 	if !ok || n != 272_000 {

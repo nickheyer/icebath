@@ -26,5 +26,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	os.Exit(m.Run())
 }

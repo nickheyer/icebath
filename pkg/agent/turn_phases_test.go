@@ -127,7 +127,7 @@ func TestIterationBudgetWarningAppendsToNewestToolResult(t *testing.T) {
 	}
 	b := budgetAgent(8)
 	b.iterationBudget.MaxTotal, b.budgetWarningRatio = 10, 0.8
-	persisted := []*state.Message{{Role: "tool", Content: "r", Extra: map[string]any{dbPersistedMarker: true}}}
+	persisted := []*state.Message{state.MessageFromDict(map[string]any{"role": "tool", "content": "r", dbPersistedMarker: true})}
 	if maybeInjectIterationBudgetWarning(b, persisted) {
 		t.Fatal("a persisted tool row is never mutated")
 	}

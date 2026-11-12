@@ -42,6 +42,7 @@ func recoveryTestExec(t *testing.T, conn state.SQLiteConn, query string, args ..
 // Three titled sessions of seven messages each with topic, routing, delegation and derived FTS markers
 func recoveryMakeSource(t *testing.T, path string) {
 	t.Helper()
+	caseHome(t)
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, path, false)
 	if err != nil {
@@ -213,6 +214,7 @@ func TestRecoveryCopiesDeliveryObligations(t *testing.T) {
 }
 
 func TestLostAndFoundDirectCopyCreatesLazyDeliveryLedger(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	dir := t.TempDir()
 	lfPath, output := filepath.Join(dir, "lost_and_found.db"), filepath.Join(dir, "rebuilt.db")
@@ -252,6 +254,7 @@ func TestLostAndFoundDirectCopyCreatesLazyDeliveryLedger(t *testing.T) {
 }
 
 func TestPartialRecoveryKeepsMessagesWhenSessionsAreUnsalvageable(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	dir := t.TempDir()
 	source, output := filepath.Join(dir, "sessions-destroyed.db"), filepath.Join(dir, "sessions-destroyed-recovered.db")
@@ -336,6 +339,7 @@ func TestPartialRecoveryKeepsMessagesWhenSessionsAreUnsalvageable(t *testing.T) 
 }
 
 func TestRecoveryResetsUnparseableModelConfig(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	dir := t.TempDir()
 	source, output := filepath.Join(dir, "state.db"), filepath.Join(dir, "recovered.db")
@@ -376,6 +380,7 @@ func TestRecoveryResetsUnparseableModelConfig(t *testing.T) {
 }
 
 func TestRecoveryRepairsOutOfWindowTimestamps(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	dir := t.TempDir()
 	source, output := filepath.Join(dir, "state.db"), filepath.Join(dir, "recovered.db")
@@ -438,6 +443,7 @@ func TestRecoveryRepairsOutOfWindowTimestamps(t *testing.T) {
 }
 
 func TestRecoverCarriesMessageIdentityColumns(t *testing.T) {
+	caseHome(t)
 	recoveryWithoutCJKExtension(t)
 	dir := t.TempDir()
 	source, output := filepath.Join(dir, "source.db"), filepath.Join(dir, "recovered.db")
@@ -633,6 +639,7 @@ func TestPartialRecoverySkipsPhantomRowRejectedByDestinationSchema(t *testing.T)
 // Sessions with a large system prompt and one message each vacuumed into one file, returning the sessions root page
 func recoveryMakeManySessionsSource(t *testing.T, path string, count int) int64 {
 	t.Helper()
+	caseHome(t)
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, path, false)
 	if err != nil {

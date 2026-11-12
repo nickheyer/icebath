@@ -427,7 +427,7 @@ func runConversationLoop(ctx context.Context, a *AIAgent, userMessage any, o Run
 	if result != nil {
 		result["user_intervened"] = a.turnUserIntervened
 	}
-	closeDurableFailedTurn(ctx, a, result)
+	CloseDurableFailedTurn(ctx, a, result)
 	return result, nil
 }
 
@@ -490,7 +490,7 @@ func redactDisplayMetadata(a *AIAgent, metadata map[string]any) map[string]any {
 }
 
 // Appends the failed turn boundary when a failed turn left its durable tail open, live and in the session DB
-func closeDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]any) {
+func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
 			if isUserInterruptPanic(r) {

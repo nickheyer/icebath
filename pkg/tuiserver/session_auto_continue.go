@@ -185,13 +185,13 @@ func acSetQueue(session *tuigateway.Session, entries []any) {
 }
 
 // Applies a steer or redirect to the live turn and records the correction, nil when the agent refused it
-func acTryCorrection(rid any, session *tuigateway.Session, a *agent.AIAgent, method, plainText, status string) map[string]any {
+func acTryCorrection(rid any, session *tuigateway.Session, a any, method, plainText, status string) map[string]any {
 	accepted := false
 	if failure := catchPanic(func() {
 		if method == "steer" {
-			accepted = a.Steer(plainText)
+			accepted = a.(interface{ Steer(string) bool }).Steer(plainText)
 		} else {
-			accepted = a.Redirect(plainText)
+			accepted = a.(interface{ Redirect(string) bool }).Redirect(plainText)
 		}
 	}); failure != nil || !accepted {
 		return nil

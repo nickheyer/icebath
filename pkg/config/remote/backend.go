@@ -1316,7 +1316,8 @@ func (b *remoteBackend) pollOne(st *profileState) bool {
 	return changed
 }
 
-func (b *remoteBackend) pollAll() {
+// Polls every profile the backend holds once, installing each changed document
+func (b *remoteBackend) PollAll() {
 	for _, st := range b.roster() {
 		b.pollOne(st)
 	}

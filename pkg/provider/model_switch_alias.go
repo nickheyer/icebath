@@ -397,9 +397,6 @@ type DisplayContextRequest struct {
 	ConfiguredBaseURL   string
 }
 
-// Context length resolver behind the display, replaced in tests
-var displayContextLengthFn = GetModelContextLength
-
 // ResolveDisplayContextLength prefers the provider aware resolver and falls back to the catalog window
 func ResolveDisplayContextLength(ctx context.Context, req DisplayContextRequest) (int, bool) {
 	pin := req.ConfigContextLength
@@ -412,7 +409,7 @@ func ResolveDisplayContextLength(ctx context.Context, req DisplayContextRequest)
 	if pin != nil {
 		lengthReq.ConfigContextLength = *pin
 	}
-	if n := displayContextLengthFn(ctx, lengthReq); n != 0 {
+	if n := GetModelContextLength(ctx, lengthReq); n != 0 {
 		return n, true
 	}
 	if req.ModelInfo != nil && req.ModelInfo.ContextWindow != 0 {

@@ -780,6 +780,7 @@ func TestManagerDiscoveryUsesItsHomeNotTheAmbientProfile(t *testing.T) {
 
 // Port of test_same_slug_profiles_allocate_distinct_modules_concurrently
 func TestSameSlugProfilesAllocateDistinctModulesConcurrently(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	python := liveInterpreters(t)["system"]
 	installHostEnvHooks()
 	installLedgerServices(t)

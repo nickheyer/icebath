@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -336,7 +337,7 @@ def register(ctx):
 `
 
 // test_plugin_host.py test_host_plugin_can_launch_status_and_steer_subagent
-func TestLiveHostPluginCanLaunchStatusAndSteerSubagent(t *testing.T) {
+func TestHostPluginCanLaunchStatusAndSteerSubagent(t *testing.T) {
 	installLiveServices(t)
 	finish := make(chan struct{})
 	d := &fakeDelegation{children: map[string]*fakeChild{}, config: map[string]any{}, known: map[string]bool{},
@@ -363,6 +364,9 @@ func TestLiveHostPluginCanLaunchStatusAndSteerSubagent(t *testing.T) {
 		t.Fatalf("%v %s", err, out)
 	}
 	result, _ := pyjson.Plain(decoded).(map[string]any)
+	if pid, ok := result["pid"].(int64); !ok || pid == int64(os.Getpid()) {
+		t.Fatalf("lifecycle tool ran in process %v", result["pid"])
+	}
 	if result["state"] != "PENDING" && result["state"] != "RUNNING" || result["accepted"] != true || d.built[0].Goal != "review from host" || d.built[0].Parent != parent {
 		t.Fatalf("hosted %v", result)
 	}

@@ -27,6 +27,7 @@ type Context struct {
 	collector                *memoryCollector
 	engineCollector          *engineCollector
 	delegationSink           func(provider any)
+	hostInProcess            map[string]bool
 }
 
 // Context whose register_delegation_provider hands the provider to sink instead of the registry, the hermes bundled registrar

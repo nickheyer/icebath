@@ -111,7 +111,7 @@ func TestLoginBackendProvenanceVerdict(t *testing.T) {
 			}
 		}
 	}
-	if readCatalogSidecar(h, dir("urlonly")) != nil {
+	if noErr(readCatalogSidecar(h, dir("urlonly"))) != nil {
 		t.Error("an in-tree catalog file forged catalog provenance")
 	}
 }
@@ -121,7 +121,7 @@ func TestReadCatalogSidecarMigratesLegacyRecordFields(t *testing.T) {
 	h := c6Home(t, map[string]any{"legacy": map[string]any{"source": "https://github.com/o/r#sub", "revision": sha,
 		"pinned": true, "catalog_name": "legacy-entry", "catalog_tier": "verified", "installed_at": int64(7)}})
 	target := filepath.Join(home.PluginsDir(h), "legacy")
-	got := readCatalogSidecar(h, target)
+	got := noErr(readCatalogSidecar(h, target))
 	low := strings.ToLower(sha)
 	want := map[string]any{"catalog_name": "legacy-entry", "repo": "https://github.com/o/r", "sha": low, "tier": "verified", "pin": low}
 	for k, v := range want {
@@ -147,14 +147,14 @@ func TestReadCatalogSidecarMigratesLegacyRecordFields(t *testing.T) {
 	if !atCatalogPin(got, low) || atCatalogPin(got, "") || atCatalogPin(got, strings.Repeat("c", 40)) {
 		t.Error("atCatalogPin verdicts wrong")
 	}
-	if a := catalogAnnotation(h, target); a != "catalog:verified@"+low[:8] {
+	if a := noErr(catalogAnnotation(h, target)); a != "catalog:verified@"+low[:8] {
 		t.Errorf("annotation %q", a)
 	}
-	row := CatalogRowFields(h, target, map[string]string{"legacy-entry": strings.Repeat("c", 40)}, map[string]string{"legacy-entry": "1.2"})
+	row := noErr(CatalogRowFields(h, target, map[string]string{"legacy-entry": strings.Repeat("c", 40)}, map[string]string{"legacy-entry": "1.2"}))
 	if row["update_available"] != true || row["catalog_version"] != "1.2" || row["catalog_tier"] != "verified" {
 		t.Errorf("row fields %v", row)
 	}
-	if reason, ok := removedAnnotation(h, "legacy", target, []RemovedEntry{{Name: "legacy-entry"}}); !ok || reason != "no reason recorded" {
+	if reason, ok := noErr2(removedAnnotation(h, "legacy", target, []RemovedEntry{{Name: "legacy-entry"}})); !ok || reason != "no reason recorded" {
 		t.Errorf("removed annotation %q %v", reason, ok)
 	}
 }

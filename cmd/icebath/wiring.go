@@ -146,6 +146,7 @@ func installProcessWiring() {
 		return gatewaycli.NewS6ServiceManager(gatewaycli.S6DynamicScandir).Start(name)
 	}
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
+	cron.WorkerProcessBoot = cronWorkerProcessBoot
 	cron.RegisterWorkerConfigHooks = gateway.RegisterWorkerConfigHooks
 	cron.RegisterEstopCheck(tools.CheckPaused)
 	selfupdate.LoadCronJobsHook = loadCronJobsForDrainReport
@@ -365,6 +366,7 @@ func installProcessWiring() {
 	tools.AsyncDelegationRetirement = provider.BackendRetirement()
 	tools.ProfileSecrets = provider.ProfileSecretSource()
 	tools.NousAccount = provider.NousAccountSource()
+	tools.CredentialPools = provider.XAICredentialPoolSource()
 	tools.RuntimeProviderCredentials = provider.ToolRuntimeCredentials
 	tools.VisionCapabilities = provider.VisionCapabilities{}
 	agent.InstallDelegationRegistryHooks()
@@ -516,6 +518,10 @@ func pluginServices() *plugins.Services {
 		ParseServerLiveness: func(raw any) (plugins.ServerLiveness, error) {
 			l, err := mcp.ParseLiveness(raw)
 			return plugins.ServerLiveness(l), err
+		},
+		ParseCostPolicy: func(costs, spendLimit, costUnit any, where string) error {
+			_, err := mcp.ParseCostPolicy(costs, spendLimit, costUnit, where)
+			return err
 		},
 		DiscoverMemoryProviders: func(ctx context.Context) [][2]string {
 			var out [][2]string

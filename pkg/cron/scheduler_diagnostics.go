@@ -22,7 +22,7 @@ func formatRunError(s *Store, err error) string {
 	var b strings.Builder
 	for i := len(chain) - 1; i >= 0; i-- {
 		b.WriteString(tracebackFrames(chain[i]))
-		b.WriteString(cronExceptionName(chain[i]) + ": " + chain[i].Error() + "\n")
+		b.WriteString(exceptionOnlyLine(chain[i]))
 		if i > 0 {
 			b.WriteString("\nThe above exception was the direct cause of the following exception:\n\n")
 		}
@@ -31,13 +31,21 @@ func formatRunError(s *Store, err error) string {
 	return "## Error\n\n```\n" + text + "\n```\n"
 }
 
+// Exception line as traceback prints it, the bare class name when the message is empty
+func exceptionOnlyLine(err error) string {
+	if msg := err.Error(); msg != "" {
+		return cronExceptionName(err) + ": " + msg + "\n"
+	}
+	return cronExceptionName(err) + "\n"
+}
+
 // Redacted tail of an external worker's captured stderr as a message suffix, empty when nothing was captured
 func externalWorkerStderrTail(s *Store, path string) string {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	text := pystr.Strip(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "�"), "\ufeff"))
+	text := pystr.Strip(pystr.DecodeUTF8SigReplace(raw))
 	if text == "" {
 		return ""
 	}

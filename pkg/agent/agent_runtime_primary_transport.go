@@ -166,7 +166,7 @@ func (a *AIAgent) tryRecoverPrimaryTransport(ctx context.Context, apiError error
 		}
 	}
 	if err := a.rebuildPrimaryTransport(ctx, errorType, retryCount); err != nil {
-		runAgentLog().Warn(fmt.Sprintf("Primary transport recovery failed: %s", err))
+		agentRuntimeHelpersLog().Warn(fmt.Sprintf("Primary transport recovery failed: %s", err))
 		return false
 	}
 	return true

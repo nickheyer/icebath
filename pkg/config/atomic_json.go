@@ -7,8 +7,22 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
+
+// Mode carrying atomic JSON write that also syncs the resolved target directory so the rename survives power loss
+func AtomicJSONWriteModeSyncDir(ctx context.Context, path string, data any, mode os.FileMode, opts ...pyjson.Option) error {
+	if err := AtomicJSONWriteMode(ctx, path, data, mode, opts...); err != nil {
+		return err
+	}
+	target := path
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		target = resolved
+	}
+	pyfs.FsyncDirectory(filepath.Dir(target))
+	return nil
+}
 
 // Writes data as two space indented JSON through a synced temp file keeping the existing mode and owner
 func AtomicJSONWrite(ctx context.Context, path string, data any) error {

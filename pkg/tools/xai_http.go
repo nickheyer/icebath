@@ -19,7 +19,7 @@ type CredentialPoolSource interface {
 	RefreshMatching(env *Env, provider, apiKeyHint string) (token, baseURL string, ok bool)
 }
 
-// CredentialPools is the installed pool source, nil when no pool backend is wired
+// CredentialPools is the credential pool source of the OAuth branch, assigned in cmd/icebath wiring
 var CredentialPools CredentialPoolSource
 
 // Bearer credentials for one direct xAI HTTP call
@@ -86,11 +86,11 @@ func xaiValidateInferenceBaseURL(env *Env, value, fallback string) string {
 	return fallback
 }
 
-// xAI base URL override from ICEBATH_XAI_BASE_URL then XAI_BASE_URL, empty when unset
+// xAI base URL override from ICEBATH_XAI_BASE_URL then XAI_BASE_URL through the scoped env then .env, empty when unset
 func xaiBaseURLOverride(env *Env) string {
-	v := secretValue(env, "ICEBATH_XAI_BASE_URL")
+	v := dotenvValue(env, "ICEBATH_XAI_BASE_URL")
 	if v == "" {
-		v = secretValue(env, "XAI_BASE_URL")
+		v = dotenvValue(env, "XAI_BASE_URL")
 	}
 	return strings.TrimRight(strings.TrimSpace(v), "/")
 }
@@ -147,7 +147,7 @@ func resolveXAIHTTPCredentialsWith(env *Env, preferAPIKey, forceRefresh bool, ap
 				BaseURL: xaiValidateInferenceBaseURL(env, xaiBaseURLOverride(env), fallback)}
 		}
 	}
-	base := strings.TrimRight(strings.TrimSpace(secretValue(env, "XAI_BASE_URL")), "/")
+	base := strings.TrimRight(strings.TrimSpace(dotenvValue(env, "XAI_BASE_URL")), "/")
 	if base == "" {
 		base = DefaultXAIBaseURL
 	}

@@ -245,7 +245,7 @@ func (s *Store) finishCancelledRun(ctx context.Context, job *Job, executionID st
 		status := "cancelled"
 		o := MarkOptions{Error: strPtr("Cancelled: " + reason), Status: &status, ExpectedFireOwner: fireOwner,
 			LadderRung: unreachableRetryIsRetryRun(s, job)}
-		if _, err := s.markJobRun(ctx, job.ID, false, o); err != nil {
+		if _, err := markJobRunSeam(s, ctx, job.ID, false, o); err != nil {
 			return err
 		}
 	}

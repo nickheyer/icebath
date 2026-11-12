@@ -17,6 +17,7 @@ const (
 )
 
 var (
+	transientNetExcNames    = map[string]bool{"ConnectError": true, "ConnectTimeout": true, "ReadTimeout": true, "WriteTimeout": true, "PoolTimeout": true, "NetworkError": true, "TimeoutException": true, "ClientConnectorError": true, "ClientConnectorDNSError": true, "ServerTimeoutError": true, "ClientOSError": true}
 	dnsFailureNeedles       = []string{"nodename nor servname", "name or service not known"}
 	transientOSErrorNeedles = append(append([]string{}, dnsFailureNeedles...), "temporary failure in name resolution", "network is unreachable")
 	transientHTTPNeedles    = append(append([]string{}, transientOSErrorNeedles...), "failed to resolve", "connection refused", "timed out", "timeout")
@@ -55,6 +56,12 @@ func isOSLevelError(err error) bool {
 func isTransientProviderResolveError(err error) bool {
 	for cur, depth := err, 0; cur != nil && depth < maxErrorChain; cur, depth = errors.Unwrap(cur), depth+1 {
 		msg := strings.ToLower(cur.Error())
+		if named, ok := cur.(interface{ PyTypeName() string }); ok && transientNetExcNames[named.PyTypeName()] {
+			return true
+		}
+		if moduled, ok := cur.(interface{ PyModule() string }); ok && containsAny(moduled.PyModule(), []string{"httpx", "httpcore", "aiohttp"}) && containsAny(msg, transientHTTPNeedles) {
+			return true
+		}
 		if netErr, ok := cur.(net.Error); ok && netErr.Timeout() {
 			return true
 		}

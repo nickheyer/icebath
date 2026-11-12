@@ -268,6 +268,9 @@ func registryStarting(ctx context.Context, registry *SessionAuthorities, profile
 	return key, started, found, nil
 }
 
+// Sibling lookup of every profile routed dispatch, replaced by a case as the hermes cases patch _sibling_for
+var connectionSiblingFor = (*AuthorityConnection).siblingFor
+
 // Connection bound to the sibling authority a profile param names, nil for this connection's own home
 func (c *AuthorityConnection) siblingFor(ctx context.Context, profile string) (*AuthorityConnection, error) {
 	if profiles.ProfileMatchesHome(ctx, profile, c.authority.ProfileID) {

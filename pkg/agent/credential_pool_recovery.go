@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -124,15 +125,12 @@ func recoverRateLimit(pool *provider.Pool, hasRetried429 bool, errorContext map[
 	return false, true
 }
 
-// Python str of an error context value with None and empty values read as empty
+// Python str of an error context value with every falsy value read as empty
 func contextString(v any) string {
-	if v == nil {
+	if !pyrepr.Truthy(v) {
 		return ""
 	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
+	return pyrepr.Str(v)
 }
 
 // Recovers through pool rotation, returning recovered and the 429 retry flag, billing rotating at once and auth refreshing first
@@ -204,7 +202,7 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 
 	switch effectiveReason {
 	case provider.ReasonUpstreamRateLimit:
-		if upstream := contextString(errorContext["upstream_provider"]); errorContext != nil && errorContext["upstream_provider"] != nil && upstream != "" {
+		if upstream := contextString(errorContext["upstream_provider"]); upstream != "" {
 			runAgentLog().Info(fmt.Sprintf("Upstream provider %s rate-limited via aggregator — skipping credential rotation, deferring to fallback chain", upstream))
 		} else {
 			runAgentLog().Info("Upstream aggregator 429 (provider unknown) — skipping credential rotation, deferring to fallback chain")

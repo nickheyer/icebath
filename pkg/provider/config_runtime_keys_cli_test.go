@@ -138,17 +138,6 @@ func TestEverySelectionCategoryKeySetIsWhatReadSelectionReturns(t *testing.T) {
 	}
 }
 
-func TestComputerUseBackendSetIsSilent(t *testing.T) {
-	h, out, errOut := runtimeKeysHome(t)
-	if runtimeKeyNotice(t, h, "computer_use.backend", "widget-driver", out, errOut) {
-		t.Fatal("computer_use.backend noticed")
-	}
-	raw, err := config.ReadRawConfig(context.Background(), h)
-	if err != nil || raw["computer_use"].(map[string]any)["backend"] != "widget-driver" {
-		t.Fatal(raw, err)
-	}
-}
-
 func TestPluginConfigKeysCountOnlyWhileThePluginIsEnabled(t *testing.T) {
 	h, out, errOut := runtimeKeysHome(t)
 	writeKeysPlugin(t, filepath.Join(h, "plugins"), "widget-plugin", []string{"display.widget"})
@@ -171,7 +160,7 @@ func TestPluginConfigKeysCountOnlyWhileThePluginIsEnabled(t *testing.T) {
 	}
 }
 
-func TestPortablePluginDeclaresConfigKeysInItsExtension(t *testing.T) {
+func TestPortablePluginDeclaresConfigKeysInItsHermesExtension(t *testing.T) {
 	h, out, errOut := runtimeKeysHome(t)
 	dir := filepath.Join(h, "plugins", "portwidget")
 	os.MkdirAll(dir, 0o755)

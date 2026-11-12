@@ -139,6 +139,7 @@ func TestPTViKeySequencesMatchPromptToolkit(t *testing.T) {
 }
 
 func TestVimModeLabelLabelTracksInputMode(t *testing.T) {
+	caseHome(t)
 	c := &CLI{ctx: context.Background()}
 	if got := c.vimModeLabel(); got != "" {
 		t.Fatalf("vim off %q", got)

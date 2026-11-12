@@ -44,7 +44,7 @@ func TestSettledNativeDocumentNamedByTheTranscriptSurvivesSettlement(t *testing.
 			if err := os.WriteFile(staged, []byte("%PDF-1.4 retained"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			media, err := captureNativeMedia(ctx, []string{staged})
+			media, err := CaptureNativeMedia(ctx, []string{staged})
 			if err != nil {
 				t.Fatal(err)
 			}

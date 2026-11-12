@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
@@ -396,7 +399,7 @@ func persistUnderLock(a *AIAgent, fn func() error, failureMsg string, pendingCLI
 			turnContextLog().Warn(fmt.Sprintf(failureMsg, orNone(a.sessionID)), "error", err)
 		}
 	}()
-	if pendingCLIMessage == nil || pyTruthy(pendingCLIMessage[state.DBPersistedMarker]) {
+	if pendingCLIMessage == nil || a.sharedDictPersisted(pendingCLIMessage) {
 		a.pendingCLIUserMessage = nil
 	}
 }
@@ -477,7 +480,7 @@ func resetPerTurnAgentState(ctx context.Context, a *AIAgent) {
 	if a.memoryStore != nil {
 		a.memoryStore.ResetConsolidationFailures()
 	}
-	a.currentTurnTimestamp = nowSeconds()
+	a.currentTurnTimestamp = loopNow()
 	if a.apiMode != "anthropic_messages" {
 		func() {
 			defer func() { _ = recover() }()
@@ -641,7 +644,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	turnUserMsg.Content = withheld
 	turnUserMsg.APIContent = ""
 	turnUserMsg.DisplayMetadata = metadata
-	rowID, ok := liveRowID(turnUserMsg)
+	rowID, ok := liveRowID(a, turnUserMsg)
 	if a.sessionDB == nil || !ok {
 		return
 	}
@@ -652,6 +655,15 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	if _, err := a.sessionDB.SetUserMessageContent(ctx, session, rowID, withheld, metadata); err != nil {
 		turnContextLog().Warn(fmt.Sprintf("withheld-prompt rewrite failed for session=%s", orNone(a.sessionID)), "error", err)
 	}
+}
+
+// Config tree of the active home loaded fresh for the spill settings, nil when it does not load
+func liveSpillTree(ctx context.Context) config.Tree {
+	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
+	if err != nil {
+		return nil
+	}
+	return tree
 }
 
 // Runs pre_llm_call plugins, spilling oversized context and collecting block vetoes into blocks
@@ -674,7 +686,7 @@ func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, 
 		"conversation_history": history, "is_first_turn": len(conversationHistory) == 0, "model": a.model,
 		"platform": a.platform, "parent_session_id": a.parentSessionID, "sender_id": a.userID,
 	})
-	spillCfg := tools.SpillConfigFromEnv(a.env)
+	spillCfg := tools.SpillConfigFromEnv(&tools.Env{Config: liveSpillTree(ctx)})
 	var parts []string
 	for _, r := range results {
 		var piece string
@@ -752,7 +764,8 @@ func memoryQueryText(originalUserMessage any) string {
 }
 
 // Python int row id a writer stamped on the live row, false when the row carries none
-func liveRowID(m *state.Message) (int64, bool) {
+func liveRowID(a *AIAgent, m *state.Message) (int64, bool) {
+	a.adoptSharedRowStamps(m)
 	switch v := m.Extra["_row_id"].(type) {
 	case int64:
 		return v, true
@@ -811,7 +824,7 @@ func stampAPIContentSidecar(ctx context.Context, a *AIAgent, messages []*state.M
 	}
 	turnUserMsg.APIContent = *apiContent
 	defer persistLock(a)()
-	rowID, hasRow := liveRowID(turnUserMsg)
+	rowID, hasRow := liveRowID(a, turnUserMsg)
 	inPlace := preflightCompressed && a.lastCompactionInPlace
 	if a.sessionDB == nil || !(hasRow || inPlace) {
 		return
@@ -834,7 +847,7 @@ func appendMultimodalContext(ctx context.Context, a *AIAgent, turnUserMsg *state
 		return
 	}
 	defer persistLock(a)()
-	rowID, ok := liveRowID(turnUserMsg)
+	rowID, ok := liveRowID(a, turnUserMsg)
 	if a.sessionDB == nil || !ok {
 		return
 	}
@@ -917,6 +930,10 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	ctx = provider.BindImageTokenCost(ctx, a.model, a.baseURL)
 	turnRow := state.MessageFromDict(userMsg)
 	messages = append(messages, turnRow)
+	func() {
+		defer persistLock(a)()
+		a.shareSessionMessageOrigins(messages, append(slices.Clone(conversationHistory), userMsg), true)
+	}()
 	currentTurnUserIdx := len(messages) - 1
 	idx := currentTurnUserIdx
 	a.persistUserMessageIdx = &idx

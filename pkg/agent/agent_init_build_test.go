@@ -142,10 +142,26 @@ func TestCompressorMaxTokensReservesTheGeminiDefault(t *testing.T) {
 	if got := compressorMaxTokens(&AIAgent{provider: "google-gemini"}); got != provider.GeminiDefaultMaxOutputTokens {
 		t.Fatalf("gemini reservation = %v", got)
 	}
-	if got := compressorMaxTokens(&AIAgent{provider: "openrouter", maxTokens: 4096}); got != 4096 {
+	if got := compressorMaxTokens(&AIAgent{provider: "openrouter", maxTokens: iptr(4096)}); got != 4096 {
 		t.Fatalf("explicit max tokens = %v", got)
 	}
 	if got := compressorMaxTokens(&AIAgent{provider: "openrouter", baseURL: "https://openrouter.ai/api/v1"}); got != nil {
 		t.Fatalf("non gemini reservation = %v", got)
+	}
+	if got := compressorMaxTokens(&AIAgent{provider: "google-gemini", maxTokens: iptr(0)}); got != 0 {
+		t.Fatalf("an explicit max_tokens of 0 is not None, got %v", got)
+	}
+	if intPtrOrNone(nil) != nil || intPtrOrNone(iptr(0)) != 0 {
+		t.Fatal("the request kwargs must tell max_tokens 0 from None")
+	}
+}
+
+func TestAgentKwargMaxTokensKeepsZeroApartFromNone(t *testing.T) {
+	var o AIAgentOptions
+	if err := applyAgentKwarg(&o, "max_tokens", nil); err != nil || o.MaxTokens != nil {
+		t.Fatalf("None gave %v %v", o.MaxTokens, err)
+	}
+	if err := applyAgentKwarg(&o, "max_tokens", 0); err != nil || o.MaxTokens == nil || *o.MaxTokens != 0 {
+		t.Fatalf("0 gave %v %v", o.MaxTokens, err)
 	}
 }

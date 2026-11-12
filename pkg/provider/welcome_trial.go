@@ -19,7 +19,11 @@ var (
 	welcomeResolveSkipped = resolveProviderSkippingFreeTier
 )
 
-func welcomeHasNousIdentity(env PoolEnv) bool {
+// Nous identity check of the claim blocker, replaced by a case as the hermes cases patch _has_nous_identity
+var welcomeHasNousIdentity = hasNousIdentity
+
+// Whether the profile or the shared store holds a Nous identity
+func hasNousIdentity(env PoolEnv) bool {
 	shared, _ := readSharedNousState(env)
 	return currentNousState(env) != nil || shared != nil
 }
@@ -83,8 +87,11 @@ func welcomeClaimBlocker(env PoolEnv, assumeFresh bool, configured *bool) (strin
 	return "", nil
 }
 
+// Welcome trial claim of every caller, replaced by a case as the hermes cases patch claim_desktop_free_tier
+var ClaimDesktopFreeTier = claimDesktopFreeTier
+
 // Mints the stamped guest and marks the machine under the claim lock, nil when the trial is unavailable
-func ClaimDesktopFreeTier(env PoolEnv, assumeFresh, force bool) (map[string]any, error) {
+func claimDesktopFreeTier(env PoolEnv, assumeFresh, force bool) (map[string]any, error) {
 	unlock, err := welcomeClaimLock()
 	if err != nil {
 		return nil, err

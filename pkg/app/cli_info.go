@@ -232,7 +232,7 @@ func bannerPlan(c *CLI) BannerPlan {
 	var ctxLen *int
 	configCtxLen := 0
 	if c.agent != nil {
-		reading := readAgentUsage(c, c.agent)
+		reading := readAgentUsage(c, agentGateway(c.agent))
 		n := reading.ContextLength
 		ctxLen = &n
 		configCtxLen = reading.ConfigContextLength
@@ -979,7 +979,7 @@ func (c *CLI) showUsage() {
 		creditsOr(c.t("cli.shared.no_active_agent", nil))
 		return
 	}
-	r := readAgentUsage(c, c.agent)
+	r := readAgentUsage(c, agentGateway(c.agent))
 	if r.Calls == 0 {
 		creditsOr(c.t("cli.usage.no_api_calls", nil))
 		return

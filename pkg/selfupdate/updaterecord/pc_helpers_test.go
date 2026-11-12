@@ -17,6 +17,7 @@ const pcModeEnv = "ICEBATH_PAUSE_TEST_CHILD"
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
 	if mode := os.Getenv(pcModeEnv); mode != "" {
 		os.Exit(pcChild(mode, os.Args[1:]))
 	}
