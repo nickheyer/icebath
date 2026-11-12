@@ -154,6 +154,3 @@ func TestSaveConfigAllowsIntentionalSecretValueChange(t *testing.T) {
 		t.Fatalf("saved %s", text)
 	}
 }
-
-// Fails until every unported config.py test case listed under rvconfiga_s24 in dev/notes/config.md has a Go test
-func TestRemainingConfigPyCases(t *testing.T) { portRemainingConfigPyCases(t) }

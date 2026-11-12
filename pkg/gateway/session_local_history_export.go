@@ -12,11 +12,6 @@ func ReopenLocalSession(ctx context.Context, a *SessionAuthority, ref SessionRef
 	return reopenLocalSession(ctx, a, ref)
 }
 
-// Binds a native owner connection of the authority profile as a legacy transport that may create sessions
-func BindNativeTransport(a *SessionAuthority, actor Principal, identity map[string]any) {
-	bindNativeTransport(a, actor, identity)
-}
-
 // Restores every boot receipt of the authority, scheduling pending input when asked
 func RecoverLocalSessions(ctx context.Context, a *SessionAuthority, schedule bool) error {
 	return recoverLocalSessions(ctx, a, schedule)

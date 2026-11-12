@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -54,10 +53,11 @@ func lr4DocFrom(t *testing.T, mutate func(doc map[string]any)) []byte {
 	return body
 }
 
-// Source path of the packaged catalog beside this test file
+var lr4PackageDir, _ = os.Getwd()
+
+// Source path of the packaged catalog in the package directory the test binary starts in
 func lr4CatalogPath() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "local_runtime_catalog.json")
+	return filepath.Join(lr4PackageDir, "local_runtime_catalog.json")
 }
 
 func lr4Budget(vramGiB, ramGiB float64) HardwareBudget {
