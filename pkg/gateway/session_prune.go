@@ -75,7 +75,7 @@ func prune(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *
 		return nil, err
 	}
 	scoped := context.WithoutCancel(ctx)
-	task := trackMutation(a, func(context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(context.Context) (any, error) {
 		return applyPrune(scoped, a, filters, days)
 	})
 	select {

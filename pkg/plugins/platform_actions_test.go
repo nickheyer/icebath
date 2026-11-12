@@ -65,7 +65,7 @@ func (m paMessage) AddReaction(_ context.Context, emoji string) error {
 
 type paRunner struct{ adapters map[string]any }
 
-func (r paRunner) ParsePlatform(v string) (string, error) {
+func (r paRunner) ParsePlatform(_ context.Context, v string) (string, error) {
 	switch v {
 	case "telegram", "discord", "slack":
 		return v, nil
@@ -80,6 +80,15 @@ func paAdapterByValue(runner any, value string) (any, bool) {
 		return nil, false
 	}
 	return r.adapters[value], true
+}
+
+// Profile aware lookup of a fake runner carrying _authorization_adapter, callable false for one without it
+func paAuthorizationAdapter(_ context.Context, runner any, value, profile string) (any, bool) {
+	r, ok := runner.(paMultiplexRunner)
+	if !ok {
+		return nil, false
+	}
+	return r.AuthorizationAdapter(value, profile), true
 }
 
 // Runner with the fail closed profile ladder, the default profile reading the default adapters
@@ -105,10 +114,13 @@ func paSetup(t *testing.T, cfg string, runner PlatformActionRunner) context.Cont
 	t.Setenv("HOME", root)
 	h := filepath.Join(root, ".icebath")
 	memWrite(t, filepath.Join(h, "config.yaml"), cfg)
-	previous, previousLookup := installedServices(), RunnerAdapterByValue
+	previous, previousLookup, previousAuthorization := installedServices(), RunnerAdapterByValue, RunnerAuthorizationAdapter
 	InstallServices(&Services{GatewayRunnerRef: func() PlatformActionRunner { return runner }})
-	RunnerAdapterByValue = paAdapterByValue
-	t.Cleanup(func() { InstallServices(previous); RunnerAdapterByValue = previousLookup })
+	RunnerAdapterByValue, RunnerAuthorizationAdapter = paAdapterByValue, paAuthorizationAdapter
+	t.Cleanup(func() {
+		InstallServices(previous)
+		RunnerAdapterByValue, RunnerAuthorizationAdapter = previousLookup, previousAuthorization
+	})
 	return home.WithOverride(context.Background(), h)
 }
 

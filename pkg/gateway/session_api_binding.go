@@ -66,7 +66,7 @@ func runSteps(ctx context.Context, steps writeSteps) (any, error) {
 
 // Drives a write step sequence as one tracked task, each write off the caller in admission order
 func runStepsOffLoop(ctx context.Context, a *SessionAuthority, steps writeSteps, orphaned func(result any)) (any, error) {
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		a.apiAdmissions.Lock()
 		defer a.apiAdmissions.Unlock()
 		return steps(func(write writeStep) (any, error) {

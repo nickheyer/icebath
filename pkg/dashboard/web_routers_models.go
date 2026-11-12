@@ -29,7 +29,6 @@ var modelInfoContextLength = provider.GetModelContextLength
 var (
 	loadPickerContext        = provider.LoadPickerContext
 	buildModelOptionsPayload = provider.BuildModelOptionsPayload
-	buildModelsPayload       = provider.BuildModelsPayload
 	prepareMainAssignment    = provider.PrepareMainAssignment
 	applyModelAssignmentSync = provider.ApplyModelAssignmentSync
 	combinedSelectionWarning = provider.CombinedSelectionWarning
@@ -344,7 +343,7 @@ func getRecommendedDefaultModel(ctx context.Context, providerName, profile strin
 		if err != nil {
 			return err
 		}
-		payload, err := buildModelsPayload(sctx, pc, provider.ModelsPayloadOptions{ProbeCustomProviders: true})
+		payload, err := provider.BuildModelsPayload(sctx, pc, provider.ModelsPayloadOptions{ProbeCustomProviders: true})
 		if err != nil {
 			return err
 		}

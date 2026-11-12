@@ -131,9 +131,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 	}
 	var override map[string]any
 	if skey != "" {
-		if state := r.peekSessionState(skey); state != nil {
-			override = state.conversation.modelOverride
-		}
+		override = r.sessionModelOverride(skey)
 	}
 	if len(override) > 0 {
 		overrideModel := model
@@ -161,10 +159,8 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 			skey, model, overrideModel))
 	} else if runLog().Enabled(ctx, slog.LevelDebug) {
 		var keys []any
-		for key, state := range r.sessionsMap() {
-			if state.conversation.modelOverride != nil {
-				keys = append(keys, key)
-			}
+		for _, key := range r.sessionModelOverrides().Keys() {
+			keys = append(keys, key)
 		}
 		listing := "[]"
 		if len(keys) > 5 {

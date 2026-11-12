@@ -37,8 +37,9 @@ func mutationTasks(a *SessionAuthority) []*trackedTask {
 	return out
 }
 
-// Runs an operation as a tracked task the caller cannot cancel apart from its commit
-func trackMutation(a *SessionAuthority, operation func(ctx context.Context) (any, error)) *trackedTask {
+// Runs a tracked task in the creator's scope uncancelled, republishing the work count before waiters resume
+func trackMutation(ctx context.Context, a *SessionAuthority, operation func(ctx context.Context) (any, error)) *trackedTask {
+	taskCtx := context.WithoutCancel(ctx)
 	task := &trackedTask{done: make(chan struct{})}
 	a.mu.Lock()
 	a.mutationTasks[task] = true
@@ -48,10 +49,10 @@ func trackMutation(a *SessionAuthority, operation func(ctx context.Context) (any
 			a.mu.Lock()
 			delete(a.mutationTasks, task)
 			a.mu.Unlock()
-			close(task.done)
 			persistWorkCount(a)
+			close(task.done)
 		}()
-		task.result, task.err = operation(context.Background())
+		task.result, task.err = operation(taskCtx)
 	}()
 	return task
 }
@@ -59,7 +60,7 @@ func trackMutation(a *SessionAuthority, operation func(ctx context.Context) (any
 // Runs a ledger write and follow up off the owner loop as one tracked task, ordered writes keep call order
 func trackedWrite(ctx context.Context, a *SessionAuthority, write func(ctx context.Context) (any, error),
 	then func(ctx context.Context, result any) (any, error), ordered bool, after func(result any)) (any, error) {
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		var result any
 		var err error
 		if ordered {

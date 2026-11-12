@@ -91,7 +91,7 @@ func settlementTransfers(a *SessionAuthority, live *LiveSession, row *pyjson.Obj
 // Stamps the recovery fence of a failed settlement, retrying until storage lets it commit
 func recoverFailedSettlement(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (string, error) {
 	for {
-		task := trackMutation(a, func(taskCtx context.Context) (any, error) { return markUnknown(taskCtx, a, row) })
+		task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) { return markUnknown(taskCtx, a, row) })
 		status, err := task.wait()
 		if err == nil {
 			return status.(string), nil
@@ -308,7 +308,7 @@ func commitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSessio
 // Commits the captured result, retrying a transient storage failure a bounded number of times
 func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *turnSettlement) error {
 	for attempt := 0; ; attempt++ {
-		task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+		task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 			return nil, commitAndPublish(taskCtx, a, live, ref, row, response, outcome, captured, settlement)
 		})
 		_, err := task.wait()

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,15 +58,31 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 
 // Asker returning a scripted answer or blocking until the context ends
 type scriptedAsker struct {
-	answer   string
-	block    bool
-	terminal bool
-	mu       sync.Mutex
-	seen     []Question
+	answer string
+	block  bool
+	mu     sync.Mutex
+	seen   []Question
 }
 
-// TerminalMenu reports whether the scripted answers model single keys typed at the terminal menu
-func (a *scriptedAsker) TerminalMenu() bool { return a.terminal }
+// Answers the terminal menu with keystroke and returns what the prompt printed to stdout
+func typeAtTerminalMenu(t *testing.T, keystroke string, ask func()) string {
+	t.Helper()
+	saved, savedOut := readTerminalChoice, os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readTerminalChoice = func(prompt string) string {
+		fmt.Print(prompt)
+		return keystroke
+	}
+	os.Stdout = w
+	defer func() { readTerminalChoice, os.Stdout = saved, savedOut }()
+	ask()
+	w.Close()
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
 
 func (a *scriptedAsker) Ask(ctx context.Context, qs []Question) (FormResult, error) {
 	a.mu.Lock()
@@ -120,7 +137,7 @@ func captureHooks(t *testing.T) *[]map[string]any {
 	var mu sync.Mutex
 	var calls []map[string]any
 	saved := ApprovalHookInvoker
-	ApprovalHookInvoker = func(name string, payload map[string]any) error {
+	ApprovalHookInvoker = func(_ context.Context, name string, payload map[string]any) error {
 		mu.Lock()
 		defer mu.Unlock()
 		payload["hook"] = name
@@ -1071,7 +1088,7 @@ func TestPromptChoicesAndMenuShapes(t *testing.T) {
 			t.Fatalf("question %+v", asker.seen[0])
 		}
 	}
-	asker := &scriptedAsker{answer: "session", terminal: true}
+	asker := &scriptedAsker{answer: "deny"}
 	env.Ask = asker
 	got := promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /tmp/example", description: "recursive delete", allowSession: true, smartDenied: true})
 	if got.value != "deny" || strings.Join(asker.seen[0].Choices, ",") != "once,deny" {
@@ -1083,10 +1100,68 @@ func TestPromptChoicesAndMenuShapes(t *testing.T) {
 	if got.value != "session" || strings.Join(asker.seen[0].Choices, ",") != "once,session,deny" {
 		t.Fatalf("no always %+v %+v", got, asker.seen[0].Choices)
 	}
-	env.Ask = nil
-	got = promptDangerousApproval(context.Background(), env, promptOptions{command: "x", description: "d", allowSession: true})
-	if got.value != "cancelled" || got.cause == "" {
-		t.Fatalf("no asker %+v", got)
+}
+
+func TestChoiceWithLongCommand(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	long := "rm -rf " + strings.Repeat("a", 200)
+	for _, c := range [][2]string{{"o", "once"}, {"s", "session"}, {"a", "always"}, {"d", "deny"}, {"v", "deny"}} {
+		var got promptChoice
+		out := typeAtTerminalMenu(t, c[0], func() {
+			got = promptDangerousApproval(context.Background(), env, promptOptions{command: long, description: "recursive delete", allowPermanent: true, allowSession: true})
+		})
+		if got.value != c[1] || !strings.Contains(out, long) {
+			t.Fatalf("%q -> %+v, printed %q", c[0], got, out)
+		}
+	}
+}
+
+func TestShortPromptSmartDenyRejectsSessionInput(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	var got promptChoice
+	typeAtTerminalMenu(t, "session", func() {
+		got = promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /tmp/example", description: "recursive delete", allowSession: true, smartDenied: true})
+	})
+	if got.value != "deny" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSmartDenyOffersOnlyOnceAndDeny(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	rendered := typeAtTerminalMenu(t, "deny", func() {
+		promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /tmp/example", description: "recursive delete", allowSession: true, smartDenied: true})
+	})
+	if !strings.Contains(rendered, "[o]nce") || !strings.Contains(rendered, "[d]eny") || strings.Contains(rendered, "[s]ession") || strings.Contains(rendered, "[a]lways") {
+		t.Fatalf("rendered %q", rendered)
+	}
+}
+
+func TestDeniesWhenPromptToolkitActiveAndNoCallback(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	release := EnterPromptApp()
+	defer release()
+	done := make(chan promptChoice, 1)
+	go func() {
+		done <- promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /", description: "test danger", timeout: 30 * time.Second, allowPermanent: true, allowSession: true})
+	}()
+	select {
+	case got := <-done:
+		if got.value != "cancelled" || got.cause == "" {
+			t.Fatalf("got %+v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("prompt_dangerous_approval deadlocked under prompt_toolkit with no callback")
+	}
+}
+
+func TestCallbackPathStillWinsOverGuard(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	release := EnterPromptApp()
+	defer release()
+	env.Ask = &scriptedAsker{answer: "once"}
+	if got := promptDangerousApproval(context.Background(), env, promptOptions{command: "rm -rf /", description: "test danger", allowPermanent: true, allowSession: true}); got.value != "once" {
+		t.Fatalf("got %+v", got)
 	}
 }
 

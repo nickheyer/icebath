@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -293,11 +294,15 @@ func failRemoteProbe(t *testing.T) {
 	t.Cleanup(func() { probeRemoteBackendFn = prev })
 }
 
-func fakeBotScreen(t *testing.T, display, holder string) {
+// Replaces the published env read and, given a holder, the lease read
+func fakeBotScreen(t *testing.T, published map[string]string, holder *string) {
 	t.Helper()
-	prev := BotScreenStatus
-	BotScreenStatus = func(*tools.Env) (string, string, error) { return display, holder, nil }
-	t.Cleanup(func() { BotScreenStatus = prev })
+	prevEnv, prevLease := botScreenPublishedEnvFn, botScreenLeaseFn
+	botScreenPublishedEnvFn = func(*tools.Env) (map[string]string, error) { return published, nil }
+	if holder != nil {
+		botScreenLeaseFn = func(*tools.Env) botdesktop.BotDesktopLease { return botdesktop.BotDesktopLease{Holder: *holder} }
+	}
+	t.Cleanup(func() { botScreenPublishedEnvFn, botScreenLeaseFn = prevEnv, prevLease })
 }
 
 func TestBuildEnvironmentHintsSuppressesHostOnDockerBackend(t *testing.T) {
@@ -348,7 +353,8 @@ func TestRunningBotScreenRidesTheEnvironmentHints(t *testing.T) {
 	env := promptTestEnv(t)
 	t.Setenv("TERMINAL_ENV", "")
 	os.Unsetenv("TERMINAL_ENV")
-	fakeBotScreen(t, ":20", "agent")
+	holder := "agent"
+	fakeBotScreen(t, map[string]string{"DISPLAY": ":20", "XAUTHORITY": "/run/x"}, &holder)
 	out := environmentHintsFor(t, env)
 	if !strings.Contains(out, "Bot Screen") || !strings.Contains(out, "display :20") || !strings.Contains(out, "you hold it") {
 		t.Fatalf("hints %q", out)
@@ -359,7 +365,8 @@ func TestHumanHeldBotScreenSaysSo(t *testing.T) {
 	env := promptTestEnv(t)
 	t.Setenv("TERMINAL_ENV", "")
 	os.Unsetenv("TERMINAL_ENV")
-	fakeBotScreen(t, ":20", "human")
+	holder := "human"
+	fakeBotScreen(t, map[string]string{"DISPLAY": ":20"}, &holder)
 	out := environmentHintsFor(t, env)
 	if !strings.Contains(out, "a human holds it") || !strings.Contains(out, "do not drive the screen") {
 		t.Fatalf("hints %q", out)
@@ -370,7 +377,7 @@ func TestStoppedBotScreenLeavesNoHint(t *testing.T) {
 	env := promptTestEnv(t)
 	t.Setenv("TERMINAL_ENV", "")
 	os.Unsetenv("TERMINAL_ENV")
-	fakeBotScreen(t, "", "")
+	fakeBotScreen(t, map[string]string{}, nil)
 	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
 		t.Fatalf("hints %q", out)
 	}
@@ -380,7 +387,7 @@ func TestRemoteBackendNeverSeesAHostBotScreen(t *testing.T) {
 	env := promptTestEnv(t)
 	t.Setenv("TERMINAL_ENV", "docker")
 	failRemoteProbe(t)
-	fakeBotScreen(t, ":20", "agent")
+	fakeBotScreen(t, map[string]string{"DISPLAY": ":20"}, nil)
 	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
 		t.Fatalf("hints %q", out)
 	}

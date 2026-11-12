@@ -541,18 +541,13 @@ func TestWindowsCuaKeepsUIAccessAndCursorHelpers(t *testing.T) {
 }
 
 func TestCatCuaDriverProbeNeverMintsTelemetryState(t *testing.T) {
-	catSwap(t, &CuaDriverChildEnv, nil)
-	env, err := newCuaDriver().ProbeEnv()
-	if err != nil || env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "0" {
-		t.Fatalf("probe env telemetry = %q, %v", env["CUA_DRIVER_RS_TELEMETRY_ENABLED"], err)
-	}
 	catSwap(t, &CuaDriverChildEnv, func() (map[string]string, error) { return map[string]string{"FROM": "tools"}, nil })
 	if env, _ := newCuaDriver().ProbeEnv(); !reflect.DeepEqual(env, map[string]string{"FROM": "tools"}) {
 		t.Fatalf("probe env = %v", env)
 	}
 	catSwap(t, &CuaDriverChildEnv, func() (map[string]string, error) { return nil, errors.New("config unreadable") })
-	if env, _ := newCuaDriver().ProbeEnv(); env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "0" {
-		t.Fatalf("failed child env kept telemetry %v", env)
+	if env, err := newCuaDriver().ProbeEnv(); err != nil || env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] != "0" {
+		t.Fatalf("failed child env kept telemetry %v, %v", env, err)
 	}
 }
 

@@ -147,6 +147,20 @@ func NewDaytonaEnvironment(ctx context.Context, env *Env, o DaytonaOptions) (*da
 
 func (d *daytonaEnv) EnvType() string { return "daytona" }
 
+// Python class name of the environment as hermes logs and records it
+func (d *daytonaEnv) ClassName() string { return "DaytonaEnvironment" }
+
+var _ interface{ ClassName() string } = (*daytonaEnv)(nil)
+
+// Pushes changed host files into the sandbox through its sync manager, nothing when the backend has none
+func (d *daytonaEnv) SyncFiles(force bool) {
+	if d.syncManager != nil {
+		d.syncManager.Sync(force)
+	}
+}
+
+var _ SandboxSyncer = (*daytonaEnv)(nil)
+
 // Home directory of the sandbox user that remote media and image delivery resolve tilde paths against
 func (d *daytonaEnv) RemoteHome() (string, bool) { return d.remoteHome, d.remoteHome != "" }
 

@@ -37,9 +37,6 @@ type UvicornConfig struct {
 	Backlog                 int
 }
 
-// Listen backlog of a config that names none
-const defaultUvicornBacklog = 2048
-
 // Signals the server turns into an exit request
 var captureSignalSet = []os.Signal{os.Interrupt, syscall.SIGTERM}
 
@@ -71,7 +68,7 @@ func NewUvicornServer(cfg *UvicornConfig) *UvicornServer {
 		cfg.TimeoutKeepAlive = 5 * time.Second
 	}
 	if cfg.Backlog == 0 {
-		cfg.Backlog = defaultUvicornBacklog
+		cfg.Backlog = 2048
 	}
 	app := cfg.App
 	if cfg.ProxyHeaders {
@@ -277,21 +274,24 @@ func (s *UvicornServer) handleExit(sig os.Signal) error {
 	return nil
 }
 
-// Runs body with the exit handler in the signal slots, then raises each captured signal into the restored handlers
-func (s *UvicornServer) CaptureSignals(body func()) error {
+// Runs body with the exit handler in the signal slots, then raises each captured signal unless body failed
+func (s *UvicornServer) CaptureSignals(body func() error) error {
 	handler := pysignal.Func(s.handleExit)
 	originals := make([]*pysignal.Handler, len(captureSignalSet))
 	for i, sig := range captureSignalSet {
 		originals[i] = pysignal.Signal(sig, handler)
 	}
-	func() {
+	err := func() error {
 		defer func() {
 			for i, sig := range captureSignalSet {
 				pysignal.Signal(sig, originals[i])
 			}
 		}()
-		body()
+		return body()
 	}()
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	captured := append([]os.Signal(nil), s.captured...)
 	s.mu.Unlock()

@@ -29,7 +29,7 @@ type mutationParams struct {
 
 // Runner that drops a typed reasoning override of a route
 type reasoningOverrideRunner interface {
-	SetSessionReasoningOverride(route string, value any)
+	SetSessionReasoningOverride(sessionKey string, reasoningConfig map[string]any)
 }
 
 // Drops the session's cached terminal environments and the cwd and workspace records that would win over a moved binding

@@ -1,6 +1,9 @@
 package gatewayrun
 
 import (
+	"slices"
+	"sync"
+
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
@@ -79,8 +82,9 @@ type PersistentState struct {
 	hygieneFailureStreak int
 }
 
-// All per session gateway state grouped by lifecycle scope
+// All per session gateway state grouped by lifecycle scope, every scope field read and written under mu
 type SessionState struct {
+	mu           sync.Mutex
 	turn         TurnState
 	conversation ConversationState
 	persistent   PersistentState
@@ -89,6 +93,26 @@ type SessionState struct {
 // Fresh state with empty turn lease tokens
 func newSessionState() *SessionState {
 	return &SessionState{turn: TurnState{leaseTokens: map[int]*TurnLeaseToken{}}}
+}
+
+// Agent or pending sentinel holding the running slot, read under the lock and nil for a nil state
+func (s *SessionState) runningAgent() *agent.AIAgent {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.turn.agent
+}
+
+// Start time of the running turn read under the lock, zero for a nil state or an idle session
+func (s *SessionState) turnStartedTS() float64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.turn.startedTS
 }
 
 // One legacy dict attribute as a scope field with its default and presence test
@@ -106,39 +130,43 @@ type SessionFieldView[T any] struct {
 	spec   fieldSpec[T]
 }
 
-// Session states of the runner, empty when none were ever created
-func (v SessionFieldView[T]) sessions() map[string]*SessionState {
-	return v.runner.sessionsMap()
-}
-
-// Session state of key when its field is present
-func (v SessionFieldView[T]) presentState(key string) *SessionState {
-	state := v.runner.peekSessionState(key)
-	if state != nil && v.spec.present(v.spec.get(state)) {
-		return state
+// Field value of a session state read under its lock together with whether the field is present
+func (v SessionFieldView[T]) read(state *SessionState) (T, bool) {
+	var zero T
+	if state == nil {
+		return zero, false
 	}
-	return nil
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	value := v.spec.get(state)
+	if !v.spec.present(value) {
+		return zero, false
+	}
+	return value, true
 }
 
 // Field value of key and whether it is present
 func (v SessionFieldView[T]) Get(key string) (T, bool) {
-	state := v.presentState(key)
-	if state == nil {
-		var zero T
-		return zero, false
-	}
-	return v.spec.get(state), true
+	return v.read(v.runner.peekSessionState(key))
 }
 
-// Stores value on the session state of key, creating that state
+// Stores value on the session state of key under its lock, creating that state when absent
 func (v SessionFieldView[T]) Set(key string, value T) {
-	v.spec.set(v.runner.sessionState(key), value)
+	state := v.runner.sessionState(key)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	v.spec.set(state, value)
 }
 
-// Resets the field of key to its default, false when it was not present
+// Resets the field of key to its default in one hold of the lock, false when it was not present
 func (v SessionFieldView[T]) Delete(key string) bool {
-	state := v.presentState(key)
+	state := v.runner.peekSessionState(key)
 	if state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if !v.spec.present(v.spec.get(state)) {
 		return false
 	}
 	v.spec.set(state, v.spec.def())
@@ -148,8 +176,8 @@ func (v SessionFieldView[T]) Delete(key string) bool {
 // Session keys whose field is present, in session map order of a snapshot
 func (v SessionFieldView[T]) Keys() []string {
 	var keys []string
-	for key := range v.sessions() {
-		if v.presentState(key) != nil {
+	for key, state := range v.runner.sessionsMap() {
+		if _, ok := v.read(state); ok {
 			keys = append(keys, key)
 		}
 	}
@@ -158,7 +186,8 @@ func (v SessionFieldView[T]) Keys() []string {
 
 // Whether the field of key is present
 func (v SessionFieldView[T]) Contains(key string) bool {
-	return v.presentState(key) != nil
+	_, ok := v.Get(key)
+	return ok
 }
 
 // Count of sessions whose field is present
@@ -166,19 +195,23 @@ func (v SessionFieldView[T]) Len() int {
 	return len(v.Keys())
 }
 
-// Present fields as a plain map
+// Present fields as a plain map, each value read with its presence under one hold
 func (v SessionFieldView[T]) Items() map[string]T {
 	items := map[string]T{}
-	for _, key := range v.Keys() {
-		items[key] = v.spec.get(v.runner.peekSessionState(key))
+	for key, state := range v.runner.sessionsMap() {
+		if value, ok := v.read(state); ok {
+			items[key] = value
+		}
 	}
 	return items
 }
 
 // Resets the field on every session
 func (v SessionFieldView[T]) Clear() {
-	for _, state := range v.sessions() {
+	for _, state := range v.runner.sessionsMap() {
+		state.mu.Lock()
 		v.spec.set(state, v.spec.def())
+		state.mu.Unlock()
 	}
 }
 
@@ -201,68 +234,71 @@ type TurnLeaseTokenView struct {
 	runner *GatewayRunner
 }
 
-// Turn state holding the token of key, nil when not held
-func (v TurnLeaseTokenView) held(key leaseTokenKey) *TurnState {
+// Token held for key and whether one is held, both read under one hold of the state lock
+func (v TurnLeaseTokenView) Get(key leaseTokenKey) (*TurnLeaseToken, bool) {
 	state := v.runner.peekSessionState(key.sessionKey)
 	if state == nil {
-		return nil
-	}
-	if _, ok := state.turn.leaseTokens[key.generation]; !ok {
-		return nil
-	}
-	return &state.turn
-}
-
-// Token held for key and whether one is held
-func (v TurnLeaseTokenView) Get(key leaseTokenKey) (*TurnLeaseToken, bool) {
-	turn := v.held(key)
-	if turn == nil {
 		return nil, false
 	}
-	return turn.leaseTokens[key.generation], true
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	token, ok := state.turn.leaseTokens[key.generation]
+	return token, ok
 }
 
-// Records token for key on the session state, creating that state
+// Records token for key on the session state under its lock, creating that state when absent
 func (v TurnLeaseTokenView) Set(key leaseTokenKey, token *TurnLeaseToken) {
-	turn := &v.runner.sessionState(key.sessionKey).turn
-	if turn.leaseTokens == nil {
-		turn.leaseTokens = map[int]*TurnLeaseToken{}
+	state := v.runner.sessionState(key.sessionKey)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.turn.leaseTokens == nil {
+		state.turn.leaseTokens = map[int]*TurnLeaseToken{}
 	}
-	turn.leaseTokens[key.generation] = token
+	state.turn.leaseTokens[key.generation] = token
 }
 
-// Drops the token of key, false when none was held
+// Drops the token of key in one hold of the state lock, false when none was held
 func (v TurnLeaseTokenView) Delete(key leaseTokenKey) bool {
-	turn := v.held(key)
-	if turn == nil {
+	state := v.runner.peekSessionState(key.sessionKey)
+	if state == nil {
 		return false
 	}
-	delete(turn.leaseTokens, key.generation)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if _, ok := state.turn.leaseTokens[key.generation]; !ok {
+		return false
+	}
+	delete(state.turn.leaseTokens, key.generation)
 	return true
 }
 
 // Every held session key and generation pair
 func (v TurnLeaseTokenView) Keys() []leaseTokenKey {
 	var keys []leaseTokenKey
-	for sessionKey, state := range v.runner.sessionsMap() {
-		for generation := range state.turn.leaseTokens {
-			keys = append(keys, leaseTokenKey{sessionKey, generation})
-		}
+	for key := range v.Items() {
+		keys = append(keys, key)
 	}
 	return keys
 }
 
 // Count of held tokens
-func (v TurnLeaseTokenView) Len() int { return len(v.Keys()) }
+func (v TurnLeaseTokenView) Len() int { return len(v.Items()) }
 
 // Whether a token is held for key
-func (v TurnLeaseTokenView) Contains(key leaseTokenKey) bool { return v.held(key) != nil }
+func (v TurnLeaseTokenView) Contains(key leaseTokenKey) bool {
+	_, ok := v.Get(key)
+	return ok
+}
 
-// Held tokens as a plain map
+// Held tokens as a plain map keyed by session and generation, each session read under its own lock
 func (v TurnLeaseTokenView) Items() map[leaseTokenKey]*TurnLeaseToken {
 	items := map[leaseTokenKey]*TurnLeaseToken{}
-	for _, key := range v.Keys() {
-		items[key], _ = v.Get(key)
+	for sessionKey, state := range v.runner.sessionsMap() {
+		state.mu.Lock()
+		for generation, token := range state.turn.leaseTokens {
+			items[leaseTokenKey{sessionKey, generation}] = token
+		}
+		state.mu.Unlock()
 	}
 	return items
 }
@@ -295,9 +331,9 @@ func mapSpec(scope, name string, get func(*SessionState) map[string]any, set fun
 		def: func() map[string]any { return nil }, present: func(v map[string]any) bool { return v != nil }}
 }
 
-// Spec of a list field present when it has an item
+// List field spec present when nonempty, copied on every read and write so callers never share its backing array
 func listSpec[E any](scope, name string, get func(*SessionState) []E, set func(*SessionState, []E)) fieldSpec[[]E] {
-	return fieldSpec[[]E]{scope: scope, name: name, get: get, set: set,
+	return fieldSpec[[]E]{scope: scope, name: name, get: func(s *SessionState) []E { return slices.Clone(get(s)) }, set: func(s *SessionState, v []E) { set(s, slices.Clone(v)) },
 		def: func() []E { return nil }, present: func(v []E) bool { return len(v) > 0 }}
 }
 

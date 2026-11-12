@@ -30,7 +30,6 @@ func TestMain(m *testing.M) {
 		return &fakeLease{}, nil, nil
 	}
 	FormatRefusalStderr = activesessions.FormatRefusalStderr
-	EmergencyCleanupAllBrowserSessions = func() {}
 	SecurityAdvisoriesStartupBanner = func(ctx context.Context) string { return "" }
 	installAgentWiring()
 	os.Exit(m.Run())

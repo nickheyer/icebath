@@ -100,7 +100,7 @@ func scheduleAdoption(ctx context.Context, a *SessionAuthority, sid string, rece
 	if a.localAdoptions == nil {
 		a.localAdoptions = map[string]*trackedTask{}
 	}
-	a.localAdoptions[sid] = trackMutation(a, func(taskCtx context.Context) (any, error) {
+	a.localAdoptions[sid] = trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		err := adoptReceipt(taskCtx, a, sid, receipt)
 		if err == nil && !a.Retiring {
 			_, err = restoreLocalSession(withOwnerLoop(taskCtx), a, sid)

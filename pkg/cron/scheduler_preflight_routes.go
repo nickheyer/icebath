@@ -69,6 +69,12 @@ func newSharedRouteAdapters(adapters any, routes []*gateway.ProfileRoute) *Share
 			primary[k] = v
 		}
 	}
+	if m, ok := adapters.(*pydict.Dict[gateway.Platform, gateway.PlatformAdapter]); ok && m != nil {
+		for _, platform := range m.Keys() {
+			adapter, _ := m.Get(platform)
+			primary[string(platform)] = adapter
+		}
+	}
 	return &SharedRouteAdapters{primary: primary, routes: append([]*gateway.ProfileRoute(nil), routes...)}
 }
 

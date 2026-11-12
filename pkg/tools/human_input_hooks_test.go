@@ -47,7 +47,7 @@ func captureHumanInputHooks(t *testing.T) *humanHookCapture {
 	t.Helper()
 	capture := &humanHookCapture{}
 	saved := ApprovalHookInvoker
-	ApprovalHookInvoker = func(name string, payload map[string]any) error {
+	ApprovalHookInvoker = func(_ context.Context, name string, payload map[string]any) error {
 		for _, hook := range humanHookNames {
 			if name == hook {
 				capture.mu.Lock()

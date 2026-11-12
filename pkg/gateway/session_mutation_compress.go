@@ -167,7 +167,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	if err != nil {
 		return nil, err
 	}
-	model, runtime, err := resolver.ResolveSessionAgentRuntime(ctx, live.Source, live.Route, true)
+	model, runtime, err := resolver.ResolveSessionAgentRuntime(ctx, live.Source, live.Route, nil, true)
 	if err != nil {
 		return nil, err
 	}

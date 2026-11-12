@@ -175,15 +175,18 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	for k, v := range result.RuntimeCapabilities {
 		capabilities[k] = v
 	}
-	r.sessionModelOverrides().Set(sw.SessionKey, map[string]any{
+	switched := map[string]any{
 		"model": result.NewModel, "provider": result.TargetProvider, "api_key": result.APIKey,
 		"base_url": result.BaseURL, "api_mode": result.APIMode, "request_overrides": requestOverrides, "capabilities": capabilities,
-	})
-	if oneTurn {
-		r.claimOneTurnRestore(sw.SessionKey, sw.RestoreSnapshot)
-	} else if !picker {
-		r.pendingOneTurnModelRestores().Delete(sw.SessionKey)
 	}
+	r.withSessionState(sw.SessionKey, func(s *SessionState) {
+		s.conversation.modelOverride = switched
+		if oneTurn {
+			claimOneTurnRestoreIn(s, sw.RestoreSnapshot)
+		} else if !picker {
+			s.conversation.oneTurnRestore = nil
+		}
+	})
 	globalError := ""
 	if sw.PersistGlobal {
 		if err := persistModelSwitchToConfig(ctx, *result, sw.ConfigPath); err != nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,18 +52,20 @@ var procState processState
 // Starts the dead marker reporter off the caller's goroutine
 var spawnReporter = func(run func()) { go run() }
 
-// Crash class of a recovered panic value or error, tagged values naming their own class
+// Python exception classes in crash class order, most specific first
+var crashClassKinds = [...][2]string{{"MemoryError", "memory_error"}, {"ImportError", "import_error"}, {"OSError", "os_error"}, {"RuntimeError", "runtime_error"}}
+
+// Crash class of a recovered panic value by its exception class chain, Go OS and runtime errors by their type
 func CrashClass(v any) string {
-	var tagged interface{ CrashClass() string }
-	if err, ok := v.(error); ok && errors.As(err, &tagged) && CrashClasses.Has(tagged.CrashClass()) {
-		return tagged.CrashClass()
-	}
-	if t, ok := v.(interface{ CrashClass() string }); ok && CrashClasses.Has(t.CrashClass()) {
-		return t.CrashClass()
-	}
 	err, ok := v.(error)
 	if !ok {
 		return "other"
+	}
+	mro := pyExceptionMRO(err)
+	for _, kind := range crashClassKinds {
+		if slices.Contains(mro, kind[0]) {
+			return kind[1]
+		}
 	}
 	var rtErr runtime.Error
 	var pathErr *fs.PathError
@@ -209,11 +212,7 @@ func BeginProcess(ctx context.Context, kind string) {
 	record := pyjson.NewObject()
 	record.Set("kind", kind)
 	record.Set("pid", int64(pid))
-	var start any
-	if ProcessStartTimeHook != nil {
-		start = ProcessStartTimeHook(pid)
-	}
-	record.Set("start_time", start)
+	record.Set("start_time", ProcessStartTimeHook(pid))
 	record.Set("state", "running")
 	procState.mu.Lock()
 	err := writeMarker(path, record)
@@ -248,7 +247,7 @@ func pidRecord(pid int64) *pyjson.Object {
 
 // Reports whether a pid passes the gateway's canonical liveness check
 func pidRecordIsLive(record *pyjson.Object) bool {
-	return RuntimeStatusPidIsLiveHook != nil && RuntimeStatusPidIsLiveHook(record)
+	return RuntimeStatusPidIsLiveHook(record)
 }
 
 // Reports whether the reporter whose pid a claimed file names is still alive

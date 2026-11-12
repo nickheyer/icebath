@@ -21,7 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Clipboard image helpers of the classic CLI, assigned at startup from the app package
+// Clipboard image helpers of the classic CLI, set by the binary
 var (
 	SaveClipboardImage func(dest string) bool
 	HasClipboardImage  func() bool

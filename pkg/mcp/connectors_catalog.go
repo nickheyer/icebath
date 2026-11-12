@@ -34,11 +34,11 @@ var (
 	catalogDashes    = regexp.MustCompile(`[-_]+`)
 )
 
-// The tui gateway launch home, the named profile home lookup and the session profile runtime scope, set by the arena slice
+// The tui gateway launch home, the named profile home lookup and the profile runtime scope, set by the binary
 var (
-	TUILaunchHome                 func() string
-	TUIProfileHome                func(ctx context.Context, profile string) (string, error)
-	TUISessionProfileRuntimeScope func(ctx context.Context, session map[string]any) (context.Context, func())
+	TUILaunchHome          func() string
+	TUIProfileHome         func(profile string) (string, error)
+	TUIProfileRuntimeScope func(ctx context.Context, profileHome string) context.Context
 )
 
 func catalogFlag(value string, def bool) bool {
@@ -88,17 +88,17 @@ func catalogSameHome(a, b string) bool {
 }
 
 // Binds the profile at h with its home, secrets and terminal policy the way an RPC for that profile does
-func CatalogTargetScope(ctx context.Context, h string) (context.Context, func()) {
+func CatalogTargetScope(ctx context.Context, h string) context.Context {
 	launch := TUILaunchHome()
 	if catalogSameHome(h, launch) {
-		return provider.WithLaunchProfileRuntimeScope(ctx, launch), func() {}
+		return provider.WithLaunchProfileRuntimeScope(ctx, launch)
 	}
-	return TUISessionProfileRuntimeScope(ctx, map[string]any{"profile_home": h})
+	return TUIProfileRuntimeScope(ctx, h)
 }
 
 // Home of the profile the Advanced modal named, an error for one that does not exist
 func catalogNamedHome(ctx context.Context, name string) (string, error) {
-	h, err := TUIProfileHome(ctx, name)
+	h, err := TUIProfileHome(name)
 	if err != nil {
 		return "", err
 	}
@@ -490,8 +490,7 @@ func (r *CatalogRunner) install(ctx context.Context, t *tools.ConnTarget, env, o
 	ref, _ := options.Get("ref")
 	refText, _ := ref.(string)
 	result, done, err := func() (map[string]any, bool, error) {
-		sctx, release := CatalogTargetScope(ctx, h)
-		defer release()
+		sctx := CatalogTargetScope(ctx, h)
 		creds := pyjson.NewObject()
 		for _, k := range env.Keys {
 			if v := catalogGet(env, k); !catalogOptionKeys[k] && v != "" {

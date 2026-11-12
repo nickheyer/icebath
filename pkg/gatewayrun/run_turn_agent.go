@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -55,7 +56,7 @@ func (r *GatewayRunner) runAgentInner(ctx context.Context, p runAgentParams) (ma
 		}
 		if captured := gateway.ExecutionResultOf(ctx); captured != nil {
 			if _, present := captured.Get("result"); !present {
-				captured.Set("result", result)
+				captured.Set("result", pyjson.Ordered(result))
 			}
 		}
 		return result, nil

@@ -35,7 +35,7 @@ var NonMessagingSessionSurfaces = map[string]bool{
 	"local": true, "msgraph_webhook": true, "tool": true, "tui": true, "webhook": true,
 }
 
-// Legacy cli CLI_CONFIG loader the cli_config_load port installs, read only under ICEBATH_IGNORE_USER_CONFIG=1
+// Process wide legacy CLI config, set by the binary, read only under ICEBATH_IGNORE_USER_CONFIG=1
 var LoadCLIConfig func(ctx context.Context) map[string]any
 
 // Delegation section of the effective config, the legacy CLI config when user config is ignored, empty on failure

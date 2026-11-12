@@ -254,16 +254,21 @@ func writeToSpillover(env *Env, content, filename string) string {
 
 // SandboxSyncer is implemented by file synced backends that must push host files before a probe
 type SandboxSyncer interface {
-	SyncFiles(ctx context.Context, force bool) error
+	SyncFiles(force bool)
 }
 
 // Path where a remote backend can read the host spill file or empty when it cannot
 func sandboxVisibleSpilloverPath(ctx context.Context, env *Env, hostPath string, sandbox Environment) string {
 	visible := toAgentVisibleCachePath(env, hostPath)
 	if syncer, ok := sandbox.(SandboxSyncer); ok {
-		if err := syncer.SyncFiles(ctx, true); err != nil {
-			toolsLogger(env).Debug("Spillover sync failed", "error", err)
-		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					toolsLogger(env).Debug(fmt.Sprintf("Spillover sync failed: %v", r))
+				}
+			}()
+			syncer.SyncFiles(true)
+		}()
 	}
 	res, err := sandbox.Execute(ctx, "test -r "+shQuote(visible), ExecOptions{Timeout: 15})
 	if err != nil {

@@ -433,6 +433,9 @@ func getSessionInfo(ctx context.Context, env *tools.Env, cacheKey string) (map[s
 	return info, nil
 }
 
+// Closes this process's browser sessions then reaps orphans of crashed processes, once per process
+func EmergencyCleanupAllSessions(ctx context.Context) { emergencyCleanupAllSessions(ctx) }
+
 // Process exit sweep, every session closed and the janitor stopped, which the binary's shutdown path calls
 func AtexitCleanup(ctx context.Context) {
 	emergencyCleanupAllSessions(ctx)

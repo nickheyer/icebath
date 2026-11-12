@@ -50,28 +50,13 @@ const rfbRelay = "import os,socket,sys,threading\n" +
 	"  if not d: break\n" +
 	"  os.write(1,d)\n"
 
-// Python class name of a terminal environment as hermes logs and records it
+// Python class name of a terminal environment as hermes logs and records it, the bare type name otherwise
 func envClassName(e tools.Environment) string {
 	if c, ok := e.(interface{ ClassName() string }); ok {
 		return c.ClassName()
 	}
-	switch e.EnvType() {
-	case "docker":
-		return "DockerEnvironment"
-	case "ssh":
-		return "SSHEnvironment"
-	case "local":
-		return "LocalEnvironment"
-	case "modal":
-		return "ModalEnvironment"
-	case "managed_modal":
-		return "ManagedModalEnvironment"
-	case "daytona":
-		return "DaytonaEnvironment"
-	case "vercel_sandbox":
-		return "VercelSandboxEnvironment"
-	}
-	return fmt.Sprintf("%T", e)
+	name := strings.TrimLeft(fmt.Sprintf("%T", e), "*")
+	return name[strings.LastIndex(name, ".")+1:]
 }
 
 // Backend name a plugin environment was built for, empty for a built in one

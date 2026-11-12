@@ -147,7 +147,8 @@ func (r *GatewayRunner) InboundModelContextLength(ctx context.Context, source *g
 func (r *GatewayRunner) enrichInboundImages(ctx context.Context, source *gateway.SessionSource, sessionKey, messageText string, imagePaths []string) string {
 	mode := r.decideImageInputMode(ctx, source, sessionKey)
 	if mode == "native" {
-		r.sessionState(sessionKey).persistent.nativeImagePaths = append([]string{}, imagePaths...)
+		staged := append([]string{}, imagePaths...)
+		r.withSessionState(sessionKey, func(s *SessionState) { s.persistent.nativeImagePaths = staged })
 		inboundLog().Info(fmt.Sprintf("Image routing: native (model supports vision). %d image(s) will be attached inline.", len(imagePaths)))
 		return messageText
 	}

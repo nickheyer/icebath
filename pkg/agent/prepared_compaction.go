@@ -284,7 +284,7 @@ func blockedForPlatform(a *AIAgent, origin string) bool {
 	if a.platform == "cron" || a.platform == "subagent" || a.delegateDepth > 0 {
 		return true
 	}
-	return a.agentIsOneshot()
+	return a.agentIsOneshot(context.Background())
 }
 
 type busyWindow struct {

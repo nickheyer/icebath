@@ -449,11 +449,6 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 	return result, nil
 }
 
-// Profile aware adapter lookup of a multiplex runner
-type authorizationAdapterRunner interface {
-	AuthorizationAdapter(platform, profile string) any
-}
-
 // Default profile adapter registry of a bare runner
 type adapterMapRunner interface {
 	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
@@ -473,7 +468,7 @@ func liveAdapter(ctx context.Context, platform gateway.Platform, lookupFailedWar
 			adapter = nil
 		}
 	}()
-	resolve, ok := runner.(authorizationAdapterRunner)
+	resolve, ok := runner.(gateway.AuthorizationAdapterRunner)
 	if !ok {
 		registry, ok := runner.(adapterMapRunner)
 		if !ok {
@@ -485,7 +480,11 @@ func liveAdapter(ctx context.Context, platform gateway.Platform, lookupFailedWar
 		}
 		return runner, live
 	}
-	return runner, resolve.AuthorizationAdapter(string(platform), profiles.GetActiveProfileName(ctx))
+	profile := profiles.GetActiveProfileName(ctx)
+	if live := resolve.AuthorizationAdapter(ctx, platform, &profile); live != nil {
+		return runner, live
+	}
+	return runner, nil
 }
 
 // Standalone sender of a registered plugin after the plugin scan, else the error payload naming it

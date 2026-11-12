@@ -7,14 +7,10 @@ func recoverOrRememberModel(r *GatewayRunner, sessionKey, model string) string {
 	if model == "" {
 		recovered := ""
 		if sessionKey != "" {
-			if state := r.peekSessionState(sessionKey); state != nil {
-				recovered = state.conversation.lastResolvedModel
-			}
+			recovered, _ = r.lastResolvedModel().Get(sessionKey)
 		}
 		if recovered == "" {
-			if star := r.peekSessionState("*"); star != nil {
-				recovered = star.conversation.lastResolvedModel
-			}
+			recovered, _ = r.lastResolvedModel().Get("*")
 		}
 		if recovered != "" {
 			runLog().Warn(fmt.Sprintf("Empty model resolved for session=%s — recovering last-known-good model %s (config read likely returned empty; see #35314)",
@@ -24,8 +20,8 @@ func recoverOrRememberModel(r *GatewayRunner, sessionKey, model string) string {
 		return model
 	}
 	if sessionKey != "" {
-		r.sessionState(sessionKey).conversation.lastResolvedModel = model
+		r.lastResolvedModel().Set(sessionKey, model)
 	}
-	r.sessionState("*").conversation.lastResolvedModel = model
+	r.lastResolvedModel().Set("*", model)
 	return model
 }

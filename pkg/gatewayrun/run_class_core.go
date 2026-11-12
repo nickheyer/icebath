@@ -250,13 +250,17 @@ func getChannelOverride(config *gateway.GatewayConfig, platform gateway.Platform
 	return nil
 }
 
-// Reasoning override of the state as session info reads it
+// Reasoning override of the state as session info reads it, read under the state lock
 func (s *SessionState) ReasoningOverride() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.conversation.reasoningOverride
 }
 
-// The /fast override of the state and whether one is set
+// The /fast override of the state and whether one is set, read together under the state lock
 func (s *SessionState) ServiceTierOverride() (*string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.conversation.serviceTierOverride.tier, s.conversation.serviceTierOverride.set
 }
 

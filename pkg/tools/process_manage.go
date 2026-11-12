@@ -67,7 +67,7 @@ func transformProcessOutput(env *Env, output, command string, returncode *int, t
 	if returncode != nil {
 		code = *returncode
 	}
-	results := TerminalOutputTransformHook(map[string]any{
+	results := TerminalOutputTransformHook(WithEnvHome(context.Background(), env), map[string]any{
 		"command": command, "output": output, "returncode": code, "task_id": taskID,
 		"env_type": "", "tool_call_id": callID,
 	})

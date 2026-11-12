@@ -22,6 +22,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const ProtocolVersion = 1
@@ -59,6 +60,22 @@ type HostBuiltinError struct {
 }
 
 func (e *HostBuiltinError) Error() string { return e.Message }
+
+// Class names of the remote exception through BaseException, its type(exc).__mro__ without object
+func (e *HostBuiltinError) PyExceptionMRO() []string { return append([]string{e.Type}, e.Bases...) }
+
+// Class names of the remote exception through BaseException, the parent side raise standing as PluginHostError
+func (e *PluginHostError) PyExceptionMRO() []string {
+	if e.TypeName == "" {
+		return []string{"PluginHostError", "Exception", "BaseException"}
+	}
+	return append([]string{e.TypeName}, e.Bases...)
+}
+
+var (
+	_ interface{ PyExceptionMRO() []string } = (*HostBuiltinError)(nil)
+	_ interface{ PyExceptionMRO() []string } = (*PluginHostError)(nil)
+)
 
 var remoteBuiltinErrors = map[string]bool{
 	"ValueError": true, "TypeError": true, "KeyError": true, "FileNotFoundError": true, "PermissionError": true,
@@ -123,8 +140,8 @@ func (o *Opaque) Attr(name string) error {
 
 // Python class name a Go value reports across the wire
 func wireTypeName(v any) string {
-	if n, ok := v.(interface{ PythonTypeName() string }); ok {
-		return n.PythonTypeName()
+	if n, ok := v.(pyrepr.PyTypeNamed); ok && n.PyTypeName() != "" {
+		return n.PyTypeName()
 	}
 	t := reflect.TypeOf(v)
 	for t != nil && t.Kind() == reflect.Pointer {

@@ -131,7 +131,7 @@ func invalidateCachedSudoOnAuthFailure(env *Env, scope, command, output string) 
 
 // Asks the user for a sudo password through the host form or the terminal, empty on skip, timeout or error
 func promptForSudoPassword(ctx context.Context, env *Env, command string, timeout time.Duration) string {
-	human := humanInputRequest(env, "sudo", command, "")
+	human := humanInputRequest(ctx, env, "sudo", command, "")
 	if cb := GetSudoPasswordCallback(ctx); cb != nil {
 		return callSudoPasswordCallback(ctx, env, cb, command, human)
 	}
@@ -139,11 +139,11 @@ func promptForSudoPassword(ctx context.Context, env *Env, command string, timeou
 		password, done := readHiddenPasswordFromTTY(timeout)
 		switch {
 		case !done:
-			human.finish(env, "timeout")
+			human.finish(ctx, env, "timeout")
 		case password != "":
-			human.finish(env, "provided")
+			human.finish(ctx, env, "provided")
 		default:
-			human.finish(env, "skipped")
+			human.finish(ctx, env, "skipped")
 		}
 		return password
 	}
@@ -157,17 +157,17 @@ func promptForSudoPassword(ctx context.Context, env *Env, command string, timeou
 	release()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			human.finish(env, "timeout")
+			human.finish(ctx, env, "timeout")
 		} else {
-			human.finish(env, "error")
+			human.finish(ctx, env, "error")
 		}
 		return ""
 	}
 	if len(result.Answers) == 0 || result.Answers[0].Text == "" {
-		human.finish(env, "skipped")
+		human.finish(ctx, env, "skipped")
 		return ""
 	}
-	human.finish(env, "provided")
+	human.finish(ctx, env, "provided")
 	return result.Answers[0].Text
 }
 

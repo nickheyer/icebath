@@ -39,7 +39,7 @@ type MediaDeliveryScopeRunner interface {
 
 // Runner seam naming the live adapter of a source after a reconnect swapped the registry entry
 type DeliveryAdapterRunner interface {
-	DeliveryAdapterFor(source *SessionSource) (PlatformAdapter, error)
+	DeliveryAdapterFor(ctx context.Context, source *SessionSource) (PlatformAdapter, error)
 }
 
 // Text and ttl of a handler response, the ttl zero where the adapter cannot delete messages
@@ -78,13 +78,13 @@ func (b *BasePlatformAdapter) mediaDeliveryScope(ctx context.Context, source *Se
 }
 
 // Runner's current adapter of the same platform for a new final send, this adapter otherwise
-func (b *BasePlatformAdapter) finalDeliveryAdapter(source *SessionSource) PlatformAdapter {
+func (b *BasePlatformAdapter) finalDeliveryAdapter(ctx context.Context, source *SessionSource) PlatformAdapter {
 	self := b.Self()
 	resolver, ok := b.GatewayRunner.(DeliveryAdapterRunner)
 	if !ok {
 		return self
 	}
-	live, err := resolver.DeliveryAdapterFor(source)
+	live, err := resolver.DeliveryAdapterFor(ctx, source)
 	if err != nil {
 		slog.Debug(fmt.Sprintf("[%s] Failed to resolve live adapter for final delivery", self.Name()))
 		return self

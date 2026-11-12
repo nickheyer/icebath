@@ -401,9 +401,9 @@ func TestAProjectFileWrittenMidSessionDoesNotSwitchToolsets(t *testing.T) {
 
 func TestPluginMCPServersStayInThePosture(t *testing.T) {
 	ctx := policyBuildHome(t)
-	held := tools.PortableMCPServerNames
-	tools.PortableMCPServerNames = func(*tools.Env) map[string]bool { return map[string]bool{"plug": true} }
-	t.Cleanup(func() { tools.PortableMCPServerNames = held })
+	held := tools.PluginToolsetCatalog.PortableNowait
+	tools.PluginToolsetCatalog.PortableNowait = func(context.Context) map[string]bool { return map[string]bool{"plug": true} }
+	t.Cleanup(func() { tools.PluginToolsetCatalog.PortableNowait = held })
 	got := postureCreate(t, ctx, map[string]any{"source": "gui", "cwd": postureProject(t)}, focusConfig(), false).Toolsets
 	if !slices.Contains(got, "coding") || !slices.Contains(got, "plug") {
 		t.Fatalf("gui posture toolsets %v", got)

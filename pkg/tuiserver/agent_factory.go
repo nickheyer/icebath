@@ -44,6 +44,8 @@ var (
 var approvalModes = map[string]bool{"manual": true, "smart": true, "off": true}
 
 // Session platform, desktop for the chat panel of the desktop app else tui
+func ResolveSessionPlatform() string { return resolveSessionPlatform() }
+
 func resolveSessionPlatform() string {
 	desktop := provider.IsTruthyValue(os.Getenv("ICEBATH_DESKTOP"))
 	if desktop && !provider.IsTruthyValue(os.Getenv("ICEBATH_DESKTOP_TERMINAL")) {
@@ -332,6 +334,11 @@ func loadEnabledToolsets(ctx context.Context, platform string) []string {
 		return nil
 	}
 	return result
+}
+
+// Enabled and configured disabled toolsets a desktop or TUI session of the platform is built with
+func GatewayToolsets(ctx context.Context, platform string) (enabled, disabled []string) {
+	return loadEnabledToolsets(ctx, platform), loadDisabledToolsetsConfig(ctx)
 }
 
 // Configured agent disabled toolsets, nil when none or unreadable

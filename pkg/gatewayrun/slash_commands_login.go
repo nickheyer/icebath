@@ -288,7 +288,11 @@ func (r *GatewayRunner) sweepSessionsOffWelcome(ctx context.Context) int {
 				failed++
 				continue
 			}
-			overrides.Delete(key)
+			r.withPeekedSessionState(key, func(s *SessionState) {
+				if held := s.conversation.modelOverride; held != nil && mapIdentity(held) == mapIdentity(override) {
+					s.conversation.modelOverride = nil
+				}
+			})
 		}
 		func() {
 			defer func() {

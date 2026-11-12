@@ -131,13 +131,13 @@ func smartVerdict(ctx context.Context, env *Env, command, description, patternKe
 		"pattern_key": patternKey, "pattern_keys": append([]string{}, patternKeys...),
 		"session_key": sessionKey, "surface": "smart",
 	}
-	fireApprovalHook(env, "pre_approval_request", payload)
+	fireApprovalHook(ctx, env, "pre_approval_request", payload)
 	verdict := smartApproveFunc(ctx, env, command, description)
 	if verdict == "approve" || verdict == "deny" {
 		post := copyMap(payload)
 		post["choice"] = "smart_" + verdict
 		post["decided_by"] = "aux_llm"
-		fireApprovalHook(env, "post_approval_response", post)
+		fireApprovalHook(ctx, env, "post_approval_response", post)
 	}
 	return verdict
 }

@@ -170,9 +170,10 @@ func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platf
 		if !r.resumeOwnerAuthorized(ctx, entry.SessionKey, source) {
 			continue
 		}
-		state := r.sessionState(entry.SessionKey)
-		state.turn.agent = agentPendingSentinel
-		state.turn.startedTS = float64(time.Now().UnixNano()) / 1e9
+		r.withSessionState(entry.SessionKey, func(s *SessionState) {
+			s.turn.agent = agentPendingSentinel
+			s.turn.startedTS = float64(time.Now().UnixNano()) / 1e9
+		})
 		observability.NoteRunningChatOwner(runnerHomeResolver{ctx, r}, entry.SessionKey, source)
 		r.persistActiveAgents(ctx)
 		event := gateway.NewMessageEvent("")

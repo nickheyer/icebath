@@ -53,7 +53,15 @@ func (f *fakeCreds) ActiveLoggedInProvider(bool) string { return f.active }
 
 func (f *fakeCreds) FreeInferenceActive() bool { return f.free }
 
-func (f *fakeCreds) CredentialError(provider string) *AuthError { return f.errs[provider] }
+func (f *fakeCreds) RuntimeCredential(provider string) (Credential, error) {
+	if cred, ok := f.Credential(provider); ok && (cred.APIKey != "" || cred.TokenSource != nil) {
+		return cred, nil
+	}
+	if err := f.errs[provider]; err != nil {
+		return Credential{}, err
+	}
+	return Credential{}, oauthMissingLoginError(provider)
+}
 
 func (f *fakeCreds) CredentialForEntry(poolKey string, entry map[string]any) (Credential, bool) {
 	if f.scoped != nil {

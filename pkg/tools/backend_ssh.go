@@ -108,6 +108,20 @@ func NewSSHEnvironment(ctx context.Context, env *Env, o SSHOptions) (*sshEnv, er
 
 func (s *sshEnv) EnvType() string { return "ssh" }
 
+// Python class name of the environment as hermes logs and records it
+func (s *sshEnv) ClassName() string { return "SSHEnvironment" }
+
+var _ interface{ ClassName() string } = (*sshEnv)(nil)
+
+// Pushes changed host files into the sandbox through its sync manager, nothing when the backend has none
+func (s *sshEnv) SyncFiles(force bool) {
+	if s.syncManager != nil {
+		s.syncManager.Sync(force)
+	}
+}
+
+var _ SandboxSyncer = (*sshEnv)(nil)
+
 // RemoteHome is the detected remote home and whether the probe found it
 func (s *sshEnv) RemoteHome() (string, bool) { return s.remoteHome, s.remoteHomeDetected }
 

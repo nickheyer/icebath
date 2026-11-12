@@ -29,22 +29,24 @@ func firstAgent(entry *agentCacheEntry) *agent.AIAgent {
 
 // Agent the running slot of a key holds and whether it is the pending claim sentinel
 func (r *GatewayRunner) RunningAgent(key string) (any, bool) {
-	state := r.peekSessionState(key)
-	if state == nil || state.turn.agent == nil {
+	running := r.runningSlotAgent(key)
+	if running == nil {
 		return nil, false
 	}
-	if state.turn.agent == agentPendingSentinel {
+	if running == agentPendingSentinel {
 		return nil, true
 	}
-	return state.turn.agent, false
+	return running, false
 }
 
 // Removes a cached agent and soft releases it off the lock, a mid turn agent retired after its turn
 func (r *GatewayRunner) evictCachedAgent(ctx context.Context, sessionKey string, commitMemory, releaseAfterTurn bool) {
 	state := r.peekSessionState(sessionKey)
 	if state != nil {
+		state.mu.Lock()
 		state.conversation.ephemeralPin = nil
 		state.conversation.vcLast = nil
+		state.mu.Unlock()
 	}
 	var evicted *agentCacheEntry
 	pop := func() {
@@ -69,7 +71,9 @@ func (r *GatewayRunner) evictCachedAgent(ctx context.Context, sessionKey string,
 	}
 	if _, running := r.runningAgentIDs()[a]; running {
 		if releaseAfterTurn && state != nil {
+			state.mu.Lock()
 			state.turn.retiredAgents = append(state.turn.retiredAgents, a)
+			state.mu.Unlock()
 		}
 		return
 	}

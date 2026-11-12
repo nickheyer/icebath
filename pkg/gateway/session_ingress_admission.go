@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 type admissionAuthorKey struct{}
@@ -31,6 +32,25 @@ func executingAdmissionOf(ctx context.Context) bool {
 func viewerTurnOf(ctx context.Context) *LiveSession {
 	live, _ := ctx.Value(viewerTurnKey{}).(*LiveSession)
 	return live
+}
+
+// Installs the viewer turn approver check the tool approval routing reads
+func init() { tools.ViewerTurnHasApprover = viewerTurnHasApprover }
+
+// Whether the viewer turn bound to ctx has an attached subscriber holding session approve
+func viewerTurnHasApprover(ctx context.Context) bool {
+	live := viewerTurnOf(ctx)
+	if live == nil {
+		return false
+	}
+	live.EventStream.Lock.Lock()
+	defer live.EventStream.Lock.Unlock()
+	for _, member := range live.Subscribers {
+		if member.Capabilities["session:approve"] {
+			return true
+		}
+	}
+	return false
 }
 
 // Validation clauses about a message's own content that are safe to name to the sender's chat

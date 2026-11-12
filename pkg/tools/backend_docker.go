@@ -1410,6 +1410,11 @@ type dockerEnv struct {
 
 func (d *dockerEnv) EnvType() string { return "docker" }
 
+// Python class name of the environment as hermes logs and records it
+func (d *dockerEnv) ClassName() string { return "DockerEnvironment" }
+
+var _ interface{ ClassName() string } = (*dockerEnv)(nil)
+
 func (d *dockerEnv) additionalProfileScopedPassthroughNames() []string {
 	return append([]string{}, d.forwardEnv...)
 }

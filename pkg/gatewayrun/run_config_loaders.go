@@ -245,7 +245,7 @@ func (r *GatewayRunner) setSessionReasoningOverride(sessionKey string, reasoning
 	if sessionKey == "" {
 		return
 	}
-	r.sessionState(sessionKey).conversation.reasoningOverride = cloneReasoning(reasoningConfig)
+	r.sessionReasoningOverrides().Set(sessionKey, cloneReasoning(reasoningConfig))
 }
 
 // Sets the /fast override to a tier or explicit normal, or clears it
@@ -254,10 +254,10 @@ func (r *GatewayRunner) setSessionServiceTierOverride(sessionKey string, service
 		return
 	}
 	if clear {
-		r.sessionState(sessionKey).conversation.serviceTierOverride = serviceTierUnset
+		r.sessionServiceTierOverrides().Set(sessionKey, serviceTierUnset)
 		return
 	}
-	r.sessionState(sessionKey).conversation.serviceTierOverride = serviceTierOverride{set: true, tier: serviceTier}
+	r.sessionServiceTierOverrides().Set(sessionKey, serviceTierOverride{set: true, tier: serviceTier})
 }
 
 // Configured agent.service_tier parsed like the CLI, nil when unset or unknown
@@ -603,8 +603,8 @@ func applyFallbackChainToAgent(a *agent.AIAgent, chain []map[string]any) {
 func (r *GatewayRunner) resolveSessionReasoningConfig(ctx context.Context, source *gateway.SessionSource, sessionKey, model string) (map[string]any, error) {
 	resolved := r.resolveSessionKeyOrNone(ctx, source, sessionKey)
 	if resolved != "" {
-		if state := r.peekSessionState(resolved); state != nil && state.conversation.reasoningOverride != nil {
-			return state.conversation.reasoningOverride, nil
+		if override, ok := r.sessionReasoningOverrides().Get(resolved); ok {
+			return override, nil
 		}
 	}
 	policy, err := gateway.LocalPolicy(ctx, r, source)
@@ -621,8 +621,8 @@ func (r *GatewayRunner) resolveSessionReasoningConfig(ctx context.Context, sourc
 func (r *GatewayRunner) resolveSessionServiceTier(ctx context.Context, source *gateway.SessionSource, sessionKey string) (*string, error) {
 	resolved := r.resolveSessionKeyOrNone(ctx, source, sessionKey)
 	if resolved != "" {
-		if state := r.peekSessionState(resolved); state != nil && state.conversation.serviceTierOverride.set {
-			return state.conversation.serviceTierOverride.tier, nil
+		if override, ok := r.sessionServiceTierOverrides().Get(resolved); ok {
+			return override.tier, nil
 		}
 	}
 	if live := gateway.LocalLiveForRoute(r, resolved); live != nil {

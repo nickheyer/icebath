@@ -18,13 +18,11 @@ const (
 
 // Runner whose platform values gateway.config.Platform accepts, answering the enum value or an error
 type PlatformActionRunner interface {
-	ParsePlatform(value string) (string, error)
+	ParsePlatform(ctx context.Context, value string) (string, error)
 }
 
-// Profile aware fail closed adapter lookup of a multiplex runner, the runner _authorization_adapter
-type authorizationAdapterRunner interface {
-	AuthorizationAdapter(platform, profile string) any
-}
+// Profile aware fail closed adapter of a runner with _authorization_adapter, callable false without one, installed by pkg/gateway
+var RunnerAuthorizationAdapter func(ctx context.Context, runner any, value, profile string) (adapter any, callable bool)
 
 // Live adapter a gateway runner's default profile registry holds for a platform value, installed by pkg/gateway
 var RunnerAdapterByValue func(runner any, value string) (adapter any, hasRegistry bool)
@@ -175,14 +173,16 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 	if runner == nil {
 		return nil, messageErr("gateway_unavailable", "no gateway runner is active in this process")
 	}
-	value, err := runner.ParsePlatform(pystr.Lower(pystr.Strip(pyrepr.Str(platform))))
+	value, err := runner.ParsePlatform(ctx, pystr.Lower(pystr.Strip(pyrepr.Str(platform))))
 	if err != nil {
 		return nil, messageErr("unknown_platform", fmt.Sprintf("unknown platform %s", pyrepr.Repr(platform)))
 	}
 	var adapter any
-	if resolver, ok := runner.(authorizationAdapterRunner); ok {
-		adapter = resolver.AuthorizationAdapter(value, profileName(home.Dir(ctx)))
-	} else if RunnerAdapterByValue != nil {
+	callable := false
+	if RunnerAuthorizationAdapter != nil {
+		adapter, callable = RunnerAuthorizationAdapter(ctx, runner, value, profileName(home.Dir(ctx)))
+	}
+	if !callable && RunnerAdapterByValue != nil {
 		adapter, _ = RunnerAdapterByValue(runner, value)
 	}
 	if adapter == nil {

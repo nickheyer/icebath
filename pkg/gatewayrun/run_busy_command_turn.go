@@ -21,8 +21,9 @@ func (r *GatewayRunner) commandTurnAdmitted(ctx context.Context, event *gateway.
 	if _, isCommand := event.GetCommand(); isCommand {
 		return false, nil
 	}
-	state := r.peekSessionState(sessionKey)
-	return !(state != nil && len(state.conversation.oneTurnRestore) > 0), nil
+	armed := false
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { armed = len(s.conversation.oneTurnRestore) > 0 })
+	return !armed, nil
 }
 
 // How many messaging stop and new commands fenced the route, the authority's per route epoch

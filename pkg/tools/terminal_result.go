@@ -119,16 +119,16 @@ func sudoAnnotations(ctx context.Context, env *Env, command, output, envType, se
 	return output, authFailed, cacheCleared
 }
 
-// TerminalOutputTransformHook is the plugin transform_terminal_output seam, installed by the plugins host, first string wins
-var TerminalOutputTransformHook func(payload map[string]any) []any
+// TerminalOutputTransformHook runs the transform_terminal_output lifecycle hook, set by the binary, first string wins
+var TerminalOutputTransformHook func(ctx context.Context, payload map[string]any) []any
 
 // Plugin output transform seam, fail open
-func applyOutputTransformHook(env *Env, command, output string, returncode int, taskID, envType string) string {
+func applyOutputTransformHook(ctx context.Context, env *Env, command, output string, returncode int, taskID, envType string) string {
 	if TerminalOutputTransformHook == nil {
 		return output
 	}
 	callID, _ := loadSessionString(env, "approval.tool_call_id")
-	results := TerminalOutputTransformHook(map[string]any{
+	results := TerminalOutputTransformHook(ctx, map[string]any{
 		"command": command, "output": output, "returncode": returncode, "task_id": taskID,
 		"env_type": envType, "tool_call_id": callID,
 	})
@@ -206,7 +206,7 @@ func finalizeForegroundResult(ctx context.Context, env *Env, command string, res
 	output := result.Output
 	returncode := result.ReturnCode
 	output, sudoAuthFailed, sudoCacheCleared := sudoAnnotations(ctx, env, command, output, envType, sessionKey)
-	output = applyOutputTransformHook(env, command, output, returncode, effectiveTaskID, envType)
+	output = applyOutputTransformHook(ctx, env, command, output, returncode, effectiveTaskID, envType)
 	output = TruncateHeadTail(output, ToolOutputLimits(env).MaxBytes, "")
 	output = StripANSI(output)
 	if output != "" {

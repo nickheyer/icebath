@@ -64,9 +64,26 @@ func TestCallbackTimeoutAnswerIsNotDeny(t *testing.T) {
 	if got.value != "timeout" {
 		t.Fatalf("callback timeout answer became %+v", got)
 	}
-	env.Ask = &scriptedAsker{answer: "timeout", terminal: true}
-	got = promptDangerousApproval(context.Background(), env, promptOptions{command: "x", description: "d", allowPermanent: true, allowSession: true})
+	env.Ask = nil
+	typeAtTerminalMenu(t, "timeout", func() {
+		got = promptDangerousApproval(context.Background(), env, promptOptions{command: "x", description: "d", allowPermanent: true, allowSession: true})
+	})
 	if got.value != "deny" {
 		t.Fatalf("a typed word at the terminal menu became %+v", got)
+	}
+}
+
+func TestPromptTitleReachesThePlainPromptAndOnlyTitleAwareCallbacks(t *testing.T) {
+	env := approvalTestEnv(t, "prompt", nil, nil)
+	aware := &callbackAsker{answer: "once"}
+	got := promptDangerousApproval(context.Background(), env, promptOptions{command: "x", description: "d", allowPermanent: true, allowSession: true, title: "Save to memory?", approvalCallback: aware})
+	if got.value != "once" || aware.seen[0].Title != "Save to memory?" {
+		t.Fatalf("aware %+v %+v", got, aware.seen)
+	}
+	out := typeAtTerminalMenu(t, "d", func() {
+		promptDangerousApproval(context.Background(), env, promptOptions{command: "x", description: "d", allowPermanent: true, allowSession: true, title: "MCP server 'gh' is asking"})
+	})
+	if !strings.Contains(out, "MCP server 'gh' is asking") || strings.Contains(out, "DANGEROUS COMMAND") {
+		t.Fatalf("printed %q", out)
 	}
 }

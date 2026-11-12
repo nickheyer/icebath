@@ -46,12 +46,21 @@ func (r *GatewayRunner) turnProcessOf(a *agent.AIAgent) (string, map[string]bool
 
 // The single conversation boundary funnel clearing conversation scoped state and boundary security state
 func (r *GatewayRunner) clearConversationScope(ctx context.Context, sessionKey, reason string) {
+	r.conversationBoundary(ctx, sessionKey, reason, false)
+}
+
+// Clears conversation scoped and boundary security state, the overflow FIFO kept within the same hold when asked
+func (r *GatewayRunner) conversationBoundary(ctx context.Context, sessionKey, reason string, keepOverflow bool) {
 	if sessionKey == "" {
 		return
 	}
-	if state := r.peekSessionState(sessionKey); state != nil {
-		state.conversation.clear()
-	}
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		queued := s.conversation.queuedEvents
+		s.conversation.clear()
+		if keepOverflow {
+			s.conversation.queuedEvents = queued
+		}
+	})
 	delete(r.pendingModelNotes, sessionKey)
 	delete(r.sessionStallNotified, sessionKey)
 	delete(r.transcriptLagStreaks, sessionKey)
@@ -65,10 +74,10 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 		return
 	}
 	delete(r.pendingSkillsReloadNotes, sessionKey)
-	if state := r.peekSessionState(sessionKey); state != nil {
-		state.persistent.approvals = nil
-		state.persistent.updatePromptPending = false
-	}
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		s.persistent.approvals = nil
+		s.persistent.updatePromptPending = false
+	})
 	for _, clear := range []struct {
 		what string
 		fn   func(string)
@@ -91,10 +100,7 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 
 // Hard interrupts the in flight agent, invalidates its generation and reaps the processes its turn spawned
 func (r *GatewayRunner) interruptRunningTurn(ctx context.Context, sessionKey, interruptReason, invalidationReason, toolReason string) int {
-	var running *agent.AIAgent
-	if state := r.peekSessionState(sessionKey); state != nil {
-		running = state.turn.agent
-	}
+	running := r.runningSlotAgent(sessionKey)
 	taskID, baseline := "", map[string]bool(nil)
 	if running != nil && running != agentPendingSentinel {
 		func() {
@@ -181,7 +187,15 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 			}
 		}()
 	}
-	r.sessionState(sessionKey).conversation.modelOverride = override
+	adopted := false
+	r.withSessionState(sessionKey, func(s *SessionState) {
+		if s.conversation.modelOverride == nil {
+			s.conversation.modelOverride, adopted = override, true
+		}
+	})
+	if !adopted {
+		return
+	}
 	runLog().Info(fmt.Sprintf("Rehydrated persisted /model override for session=%s: model=%s provider=%s", sessionKey, pyrepr.Str(override["model"]), providerName))
 }
 

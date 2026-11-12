@@ -250,11 +250,11 @@ func requestProtectedInstructionApproval(ctx context.Context, env *Env, reasons 
 		}
 		hook := map[string]any{"command": display, "description": description, "pattern_key": "protected_instruction_file",
 			"pattern_keys": []string{"protected_instruction_file"}, "session_key": sessionKey, "surface": "cli"}
-		fireApprovalHook(env, "pre_approval_request", hook)
+		fireApprovalHook(ctx, env, "pre_approval_request", hook)
 		answer := promptDangerousApproval(ctx, env, promptOptions{command: display, description: description, allowPermanent: false, allowSession: false})
 		post := copyMap(hook)
 		post["choice"] = answer.value
-		fireApprovalHook(env, "post_approval_response", post)
+		fireApprovalHook(ctx, env, "post_approval_response", post)
 		if answer.value == "cancelled" {
 			cause := answer.cause
 			if cause == "" {

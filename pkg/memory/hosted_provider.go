@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -61,6 +62,43 @@ func setIf(kwargs map[string]any, key, value string) {
 }
 
 func (p *hostedProvider) Name() string { return p.name }
+
+var (
+	_ postSetupProvider    = (*hostedProvider)(nil)
+	_ statusConfigProvider = (*hostedProvider)(nil)
+	_ hookPresence         = (*hostedProvider)(nil)
+)
+
+// Python hasattr on the hosted provider object, AttributeError meaning absent and any other error raised
+func (p *hostedProvider) HasHook(ctx context.Context, name string) bool {
+	if p.obj.HasMethod(name) {
+		return true
+	}
+	_, err := p.obj.Get(ctx, name)
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return true
+}
+
+// Hands setup to the hosted provider's post_setup with the profile home and the config it owns
+func (p *hostedProvider) PostSetup(ctx context.Context, icebathHome string, cfg map[string]any) error {
+	_, err := p.obj.Call(ctx, "post_setup", []any{icebathHome, cfg}, nil)
+	return err
+}
+
+// Display config the hosted provider's get_status_config derives from its raw provider config
+func (p *hostedProvider) StatusConfig(ctx context.Context, providerConfig any) (any, error) {
+	v, err := p.obj.Call(ctx, "get_status_config", []any{providerConfig}, nil)
+	if record, ok := v.(plugins.Record); ok {
+		return map[string]any(record), err
+	}
+	return v, err
+}
 
 func (p *hostedProvider) Available(ctx context.Context) bool {
 	v, err := p.obj.Call(ctx, "is_available", nil, nil)

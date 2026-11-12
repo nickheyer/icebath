@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,11 +19,11 @@ var MaxSafeTimeoutSeconds = func() float64 {
 	return 31536000.0
 }()
 
-// ApprovalHookInvoker dispatches plugin lifecycle hooks such as pre_approval_request, set by the plugin host
-var ApprovalHookInvoker func(hookName string, payload map[string]any) error
+// ApprovalHookInvoker dispatches plugin lifecycle hooks such as pre_approval_request, set by the binary
+var ApprovalHookInvoker func(ctx context.Context, hookName string, payload map[string]any) error
 
-// ViewerTurnHasApprover reports whether the executing viewer turn has a subscriber holding session approve
-var ViewerTurnHasApprover func(env *Env) bool
+// ViewerTurnHasApprover reports whether the viewer turn bound to ctx has a subscriber holding session approve, set by the gateway
+var ViewerTurnHasApprover func(ctx context.Context) bool
 
 // FiniteTurnRequired reports the admitted turn's finite flag and whether one is known, the env flag by default
 var FiniteTurnRequired func(env *Env) (bool, bool) = FiniteTurnFlag
@@ -83,7 +84,7 @@ func isInteractiveCLI(env *Env) bool {
 }
 
 // Invokes a plugin lifecycle hook with the session correlation ids, never raising
-func fireApprovalHook(env *Env, hookName string, payload map[string]any) {
+func fireApprovalHook(ctx context.Context, env *Env, hookName string, payload map[string]any) {
 	if ApprovalHookInvoker == nil {
 		return
 	}
@@ -104,7 +105,7 @@ func fireApprovalHook(env *Env, hookName string, payload map[string]any) {
 			p["session_id"] = sid
 		}
 	}
-	if err := ApprovalHookInvoker(hookName, p); err != nil {
+	if err := ApprovalHookInvoker(ctx, hookName, p); err != nil {
 		envLog(env).Debug("Approval hook dispatch failed", "hook", hookName, "error", err)
 	}
 }
@@ -123,8 +124,8 @@ func isLocalInteractiveSession(env *Env) bool {
 }
 
 // Reports a viewer submitted turn whose session has a subscriber able to answer approvals
-func isViewerTurnWithApprover(env *Env) bool {
-	return ViewerTurnHasApprover != nil && ViewerTurnHasApprover(env)
+func isViewerTurnWithApprover(ctx context.Context) bool {
+	return ViewerTurnHasApprover != nil && ViewerTurnHasApprover(ctx)
 }
 
 // SetCurrentSessionKey binds the active approval session key to the session

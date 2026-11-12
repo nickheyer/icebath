@@ -444,15 +444,7 @@ func (r *GatewayRunner) hmwaRotateExhaustedSession(ctx context.Context, entry *g
 		return nil, err
 	}
 	r.evictCachedAgent(ctx, sessionKey, false, false)
-	var queued []*gateway.MessageEvent
-	if q := r.overflowQueue(sessionKey); q != nil {
-		queued = append(queued, (*q)...)
-	}
-	r.clearConversationScope(ctx, sessionKey, "compression_exhausted_reset")
-	if len(queued) > 0 {
-		st := r.sessionState(sessionKey)
-		st.conversation.queuedEvents = append(st.conversation.queuedEvents, queued...)
-	}
+	r.conversationBoundary(ctx, sessionKey, "compression_exhausted_reset", true)
 	if newEntry != nil {
 		entry = newEntry
 		r.syncTelegramTopicBinding(ctx, source, entry, "compression-exhausted-reset")
@@ -671,8 +663,8 @@ func (r *GatewayRunner) hmwaAgentErrorReply(ctx context.Context, turnErr error, 
 	switch statusCode {
 	case 401:
 		providerName := ""
-		if st := r.sessionState(sessionKey); st.turn.agent != nil {
-			providerName = st.turn.agent.Provider()
+		if running := r.sessionState(sessionKey).runningAgent(); running != nil {
+			providerName = running.Provider()
 		}
 		statusHint = t(hintKey, map[string]any{"relogin": provider.ReloginCommandHint(home.Dir(ctx), providerName)})
 	case 429:

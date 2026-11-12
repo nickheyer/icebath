@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -58,9 +59,9 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 			if pyrepr.Truthy(result["response_previewed"]) {
 				merged["response_previewed"] = true
 			}
-			captured.Set("result", merged)
+			captured.Set("result", pyjson.Ordered(merged))
 		} else {
-			captured.Set("result", result)
+			captured.Set("result", pyjson.Ordered(result))
 		}
 	}
 	return result, nil

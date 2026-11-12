@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 const recentSubagentsCap = 200
@@ -62,14 +63,8 @@ var (
 	recentSubagents   subagentRecords
 )
 
-// SessionSteerAuthority returns the request transport and live session record owning a gateway session, installed by the tui gateway
+// SessionSteerAuthority returns the request transport and live session record owning a gateway session, installed by the binary
 var SessionSteerAuthority func(ctx context.Context, sessionID string) (transport, record any)
-
-// SteerSessionRecord is a gateway session record whose live transport slot carries steer authority
-type SteerSessionRecord interface{ SteerTransport() any }
-
-// SteerFanoutTransport is a mirrored transport slot granting authority to every attached member
-type SteerFanoutTransport interface{ Contains(transport any) bool }
 
 // Hard interrupt of a running child, swapped by tests that observe the stop path
 var subagentHardInterrupt = func(agent any, reason string) bool { return RequestHardInterruptOf(agent, &reason, nil) }
@@ -218,16 +213,20 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 	switch owner := record["owner_session_record"].(type) {
 	case map[string]any:
 		bound = owner["transport"]
-	case SteerSessionRecord:
-		bound = owner.SteerTransport()
+	case *tuigateway.Session:
+		bound = owner.Get("transport")
 	default:
 		bound = record["owner_transport"]
 	}
 	if pyrepr.Is(bound, transport) {
 		return true
 	}
-	fanout, ok := bound.(SteerFanoutTransport)
-	return ok && fanout.Contains(transport)
+	fanout, ok := bound.(*tuigateway.FanoutTransport)
+	if !ok {
+		return false
+	}
+	member, ok := transport.(tuigateway.Transport)
+	return ok && fanout.Contains(member)
 }
 
 // SteerSubagent queues steering text into a running child, an owner session id demanding exact gateway authority

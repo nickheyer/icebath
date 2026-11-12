@@ -56,6 +56,9 @@ func (e *AWSCredentialError) Error() string {
 
 func (e *AWSCredentialError) Unwrap() error { return e.Err }
 
+// Python module of botocore's CredentialRetrievalError
+func (e *AWSCredentialError) PyModule() string { return "botocore.exceptions" }
+
 // ErrNoAWSCredentials is the chain walked to the end without any source answering
 var ErrNoAWSCredentials = errors.New("Unable to locate credentials")
 
@@ -910,6 +913,9 @@ func (e *AWSServiceError) Error() string {
 
 // ResponseHeaders exposes the error response headers to the classifier
 func (e *AWSServiceError) ResponseHeaders() http.Header { return e.Headers }
+
+// Python module of botocore's ClientError
+func (e *AWSServiceError) PyModule() string { return "botocore.exceptions" }
 
 // Legacy STS regions answered by the global endpoint under sts_regional_endpoints=legacy
 var awsSTSLegacyGlobalRegions = map[string]bool{

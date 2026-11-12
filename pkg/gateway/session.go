@@ -31,15 +31,24 @@ func isPathUnsafe(value string, strict bool) bool {
 
 var PersistableModelOverrideKeys = []string{"model", "provider", "base_url"}
 
-// Copy of the override with only persistable non empty keys as strings, nil when nothing is left
+// Copy of a dict override with only persistable non empty keys as strings, nil when nothing is left
 func SanitizeModelOverride(override any) *pyjson.Object {
-	obj, ok := override.(*pyjson.Object)
-	if !ok {
+	var keys []string
+	var value func(key string) any
+	switch obj := override.(type) {
+	case *pyjson.Object:
+		if obj == nil {
+			return nil
+		}
+		keys, value = obj.Keys, func(key string) any { return obj.Vals[key] }
+	case map[string]any:
+		keys, value = PersistableModelOverrideKeys, func(key string) any { return obj[key] }
+	default:
 		return nil
 	}
 	cleaned := pyjson.NewObject()
-	for _, k := range obj.Keys {
-		v := obj.Vals[k]
+	for _, k := range keys {
+		v := value(k)
 		if !slices.Contains(PersistableModelOverrideKeys, k) || v == nil || v == "" {
 			continue
 		}

@@ -126,12 +126,10 @@ func catalogPlatformOwner(homeDir, platform string) (string, bool) {
 		return cached.name, cached.ok
 	}
 	result := ownerResult{}
-	if hook := CatalogPlatformOwnerHook; hook != nil {
-		if row, ok := hook(homeDir, platform); ok {
-			name := catalogNorm(row)
-			if catalogSafe("catalog_platform_names").Has(name) {
-				result = ownerResult{name: name, ok: true}
-			}
+	if row, ok := CatalogPlatformOwnerHook(homeDir, platform); ok {
+		name := catalogNorm(row)
+		if catalogSafe("catalog_platform_names").Has(name) {
+			result = ownerResult{name: name, ok: true}
 		}
 	}
 	catalogMu.Lock()
@@ -144,7 +142,7 @@ func catalogPlatformOwner(homeDir, platform string) (string, bool) {
 }
 
 // Canonical registry name of a command or alias, skill and plugin commands staying anonymous
-func SlashCommandMetricName(raw any) string {
+func SlashCommandMetricName(ctx context.Context, raw any) string {
 	name := strings.SplitN(strings.TrimLeft(catalogNorm(raw), "/"), " ", 2)[0]
 	if name == "" {
 		return "unknown"
@@ -154,10 +152,12 @@ func SlashCommandMetricName(raw any) string {
 			return canonical
 		}
 	}
-	if hook := ResolveSkillCommandKeyHook; hook != nil && hook(name) {
+	if skill, err := ResolveSkillCommandKeyHook(ctx, name); err != nil {
+		return "unknown"
+	} else if skill {
 		return "skill"
 	}
-	if hook := PluginCommandHandlerHook; hook != nil && hook(name) {
+	if PluginCommandHandlerHook(ctx, name) {
 		return "plugin"
 	}
 	return "unknown"

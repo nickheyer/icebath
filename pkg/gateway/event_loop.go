@@ -15,6 +15,8 @@ var ErrLoopClosed = errors.New("Event loop is closed")
 type EventLoop interface {
 	CallSoonThreadsafe(fn func()) error
 	CallLater(delay time.Duration, fn func()) (LoopTimer, error)
+	IsClosed() bool
+	IsRunning() bool
 }
 
 // Pending loop timer that can be cancelled before its callback runs
@@ -24,10 +26,11 @@ type LoopTimer interface {
 
 // Single goroutine callback loop the gateway runner runs its work on, the asyncio event loop of the runner
 type CallbackLoop struct {
-	mu     sync.Mutex
-	queue  []*loopCallback
-	wake   chan struct{}
-	closed bool
+	mu      sync.Mutex
+	queue   []*loopCallback
+	wake    chan struct{}
+	closed  bool
+	running bool
 }
 
 type loopCallback struct {
@@ -70,6 +73,11 @@ func (l *CallbackLoop) CallSoonThreadsafe(fn func()) error {
 	return l.enqueue(&loopCallback{fn: fn})
 }
 
+// Starts fn from the loop goroutine as its own task beside the loop callbacks, false once the loop is closed
+func (l *CallbackLoop) Schedule(fn func()) bool {
+	return l.CallSoonThreadsafe(func() { go fn() }) == nil
+}
+
 // Runs fn on the loop after delay, ErrLoopClosed once the loop is closed
 func (l *CallbackLoop) CallLater(delay time.Duration, fn func()) (LoopTimer, error) {
 	l.mu.Lock()
@@ -99,6 +107,14 @@ func (l *CallbackLoop) Close() {
 
 // Runs queued callbacks one at a time on the calling goroutine until ctx ends or the loop closes
 func (l *CallbackLoop) Run(ctx context.Context) error {
+	l.mu.Lock()
+	l.running = true
+	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		l.running = false
+		l.mu.Unlock()
+	}()
 	for {
 		l.mu.Lock()
 		closed, batch := l.closed, l.queue

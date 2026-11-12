@@ -616,7 +616,7 @@ var (
 )
 
 // Safe session surface carried by the parent Relay scope
-func ExecutionSurface(kwargs map[string]any) string {
+func ExecutionSurface(ctx context.Context, kwargs map[string]any) string {
 	raw := kwargs["execution_surface"]
 	if !pyrepr.Truthy(raw) {
 		raw = kwargs["platform"]
@@ -631,22 +631,22 @@ func ExecutionSurface(kwargs map[string]any) string {
 	if alias, ok := surfaceAliases[value]; ok {
 		return alias
 	}
-	if allPlatformNames().Has(value) || knownGatewayPlatforms.Has(value) {
+	if allPlatformNames(ctx).Has(value) || knownGatewayPlatforms.Has(value) {
 		return "gateway"
 	}
 	return "other"
 }
 
 // Platforms the registry serves plus plugin registered platforms, hermes get_all_platforms
-func allPlatformNames() ValueSet {
-	return platformRegistryNames().Union(Set(pluginPlatformNames()...))
+func allPlatformNames(ctx context.Context) ValueSet {
+	return platformRegistryNames().Union(Set(PluginPlatformNamesHook(ctx)...))
 }
 
 // Bounded fields recorded on a task scope start event
 func TaskStartFields(ctx context.Context, kwargs map[string]any) map[string]string {
-	surface := ExecutionSurface(kwargs)
+	surface := ExecutionSurface(ctx, kwargs)
 	return map[string]string{
-		"entrypoint": TaskEntrypoint(kwargs, surface), "execution_surface": surface,
+		"entrypoint": TaskEntrypoint(ctx, kwargs, surface), "execution_surface": surface,
 		"platform": GatewayPlatform(ctx, kwargs, surface),
 	}
 }
@@ -654,7 +654,7 @@ func TaskStartFields(ctx context.Context, kwargs map[string]any) map[string]stri
 // Messaging platform of a gateway task, unproven plugin platforms reading plugin and other surfaces none
 func GatewayPlatform(ctx context.Context, kwargs map[string]any, surface string) string {
 	if surface == "" {
-		surface = ExecutionSurface(kwargs)
+		surface = ExecutionSurface(ctx, kwargs)
 	}
 	if surface != "gateway" {
 		return "none"
@@ -678,7 +678,7 @@ var surfaceEntrypoints = map[string]string{
 }
 
 // Task dispatch owner without exporting source strings
-func TaskEntrypoint(kwargs map[string]any, surface string) string {
+func TaskEntrypoint(ctx context.Context, kwargs map[string]any, surface string) string {
 	declared := norm(kwargs["entrypoint"])
 	if TaskEntrypoints.Has(declared) {
 		return declared
@@ -687,7 +687,7 @@ func TaskEntrypoint(kwargs map[string]any, surface string) string {
 		return "delegated"
 	}
 	if surface == "" {
-		surface = ExecutionSurface(kwargs)
+		surface = ExecutionSurface(ctx, kwargs)
 	}
 	if e, ok := surfaceEntrypoints[surface]; ok {
 		return e

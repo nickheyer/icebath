@@ -175,7 +175,7 @@ func refuseParkedRoute(ctx context.Context, adapter PlatformAdapter, source *Ses
 
 // Runner thread metadata a parked refusal replies under, gateway/run.py _thread_metadata_for_source
 type threadMetadataRunner interface {
-	ThreadMetadataForSource(source PluginMessageSource) (map[string]any, error)
+	ThreadMetadataForSource(source *SessionSource, replyToMessageID *string) map[string]any
 }
 
 // Replies in the sender chat and thread as an interim send, logging only safe fields of a failure
@@ -189,14 +189,10 @@ func sendParkedRefusal(ctx context.Context, adapter PlatformAdapter, source *Ses
 	}
 	runner, ok := adapter.Base().GatewayRunner.(threadMetadataRunner)
 	if !ok {
-		fail(fmt.Errorf("AttributeError: %s has no attribute '_thread_metadata_for_source'", pyTypeName(adapter.Base().GatewayRunner)))
+		fail(fmt.Errorf("AttributeError: '%T' object has no attribute '_thread_metadata_for_source'", adapter.Base().GatewayRunner))
 		return
 	}
-	threadMetadata, err := runner.ThreadMetadataForSource(source)
-	if err != nil {
-		fail(err)
-		return
-	}
+	threadMetadata := runner.ThreadMetadataForSource(source, nil)
 	metadata := map[string]any{}
 	for k, v := range threadMetadata {
 		metadata[k] = v

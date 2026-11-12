@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -519,7 +520,7 @@ func registerMCPServers(ctx context.Context, env *tools.Env, servers map[string]
 
 // Connect registers the tools of every enabled, not yet connected server, idempotent for connected names, and returns every MCP tool name
 func Connect(ctx context.Context, env *tools.Env, servers map[string]*Rendered) ([]string, error) {
-	if SafeWorkerEnabled != nil && SafeWorkerEnabled(ctx) {
+	if config.SafeWorkerEnabled() {
 		return []string{}, nil
 	}
 	if !ensureMCPSDK() {
@@ -580,7 +581,7 @@ func ownerServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendere
 
 // ConnectAll loads config and connects every configured server, or only the allowed names when allowed is non nil
 func ConnectAll(ctx context.Context, env *tools.Env, allowed []string) ([]string, error) {
-	if SafeWorkerEnabled != nil && SafeWorkerEnabled(ctx) {
+	if config.SafeWorkerEnabled() {
 		return []string{}, nil
 	}
 	servers := ownerServerConfigs(ctx, env)

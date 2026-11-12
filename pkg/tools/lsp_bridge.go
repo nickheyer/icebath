@@ -225,5 +225,8 @@ func lspReportForFile(path string, diagnostics []map[string]any) string {
 	return block
 }
 
+// Elision the diagnostics summary goes through, the seam tests wrap the way Python patches elide
+var lspElide = elide
+
 // Diagnostics summary capped with the elision marker
-func lspTruncate(s string) string { return elide(s, lsp.MaxTotalChars) }
+func lspTruncate(s string) string { return lspElide(s, lsp.MaxTotalChars) }

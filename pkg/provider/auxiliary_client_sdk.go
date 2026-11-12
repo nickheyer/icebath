@@ -95,6 +95,7 @@ type auxOpenAIClient struct {
 	maxRetries     int
 	httpClient     *http.Client
 	ownsHTTP       bool
+	closed         bool
 	initErr        error
 	responseHooks  []func(*http.Response)
 	responseMarks  map[string]bool
@@ -268,12 +269,35 @@ func (c *auxOpenAIClient) APIKey() string {
 	return c.apiKey
 }
 
-// Closes the client's own HTTP client, the shared SDK default client stays open
+// Replaces the key the next request authenticates with, the SDK api_key attribute assignment
+func (c *auxOpenAIClient) SetAPIKey(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.apiKey = key
+}
+
+var _ interface {
+	APIKey() string
+	SetAPIKey(string)
+	IsClosed() bool
+} = (*auxOpenAIClient)(nil)
+
+// Closes the client's own HTTP client and marks the client closed, the shared SDK default client stays open
 func (c *auxOpenAIClient) Close() error {
 	if c.ownsHTTP {
 		closeHTTPClient(c.httpClient)
 	}
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
 	return nil
+}
+
+// Whether Close ran, the SDK is_closed of the underlying HTTP client
+func (c *auxOpenAIClient) IsClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
 }
 
 // Mints a fresh key from the callable before every request
@@ -1043,9 +1067,18 @@ type AuxTransportError struct {
 	Request *FailedStreamRequest
 }
 
-func (e *AuxTransportError) Error() string                       { return e.Message }
-func (e *AuxTransportError) Unwrap() error                       { return e.Err }
-func (e *AuxTransportError) PyTypeName() string                  { return e.Class }
+func (e *AuxTransportError) Error() string      { return e.Message }
+func (e *AuxTransportError) Unwrap() error      { return e.Err }
+func (e *AuxTransportError) PyTypeName() string { return e.Class }
+
+// Python module of the raised class, json.decoder for a JSONDecodeError and httpx for every transport class
+func (e *AuxTransportError) PyModule() string {
+	if e.Class == "JSONDecodeError" {
+		return "json.decoder"
+	}
+	return "httpx"
+}
+
 func (e *AuxTransportError) FailedRequest() *FailedStreamRequest { return e.Request }
 func (e *AuxTransportError) Timeout() bool                       { return strings.HasSuffix(e.Class, "Timeout") }
 

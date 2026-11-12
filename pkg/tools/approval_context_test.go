@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -128,27 +129,28 @@ func TestSessionContextPredicates(t *testing.T) {
 	if !isLocalInteractiveSession(env) {
 		t.Fatal("tui source is local interactive")
 	}
-	if isViewerTurnWithApprover(env) {
+	if isViewerTurnWithApprover(context.Background()) {
 		t.Fatal("no gateway hook means no approver")
 	}
 }
 
 func TestFireApprovalHookForwardsCorrelationIDs(t *testing.T) {
 	var got []map[string]any
-	ApprovalHookInvoker = func(name string, payload map[string]any) error {
+	ApprovalHookInvoker = func(_ context.Context, name string, payload map[string]any) error {
 		payload["hook"] = name
 		got = append(got, payload)
 		return errors.New("observer failed")
 	}
 	defer func() { ApprovalHookInvoker = nil }()
+	ctx := context.Background()
 	env := &Env{Values: &sync.Map{}}
 	SetCurrentObservabilityContext(env, "turn-1", "call-1", "sess-1")
-	fireApprovalHook(env, "pre_approval_request", map[string]any{"command": "ls"})
+	fireApprovalHook(ctx, env, "pre_approval_request", map[string]any{"command": "ls"})
 	if len(got) != 1 || got[0]["turn_id"] != "turn-1" || got[0]["tool_call_id"] != "call-1" || got[0]["session_id"] != "sess-1" || got[0]["hook"] != "pre_approval_request" {
 		t.Fatalf("hook payload %v", got)
 	}
 	ResetCurrentObservabilityContext(env)
-	fireApprovalHook(env, "post_approval_response", map[string]any{"turn_id": "explicit"})
+	fireApprovalHook(ctx, env, "post_approval_response", map[string]any{"turn_id": "explicit"})
 	if got[1]["turn_id"] != "explicit" || got[1]["tool_call_id"] != "" {
 		t.Fatalf("hook payload %v", got[1])
 	}

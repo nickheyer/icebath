@@ -221,6 +221,20 @@ func NewModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (*modalE
 
 func (m *modalEnv) EnvType() string { return "modal" }
 
+// Python class name of the environment as hermes logs and records it
+func (m *modalEnv) ClassName() string { return "ModalEnvironment" }
+
+var _ interface{ ClassName() string } = (*modalEnv)(nil)
+
+// Pushes changed host files into the sandbox through its sync manager, nothing when the backend has none
+func (m *modalEnv) SyncFiles(force bool) {
+	if m.syncManager != nil {
+		m.syncManager.Sync(force)
+	}
+}
+
+var _ SandboxSyncer = (*modalEnv)(nil)
+
 // Runs bash -c cmd in the sandbox with optional streamed stdin, returning stdout when capturing
 func (m *modalEnv) exec(ctx context.Context, cmd string, timeout time.Duration, stdin *string, failLabel string, capture bool) ([]byte, error) {
 	runCtx, cancel := context.WithTimeout(ctx, timeout)

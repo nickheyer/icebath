@@ -30,3 +30,10 @@ func (l *CallbackLoop) IsClosed() bool {
 	defer l.mu.Unlock()
 	return l.closed
 }
+
+// Whether Run is executing the loop on some goroutine, false before it starts and after it returns
+func (l *CallbackLoop) IsRunning() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.running
+}

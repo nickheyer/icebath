@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -168,6 +169,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 		} else {
 			relayOutcome = "timed_out"
 		}
+		exportResultMessages(admission.earlyResult)
 		return admission.earlyResult, nil
 	}
 	lease = admission.lease
@@ -206,6 +208,7 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 	if err != nil {
 		return nil, err
 	}
+	exportResultMessages(result)
 	switch {
 	case result["interrupted"] == true:
 		relayOutcome = "cancelled"
@@ -220,6 +223,13 @@ func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o
 		observability.FinishTaskRun(turnCtx, sessionID, effectiveTaskID, platform, result, nil)
 	}
 	return result, nil
+}
+
+// Renders the live messages of a turn result as the list of dicts every caller outside the turn reads
+func exportResultMessages(result map[string]any) {
+	if live, isLive := result["messages"].([]*state.Message); isLive {
+		result["messages"] = messagesToRows(live)
+	}
 }
 
 // Chat returns the final response of one turn, the stream callback receiving each text delta

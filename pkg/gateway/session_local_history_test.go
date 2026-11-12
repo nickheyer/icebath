@@ -58,11 +58,11 @@ func (r *recoverTestRunner) ProfileAdapterMap(name string) *pydict.Dict[Platform
 	r.profiles.Set(name, adapters)
 	return adapters
 }
-func (r *recoverTestRunner) RestoredSource(ctx context.Context, entry *SessionEntry) *SessionSource {
+func (r *recoverTestRunner) RestoredSource(ctx context.Context, entry *SessionEntry) (*SessionSource, error) {
 	if r.restored != nil {
-		return r.restored(entry)
+		return r.restored(entry), nil
 	}
-	return entry.Origin
+	return entry.Origin, nil
 }
 
 // Authority over a real store and state database, as initialize_session_authority builds one

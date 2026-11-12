@@ -26,13 +26,12 @@ func (r *GatewayRunner) prepareClarifyReplyText(ctx context.Context, event *gate
 
 // Native image paths queued for the session, emptied once taken
 func (r *GatewayRunner) consumePendingNativeImagePaths(sessionKey string) []string {
-	state := r.peekSessionState(sessionKey)
-	if state == nil {
-		return []string{}
-	}
-	paths := append([]string{}, state.persistent.nativeImagePaths...)
-	if len(paths) > 0 {
-		state.persistent.nativeImagePaths = []string{}
-	}
+	paths := []string{}
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		paths = append(paths, s.persistent.nativeImagePaths...)
+		if len(paths) > 0 {
+			s.persistent.nativeImagePaths = []string{}
+		}
+	})
 	return paths
 }

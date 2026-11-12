@@ -109,7 +109,9 @@ func (r *GatewayRunner) offerUsageLimitSwitchBody(ctx context.Context, event *ga
 
 // Whether the session started a newer run than the refused one, failing open as not stale
 func (r *GatewayRunner) usageLimitOfferIsStale(sessionKey string, generation int) bool {
-	return r.sessionState(sessionKey).persistent.runGeneration != generation
+	current := 0
+	r.withSessionState(sessionKey, func(s *SessionState) { current = s.persistent.runGeneration })
+	return current != generation
 }
 
 // Identity of a map value, the Python is check of two dicts

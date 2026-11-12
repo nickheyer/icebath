@@ -57,3 +57,12 @@ func ListenerClientUse(clientID, portalURL string) func() {
 		restore()
 	}
 }
+
+// Signs Webapp browsers in with the Portal client Web Access registered until the undo runs, nil when none is registered
+func UseOwnSignIn(webapp *WebappMount) func() {
+	clientID, portal, registered := webappSignInClient(webapp.Home)
+	if !registered {
+		return nil
+	}
+	return ListenerClientUse(clientID, portal)
+}

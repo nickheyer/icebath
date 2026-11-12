@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
@@ -143,6 +145,9 @@ func installProcessWiring() {
 	gatewaycli.DescribeActiveWorkUnit = selfupdate.DescribeActiveWorkUnit
 	gatewaycli.SealedSteward = selfupdate.SealedSteward
 	gateway.WebServer.ShouldRequireDashboardAuth = dashboard.ShouldRequireDashboardAuthAfterImport
+	gateway.WebServer.StartServer = dashboard.StartServer
+	dashboard.RestoreUserProxyEnv = selfupdate.RestoreUserProxyEnv
+	gatewayrun.BuildGatewayListener = dashboard.BuildGatewayListener
 	provider.RetirementIdleProof = dashboard.RetirementIdleProof
 	dashboard.GatewayCLI.NeedsSudo = selfupdate.NeedsSudo
 	dashboard.GatewayCLI.SudoNoninteractiveOk = selfupdate.SudoNoninteractiveOk
@@ -215,6 +220,7 @@ func installProcessWiring() {
 	gateway.SessionReadLines.Cron = cron.CronCommandLines
 	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
 	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
+	gateway.NormalizeRunBudgetSeconds = agent.NormalizeRunBudgetSeconds
 	gateway.RosterProfileInfo = func(ctx context.Context, name, path string, isDefault bool) (gateway.RosterProfile, error) {
 		info, err := manage.ProfileInfoOf(ctx, name, path, isDefault)
 		return gateway.RosterProfile{IsDefault: info.IsDefault, Model: info.Model, Provider: info.Provider,
@@ -246,6 +252,17 @@ func installProcessWiring() {
 	gateway.WebappRendererBuild.ExceptionName = selfupdate.ExceptionName
 	selfupdate.RunCLIHook = run
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
+	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
+	agent.SessionSteerAuthority = tuiserver.SessionSteerAuthority
+	mcp.TUILaunchHome, mcp.TUIProfileHome, mcp.TUIProfileRuntimeScope = tuiserver.LaunchHome, tuiserver.ProfileHome, tuiserver.ProfileRuntimeScope
+	observability.ResolveSessionPlatformHook = tuiserver.ResolveSessionPlatform
+	pm.InteractiveAppRunning = app.PromptAppIsRunning
+	pm.CuaDriverChildEnv = cuaDriverChildEnv
+	pm.LooksLikeGatewayCommandLine = gateway.LooksLikeGatewayCommandLine
+	tools.ApprovalHookInvoker = approvalHookInvoker
+	tools.LoadCLIConfig = app.CLIConfig
+	tools.TerminalOutputTransformHook = terminalOutputTransform
+	tuiserver.SaveClipboardImage, tuiserver.HasClipboardImage = app.SaveClipboardImage, app.HasClipboardImage
 	state.SecretEnvName = codeexec.IsSecretEnvName
 	state.SecretEnvSubstrings = codeexec.SecretSubstrings
 	state.MessagingPlatformLabels = gateway.MessagingPlatformLabels
@@ -429,7 +446,7 @@ func pluginServices() *plugins.Services {
 		},
 		CallMCPTool:              mcp.CallToolForPlugin,
 		RedeemSideQuestion:       agent.RedeemSideQuestion,
-		BoundSessionKey:          func(ctx context.Context) string { return tools.BoundSessionKey(processToolsEnv(ctx)) },
+		BoundSessionKey:          func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
 		ResolveBuiltinCommand:    func(name string) bool { return commands.Resolve(name) != nil },
 		DispatchTool:             tools.DispatchForPlugin,
 		RegisterContextReference: agent.RegisterContextReference,
@@ -599,6 +616,37 @@ func mediaDeliveryPathValidator(env *tools.Env, candidate, sessionKey string) st
 		panic(err)
 	}
 	return path
+}
+
+// Lifecycle invoke_hook dispatch of an approval hook, a raise of the dispatch layer returned as the error
+func approvalHookInvoker(ctx context.Context, hookName string, payload map[string]any) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	agent.LifecycleInvokeHook(ctx, hookName, payload)
+	return nil
+}
+
+// Results of the transform_terminal_output lifecycle hook, none when its dispatch raises so the output stays
+func terminalOutputTransform(ctx context.Context, payload map[string]any) (results []any) {
+	defer func() {
+		if r := recover(); r != nil {
+			results = nil
+		}
+	}()
+	return agent.LifecycleInvokeHook(ctx, "transform_terminal_output", payload)
+}
+
+// Computer use driver child env of the process home, a raise of the bot desktop read returned as the error
+func cuaDriverChildEnv() (env map[string]string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			env, err = nil, fmt.Errorf("%v", r)
+		}
+	}()
+	return codeexec.CuaDriverChildEnv(processToolsEnv(context.Background())), nil
 }
 
 // Gateway status start time of a pid as the int the async delegation owner check compares

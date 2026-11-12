@@ -58,21 +58,29 @@ func hygieneCooldownForFailure(ctx context.Context, gw hygieneGateway, sessionKe
 		if err == nil {
 			streak = max(1, n)
 			if st != nil {
+				st.mu.Lock()
 				st.persistent.hygieneFailureStreak = streak
+				st.mu.Unlock()
 			}
 		} else {
 			runLog().Debug(fmt.Sprintf("hygiene failure streak persist failed: %s", err))
 			if st != nil {
-				st.persistent.hygieneFailureStreak++
-				streak = st.persistent.hygieneFailureStreak
+				streak = st.bumpHygieneFailureStreak()
 			}
 		}
 	} else if st != nil {
-		st.persistent.hygieneFailureStreak++
-		streak = st.persistent.hygieneFailureStreak
+		streak = st.bumpHygieneFailureStreak()
 	}
 	multiplier := hygieneCooldownLadderMultipliers[min(streak, len(hygieneCooldownLadderMultipliers))-1]
 	return math.Min(baseCooldownSeconds*multiplier, hygieneCooldownMaxSeconds)
+}
+
+// Increments the in memory hygiene failure streak in one hold of the lock and returns the new count
+func (s *SessionState) bumpHygieneFailureStreak() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persistent.hygieneFailureStreak++
+	return s.persistent.hygieneFailureStreak
 }
 
 // Clears the hygiene failure streak in memory and in the state database after a compression that reduced context
@@ -84,7 +92,9 @@ func resetHygieneFailureStreak(ctx context.Context, gw hygieneGateway, sessionKe
 			}
 		}()
 		if st := gw.peekSessionState(sessionKey); st != nil {
+			st.mu.Lock()
 			st.persistent.hygieneFailureStreak = 0
+			st.mu.Unlock()
 		}
 	}()
 	if db := gw.SessionDB(ctx); db != nil {

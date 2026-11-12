@@ -337,9 +337,12 @@ func (r *GatewayRunner) handleModelReset(ctx context.Context, event *gateway.Mes
 		return &reply, nil
 	}
 	r.rehydrateSessionModelOverride(ctx, sessionKey)
-	previous, had := r.sessionModelOverrides().Get(sessionKey)
-	r.sessionModelOverrides().Delete(sessionKey)
-	r.pendingOneTurnModelRestores().Delete(sessionKey)
+	var previous map[string]any
+	had := false
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		previous, had = s.conversation.modelOverride, s.conversation.modelOverride != nil
+		s.conversation.modelOverride, s.conversation.oneTurnRestore = nil, nil
+	})
 	if err := r.slashStore().SetModelOverride(ctx, sessionKey, nil); err != nil {
 		runLog().Warn("Failed to clear persisted session model override", "error", err)
 	}

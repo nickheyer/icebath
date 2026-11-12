@@ -8,3 +8,6 @@ func applyDashboardCard(e *gateway.PlatformEntry) {
 	e.DocsURL = "https://discord.com/developers/applications"
 	e.DashboardEnvVars = []string{"DISCORD_BOT_TOKEN", "DISCORD_ALLOWED_USERS"}
 }
+
+// Registers the card of the bundled discord directory for dashboards whose registry holds no discord entry
+func init() { gateway.RegisterBundledDashboardCard("discord", applyDashboardCard) }

@@ -53,3 +53,6 @@ func applyDashboardCard(e *gateway.PlatformEntry) {
 	e.DashboardEnvVars = []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_PROXY"}
 	e.EnvValueRules = envValueRules
 }
+
+// Registers the card of the bundled telegram directory for dashboards whose registry holds no telegram entry
+func init() { gateway.RegisterBundledDashboardCard("telegram", applyDashboardCard) }

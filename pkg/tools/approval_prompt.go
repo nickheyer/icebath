@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -15,6 +16,9 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Inputs of the interactive dangerous command prompt
@@ -44,11 +48,11 @@ func promptDangerousApproval(ctx context.Context, env *Env, o promptOptions) pro
 	if o.timeout <= 0 {
 		o.timeout = time.Duration(getApprovalTimeout(env)) * time.Second
 	}
-	human := humanInputRequest(env, "approval", o.command, "")
+	human := humanInputRequest(ctx, env, "approval", o.command, "")
 	release := humanWaitWindow(env, "")
 	choice := askHuman(ctx, env, o)
 	release()
-	human.finish(env, choice.value)
+	human.finish(ctx, env, choice.value)
 	return choice
 }
 
@@ -63,16 +67,91 @@ func CodexApprovalPrompt(env *Env) func(command, description string, allowPerman
 	}
 }
 
-// Asks through the host asker with the menu shape the caller allows
-// TerminalMenuAsker marks an asker that reads single keys from a terminal menu rather than returning a callback answer
-type TerminalMenuAsker interface {
-	TerminalMenu() bool
+// Running full screen prompt applications, the prompt_toolkit get_app_or_none check of the input fallback
+var promptAppsRunning atomic.Int32
+
+// Marks a full screen prompt application as owning the terminal until the returned release runs
+func EnterPromptApp() func() {
+	promptAppsRunning.Add(1)
+	var once sync.Once
+	return func() { once.Do(func() { promptAppsRunning.Add(-1) }) }
 }
 
-// Reports whether answers come from a terminal key menu, where an unoffered key denies as the Python input loop does
-func askerReadsTerminalKeys(a Asker) bool {
-	t, ok := a.(TerminalMenuAsker)
-	return ok && t.TerminalMenu()
+// Prints the prompt and reads one stdin line a byte at a time, end of input or a read error giving what was read
+var readTerminalChoice = func(prompt string) string {
+	fmt.Print(prompt)
+	flushStdout()
+	var line []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n == 1 {
+			if buf[0] == '\n' {
+				return string(line)
+			}
+			line = append(line, buf[0])
+		}
+		if err != nil {
+			return string(line)
+		}
+	}
+}
+
+// Confirmation line of each terminal menu decision
+var cliChoiceI18n = map[string]string{"once": "approval.allowed_once", "session": "approval.allowed_session",
+	"always": "approval.allowed_always", "deny": "approval.denied"}
+
+// Terminal menu of the dangerous command prompt answered on stdin, the input fallback when no callback is registered
+func askTerminal(ctx context.Context, env *Env, o promptOptions, displayCommand, displayDescription string, onceOnly bool) promptChoice {
+	os.Setenv("ICEBATH_SPINNER_PAUSE", "1")
+	defer os.Unsetenv("ICEBATH_SPINNER_PAUSE")
+	tctx := WithEnvHome(ctx, env)
+	t := func(key string, kwargs map[string]any) string { return i18n.T(tctx, key, "", kwargs) }
+	shape := "short"
+	if onceOnly {
+		shape = "smart_deny"
+	} else if o.allowPermanent {
+		shape = "long"
+	}
+	header := o.title
+	if header == "" {
+		header = t("approval.dangerous_header", map[string]any{"description": displayDescription})
+	}
+	fmt.Printf("\n  %s\n      %s\n\n%s\n\n", header, displayCommand, t("approval.choose_"+shape, nil))
+	flushStdout()
+	prompt := t("approval.prompt_"+shape, nil)
+	answered := make(chan string, 1)
+	go func() { answered <- pystr.Lower(pystr.Strip(readTerminalChoice(prompt))) }()
+	var choice string
+	select {
+	case choice = <-answered:
+	case <-time.After(o.timeout):
+		fmt.Println("\n" + t("approval.timeout", approvalTimeoutNoticeKwargs(env)))
+		return promptChoice{value: "timeout"}
+	case <-ctx.Done():
+		fmt.Println("\n" + t("approval.cancelled", nil))
+		return unanswered("the prompt was interrupted before an answer was given")
+	}
+	decision := "deny"
+	if onceOnly {
+		inputs := map[string]string{}
+		for _, k := range strings.Split(t("approval.smart_deny_once_inputs", nil), ",") {
+			inputs[k] = "once"
+		}
+		for _, k := range strings.Split(t("approval.smart_deny_deny_inputs", nil), ",") {
+			inputs[k] = "deny"
+		}
+		if d, ok := inputs[choice]; ok {
+			decision = d
+		}
+	} else if d, ok := cliChoiceAliases[choice]; ok {
+		decision = d
+		if decision == "always" && !o.allowPermanent {
+			decision = "session"
+		}
+	}
+	fmt.Println(t(cliChoiceI18n[decision], nil))
+	return promptChoice{value: decision}
 }
 
 // ApprovalCallbackOptions are the keywords an approval callback receives beside the command and its description
@@ -94,7 +173,10 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 	onceOnly := o.smartDenied || !o.allowSession
 	asker := resolveCLIApprovalCallback(env, o.approvalCallback)
 	if asker == nil {
-		envLog(env).Warn("Dangerous-command approval requested with no approval surface registered; failing closed", "command", displayCommand, "description", displayDescription)
+		if promptAppsRunning.Load() == 0 {
+			return askTerminal(ctx, env, o, displayCommand, displayDescription, onceOnly)
+		}
+		envLog(env).Warn(fmt.Sprintf("Dangerous-command approval requested on a thread with no approval callback while prompt_toolkit is active; failing closed to avoid stdin deadlock. command=%s description=%s", pyrepr.Repr(o.command), pyrepr.Repr(o.description)))
 		return unanswered("no approval callback is registered on this thread while prompt_toolkit owns the terminal, so the prompt could not be shown")
 	}
 	if callback, ok := asker.(ApprovalCallbackAsker); ok {
@@ -102,7 +184,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 			AllowPermanent: o.allowPermanent, AllowSession: o.allowSession, SmartDenied: o.smartDenied, Title: o.title})
 		if err != nil {
 			envLog(env).Error("Approval callback failed", "error", err)
-			return unanswered(fmt.Sprintf("the approval callback failed: %v", err))
+			return unanswered("the approval callback failed: " + pyrepr.ExceptionName(err))
 		}
 		return promptChoice{value: answer}
 	}
@@ -129,7 +211,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 			return unanswered("the prompt was interrupted before an answer was given")
 		}
 		envLog(env).Error("Approval callback failed", "error", err)
-		return unanswered(fmt.Sprintf("the approval callback failed: %v", err))
+		return unanswered("the approval callback failed: " + pyrepr.ExceptionName(err))
 	}
 	if result.Outcome == "cancelled" || len(result.Answers) == 0 {
 		return unanswered("the prompt was interrupted before an answer was given")
@@ -141,14 +223,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 		raw = result.Answers[0].Text
 	}
 	raw = strings.ToLower(strings.TrimSpace(raw))
-	if onceOnly && askerReadsTerminalKeys(asker) {
-		switch raw {
-		case "o", "once":
-			return promptChoice{value: "once"}
-		}
-		return promptChoice{value: "deny"}
-	}
-	if raw == "timeout" && !askerReadsTerminalKeys(asker) {
+	if raw == "timeout" {
 		return promptChoice{value: "timeout"}
 	}
 	decision, ok := cliChoiceAliases[raw]
@@ -456,8 +531,8 @@ func presentWithSelectedTransport(ctx context.Context, env *Env, r transportRequ
 	hookPayload := map[string]any{"command": req.Command, "description": req.Description, "pattern_key": r.patternKey,
 		"pattern_keys": append([]string{}, r.patternKeys...), "session_key": r.sessionKey, "surface": "transport:" + name,
 		"request_id": req.RequestID, "request_digest": req.Digest}
-	fireApprovalHook(env, "pre_approval_request", hookPayload)
-	human := humanInputRequest(env, "approval", req.Command, r.sessionKey)
+	fireApprovalHook(ctx, env, "pre_approval_request", hookPayload)
+	human := humanInputRequest(ctx, env, "approval", req.Command, r.sessionKey)
 	release := humanWaitWindow(env, r.sessionKey)
 	result := invokeApprovalTransport(ctx, registered.Present, req, timeout, transportWait{
 		onPoll: activityHeartbeat(env, "waiting for plugin approval transport"), isInterrupted: func() bool { return IsInterrupted(ctx) }})
@@ -466,10 +541,10 @@ func presentWithSelectedTransport(ctx context.Context, env *Env, r transportRequ
 	if result.failure != "" {
 		outcome = "transport_" + result.failure
 	}
-	human.finish(env, outcome)
+	human.finish(ctx, env, outcome)
 	post := copyMap(hookPayload)
 	post["choice"] = outcome
-	fireApprovalHook(env, "post_approval_response", post)
+	fireApprovalHook(ctx, env, "post_approval_response", post)
 	return transportAttempt{selected: true, choice: result.choice, failure: result.failure, fallback: fallback, name: name}
 }
 
@@ -555,12 +630,12 @@ func RequestElicitationConsent(ctx context.Context, env *Env, message, descripti
 	}
 	hookPayload := map[string]any{"command": message, "description": description, "pattern_key": "mcp_elicitation",
 		"pattern_keys": []string{"mcp_elicitation"}, "session_key": sessionKey, "surface": o.Surface}
-	fireApprovalHook(env, "pre_approval_request", hookPayload)
+	fireApprovalHook(ctx, env, "pre_approval_request", hookPayload)
 	choice := promptDangerousApproval(ctx, env, promptOptions{command: message, description: description, timeout: o.Timeout,
 		allowPermanent: scoped, allowSession: scoped, title: o.Title})
 	post := copyMap(hookPayload)
 	post["choice"] = choice.value
-	fireApprovalHook(env, "post_approval_response", post)
+	fireApprovalHook(ctx, env, "post_approval_response", post)
 	return rememberedConsent(env, sessionKey, choice.value, o.RememberKey, "cancel")
 }
 

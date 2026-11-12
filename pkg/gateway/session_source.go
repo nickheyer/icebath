@@ -204,9 +204,3 @@ func SessionSourceFromDict(ctx context.Context, data map[string]any) (*SessionSo
 	}
 	return src, nil
 }
-
-// SourcePlatform answers the plugin message route with the source platform
-func (s *SessionSource) SourcePlatform() Platform { return s.Platform }
-
-// SourceChatID answers the plugin message route with the source chat
-func (s *SessionSource) SourceChatID() string { return s.ChatID }

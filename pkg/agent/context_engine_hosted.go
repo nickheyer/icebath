@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -20,6 +22,9 @@ type hostedContextEngine struct {
 var _ ContextEngine = (*hostedContextEngine)(nil)
 var _ ContextEngineInfo = (*hostedContextEngine)(nil)
 var _ compressKeywordInspector = (*hostedContextEngine)(nil)
+var _ engineCarryOver = (*hostedContextEngine)(nil)
+var _ realPromptTokensEngine = (*hostedContextEngine)(nil)
+var _ compactionClearLatch = (*hostedContextEngine)(nil)
 
 // Wraps a hosted engine object, reading its name and base attributes once
 func newHostedContextEngine(ctx context.Context, obj *plugins.HostedObject) (*hostedContextEngine, error) {
@@ -298,6 +303,62 @@ func (e *hostedContextEngine) OnSessionEnd(sessionID string, messages []map[stri
 }
 
 func (e *hostedContextEngine) OnSessionReset() { e.call("on_session_reset", nil, nil) }
+
+// Forwards the carry over hook to the hosted engine, skipped when its object has no such attribute
+func (e *hostedContextEngine) CarryOverNewSessionContext(oldSessionID, newSessionID string) {
+	if e.hasAttr("carry_over_new_session_context") {
+		e.call("carry_over_new_session_context", []any{oldSessionID, newSessionID}, nil)
+	}
+}
+
+// Hosted last_real_prompt_tokens as int of the value or zero, false when the object has no such attribute
+func (e *hostedContextEngine) LastRealPromptTokens() (int, bool) {
+	v, err := e.obj.Get(e.ctx, "last_real_prompt_tokens")
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return 0, false
+	}
+	if err != nil {
+		panic(err)
+	}
+	if !pyrepr.Truthy(v) {
+		return 0, true
+	}
+	n, err := pyint.Of(v)
+	if err != nil {
+		panic(err)
+	}
+	return int(n.Int64()), true
+}
+
+// Truth of the hosted compaction boundary latch, false when the object has no such attribute
+func (e *hostedContextEngine) VerifyCompactionClearedThreshold() bool {
+	v, err := e.obj.Get(e.ctx, "_verify_compaction_cleared_threshold")
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return pyrepr.Truthy(v)
+}
+
+// Python hasattr on the hosted object, AttributeError meaning absent and any other error raised
+func (e *hostedContextEngine) hasAttr(name string) bool {
+	if e.obj.HasMethod(name) {
+		return true
+	}
+	_, err := e.obj.Get(e.ctx, name)
+	var builtin *plugins.HostBuiltinError
+	if errors.As(err, &builtin) && builtin.Type == "AttributeError" {
+		return false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return true
+}
 
 func (e *hostedContextEngine) GetToolSchemas() []map[string]any {
 	return hostedMapList(e.call("get_tool_schemas", nil, nil))

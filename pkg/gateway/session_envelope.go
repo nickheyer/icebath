@@ -30,7 +30,7 @@ var messageTypes = map[MessageType]bool{MessageTypeText: true, MessageTypeLocati
 
 // Runner surface that authorizes a native sender under the live transport of its source
 type nativeAuthorizationRunner interface {
-	AdapterFlag(platform Platform, name string, profile *string) bool
+	AdapterFlag(ctx context.Context, platform Platform, name string, profile *string) bool
 	AdapterProfileForSource(source *SessionSource) *string
 	IsUserAuthorizedForSource(ctx context.Context, source *SessionSource, allowAdapterDelegation bool) (bool, error)
 }
@@ -286,7 +286,7 @@ func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	delegated := freshRoles || provenanceBindsRelay(provenance)
 	if !delegated {
-		delegated = authz.AdapterFlag(source.Platform, "authorization_is_upstream", authz.AdapterProfileForSource(source))
+		delegated = authz.AdapterFlag(ctx, source.Platform, "authorization_is_upstream", authz.AdapterProfileForSource(source))
 	}
 	allowed, err := authz.IsUserAuthorizedForSource(ctx, source, delegated)
 	if err != nil {
@@ -373,7 +373,7 @@ func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEv
 		}
 		var capture *trackedTask
 		if owned {
-			capture = trackMutation(scope.authority, work)
+			capture = trackMutation(ctx, scope.authority, work)
 		} else {
 			capture = &trackedTask{done: make(chan struct{})}
 			go func() {
@@ -397,7 +397,7 @@ func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEv
 				scope.mu.Unlock()
 				go func() {
 					<-capture.done
-					trackMutation(scope.authority, func(taskCtx context.Context) (any, error) {
+					trackMutation(ctx, scope.authority, func(taskCtx context.Context) (any, error) {
 						return nil, releaseAbandonedCapture(taskCtx, scope)
 					})
 				}()

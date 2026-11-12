@@ -586,7 +586,7 @@ func (a *AIAgent) OnboardingStore() tools.OnboardingStore {
 }
 func (a *AIAgent) DisabledToolsets() []string { return a.disabledToolsets }
 func (a *AIAgent) DelegationBackend() string  { return a.delegationBackend }
-func (a *AIAgent) IsOneshot() bool            { return a.agentIsOneshot() }
+func (a *AIAgent) IsOneshot() bool            { return a.agentIsOneshot(context.Background()) }
 func (a *AIAgent) ToolSearchScopedNames() map[string]bool {
 	return toolSearchScopedNames(a)
 }
@@ -726,7 +726,7 @@ func (a *AIAgent) toolSurface(ctx context.Context, defs []map[string]any) []map[
 			kept = append(kept, d)
 		}
 	}
-	if a.agentIsOneshot() || tools.AgentJoinsDelegation(ctx, a) {
+	if a.agentIsOneshot(ctx) || tools.AgentJoinsDelegation(ctx, a) {
 		joined, err := OneshotToolSchemas(kept)
 		if err != nil {
 			panic(err)

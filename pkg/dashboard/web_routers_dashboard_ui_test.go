@@ -172,7 +172,7 @@ func readGitCredential(t *testing.T, ctx context.Context, seen map[string]any) {
 }
 
 // Stands in for the install action, reading the credential and answering result or a plain success
-func stubInstallAction(t *testing.T, seen map[string]any, result map[string]any) {
+func fakeInstallAction(t *testing.T, seen map[string]any, result map[string]any) {
 	t.Helper()
 	real := uiDashboardInstallPlugin
 	uiDashboardInstallPlugin = func(ctx context.Context, _ plugins.DashboardInstallOptions) (map[string]any, error) {
@@ -188,7 +188,7 @@ func stubInstallAction(t *testing.T, seen map[string]any, result map[string]any)
 func TestInstallRouteReadsTheGitCredentialInProfileScope(t *testing.T) {
 	c := multiplexedPluginClient(t)
 	seen := map[string]any{}
-	stubInstallAction(t, seen, nil)
+	fakeInstallAction(t, seen, nil)
 	resp := c.send("POST", "/api/dashboard/agent-plugins/install", map[string]any{"identifier": "owner/repo"})
 	if resp.Status != 200 {
 		t.Fatalf("status %d %s", resp.Status, resp.Body)
@@ -219,7 +219,7 @@ func TestUpdateRouteReadsTheGitCredentialInProfileScope(t *testing.T) {
 func TestFailureAndRequestShapeErrorsAreUnchanged(t *testing.T) {
 	c := multiplexedPluginClient(t)
 	seen := map[string]any{}
-	stubInstallAction(t, seen, map[string]any{"ok": false, "error": "Install failed: no such plugin."})
+	fakeInstallAction(t, seen, map[string]any{"ok": false, "error": "Install failed: no such plugin."})
 	failed := c.send("POST", "/api/dashboard/agent-plugins/install", map[string]any{"identifier": "owner/repo"})
 	if detail, _ := jsonObject(t, failed)["detail"].(string); failed.Status != 400 || !strings.Contains(detail, "no such plugin") {
 		t.Fatalf("status %d %s", failed.Status, failed.Body)

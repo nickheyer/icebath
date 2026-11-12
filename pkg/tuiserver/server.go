@@ -57,6 +57,12 @@ var (
 // Logger every server module writes through
 func logger() *slog.Logger { return slog.Default().With("logger", "tui_gateway.server") }
 
+// Launch profile home the gateway serves at call time
+func LaunchHome() string { return launchHome() }
+
+// Named profile home on this host, empty for the launch profile, an error naming an unknown profile
+func ProfileHome(profile string) (string, error) { return profileHome(profile) }
+
 // Launch profile home at call time, the swapped copy when a harness changed it else the live process home
 func launchHome() string {
 	if hermesHome != hermesHomeAtImport {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -30,12 +31,16 @@ func zeroDecimals(value float64) string {
 // Evicts a leaked running slot whose agent idled past the timeout, or reports no activity and outlived the wall ttl
 func (r *GatewayRunner) hmEvictIdleStaleAgent(ctx context.Context, quickKey string) {
 	rawStaleTimeout := floatEnv("ICEBATH_AGENT_TIMEOUT", 1800)
-	quickState := r.peekSessionState(quickKey)
-	if quickState == nil || quickState.turn.agent == nil || quickState.turn.startedTS == 0 {
+	var staleAgent *agent.AIAgent
+	var staleCtx *TurnContext
+	startedTS := 0.0
+	r.withPeekedSessionState(quickKey, func(s *SessionState) {
+		staleAgent, staleCtx, startedTS = s.turn.agent, s.turn.ctx, s.turn.startedTS
+	})
+	if staleAgent == nil || startedTS == 0 {
 		return
 	}
-	staleAge := float64(time.Now().UnixNano())/1e9 - quickState.turn.startedTS
-	staleAgent := quickState.turn.agent
+	staleAge := float64(time.Now().UnixNano())/1e9 - startedTS
 	staleIdle := math.Inf(1)
 	staleDetail := ""
 	summaryValid := false
@@ -47,8 +52,8 @@ func (r *GatewayRunner) hmEvictIdleStaleAgent(ctx context.Context, quickKey stri
 			if resolved := gateway.ResolveSessionIdleSecondsFromActivity(summary, &now); resolved != nil {
 				staleIdle = *resolved
 				summaryValid = true
-				if tc := quickState.turn.ctx; tc != nil && tc.awakeIdle != nil {
-					staleIdle = tc.awakeIdle.Measure(staleIdle)
+				if staleCtx != nil && staleCtx.awakeIdle != nil {
+					staleIdle = staleCtx.awakeIdle.Measure(staleIdle)
 				}
 			}
 			field := func(key string, def any) string {
@@ -188,10 +193,7 @@ func (r *GatewayRunner) hmBusyTelegramGraceQueue(ctx context.Context, event *gat
 	if err != nil {
 		return false, err
 	}
-	startedAt := 0.0
-	if graceState := r.peekSessionState(quickKey); graceState != nil {
-		startedAt = graceState.turn.startedTS
-	}
+	startedAt := r.peekSessionState(quickKey).turnStartedTS()
 	now := float64(time.Now().UnixNano()) / 1e9
 	if !(source.Platform == gateway.PlatformTelegram && event.MessageType == gateway.MessageTypeText &&
 		grace > 0 && startedAt != 0 && now-startedAt <= grace) {

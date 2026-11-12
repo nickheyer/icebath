@@ -19,7 +19,7 @@ func (r *GatewayRunner) hmEstopTurnAllowed(ctx context.Context, event *gateway.M
 	if err != nil {
 		return false
 	}
-	if state := r.peekSessionState(key); state != nil && state.persistent.updatePromptPending {
+	if pending, _ := r.updatePromptPending().Get(key); pending {
 		return true
 	}
 	if r.isSessionRunning(key) {

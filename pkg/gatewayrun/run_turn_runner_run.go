@@ -307,7 +307,7 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 		incoming := max(0, a.SessionPromptTokens()-beforePrompt)
 		outgoing := max(0, a.SessionCompletionTokens()-beforeCompletion)
 		usage := map[string]any{"input_tokens": incoming, "output_tokens": outgoing, "total_tokens": incoming + outgoing}
-		captured.Set("usage", usage)
+		captured.Set("usage", pyjson.ObjectOf("input_tokens", incoming, "output_tokens", outgoing, "total_tokens", incoming+outgoing))
 		if err := settleAPIRuntimeLock(ctx, a, result, map[string]any{"usage": usage}); err != nil {
 			return nil, err
 		}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -201,8 +202,10 @@ func errorTypeName(err error) string {
 		if e.TypeName != "" {
 			return e.TypeName
 		}
-	case interface{ PythonTypeName() string }:
-		return e.PythonTypeName()
+	case pyrepr.PyTypeNamed:
+		if name := e.PyTypeName(); name != "" {
+			return name
+		}
 	}
 	name := fmt.Sprintf("%T", err)
 	name = strings.TrimLeft(name, "*")

@@ -19,6 +19,15 @@ func currentSessionSteerAuthority(ctx context.Context, sessionID string) (tuigat
 	return transport, session
 }
 
+// Steer authority of the bound request as untyped values, both nil when the transport holds none
+func SessionSteerAuthority(ctx context.Context, sessionID string) (any, any) {
+	transport, session := currentSessionSteerAuthority(ctx, sessionID)
+	if transport == nil || session == nil {
+		return nil, nil
+	}
+	return transport, session
+}
+
 type runtimeSessionRecordKey struct{}
 
 // Context whose turn executes on the given in memory session record

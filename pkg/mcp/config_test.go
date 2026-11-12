@@ -132,8 +132,11 @@ func TestLoadServerConfigs(t *testing.T) {
 		t.Fatalf("safe mode loaded %v", got)
 	}
 	t.Setenv("ICEBATH_SAFE_MODE", "")
-	SafeWorkerEnabled = func(context.Context) bool { return true }
-	t.Cleanup(func() { SafeWorkerEnabled = nil })
+	config.ResetWorkerPolicyForTests()
+	t.Cleanup(config.ResetWorkerPolicyForTests)
+	if _, err := config.BindSafeWorkerPolicy(true, false, map[string]any{}); err != nil {
+		t.Fatal(err)
+	}
 	if got := LoadServerConfigs(context.Background(), nil); len(got) != 0 {
 		t.Fatalf("safe worker loaded %v", got)
 	}

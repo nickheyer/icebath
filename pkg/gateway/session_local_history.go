@@ -430,7 +430,7 @@ func recoverLocalSessions(ctx context.Context, a *SessionAuthority, schedule boo
 			return err
 		}
 		if anyUnknown(rows) {
-			trackMutation(a, func(taskCtx context.Context) (any, error) {
+			trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 				return nil, settleViewerClose(taskCtx, a, sid)
 			})
 		}

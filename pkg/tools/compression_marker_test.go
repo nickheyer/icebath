@@ -6,11 +6,6 @@ import (
 	"unicode/utf8"
 )
 
-// Limits passed to elide during a test, reset by the test that reads them
-var elideCalls []int
-
-func init() { elideObserver = func(limit int) { elideCalls = append(elideCalls, limit) } }
-
 func TestCompressionMarkerMintedIsCaughtByDispatchGuard(t *testing.T) {
 	for _, out := range []string{elide(strings.Repeat("y", 4000), 199), elideMiddle(strings.Repeat("y", 4000), 100, 100)} {
 		if !compressionMarkerRe.MatchString(out) || !compressionMarkerArtifactRe.MatchString(out) {

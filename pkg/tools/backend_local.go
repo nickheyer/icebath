@@ -1468,6 +1468,11 @@ func NewLocalEnvironment(ctx context.Context, env *Env, cwd string, timeout int,
 // EnvType names the backend
 func (l *localEnv) EnvType() string { return "local" }
 
+// Python class name of the environment as hermes logs and records it
+func (l *localEnv) ClassName() string { return "LocalEnvironment" }
+
+var _ interface{ ClassName() string } = (*localEnv)(nil)
+
 // First party names present in the env, excluded from the shared session snapshot
 func (l *localEnv) additionalProfileScopedPassthroughNames() []string {
 	merged := environMap()

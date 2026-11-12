@@ -39,7 +39,13 @@ func hmWriteUpdateResponse(ctx context.Context, responseText string) *string {
 // Consumes a reply to a pending update prompt, nil when nothing was consumed
 func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.MessageEvent, quickKey string) *string {
 	upState := r.peekSessionState(quickKey)
-	if upState == nil || !upState.persistent.updatePromptPending {
+	if upState == nil {
+		return nil
+	}
+	upState.mu.Lock()
+	pendingNow := upState.persistent.updatePromptPending
+	upState.mu.Unlock()
+	if !pendingNow {
 		return nil
 	}
 	cmd, _ := event.GetCommand()
@@ -60,13 +66,27 @@ func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.
 			responseText = pystr.Strip(event.Text)
 		}
 	}
+	if responseText == "" && recognized == "" {
+		return nil
+	}
+	claimed := false
+	upState.mu.Lock()
+	if upState.persistent.updatePromptPending {
+		upState.persistent.updatePromptPending, claimed = false, true
+	}
+	upState.mu.Unlock()
+	if !claimed {
+		return nil
+	}
 	if responseText != "" {
 		if err := hmWriteUpdateResponse(ctx, responseText); err != nil {
+			upState.mu.Lock()
+			upState.persistent.updatePromptPending = true
+			upState.mu.Unlock()
 			runLog().Warn(fmt.Sprintf("Failed to write update response: %s", *err))
 			reply := i18n.T(ctx, "gateway.update.reply_failed", "", map[string]any{"error": *err})
 			return &reply
 		}
-		upState.persistent.updatePromptPending = false
 		label := responseText
 		if runes := []rune(responseText); len(runes) > 20 {
 			label = string(runes[:20]) + "…"
@@ -80,7 +100,6 @@ func (r *GatewayRunner) hmUpdatePromptReply(ctx context.Context, event *gateway.
 		} else {
 			runLog().Warn(fmt.Sprintf("Failed to write cancel response for pending update prompt: %s", *err))
 		}
-		upState.persistent.updatePromptPending = false
 	}
 	return nil
 }

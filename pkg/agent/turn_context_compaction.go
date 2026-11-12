@@ -288,12 +288,16 @@ func preflightCompression(ctx context.Context, a *AIAgent, out *CompactionOutcom
 	var blockReason *string
 	switch {
 	case deferred:
+		var lastReal int
 		real, ok := compressor.(realPromptTokensEngine)
+		if ok {
+			lastReal, ok = real.LastRealPromptTokens()
+		}
 		if !ok {
 			return engineAttributeError(compressor, "last_real_prompt_tokens")
 		}
 		turnContextLog().Info(fmt.Sprintf("Skipping preflight compression: rough estimate ~%s >= %s is not anchored on real usage (last real provider prompt %s); deferring to the next response",
-			groupThousands(tokens), groupThousands(base.ThresholdTokens), groupThousands(real.LastRealPromptTokens())))
+			groupThousands(tokens), groupThousands(base.ThresholdTokens), groupThousands(lastReal)))
 	case len(cooldown) > 0:
 		remaining := 0.0
 		if v, ok := cooldown["remaining_seconds"]; ok {

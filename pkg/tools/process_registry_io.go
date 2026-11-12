@@ -24,7 +24,7 @@ import (
 // Hooks the gateway and the worker runtime install for the registry
 var (
 	// SupervisedGatewayPid reports whether this launch is a supervised gateway and the live gateway pid, installed by the gateway
-	SupervisedGatewayPid func() (supervisedLaunch bool, runningPid int)
+	SupervisedGatewayPid func() (supervisedLaunch bool, runningPid int, err error)
 	// IsWorkerProcess reports whether this process is a registered per turn worker, installed by the agent runtime
 	IsWorkerProcess func() bool
 )
@@ -227,7 +227,11 @@ func isSupervisedGatewayProcess() bool {
 		toolsLogger(nil).Debug("Could not verify supervised gateway process identity: no gateway installed SupervisedGatewayPid")
 		return false
 	}
-	supervised, pid := SupervisedGatewayPid()
+	supervised, pid, err := SupervisedGatewayPid()
+	if err != nil {
+		toolsLogger(nil).Debug(fmt.Sprintf("Could not verify supervised gateway process identity: %v", err))
+		return false
+	}
 	return supervised && pid == os.Getpid()
 }
 

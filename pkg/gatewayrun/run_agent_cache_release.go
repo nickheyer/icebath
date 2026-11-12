@@ -28,19 +28,37 @@ func (r *GatewayRunner) PersistActiveAgents() {
 
 // Pops every per running agent state of the session, a stale generation leaving a newer run untouched
 func (r *GatewayRunner) releaseRunningAgentState(ctx context.Context, sessionKey string, runGeneration *int) bool {
-	if sessionKey == "" || (runGeneration != nil && !r.isSessionRunCurrent(sessionKey, *runGeneration)) {
+	return r.releaseRunningSlot(ctx, sessionKey, runGeneration, nil)
+}
+
+// Pops the running agent state in the hold that checks generation and slot holder, a nil holder matching any
+func (r *GatewayRunner) releaseRunningSlot(ctx context.Context, sessionKey string, runGeneration *int, holder *agent.AIAgent) bool {
+	if sessionKey == "" {
 		return false
 	}
-	if state := r.peekSessionState(sessionKey); state != nil {
-		if state.turn.lease != nil {
-			gateway.ReleaseSoon(state.turn.lease)
+	state := r.peekSessionState(sessionKey)
+	if state == nil {
+		if holder != nil || (runGeneration != nil && *runGeneration != 0) {
+			return false
 		}
-		state.turn.clear()
-		retired := state.turn.retiredAgents
-		state.turn.retiredAgents = nil
-		for _, a := range retired {
-			r.spawnReleaseThread(ctx, func(ctx context.Context) { r.releaseEvictedAgentSoft(ctx, a) }, sessionKey)
-		}
+		r.persistActiveAgents(ctx)
+		return true
+	}
+	state.mu.Lock()
+	if (runGeneration != nil && state.persistent.runGeneration != *runGeneration) || (holder != nil && state.turn.agent != holder) {
+		state.mu.Unlock()
+		return false
+	}
+	lease := state.turn.lease
+	state.turn.clear()
+	retired := state.turn.retiredAgents
+	state.turn.retiredAgents = nil
+	state.mu.Unlock()
+	if lease != nil {
+		gateway.ReleaseSoon(lease)
+	}
+	for _, a := range retired {
+		r.spawnReleaseThread(ctx, func(ctx context.Context) { r.releaseEvictedAgentSoft(ctx, a) }, sessionKey)
 	}
 	r.persistActiveAgents(ctx)
 	return true
@@ -55,13 +73,16 @@ func (r *GatewayRunner) dropTurnSlot(ctx context.Context, sessionKey string, run
 	if state == nil || registry == nil {
 		return
 	}
-	current := state.persistent.runGeneration
-	tokens := state.turn.leaseTokens
-	for gen, token := range tokens {
-		if gen >= current {
-			continue
+	displaced := map[int]*TurnLeaseToken{}
+	state.mu.Lock()
+	for gen, token := range state.turn.leaseTokens {
+		if gen < state.persistent.runGeneration {
+			delete(state.turn.leaseTokens, gen)
+			displaced[gen] = token
 		}
-		delete(tokens, gen)
+	}
+	state.mu.Unlock()
+	for gen, token := range displaced {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
@@ -78,11 +99,7 @@ func (r *GatewayRunner) interruptAndClearSession(ctx context.Context, sessionKey
 	if sessionKey == "" {
 		return nil
 	}
-	state := r.peekSessionState(sessionKey)
-	var running *agent.AIAgent
-	if state != nil {
-		running = state.turn.agent
-	}
+	running := r.runningSlotAgent(sessionKey)
 	generationAtInterrupt := r.interruptRunningTurn(ctx, sessionKey, interruptReason, invalidationReason, "")
 	parentSessionID := ""
 	if running != nil && running != agentPendingSentinel {
@@ -114,23 +131,13 @@ func (r *GatewayRunner) interruptAndClearSession(ctx context.Context, sessionKey
 			wake = parked
 		}
 		if wake == nil {
-			if overflow := r.overflowQueue(sessionKey); overflow != nil {
-				for i, e := range *overflow {
-					if e != nil && e.Internal {
-						wake = e
-						*overflow = append((*overflow)[:i:i], (*overflow)[i+1:]...)
-						break
-					}
-				}
-			}
+			wake = r.takeOverflow(sessionKey, func(e *gateway.MessageEvent) bool { return e != nil && e.Internal })
 		}
 		if wake != nil {
 			base.SetPendingMessage(sessionKey, wake)
 		}
 	}
-	if state != nil {
-		state.persistent.pendingCommandText = nil
-	}
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { s.persistent.pendingCommandText = nil })
 	if releaseRunningState {
 		r.dropTurnSlot(ctx, sessionKey, &generationAtInterrupt)
 	}
@@ -212,8 +219,7 @@ func (r *GatewayRunner) voiceChannelSidecarNote(ctx context.Context, event *gate
 	}
 	var vcPrev *string
 	if sessionKey != "" {
-		state := r.sessionState(sessionKey)
-		vcPrev, state.conversation.vcLast = state.conversation.vcLast, &vcNow
+		r.withSessionState(sessionKey, func(s *SessionState) { vcPrev, s.conversation.vcLast = s.conversation.vcLast, &vcNow })
 	}
 	prev := ""
 	if vcPrev != nil {

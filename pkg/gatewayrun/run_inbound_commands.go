@@ -197,12 +197,13 @@ func (r *GatewayRunner) hmCmdMoa(ctx context.Context, event *gateway.MessageEven
 			}
 		}()
 		event.Text = payload
-		state := r.sessionState(quickKey)
-		r.claimOneTurnRestore(quickKey, nil)
-		state.conversation.modelOverride = map[string]any{
-			"provider": "moa", "model": moaCfg["default_preset"], "base_url": "moa://local",
-			"api_key": "moa-virtual-provider", "api_mode": "chat_completions",
-		}
+		r.withSessionState(quickKey, func(s *SessionState) {
+			claimOneTurnRestoreIn(s, nil)
+			s.conversation.modelOverride = map[string]any{
+				"provider": "moa", "model": moaCfg["default_preset"], "base_url": "moa://local",
+				"api_key": "moa-virtual-provider", "api_mode": "chat_completions",
+			}
+		})
 		r.evictCachedAgent(ctx, quickKey, false, false)
 		return false
 	}()

@@ -37,28 +37,10 @@ var pluginAssetContentTypes = map[string]string{
 	".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json",
 }
 
-// Plugin mutations and listings of the dashboard UI routes, the names hermes tests patch
+// Install and update actions of the agent plugin routes, the plugins_cmd names hermes tests patch
 var (
-	uiDashboardPlugins            = getDashboardPlugins
-	uiDashboardInstallPlugin      = plugins.DashboardInstallPlugin
-	uiDashboardSetPluginEnabled   = plugins.DashboardSetAgentPluginEnabled
-	uiDashboardUpdateUserPlugin   = plugins.DashboardUpdateUserPlugin
-	uiDashboardRemoveUserPlugin   = plugins.DashboardRemoveUserPlugin
-	uiLoadAndGoLive               = plugins.LoadAndGoLive
-	uiSaveMemoryProvider          = plugins.SaveMemoryProvider
-	uiSaveContextEngine           = plugins.SaveContextEngine
-	uiRequireMemoryProviderReady  = requireMemoryProviderReady
-	uiDiscoverAllPlugins          = plugins.DiscoverAllPlugins
-	uiInstalledCatalogState       = plugins.InstalledCatalogState
-	uiMergedPluginsHub            = mergedPluginsHub
-	uiInvalidatePluginsHubCache   = invalidatePluginsHubCache
-	uiProfileNameForHome          = gateway.ProfileNameForHome
-	uiPluginConsentWithheld       = pluginConsentWithheld
-	uiPluginEnabledSet            = plugins.EnabledPluginSet
-	uiPluginDisabledSet           = plugins.DisabledPluginSet
-	uiCompiledDashboard           = compiledDashboard
-	uiPluginRuntimeStatusOfAlias  = pluginRuntimeStatus
-	uiDiscoverUserDashboardThemes = discoverUserThemes
+	uiDashboardInstallPlugin    = plugins.DashboardInstallPlugin
+	uiDashboardUpdateUserPlugin = plugins.DashboardUpdateUserPlugin
 )
 
 // Python item assignment error of a config value that is no mapping
@@ -111,7 +93,7 @@ func getDashboardThemes(ctx context.Context, profile string) (any, error) {
 			themes = append(themes, t)
 			seen[t.GetOr("name", nil)] = true
 		}
-		for _, t := range uiDiscoverUserDashboardThemes() {
+		for _, t := range discoverUserThemes() {
 			name := t.GetOr("name", nil)
 			if seen[name] {
 				continue
@@ -156,13 +138,13 @@ func listDashboardPlugins(ctx context.Context, profile string) (any, error) {
 			hidden = []any{}
 		}
 		out := []*pyjson.Object{}
-		for _, p := range uiDashboardPlugins(sctx, false) {
+		for _, p := range getDashboardPlugins(sctx, false) {
 			name, _ := p.GetOr("name", "").(string)
 			isHidden, err := pyNameIn(name, hidden)
 			if err != nil {
 				return nil, err
 			}
-			if !isHidden && !uiPluginConsentWithheld(sctx, p) {
+			if !isHidden && !pluginConsentWithheld(sctx, p) {
 				out = append(out, p)
 			}
 		}
@@ -187,7 +169,7 @@ func listDashboardPlugins(ctx context.Context, profile string) (any, error) {
 // Forces a rescan of the dashboard plugins of the profile
 func rescanDashboardPlugins(ctx context.Context, profile string) (any, error) {
 	found, err := configScopedToThread(ctx, profile, func(sctx context.Context) ([]*pyjson.Object, error) {
-		return uiDashboardPlugins(sctx, true), nil
+		return getDashboardPlugins(sctx, true), nil
 	})
 	if err != nil {
 		return nil, err
@@ -203,7 +185,7 @@ func getPluginsHub(ctx context.Context, req *Request, profile string) (any, erro
 	var out any
 	err := raised(func() error {
 		hub, err := configScopedToThread(ctx, profile, func(sctx context.Context) (*pyjson.Object, error) {
-			return uiMergedPluginsHub(sctx, false)
+			return mergedPluginsHub(sctx, false)
 		})
 		out = hub
 		return err
@@ -236,9 +218,9 @@ func pluginAction(ctx context.Context, result map[string]any, fallbackError stri
 		return nil, NewHTTPException(400, detail)
 	}
 	if rescan {
-		uiDashboardPlugins(ctx, true)
+		getDashboardPlugins(ctx, true)
 	}
-	uiInvalidatePluginsHubCache()
+	invalidatePluginsHubCache()
 	return result, nil
 }
 
@@ -249,8 +231,8 @@ func getPluginsCatalog(ctx context.Context, req *Request) (any, error) {
 	}
 	var out any
 	err := raised(func() error {
-		enabled, disabled := uiPluginEnabledSet(ctx), uiPluginDisabledSet(ctx)
-		entries, err := uiDiscoverAllPlugins(home.Dir(ctx))
+		enabled, disabled := plugins.EnabledPluginSet(ctx), plugins.DisabledPluginSet(ctx)
+		entries, err := plugins.DiscoverAllPlugins(home.Dir(ctx))
 		if err != nil {
 			return err
 		}
@@ -263,7 +245,7 @@ func getPluginsCatalog(ctx context.Context, req *Request) (any, error) {
 					aliases[alias] = true
 				}
 			}
-			info := map[string]any{"dir": e.Dir, "runtime_status": uiPluginRuntimeStatusOfAlias(aliases, enabled, disabled)}
+			info := map[string]any{"dir": e.Dir, "runtime_status": pluginRuntimeStatus(aliases, enabled, disabled)}
 			for _, alias := range []string{e.Name, e.Key} {
 				if !aliases[alias] {
 					continue
@@ -274,7 +256,7 @@ func getPluginsCatalog(ctx context.Context, req *Request) (any, error) {
 				installed[alias] = info
 			}
 		}
-		out = configJSON(uiInstalledCatalogState(ctx, installed, order))
+		out = configJSON(plugins.InstalledCatalogState(ctx, installed, order))
 		return nil
 	})
 	if err != nil {
@@ -410,7 +392,7 @@ func postAgentPluginActivate(ctx context.Context, req *Request) (any, error) {
 	}
 	profile, known := "", false
 	if target != "" && target != "." {
-		profile, known = uiProfileNameForHome(target)
+		profile, known = gateway.ProfileNameForHome(target)
 	}
 	if !known {
 		return nil, NewHTTPException(400, "Not a Hermes profile home.")
@@ -426,7 +408,7 @@ func postAgentPluginActivate(ctx context.Context, req *Request) (any, error) {
 	if home.Key(home.Dir(sctx)) != home.Key(target) {
 		return nil, NewHTTPException(400, "Home is not served by this backend.")
 	}
-	activation, err := uiLoadAndGoLive(sctx, name)
+	activation, err := plugins.LoadAndGoLive(sctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -447,22 +429,22 @@ func putPluginProviders(ctx context.Context, req *Request, body *pyjson.Object, 
 		defer unlock()
 		if raw := body.GetOr("memory_provider", nil); raw != nil {
 			memoryProvider := normalizeMemoryProviderName(raw)
-			if err := uiRequireMemoryProviderReady(lctx, memoryProvider); err != nil {
+			if err := requireMemoryProviderReady(lctx, memoryProvider); err != nil {
 				return err
 			}
-			if err := uiSaveMemoryProvider(lctx, memoryProvider); err != nil {
+			if err := plugins.SaveMemoryProvider(lctx, memoryProvider); err != nil {
 				return err
 			}
 		}
 		if engine, ok := body.GetOr("context_engine", nil).(string); ok {
-			return uiSaveContextEngine(lctx, engine)
+			return plugins.SaveContextEngine(lctx, engine)
 		}
 		return nil
 	}()
 	if err != nil {
 		return nil, err
 	}
-	uiInvalidatePluginsHubCache()
+	invalidatePluginsHubCache()
 	return pyjson.ObjectOf("ok", true), nil
 }
 
@@ -514,7 +496,7 @@ func postPluginVisibility(ctx context.Context, req *Request, name string, body *
 	if err != nil {
 		return nil, err
 	}
-	uiInvalidatePluginsHubCache()
+	invalidatePluginsHubCache()
 	return pyjson.ObjectOf("ok", true, "name", name, "hidden", hidden), nil
 }
 
@@ -527,9 +509,9 @@ func pathWithin(target, base string) bool {
 // Static asset of a consented dashboard plugin of the profile, limited to the browser asset suffixes
 func servePluginAsset(ctx context.Context, pluginName, filePath, profile string) (any, error) {
 	plugin, err := configScopedToThread(ctx, profile, func(sctx context.Context) (*pyjson.Object, error) {
-		for _, p := range uiDashboardPlugins(sctx, false) {
+		for _, p := range getDashboardPlugins(sctx, false) {
 			if p.GetOr("name", nil) == pluginName {
-				if uiPluginConsentWithheld(sctx, p) {
+				if pluginConsentWithheld(sctx, p) {
 					return nil, nil
 				}
 				return p, nil
@@ -548,7 +530,7 @@ func servePluginAsset(ctx context.Context, pluginName, filePath, profile string)
 	}
 	base, _ := plugin.GetOr("_dir", "").(string)
 	noStore := []string{"Cache-Control", "no-store, no-cache, must-revalidate"}
-	if compiled, ok := uiCompiledDashboard(plugin); ok {
+	if compiled, ok := compiledDashboard(plugin); ok {
 		root := filepath.Clean(base)
 		target := filepath.Clean(pypath.PathJoin(root, filePath))
 		if !pathWithin(target, root) {
@@ -673,7 +655,7 @@ func dashboardUiRouter() *APIRouter {
 			Params: []Param{pluginPath},
 			Handle: func(ctx context.Context, c *Call) (any, error) {
 				return namedPluginAction(ctx, c.Request, c.Str("name"), func(sctx context.Context, n string) (map[string]any, error) {
-					return uiDashboardSetPluginEnabled(sctx, n, toggle.enabled)
+					return plugins.DashboardSetAgentPluginEnabled(sctx, n, toggle.enabled)
 				}, toggle.fallback, false)
 			},
 		})
@@ -690,7 +672,7 @@ func dashboardUiRouter() *APIRouter {
 		Params: []Param{pluginPath},
 		Handle: func(ctx context.Context, c *Call) (any, error) {
 			return namedPluginAction(ctx, c.Request, c.Str("name"), func(sctx context.Context, n string) (map[string]any, error) {
-				return uiDashboardRemoveUserPlugin(sctx, n)
+				return plugins.DashboardRemoveUserPlugin(sctx, n)
 			}, "Remove failed.", true)
 		},
 	})

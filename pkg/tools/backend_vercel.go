@@ -575,6 +575,20 @@ func NewVercelSandboxEnvironment(ctx context.Context, env *Env, o VercelOptions)
 
 func (v *vercelEnv) EnvType() string { return "vercel_sandbox" }
 
+// Python class name of the environment as hermes logs and records it
+func (v *vercelEnv) ClassName() string { return "VercelSandboxEnvironment" }
+
+var _ interface{ ClassName() string } = (*vercelEnv)(nil)
+
+// Pushes changed host files into the sandbox through its sync manager, nothing when the backend has none
+func (v *vercelEnv) SyncFiles(force bool) {
+	if v.syncManager != nil {
+		v.syncManager.Sync(force)
+	}
+}
+
+var _ SandboxSyncer = (*vercelEnv)(nil)
+
 // Home directory of the sandbox user that remote media and image delivery resolve tilde paths against
 func (v *vercelEnv) RemoteHome() (string, bool) { return v.remoteHome, v.remoteHome != "" }
 

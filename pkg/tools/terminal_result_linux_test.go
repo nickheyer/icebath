@@ -17,7 +17,7 @@ func TestLargeProcessOutputIsBoundedBeforeSudoAndPluginHooks(t *testing.T) {
 	ResetToolOutputLimitsCache()
 	defer ResetToolOutputLimitsCache()
 	var hookInputs []string
-	TerminalOutputTransformHook = func(payload map[string]any) []any {
+	TerminalOutputTransformHook = func(_ context.Context, payload map[string]any) []any {
 		hookInputs = append(hookInputs, payload["output"].(string))
 		return nil
 	}

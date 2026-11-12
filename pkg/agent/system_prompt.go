@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -63,9 +64,6 @@ type workspacePin struct{ key, block string }
 type SystemPromptParts struct {
 	Stable, Context, Volatile string
 }
-
-// PlatformRegistryHint returns a registered platform's prompt hint and whether the registry has the entry, set by the gateway
-var PlatformRegistryHint func(ctx context.Context, platform string) (string, bool)
 
 // Seams the prompt builders call so tests can replace the file and host probes
 var (
@@ -551,12 +549,13 @@ func activeProfileLine(ctx context.Context, a *AIAgent) string {
 		"explicitly directs you to.", active, profileHome, root, root, root, root)
 }
 
-// The registered platform hint and whether an entry exists, no entry while no registry is installed
+// The gateway platform registry hint of a platform and whether the registry has its entry
 func platformRegistryEntry(ctx context.Context, platformKey string) (string, bool) {
-	if PlatformRegistryHint == nil {
+	entry := gateway.Registry.Get(ctx, platformKey)
+	if entry == nil {
 		return "", false
 	}
-	return PlatformRegistryHint(ctx, platformKey)
+	return entry.PlatformHint, true
 }
 
 // Built in hint, else the platform registry hint after plugin discovery, plus the Telegram rich messages opt in
@@ -775,7 +774,7 @@ func guidanceParts(ctx context.Context, a *AIAgent) []string {
 	if !hasTools {
 		return parts
 	}
-	if !a.agentIsOneshot() {
+	if !a.agentIsOneshot(ctx) {
 		parts = append(parts, SteerChannelNote)
 	}
 	if modelGate(a.toolUseEnforcement, a.model, ToolUseEnforcementModels) {
@@ -1030,6 +1029,11 @@ func BuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string) (
 		}
 	}
 	return strings.Join(kept, "\n\n"), nil
+}
+
+// Forces a system prompt rebuild on the next turn and reloads memory from disk
+func (a *AIAgent) InvalidateSystemPrompt(ctx context.Context) error {
+	return InvalidateSystemPrompt(ctx, a)
 }
 
 // InvalidateSystemPrompt forces a rebuild, stashes the frozen plugin sections and reloads memory from disk

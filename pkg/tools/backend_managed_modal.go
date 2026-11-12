@@ -89,6 +89,11 @@ func NewManagedModalEnvironment(ctx context.Context, env *Env, o ModalOptions) (
 
 func (m *managedModalEnv) EnvType() string { return "modal" }
 
+// Python class name of the environment as hermes logs and records it
+func (m *managedModalEnv) ClassName() string { return "ManagedModalEnvironment" }
+
+var _ interface{ ClassName() string } = (*managedModalEnv)(nil)
+
 // Managed sandboxes never spawn local processes, every command goes through Execute
 func (m *managedModalEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdinData *string) (ProcessHandle, error) {
 	return nil, errors.New("Managed Modal runs commands through the tool gateway, not a local process")

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -142,14 +143,17 @@ func TestTUIEmbeddedPaneClarifier(t *testing.T) {
 	}
 }
 
-// Installs a platform registry hook answering the given plugin hints
+// Registers gateway platform entries carrying the given hints, restoring the previous registrations after the case
 func fakePlatformRegistry(t *testing.T, hints map[string]string) {
 	t.Helper()
-	prev := PlatformRegistryHint
-	t.Cleanup(func() { PlatformRegistryHint = prev })
-	PlatformRegistryHint = func(_ context.Context, platform string) (string, bool) {
-		h, ok := hints[platform]
-		return h, ok
+	for name, hint := range hints {
+		prevEntry, prevLoader := gateway.Registry.SnapshotRegistration(name, "")
+		entry := gateway.NewPlatformEntry(name, name, nil, nil)
+		entry.PlatformHint = hint
+		if err := gateway.Registry.Register(context.Background(), entry, ""); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { gateway.Registry.RestoreRegistration(name, entry, nil, prevEntry, prevLoader, "") })
 	}
 }
 

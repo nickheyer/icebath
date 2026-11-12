@@ -2,18 +2,13 @@ package gateway
 
 import (
 	"context"
+	"fmt"
 	"maps"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
-
-// Peeked session state that also reports the /fast override and whether one is set
-type serviceTierPeekedState interface {
-	peekedSessionState
-	ServiceTierOverride() (*string, bool)
-}
 
 // Launch secret owner of the active authority, a nil owner when the runner has none
 func activeOwner(ctx context.Context, runner any) (launchSecretOwner, error) {
@@ -24,7 +19,7 @@ func activeOwner(ctx context.Context, runner any) (launchSecretOwner, error) {
 	return authority, nil
 }
 
-// Peeked state of a route, nil when the runner holds none or cannot peek
+// Peeked state of a route, nil when the runner holds none or has no peek as the getattr read allows
 func peekRouteState(runner any, sessionKey string) peekedSessionState {
 	peeker, ok := runner.(sessionStatePeekRunner)
 	if !ok || sessionKey == "" {
@@ -60,9 +55,15 @@ func (p *LocalSessionPolicy) CurrentReasoningConfig(ctx context.Context, runner 
 
 // Next turn tier, a typed session /fast, else the policy tier frozen or followed from the profile
 func (p *LocalSessionPolicy) CurrentServiceTier(ctx context.Context, runner any, sessionKey string) (*string, error) {
-	if state, ok := peekRouteState(runner, sessionKey).(serviceTierPeekedState); ok && state != nil {
-		if tier, set := state.ServiceTierOverride(); set {
-			return tier, nil
+	if sessionKey != "" {
+		peeker, ok := runner.(sessionStatePeekRunner)
+		if !ok {
+			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_peek_session_state'", runner)}
+		}
+		if state := peeker.PeekSessionState(sessionKey); state != nil {
+			if tier, set := state.ServiceTierOverride(); set {
+				return tier, nil
+			}
 		}
 	}
 	owner, err := activeOwner(ctx, runner)

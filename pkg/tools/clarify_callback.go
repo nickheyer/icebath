@@ -47,7 +47,7 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 			"multi_select": s.MultiSelect, "choices": choices}
 		prompts = append(prompts, s.Question)
 	}
-	human := humanInputRequest(env, "clarify", strings.Join(prompts, "\n"), "")
+	human := humanInputRequest(ctx, env, "clarify", strings.Join(prompts, "\n"), "")
 	reply, err := callback(ctx, dicts)
 	outcome := ""
 	if err == nil {
@@ -59,7 +59,7 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 		}
 	}
 	if err != nil {
-		human.finish(env, "error")
+		human.finish(ctx, env, "error")
 		return toolErrorJSON("Failed to get user input: "+err.Error(), nil)
 	}
 	answers, _ := reply["answers"].(map[string]any)
@@ -67,6 +67,6 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 	if notice := reply["notice"]; pyrepr.Truthy(notice) {
 		out.Notice = pyrepr.Str(notice)
 	}
-	human.finish(env, outcome)
+	human.finish(ctx, env, outcome)
 	return clarifyResult(normalized, out, shown)
 }

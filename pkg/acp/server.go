@@ -775,14 +775,7 @@ func (a *HermesACPAgent) refreshToolSurface(ctx context.Context, st *SessionStat
 	}
 	defs, names, _ = memory.InjectMemoryProviderTools(ctx, view, agentMemoryManager(ag), defs, names)
 	surface.SetToolSnapshot(defs, names)
-	switch target := ag.(type) {
-	case *agent.AIAgent:
-		if err := agent.InvalidateSystemPrompt(ctx, target); err != nil {
-			return err
-		}
-	case interface {
-		InvalidateSystemPrompt(ctx context.Context) error
-	}:
+	if target, ok := ag.(systemPromptInvalidator); ok {
 		if err := target.InvalidateSystemPrompt(ctx); err != nil {
 			return err
 		}

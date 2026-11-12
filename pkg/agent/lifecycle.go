@@ -27,10 +27,13 @@ var (
 	}
 )
 
-// Carries the agent env on the context so lifecycle observers read its turn scoped values
+// Carries the agent env for lifecycle observers, and as the session env when the surface bound none
 func withLifecycleEnv(ctx context.Context, env *tools.Env) context.Context {
 	if env == nil {
 		return ctx
+	}
+	if tools.ToolEnvFrom(ctx) == nil {
+		ctx = tools.WithToolEnv(ctx, env)
 	}
 	return context.WithValue(ctx, lifecycleEnvKey{}, env)
 }

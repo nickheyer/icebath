@@ -592,6 +592,9 @@ func (e *lmHTTPStatusError) Error() string { return fmt.Sprintf("HTTP Error %d: 
 // Python exception class the error stands for
 func (e *lmHTTPStatusError) PyTypeName() string { return "HTTPError" }
 
+// Python module of urllib's HTTPError
+func (e *lmHTTPStatusError) PyModule() string { return "urllib.error" }
+
 // Python repr of urllib's HTTPError, the code and the quoted reason
 func (e *lmHTTPStatusError) PyRepr() string {
 	return fmt.Sprintf("<HTTPError %d: %s>", e.Code, pyrepr.Repr(e.Msg))

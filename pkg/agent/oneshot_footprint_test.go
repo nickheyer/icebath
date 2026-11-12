@@ -52,21 +52,21 @@ func TestOneshotSkillsPromptDropsAuthoringCoaching(t *testing.T) {
 func TestAgentIsOneshotFreezesAtFirstUse(t *testing.T) {
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
 	a := &AIAgent{}
-	if !a.agentIsOneshot() {
+	if !a.agentIsOneshot(context.Background()) {
 		t.Fatal("single query marker not read")
 	}
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "")
-	if !a.agentIsOneshot() {
+	if !a.agentIsOneshot(context.Background()) {
 		t.Fatal("frozen fact changed after the marker cleared")
 	}
 	if v, pinned := a.oneshotSession.Pinned(); !v || !pinned {
 		t.Fatal("pin not visible to delegation readers")
 	}
 	prev := tools.ActivePolicySource
-	tools.ActivePolicySource = func(*tools.Env) (string, bool) { return "cli", true }
+	tools.ActivePolicySource = func(context.Context) (string, bool) { return "cli", true }
 	defer func() { tools.ActivePolicySource = prev }()
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
-	if tools.IsSingleQuerySession(nil) {
+	if tools.IsSingleQuerySession(context.Background(), nil) {
 		t.Fatal("interactive gateway policy must win over a stray env marker")
 	}
 }

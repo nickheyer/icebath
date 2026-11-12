@@ -174,7 +174,7 @@ func TestSessionJoinsDelegationFollowsTheCarriedSchema(t *testing.T) {
 		t.Fatal("background or absent delegate_task joins")
 	}
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
-	if !tools.AgentIsOneshot(&inline.oneshotSession, nil) {
+	if !tools.AgentIsOneshot(context.Background(), &inline.oneshotSession, nil) {
 		t.Fatal("one shot marker not frozen")
 	}
 	if sessionJoinsDelegation(inline) {

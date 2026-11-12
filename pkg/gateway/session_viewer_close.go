@@ -464,7 +464,7 @@ func fireOrphanClose(a *SessionAuthority, sessionID, reason string, timer **time
 	}
 	a.pendingCloses[sessionID] = close
 	a.mu.Unlock()
-	trackMutation(a, func(taskCtx context.Context) (any, error) {
+	trackMutation(context.Background(), a, func(taskCtx context.Context) (any, error) {
 		return nil, storeAndSettle(taskCtx, a, sessionID, live, close)
 	})
 }

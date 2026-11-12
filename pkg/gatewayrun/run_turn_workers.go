@@ -126,12 +126,18 @@ func (r *GatewayRunner) runAgentTrackAgent(ctx context.Context, tc *TurnContext)
 	if tc.sessionKey == "" {
 		return
 	}
-	if tc.runGeneration != nil && !r.isSessionRunCurrent(tc.sessionKey, *tc.runGeneration) {
+	promoted, stale := tc.currentAgent(), false
+	r.withSessionState(tc.sessionKey, func(s *SessionState) {
+		if tc.runGeneration != nil && s.persistent.runGeneration != *tc.runGeneration {
+			stale = true
+			return
+		}
+		s.turn.agent, s.turn.ctx = promoted, tc
+	})
+	if stale {
 		runLog().Info(fmt.Sprintf("Skipping stale agent promotion for %s — generation %d is no longer current", tc.sessionKey, *tc.runGeneration))
 		return
 	}
-	turnState := &r.sessionState(tc.sessionKey).turn
-	turnState.agent, turnState.ctx = tc.currentAgent(), tc
 	if r.draining.Load() {
 		draining := "draining"
 		r.updateRuntimeStatus(ctx, &draining, nil)

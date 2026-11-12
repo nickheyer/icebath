@@ -1172,12 +1172,12 @@ func humanDecision(ctx context.Context, env *Env, spec gateSpec, in humanDecisio
 	}
 	hookPayload := map[string]any{"command": promptCommand, "description": promptDescription, "pattern_key": in.patternKey,
 		"pattern_keys": append([]string{}, in.patternKeys...), "session_key": in.sessionKey, "surface": "cli"}
-	fireApprovalHook(env, "pre_approval_request", hookPayload)
+	fireApprovalHook(ctx, env, "pre_approval_request", hookPayload)
 	choice := promptDangerousApproval(ctx, env, promptOptions{command: promptCommand, description: promptDescription,
 		allowPermanent: allowPermanent, allowSession: true, smartDenied: smartDenied, approvalCallback: in.approvalCallback})
 	post := copyMap(hookPayload)
 	post["choice"] = choice.value
-	fireApprovalHook(env, "post_approval_response", post)
+	fireApprovalHook(ctx, env, "post_approval_response", post)
 	switch choice.value {
 	case "timeout":
 		return deny(spec.cliTimeout, "timeout", nil, "")
@@ -1648,8 +1648,8 @@ func CheckAllCommandGuards(ctx context.Context, env *Env, command, envType strin
 const executeCodeDescription = "execute_code script execution. The script can spawn subprocesses or mutate files without passing through terminal command approval; approval is one-shot for this run."
 
 // A local session's own viewer turn with an approver attached and a registered notifier
-func isLocalViewerTurn(env *Env) bool {
-	return isLocalInteractiveSession(env) && isViewerTurnWithApprover(env) &&
+func isLocalViewerTurn(ctx context.Context, env *Env) bool {
+	return isLocalInteractiveSession(env) && isViewerTurnWithApprover(ctx) &&
 		!isDelegatedChildProcessContext(env) && gatewayNotifyCb(getCurrentSessionKey(env, "default")) != nil
 }
 
@@ -1672,7 +1672,7 @@ func CheckExecuteCodeGuard(ctx context.Context, env *Env, code, envType string, 
 		}
 		return approvedResult()
 	}
-	if (!isGateway && !isAsk) || isLocalViewerTurn(env) {
+	if (!isGateway && !isAsk) || isLocalViewerTurn(ctx, env) {
 		return approvedResult()
 	}
 	sessionKey := getCurrentSessionKey(env, "default")

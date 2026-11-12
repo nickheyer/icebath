@@ -13,7 +13,7 @@ import (
 
 // Runner that revives a persisted routing entry's source pinned to its receiving bot
 type restoredSourceRunner interface {
-	RestoredSource(ctx context.Context, entry *SessionEntry) *SessionSource
+	RestoredSource(ctx context.Context, entry *SessionEntry) (*SessionSource, error)
 }
 
 // Routing entry that still names the session under the route, nil otherwise
@@ -136,7 +136,10 @@ func restoreRoutedSession(ctx context.Context, a *SessionAuthority, sid string) 
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_restored_source'", a.Runner)}
 	}
-	source := runner.RestoredSource(ctx, plan.entry)
+	source, err := runner.RestoredSource(ctx, plan.entry)
+	if err != nil {
+		return nil, err
+	}
 	a.mu.Lock()
 	_, held := a.Sessions[sid]
 	var live *LiveSession

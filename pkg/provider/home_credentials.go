@@ -14,6 +14,8 @@ type RuntimeCredentialSource interface {
 	RuntimeCredential(provider string) (Credential, error)
 }
 
+var _ RuntimeCredentialSource = (*homeCredentials)(nil)
+
 // PoolPresenceSource reports whether a provider's credential pool holds any row at all
 type PoolPresenceSource interface {
 	HasPoolCredentials(provider string) bool

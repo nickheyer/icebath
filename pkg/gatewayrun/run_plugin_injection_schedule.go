@@ -78,8 +78,7 @@ func onGatewayLoop(ctx context.Context) bool {
 
 // Whether the loop was closed so scheduling onto it fails
 func loopIsClosed(loop gateway.EventLoop) bool {
-	closer, ok := loop.(interface{ IsClosed() bool })
-	return ok && closer.IsClosed()
+	return loop.IsClosed()
 }
 
 // Schedules a plugin triggered turn on the live gateway loop, refusing up front what the plugin may not start

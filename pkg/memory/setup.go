@@ -42,7 +42,20 @@ type postSetupProvider interface {
 }
 
 type statusConfigProvider interface {
-	StatusConfig(providerConfig any) (any, error)
+	StatusConfig(ctx context.Context, providerConfig any) (any, error)
+}
+
+// Provider whose optional setup hooks are present only when its object defines them, the hosted plugin provider
+type hookPresence interface {
+	HasHook(ctx context.Context, name string) bool
+}
+
+// Python hasattr of an optional provider hook, a native provider declaring the method always having it
+func providerHasHook(ctx context.Context, p Provider, name string) bool {
+	if h, ok := p.(hookPresence); ok {
+		return h.HasHook(ctx, name)
+	}
+	return true
 }
 
 // MemorySetup runs icebath memory setup and status for one home on one console
@@ -283,7 +296,7 @@ func (m *MemorySetup) postSetupHook(ctx context.Context, p Provider, cfg map[str
 	if _, ok := cfg["memory"].(map[string]any); !ok {
 		cfg["memory"] = map[string]any{}
 	}
-	if ps, ok := p.(postSetupProvider); ok {
+	if ps, ok := p.(postSetupProvider); ok && providerHasHook(ctx, p, "post_setup") {
 		return true, ps.PostSetup(ctx, envHome(m.Env), cfg)
 	}
 	return false, nil
@@ -586,8 +599,8 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 	if providerName != "" {
 		providerConfig := dictGet(memCfg, providerName, map[string]any{})
 		display := providerConfig
-		if sp, ok := p.(statusConfigProvider); ok {
-			if d, err := sp.StatusConfig(providerConfig); err != nil {
+		if sp, ok := p.(statusConfigProvider); ok && providerHasHook(ctx, p, "get_status_config") {
+			if d, err := sp.StatusConfig(ctx, providerConfig); err != nil {
 				if pc, isMap := providerConfig.(map[string]any); isMap {
 					copied := make(map[string]any, len(pc)+1)
 					for k, v := range pc {

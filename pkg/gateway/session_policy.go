@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Launch policy section and marker names a local session policy carries
@@ -314,6 +315,18 @@ type LocalSessionPolicy struct {
 	ClientEnvRemote    bool
 	ClientEnvRulesJSON *string
 	EditApprovalPolicy string
+}
+
+// Installs the launch policy source read the tool and skill prompt one shot checks make
+func init() { tools.ActivePolicySource = activePolicySource }
+
+// Source of the launch policy bound to ctx, false when the turn runs under none
+func activePolicySource(ctx context.Context) (string, bool) {
+	policy, ok := ActivePolicy(ctx).(*LocalSessionPolicy)
+	if !ok || policy == nil {
+		return "", false
+	}
+	return policy.Source, true
 }
 
 // Platform label the policy turn runs on

@@ -74,11 +74,11 @@ func taskParentHandle(ctx context.Context, session *metricsSession, taskID strin
 }
 
 // Declares background or one_shot for a finite cli run, leaving every other event untouched
-func withLaunchEntrypoint(env *tools.Env, event map[string]any) map[string]any {
-	if pyrepr.Truthy(event["entrypoint"]) || pyrepr.Truthy(event["parent_task_id"]) || pyrepr.Truthy(event["parent_session_id"]) || ExecutionSurface(event) != "cli" {
+func withLaunchEntrypoint(ctx context.Context, env *tools.Env, event map[string]any) map[string]any {
+	if pyrepr.Truthy(event["entrypoint"]) || pyrepr.Truthy(event["parent_task_id"]) || pyrepr.Truthy(event["parent_session_id"]) || ExecutionSurface(ctx, event) != "cli" {
 		return event
 	}
-	if !tools.IsSingleQuerySession(env) {
+	if !tools.IsSingleQuerySession(ctx, env) {
 		return event
 	}
 	source := pystr.Lower(pystr.Strip(tools.SessionEnvValue(env, "ICEBATH_SESSION_SOURCE")))
@@ -562,7 +562,7 @@ func (r *Runtime) startTask(ctx context.Context, env *tools.Env, event map[strin
 		return nil, nil, err
 	}
 	taskContext := relayContext.Copy()
-	startFields := TaskStartFields(ctx, withLaunchEntrypoint(env, event))
+	startFields := TaskStartFields(ctx, withLaunchEntrypoint(ctx, env, event))
 	if r.relay.Scope == nil || r.relay.Scope.Push == nil {
 		return nil, nil, tools.RelayAttributeError("NemoRelayScope", "push")
 	}

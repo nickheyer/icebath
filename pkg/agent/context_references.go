@@ -268,11 +268,11 @@ var (
 	referenceReadBlockErrorFn = func(ctx context.Context, path string) (string, error) {
 		return tools.ReadBlockError(referenceToolsEnv(ctx), path), nil
 	}
-	referenceReadTextFn        = os.ReadFile
-	referenceReadPrefixFn      = readFilePrefix
-	quietRunnerFn              = runQuiet
-	referenceLinePieceObserver func(n int)
-	referenceGitArgs           = map[string]func(ref ContextReference) []string{
+	referenceReadTextFn   = os.ReadFile
+	referenceReadPrefixFn = readFilePrefix
+	quietRunnerFn         = runQuiet
+	referenceOpenTextFn   = openReferenceText
+	referenceGitArgs      = map[string]func(ref ContextReference) []string{
 		"diff":   func(ContextReference) []string { return []string{"diff"} },
 		"staged": func(ContextReference) []string { return []string{"diff", "--staged"} },
 		"git": func(ref ContextReference) []string {
@@ -592,14 +592,14 @@ func readFileReference(ref ContextReference, path string, maxInlineTokens int) (
 
 // Streams only the requested line window in bounded pieces, the character total when it passed the budget
 func readLineWindow(path string, lineStart int, lineEnd *int, charBudget int) (string, int, error) {
-	f, err := os.Open(path)
+	fh, err := referenceOpenTextFn(path)
 	if err != nil {
 		return "", -1, err
 	}
-	defer f.Close()
-	reader := newBoundedLineReader(f, charBudget+1)
+	defer fh.Close()
+	lineCap := charBudget + 1
 	for i := 0; i < max(lineStart-1, 0); i++ {
-		if _, seen, err := reader.nextLine(false, -1); err != nil {
+		if _, seen, err := nextReferenceLine(fh, lineCap, false, -1); err != nil {
 			return "", -1, err
 		} else if !seen {
 			break
@@ -612,7 +612,7 @@ func readLineWindow(path string, lineStart int, lineEnd *int, charBudget int) (s
 	var parts []string
 	total := 0
 	for i := 0; i < end-lineStart+1; i++ {
-		line, seen, err := reader.nextLine(true, charBudget-total)
+		line, seen, err := nextReferenceLine(fh, lineCap, true, charBudget-total)
 		if err != nil {
 			return "", -1, err
 		}
@@ -628,22 +628,34 @@ func readLineWindow(path string, lineStart int, lineEnd *int, charBudget int) (s
 	return strings.Join(parts, ""), -1, nil
 }
 
-// Line reader whose readline never materializes more than the cap at once
+// Open text handle of a reference file whose readline returns at most size characters, empty at EOF
+type referenceTextFile interface {
+	readline(size int) (string, error)
+	Close() error
+}
+
+// Text handle over a file whose readline never materializes more than the size asked
 type boundedLineReader struct {
-	r   io.Reader
-	cap int
+	r   io.ReadCloser
 	buf []byte
 }
 
-func newBoundedLineReader(r io.Reader, cap int) *boundedLineReader {
-	return &boundedLineReader{r: r, cap: cap}
+// Opens a reference file as a text handle read in bounded readline pieces
+func openReferenceText(path string) (referenceTextFile, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return &boundedLineReader{r: f}, nil
 }
 
-// One readline(cap) piece, ending at a newline or the cap, empty at EOF
-func (b *boundedLineReader) piece() (string, error) {
+func (b *boundedLineReader) Close() error { return b.r.Close() }
+
+// One readline(size) piece, ending at a newline or the size, empty at EOF
+func (b *boundedLineReader) readline(size int) (string, error) {
 	var out []byte
 	one := make([]byte, 1)
-	for len(out) < b.cap {
+	for len(out) < size {
 		if len(b.buf) == 0 {
 			chunk := make([]byte, 4096)
 			n, err := b.r.Read(chunk)
@@ -667,18 +679,15 @@ func (b *boundedLineReader) piece() (string, error) {
 			break
 		}
 	}
-	if referenceLinePieceObserver != nil {
-		referenceLinePieceObserver(len(out))
-	}
 	return string(out), nil
 }
 
-// One logical line read in bounded pieces, collected only when asked and stopped once over remaining
-func (b *boundedLineReader) nextLine(collect bool, remaining int) (string, bool, error) {
+// One logical line read in pieces of at most lineCap, collected only when asked and stopped once over remaining
+func nextReferenceLine(fh referenceTextFile, lineCap int, collect bool, remaining int) (string, bool, error) {
 	var pieces []string
 	seen, collected := false, 0
 	for {
-		piece, err := b.piece()
+		piece, err := fh.readline(lineCap)
 		if err != nil {
 			return "", false, err
 		}

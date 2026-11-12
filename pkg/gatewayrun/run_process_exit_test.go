@@ -28,6 +28,10 @@ func (l *capturingLoop) CallSoonThreadsafe(fn func()) error {
 
 func (l *capturingLoop) CallLater(time.Duration, func()) (gateway.LoopTimer, error) { return nil, nil }
 
+func (l *capturingLoop) IsClosed() bool { return false }
+
+func (l *capturingLoop) IsRunning() bool { return true }
+
 func (l *capturingLoop) calls() []func() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

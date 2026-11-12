@@ -268,7 +268,7 @@ func resetAndRehomeMessages(ctx context.Context, runner AuthorityRunner, session
 		return out, nil
 	}
 	live.mutationLock.Lock()
-	task := trackMutation(a, operation)
+	task := trackMutation(ctx, a, operation)
 	select {
 	case <-task.done:
 	case <-ctx.Done():

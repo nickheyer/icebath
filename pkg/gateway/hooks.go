@@ -25,6 +25,16 @@ func init() {
 	tools.RegisteredAdapterSecretEnv = registeredAdapterSecretEnv
 	tools.RegisteredPlatformNames = registeredPlatformNames
 	tools.BundledPlatformNames = bundledPlatformNamesAndAliases
+	tools.SupervisedGatewayPid = supervisedGatewayPid
+}
+
+// Whether this launch is a supervised gateway and the pid of the live gateway, the lock records left in place
+func supervisedGatewayPid() (bool, int, error) {
+	if !IsSupervisedGatewayLaunch(nil) {
+		return false, 0, nil
+	}
+	pid, _, err := GetRunningPid("", false)
+	return true, pid, err
 }
 
 // Whether a live gateway serves home by the uncached ladder scoped to it, false on any error

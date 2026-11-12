@@ -264,6 +264,9 @@ func desktopIdentity(env *tools.Env, childEnv map[string]string) string {
 // True when a cached backend's recorded display no longer matches a fresh spawn's
 func backendDisplayStale(recorded, current string) bool { return recorded != current }
 
+// Driver spawn env over the process environment with the bot desktop display, telemetry policy and Wayland opt in
+func CuaDriverChildEnv(env *tools.Env) map[string]string { return cuaDriverChildEnv(env, nil) }
+
 // Driver spawn env with the bot desktop display, the telemetry policy and the native Wayland opt in
 func cuaDriverChildEnv(env *tools.Env, base map[string]string) map[string]string {
 	if base == nil {

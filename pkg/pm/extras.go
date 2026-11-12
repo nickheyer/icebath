@@ -203,7 +203,7 @@ func SwapAnchorImportable(fn func(ctx context.Context, anchor string) bool) func
 // The one command users run for a missing extra
 func InstallHint(extra string) string { return "icebath pm install --extra " + extra }
 
-// Reports a terminal UI owning stdin, set by the TUI so a prompt never reads under it
+// Reports a prompt application owning stdin, set by the binary so a prompt never reads under it
 var InteractiveAppRunning func() bool
 
 // Client sync a lazy extra install goes through
@@ -240,7 +240,7 @@ func EnsureImport(ctx context.Context, extra string) error {
 		return NewInstallError("venv", fmt.Sprintf("extra %s is not supported on this platform (gate: %s); the adapter degrades without it",
 			pyrepr.StrRepr(extra), pyrepr.StrRepr(gates[extra])), "")
 	}
-	appRunning := InteractiveAppRunning != nil && InteractiveAppRunning()
+	appRunning := InteractiveAppRunning()
 	if !appRunning && promptTerminals() {
 		answer, err := promptInput(fmt.Sprintf("\nThis needs icebath's optional %s feature, which isn't installed yet.\nInstall it now? [Y/n] ", pyrepr.StrRepr(extra)))
 		if err != nil {

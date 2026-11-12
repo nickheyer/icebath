@@ -152,8 +152,10 @@ func ClassifyAgentError(text any) string {
 // Error that carries its own reason attribute
 type ReasonedError interface {
 	error
-	ReasonAttr() string
+	Reason() string
 }
+
+var _ ReasonedError = (*TurnBusyError)(nil)
 
 // Typed reason of a delivery refusal, an error's own reason trusted only inside the vocabulary
 func DeliveryFailureReason(err error) string {
@@ -162,7 +164,7 @@ func DeliveryFailureReason(err error) string {
 	case *state.RuntimeStoreError:
 		supplied = e.Reason
 	case ReasonedError:
-		supplied = e.ReasonAttr()
+		supplied = e.Reason()
 	}
 	supplied = pystr.Strip(supplied)
 	if supplied == "target_busy" || AllReasons[supplied] {

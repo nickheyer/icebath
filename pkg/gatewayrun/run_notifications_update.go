@@ -304,7 +304,7 @@ func (r *GatewayRunner) forwardUpdatePrompt(ctx context.Context, target *updateT
 			return err
 		}
 	}
-	r.sessionState(target.sessionKey).persistent.updatePromptPending = true
+	r.updatePromptPending().Set(target.sessionKey, true)
 	inboundLog().Info(fmt.Sprintf("Forwarded update prompt to %s: %s", target.sessionKey, pystr.Slice(promptText, 0, 80)))
 	return nil
 }
@@ -312,9 +312,7 @@ func (r *GatewayRunner) forwardUpdatePrompt(ctx context.Context, target *updateT
 // Removes the markers and clears the session's pending prompt flag
 func (r *GatewayRunner) clearUpdateMarkers(paths updatePaths, sessionKey string) {
 	paths.unlinkAll()
-	if st := r.peekSessionState(sessionKey); st != nil {
-		st.persistent.updatePromptPending = false
-	}
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { s.persistent.updatePromptPending = false })
 }
 
 // Streams update output, forwards prompts and sends the final notice until the exit code or the timeout
@@ -358,11 +356,11 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 		if pystr.Strip(buffer) != "" && time.Since(lastStream) >= streamInterval {
 			flush()
 		}
-		var pending *SessionState
+		promptPending := false
 		if sessionKey != "" {
-			pending = r.peekSessionState(sessionKey)
+			promptPending, _ = r.updatePromptPending().Get(sessionKey)
 		}
-		if updatePathExists(paths.prompt) && sessionKey != "" && (pending == nil || !pending.persistent.updatePromptPending) {
+		if updatePathExists(paths.prompt) && sessionKey != "" && !promptPending {
 			if err := r.forwardPendingUpdatePrompt(ctx, paths, target, flush); err != nil {
 				return err
 			}

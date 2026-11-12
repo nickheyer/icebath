@@ -28,7 +28,7 @@ type switchRoute struct {
 
 // Runner that resolves the model and runtime a session's agent runs
 type agentRuntimeResolver interface {
-	ResolveSessionAgentRuntime(ctx context.Context, source *SessionSource, sessionKey string, fallback bool) (string, map[string]any, error)
+	ResolveSessionAgentRuntime(ctx context.Context, source *SessionSource, sessionKey string, userConfig map[string]any, fallback bool) (string, map[string]any, error)
 }
 
 // Runtime resolver of the authority's runner, an AttributeError when it has none
@@ -63,7 +63,7 @@ func currentModelRoute(ctx context.Context, a *SessionAuthority, live *LiveSessi
 	if err != nil {
 		return nil, switchRoute{}, err
 	}
-	model, runtime, err := resolver.ResolveSessionAgentRuntime(scoped, live.Source, live.Route, false)
+	model, runtime, err := resolver.ResolveSessionAgentRuntime(scoped, live.Source, live.Route, nil, false)
 	if err != nil {
 		var authErr *provider.AuthError
 		if !errors.As(err, &authErr) {

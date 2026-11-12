@@ -2,7 +2,7 @@ package dashboard
 
 import "testing"
 
-// Application of web_server.py with the routers in the tree, the TestClient(web_server.app) of the hermes cases
+// Fresh application of web_server.py under a temp home, the TestClient(web_server.app) of the hermes cases
 func dashboardTestApp(t *testing.T) *FastAPI {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -11,5 +11,5 @@ func dashboardTestApp(t *testing.T) *FastAPI {
 	if err := ImportWebServer(); err != nil {
 		t.Fatal(err)
 	}
-	return buildWebServerApp(testIncludeWebRouters)
+	return buildWebServerApp(includeWebRouters)
 }

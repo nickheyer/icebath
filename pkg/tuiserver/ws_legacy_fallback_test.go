@@ -60,6 +60,15 @@ func wsLegacyCall(t *testing.T, ctx context.Context, actor gateway.Principal, me
 	return written
 }
 
+// Sets the import time launch home under the lock its watchers read it with and returns the previous one
+func wsTestSwapLaunchHome(h string) string {
+	servedProfileMu.Lock()
+	defer servedProfileMu.Unlock()
+	prev := hermesHome
+	hermesHome = h
+	return prev
+}
+
 // Launch home with a bee profile under it, the launch store reopened for the case
 func wsLegacyHomes(t *testing.T) (launch, bee string) {
 	t.Helper()
@@ -67,8 +76,7 @@ func wsLegacyHomes(t *testing.T) (launch, bee string) {
 	bee = filepath.Join(launch, "profiles", "bee")
 	mkdirAll(t, bee)
 	t.Setenv("ICEBATH_HOME", launch)
-	prevHome := hermesHome
-	hermesHome = launch
+	prevHome := wsTestSwapLaunchHome(launch)
 	dbMu.Lock()
 	prevDB, prevErr := sharedDB, dbError
 	sharedDB, dbError = nil, ""
@@ -78,7 +86,8 @@ func wsLegacyHomes(t *testing.T) (launch, bee string) {
 		return state.NewSessionDB(ctx, dbPath, readOnly)
 	}
 	t.Cleanup(func() {
-		hermesHome, OpenSessionDBAtPath = prevHome, prevOpen
+		wsTestSwapLaunchHome(prevHome)
+		OpenSessionDBAtPath = prevOpen
 		dbMu.Lock()
 		sharedDB, dbError = prevDB, prevErr
 		dbMu.Unlock()
@@ -167,9 +176,8 @@ func TestSecondaryProfilePasteLandsInItsOwnHome(t *testing.T) {
 	launch, secondary := filepath.Join(tmp, "launch"), filepath.Join(tmp, "profiles", "coder")
 	mkdirAll(t, launch)
 	mkdirAll(t, secondary)
-	prevHome := hermesHome
-	hermesHome = launch
-	t.Cleanup(func() { hermesHome = prevHome })
+	prevHome := wsTestSwapLaunchHome(launch)
+	t.Cleanup(func() { wsTestSwapLaunchHome(prevHome) })
 	reply := dispatchLegacy(context.Background(), map[string]any{"jsonrpc": "2.0", "id": 1, "method": "paste.collapse",
 		"params": map[string]any{"text": "secret\npaste"}}, nil, wsLegacyActor(secondary))
 	result, _ := reply["result"].(map[string]any)

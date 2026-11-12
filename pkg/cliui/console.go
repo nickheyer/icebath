@@ -121,12 +121,24 @@ func (c *Console) secretPrompt() func(string) (string, error) {
 // MaskedSecret reads one hidden value through the masked secret prompt
 func (c *Console) MaskedSecret(prompt string) (string, error) { return c.secretPrompt()(prompt) }
 
-// Single reader of one input stream shared by every console over it
+// Single reader of one input stream shared by every console over it, reading only while a console waits for input
 type inputPump struct {
 	bytesCh chan byte
 	errCh   chan struct{}
 	errMu   sync.Mutex
 	readErr error
+	mu      sync.Mutex
+	arrived *sync.Cond
+	waiters int
+	gate    readGate
+}
+
+// Wait for a stream to become readable that ends early once no console waits on it any more
+type readGate interface {
+	// True when the stream is readable, false when the last waiting console left first
+	wait() bool
+	// Ends a wait in progress
+	release()
 }
 
 var (
@@ -134,7 +146,41 @@ var (
 	pumps   = map[io.Reader]*inputPump{}
 )
 
-// Pump of a reader, one goroutine per stream so consoles over standard input never race for bytes
+// Counts one console waiting for input and wakes the reader goroutine
+func (p *inputPump) enter() {
+	p.mu.Lock()
+	p.waiters++
+	p.arrived.Broadcast()
+	p.mu.Unlock()
+}
+
+// Drops one waiting console, ending the readable wait when it was the last
+func (p *inputPump) leave() {
+	p.mu.Lock()
+	p.waiters--
+	idle := p.waiters == 0
+	p.mu.Unlock()
+	if idle && p.gate != nil {
+		p.gate.release()
+	}
+}
+
+// Blocks until a console waits for input
+func (p *inputPump) awaitReader() {
+	p.mu.Lock()
+	for p.waiters == 0 {
+		p.arrived.Wait()
+	}
+	p.mu.Unlock()
+}
+
+func (p *inputPump) wanted() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.waiters > 0
+}
+
+// Pump of a reader, one goroutine per stream taking a byte only while a console waits for input
 func pumpFor(r io.Reader) *inputPump {
 	shared := reflect.TypeOf(r) != nil && reflect.TypeOf(r).Comparable()
 	pumpsMu.Lock()
@@ -144,13 +190,21 @@ func pumpFor(r io.Reader) *inputPump {
 			return p
 		}
 	}
-	p := &inputPump{bytesCh: make(chan byte, 4096), errCh: make(chan struct{})}
+	p := &inputPump{bytesCh: make(chan byte, 4096), errCh: make(chan struct{}), gate: newReadGate(r)}
+	p.arrived = sync.NewCond(&p.mu)
 	if shared {
 		pumps[r] = p
 	}
 	go func() {
 		buf := make([]byte, 1024)
+		if p.gate != nil {
+			buf = buf[:1]
+		}
 		for {
+			p.awaitReader()
+			if p.gate != nil && (!p.gate.wait() || !p.wanted()) {
+				continue
+			}
 			n, err := r.Read(buf)
 			for _, b := range buf[:n] {
 				p.bytesCh <- b
@@ -183,6 +237,8 @@ func (c *Console) readByte(timeout time.Duration, interrupt <-chan os.Signal) (b
 		return b, nil
 	default:
 	}
+	c.pump.enter()
+	defer c.pump.leave()
 	var timer <-chan time.Time
 	if timeout >= 0 {
 		t := time.NewTimer(timeout)

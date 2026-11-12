@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -150,19 +151,21 @@ func BotScreenNote(running bool, display, holder string) string {
 		"the user's own display.", display, held)
 }
 
-// Published DISPLAY of the profile Bot Screen and its lease holder, installed by the bot desktop runtime
-var BotScreenStatus func(env *tools.Env) (display, holder string, err error)
+// Bot desktop runtime published env and profile lease reads, the seams tests replace
+var (
+	botScreenPublishedEnvFn = botdesktop.PublishedEnv
+	botScreenLeaseFn        = func(env *tools.Env) botdesktop.BotDesktopLease {
+		return botdesktop.LeaseGet(botdesktop.ProfileKey(env))
+	}
+)
 
 // Running Bot Screen line for the environment block, empty when no screen runs or the state is unreadable
 func botScreenHint(env *tools.Env) string {
-	if BotScreenStatus == nil {
-		return ""
-	}
-	display, holder, err := BotScreenStatus(env)
+	published, err := botScreenPublishedEnvFn(env)
 	if err != nil {
 		return ""
 	}
-	return BotScreenNote(true, display, holder)
+	return BotScreenNote(true, published["DISPLAY"], botScreenLeaseFn(env).Holder)
 }
 
 // Remote backend probe, the seam tests replace to skip a live sandbox

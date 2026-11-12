@@ -637,7 +637,7 @@ func (a *SessionAuthority) CancelQueued(ctx context.Context, actor Principal, re
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		return a.commitCancel(taskCtx, ref, admissionID, before)
 	})
 	result, err := task.wait()

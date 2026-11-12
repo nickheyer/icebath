@@ -537,7 +537,6 @@ var (
 	activeTUIApp                             tuiApplication
 	activeTUIAppMu                           sync.Mutex
 	osExit                                   = os.Exit
-	EmergencyCleanupAllBrowserSessions       func()
 	TryAcquireActiveSession                  func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error)
 	FormatRefusalStderr                      func(message *activesessions.Refusal) string
 	SecurityAdvisoriesStartupBanner          func(ctx context.Context) string

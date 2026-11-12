@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -258,24 +259,46 @@ func TestLineRangeBoundsReadsOnSingleLineFile(t *testing.T) {
 	ctx, _ := referenceTestHome(t)
 	tmp := t.TempDir()
 	writeText(t, filepath.Join(tmp, "oneline.txt"), strings.Repeat("x", 100_000))
-	var returned []int
-	referenceLinePieceObserver = func(n int) { returned = append(returned, n) }
-	t.Cleanup(func() { referenceLinePieceObserver = nil })
+	var readSizes, returned []int
+	origOpen := referenceOpenTextFn
+	referenceOpenTextFn = func(path string) (referenceTextFile, error) {
+		fh, err := origOpen(path)
+		if err != nil {
+			return nil, err
+		}
+		return &countingTextFile{inner: fh, sizes: &readSizes, returned: &returned}, nil
+	}
+	t.Cleanup(func() { referenceOpenTextFn = origOpen })
 	result := preprocess(t, ctx, "Inspect @file:oneline.txt:1-1", tmp, 1_000)
 	if !strings.Contains(result.Message, "too large to inline safely") {
 		t.Fatalf("%+v", result)
 	}
+	if len(readSizes) == 0 || slices.Max(readSizes) > 2001 {
+		t.Fatal(readSizes)
+	}
 	total := 0
 	for _, n := range returned {
-		if n > 2001 {
-			t.Fatal(returned)
-		}
 		total += n
 	}
-	if len(returned) == 0 || total > 2*2001 {
+	if total > 2*2001 {
 		t.Fatal(returned)
 	}
 }
+
+// Text handle recording each readline size asked and each piece length returned
+type countingTextFile struct {
+	inner           referenceTextFile
+	sizes, returned *[]int
+}
+
+func (c *countingTextFile) readline(size int) (string, error) {
+	*c.sizes = append(*c.sizes, size)
+	piece, err := c.inner.readline(size)
+	*c.returned = append(*c.returned, len(piece))
+	return piece, err
+}
+
+func (c *countingTextFile) Close() error { return c.inner.Close() }
 
 func TestRunQuietCapsChildOutput(t *testing.T) {
 	tmp := t.TempDir()

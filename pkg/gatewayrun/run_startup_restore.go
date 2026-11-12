@@ -11,9 +11,7 @@ import (
 // Dispatches one synthetic startup resume and waits for its agent turn, releasing an unclaimed pre claimed slot
 func (r *GatewayRunner) runStartupResumeEvent(ctx context.Context, adapter gateway.PlatformAdapter, event *gateway.MessageEvent, sessionKey string) error {
 	defer func() {
-		if state := r.peekSessionState(sessionKey); state != nil && state.turn.agent == agentPendingSentinel {
-			r.releaseRunningAgentState(ctx, sessionKey, nil)
-		}
+		r.releaseRunningSlot(ctx, sessionKey, nil, agentPendingSentinel)
 	}()
 	if err := adapter.Base().HandleMessage(ctx, event); err != nil {
 		return err

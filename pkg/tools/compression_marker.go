@@ -62,14 +62,8 @@ var elisionMarkerMaxLen = utf8.RuneCountInString(elisionMarker(1e12-1, 1e12-1))
 // Longest elision marker any count can render, in code points
 func ElisionMarkerMaxLen() int { return elisionMarkerMaxLen }
 
-// Observer of every elide limit, installed by tests only
-var elideObserver func(limit int)
-
 // Caps text at limit characters with the elision marker, the marker alone when limit cannot hold it
 func elide(text string, limit int) string {
-	if elideObserver != nil {
-		elideObserver(limit)
-	}
 	total := utf8.RuneCountInString(text)
 	if total <= limit {
 		return text

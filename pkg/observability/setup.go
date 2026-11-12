@@ -187,11 +187,7 @@ func BeginProviderSetup(ctx context.Context, surface string, provider any, homeD
 	marker := filepath.Join(dir, fmt.Sprintf("%s-%d-%d.json", surface, pid, time.Now().UnixNano()))
 	record := pyjson.NewObject()
 	record.Set("pid", int64(pid))
-	var start any
-	if ProcessStartTimeHook != nil {
-		start = ProcessStartTimeHook(pid)
-	}
-	record.Set("start_time", start)
+	record.Set("start_time", ProcessStartTimeHook(pid))
 	record.Set("started_at", float64(time.Now().UnixNano())/1e9)
 	record.Set("surface", surface)
 	record.Set("provider", fields["provider"])

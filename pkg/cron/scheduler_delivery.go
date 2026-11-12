@@ -45,6 +45,8 @@ type cronLoop interface {
 	Schedule(fn func()) bool
 }
 
+var _ cronLoop = (*gateway.CallbackLoop)(nil)
+
 // Adapter capabilities a cron delivery probes for, the Go form of the Python getattr checks
 type (
 	handoffThreadCreator interface {

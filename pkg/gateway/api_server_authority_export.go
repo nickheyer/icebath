@@ -85,7 +85,7 @@ func CreatePeerBotChat(ctx context.Context, a *SessionAuthority, actor Principal
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		return createBotChat(taskCtx, a, actor, "")
 	})
 	select {

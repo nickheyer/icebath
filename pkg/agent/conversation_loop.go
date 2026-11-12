@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
+	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -278,7 +279,7 @@ func credentialRefreshProfile(ctx context.Context, a *AIAgent) *provider.Profile
 }
 
 // Last provider reported prompt size the context compressor keeps
-type realPromptTokensEngine interface{ LastRealPromptTokens() int }
+type realPromptTokensEngine interface{ LastRealPromptTokens() (int, bool) }
 
 // Floors the rough pressure estimate at the last real prompt size outside the post compaction window
 func pressureWithRealFloor(compressor ContextEngine, roughTokens int) int {
@@ -286,7 +287,7 @@ func pressureWithRealFloor(compressor ContextEngine, roughTokens int) int {
 	if !ok {
 		return roughTokens
 	}
-	lastReal := real.LastRealPromptTokens()
+	lastReal, _ := real.LastRealPromptTokens()
 	if lastReal > roughTokens && !compressorAwaitingRealUsage(compressor) {
 		return lastReal
 	}
@@ -685,36 +686,26 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Obje
 	return built
 }
 
-// ActiveSessionPolicyToolsets returns the frozen launch policy toolsets of the running gateway turn, set by pkg/gateway
-var ActiveSessionPolicyToolsets func(ctx context.Context) ([]string, bool)
-
-// TUIGatewayToolsets returns the enabled and disabled toolsets the desktop and TUI gateway loads, set by the tui gateway
-var TUIGatewayToolsets func(ctx context.Context, platform string) ([]string, []string, error)
+// TUIGatewayToolsets returns the enabled and disabled toolsets the desktop and TUI gateway loads, set by the binary
+var TUIGatewayToolsets func(ctx context.Context, platform string) (enabled, disabled []string)
 
 // Rebuilds the tools for a Bot Chat capability refresh through the builder that created the session
 func refreshBotChatTools(ctx context.Context, a *AIAgent) {
-	var policy []string
-	hasPolicy := false
-	if ActiveSessionPolicyToolsets != nil {
-		policy, hasPolicy = ActiveSessionPolicyToolsets(ctx)
-	}
-	if !hasPolicy && a.platform != "desktop" && a.platform != "tui" {
+	policy := gateway.ActivePolicy(ctx)
+	if policy == nil && a.platform != "desktop" && a.platform != "tui" {
 		return
 	}
-	if hasPolicy {
-		mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: append([]string{}, policy...), Quiet: true, ContentAware: true})
+	if policy != nil {
+		launch, ok := policy.(*gateway.LocalSessionPolicy)
+		if !ok {
+			conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s",
+				a.sessionID, fmt.Sprintf("'%T' object has no attribute 'toolsets'", policy)))
+			return
+		}
+		mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: append([]string{}, launch.Toolsets...), Quiet: true, ContentAware: true})
 		return
 	}
-	if TUIGatewayToolsets == nil {
-		conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s",
-			a.sessionID, "No module named 'tui_gateway'"))
-		return
-	}
-	enabled, disabled, err := TUIGatewayToolsets(ctx, a.platform)
-	if err != nil {
-		conversationLoopLog().Warn(fmt.Sprintf("Bot Chat capability refresh kept the previous tools for session %s: %s", a.sessionID, err))
-		return
-	}
+	enabled, disabled := TUIGatewayToolsets(ctx, a.platform)
 	mcp.RefreshAgentMCPTools(ctx, a, mcp.RefreshOptions{EnabledOverride: enabled, DisabledOverride: disabled, Quiet: true, ContentAware: true})
 }
 

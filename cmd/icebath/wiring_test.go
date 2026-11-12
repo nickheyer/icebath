@@ -7,17 +7,21 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/observability"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Fails for every nil func field of a hook struct
@@ -52,6 +56,10 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"gateway.DrainProgressReporterHook": gateway.DrainProgressReporterHook != nil,
 		"gateway.RosterProfileInfo":         gateway.RosterProfileInfo != nil,
 		"gatewayrun.RestoreUserProxyEnv":    gatewayrun.RestoreUserProxyEnv != nil,
+		"gatewayrun.BuildGatewayListener":   gatewayrun.BuildGatewayListener != nil,
+		"gateway.WebServer.StartServer":     gateway.WebServer.StartServer != nil,
+		"gateway.NormalizeRunBudgetSeconds": gateway.NormalizeRunBudgetSeconds != nil,
+		"dashboard.RestoreUserProxyEnv":     dashboard.RestoreUserProxyEnv != nil,
 		"gatewayrun.CheckRuntime":           gatewayrun.CheckRuntime != nil, "gatewayrun.MaybeRunBootBootstrap": gatewayrun.MaybeRunBootBootstrap != nil,
 		"gatewayrun.ConfigureWindowsStdio": gatewayrun.ConfigureWindowsStdio != nil,
 		"slack.SubcommandMap":              slack.SubcommandMap != nil, "telegram.InlineCommands": telegram.InlineCommands != nil,
@@ -62,6 +70,19 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"codeexec.BotDesktopAssertAgentMayAct": codeexec.BotDesktopAssertAgentMayAct != nil, "codeexec.BotDesktopLeaseEpoch": codeexec.BotDesktopLeaseEpoch != nil,
 		"codeexec.BotDesktopEnsureStartedForTool": codeexec.BotDesktopEnsureStartedForTool != nil, "codeexec.BotDesktopInstallPackages": codeexec.BotDesktopInstallPackages != nil,
 		"agent.ResetScreenshotDedup": agent.ResetScreenshotDedup != nil, "agent.KanbanBudgetExhaustedHook": agent.KanbanBudgetExhaustedHook != nil,
+		"agent.TUIGatewayToolsets": agent.TUIGatewayToolsets != nil, "agent.SessionSteerAuthority": agent.SessionSteerAuthority != nil,
+		"mcp.TUILaunchHome": mcp.TUILaunchHome != nil, "mcp.TUIProfileHome": mcp.TUIProfileHome != nil, "mcp.TUIProfileRuntimeScope": mcp.TUIProfileRuntimeScope != nil,
+		"observability.ResolveSessionPlatformHook": observability.ResolveSessionPlatformHook != nil, "pm.InteractiveAppRunning": pm.InteractiveAppRunning != nil,
+		"pm.CuaDriverChildEnv": pm.CuaDriverChildEnv != nil, "pm.LooksLikeGatewayCommandLine": pm.LooksLikeGatewayCommandLine != nil,
+		"tools.ApprovalHookInvoker": tools.ApprovalHookInvoker != nil, "tools.ViewerTurnHasApprover": tools.ViewerTurnHasApprover != nil,
+		"tools.ActivePolicySource": tools.ActivePolicySource != nil, "tools.LoadCLIConfig": tools.LoadCLIConfig != nil,
+		"tools.TerminalOutputTransformHook": tools.TerminalOutputTransformHook != nil, "tools.SupervisedGatewayPid": tools.SupervisedGatewayPid != nil,
+		"tools.ModelNotFoundPatterns": tools.ModelNotFoundPatterns != nil, "tools.DelegationFallbackChain": tools.DelegationFallbackChain != nil,
+		"tuiserver.SaveClipboardImage": tuiserver.SaveClipboardImage != nil, "tuiserver.HasClipboardImage": tuiserver.HasClipboardImage != nil,
+		"observability.ClassifySendErrorHook": observability.ClassifySendErrorHook != nil, "observability.GatewayAdapterPlatformsHook": observability.GatewayAdapterPlatformsHook != nil,
+		"observability.PluginPlatformNamesHook": observability.PluginPlatformNamesHook != nil, "observability.CatalogPlatformOwnerHook": observability.CatalogPlatformOwnerHook != nil,
+		"observability.ResolveSkillCommandKeyHook": observability.ResolveSkillCommandKeyHook != nil, "observability.PluginCommandHandlerHook": observability.PluginCommandHandlerHook != nil,
+		"observability.ProcessStartTimeHook": observability.ProcessStartTimeHook != nil, "observability.RuntimeStatusPidIsLiveHook": observability.RuntimeStatusPidIsLiveHook != nil,
 		"tools.TerminalBackendInstallHint": tools.TerminalBackendInstallHint != nil, "tools.SkillLocks": tools.SkillLocks != nil,
 		"tools.DelegationRegistryHooks.GetProvider": tools.DelegationRegistryHooks.GetProvider != nil, "tools.DelegationRegistryHooks.LoadBundled": tools.DelegationRegistryHooks.LoadBundled != nil,
 		"tools.DelegationBackendHooks.ListProviders": tools.DelegationBackendHooks.ListProviders != nil,

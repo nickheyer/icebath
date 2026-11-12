@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -41,8 +40,7 @@ func (r *GatewayRunner) enqueueFIFO(sessionKey string, queuedEvent *gateway.Mess
 	}
 	base := adapter.Base()
 	if _, held := base.PeekPendingMessage(sessionKey); held {
-		state := r.sessionState(sessionKey)
-		state.conversation.queuedEvents = append(state.conversation.queuedEvents, queuedEvent)
+		r.appendOverflow(sessionKey, queuedEvent)
 	} else {
 		base.SetPendingMessage(sessionKey, queuedEvent)
 	}
@@ -51,19 +49,16 @@ func (r *GatewayRunner) enqueueFIFO(sessionKey string, queuedEvent *gateway.Mess
 
 // Promotes the overflow head after the slot drained, staging it in the slot when an event is already pending
 func (r *GatewayRunner) promoteQueuedEvent(sessionKey string, adapter gateway.PlatformAdapter, pendingEvent *gateway.MessageEvent) *gateway.MessageEvent {
-	overflow := r.overflowQueue(sessionKey)
-	if overflow == nil || len(*overflow) == 0 {
+	if pendingEvent == nil {
+		if head, _ := r.popOverflow(sessionKey, 1); len(head) > 0 {
+			return head[0]
+		}
 		return pendingEvent
 	}
-	if pendingEvent == nil {
-		head := (*overflow)[0]
-		*overflow = slices.Delete(*overflow, 0, 1)
-		return head
-	}
 	if adapter != nil {
-		head := (*overflow)[0]
-		*overflow = slices.Delete(*overflow, 0, 1)
-		adapter.Base().SetPendingMessage(sessionKey, head)
+		if head, _ := r.popOverflow(sessionKey, 1); len(head) > 0 {
+			adapter.Base().SetPendingMessage(sessionKey, head[0])
+		}
 	}
 	return pendingEvent
 }
@@ -94,8 +89,7 @@ func (r *GatewayRunner) requeueEventAtFront(sessionKey string, event *gateway.Me
 	}
 	base := adapter.Base()
 	if staged, _ := base.PeekPendingMessage(sessionKey); staged != nil {
-		state := r.sessionState(sessionKey)
-		state.conversation.queuedEvents = slices.Insert(state.conversation.queuedEvents, 0, staged)
+		r.pushOverflowFront(sessionKey, staged)
 	}
 	base.SetPendingMessage(sessionKey, event)
 }
@@ -109,17 +103,7 @@ func (r *GatewayRunner) takeWakeAdmittedBeforeDrain(sessionKey string, adapter g
 			return r.promoteQueuedEvent(sessionKey, adapter, popped)
 		}
 	}
-	overflow := r.overflowQueue(sessionKey)
-	if overflow == nil {
-		return nil
-	}
-	for index, event := range *overflow {
-		if event.AdmittedBeforeDrain() {
-			*overflow = slices.Delete(*overflow, index, index+1)
-			return event
-		}
-	}
-	return nil
+	return r.takeOverflow(sessionKey, (*gateway.MessageEvent).AdmittedBeforeDrain)
 }
 
 // Stripped pending steer text of an agent turn result, empty when the result carries none
@@ -134,8 +118,7 @@ func resultPendingSteer(result map[string]any) string {
 func (r *GatewayRunner) deferPastExhaustionReset(result map[string]any, adapter gateway.PlatformAdapter, source *gateway.SessionSource, sessionKey string, pendingEvent *gateway.MessageEvent) {
 	if leftoverSteer := resultPendingSteer(result); leftoverSteer != "" {
 		steerPrompt, steerSource := r.pinnedChannelInputs(sessionKey, nil, source, true)
-		state := r.sessionState(sessionKey)
-		state.conversation.queuedEvents = slices.Insert(state.conversation.queuedEvents, 0, pendingEvent)
+		r.pushOverflowFront(sessionKey, pendingEvent)
 		pendingEvent = gateway.NewMessageEvent(leftoverSteer)
 		pendingEvent.Source = steerSource
 		pendingEvent.ChannelPrompt = steerPrompt
@@ -155,15 +138,9 @@ func (r *GatewayRunner) mergeLeftoverSteer(result map[string]any, adapter gatewa
 		pending = leftoverSteer
 		runLog().Debug(fmt.Sprintf("Delivering leftover /steer as next turn: '%s...'", headRunes(pending, 40)))
 	case pendingEvent != nil && adapter != nil && sessionKey != "":
-		overflow := r.overflowQueue(sessionKey)
 		base := adapter.Base()
 		if promoted, _ := base.PeekPendingMessage(sessionKey); promoted != nil {
-			if overflow != nil {
-				*overflow = slices.Insert(*overflow, 0, promoted)
-			} else {
-				state := r.sessionState(sessionKey)
-				state.conversation.queuedEvents = slices.Insert(state.conversation.queuedEvents, 0, promoted)
-			}
+			r.pushOverflowFront(sessionKey, promoted)
 		}
 		base.SetPendingMessage(sessionKey, pendingEvent)
 		pendingEvent = nil
@@ -188,10 +165,7 @@ func (r *GatewayRunner) mergeLeftoverSteer(result map[string]any, adapter gatewa
 
 // Total pending queue items of a session, the slot plus the overflow
 func (r *GatewayRunner) queueDepth(sessionKey string, adapter gateway.PlatformAdapter) int {
-	depth := 0
-	if overflow := r.overflowQueue(sessionKey); overflow != nil {
-		depth = len(*overflow)
-	}
+	depth := r.overflowLen(sessionKey)
 	if adapter != nil {
 		if _, held := adapter.Base().PeekPendingMessage(sessionKey); held {
 			depth++
@@ -202,26 +176,25 @@ func (r *GatewayRunner) queueDepth(sessionKey string, adapter gateway.PlatformAd
 
 // Pops the oldest orphaned overflow event of an idle session, staging the next one in the slot
 func (r *GatewayRunner) rescueOrphanedOverflow(sessionKey string, adapter gateway.PlatformAdapter) *gateway.MessageEvent {
-	overflow := r.overflowQueue(sessionKey)
-	if overflow == nil || len(*overflow) == 0 || adapter == nil {
+	if r.overflowLen(sessionKey) == 0 || adapter == nil {
 		return nil
 	}
 	base := adapter.Base()
 	if occupied, _ := base.PeekPendingMessage(sessionKey); occupied != nil {
 		return nil
 	}
-	head := (*overflow)[0]
-	*overflow = slices.Delete(*overflow, 0, 1)
-	if len(*overflow) > 0 {
-		next := (*overflow)[0]
-		*overflow = slices.Delete(*overflow, 0, 1)
-		base.SetPendingMessage(sessionKey, next)
+	popped, remaining := r.popOverflow(sessionKey, 2)
+	if len(popped) == 0 {
+		return nil
+	}
+	if len(popped) > 1 {
+		base.SetPendingMessage(sessionKey, popped[1])
 	}
 	runLog().Warn(fmt.Sprintf("Rescued orphaned FIFO overflow event for idle session %s — it was queued during a busy window but the post-turn drain never promoted it (#99882)", sessionKey))
-	if len(*overflow) > 0 {
-		runLog().Warn(fmt.Sprintf("%d overflow event(s) still queued for session %s after rescue staging (will drain via normal promotion)", len(*overflow), sessionKey))
+	if remaining > 0 {
+		runLog().Warn(fmt.Sprintf("%d overflow event(s) still queued for session %s after rescue staging (will drain via normal promotion)", remaining, sessionKey))
 	}
-	return head
+	return popped[0]
 }
 
 // Whether an event or text is a synthetic goal continuation turn
@@ -253,16 +226,7 @@ func (r *GatewayRunner) clearGoalPendingContinuations(sessionKey string, adapter
 			removed++
 		}
 	}
-	if overflow := r.overflowQueue(sessionKey); overflow != nil && len(*overflow) > 0 {
-		kept := []*gateway.MessageEvent{}
-		for _, e := range *overflow {
-			if !isGoalContinuationEvent(e) {
-				kept = append(kept, e)
-			}
-		}
-		removed += len(*overflow) - len(kept)
-		r.peekSessionState(sessionKey).conversation.queuedEvents = kept
-	}
+	removed += r.dropOverflow(sessionKey, func(e *gateway.MessageEvent) bool { return isGoalContinuationEvent(e) })
 	return removed
 }
 

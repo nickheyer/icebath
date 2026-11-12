@@ -100,7 +100,7 @@ func TestExecuteFoldsRecreationFlagOnce(t *testing.T) {
 }
 
 // test_terminal_output_transform_hook.py
-func runTransformTerminal(t *testing.T, output string, returncode int, hook func(map[string]any) []any, approval GuardResult, command string) map[string]any {
+func runTransformTerminal(t *testing.T, output string, returncode int, hook func(context.Context, map[string]any) []any, approval GuardResult, command string) map[string]any {
 	t.Helper()
 	dir := t.TempDir()
 	env := newTerminalTestEnv(t, dir)
@@ -125,7 +125,7 @@ func TestTerminalOutputUnchangedWhenTransformHookNotRegistered(t *testing.T) {
 
 func TestTerminalOutputTransformStillRunsStripAndRedact(t *testing.T) {
 	secret := "sk-proj-abc123def456ghi789jkl012mno345"
-	r := runTransformTerminal(t, "plain output", 0, func(map[string]any) []any {
+	r := runTransformTerminal(t, "plain output", 0, func(_ context.Context, _ map[string]any) []any {
 		return []any{" \x1b[31mOPENAI_API_KEY=" + secret + "\x1b[0m "}
 	}, GuardResult{}, "echo hello")
 	out := resultString(r, "output")
@@ -135,7 +135,7 @@ func TestTerminalOutputTransformStillRunsStripAndRedact(t *testing.T) {
 }
 
 func TestTerminalOutputTransformDoesNotChangeApprovalOrExitCodeMeaning(t *testing.T) {
-	r := runTransformTerminal(t, "original output", 1, func(map[string]any) []any { return []any{"replaced output"} },
+	r := runTransformTerminal(t, "original output", 1, func(context.Context, map[string]any) []any { return []any{"replaced output"} },
 		GuardResult{Approved: true, UserApproved: true, Description: "dangerous command"}, "grep foo bar")
 	if r["output"] != "replaced output" {
 		t.Fatalf("%v", r)

@@ -53,8 +53,8 @@ func busyAckStatusParts(ctx context.Context, now float64, busyState *SessionStat
 	defer func() { _ = recover() }()
 	summary := runningAgent.GetActivitySummary()
 	elapsedMin := 0
-	if busyState != nil && busyState.turn.startedTS != 0 {
-		elapsedMin = int((now - busyState.turn.startedTS) / 60)
+	if startedTS := busyState.turnStartedTS(); startedTS != 0 {
+		elapsedMin = int((now - startedTS) / 60)
 	}
 	if elapsedMin > 0 {
 		parts = append(parts, i18n.T(ctx, "gateway.busy.elapsed_min", "", map[string]any{"minutes": elapsedMin}))
@@ -198,10 +198,7 @@ func (r *GatewayRunner) handleActiveSessionBusyMessage(ctx context.Context, even
 		return false, nil
 	}
 	busyState := r.peekSessionState(sessionKey)
-	var runningAgent *agent.AIAgent
-	if busyState != nil {
-		runningAgent = busyState.turn.agent
-	}
+	runningAgent := busyState.runningAgent()
 	outcome, err := r.resolveBusySteerOrRedirect(ctx, event, sessionKey, effectiveMode, runningAgent)
 	if err != nil {
 		return false, err
@@ -233,7 +230,9 @@ func (r *GatewayRunner) busyInterruptAndAck(ctx context.Context, event *gateway.
 	now := wallClock()
 	lastAck := 0.0
 	if busyState != nil {
+		busyState.mu.Lock()
 		lastAck = busyState.turn.busyAckTS
+		busyState.mu.Unlock()
 	}
 	if now-lastAck < 30 {
 		return nil
@@ -241,7 +240,15 @@ func (r *GatewayRunner) busyInterruptAndAck(ctx context.Context, event *gateway.
 	if isSteerMode && !r.busySteerAckEnabled(ctx, event, sessionKey) {
 		return nil
 	}
-	r.sessionState(sessionKey).turn.busyAckTS = now
+	claimed := false
+	r.withSessionState(sessionKey, func(s *SessionState) {
+		if now-s.turn.busyAckTS >= 30 {
+			s.turn.busyAckTS, claimed = now, true
+		}
+	})
+	if !claimed {
+		return nil
+	}
 	message := r.composeBusyAckMessage(ctx, event, now, busyState, runningAgent, busyAckModes{
 		steer: isSteerMode, queue: isQueueMode, redirect: isRedirectMode,
 		demotedForSubagents: outcome.demotedForSubagents, demotedForCompression: outcome.demotedForCompression})

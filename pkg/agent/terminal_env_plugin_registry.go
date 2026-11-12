@@ -118,6 +118,14 @@ func (h hostedTerminalEnvProvider) SetupInstructions(*tools.Env) []string {
 	return lines
 }
 
+// Runs the hosted provider's interactive post_setup hook once the setup wizard selects it
+func (h hostedTerminalEnvProvider) PostSetup(ctx context.Context, _ *tools.Env) error {
+	_, err := h.obj.Call(ctx, "post_setup", nil, nil)
+	return err
+}
+
+var _ tools.TerminalBackendPostSetup = hostedTerminalEnvProvider{}
+
 // Doctor rows of the plugin, each wire tuple read as ok, label and detail
 func (h hostedTerminalEnvProvider) DoctorChecks() []tools.DoctorCheck {
 	rows, _ := h.mustCall("doctor_checks").([]any)

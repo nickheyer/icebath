@@ -521,6 +521,11 @@ func (c *ContextCompressor) SetLastCompressionRoughTokens(n int) { c.lastCompres
 
 func (c *ContextCompressor) LastCompressionRoughTokens() int { return c.lastCompressionRoughTokens }
 
+// Prompt tokens the provider last reported, always present on the built in compressor
+func (c *ContextCompressor) LastRealPromptTokens() (int, bool) { return c.lastRealPromptTokens, true }
+
+var _ realPromptTokensEngine = (*ContextCompressor)(nil)
+
 func (c *ContextCompressor) SummaryTargetRatio() float64 { return c.summaryTargetRatio }
 
 func (c *ContextCompressor) SetLastUsage(promptTokens, completionTokens int) {
@@ -536,6 +541,13 @@ func (c *ContextCompressor) RecordCompletedCompaction(usedFallback bool) {
 func (c *ContextCompressor) SetVerifyCompactionClearedThreshold(on bool) {
 	c.verifyCompactionClearedThreshold = on
 }
+
+// Whether the next real prompt count is the first after a compaction and may rearm the budget
+func (c *ContextCompressor) VerifyCompactionClearedThreshold() bool {
+	return c.verifyCompactionClearedThreshold
+}
+
+var _ compactionClearLatch = (*ContextCompressor)(nil)
 
 func (c *ContextCompressor) PreparedCompactionState() *PreparedCompaction {
 	return c.preparedCompaction

@@ -14,6 +14,8 @@ type GatewayAPIRunner interface {
 	NoteClientActivity()
 	// Counts an attached native client until the returned release runs
 	AttachClient() (release func())
+	// Loop the listener reports failed connection callbacks to, nil before the runner has one
+	ListenerLoop() *CallbackLoop
 }
 
 // Mounted dashboard application as the webapp control verbs read it, the web_server module of the mount

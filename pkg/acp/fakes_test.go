@@ -102,8 +102,8 @@ func (a *mockAgent) SessionID() string {
 	defer a.mu.Unlock()
 	return a.sessionID
 }
-func (a *mockAgent) CompressorFigures() (int, int, int) {
-	return a.contextLength, a.thresholdTokens, a.lastPromptTokens
+func (a *mockAgent) ContextCompressor() agent.ContextEngine {
+	return &agent.ContextCompressor{ContextEngineBase: agent.ContextEngineBase{ContextLength: a.contextLength, ThresholdTokens: a.thresholdTokens, LastPromptTokens: a.lastPromptTokens}}
 }
 func (a *mockAgent) SetToolProgressCallback(cb any) { a.toolProgressCallback = cb }
 func (a *mockAgent) SetThinkingCallback(cb any)     { a.thinkingCallback = cb }

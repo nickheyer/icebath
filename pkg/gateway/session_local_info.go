@@ -32,9 +32,10 @@ type sessionInfoAgent interface {
 	SessionRuntime() SessionRuntimeFacts
 }
 
-// Peeked session state of a route as session info reads it
+// Peeked session state of a route, its reasoning override and its /fast override with whether one is set
 type peekedSessionState interface {
 	ReasoningOverride() map[string]any
+	ServiceTierOverride() (*string, bool)
 }
 
 // Runner that reads the session state of a route without building it

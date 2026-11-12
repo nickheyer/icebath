@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"reflect"
@@ -185,9 +186,9 @@ func CompressionFields(trigger, outcome, tokensBefore, contextLength, failureCla
 }
 
 // ModelSwitchFields is a model switch's surface and both providers
-func ModelSwitchFields(fromProvider, toProvider, surface any) map[string]string {
+func ModelSwitchFields(ctx context.Context, fromProvider, toProvider, surface any) map[string]string {
 	return map[string]string{
-		"execution_surface": ExecutionSurface(map[string]any{"execution_surface": surface}),
+		"execution_surface": ExecutionSurface(ctx, map[string]any{"execution_surface": surface}),
 		"from_provider":     ProviderIdentifier(fromProvider), "to_provider": ProviderIdentifier(toProvider),
 	}
 }
@@ -214,10 +215,10 @@ func FallbackFields(fromProvider, toProvider, reason any) map[string]string {
 }
 
 // SlashCommandFields is a slash command's public name and surface
-func SlashCommandFields(command, surface any) map[string]string {
+func SlashCommandFields(ctx context.Context, command, surface any) map[string]string {
 	return map[string]string{
-		"command":           SlashCommandMetricName(command),
-		"execution_surface": ExecutionSurface(map[string]any{"execution_surface": surface}),
+		"command":           SlashCommandMetricName(ctx, command),
+		"execution_surface": ExecutionSurface(ctx, map[string]any{"execution_surface": surface}),
 	}
 }
 

@@ -8,18 +8,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Channel override entry of a chat, its model and provider
-type channelModelOverride struct {
-	Model    string
-	Provider string
-}
-
 // Runner resolving a messaging chat's next turn route without building an agent
 type messagingRouteRunner interface {
-	ChannelOverrideFor(ctx context.Context, source *SessionSource) *channelModelOverride
-	SessionModelOverride(route string) *pyjson.Object
+	sessionTierRunner
+	ChannelOverrideFor(source *SessionSource) *ChannelOverride
+	SessionModelOverride(sessionKey string) map[string]any
 	ResolveSessionReasoningConfig(ctx context.Context, source *SessionSource, sessionKey, model string) (map[string]any, error)
-	ResolveSessionServiceTier(ctx context.Context, source *SessionSource, sessionKey string) (string, error)
 }
 
 // Model and effort fields a messaging chat's next turn resolves, session override over channel over config
@@ -34,19 +28,17 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_channel_override_for'", runner)}
 	}
-	if channel := resolver.ChannelOverrideFor(ctx, live.Source); channel != nil {
+	if channel := resolver.ChannelOverrideFor(live.Source); channel != nil {
 		model, providerName = pyrepr.Or(channel.Model, model), pyrepr.Or(channel.Provider, providerName)
 	}
-	override := resolver.SessionModelOverride(live.Route)
-	if override == nil || override.Len() == 0 {
-		override = runner.SessionStore().GetModelOverride(ctx, live.Route)
-	}
-	if override == nil {
-		override = pyjson.NewObject()
-	}
-	get := func(key string) any {
-		value, _ := override.Get(key)
-		return value
+	get := func(string) any { return nil }
+	if override := resolver.SessionModelOverride(live.Route); len(override) > 0 {
+		get = func(key string) any { return override[key] }
+	} else if stored := runner.SessionStore().GetModelOverride(ctx, live.Route); stored != nil && stored.Len() > 0 {
+		get = func(key string) any {
+			value, _ := stored.Get(key)
+			return value
+		}
 	}
 	model = pyrepr.Or(get("model"), model)
 	providerName, baseURL = pyrepr.Or(get("provider"), providerName), pyrepr.Or(get("base_url"), baseURL)
@@ -70,7 +62,11 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	if reasoning != nil {
 		reasoningValue = reasoning
 	}
+	tierText := ""
+	if tier != nil {
+		tierText = *tier
+	}
 	info := pyjson.ObjectOf("model", model)
-	mergeObject(info, effortFields(reasoningValue, tier, model, providerName, baseURL, apiMode))
+	mergeObject(info, effortFields(reasoningValue, tierText, model, providerName, baseURL, apiMode))
 	return info, nil
 }

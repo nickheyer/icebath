@@ -495,13 +495,18 @@ func (b *BasePlatformAdapter) sharedRuntimeOwnsInput(event *MessageEvent) bool {
 }
 
 // Adapters whose pending slot may hold the event, this one plus a guard free replacement delivery adapter
-func (b *BasePlatformAdapter) pendingRecoveryOwners(event *MessageEvent, sessionKey string) []*BasePlatformAdapter {
+func (b *BasePlatformAdapter) pendingRecoveryOwners(ctx context.Context, event *MessageEvent, sessionKey string) []*BasePlatformAdapter {
 	owners := []*BasePlatformAdapter{b}
-	runner, ok := b.GatewayRunner.(DeliveryAdapterRunner)
-	if !ok || runner == nil {
+	if b.GatewayRunner == nil {
 		return owners
 	}
-	delivery, err := runner.DeliveryAdapterFor(event.Source)
+	var delivery PlatformAdapter
+	var err error
+	if runner, ok := b.GatewayRunner.(DeliveryAdapterRunner); ok {
+		delivery, err = runner.DeliveryAdapterFor(ctx, event.Source)
+	} else {
+		err = fmt.Errorf("AttributeError: '%T' object has no attribute '_delivery_adapter_for'", b.GatewayRunner)
+	}
 	if err != nil {
 		slog.Debug(fmt.Sprintf("[%s] Delivery-adapter lookup failed during pending recovery: %v", b.Self().Name(), err))
 		return owners
@@ -555,7 +560,7 @@ func (b *BasePlatformAdapter) handleMessageWhileActive(ctx context.Context, even
 		}
 		if !b.HasActiveSession(sessionKey) {
 			var orphan *MessageEvent
-			for _, owner := range b.pendingRecoveryOwners(event, sessionKey) {
+			for _, owner := range b.pendingRecoveryOwners(ctx, event, sessionKey) {
 				if orphan = owner.GetPendingMessage(sessionKey); orphan != nil {
 					owner.StartSessionProcessing(ctx, orphan, sessionKey, nil)
 					break

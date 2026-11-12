@@ -39,11 +39,7 @@ func (r *GatewayRunner) hmwaAcquireTurnLease(ctx context.Context, quickKey strin
 		return err
 	}
 	if token != nil {
-		turn := &r.sessionState(quickKey).turn
-		if turn.leaseTokens == nil {
-			turn.leaseTokens = map[int]*TurnLeaseToken{}
-		}
-		turn.leaseTokens[runGeneration] = token
+		r.turnLeaseTokens().Set(leaseTokenKey{quickKey, runGeneration}, token)
 	}
 	return nil
 }

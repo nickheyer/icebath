@@ -191,7 +191,7 @@ func TestPreparedTurnEndPassSkippedWhereTheSessionEndsWithTheTurn(t *testing.T) 
 		"delegate": func(a *AIAgent) { a.delegateDepth = 1 },
 		"oneshot": func(a *AIAgent) {
 			prev := tools.ActivePolicySource
-			tools.ActivePolicySource = func(env *tools.Env) (string, bool) { return "oneshot", true }
+			tools.ActivePolicySource = func(context.Context) (string, bool) { return "oneshot", true }
 			t.Cleanup(func() { tools.ActivePolicySource = prev })
 		},
 	} {

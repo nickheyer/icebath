@@ -7,14 +7,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Current route and persistence policy of a model switch, shared with the runner's model commands
-type ModelSwitchContext = modelSwitchContext
-
 // Fills the current route from the config file, the defaults kept when it cannot be read
-func (c *modelSwitchContext) ReadConfig(ctx context.Context) { c.readConfig(ctx) }
+func (c *ModelSwitchContext) ReadConfig(ctx context.Context) { c.readConfig(ctx) }
 
 // Session model override superseding the configured route
-func (c *modelSwitchContext) ApplyOverride(override map[string]any) { c.applyOverride(override) }
+func (c *ModelSwitchContext) ApplyOverride(override map[string]any) { c.applyOverride(override) }
 
 // Authority and live session of the local session a source belongs to, nils for a messaging chat
 func LocalAuthorityLive(runner any, source *SessionSource) (*SessionAuthority, *LiveSession) {

@@ -41,11 +41,6 @@ type FreeTierSource interface {
 	FreeInferenceActive() bool
 }
 
-// CredentialErrorSource explains why a provider has no usable login
-type CredentialErrorSource interface {
-	CredentialError(provider string) *AuthError
-}
-
 // Runtime is one resolved provider runtime, the dict hermes hands the agent
 type Runtime struct {
 	Provider          string
@@ -1660,11 +1655,6 @@ func (r *resolver) oauthCredential(provider string) (Credential, error) {
 	if r.creds != nil {
 		if cred, ok := r.creds.Credential(provider); ok && (cred.APIKey != "" || cred.TokenSource != nil) {
 			return cred, nil
-		}
-		if src, ok := r.creds.(CredentialErrorSource); ok {
-			if err := src.CredentialError(provider); err != nil {
-				return Credential{}, err
-			}
 		}
 	}
 	return Credential{}, oauthMissingLoginError(provider)

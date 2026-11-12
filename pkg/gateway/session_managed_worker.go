@@ -628,7 +628,7 @@ func recordLostAttempt(ctx context.Context, a *SessionAuthority, policy *LocalSe
 		pid = scope.GetOr("pid", nil)
 	}
 	caller := context.WithoutCancel(ctx)
-	return trackMutation(a, func(context.Context) (any, error) {
+	return trackMutation(ctx, a, func(context.Context) (any, error) {
 		recordWorkerLoss(caller, policy, reason, pid, scope != nil)
 		return nil, nil
 	})

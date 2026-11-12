@@ -146,11 +146,15 @@ func guardedMedia(fn func() (gateway.SendResult, error)) (r gateway.SendResult, 
 
 // Runs the send on the gateway loop, directly when there is no loop or ctx already runs on it
 func dispatchOnGatewayLoop(ctx context.Context, runner any, makeCoro func(ctx context.Context) (any, error), logMessage string) (any, error) {
-	loop, ok := runner.(gateway.GatewayLoopRunner)
-	if !ok || loop.OnGatewayLoop(ctx) {
+	var gatewayLoop gateway.EventLoop
+	loopRunner, ok := runner.(gateway.GatewayLoopRunner)
+	if ok {
+		gatewayLoop = loopRunner.GatewayLoop()
+	}
+	if gatewayLoop == nil || loopRunner.OnGatewayLoop(ctx) {
 		return makeCoro(ctx)
 	}
-	if !loop.LoopRunning() {
+	if !gatewayLoop.IsRunning() {
 		return map[string]any{"error": "Gateway loop is not running; cannot dispatch adapter send"}, nil
 	}
 	type outcome struct {
@@ -159,16 +163,21 @@ func dispatchOnGatewayLoop(ctx context.Context, runner any, makeCoro func(ctx co
 	}
 	done := make(chan outcome, 1)
 	loopCtx := context.WithoutCancel(ctx)
-	go func() {
-		defer func() {
-			if p := recover(); p != nil {
-				sendLog().Debug(logMessage, "error", fmt.Sprint(p))
-				done <- outcome{err: fmt.Errorf("%v", p)}
-			}
+	start := func() {
+		go func() {
+			defer func() {
+				if p := recover(); p != nil {
+					done <- outcome{err: fmt.Errorf("%v", p)}
+				}
+			}()
+			v, err := makeCoro(loopCtx)
+			done <- outcome{v, err}
 		}()
-		v, err := makeCoro(loopCtx)
-		done <- outcome{v, err}
-	}()
+	}
+	if err := gatewayLoop.CallSoonThreadsafe(start); err != nil {
+		sendLog().Debug(fmt.Sprintf("%s: %s", logMessage, err))
+		return map[string]any{"error": "Gateway loop unavailable for send dispatch"}, nil
+	}
 	select {
 	case o := <-done:
 		return o.v, o.err

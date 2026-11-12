@@ -40,10 +40,34 @@ func (r *GatewayRunner) peekSessionState(sessionKey string) *SessionState {
 	return r.sessions[sessionKey]
 }
 
+// Runs fn on the state of sessionKey under its lock, creating that state when absent
+func (r *GatewayRunner) withSessionState(sessionKey string, fn func(*SessionState)) {
+	state := r.sessionState(sessionKey)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	fn(state)
+}
+
+// Runs fn on the existing state of sessionKey under its lock, false when the session holds no state
+func (r *GatewayRunner) withPeekedSessionState(sessionKey string, fn func(*SessionState)) bool {
+	state := r.peekSessionState(sessionKey)
+	if state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	fn(state)
+	return true
+}
+
+// Running slot agent of the session read under its lock, nil when no turn runs
+func (r *GatewayRunner) runningSlotAgent(sessionKey string) *agent.AIAgent {
+	return r.peekSessionState(sessionKey).runningAgent()
+}
+
 // True when the session holds a running turn slot, agent or pending sentinel
 func (r *GatewayRunner) isSessionRunning(sessionKey string) bool {
-	state := r.peekSessionState(sessionKey)
-	return state != nil && state.turn.agent != nil
+	return r.runningSlotAgent(sessionKey) != nil
 }
 
 // Session key and agent of each session with a running turn
@@ -56,8 +80,11 @@ type runningAgentItem struct {
 func (r *GatewayRunner) runningAgentItems() []runningAgentItem {
 	var items []runningAgentItem
 	for key, state := range r.sessionsMap() {
-		if state.turn.agent != nil {
-			items = append(items, runningAgentItem{key, state.turn.agent})
+		state.mu.Lock()
+		running := state.turn.agent
+		state.mu.Unlock()
+		if running != nil {
+			items = append(items, runningAgentItem{key, running})
 		}
 	}
 	return items

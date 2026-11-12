@@ -23,6 +23,8 @@ func init() {
 		_, err := readXAIOAuthTokens(env, true)
 		return err
 	}
+	tools.ModelNotFoundPatterns = func() []string { return append([]string(nil), modelNotFoundPatterns...) }
+	tools.DelegationFallbackChain = GetFallbackChain
 	installToolsConfigHooks()
 }
 

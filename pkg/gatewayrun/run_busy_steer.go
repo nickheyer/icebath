@@ -389,32 +389,40 @@ func (r *GatewayRunner) redirectActiveTurn(ctx context.Context, runningAgent *ag
 	if !r.tryAgentVerb(ctx, runningAgent, "redirect", text, sessionKey, event) {
 		return false
 	}
-	turn := r.foldIntoRunningTurn(runningAgent, sessionKey, event)
-	if turn == nil {
-		return true
-	}
 	anchor := gateway.ReplyAnchorForEvent(event)
 	var inboundID *string
 	if event.MessageID != nil && *event.MessageID != "" {
 		id := *event.MessageID
 		inboundID = &id
 	}
-	if turn.event != nil && turn.event != event {
-		turn.event.ReplyAnchorOverride = anchor
-		turn.event.LedgerMessageID = inboundID
-	}
-	if turn.ctx != nil {
-		turn.ctx.eventMessageID = anchor
-		turn.ctx.inboundMessageID = inboundID
-	}
+	r.withSessionState(sessionKey, func(s *SessionState) {
+		turn := &s.turn
+		if !foldIntoTurn(turn, runningAgent, event) {
+			return
+		}
+		if turn.event != nil && turn.event != event {
+			turn.event.ReplyAnchorOverride = anchor
+			turn.event.LedgerMessageID = inboundID
+		}
+		if turn.ctx != nil {
+			turn.ctx.eventMessageID = anchor
+			turn.ctx.inboundMessageID = inboundID
+		}
+	})
 	return true
 }
 
-// Makes the running turn answer the event too, nil when a newer turn already owns the slot
-func (r *GatewayRunner) foldIntoRunningTurn(runningAgent *agent.AIAgent, sessionKey string, event *gateway.MessageEvent) *TurnState {
-	turn := &r.sessionState(sessionKey).turn
+// Makes the running turn answer the event too under the state lock, false when a newer turn owns the slot
+func (r *GatewayRunner) foldIntoRunningTurn(runningAgent *agent.AIAgent, sessionKey string, event *gateway.MessageEvent) bool {
+	folded := false
+	r.withSessionState(sessionKey, func(s *SessionState) { folded = foldIntoTurn(&s.turn, runningAgent, event) })
+	return folded
+}
+
+// Absorbs the reply expectation of event into a turn the agent still runs, the caller holding the state lock
+func foldIntoTurn(turn *TurnState, runningAgent *agent.AIAgent, event *gateway.MessageEvent) bool {
 	if turn.agent != runningAgent {
-		return nil
+		return false
 	}
 	if turn.event != nil && turn.event != event {
 		turn.event.AbsorbReplyExpected(event)
@@ -422,7 +430,7 @@ func (r *GatewayRunner) foldIntoRunningTurn(runningAgent *agent.AIAgent, session
 			turn.ctx.replyExpected = turn.event.ReplyExpected
 		}
 	}
-	return turn
+	return true
 }
 
 // Interrupts the running agent with the busy text, voice transcribed and media only events described

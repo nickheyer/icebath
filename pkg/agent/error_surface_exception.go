@@ -44,8 +44,12 @@ func surfaceExceptionName(err error) string {
 
 // Top level Python module of err, the SDK, transport, TLS and socket errors mapped to their Python homes
 func surfaceExceptionModule(err error) string {
-	if m, ok := err.(pyModuled); ok {
-		return strings.SplitN(m.PyModule(), ".", 2)[0]
+	var moduled pyModuled
+	if errors.As(err, &moduled) {
+		return strings.SplitN(moduled.PyModule(), ".", 2)[0]
+	}
+	if errors.Is(err, provider.ErrNoAWSCredentials) {
+		return "botocore"
 	}
 	var apiErr *provider.APIError
 	var urlErr *url.Error

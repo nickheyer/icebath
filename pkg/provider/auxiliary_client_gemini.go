@@ -45,7 +45,20 @@ func newAuxGeminiNativeClient(apiKey, baseURL string, defaultHeaders map[string]
 
 func (c *auxGeminiNativeClient) BaseURL() string { return c.baseURL }
 
-func (c *auxGeminiNativeClient) APIKey() string { return c.apiKey }
+func (c *auxGeminiNativeClient) APIKey() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.apiKey
+}
+
+// Replaces the key the next generateContent call sends as x-goog-api-key
+func (c *auxGeminiNativeClient) SetAPIKey(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.apiKey, c.route.APIKey = key, key
+}
+
+var _ interface{ SetAPIKey(string) } = (*auxGeminiNativeClient)(nil)
 
 // A complete client the auxiliary transport wrap never redispatches through a wire adapter
 func (c *auxGeminiNativeClient) AuxDeclares(flag string) bool {
@@ -159,7 +172,9 @@ func (c *auxGeminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs
 	if err != nil {
 		return nil, err
 	}
+	c.mu.Lock()
 	route := c.route
+	c.mu.Unlock()
 	route.Transport = c.transport(timeouts)
 	built, err := newGeminiNativeClient(route)
 	if err != nil {

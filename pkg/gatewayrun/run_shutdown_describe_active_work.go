@@ -15,13 +15,15 @@ func (r *GatewayRunner) describeActiveWork(ctx context.Context) []map[string]any
 	pid := os.Getpid()
 	units := []map[string]any{}
 	for key, state := range r.sessionsMap() {
-		a := state.turn.agent
+		state.mu.Lock()
+		a, startedTS := state.turn.agent, state.turn.startedTS
+		state.mu.Unlock()
 		if a == nil {
 			continue
 		}
 		unit := map[string]any{"kind": "chat", "session": key, "pid": pid}
-		if state.turn.startedTS != 0 {
-			unit["elapsed_s"] = pyint.Round(now-state.turn.startedTS, 1)
+		if startedTS != 0 {
+			unit["elapsed_s"] = pyint.Round(now-startedTS, 1)
 		}
 		if a != agentPendingSentinel {
 			unit["model"] = a.Model()

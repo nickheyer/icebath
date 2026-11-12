@@ -49,7 +49,7 @@ func RecordSetupCompleted(ctx context.Context, surface string, provider any) {
 
 // Counts one slash command typed on a surface
 func RecordSlashCommand(ctx context.Context, command, surface string) {
-	emit(ctx, SlashCommandMark, func() map[string]string { return SlashCommandFields(command, surface) })
+	emit(ctx, SlashCommandMark, func() map[string]string { return SlashCommandFields(ctx, command, surface) })
 }
 
 // Counts one tool search call by scope, hit count and outcome
@@ -122,7 +122,7 @@ func RecordGatewaySlashCommand(ctx context.Context, command string, counted *boo
 
 // Counts a model switch, friction against the left model and the turns it served before the switch
 func RecordModelSwitch(ctx context.Context, fromProvider, toProvider any, surface string, fromModel any, sessionID any) {
-	emit(ctx, ModelSwitchMark, func() map[string]string { return ModelSwitchFields(fromProvider, toProvider, surface) })
+	emit(ctx, ModelSwitchMark, func() map[string]string { return ModelSwitchFields(ctx, fromProvider, toProvider, surface) })
 	if pyText(fromModel) != "" {
 		RecordModelFriction(ctx, "switch_away", FrictionOptions{Provider: fromProvider, Model: fromModel})
 	}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -23,6 +24,38 @@ type anthropicSDKClient struct {
 	betas     []string
 	transport *http.Transport
 	closed    atomic.Bool
+	apiKey    string
+	authToken string
+}
+
+var _ interface {
+	APIKey() string
+	AuthToken() string
+} = (*anthropicSDKClient)(nil)
+
+// SDK api_key attribute, the key passed as api_key or its environment default
+func (c *anthropicSDKClient) APIKey() string { return c.apiKey }
+
+// SDK auth_token attribute, the bearer or OAuth key passed as auth_token or its environment default
+func (c *anthropicSDKClient) AuthToken() string { return c.authToken }
+
+// SDK api_key and auth_token attributes of a direct client, the unpassed one read from its environment variable
+func anthSDKKeyAttributes(apiKey any, baseURL string) (string, string) {
+	if _, ok := anthSDKTokenSource(apiKey); ok {
+		return os.Getenv("ANTHROPIC_API_KEY"), "entra-id-bearer-via-http-hook"
+	}
+	key, isStr := apiKey.(string)
+	switch anthAuthStyle(key, baseURL, anthNormalizedBaseURL(baseURL)) {
+	case "bearer", "oauth":
+		if !isStr {
+			key = os.Getenv("ANTHROPIC_AUTH_TOKEN")
+		}
+		return os.Getenv("ANTHROPIC_API_KEY"), key
+	}
+	if !isStr {
+		key = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	return key, os.Getenv("ANTHROPIC_AUTH_TOKEN")
 }
 
 // Normalized SDK base URL the client posts to
@@ -79,8 +112,9 @@ func buildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 		return nil, err
 	}
 	normalized := anthSDKV1Suffix.ReplaceAllString(strings.TrimRight(anthNormalizedBaseURL(baseURL), "/"), "")
+	keyAttr, tokenAttr := anthSDKKeyAttributes(apiKey, baseURL)
 	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: normalized, transport: tr,
-		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta)}, nil
+		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta), apiKey: keyAttr, authToken: tokenAttr}, nil
 }
 
 // Anthropic SDK client for a static key or bearer callable, nil with the error when the build fails
@@ -284,6 +318,10 @@ func buildAnthropicBedrockClient(ctx context.Context, region string, timeout flo
 	if err != nil {
 		return nil, err
 	}
+	bearer, bearerSet := os.LookupEnv("AWS_BEARER_TOKEN_BEDROCK")
+	if bearerSet && (scoped.AccessKeyID != "" || scoped.SecretAccessKey != "" || scoped.SessionToken != "" || scoped.Profile != "") {
+		return nil, &ValueError{Message: "Cannot specify both `api_key` and AWS credentials (`aws_access_key`, `aws_secret_key`, `aws_session_token`, `aws_profile`)"}
+	}
 	read := 900 * time.Second
 	if timeout > 0 {
 		read = time.Duration(timeout * float64(time.Second))
@@ -298,7 +336,7 @@ func buildAnthropicBedrockClient(ctx context.Context, region string, timeout flo
 		return nil, err
 	}
 	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: "https://bedrock-runtime." + region + ".amazonaws.com", transport: tr,
-		betas: betas}, nil
+		betas: betas, apiKey: bearer}, nil
 }
 
 // BuildAnthropicBedrockClient is the Anthropic Bedrock SDK client of a region with the request timeout

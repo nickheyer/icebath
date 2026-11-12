@@ -25,6 +25,10 @@ func (l inlineLoop) CallSoonThreadsafe(fn func()) error {
 
 func (l inlineLoop) CallLater(time.Duration, func()) (gateway.LoopTimer, error) { return nil, nil }
 
+func (l inlineLoop) IsClosed() bool { return false }
+
+func (l inlineLoop) IsRunning() bool { return true }
+
 type fakeActiveWorkRunner struct {
 	units     []map[string]any
 	count     int

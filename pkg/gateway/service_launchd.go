@@ -59,18 +59,17 @@ var (
 	launchdTCPConnect               = func(addr string, timeout time.Duration) (net.Conn, error) {
 		return net.DialTimeout("tcp", addr, timeout)
 	}
-	launchdLoadGatewayConfig         = LoadGatewayConfig
-	launchdServicePIDPollInterval    = 500 * time.Millisecond
-	launchdTCPPortFreePollInterval   = 100 * time.Millisecond
-	launchdTempRootCandidates        = []string{"/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"}
-	launchdGatewayRunCommandOverride func(ctx context.Context) ([]string, error)
-	launchdLabelOf                   = GetLaunchdLabel
-	launchdPlistPathOf               = GetLaunchdPlistPath
-	launchdDomainOf                  = launchdDomain
-	launchdPlistIsCurrentFn          = LaunchdPlistIsCurrent
-	launchdGeneratePlist             = GenerateLaunchdPlist
-	launchdRetryBootstrap            = retryLaunchctlBootstrapUntilRegistered
-	launchdRefuseTempHome            = refuseTempHomeServiceWrite
+	launchdLoadGatewayConfig       = LoadGatewayConfig
+	launchdServicePIDPollInterval  = 500 * time.Millisecond
+	launchdTCPPortFreePollInterval = 100 * time.Millisecond
+	launchdTempRootCandidates      = []string{"/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"}
+	launchdLabelOf                 = GetLaunchdLabel
+	launchdPlistPathOf             = GetLaunchdPlistPath
+	launchdDomainOf                = launchdDomain
+	launchdPlistIsCurrentFn        = LaunchdPlistIsCurrent
+	launchdGeneratePlist           = GenerateLaunchdPlist
+	launchdRetryBootstrap          = retryLaunchctlBootstrapUntilRegistered
+	launchdRefuseTempHome          = refuseTempHomeServiceWrite
 )
 
 // Runs a launchctl argv under a timeout, captured like capture_output or on the terminal like a bare run
@@ -288,9 +287,6 @@ func shlexJoin(argv []string) string {
 
 // Unsupervised replacing gateway run argv pinned to the default profile when the home is the root
 func gatewayRunCommand(ctx context.Context) ([]string, error) {
-	if launchdGatewayRunCommandOverride != nil {
-		return launchdGatewayRunCommandOverride(ctx)
-	}
 	arg, err := profileArg(ctx, "", "")
 	if err != nil {
 		return nil, err

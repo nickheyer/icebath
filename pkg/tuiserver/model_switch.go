@@ -30,6 +30,11 @@ func profileRuntimeScope(ctx context.Context, profileHome string, hydrateSecrets
 	return tools.WithProfileTerminalScope(ctx, launch, provider.LaunchTerminalEnv())
 }
 
+// Context bound to the home, hydrated secrets and terminal policy of a profile home, empty meaning the launch profile
+func ProfileRuntimeScope(ctx context.Context, profileHome string) context.Context {
+	return profileRuntimeScope(ctx, profileHome, true)
+}
+
 // Context bound to the model resolution, config and secrets of the session profile, launch profile included
 func sessionProfileRuntimeScope(ctx context.Context, session *tuigateway.Session, hydrateSecrets bool) context.Context {
 	return profileRuntimeScope(ctx, strOr(session.Get("profile_home")), hydrateSecrets)

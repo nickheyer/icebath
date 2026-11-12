@@ -540,7 +540,7 @@ func commitRefresh(ctx context.Context, a *SessionAuthority, ref SessionRef, mcp
 	if err := refreshSettled(ctx, a, ref.SessionID); err != nil {
 		return false, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		return commitRefreshTask(taskCtx, a, ref, mcpOnly, adoptOnly)
 	})
 	a.mu.Lock()

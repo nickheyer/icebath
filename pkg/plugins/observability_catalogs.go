@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"context"
 	"io/fs"
 	"path"
 	"strings"
@@ -12,6 +13,10 @@ func init() {
 	observability.SetCatalogSource("plugin_catalog_names", pluginCatalogStems)
 	observability.SetCatalogSource("catalog_platform_names", catalogPlatformNames)
 	observability.BundledPluginKeysHook = BundledPluginKeys
+	observability.PluginCommandHandlerHook = func(ctx context.Context, name string) bool {
+		handler, ok := GetPluginCommandHandler(ctx, name)
+		return ok && handler != nil
+	}
 }
 
 // Lower case file stems of the in-tree plugin catalog

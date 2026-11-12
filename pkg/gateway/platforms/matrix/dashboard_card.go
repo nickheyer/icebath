@@ -9,3 +9,6 @@ func applyDashboardCard(e *gateway.PlatformEntry) {
 	e.DashboardEnvVars = []string{"MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN", "MATRIX_USER_ID", "MATRIX_ALLOWED_USERS"}
 	e.DashboardRequiredEnv = []string{"MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN", "MATRIX_USER_ID"}
 }
+
+// Registers the card of the bundled matrix directory for dashboards whose registry holds no matrix entry
+func init() { gateway.RegisterBundledDashboardCard("matrix", applyDashboardCard) }

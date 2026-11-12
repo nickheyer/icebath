@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
@@ -494,6 +495,8 @@ func (a *ptApplication) run() error {
 	pumped := make(chan struct{})
 	a.done.Store(false)
 	a.running.Store(true)
+	releasePromptApp := tools.EnterPromptApp()
+	defer releasePromptApp()
 	go func() {
 		a.pump(p, stop)
 		close(pumped)
@@ -514,6 +517,7 @@ func (a *ptApplication) run() error {
 	}
 	_, err := p.Run()
 	a.running.Store(false)
+	releasePromptApp()
 	close(stop)
 	<-pumped
 	a.queueMu.Lock()

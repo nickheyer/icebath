@@ -19,6 +19,11 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Msg }
 
+// Class names of the builtin exception through BaseException as type(exc).__mro__ lists them
+func (e *Error) PyExceptionMRO() []string { return pyrepr.ExceptionMROFrom(e.Kind, nil) }
+
+var _ interface{ PyExceptionMRO() []string } = (*Error)(nil)
+
 // Python int of a string in base 10, digits of any script with single underscores between digits
 func Parse(text string) (*big.Int, bool) {
 	text = pystr.Strip(text)

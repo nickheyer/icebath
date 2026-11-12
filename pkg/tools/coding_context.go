@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -276,10 +277,7 @@ func detectProfile(mode, platform, cwd string) ContextProfile {
 
 // Names of MCP servers the user enabled, kept in the coding posture
 func enabledMCPServers(env *Env) []string {
-	var portable map[string]bool
-	if PortableMCPServerNames != nil {
-		portable = PortableMCPServerNames(env)
-	}
+	portable := portableMCPServerNames(WithEnvHome(context.Background(), env))
 	cfg := env.Config
 	if raw, err := readRawConfig(env); err == nil {
 		cfg = raw
@@ -292,9 +290,6 @@ func enabledMCPServers(env *Env) []string {
 	sortStrings(out)
 	return out
 }
-
-// PortableMCPServerNames is installed by pkg/plugins to add portable plugin MCP servers
-var PortableMCPServerNames func(env *Env) map[string]bool
 
 func postureToolsets(env *Env) []string {
 	return append([]string{CodingToolset}, enabledMCPServers(env)...)

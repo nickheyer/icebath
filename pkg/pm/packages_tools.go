@@ -302,7 +302,7 @@ func (p *Ripgrep) LatestVersions(target, locked string) ([]string, error) {
 	return GithubReleaseTags("BurntSushi/ripgrep", "")
 }
 
-// Computer use child environment pkg/tools installs at init, Python's cua_driver_child_env
+// Computer use driver child environment, set by the binary, an error where Python's cua_driver_child_env raises
 var CuaDriverChildEnv func() (map[string]string, error)
 
 // CuaDriver is the computer use driver, shipped by default wherever upstream builds it
@@ -366,10 +366,8 @@ func (p *CuaDriver) Stage(store *Store, staged, version, target string) error {
 
 // The probe is a first run, so it never mints telemetry state
 func (p *CuaDriver) ProbeEnv() (map[string]string, error) {
-	if CuaDriverChildEnv != nil {
-		if env, err := CuaDriverChildEnv(); err == nil {
-			return env, nil
-		}
+	if env, err := CuaDriverChildEnv(); err == nil {
+		return env, nil
 	}
 	env := environMap()
 	env["CUA_DRIVER_RS_TELEMETRY_ENABLED"] = "0"

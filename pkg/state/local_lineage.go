@@ -24,13 +24,21 @@ func runtimeJSON(value any) (string, error) {
 	return text, nil
 }
 
-// Item of a decoded receipt dict, a KeyError or TypeError as subscripting raises
+// Item of a receipt dict decoded or built as a map, a KeyError or TypeError as subscripting raises
 func receiptItem(v any, key string) (any, error) {
-	obj, ok := v.(*pyjson.Object)
-	if !ok {
+	var item any
+	var ok bool
+	switch obj := v.(type) {
+	case *pyjson.Object:
+		if obj == nil {
+			return nil, &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
+		}
+		item, ok = obj.Get(key)
+	case map[string]any:
+		item, ok = obj[key]
+	default:
 		return nil, &stateTypedError{"TypeError", "receipt is not subscriptable by key"}
 	}
-	item, ok := obj.Get(key)
 	if !ok {
 		return nil, &stateTypedError{"KeyError", pyRepr(key)}
 	}

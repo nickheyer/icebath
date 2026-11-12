@@ -119,7 +119,7 @@ type identityPrimaryRunner interface {
 
 // Runner naming the active profile when no primary is pinned
 type identityActiveRunner interface {
-	ActiveProfileName() string
+	ActiveProfileName(ctx context.Context) string
 }
 
 // Runner naming the profile that registered an adapter for a platform
@@ -151,7 +151,7 @@ func identityMultiplexed(runner any) bool {
 }
 
 // Primary profile name of the runner, else its active profile, else default
-func identityPrimaryProfile(runner any, activeFallback bool) string {
+func identityPrimaryProfile(ctx context.Context, runner any, activeFallback bool) string {
 	if r, ok := runner.(identityPrimaryRunner); ok {
 		if name := pystr.Strip(r.PrimaryProfileName()); name != "" {
 			return name
@@ -159,7 +159,7 @@ func identityPrimaryProfile(runner any, activeFallback bool) string {
 	}
 	if activeFallback {
 		if r, ok := runner.(identityActiveRunner); ok {
-			if name := pystr.Strip(r.ActiveProfileName()); name != "" {
+			if name := pystr.Strip(r.ActiveProfileName(ctx)); name != "" {
 				return name
 			}
 		}
@@ -190,7 +190,7 @@ func restoreIdentity(ctx context.Context, source *SessionSource, runner any, tra
 	if existing := IdentityOf(source); existing != nil {
 		return existing, nil
 	}
-	primary := identityPrimaryProfile(runner, false)
+	primary := identityPrimaryProfile(ctx, runner, false)
 	runtimeName := identityName(source.Profile)
 	if runtimeName == "" {
 		runtimeName = primary
@@ -230,7 +230,7 @@ func identityRuntimeHome(ctx context.Context, runner any, source *SessionSource)
 // Resolves and pins the routing identity of an inbound source, IdentityUnresolved when the route is rejected
 func resolveIdentity(ctx context.Context, source *SessionSource, runner TransportOwnerRunner, adapter PlatformAdapter, transportProfile, primaryHome string) (*RoutingIdentity, error) {
 	multiplexed := identityMultiplexed(runner)
-	primary := identityPrimaryProfile(runner, true)
+	primary := identityPrimaryProfile(ctx, runner, true)
 	platform := source.Platform
 	ownerProfile := ""
 	if adapter == nil {

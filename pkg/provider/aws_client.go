@@ -121,6 +121,9 @@ func (e *AWSReadTimeoutError) Error() string {
 }
 
 func (e *AWSReadTimeoutError) Timeout() bool   { return true }
+
+// Python module of botocore's ReadTimeoutError
+func (e *AWSReadTimeoutError) PyModule() string { return "botocore.exceptions" }
 func (e *AWSReadTimeoutError) Temporary() bool { return true }
 
 // Body whose reads fail once no byte arrives within the read timeout

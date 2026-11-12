@@ -19,9 +19,9 @@ func catalogInstallFixture(t *testing.T) (context.Context, string) {
 	root := isolateHome(t)
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	tools.LiveResetForTests()
-	saved := []any{TUILaunchHome, TUIProfileHome, TUISessionProfileRuntimeScope, tools.WatchIntervalSeconds}
+	saved := []any{TUILaunchHome, TUIProfileHome, TUIProfileRuntimeScope, tools.WatchIntervalSeconds}
 	TUILaunchHome = func() string { return root }
-	TUIProfileHome = func(_ context.Context, name string) (string, error) {
+	TUIProfileHome = func(name string) (string, error) {
 		if name = strings.TrimSpace(name); name == "" || name == "default" {
 			return "", nil
 		}
@@ -31,14 +31,14 @@ func catalogInstallFixture(t *testing.T) (context.Context, string) {
 		}
 		return dir, nil
 	}
-	TUISessionProfileRuntimeScope = func(ctx context.Context, session map[string]any) (context.Context, func()) {
-		return home.WithOverride(ctx, session["profile_home"].(string)), func() {}
+	TUIProfileRuntimeScope = func(ctx context.Context, profileHome string) context.Context {
+		return home.WithOverride(ctx, profileHome)
 	}
 	tools.WatchIntervalSeconds = 0.01
 	t.Cleanup(func() {
 		TUILaunchHome = saved[0].(func() string)
-		TUIProfileHome = saved[1].(func(context.Context, string) (string, error))
-		TUISessionProfileRuntimeScope = saved[2].(func(context.Context, map[string]any) (context.Context, func()))
+		TUIProfileHome = saved[1].(func(string) (string, error))
+		TUIProfileRuntimeScope = saved[2].(func(context.Context, string) context.Context)
 		tools.WatchIntervalSeconds = saved[3].(float64)
 		tools.LiveResetForTests()
 	})

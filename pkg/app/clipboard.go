@@ -126,6 +126,11 @@ func linuxClipBackends() []clipBackend {
 }
 
 // Saves the clipboard image to dest as PNG, true when an image was found and written
+func SaveClipboardImage(dest string) bool { return saveClipboardImage(dest) }
+
+// Reports whether the clipboard currently holds an image
+func HasClipboardImage() bool { return hasClipboardImage() }
+
 func saveClipboardImage(dest string) bool {
 	_ = os.MkdirAll(filepath.Dir(dest), 0o777)
 	switch clipboardPlatform {

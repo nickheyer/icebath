@@ -32,9 +32,6 @@ const oneshotSkillsLoadGuidance = "## Skills\n" +
 	"for THIS task (an API, a tool's commands, a project's conventions). Do not load general process skills " +
 	"(testing, debugging, review methodology) for work you already know how to do.\n"
 
-// Gateway session policy source governing the turn, set by the gateway host, false when no policy is active
-var ActivePolicySource func(env *tools.Env) (source string, ok bool)
-
 var skillsPromptCache = struct {
 	mu    sync.Mutex
 	order []string
@@ -320,13 +317,8 @@ func (s *Scope) currentSessionPlatformHint() string {
 }
 
 // Reports a finite single query session from the gateway policy, then the session env marker
-func (s *Scope) singleQuerySession() bool {
-	if ActivePolicySource != nil {
-		if source, ok := ActivePolicySource(s.Env); ok {
-			return source == "oneshot"
-		}
-	}
-	return tools.SessionEnvValue(s.Env, "ICEBATH_SINGLE_QUERY_SESSION") == "1"
+func (s *Scope) singleQuerySession(ctx context.Context) bool {
+	return tools.IsSingleQuerySession(ctx, s.Env)
 }
 
 // Compact skill index for the system prompt, empty under a safe worker or with no skill roots
@@ -480,7 +472,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 		pluginKey = append(pluginKey, []any{r.name, r.desc})
 	}
 	key := skillsPromptCacheKey(skillsDir, extraKey, files, sortedSet(availableTools), sortedSet(availableToolsets),
-		platformHint, sortedSet(disabled), sortedSet(compact), s.singleQuerySession(), pluginKey)
+		platformHint, sortedSet(disabled), sortedSet(compact), s.singleQuerySession(ctx), pluginKey)
 	snapshot := loadSkillsSnapshot(s.Home, manifest)
 	var snapEntries []*pyjson.Object
 	appGated := false
@@ -612,7 +604,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 		unloadable = append(unloadable, n)
 	}
 	sort.Strings(unloadable)
-	result := s.renderSkillsIndex(byCategory, compact, availableTools, unloadable)
+	result := s.renderSkillsIndex(ctx, byCategory, compact, availableTools, unloadable)
 	skillsPromptCache.mu.Lock()
 	skillsPromptCache.vals[key] = result
 	touchPromptCache(key)
@@ -633,7 +625,7 @@ func touchPromptCache(key string) {
 }
 
 // Renders the skills block with demoted categories as names only lines, empty when nothing is listed
-func (s *Scope) renderSkillsIndex(byCategory map[string][]indexRow, compact, availableTools map[string]bool, unloadable []string) string {
+func (s *Scope) renderSkillsIndex(ctx context.Context, byCategory map[string][]indexRow, compact, availableTools map[string]bool, unloadable []string) string {
 	if len(byCategory) == 0 {
 		return ""
 	}
@@ -703,7 +695,7 @@ func (s *Scope) renderSkillsIndex(byCategory map[string][]indexRow, compact, ava
 			}
 		}
 	}
-	if s.singleQuerySession() {
+	if s.singleQuerySession(ctx) {
 		return oneshotSkillsLoadGuidance + "\n<available_skills>\n" + strings.Join(lines, "\n") + "\n</available_skills>" + hiddenNote
 	}
 	return "## Skills\n" +

@@ -71,7 +71,8 @@ type DashboardServerOptions struct {
 	SSHOwnerNonce              string
 	StartMCPDiscoveryAfterBind bool
 	SSHLockPath                string
-	Stdout, Stderr             io.Writer
+	// Stream the human lines and a failed sentinel write go to, stdout being reserved for the machine sentinels
+	Stderr io.Writer
 }
 
 // Host facts of a dashboard launch, swapped by tests
@@ -183,7 +184,6 @@ func cmdDashboard(ctx context.Context, l DashboardLaunch) error {
 		SSHOwnerNonce:              nonce,
 		StartMCPDiscoveryAfterBind: discoveryAfterBind,
 		SSHLockPath:                lockPath,
-		Stdout:                     l.Stdout,
 		Stderr:                     l.Stderr,
 	})
 }

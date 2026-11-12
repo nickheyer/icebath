@@ -12,14 +12,16 @@ func (r *GatewayRunner) restorePendingOneTurnModelOverride(ctx context.Context, 
 			runLog().Debug("Failed to restore one-turn model override", "error", rec)
 		}
 	}()
-	state := r.peekSessionState(sessionKey)
-	if state == nil || len(state.conversation.oneTurnRestore) == 0 {
+	var snapshot map[string]any
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		if len(s.conversation.oneTurnRestore) == 0 || (runGeneration != nil && s.persistent.runGeneration != *runGeneration) {
+			return
+		}
+		snapshot = s.conversation.oneTurnRestore
+		s.conversation.oneTurnRestore = nil
+	})
+	if snapshot == nil {
 		return
 	}
-	if runGeneration != nil && !r.isSessionRunCurrent(sessionKey, *runGeneration) {
-		return
-	}
-	snapshot := state.conversation.oneTurnRestore
-	state.conversation.oneTurnRestore = nil
 	r.restoreSessionModelOverride(ctx, sessionKey, snapshot)
 }

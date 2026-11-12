@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -37,9 +38,9 @@ const alreadyRunningError = "Job is already running (a scheduler tick or another
 
 // GatewayRunner is the live gateway a manual run borrows adapters and the event loop from
 type GatewayRunner interface {
-	AdaptersForProfile(profile string) any
-	IsSharedBotSatellite(profile string) bool
-	GatewayLoop() any
+	AdaptersForProfile(profile *string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	IsSharedBotSatellite(ctx context.Context, profileName string, platform gateway.Platform) bool
+	GatewayLoop() gateway.EventLoop
 }
 
 var gatewayRunnerRef func() GatewayRunner
@@ -389,9 +390,15 @@ func (s *Store) runClaimedJob(ctx context.Context, job *Job, extraPrompt *string
 	}
 	var adapters, loop any
 	if runner := currentGatewayRunner(); runner != nil {
-		profile, _ := gateway.ProfileNameForHome(s.home)
-		adapters = runner.AdaptersForProfile(profile)
-		if runner.IsSharedBotSatellite(profile) {
+		var profile *string
+		if name, ok := gateway.ProfileNameForHome(s.home); ok {
+			profile = &name
+		}
+		profileAdapters := runner.AdaptersForProfile(profile)
+		if profileAdapters != nil {
+			adapters = profileAdapters
+		}
+		if profile != nil && runner.IsSharedBotSatellite(ctx, *profile, "") {
 			adapters = newSharedRouteAdapters(adapters, primaryProfileRoutesForCurrentHome(ctx))
 		}
 		loop = runner.GatewayLoop()

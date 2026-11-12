@@ -33,16 +33,14 @@ var (
 	SubagentAttribution func(taskID string) map[string]any
 	// DelegationConfig returns the active delegation config section, installed by the delegate slice
 	DelegationConfig func(env *Env) map[string]any
-	// DelegationFallbackChain returns the configured fallback chain of a delegation config
-	DelegationFallbackChain func(cfg map[string]any) []any
+	// DelegationFallbackChain returns the configured fallback chain of a delegation config, installed by pkg/provider
+	DelegationFallbackChain func(cfg map[string]any) []map[string]any
 	// ModelNotFoundPatterns returns the failover classifier's model not found phrases, installed by provider wiring
 	ModelNotFoundPatterns func() []string
 	// AsyncDelegationLedger replays and marks durable delegation completions, installed by the delegate slice
 	AsyncDelegationLedger AsyncDelegationCompletions
 	// DiagnosticProcessEvent reports a delegation event that is diagnostic rather than a result, installed by the agent
 	DiagnosticProcessEvent func(evt map[string]any) bool
-	// AsyncDeliverySupported reports whether the bound session can receive async notices, installed by the gateway
-	AsyncDeliverySupported func(env *Env) bool
 )
 
 // SubagentHandoff is the live subagent record a process handoff validates against
@@ -868,11 +866,7 @@ func canDeliverCompletion(ctx context.Context, env *Env) bool {
 	if (known && finite) || (!known && sessionEnvValue(env, "ICEBATH_SINGLE_QUERY_SESSION") == "1") {
 		return false
 	}
-	supported := true
-	if AsyncDeliverySupported != nil {
-		supported = AsyncDeliverySupported(env)
-	}
-	if !supported || isDelegatedChildProcessContext(env) {
+	if !asyncDeliverySupported(env) || isDelegatedChildProcessContext(env) {
 		return false
 	}
 	modes := []any{platformGateEnv(ctx, env, "ICEBATH_BACKGROUND_NOTIFICATIONS")}

@@ -1,9 +1,23 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/plugins"
+import (
+	"context"
 
-// Installs the default profile adapter lookup the plugin platform actions fall back to
+	"github.com/nickheyer/icebath/pkg/plugins"
+)
+
+// Installs the profile aware runner lookup and the default profile fallback the plugin platform actions use
 func init() {
+	plugins.RunnerAuthorizationAdapter = func(ctx context.Context, runner any, value, profile string) (any, bool) {
+		resolver, ok := runner.(AuthorizationAdapterRunner)
+		if !ok {
+			return nil, false
+		}
+		if adapter := resolver.AuthorizationAdapter(ctx, Platform(value), &profile); adapter != nil {
+			return adapter, true
+		}
+		return nil, true
+	}
 	plugins.RunnerAdapterByValue = func(runner any, value string) (any, bool) {
 		registry, ok := runner.(primaryAdaptersRunner)
 		if !ok {

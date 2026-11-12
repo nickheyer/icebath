@@ -268,18 +268,18 @@ func clarifyTool(ctx context.Context, env *Env, questions any) string {
 		shown[i] = s
 		prompts = append(prompts, s.Question)
 	}
-	human := humanInputRequest(env, "clarify", strings.Join(prompts, "\n"), "")
+	human := humanInputRequest(ctx, env, "clarify", strings.Join(prompts, "\n"), "")
 	form := make([]Question, len(shown))
 	for i, s := range shown {
 		form[i] = Question{Header: s.QID, Text: s.Question, Choices: s.Choices, MultiSelect: s.MultiSelect}
 	}
 	result, err := env.Ask.Ask(ctx, form)
 	if err != nil {
-		human.finish(env, "error")
+		human.finish(ctx, env, "error")
 		return toolErrorJSON("Failed to get user input: "+err.Error(), nil)
 	}
 	reply := clarifyReplyFromForm(shown, result)
-	human.finish(env, reply.Outcome)
+	human.finish(ctx, env, reply.Outcome)
 	return clarifyResult(normalized, reply, shown)
 }
 

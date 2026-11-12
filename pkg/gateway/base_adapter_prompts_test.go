@@ -408,21 +408,21 @@ func TestUnwrapEphemeralHandlesUnreadableConfig(t *testing.T) {
 
 type liveAdapterRunner struct{ live PlatformAdapter }
 
-func (r liveAdapterRunner) DeliveryAdapterFor(*SessionSource) (PlatformAdapter, error) {
+func (r liveAdapterRunner) DeliveryAdapterFor(context.Context, *SessionSource) (PlatformAdapter, error) {
 	return r.live, nil
 }
 
 func TestFinalDeliveryAdapterFollowsSamePlatformReplacement(t *testing.T) {
 	a, replacement, other := newMediaAdapter(), newMediaAdapter(), historyAdapter(nil)
-	if a.finalDeliveryAdapter(nil) != PlatformAdapter(a) {
+	if a.finalDeliveryAdapter(context.Background(), nil) != PlatformAdapter(a) {
 		t.Fatal("no runner keeps this adapter")
 	}
 	a.GatewayRunner = liveAdapterRunner{replacement}
-	if a.finalDeliveryAdapter(nil) != PlatformAdapter(replacement) {
+	if a.finalDeliveryAdapter(context.Background(), nil) != PlatformAdapter(replacement) {
 		t.Fatal("same platform replacement wins")
 	}
 	a.GatewayRunner = liveAdapterRunner{other}
-	if a.finalDeliveryAdapter(nil) != PlatformAdapter(a) {
+	if a.finalDeliveryAdapter(context.Background(), nil) != PlatformAdapter(a) {
 		t.Fatal("another platform never takes the send")
 	}
 	ctx, release := a.mediaDeliveryScope(context.Background(), &SessionSource{})

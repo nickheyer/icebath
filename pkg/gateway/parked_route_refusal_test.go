@@ -16,8 +16,8 @@ const parkedSecret = "xoxb-not-a-real-token"
 type parkedRunner struct{ descriptor map[string]any }
 
 func (r *parkedRunner) SessionRuntimeDescriptor() map[string]any { return r.descriptor }
-func (r *parkedRunner) ThreadMetadataForSource(PluginMessageSource) (map[string]any, error) {
-	return nil, nil
+func (r *parkedRunner) ThreadMetadataForSource(*SessionSource, *string) map[string]any {
+	return nil
 }
 
 type parkedSend struct{ chatID, text, replyTo string }

@@ -11,17 +11,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Current in memory model override of a session, nil when absent
+// Current in memory model override of a session read under its state lock, nil when absent
 func (r *GatewayRunner) sessionModelOverride(sessionKey string) map[string]any {
-	if state := r.peekSessionState(sessionKey); state != nil {
-		return state.conversation.modelOverride
-	}
-	return nil
+	var override map[string]any
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { override = s.conversation.modelOverride })
+	return override
 }
 
-// Session override captured before a one turn switch
-func (r *GatewayRunner) snapshotSessionModelOverride(sessionKey string) map[string]any {
-	override := r.sessionModelOverride(sessionKey)
+// Restore snapshot of an override, recording whether one was set and a copy of it
+func modelOverrideSnapshot(override map[string]any) map[string]any {
 	snapshot := map[string]any{"had_override": override != nil, "override": nil}
 	if override != nil {
 		snapshot["override"] = maps.Clone(override)
@@ -29,9 +27,19 @@ func (r *GatewayRunner) snapshotSessionModelOverride(sessionKey string) map[stri
 	return snapshot
 }
 
-// Arms the one shot restore snapshot, a repeated one shot command keeping the earliest snapshot
+// Session override captured before a one turn switch
+func (r *GatewayRunner) snapshotSessionModelOverride(sessionKey string) map[string]any {
+	return modelOverrideSnapshot(r.sessionModelOverride(sessionKey))
+}
+
+// Arms the one shot restore snapshot in one hold, a repeated one shot command keeping the earliest snapshot
 func (r *GatewayRunner) claimOneTurnRestore(sessionKey string, snapshot map[string]any) {
-	conv := &r.sessionState(sessionKey).conversation
+	r.withSessionState(sessionKey, func(s *SessionState) { claimOneTurnRestoreIn(s, snapshot) })
+}
+
+// Arms the one shot restore snapshot on a state whose lock the caller holds, keeping an earlier snapshot
+func claimOneTurnRestoreIn(s *SessionState, snapshot map[string]any) {
+	conv := &s.conversation
 	if len(conv.oneTurnRestore) > 0 {
 		return
 	}
@@ -39,7 +47,7 @@ func (r *GatewayRunner) claimOneTurnRestore(sessionKey string, snapshot map[stri
 		conv.oneTurnRestore = maps.Clone(snapshot)
 		return
 	}
-	conv.oneTurnRestore = r.snapshotSessionModelOverride(sessionKey)
+	conv.oneTurnRestore = modelOverrideSnapshot(conv.modelOverride)
 }
 
 // Restores the session override captured before a one turn switch and evicts the cached agent
@@ -49,12 +57,13 @@ func (r *GatewayRunner) restoreSessionModelOverride(ctx context.Context, session
 	}
 	if pyrepr.Truthy(snapshot["had_override"]) {
 		override, _ := snapshot["override"].(map[string]any)
-		r.sessionState(sessionKey).conversation.modelOverride = maps.Clone(override)
-		if r.sessionState(sessionKey).conversation.modelOverride == nil {
-			r.sessionState(sessionKey).conversation.modelOverride = map[string]any{}
+		restored := maps.Clone(override)
+		if restored == nil {
+			restored = map[string]any{}
 		}
-	} else if state := r.peekSessionState(sessionKey); state != nil {
-		state.conversation.modelOverride = nil
+		r.withSessionState(sessionKey, func(s *SessionState) { s.conversation.modelOverride = restored })
+	} else {
+		r.withPeekedSessionState(sessionKey, func(s *SessionState) { s.conversation.modelOverride = nil })
 	}
 	r.evictCachedAgent(ctx, sessionKey, false, false)
 }
@@ -73,9 +82,15 @@ func (r *GatewayRunner) beginSessionRunGeneration(sessionKey string) int {
 	if sessionKey == "" {
 		return 0
 	}
-	persistent := &r.sessionState(sessionKey).persistent
-	persistent.runGeneration++
-	return persistent.runGeneration
+	generation := 0
+	r.withSessionState(sessionKey, func(s *SessionState) { generation = s.bumpRunGeneration() })
+	return generation
+}
+
+// Increments the run generation of a state whose lock the caller holds and returns the new value
+func (s *SessionState) bumpRunGeneration() int {
+	s.persistent.runGeneration++
+	return s.persistent.runGeneration
 }
 
 // Invalidates the in flight run token after settling a pending one shot model override
@@ -90,10 +105,9 @@ func (r *GatewayRunner) invalidateSessionRunGeneration(ctx context.Context, sess
 
 // Current run generation of a session, zero when it tracks no run
 func (r *GatewayRunner) currentSessionRunGeneration(sessionKey string) int {
-	if state := r.peekSessionState(sessionKey); state != nil {
-		return state.persistent.runGeneration
-	}
-	return 0
+	generation := 0
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { generation = s.persistent.runGeneration })
+	return generation
 }
 
 // True when the generation is still current for the session, always for an empty key
@@ -115,30 +129,31 @@ func (r *GatewayRunner) bindAdapterRunGeneration(adapter gateway.PlatformAdapter
 	}
 }
 
-// Registry and token map when the session holds a lease token for the generation
-func (r *GatewayRunner) heldTurnLease(sessionKey string, runGeneration int) (*SessionTurnLeaseRegistry, map[int]*TurnLeaseToken) {
+// Registry and the token the session holds for the generation, popped in the same hold when asked
+func (r *GatewayRunner) heldTurnLease(sessionKey string, runGeneration int, pop bool) (*SessionTurnLeaseRegistry, *TurnLeaseToken) {
 	registry := r.turnLeases
 	if sessionKey == "" || registry == nil {
 		return nil, nil
 	}
-	state := r.peekSessionState(sessionKey)
-	if state == nil || state.turn.leaseTokens == nil {
+	var token *TurnLeaseToken
+	held := false
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+		if token, held = s.turn.leaseTokens[runGeneration]; held && pop {
+			delete(s.turn.leaseTokens, runGeneration)
+		}
+	})
+	if !held {
 		return nil, nil
 	}
-	if _, ok := state.turn.leaseTokens[runGeneration]; !ok {
-		return nil, nil
-	}
-	return registry, state.turn.leaseTokens
+	return registry, token
 }
 
 // Releases the turn lease the session and generation acquired, a stale unwind popping only its own token
 func (r *GatewayRunner) releaseTurnLease(sessionKey string, runGeneration int) (released bool) {
-	registry, tokens := r.heldTurnLease(sessionKey, runGeneration)
+	registry, token := r.heldTurnLease(sessionKey, runGeneration, true)
 	if registry == nil {
 		return false
 	}
-	token := tokens[runGeneration]
-	delete(tokens, runGeneration)
 	defer func() {
 		if rec := recover(); rec != nil {
 			runLog().Debug("Failed to release turn lease", "error", rec)
@@ -153,7 +168,7 @@ func (r *GatewayRunner) rebindTurnLease(sessionKey string, runGeneration int, ne
 	if newSessionID == "" {
 		return false
 	}
-	registry, tokens := r.heldTurnLease(sessionKey, runGeneration)
+	registry, token := r.heldTurnLease(sessionKey, runGeneration, false)
 	if registry == nil {
 		return false
 	}
@@ -163,7 +178,7 @@ func (r *GatewayRunner) rebindTurnLease(sessionKey string, runGeneration int, ne
 			rebound = false
 		}
 	}()
-	return registry.Rebind(tokens[runGeneration], newSessionID)
+	return registry.Rebind(token, newSessionID)
 }
 
 // Stages one shot must deliver notes for the next agent run
@@ -171,20 +186,19 @@ func (r *GatewayRunner) setPendingTurnSidecarNotes(sessionKey string, notes []st
 	if sessionKey == "" || len(notes) == 0 {
 		return
 	}
-	r.sessionState(sessionKey).conversation.sidecarNotes = append([]string(nil), notes...)
+	staged := append([]string(nil), notes...)
+	r.withSessionState(sessionKey, func(s *SessionState) { s.conversation.sidecarNotes = staged })
 }
 
 // Staged sidecar notes of a session, cleared as they are read
 func (r *GatewayRunner) consumePendingTurnSidecarNotes(sessionKey string) []string {
-	var state *SessionState
+	var staged []string
 	if sessionKey != "" {
-		state = r.peekSessionState(sessionKey)
+		r.withPeekedSessionState(sessionKey, func(s *SessionState) {
+			staged = s.conversation.sidecarNotes
+			s.conversation.sidecarNotes = []string{}
+		})
 	}
-	if state == nil {
-		return []string{}
-	}
-	staged := state.conversation.sidecarNotes
-	state.conversation.sidecarNotes = []string{}
 	return append([]string{}, staged...)
 }
 
@@ -192,9 +206,7 @@ func (r *GatewayRunner) consumePendingTurnSidecarNotes(sessionKey string) []stri
 func (r *GatewayRunner) pinnedSessionContextPrompt(ctx context.Context, sc *gateway.SessionContext, redactPII bool, sessionKey string, internal bool) string {
 	var pin *ephemeralPin
 	if sessionKey != "" {
-		if state := r.peekSessionState(sessionKey); state != nil {
-			pin = state.conversation.ephemeralPin
-		}
+		r.withPeekedSessionState(sessionKey, func(s *SessionState) { pin = s.conversation.ephemeralPin })
 	}
 	if pin != nil && pin.redactPII != redactPII {
 		pin = nil
@@ -208,7 +220,9 @@ func (r *GatewayRunner) pinnedSessionContextPrompt(ctx context.Context, sc *gate
 	}
 	text := gateway.BuildSessionContextPrompt(ctx, sc, redactPII)
 	if sessionKey != "" {
-		r.sessionState(sessionKey).conversation.ephemeralPin = &ephemeralPin{changeKey: key, text: text, redactPII: redactPII}
+		r.withSessionState(sessionKey, func(s *SessionState) {
+			s.conversation.ephemeralPin = &ephemeralPin{changeKey: key, text: text, redactPII: redactPII}
+		})
 	}
 	return text
 }
@@ -219,14 +233,15 @@ func (r *GatewayRunner) pinnedChannelInputs(sessionKey string, channelPrompt *st
 		return channelPrompt, source
 	}
 	if !internal {
-		r.sessionState(sessionKey).conversation.channelPin = &channelPin{channelPrompt: channelPrompt, parentChatID: source.ParentChatID}
+		recorded := &channelPin{channelPrompt: channelPrompt, parentChatID: source.ParentChatID}
+		r.withSessionState(sessionKey, func(s *SessionState) { s.conversation.channelPin = recorded })
 		return channelPrompt, source
 	}
-	state := r.peekSessionState(sessionKey)
-	if state == nil || state.conversation.channelPin == nil {
+	var pin *channelPin
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { pin = s.conversation.channelPin })
+	if pin == nil {
 		return channelPrompt, source
 	}
-	pin := state.conversation.channelPin
 	if pin.parentChatID != nil && *pin.parentChatID != "" && (source.ParentChatID == nil || *source.ParentChatID == "") {
 		parent := *pin.parentChatID
 		source = gateway.ReplaceSource(source, func(s *gateway.SessionSource) { s.ParentChatID = &parent })
@@ -246,7 +261,9 @@ func (r *GatewayRunner) asyncStore() *gateway.AsyncSessionStore {
 
 // Adopts the durable pin snapshot for an internal turn when this process holds no context pin
 func (r *GatewayRunner) rehydratePromptPins(ctx context.Context, sessionKey string, expectedSessionID *string) {
-	if state := r.peekSessionState(sessionKey); state != nil && state.conversation.ephemeralPin != nil {
+	pinned := false
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { pinned = s.conversation.ephemeralPin != nil })
+	if pinned {
 		return
 	}
 	var raw *pyjson.Object
@@ -267,11 +284,14 @@ func (r *GatewayRunner) rehydratePromptPins(ctx context.Context, sessionKey stri
 	contextKey, _ := get("context_key").(string)
 	contextPrompt, _ := get("context_prompt").(string)
 	redact, _ := get("redact_pii").(bool)
-	conversation := &r.sessionState(sessionKey).conversation
-	conversation.ephemeralPin = &ephemeralPin{changeKey: contextKey, text: contextPrompt, redactPII: redact}
-	if conversation.channelPin == nil {
-		conversation.channelPin = &channelPin{channelPrompt: optionalText(get("channel_prompt")), parentChatID: optionalText(get("parent_chat_id"))}
-	}
+	adopted := &ephemeralPin{changeKey: contextKey, text: contextPrompt, redactPII: redact}
+	channel := &channelPin{channelPrompt: optionalText(get("channel_prompt")), parentChatID: optionalText(get("parent_chat_id"))}
+	r.withSessionState(sessionKey, func(s *SessionState) {
+		s.conversation.ephemeralPin = adopted
+		if s.conversation.channelPin == nil {
+			s.conversation.channelPin = channel
+		}
+	})
 }
 
 // String pointer of a JSON value, nil for null or a non string
@@ -295,11 +315,12 @@ func (r *GatewayRunner) persistPromptPins(ctx context.Context, sessionKey string
 	if sessionKey == "" {
 		return
 	}
-	state := r.peekSessionState(sessionKey)
-	if state == nil || state.conversation.ephemeralPin == nil || state.conversation.channelPin == nil {
+	var pin *ephemeralPin
+	var channel *channelPin
+	r.withPeekedSessionState(sessionKey, func(s *SessionState) { pin, channel = s.conversation.ephemeralPin, s.conversation.channelPin })
+	if pin == nil || channel == nil {
 		return
 	}
-	pin, channel := state.conversation.ephemeralPin, state.conversation.channelPin
 	snapshot := pyjson.ObjectOf(
 		"version", gateway.PromptPinVersion, "context_key", pin.changeKey,
 		"context_prompt", pin.text, "redact_pii", pin.redactPII,

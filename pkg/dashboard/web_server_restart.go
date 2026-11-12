@@ -29,7 +29,9 @@ var restartMonotonic = func() float64 { return time.Since(processClockStart).Sec
 // Argv builder and spawner the restart goes through, the module attributes hermes tests patch
 var (
 	restartGatewaySubcommand = gatewaySubcommand
-	restartSpawnAction       = spawnHermesAction
+	restartSpawnAction       = func(ctx context.Context, subcommand []string, name string, env map[string]string) (actionProc, error) {
+		return spawnHermesAction(ctx, subcommand, name, env)
+	}
 )
 
 func init() {

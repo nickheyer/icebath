@@ -2,64 +2,33 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// Conversation a plugin message lands in, gateway/session.py SessionSource as delivery reads it
-type PluginMessageSource interface {
-	SourcePlatform() Platform
-	SourceChatID() string
-}
-
-// Local session viewers a plugin notice reaches, the live session event_stream publish
-type PluginLiveSession interface {
-	PublishEvent(chatID string, payload map[string]any, eventType string) bool
-}
-
-// Outcome of one adapter send or edit, gateway/platforms/base.py SendResult
-type PluginSendResult = SendResult
-
-// Adapter send surface, gateway/platforms/base.py BasePlatformAdapter send
-type PluginMessageAdapter interface {
-	Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (PluginSendResult, error)
-}
-
-// Adapter overriding the base edit_message, editing a sent message in place
-type PluginMessageEditor interface {
-	EditMessage(ctx context.Context, chatID, messageID, content string, finalize bool) (PluginSendResult, error)
-}
-
-// Adapter declaring SUPPORTS_MESSAGE_EDITING, false refusing every edit
-type pluginEditSupport interface {
-	SupportsMessageEditing() bool
-}
-
-// Per chat message limit and length measure of a base built adapter
-type PluginMessageLimits interface {
-	MaxMessageLengthForChat(chatID string) (int, error)
-	MessageLenFnForChat(chatID string) (func(string) int, error)
-}
-
 // Running gateway methods plugin message delivery resolves a session through, gateway/run.py GatewayRunner
 type PluginMessageRunner interface {
-	PluginStoredSource(sessionKey string) (PluginMessageSource, bool)
-	SessionKeyForSource(source PluginMessageSource) string
-	PluginLocalSession(source PluginMessageSource, sessionKey, pluginHome, pluginID string) PluginLiveSession
-	PluginMessagingSessionOwned(sessionKey, pluginHome, pluginID string) bool
-	DeliveryAdapterFor(source PluginMessageSource) PluginMessageAdapter
-	ThreadMetadataForSource(source PluginMessageSource) (map[string]any, error)
+	SessionStore() *SessionStore
+	RestoredSource(ctx context.Context, entry *SessionEntry) (*SessionSource, error)
+	SessionKeyForSource(ctx context.Context, source *SessionSource) (string, error)
+	PluginLocalSession(ctx context.Context, source *SessionSource, sessionKey, pluginHome, pluginID string) (*LiveSession, error)
+	PluginMessagingSessionOwned(ctx context.Context, sessionKey, pluginHome, pluginID string) bool
+	DeliveryAdapterFor(ctx context.Context, source *SessionSource) (PlatformAdapter, error)
+	ThreadMetadataForSource(source *SessionSource, replyToMessageID *string) map[string]any
 }
 
-// Running gateway loop state, the runner _running flag with an open _gateway_loop
+// Running gateway loop state, the runner _running flag and its _gateway_loop
 type GatewayLoopRunner interface {
-	LoopRunning() bool
+	Running() bool
+	GatewayLoop() EventLoop
 	OnGatewayLoop(ctx context.Context) bool
 }
 
@@ -67,9 +36,9 @@ type GatewayLoopRunner interface {
 type PostTarget struct {
 	Platform  string
 	ChatID    string
-	Adapter   PluginMessageAdapter
+	Adapter   PlatformAdapter
 	Metadata  map[string]any
-	Live      PluginLiveSession
+	Live      *LiveSession
 	NoticeKey string
 }
 
@@ -95,11 +64,14 @@ func CurrentGatewayRunner() any {
 // Running runner with an open loop and whether ctx runs on that loop, nil without one
 func GatewayLoop(ctx context.Context) (any, bool) {
 	runner := CurrentGatewayRunner()
-	loop, ok := runner.(GatewayLoopRunner)
-	if runner == nil || !ok || !loop.LoopRunning() {
+	r, ok := runner.(GatewayLoopRunner)
+	if runner == nil || !ok || !r.Running() {
 		return nil, false
 	}
-	return runner, loop.OnGatewayLoop(ctx)
+	if loop := r.GatewayLoop(); loop == nil || loop.IsClosed() {
+		return nil, false
+	}
+	return runner, r.OnGatewayLoop(ctx)
 }
 
 // Runner as the platform actions facade drives it, nil without a runner
@@ -111,13 +83,13 @@ func GatewayRunnerRef() plugins.PlatformActionRunner {
 type liveSourceKey struct{}
 
 // Binds the live inbound source of a call dispatched before its session is stored
-func WithLiveSource(ctx context.Context, source PluginMessageSource) context.Context {
+func WithLiveSource(ctx context.Context, source *SessionSource) context.Context {
 	return context.WithValue(ctx, liveSourceKey{}, source)
 }
 
 // Live source bound in this context, nil when none
 func BoundRoute(ctx context.Context) any {
-	if source, ok := ctx.Value(liveSourceKey{}).(PluginMessageSource); ok {
+	if source, ok := ctx.Value(liveSourceKey{}).(*SessionSource); ok && source != nil {
 		return source
 	}
 	return nil
@@ -170,14 +142,12 @@ func runePrefix(s string, n int) string {
 func pyLen(s string) int { return len([]rune(s)) }
 
 // Text clamped to the adapter's per chat limit with an ellipsis, never split
-func fitPluginText(adapter PluginMessageAdapter, chatID, text string) string {
+func fitPluginText(adapter PlatformAdapter, chatID, text string) string {
 	limit, measure := 4096, pyLen
-	if limits, ok := adapter.(PluginMessageLimits); ok {
-		l, err := limits.MaxMessageLengthForChat(chatID)
-		m, merr := limits.MessageLenFnForChat(chatID)
-		if err == nil && merr == nil && m != nil {
-			limit, measure = l, m
-		}
+	l, err := adapter.MaxMessageLengthForChat(chatID)
+	m, merr := adapter.MessageLenFnForChat(chatID)
+	if err == nil && merr == nil && m != nil {
+		limit, measure = l, m
 	}
 	if limit <= 0 || measure(text) <= limit {
 		return text
@@ -190,49 +160,65 @@ func fitPluginText(adapter PluginMessageAdapter, chatID, text string) string {
 }
 
 // Whether the adapter overrides edit_message and does not refuse edits
-func supportsPluginEdit(adapter PluginMessageAdapter) bool {
-	if s, ok := adapter.(pluginEditSupport); ok && !s.SupportsMessageEditing() {
+func supportsPluginEdit(adapter PlatformAdapter) bool {
+	if base := adapter.Base(); base != nil && !base.Traits.SupportsMessageEditing {
 		return false
 	}
-	_, ok := adapter.(PluginMessageEditor)
-	return ok
+	return AdapterOverridesBaseMethod(adapter, "EditMessage")
 }
 
 // Post target for the session key names, or the refusal, the live route serving an unstored session
 func ResolvePluginMessageTarget(ctx context.Context, runner any, sessionKey string, route any, pluginHome, pluginID string) (any, map[string]any, error) {
 	r, ok := runner.(PluginMessageRunner)
 	if !ok {
-		return nil, nil, fmt.Errorf("AttributeError: %T has no attribute 'session_store'", runner)
+		return nil, nil, fmt.Errorf("AttributeError: '%T' object has no attribute 'session_store'", runner)
 	}
-	var source PluginMessageSource
-	if stored, found := r.PluginStoredSource(sessionKey); found {
-		source = stored
-	} else if live, isSource := route.(PluginMessageSource); isSource && route != nil && r.SessionKeyForSource(live) == sessionKey {
-		source = live
-	} else {
+	store := r.SessionStore()
+	if store == nil {
+		return nil, nil, errors.New("AttributeError: 'NoneType' object has no attribute 'lookup_by_session_key'")
+	}
+	var source *SessionSource
+	if entry := store.LookupBySessionKey(ctx, sessionKey); entry != nil && entry.Origin != nil {
+		restored, err := r.RestoredSource(ctx, entry)
+		if err != nil {
+			return nil, nil, err
+		}
+		source = ReplaceSource(restored, nil)
+	} else if live, isSource := route.(*SessionSource); isSource && live != nil {
+		key, err := r.SessionKeyForSource(ctx, live)
+		if err != nil {
+			return nil, nil, err
+		}
+		if key == sessionKey {
+			source = live
+		}
+	}
+	if source == nil {
 		return nil, pluginMessageErr("no_conversation", fmt.Sprintf("session %s is not known to this gateway", pyrepr.StrRepr(sessionKey))), nil
 	}
-	if source.SourcePlatform() == PlatformLocal {
-		live := r.PluginLocalSession(source, sessionKey, pluginHome, pluginID)
+	if source.Platform == PlatformLocal {
+		live, err := r.PluginLocalSession(ctx, source, sessionKey, pluginHome, pluginID)
+		if err != nil {
+			return nil, nil, err
+		}
 		if live == nil {
 			return nil, pluginMessageErr("no_conversation", "the local session is not live in this plugin's profile"), nil
 		}
 		key := fmt.Sprintf("plugin-message:%s:%s", pluginID, uuidHex12())
-		return &PostTarget{Platform: "local", ChatID: source.SourceChatID(), Live: live, NoticeKey: key}, nil, nil
+		return &PostTarget{Platform: "local", ChatID: source.ChatID, Live: live, NoticeKey: key}, nil, nil
 	}
-	if !r.PluginMessagingSessionOwned(sessionKey, pluginHome, pluginID) {
+	if !r.PluginMessagingSessionOwned(ctx, sessionKey, pluginHome, pluginID) {
 		return nil, pluginMessageErr("no_conversation", "the session belongs to another profile"), nil
 	}
-	adapter := r.DeliveryAdapterFor(source)
-	if adapter == nil {
-		return nil, pluginMessageErr("adapter_unavailable", fmt.Sprintf("no connected %s adapter answers this chat", string(source.SourcePlatform()))), nil
-	}
-	metadata, err := r.ThreadMetadataForSource(source)
+	adapter, err := r.DeliveryAdapterFor(ctx, source)
 	if err != nil {
-		slog.Debug(fmt.Sprintf("plugin_message: no thread metadata for %s: %v", string(source.SourcePlatform()), err))
-		metadata = nil
+		return nil, nil, err
 	}
-	return &PostTarget{Platform: string(source.SourcePlatform()), ChatID: source.SourceChatID(), Adapter: adapter, Metadata: metadata}, nil, nil
+	if adapter == nil {
+		return nil, pluginMessageErr("adapter_unavailable", fmt.Sprintf("no connected %s adapter answers this chat", string(source.Platform))), nil
+	}
+	metadata := r.ThreadMetadataForSource(source, nil)
+	return &PostTarget{Platform: string(source.Platform), ChatID: source.ChatID, Adapter: adapter, Metadata: metadata}, nil, nil
 }
 
 func uuidHex12() string {
@@ -242,9 +228,9 @@ func uuidHex12() string {
 
 // Keyed sticky notice to a local session's viewers
 func publishLocal(target *PostTarget, text string) map[string]any {
-	delivered := target.Live.PublishEvent(target.ChatID, map[string]any{
-		"text": text, "level": "info", "kind": "sticky", "key": target.NoticeKey, "id": target.NoticeKey,
-	}, "notification.show")
+	delivered := target.Live.EventStream.Publish(target.ChatID, pyjson.ObjectOf(
+		"text", text, "level", "info", "kind", "sticky", "key", target.NoticeKey, "id", target.NoticeKey,
+	), "notification.show", nil)
 	return map[string]any{"ok": true, "message_id": target.NoticeKey, "delivered": delivered}
 }
 
@@ -348,7 +334,7 @@ func editPluginMessage(ctx context.Context, t *PostTarget, messageID, text, plug
 		return result, nil
 	}
 	if messageID != "" && supportsPluginEdit(t.Adapter) {
-		sent, err := t.Adapter.(PluginMessageEditor).EditMessage(ctx, t.ChatID, messageID, fitPluginText(t.Adapter, t.ChatID, text), false)
+		sent, err := t.Adapter.EditMessage(ctx, t.ChatID, messageID, fitPluginText(t.Adapter, t.ChatID, text), false)
 		edited, editError := false, ""
 		if err != nil {
 			slog.Debug(fmt.Sprintf("plugin_message plugin=%s edit_message raised: %v", pluginID, err))

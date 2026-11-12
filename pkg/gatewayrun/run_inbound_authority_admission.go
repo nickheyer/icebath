@@ -72,10 +72,7 @@ func (r *GatewayRunner) hmBusyInterrupt(ctx context.Context, event *gateway.Mess
 func (r *GatewayRunner) hmBusyPreempt(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, error) {
 	mode := r.effectiveBusyInputMode(ctx, source)
 	busyState := r.peekSessionState(quickKey)
-	var runningAgent *agent.AIAgent
-	if busyState != nil {
-		runningAgent = busyState.turn.agent
-	}
+	runningAgent := busyState.runningAgent()
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
 		return false, err

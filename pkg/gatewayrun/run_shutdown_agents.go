@@ -76,8 +76,7 @@ func (r *GatewayRunner) shouldEmitLongRunningNotification(sessionKey string, a *
 		return false
 	}
 	if sessionKey != "" {
-		state := r.peekSessionState(sessionKey)
-		if state == nil || state.turn.agent != a {
+		if r.runningSlotAgent(sessionKey) != a {
 			return false
 		}
 	}

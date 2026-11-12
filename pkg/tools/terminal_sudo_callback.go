@@ -47,7 +47,7 @@ func GetSudoPromptCommand(ctx context.Context) string {
 func callSudoPasswordCallback(ctx context.Context, env *Env, cb *SudoPasswordCallback, command string, human *humanInputHandle) (password string) {
 	defer func() {
 		if r := recover(); r != nil {
-			human.finish(env, "error")
+			human.finish(ctx, env, "error")
 			password = ""
 		}
 	}()
@@ -57,9 +57,9 @@ func callSudoPasswordCallback(ctx context.Context, env *Env, cb *SudoPasswordCal
 		return cb.Prompt(context.WithValue(ctx, sudoPromptCommandKey{}, command))
 	}()
 	if password != "" {
-		human.finish(env, "provided")
+		human.finish(ctx, env, "provided")
 	} else {
-		human.finish(env, "skipped")
+		human.finish(ctx, env, "skipped")
 	}
 	return password
 }

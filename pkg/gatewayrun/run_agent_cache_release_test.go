@@ -368,3 +368,58 @@ func TestADesktopClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *test
 		t.Fatal(err)
 	}
 }
+
+// Releasing a session's running agent state while the running agents view reads that session stays race free
+func TestReleaseRunningAgentStateWhileRunningAgentsViewReads(t *testing.T) {
+	ctx := context.Background()
+	r := leaseRunner(0)
+	const sessionKey = "agent:main:telegram:dm:42"
+	running := &agent.AIAgent{}
+	claim := func() {
+		r.withSessionState(sessionKey, func(s *SessionState) {
+			s.turn.agent, s.turn.event, s.turn.startedTS = running, gateway.NewMessageEvent("hi"), wallClock()
+		})
+	}
+	claim()
+	stop, first := make(chan struct{}), make(chan struct{})
+	released := make(chan int)
+	go func() {
+		count := 0
+		for {
+			select {
+			case <-stop:
+				released <- count
+				return
+			default:
+			}
+			r.releaseRunningAgentState(ctx, sessionKey, nil)
+			if count++; count == 1 {
+				close(first)
+			}
+			claim()
+		}
+	}()
+	<-first
+	for range 20000 {
+		got, ok := r.runningAgents().Get(sessionKey)
+		if ok != (got == running) || (!ok && got != nil) {
+			t.Fatalf("running agents view read %p present=%v", got, ok)
+		}
+		if resident := r.ResidentAgentFor(sessionKey); resident != nil && resident != any(running) {
+			t.Fatalf("resident agent %v", resident)
+		}
+	}
+	close(stop)
+	if count := <-released; count == 0 {
+		t.Fatal("the releasing goroutine never released the running agent state")
+	}
+	if _, ok := r.runningAgents().Get(sessionKey); !ok {
+		t.Fatal("the final claim is not visible through the running agents view")
+	}
+	if !r.releaseRunningAgentState(ctx, sessionKey, nil) {
+		t.Fatal("release refused")
+	}
+	if got, ok := r.runningAgents().Get(sessionKey); ok || got != nil {
+		t.Fatalf("running agent %p survived the release", got)
+	}
+}

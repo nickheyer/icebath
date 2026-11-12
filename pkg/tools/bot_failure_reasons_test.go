@@ -130,3 +130,9 @@ func TestNonRetryableReasonsStop(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliveryFailureReasonTrustsTheBusyTurnReason(t *testing.T) {
+	if got := tools.DeliveryFailureReason(&tools.TurnBusyError{Profile: "work", WaitedSeconds: 3}); got != "target_busy" {
+		t.Fatalf("got %q", got)
+	}
+}

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -83,16 +82,20 @@ func (r *GatewayRunner) handleMessage(ctx context.Context, event *gateway.Messag
 		return refusal.Message, nil
 	}
 	event, source, isInternal = r.hmRescueOrphanedFIFO(ctx, event, source, isInternal, quickKey)
-	claimState := r.sessionState(quickKey)
-	if lease != nil {
-		claimState.turn.lease = lease
-	}
-	claimState.turn.agent = agentPendingSentinel
-	claimState.turn.event = event
-	claimState.turn.startedTS = float64(time.Now().UnixNano()) / 1e9
+	runGeneration := 0
+	r.withSessionState(quickKey, func(s *SessionState) {
+		if lease != nil {
+			s.turn.lease = lease
+		}
+		s.turn.agent = agentPendingSentinel
+		s.turn.event = event
+		s.turn.startedTS = float64(time.Now().UnixNano()) / 1e9
+		if quickKey != "" {
+			runGeneration = s.bumpRunGeneration()
+		}
+	})
 	observability.StartReplyClock(ctx, source, isInternal)
 	r.persistActiveAgents(ctx)
-	runGeneration := r.beginSessionRunGeneration(quickKey)
 	defer func() {
 		r.restorePendingOneTurnModelOverride(ctx, quickKey, &runGeneration)
 		if !event.TurnMarkerHandoff() {
@@ -155,17 +158,15 @@ func (r *GatewayRunner) hmHandleRunningSessionMessage(ctx context.Context, event
 	if queued, err := r.hmBusyTelegramGraceQueue(ctx, event, source, quickKey, mode); queued || err != nil {
 		return nil, err
 	}
-	state := r.peekSessionState(quickKey)
-	var runningAgent *agent.AIAgent
-	if state != nil {
-		runningAgent = state.turn.agent
-	}
-	if runningAgent == agentPendingSentinel {
-		if command == "stop" {
-			r.releaseRunningAgentState(ctx, quickKey, nil)
+	runningAgent := r.runningSlotAgent(quickKey)
+	for runningAgent == agentPendingSentinel && command == "stop" {
+		if r.releaseRunningSlot(ctx, quickKey, nil, agentPendingSentinel) {
 			runLog().Info(fmt.Sprintf("HARD STOP (pending) for session %s — sentinel cleared", quickKey))
 			return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.stop.force_stopped_pending", "", nil), nil), nil
 		}
+		runningAgent = r.runningSlotAgent(quickKey)
+	}
+	if runningAgent == agentPendingSentinel {
 		return nil, r.hmMergePendingForSource(ctx, source, quickKey, event, true)
 	}
 	if r.draining.Load() {

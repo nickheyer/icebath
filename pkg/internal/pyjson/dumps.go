@@ -216,6 +216,8 @@ func (e *encoder) encode(v any) error {
 		return e.container(sliceID(reflect.ValueOf(x)), func() error {
 			return e.list(len(x), func(i int) any { return x[i] })
 		})
+	case pyrepr.Mapping:
+		return e.container(mappingID(reflect.ValueOf(v)), func() error { return e.mapping(x) })
 	case interface{ PyStr() string }:
 		if _, typed := v.(pyrepr.TypeNamer); typed {
 			return e.unencodable(v, reflect.ValueOf(v))
@@ -225,6 +227,38 @@ func (e *encoder) encode(v any) error {
 		return e.reflected(v)
 	}
 	return nil
+}
+
+// Identity of a dict like value for the circular reference check, zero for one with no address
+func mappingID(rv reflect.Value) uintptr {
+	switch rv.Kind() {
+	case reflect.Slice:
+		return sliceID(rv)
+	case reflect.Pointer, reflect.Map:
+		return rv.Pointer()
+	}
+	return 0
+}
+
+// Writes a dict like value in its own key order with dict key conversion, sorted under sort_keys
+func (e *encoder) mapping(m pyrepr.Mapping) error {
+	var ms []member
+	for k, v := range m.PyItems() {
+		text, keep := "null", true
+		if k != nil {
+			var err error
+			if text, keep, err = e.keyText(reflect.ValueOf(k)); err != nil {
+				return err
+			}
+		}
+		if keep {
+			ms = append(ms, member{text, v})
+		}
+	}
+	if e.sortKeys {
+		sort.SliceStable(ms, func(i, j int) bool { return ms[i].key < ms[j].key })
+	}
+	return e.members(ms)
 }
 
 // Encodes slices maps and pointers through reflection, handing anything else to default

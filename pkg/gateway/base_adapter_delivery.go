@@ -47,12 +47,12 @@ type DurableActiveTurnClearer interface {
 
 // Runner seam sweeping the failed obligations of a platform once a replacement adapter is live
 type FailedObligationRedeliverer interface {
-	RedeliverFailedObligationsForPlatform(ctx context.Context, platform Platform, profile *string) error
+	RedeliverFailedObligationsForPlatform(ctx context.Context, platform Platform, profile *string) int
 }
 
 // Runner seam arming the timed redelivery after a refused final reply
 type FloodRedeliveryScheduler interface {
-	ScheduleFloodRedelivery(platform Platform, profile *string)
+	ScheduleFloodRedelivery(ctx context.Context, platform Platform, profile *string)
 }
 
 // Runner seam naming the routed profile of a source, a refused route raising *ProfileRouteRejected
@@ -162,13 +162,13 @@ func (b *BasePlatformAdapter) finalizeDeliveryObligation(ctx context.Context, ob
 		}
 		profile := ownerProfileOf(deliveryAdapter)
 		if IsReconnectOnly(errText) {
-			live := b.finalDeliveryAdapter(event.Source)
+			live := b.finalDeliveryAdapter(ctx, event.Source)
 			if redeliver, ok := b.GatewayRunner.(FailedObligationRedeliverer); ok && live != deliveryAdapter {
-				return redeliver.RedeliverFailedObligationsForPlatform(ctx, event.Source.Platform, profile)
+				redeliver.RedeliverFailedObligationsForPlatform(ctx, event.Source.Platform, profile)
 			}
 		} else if ClassifyDeadError(errText) == "" {
 			if schedule, ok := b.GatewayRunner.(FloodRedeliveryScheduler); ok {
-				schedule.ScheduleFloodRedelivery(event.Source.Platform, profile)
+				schedule.ScheduleFloodRedelivery(ctx, event.Source.Platform, profile)
 			}
 		}
 		return nil
@@ -288,7 +288,7 @@ func (b *BasePlatformAdapter) sendImageBatch(ctx context.Context, event *Message
 
 // Ledger bracket of a final text on the current transport, returning the result with the adapter that sent it
 func (b *BasePlatformAdapter) SendFinalLedgered(ctx context.Context, event *MessageEvent, sessionKey, textContent string, metadata map[string]any, replyTo *string, isEphemeral bool) (SendResult, PlatformAdapter, error) {
-	deliveryAdapter := b.finalDeliveryAdapter(event.Source)
+	deliveryAdapter := b.finalDeliveryAdapter(ctx, event.Source)
 	slog.Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), pystr.Len(textContent), event.Source.ChatID))
 	var obligationID *string
 	if recorder, overridden := b.Self().(deliveryObligationRecorder); overridden {

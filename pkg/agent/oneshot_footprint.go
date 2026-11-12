@@ -1,15 +1,16 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// One shot fact frozen on the agent at its first tool build
-func (a *AIAgent) agentIsOneshot() bool {
-	return tools.AgentIsOneshot(&a.oneshotSession, a.env)
+// One shot fact frozen on the agent at its first tool build, read under the launch policy bound to ctx
+func (a *AIAgent) agentIsOneshot(ctx context.Context) bool {
+	return tools.AgentIsOneshot(ctx, &a.oneshotSession, a.env)
 }
 
 // Tool schemas with delegate_task swapped for its one shot variant without live control parameters

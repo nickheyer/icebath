@@ -16,11 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// importFailure is a crash tagged with the import error class
+// importFailure is a raised ImportError
 type importFailure struct{}
 
-func (importFailure) Error() string      { return "x" }
-func (importFailure) CrashClass() string { return "import_error" }
+func (importFailure) Error() string { return "x" }
+func (importFailure) PyExceptionMRO() []string {
+	return []string{"ImportError", "Exception", "BaseException"}
+}
 
 func TestDeadMarkersReportKilledOrCrashAndLiveOnesWait(t *testing.T) {
 	m := captureMarks(t)

@@ -207,7 +207,7 @@ func TestNestedAndOneShotDelegationKeepTheirOwnPaths(t *testing.T) {
 	}
 	oneshot := inlineParent(env, builtInlineAgent(t, env, true).tools, 0)
 	t.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
-	if !tools.AgentIsOneshot(&oneshot.oneshotSession, env) {
+	if !tools.AgentIsOneshot(context.Background(), &oneshot.oneshotSession, env) {
 		t.Fatal("one shot session not pinned")
 	}
 	os.Unsetenv("ICEBATH_SINGLE_QUERY_SESSION")

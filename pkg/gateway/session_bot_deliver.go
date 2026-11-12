@@ -348,7 +348,7 @@ func BotDeliver(ctx context.Context, a *SessionAuthority, actor Principal, param
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) { return botDeliverLocked(taskCtx, a, actor, params) })
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) { return botDeliverLocked(taskCtx, a, actor, params) })
 	return botTaskAnswer(ctx, task)
 }
 
@@ -585,7 +585,7 @@ func BotSettle(ctx context.Context, a *SessionAuthority, actor Principal, params
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) { return botSettleLocked(taskCtx, a, actor, params) })
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) { return botSettleLocked(taskCtx, a, actor, params) })
 	return botTaskAnswer(ctx, task)
 }
 

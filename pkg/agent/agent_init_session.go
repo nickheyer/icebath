@@ -36,7 +36,7 @@ func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
 	a.toolSnapshotGeneration = &generation
 	a.setDelegationBackend(tools.SavedDelegationBackend(ctx))
 	a.configuredDisabledToolsets = disabled
-	disabled = tools.SessionDisabledToolsets(disabled, a.platform, a.agentIsOneshot())
+	disabled = tools.SessionDisabledToolsets(disabled, a.platform, a.agentIsOneshot(ctx))
 	a.disabledToolsets = disabled
 	selection := tools.ToolSelectionKey(enabled, disabled)
 	a.toolSnapshotSelection = &selection

@@ -329,7 +329,7 @@ func settleRefusedTranscripts(refused []*pyjson.Object, liveDelegID string, live
 
 // Charges the requested children against a one shot session's total, the refusal text once it is spent
 func oneshotSpawnBudget(ctx context.Context, parent *AIAgent, requested int) string {
-	if !tools.IsSingleQuerySession(parent.env) {
+	if !tools.IsSingleQuerySession(ctx, parent.env) {
 		return ""
 	}
 	limit := tools.OneshotMaxChildren(ctx)

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // AuxSDKError is the OpenAI SDK APIError shape an auxiliary SDK client raises, status zero when status less
@@ -21,6 +23,49 @@ type AuxSDKError struct {
 func (e *AuxSDKError) Error() string { return e.Message }
 
 func (e *AuxSDKError) Unwrap() error { return e.Err }
+
+// Python module of the SDK exception classes
+func (e *AuxSDKError) PyModule() string { return "openai" }
+
+// Base class of each httpx and openai SDK exception class the auxiliary clients raise
+var auxSDKExceptionParents = map[string]string{
+	"HTTPError": "Exception", "RequestError": "HTTPError", "TransportError": "RequestError",
+	"TimeoutException": "TransportError", "ConnectTimeout": "TimeoutException", "ReadTimeout": "TimeoutException",
+	"WriteTimeout": "TimeoutException", "PoolTimeout": "TimeoutException", "NetworkError": "TransportError",
+	"ConnectError": "NetworkError", "ReadError": "NetworkError", "WriteError": "NetworkError", "CloseError": "NetworkError",
+	"ProtocolError": "TransportError", "LocalProtocolError": "ProtocolError", "RemoteProtocolError": "ProtocolError",
+	"ProxyError": "TransportError", "UnsupportedProtocol": "TransportError", "DecodingError": "RequestError",
+	"TooManyRedirects": "RequestError", "HTTPStatusError": "HTTPError", "InvalidURL": "Exception",
+	"CookieConflict": "Exception", "StreamError": "RuntimeError", "StreamConsumed": "StreamError",
+	"StreamClosed": "StreamError", "ResponseNotRead": "StreamError", "RequestNotRead": "StreamError",
+	"OpenAIError": "Exception", "APIError": "OpenAIError", "APIResponseValidationError": "APIError",
+	"APIStatusError": "APIError", "BadRequestError": "APIStatusError", "AuthenticationError": "APIStatusError",
+	"PermissionDeniedError": "APIStatusError", "NotFoundError": "APIStatusError", "ConflictError": "APIStatusError",
+	"UnprocessableEntityError": "APIStatusError", "RateLimitError": "APIStatusError",
+	"InternalServerError": "APIStatusError", "APIConnectionError": "APIError", "APITimeoutError": "APIConnectionError",
+	"LengthFinishReasonError": "OpenAIError", "ContentFilterFinishReasonError": "OpenAIError",
+}
+
+// Class names of the SDK exception through BaseException as type(exc).__mro__ lists them
+func (e *AuxSDKError) PyExceptionMRO() []string {
+	return pyrepr.ExceptionMROFrom(e.PyTypeName(), auxSDKExceptionParents)
+}
+
+// Class names of the httpx transport exception through BaseException as type(exc).__mro__ lists them
+func (e *AuxTransportError) PyExceptionMRO() []string {
+	return pyrepr.ExceptionMROFrom(e.Class, auxSDKExceptionParents)
+}
+
+var (
+	_ interface{ PyExceptionMRO() []string } = (*AuxSDKError)(nil)
+	_ interface{ PyExceptionMRO() []string } = (*AuxTransportError)(nil)
+	_ interface{ PyModule() string }         = (*AuxSDKError)(nil)
+	_ interface{ PyModule() string }         = (*AuxTransportError)(nil)
+	_ interface{ PyModule() string }         = (*AWSServiceError)(nil)
+	_ interface{ PyModule() string }         = (*AWSReadTimeoutError)(nil)
+	_ interface{ PyModule() string }         = (*AWSCredentialError)(nil)
+	_ interface{ PyModule() string }         = (*lmHTTPStatusError)(nil)
+)
 
 // Python exception class the SDK raised, APIError when unclassified
 func (e *AuxSDKError) PyTypeName() string {

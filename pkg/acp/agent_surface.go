@@ -1,9 +1,18 @@
 package acp
 
 import (
+	"context"
+
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
 )
+
+// Agent whose cached system prompt can be dropped so the next turn rebuilds it
+type systemPromptInvalidator interface {
+	InvalidateSystemPrompt(ctx context.Context) error
+}
+
+var _ systemPromptInvalidator = (*agent.AIAgent)(nil)
 
 // Model of a session agent, empty when the agent exposes none
 func agentModel(a any) string {
@@ -97,17 +106,12 @@ func agentToolDefs(a any) []map[string]any {
 
 // Context window, compression threshold and last prompt tokens of the agent's context engine, zeros without one
 func agentCompressorFigures(a any) (contextLength, thresholdTokens, lastPromptTokens int) {
-	switch m := a.(type) {
-	case interface{ ContextCompressor() agent.ContextEngine }:
+	if m, ok := a.(interface{ ContextCompressor() agent.ContextEngine }); ok {
 		if engine := m.ContextCompressor(); engine != nil {
 			if base := engine.Base(); base != nil {
 				return base.ContextLength, base.ThresholdTokens, base.LastPromptTokens
 			}
 		}
-	case interface {
-		CompressorFigures() (int, int, int)
-	}:
-		return m.CompressorFigures()
 	}
 	return 0, 0, 0
 }

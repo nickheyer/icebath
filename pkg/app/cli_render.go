@@ -966,6 +966,8 @@ func prependNoteToMessage(message any, note string) any {
 }
 
 // Reports whether a prompt application currently owns the live terminal
+func PromptAppIsRunning() bool { return ptAppIsRunning() }
+
 func ptAppIsRunning() bool {
 	app := tuiApp()
 	return app != nil && app.IsRunning()

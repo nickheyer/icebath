@@ -54,3 +54,6 @@ func applyDashboardCard(e *gateway.PlatformEntry) {
 	e.DashboardEnvVars = []string{"SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"}
 	e.EnvValueRules = envValueRules
 }
+
+// Registers the card of the bundled slack directory for dashboards whose registry holds no slack entry
+func init() { gateway.RegisterBundledDashboardCard("slack", applyDashboardCard) }

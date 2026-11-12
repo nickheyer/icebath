@@ -123,7 +123,13 @@ func TestLSPDecodeJSONMatchesJSONLoads(t *testing.T) {
 }
 
 func TestLSPTruncateElidesAtTheTotalCap(t *testing.T) {
-	elideCalls = nil
+	var elideCalls []int
+	saved := lspElide
+	lspElide = func(text string, limit int) string {
+		elideCalls = append(elideCalls, limit)
+		return saved(text, limit)
+	}
+	t.Cleanup(func() { lspElide = saved })
 	lspTruncate(strings.Repeat("x", 10000))
 	if !slices.Equal(elideCalls, []int{lsp.MaxTotalChars}) {
 		t.Fatalf("elide calls %v", elideCalls)

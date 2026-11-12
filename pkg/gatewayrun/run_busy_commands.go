@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -134,10 +133,7 @@ func (r *GatewayRunner) busySteerCommand(ctx context.Context, event *gateway.Mes
 	if err := busyAccepted(ctx); err != nil {
 		return nil, err
 	}
-	var runningAgent *agent.AIAgent
-	if steerState := r.peekSessionState(quickKey); steerState != nil {
-		runningAgent = steerState.turn.agent
-	}
+	runningAgent := r.runningSlotAgent(quickKey)
 	queueFallback := func(reply string) (any, error) {
 		adapter, err := r.deliveryAdapterFor(ctx, source)
 		if err != nil {

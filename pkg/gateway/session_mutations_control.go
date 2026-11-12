@@ -201,7 +201,7 @@ func mutateSession(ctx context.Context, a *SessionAuthority, actor Principal, re
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
-	task := trackMutation(a, func(taskCtx context.Context) (any, error) {
+	task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 		return ownedMutation(taskCtx, a, actor, ref, params)
 	})
 	result, err := task.wait()
@@ -359,8 +359,8 @@ func mutateSessionChecked(ctx context.Context, a *SessionAuthority, actor Princi
 	return writeMutation(ctx, a, ref, write, editorServers, actor.Subject, authorizeWrite, commitLock)
 }
 
-// Current route and persistence policy of a model switch
-type modelSwitchContext struct {
+// Current route and persistence policy of a model switch, shared with the runner's model commands
+type ModelSwitchContext struct {
 	SessionKey       string
 	Source           *SessionSource
 	ConfigPath       string
@@ -379,7 +379,7 @@ type modelSwitchContext struct {
 }
 
 // Fills the current route from the config file, the defaults kept when it cannot be read
-func (c *modelSwitchContext) readConfig(ctx context.Context) {
+func (c *ModelSwitchContext) readConfig(ctx context.Context) {
 	defer func() { _ = recover() }()
 	cfg := loadGatewayConfig(ctx, c.ConfigPath)
 	if len(cfg) == 0 {
@@ -403,7 +403,7 @@ func (c *modelSwitchContext) readConfig(ctx context.Context) {
 }
 
 // Session model override superseding the configured route
-func (c *modelSwitchContext) applyOverride(override map[string]any) {
+func (c *ModelSwitchContext) applyOverride(override map[string]any) {
 	if len(override) == 0 {
 		return
 	}
@@ -423,20 +423,24 @@ func (c *modelSwitchContext) applyOverride(override map[string]any) {
 
 // Runner model switch surface a messaging chat pick drives
 type chatModelRunner interface {
-	ApplyReasoningSelection(ctx context.Context, route, platformKey, value string) error
-	HandleModelReset(ctx context.Context, event *MessageEvent, sw *modelSwitchContext) (string, error)
-	RehydrateSessionModelOverride(route string)
-	SessionModelOverride(route string) map[string]any
-	PerformModelSwitch(ctx context.Context, sw *modelSwitchContext, raw, explicit string, source *SessionSource) (provider.ModelSwitchResult, string, error)
-	RecordModelSwitch(ctx context.Context, result provider.ModelSwitchResult, sw *modelSwitchContext, source *SessionSource, oneTurn, picker bool) error
-	ModelSwitchLock() sync.Locker
+	reasoningSelectionRunner
+	HandleModelReset(ctx context.Context, event *MessageEvent, sw *ModelSwitchContext) (*string, error)
+	RehydrateSessionModelOverride(ctx context.Context, sessionKey string)
+	SessionModelOverride(sessionKey string) map[string]any
+	PerformModelSwitch(ctx context.Context, sw *ModelSwitchContext, rawInput, explicitProvider string, source *SessionSource) (*provider.ModelSwitchResult, string, error)
+	RecordModelSwitch(ctx context.Context, result *provider.ModelSwitchResult, sw *ModelSwitchContext, source *SessionSource, oneTurn, picker bool) string
+	ModelSwitchLock() *sync.Mutex
 }
 
-// Model switch surface of the runner, an AttributeError when it has none
-func chatRunner(a *SessionAuthority) (chatModelRunner, error) {
+// Model switch surface of the runner, an AttributeError naming the attribute the operation reads first
+func chatRunner(a *SessionAuthority, operation string) (chatModelRunner, error) {
 	runner, ok := a.Runner.(chatModelRunner)
 	if !ok {
-		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '_apply_reasoning_selection'", a.Runner)}
+		attribute := "_model_switch_lock"
+		if operation == "reasoning" {
+			attribute = "_apply_reasoning_selection"
+		}
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%T' object has no attribute '%s'", a.Runner, attribute)}
 	}
 	return runner, nil
 }
@@ -449,18 +453,18 @@ func platformConfigKey(platform Platform) string {
 	return string(platform)
 }
 
-// Applies a reasoning level as the chat's own reasoning command would, a nil effort resetting it
-func applyChatReasoning(ctx context.Context, runner chatModelRunner, live *LiveSession, effort any) error {
+// Applies a reasoning level as the chat's own reasoning command would, a nil effort resetting it, the reply returned
+func applyChatReasoning(ctx context.Context, runner chatModelRunner, live *LiveSession, effort any) string {
 	value := "reset"
 	if effort != nil {
 		value = pyrepr.Str(effort)
 	}
-	return runner.ApplyReasoningSelection(ctx, live.Route, platformConfigKey(live.Source.Platform), value)
+	return runner.ApplyReasoningSelection(ctx, live.Route, platformConfigKey(live.Source.Platform), value, false)
 }
 
 // Chat's model command resolved and guarded like a local pick then committed as its session override
 func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRunner, owner SessionRef, live *LiveSession, payload *pyjson.Object, row *pyjson.Object) (*pyjson.Object, error) {
-	sw := &modelSwitchContext{SessionKey: live.Route, Source: live.Source, ConfigPath: filepath.Join(home.Dir(ctx), "config.yaml"), CurrentProvider: "openrouter"}
+	sw := &ModelSwitchContext{SessionKey: live.Route, Source: live.Source, ConfigPath: filepath.Join(home.Dir(ctx), "config.yaml"), CurrentProvider: "openrouter"}
 	sw.readConfig(ctx)
 	reset, err := isModelReset(payload)
 	if err != nil {
@@ -476,9 +480,13 @@ func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRun
 			return nil, err
 		}
 		model, _ := info.Get("model")
-		return pyjson.ObjectOf("model", model, "note", note), nil
+		var reply any
+		if note != nil {
+			reply = *note
+		}
+		return pyjson.ObjectOf("model", model, "note", reply), nil
 	}
-	runner.RehydrateSessionModelOverride(live.Route)
+	runner.RehydrateSessionModelOverride(ctx, live.Route)
 	sw.applyOverride(runner.SessionModelOverride(live.Route))
 	raw, _ := payload.Get("model")
 	explicit := ""
@@ -489,23 +497,19 @@ func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRun
 	if err != nil {
 		return nil, err
 	}
-	if problem != "" {
+	if result == nil {
 		return nil, state.NewRuntimeStoreError("model_resolution_failed", nil, &problem)
 	}
 	snapshot := pyjson.ObjectOf("target", owner.SessionID, "target_revision", rowValue(row, "runtime_revision"))
 	current := switchRoute{Provider: sw.CurrentProvider, Model: sw.CurrentModel, BaseURL: sw.CurrentBaseURL, APIKey: sw.CurrentAPIKey}
-	refusal, err := selectionGuardRefusal(ctx, a, live, payload, snapshot, current, result)
+	refusal, err := selectionGuardRefusal(ctx, a, live, payload, snapshot, current, *result)
 	if err != nil || refusal != nil {
 		return refusal, err
 	}
-	if err := runner.RecordModelSwitch(ctx, result, sw, live.Source, false, true); err != nil {
-		return nil, err
-	}
+	runner.RecordModelSwitch(ctx, result, sw, live.Source, false, true)
 	fields := pyjson.ObjectOf("model", result.NewModel, "provider", result.TargetProvider)
 	if effort, has := payload.Get("reasoning"); has {
-		if err := applyChatReasoning(ctx, runner, live, effort); err != nil {
-			return nil, err
-		}
+		applyChatReasoning(ctx, runner, live, effort)
 		fields.Set("effort", effort)
 	}
 	return fields, nil
@@ -533,22 +537,22 @@ func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionR
 	}
 	rawRow, _ := prepared.Get("row")
 	row, _ := pyjson.AsObject(rawRow)
-	runner, err := chatRunner(a)
+	runner, err := chatRunner(a, operation)
 	if err != nil {
 		return nil, err
 	}
 	var fields *pyjson.Object
 	if operation == "reasoning" {
 		effort, _ := payload.Get("effort")
-		if err := applyChatReasoning(ctx, runner, live, effort); err != nil {
-			return nil, err
-		}
+		applyChatReasoning(ctx, runner, live, effort)
 		fields = pyjson.ObjectOf("effort", effort)
 	} else {
-		lock := runner.ModelSwitchLock()
-		lock.Lock()
-		fields, err = pickChatModel(ctx, a, runner, owner, live, payload, row)
-		lock.Unlock()
+		fields, err = func() (*pyjson.Object, error) {
+			lock := runner.ModelSwitchLock()
+			lock.Lock()
+			defer lock.Unlock()
+			return pickChatModel(ctx, a, runner, owner, live, payload, row)
+		}()
 		if err != nil {
 			return nil, err
 		}

@@ -1761,9 +1761,6 @@ func mergePortableServers(portable map[string]map[string]any, safe map[string]*R
 	}
 }
 
-// SafeWorkerEnabled is installed by the safe worker process, reporting whether its policy runs in safe mode
-var SafeWorkerEnabled func(ctx context.Context) bool
-
 // Truthy spellings env flags accept
 var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
@@ -1777,7 +1774,7 @@ func secretsLookup(env *tools.Env, h string) config.Lookup {
 
 // Every mcp_servers entry of the active profile rendered, suspicious and malformed ones dropped, empty in safe mode
 func LoadServerConfigs(ctx context.Context, env *tools.Env) map[string]*Rendered {
-	if SafeWorkerEnabled != nil && SafeWorkerEnabled(ctx) {
+	if config.SafeWorkerEnabled() {
 		return map[string]*Rendered{}
 	}
 	if truthyStrings[strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_SAFE_MODE")))] {

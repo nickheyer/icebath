@@ -38,6 +38,12 @@ func (l *recordingLoop) IsClosed() bool {
 	return l.closed
 }
 
+func (l *recordingLoop) IsRunning() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return !l.closed
+}
+
 // Bare runner with an empty session store, running and not draining
 func injectionRunner(t *testing.T) *GatewayRunner {
 	ctx := context.Background()

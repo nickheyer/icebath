@@ -196,8 +196,9 @@ func statusCode(err error) (int, bool) {
 
 // Python exception class names of an error from the class itself through BaseException
 func pyExceptionMRO(err error) []string {
-	if m, ok := err.(interface{ PyExceptionMRO() []string }); ok {
-		return m.PyExceptionMRO()
+	var declared interface{ PyExceptionMRO() []string }
+	if errors.As(err, &declared) {
+		return declared.PyExceptionMRO()
 	}
 	base := []string{"Exception", "BaseException"}
 	var netErr net.Error
@@ -214,6 +215,9 @@ func pyExceptionMRO(err error) []string {
 			return append([]string{cls, "ConnectionError", "OSError"}, base...)
 		}
 		return append([]string{cls, "OSError"}, base...)
+	}
+	if mro := pyrepr.BuiltinExceptionMRO(pyrepr.ExceptionName(err)); mro != nil {
+		return mro
 	}
 	var names []string
 	for e := err; e != nil; e = errors.Unwrap(e) {

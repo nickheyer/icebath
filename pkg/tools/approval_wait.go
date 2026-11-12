@@ -84,7 +84,7 @@ func hookChoice(resolved bool, choice, cancelled string) string {
 }
 
 // Fires the post hook and builds the decision
-func finishDecision(env *Env, payload map[string]any, resolved bool, choice, reason, cancelled string, coalesced bool) gatewayDecision {
+func finishDecision(ctx context.Context, env *Env, payload map[string]any, resolved bool, choice, reason, cancelled string, coalesced bool) gatewayDecision {
 	post := copyMap(payload)
 	post["choice"] = hookChoice(resolved, choice, cancelled)
 	if cancelled != "" {
@@ -93,7 +93,7 @@ func finishDecision(env *Env, payload map[string]any, resolved bool, choice, rea
 	if coalesced {
 		post["coalesced"] = true
 	}
-	fireApprovalHook(env, "post_approval_response", post)
+	fireApprovalHook(ctx, env, "post_approval_response", post)
 	return gatewayDecision{Resolved: resolved, Choice: choice, Reason: reason, Cancelled: cancelled, Coalesced: coalesced}
 }
 
@@ -112,7 +112,7 @@ func entryTimeout(entry *ApprovalEntry, fallback time.Duration) time.Duration {
 func awaitCoalescedLeader(ctx context.Context, env *Env, sessionKey string, leader *ApprovalEntry, payload map[string]any) (gatewayDecision, bool) {
 	pre := copyMap(payload)
 	pre["coalesced"] = true
-	fireApprovalHook(env, "pre_approval_request", pre)
+	fireApprovalHook(ctx, env, "pre_approval_request", pre)
 	state := pollEvent(ctx, env, leader, sessionKey, "Coalesced approval wait interrupted — returning deny for session",
 		entryTimeout(leader, time.Duration(getApprovalTimeout(env))*time.Second))
 	approvalState.Lock()
@@ -136,7 +136,7 @@ func awaitCoalescedLeader(ctx context.Context, env *Env, sessionKey string, lead
 	if choice == "once" {
 		return gatewayDecision{}, false
 	}
-	return finishDecision(env, payload, resolved, choice, reason, cancelled, true), true
+	return finishDecision(ctx, env, payload, resolved, choice, reason, cancelled, true), true
 }
 
 // Enqueues the approval, notifies the user, and blocks until resolved, withdrawn, or timed out
@@ -239,15 +239,15 @@ func awaitGatewayDecision(ctx context.Context, env *Env, sessionKey string, noti
 		return choice
 	}
 
-	human := humanInputRequest(env, "approval", command, sessionKey)
-	fireApprovalHook(env, "pre_approval_request", payload)
+	human := humanInputRequest(ctx, env, "approval", command, sessionKey)
+	fireApprovalHook(ctx, env, "pre_approval_request", payload)
 	if err := notify(copyMap(entry.Data)); err != nil {
 		envLog(env).Warn("Gateway approval notify failed", "error", err)
 		dropEntry("notify_failed")
 		post := copyMap(payload)
 		post["choice"] = "notify_failed"
-		fireApprovalHook(env, "post_approval_response", post)
-		human.finish(env, "notify_failed")
+		fireApprovalHook(ctx, env, "post_approval_response", post)
+		human.finish(ctx, env, "notify_failed")
 		return gatewayDecision{NotifyFailed: true}
 	}
 	if slot != nil {
@@ -266,8 +266,8 @@ func awaitGatewayDecision(ctx context.Context, env *Env, sessionKey string, noti
 		choice = "deny"
 	}
 	resolved := state != "timeout" || choice != ""
-	human.finish(env, hookChoice(resolved, choice, cancelled))
-	return finishDecision(env, payload, resolved, choice, entry.Reason, cancelled, false)
+	human.finish(ctx, env, hookChoice(resolved, choice, cancelled))
+	return finishDecision(ctx, env, payload, resolved, choice, entry.Reason, cancelled, false)
 }
 
 // Strings of a list value in a payload map
@@ -473,7 +473,7 @@ func humanInputRedacted(env *Env, text string) (out string) {
 }
 
 // Fires the request hook for a human prompt and returns the handle to resolve it
-func humanInputRequest(env *Env, kind, prompt, sessionKey string) *humanInputHandle {
+func humanInputRequest(ctx context.Context, env *Env, kind, prompt, sessionKey string) *humanInputHandle {
 	payload := map[string]any{"kind": kind, "request_id": newRequestID()}
 	for k, v := range humanInputIdentity(env) {
 		payload[k] = v
@@ -482,18 +482,18 @@ func humanInputRequest(env *Env, kind, prompt, sessionKey string) *humanInputHan
 	if sessionKey != "" {
 		payload["session_key"] = sessionKey
 	}
-	fireApprovalHook(env, "on_human_input_request", payload)
+	fireApprovalHook(ctx, env, "on_human_input_request", payload)
 	return &humanInputHandle{payload: payload}
 }
 
 // Fires the resolved hook exactly once with the outcome, error when none was set
-func (h *humanInputHandle) finish(env *Env, outcome string) {
+func (h *humanInputHandle) finish(ctx context.Context, env *Env, outcome string) {
 	h.once.Do(func() {
 		if outcome == "" {
 			outcome = "error"
 		}
 		resolved := copyMap(h.payload)
 		resolved["outcome"] = outcome
-		fireApprovalHook(env, "on_human_input_resolved", resolved)
+		fireApprovalHook(ctx, env, "on_human_input_resolved", resolved)
 	})
 }
