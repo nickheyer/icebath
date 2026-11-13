@@ -20,6 +20,8 @@ func (e *DecodeError) Error() string {
 	return fmt.Sprintf("%s: line %d column %d (char %d)", e.Msg, e.Lineno, e.Colno, e.Pos)
 }
 
+func (e *DecodeError) PyTypeName() string { return "JSONDecodeError" }
+
 type parser struct {
 	s       []rune
 	lenient bool

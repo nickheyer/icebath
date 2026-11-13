@@ -32,7 +32,7 @@ func (c *CLI) addPM(root *cobra.Command) {
 	install := c.newCmd(pmCmd, "install", "install packages (default: all required + optional defaults)", "")
 	c.pos(install, pAny("names"))
 	af(install, "extra", "", "enable a declared dependency extra in the venv (repeatable)")
-	af(install, "without", "", "leave an optional default package (chromium, cua-driver) or a recorded extra outside [all] (matrix, ...) out of this and every later default install and update; `icebath pm install NAME` / `--extra NAME` opts back in (repeatable)")
+	af(install, "without", "", "leave an optional default package (chromium, cua-driver) or a recorded extra outside [all] out of this and every later default install and update; `icebath pm install NAME` / `--extra NAME` opts back in (repeatable)")
 	bf(install, "tools-only", "", "install the tool closure, put it on PATH, and stop before the venv sync")
 	bf(install, "trust-recorded", "", "trust the recorded tool digest instead of re-hashing every entry. shell activation only. a deliberate install re-checks the bytes")
 	sf(install, "test-environment", "", "", "also make this checkout's isolated test environment current (activation). EXTRAS is comma-separated; omitted selects [all]")

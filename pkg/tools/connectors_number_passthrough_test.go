@@ -112,12 +112,12 @@ func TestConnectorRequestBodiesAreTheWireModelDumps(t *testing.T) {
 	c := NewConnectorClient(env, nil, "")
 	c.Search(ctx, []map[string]any{{"use_case": "find é", "known_fields": "k"}, {"use_case": "x"}})
 	c.Schemas(ctx, []string{"GMAIL_SEND_EMAIL", "B"})
-	c.Connections(ctx, ConnectionsRequest{Connectors: []string{"gmail"}, Alias: "work", ConnectionID: "c1", ReturnTo: "cli", Op: "op1"})
+	c.Connections(ctx, ConnectionsRequest{Connectors: []string{"gmail"}, Alias: "work", ConnectionID: "c1", ReturnTo: "hermes-desktop", Op: "op1"})
 	c.StageFile(ctx, "gmail", "T", "a<b>.txt", "text/plain", 3)
 	for route, want := range map[string]string{
 		"search":      `{"queries": [{"useCase": "find \u00e9", "knownFields": "k"}, {"useCase": "x"}]}`,
 		"schemas":     `{"tools": ["GMAIL_SEND_EMAIL", "B"]}`,
-		"connections": `{"connectors": ["gmail"], "reinitiate": false, "alias": "work", "connectionId": "c1", "returnTo": "cli", "op": "op1"}`,
+		"connections": `{"connectors": ["gmail"], "reinitiate": false, "alias": "work", "connectionId": "c1", "returnTo": "hermes-desktop", "op": "op1"}`,
 		"upload":      `{"toolkit": "gmail", "tool": "T", "filename": "a<b>.txt", "mimetype": "text/plain", "size": 3}`,
 	} {
 		if bodies[route] != want {

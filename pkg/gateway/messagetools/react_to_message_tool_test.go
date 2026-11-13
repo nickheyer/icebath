@@ -48,6 +48,7 @@ func TestReactionDatabaseClosesWhenWriteFails(t *testing.T) {
 func reactionTestHome(t *testing.T, sessions map[string][]string, order []string) (*tools.Env, map[string][]int64) {
 	t.Helper()
 	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", dir)
 	db, err := state.Acquire(context.Background(), home.StatePath(dir))
 	if err != nil {
 		t.Fatal(err)

@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
 	"math/big"
 	"slices"
@@ -159,12 +160,6 @@ var submissionFields = []string{"session_id", "text", "submission_id", "input_id
 	"unattended", "surface", "voice_context", "interrupted", "voice_turn", "display_kind", "title_preview",
 	"turn_author", "api_text", "model_override", "clarify_batch"}
 
-// Per turn CLI fields of a prompt.submit request forwarded to admission
-var cliTurnSubmitFields = []string{"turn_author", "api_text", "model_override", "clarify_batch"}
-
-// Raw per turn surface fields of a prompt.submit request forwarded to admission
-var surfaceSubmitOrder = []string{"surface", "voice_context", "interrupted", "voice_turn"}
-
 // Admission a prompt.submit shaped request asks for, prompt.replace_queued too
 func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, params *pyjson.Object) (Submission, error) {
 	c.mu.Lock()
@@ -193,19 +188,9 @@ func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, pa
 	for _, key := range finite.Keys {
 		payload[key] = finite.Vals[key]
 	}
-	for _, fields := range [][]string{surfaceSubmitOrder, nil, cliTurnSubmitFields} {
-		if fields == nil {
-			for key, value := range SubmitDisplayFields(plain) {
-				payload[key] = value
-			}
-			continue
-		}
-		for _, key := range fields {
-			if value, ok := plain[key]; ok {
-				payload[key] = value
-			}
-		}
-	}
+	maps.Copy(payload, submitSurfaceFields(plain))
+	maps.Copy(payload, SubmitDisplayFields(plain))
+	maps.Copy(payload, submitCLITurnFields(plain))
 	if value, ok := plain["attachments"]; ok {
 		payload["attachments"] = value
 	}

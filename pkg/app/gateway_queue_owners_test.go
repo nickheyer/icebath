@@ -491,7 +491,7 @@ func (steerRefusingAgent) Steer(string) any { return false }
 func TestASteerThatFallsBackToQueueIsAGatewayAdmissionAndImagesStayLocal(t *testing.T) {
 	c, client, conn, _ := idleNotifyCLI(t)
 	c.agentRunning = true
-	c.agent = steerRefusingAgent{&GatewayAgent{ctx: context.Background()}}
+	c.setAgent(steerRefusingAgent{&GatewayAgent{ctx: context.Background()}})
 	busyEnter(t, c, "steer", "steer me")
 	state := conn.State(scriptSID)
 	state.Lock()

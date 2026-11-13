@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -23,14 +24,18 @@ type whatsAppWizard struct {
 	pair    func(session, mode string) int
 }
 
-// Wizard over the process terminal, this profile and the installed package manager
+// Wizard over the process terminal and this profile, Ctrl-C during pairing ending only the pairing run
 func newWhatsAppWizard(ctx context.Context, h string, w io.Writer) *whatsAppWizard {
 	base := cliui.Default()
 	con := &cliui.Console{In: base.In, Out: w, Getenv: base.Getenv, StdinTTY: base.StdinTTY, StdoutTTY: base.StdoutTTY,
 		TermSize: base.TermSize, MaskedSecretPrompt: base.MaskedSecretPrompt, OpenScreen: base.OpenScreen}
 	return &whatsAppWizard{
 		ctx: ctx, home: h, console: con, out: w,
-		pair: func(session, mode string) int { return RunPairing(ctx, session, mode, w, false) },
+		pair: func(session, mode string) int {
+			pairCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
+			defer stop()
+			return RunPairing(pairCtx, session, mode, w, false)
+		},
 	}
 }
 

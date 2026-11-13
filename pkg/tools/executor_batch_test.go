@@ -71,9 +71,9 @@ func TestFlushAfterToolProgressPersistsTheInjectionMadeBeforeTheFlush(t *testing
 			}
 		}
 		var flushed string
-		host.flush = func(msgs []*state.Message) (bool, error) {
+		host.flush = func(msgs []*state.Message) state.FlushOutcome {
 			flushed = fmt.Sprint(msgs[len(msgs)-1].Content)
-			return true, nil
+			return state.FlushPersisted
 		}
 		e := NewExecutor(host, NewDispatcher(NewRegistry()))
 		messages := []*state.Message{{Role: "user", Content: "work"}, {Role: "tool", ToolCallID: "t0", Content: content}}
@@ -84,14 +84,18 @@ func TestFlushAfterToolProgressPersistsTheInjectionMadeBeforeTheFlush(t *testing
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
 	e := NewExecutor(host, NewDispatcher(NewRegistry()))
 	messages := []*state.Message{{Role: "tool", Content: "r"}}
-	host.flush = func([]*state.Message) (bool, error) { return false, nil }
+	host.flush = func([]*state.Message) state.FlushOutcome { return state.FlushDisabled }
+	if !e.flushAfterToolProgress(&messages, "checkpoint") || host.persistFail.Load() || len(host.causes) != 0 {
+		t.Fatalf("a disabled store is not persisted %q", host.causes)
+	}
+	host.flush = func([]*state.Message) state.FlushOutcome { return state.FlushFailed }
 	if e.flushAfterToolProgress(&messages, "checkpoint") || !host.persistFail.Load() || fmt.Sprint(host.causes) != "[]" {
 		t.Fatalf("declined flush causes %q", host.causes)
 	}
 	full := errors.New("database or disk is full")
-	host.flush = func([]*state.Message) (bool, error) { return false, full }
+	host.flush = func([]*state.Message) state.FlushOutcome { panic(full) }
 	host.causes = nil
-	if e.flushAfterToolProgress(&messages, "checkpoint") || len(host.causes) != 1 || host.causes[0] != ClassifyPersistenceError(full) || host.causes[0] == "" {
+	if e.flushAfterToolProgress(&messages, "checkpoint") || len(host.causes) != 1 || host.causes[0] != state.ClassifyPersistenceError(full) || host.causes[0] != "disk" {
 		t.Fatalf("raised flush causes %q", host.causes)
 	}
 }

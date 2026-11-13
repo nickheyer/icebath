@@ -3,8 +3,10 @@ package media
 import (
 	"context"
 	"errors"
+	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -60,8 +62,6 @@ func TestWakeLibraryImportsWithoutTheDistributions(t *testing.T) {
 	check("pyopen_wakeword", err)
 	_, err = importPvporcupine(ctx)
 	check("pvporcupine", err)
-	_, err = importSherpaOnnx(ctx)
-	check("sherpa_onnx", err)
 }
 
 func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
@@ -102,8 +102,38 @@ func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
 		t.Fatalf("classifier without the TFLite library gave %v", err)
 	}
 
+}
+
+func TestSherpaWakeEngineRunsOnTheNativeSpeechEngine(t *testing.T) {
+	ctx := context.Background()
+	swap(t, &wakeLoadTTSConfig, func(context.Context) map[string]any { return map[string]any{"piper": map[string]any{"use_cuda": true}} })
+	if !speechOnGPU(ctx) {
+		t.Fatal("the wake engine ignores the device the speech engine is configured for")
+	}
+	swap(t, &wakeSpeechEngine, func(context.Context) (*sherpaonnx.Module, error) { return nil, &sherpaonnx.PlatformError{} })
 	var we *WakeWordError
-	if _, err := importSherpaOnnx(ctx); !errors.As(err, &we) || we.Class != "ImportError" || we.Msg == "" {
-		t.Fatalf("sherpa_onnx without its native library gave %v", err)
+	if _, err := importSherpaOnnx(ctx); !errors.As(err, &we) || we.Class != "ImportError" || !strings.Contains(we.Msg, "no build for") {
+		t.Fatalf("an engine without a library build gave %v", err)
+	}
+	for supported, want := range map[bool]bool{true: true, false: false} {
+		swap(t, &wakeSpeechSupported, func() bool { return supported })
+		available, err := wakeEngineAvailable(ctx, "wake-sherpa")
+		platform, perr := wakeEngineSupported(ctx, "wake-sherpa")
+		if err != nil || perr != nil || available != want || platform != want || SherpaOnnxAvailable() != want {
+			t.Fatalf("supported=%v gave available=%v platform=%v", supported, available, platform)
+		}
+	}
+}
+
+func TestSherpaModelComesFromAnExistingRootElseThePinnedArchive(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	ctx := context.Background()
+	root := t.TempDir()
+	wakeLibsTouch(t, root, sherpaKWSModelDir, "tokens.txt")
+	if got, err := ensureSherpaModel(ctx, root); err != nil || got != filepath.Join(root, sherpaKWSModelDir) {
+		t.Fatalf("existing model = %q, %v", got, err)
+	}
+	if len(sherpaKWSModel.SHA256) != 64 || sherpaKWSModel.Size == 0 || !strings.HasSuffix(sherpaKWSModel.URL, "/"+sherpaKWSModelDir+".tar.bz2") {
+		t.Fatalf("model archive is not pinned: %+v", sherpaKWSModel)
 	}
 }

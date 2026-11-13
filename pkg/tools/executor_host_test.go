@@ -23,7 +23,7 @@ type fakeExecutorHost struct {
 	startCb     func(string, string, map[string]any)
 	completeCb  func(string, string, map[string]any, string)
 	progressCb  func(string, string, string, map[string]any, map[string]any)
-	flush       func([]*state.Message) (bool, error)
+	flush       func([]*state.Message) state.FlushOutcome
 	ckptMgr     *CheckpointManager
 	memory      MemoryToolManager
 	gsk         string
@@ -140,11 +140,11 @@ func (h *fakeExecutorHost) ToolResultMetadataCallback() func(string, string, map
 	return nil
 }
 func (h *fakeExecutorHost) CheckpointManager() *CheckpointManager { return h.ckptMgr }
-func (h *fakeExecutorHost) FlushMessagesToSessionDB(msgs []*state.Message) (bool, error) {
+func (h *fakeExecutorHost) FlushMessagesToSessionDB(msgs []*state.Message) state.FlushOutcome {
 	if h.flush != nil {
 		return h.flush(msgs)
 	}
-	return true, nil
+	return state.FlushPersisted
 }
 func (h *fakeExecutorHost) BeforeToolFlush(messages *[]*state.Message) {
 	if h.beforeFlush != nil {

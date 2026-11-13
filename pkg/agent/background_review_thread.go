@@ -182,7 +182,7 @@ func runReviewFork(ctx context.Context, a *AIAgent, messagesSnapshot []map[strin
 	if err != nil {
 		return err
 	}
-	st.reviewMessages = sessionMessageDicts(fork.sessionMessages)
+	st.reviewMessages = sessionMessageDicts(fork.liveSessionMessages())
 	releaseForkClients(ctx, fork)
 	st.reviewAgent = nil
 	return nil

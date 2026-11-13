@@ -193,7 +193,7 @@ func styleIf(color bool, style string) string {
 }
 
 // The journey frame as styled lines, title, legends, field, axis, footer, charted signals and summary
-func journeyFrameLines(ctx context.Context, palette map[string]string, payload map[string]any, cols, rows int, reveal float64, color bool) ([]journeyLine, error) {
+func journeyFrameLines(palette map[string]string, payload map[string]any, cols, rows int, reveal float64, color bool) ([]journeyLine, error) {
 	legend, err := BuildLegend(payload)
 	if err != nil {
 		return nil, err
@@ -256,7 +256,7 @@ func journeyFrameLines(ctx context.Context, palette map[string]string, payload m
 	}
 	gap := max(1, inner-pystr.Len(axis["start"])-pystr.Len(axis["end"]))
 	lines = append(lines, journeyLine{{Text: "  "}, {Text: axis["start"], Style: styleIf(color, "grey54")}, {Text: strings.Repeat(" ", gap)}, {Text: axis["end"], Style: styleIf(color, "grey54")}})
-	pct := int(math.Round(reveal * 100))
+	pct := int(math.RoundToEven(reveal * 100))
 	date := pyrepr.Str(frame["date"])
 	if !pyrepr.Truthy(frame["date"]) {
 		date = "—"
@@ -512,14 +512,14 @@ func journeyCmdShow(ctx context.Context, env *tools.Env, ns map[string]any, w io
 		if fps == 0 && ns["fps"] == nil {
 			fps = journeyPlayDefaultFPS
 		}
-		return journeyPlay(ctx, console, palette, payload, cols, rows, color, fps)
+		return journeyPlay(console, palette, payload, cols, rows, color, fps)
 	}
 	reveal := 1.0
 	if f, ok := journeyFloat(ns["reveal"]); ok && f != 0 {
 		reveal = f
 	}
 	reveal = journeyClamp(reveal, 0, 1)
-	lines, err := journeyFrameLines(ctx, palette, payload, cols, rows, reveal, color)
+	lines, err := journeyFrameLines(palette, payload, cols, rows, reveal, color)
 	if err != nil {
 		return 1, err
 	}
@@ -537,14 +537,14 @@ func journeyNodeCount(payload map[string]any) int {
 }
 
 // Animates the build up over time in place, Ctrl-C printing interrupted and exiting 130
-func journeyPlay(ctx context.Context, console *journeyConsole, palette map[string]string, payload map[string]any, cols, rows int, color bool, fps int) (int, error) {
+func journeyPlay(console *journeyConsole, palette map[string]string, payload map[string]any, cols, rows int, color bool, fps int) (int, error) {
 	delay := time.Duration(float64(time.Second) / float64(max(1, min(60, fps))))
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
 	drawn := 0
 	draw := func(reveal float64) error {
-		lines, err := journeyFrameLines(ctx, palette, payload, cols, rows, reveal, color)
+		lines, err := journeyFrameLines(palette, payload, cols, rows, reveal, color)
 		if err != nil {
 			return err
 		}
@@ -562,7 +562,7 @@ func journeyPlay(ctx context.Context, console *journeyConsole, palette map[strin
 		return err
 	}
 	if !console.ansi {
-		lines, err := journeyFrameLines(ctx, palette, payload, cols, rows, 1.0, color)
+		lines, err := journeyFrameLines(palette, payload, cols, rows, 1.0, color)
 		if err != nil {
 			return 1, err
 		}

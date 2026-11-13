@@ -193,6 +193,20 @@ func oneshotControlFlowRepr(err error) string {
 	return ""
 }
 
+// Reports whether a control flow failure RunOneshot re raises is a keyboard interrupt
+func IsOneshotKeyboardInterrupt(err error) bool {
+	return oneshotControlFlowRepr(err) == "KeyboardInterrupt()"
+}
+
+// Exit status a SystemExit failure RunOneshot re raises carries, not ok for any other failure
+func OneshotSystemExitCode(err error) (int, bool) {
+	var exit *pysignal.SystemExit
+	if errors.As(err, &exit) {
+		return exit.Code, true
+	}
+	return 0, false
+}
+
 // Runs one prompt and prints only the final reply, returning the exit code and any control flow failure to re raise
 func RunOneshot(ctx context.Context, prompt string, o OneshotOptions) (int, error) {
 	logging.Disable(logging.LevelCritical)

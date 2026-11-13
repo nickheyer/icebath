@@ -25,6 +25,11 @@ type voiceConnection interface {
 	IsPlaying() bool
 	Stop()
 	Disconnect(ctx context.Context) error
+	MoveTo(ctx context.Context, channelID int64)
+	Play(source audioSource, after func(error)) error
+	SendPacket(packet []byte) error
+	Channel() *discordgo.Channel
+	ChannelMembers() []*discordgo.Member
 }
 
 // Inbound speech capture of one guild voice connection
@@ -32,6 +37,12 @@ type voiceCapture interface {
 	FlushPending() []voiceUtterance
 	Stop()
 	RefreshCredentials(reason string)
+	CheckSilence() []voiceUtterance
+	DiscardPending()
+	Pause()
+	Resume()
+	Running() bool
+	SpeakingUserIDs(window time.Duration) map[int64]bool
 }
 
 // Buffered speech of one user awaiting transcription
@@ -49,14 +60,18 @@ type voiceState struct {
 	voiceTimeoutTasks  map[int64]*bgTask
 	voiceReceivers     map[int64]voiceCapture
 	voiceListenTasks   map[int64]*bgTask
-	voiceMixers        map[int64]any
+	voiceMixers        map[int64]*voiceMixer
 	voiceInputCallback func(ctx context.Context, guildID, userID int64, transcript string) error
+	onVoiceDisconnect  func(chatID string)
+	voiceModeGetter    func(chatID any) string
+	ambientPCMCache    []byte
+	voiceProtocols     map[int64]*voiceClient
 }
 
 func newVoiceState() voiceState {
 	return voiceState{voiceClients: map[int64]voiceConnection{}, voiceLocks: map[int64]*sync.Mutex{}, voiceTextChannels: map[int64]int64{},
 		voiceSources: map[int64]map[string]any{}, voiceTimeoutTasks: map[int64]*bgTask{}, voiceReceivers: map[int64]voiceCapture{},
-		voiceListenTasks: map[int64]*bgTask{}, voiceMixers: map[int64]any{}}
+		voiceListenTasks: map[int64]*bgTask{}, voiceMixers: map[int64]*voiceMixer{}, voiceProtocols: map[int64]*voiceClient{}}
 }
 
 // Registers the runner callback that receives transcribed voice channel speech
@@ -161,7 +176,7 @@ func (a *DiscordAdapter) leaveVoiceChannel(ctx context.Context, guildID int64) e
 	if listen != nil {
 		listen.cancel()
 	}
-	guild := strconv.FormatInt(guildID, 10)
+	guild := a.voiceAuthGuild(guildID)
 	var capturedFor *int64
 	if hasCaptured {
 		capturedFor = &captured

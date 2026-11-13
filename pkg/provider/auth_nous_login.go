@@ -71,7 +71,7 @@ var (
 
 // Runs the Nous device code flow and returns the full OAuth state without persisting it
 func nousDeviceCodeLogin(env PoolEnv, out io.Writer, args NousDeviceLoginArgs) (map[string]any, error) {
-	pconfig, err := providerConfig(env.Ctx, "nous")
+	pconfig, err := providerConfig(env.ctx(), "nous")
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func StepUpNousBillingScope(env PoolEnv, out io.Writer, openBrowser bool, timeou
 			requested = append(requested, s)
 		}
 	}
-	pconfig, err := providerConfig(env.Ctx, "nous")
+	pconfig, err := providerConfig(env.ctx(), "nous")
 	if err != nil {
 		return false, err
 	}
@@ -362,7 +362,7 @@ func loginNous(env PoolEnv, out io.Writer, args NousLoginArgs) error {
 	caBundle := firstNonEmpty(args.CABundle, oauthGetenv("ICEBATH_CA_BUNDLE"), oauthGetenv("SSL_CERT_FILE"))
 	authState, imported := nousOfferSharedImport(env, out, timeout)
 	if !imported {
-		pconfig, err := providerConfig(env.Ctx, "nous")
+		pconfig, err := providerConfig(env.ctx(), "nous")
 		if err != nil {
 			return err
 		}

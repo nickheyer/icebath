@@ -54,7 +54,7 @@ func TestResolveHermesBinFallsBackToPathWhich(t *testing.T) {
 }
 
 func TestExtractInheritedFlagsExtractsTuiAndDev(t *testing.T) {
-	if got := extractInheritedFlags([]string{"--tui", "--dev", "chat"}); !slices.Equal(got, []string{"--tui", "--dev"}) {
+	if got := extractInheritedFlags([]string{"--tui", "chat"}); !slices.Equal(got, []string{"--tui"}) {
 		t.Fatalf("flags %v", got)
 	}
 }
@@ -76,7 +76,7 @@ func TestInheritedFlagTableExcludedFlagsAreNotInherited(t *testing.T) {
 			t.Fatalf("%s should not be inherited", flag)
 		}
 	}
-	for _, flag := range []string{"--tui", "--dev", "--profile", "-p", "-s"} {
+	for _, flag := range []string{"--tui", "--profile", "-p", "-s"} {
 		if !table[flag] {
 			t.Fatalf("%s is missing from the table %v", flag, table)
 		}
@@ -85,12 +85,12 @@ func TestInheritedFlagTableExcludedFlagsAreNotInherited(t *testing.T) {
 
 func TestBuildRelaunchArgvPreservesInheritedFlags(t *testing.T) {
 	bin := resolvedRelaunchBin(t)
-	original := []string{"--tui", "--dev", "--profile", "work", "sessions", "browse"}
+	original := []string{"--tui", "--profile", "work", "sessions", "browse"}
 	argv, err := buildRelaunchArgv([]string{"--resume", "abc"}, true, original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"--tui", "--dev", "--profile", "work", "--resume", "abc"} {
+	for _, want := range []string{"--tui", "--profile", "work", "--resume", "abc"} {
 		if !slices.Contains(argv, want) {
 			t.Fatalf("argv %v lacks %s", argv, want)
 		}

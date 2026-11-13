@@ -6,11 +6,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -165,11 +167,47 @@ func (a *AIAgent) emitAuxiliaryFailure(task string, err error) {
 }
 
 // Live main runtime fields for session scoped auxiliary routing
-func (a *AIAgent) currentMainRuntime() map[string]string {
-	return map[string]string{
-		"model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_key": a.apiKey,
+func (a *AIAgent) currentMainRuntime(ctx context.Context) map[string]any {
+	return map[string]any{
+		"model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_key": a.apiKeyValue(ctx),
 		"api_mode": a.apiMode, "auth_mode": "", "session_id": a.sessionID,
 	}
+}
+
+// Minted credential of the live route as one stable no argument callable with the source it wraps
+type mainKeyAdapter struct {
+	id uintptr
+	fn func() (string, error)
+}
+
+// Identity of a callable credential, the closure record of a func and the address of a token source
+func credentialIdentity(key any) uintptr {
+	if id, ok := provider.CallableKeyIdentity(key); ok {
+		return id
+	}
+	return reflect.ValueOf(key).Pointer()
+}
+
+// Credential of the live route for auxiliary routing, a minted key as the same callable until its source changes
+func (a *AIAgent) apiKeyValue(ctx context.Context) any {
+	var key any
+	if a.apiMode == "anthropic_messages" && a.anthropicTokenSource != nil {
+		key = a.anthropicTokenSource
+	} else if held, present := a.clientKwargs["api_key"]; present {
+		key = held
+	}
+	mint, minted := callableCredential(key)
+	if !minted {
+		return a.apiKey
+	}
+	id := credentialIdentity(key)
+	if held := a.mainKey.Load(); held != nil && held.id == id {
+		return held.fn
+	}
+	mintCtx := context.WithoutCancel(ctx)
+	adapter := &mainKeyAdapter{id: id, fn: func() (string, error) { return mint(mintCtx) }}
+	a.mainKey.Store(adapter)
+	return adapter.fn
 }
 
 // Hostname of the given base URL, or of the agent base URL when nil, panicking on the urlparse ValueError
@@ -407,7 +445,7 @@ func (a *AIAgent) maxTokensParam(ctx context.Context, value int) map[string]any 
 	if s, ok := declared.(string); ok && s != "" {
 		return map[string]any{s: value}
 	}
-	if provider.ModelForcesMaxCompletionTokens(a.model) {
+	if config.ModelForcesMaxCompletionTokens(a.model) {
 		return map[string]any{"max_completion_tokens": value}
 	}
 	return map[string]any{"max_tokens": value}

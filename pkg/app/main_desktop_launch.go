@@ -928,7 +928,7 @@ func cmdGUI(ctx context.Context, ns map[string]any, explicitProfile string, w io
 				return &guiExit{code: code}
 			}
 		} else if needsBuild {
-			if err := gui.prepare(ctx, projectRoot, []string{"ui-tui", "web", "apps/desktop"}, buildEnv, forceBuild || buildOnly); err != nil {
+			if err := gui.prepare(ctx, projectRoot, []string{"web", "apps/desktop"}, buildEnv, forceBuild || buildOnly); err != nil {
 				return err
 			}
 			built, err := gui.buildPrepared(ctx, desktopDir, sourceMode, npm, buildEnv)

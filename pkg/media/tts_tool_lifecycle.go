@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -31,9 +30,6 @@ var lifecycleRunCommandProvider = runCommandProvider
 
 // Starts the keep warm unload after the delay, the threading.Timer seam of the lifecycle
 var makeKeepWarmTimer = func(delay time.Duration, fn func()) keepWarmTimerHandle { return time.AfterFunc(delay, fn) }
-
-// Cloud SDK features installed lazily per provider
-var lazySDKFeatures = map[string]string{"edge": "edge-tts", "elevenlabs": "tts-premium", "mistral": "mistral"}
 
 // Provider name to the loader filling that engine's cache slot under the key synthesis uses
 func localTTSWarmers() map[string]func(ctx context.Context, env *tools.Env, cfg map[string]any) error {
@@ -115,7 +111,7 @@ func mapGetOr(m map[string]any, key string, def any) any {
 	return def
 }
 
-// Warms the configured or named TTS provider, loading local engines and installing lazy SDKs
+// Warms the configured or named TTS provider, loading local engines and signalling user providers
 func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]any, providerName string) map[string]any {
 	if ttsConfig == nil {
 		ttsConfig = loadTTSConfig(ctx, env)
@@ -159,20 +155,6 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, ttsConfig map[string]a
 			result["action"] = "warmed"
 		}
 		return result
-	}
-	if feature, ok := lazySDKFeatures[name]; ok {
-		available, err := pm.Available(ctx, feature)
-		if err == nil {
-			if available {
-				result["warmed"], result["action"] = true, "cached"
-			} else if err = pm.EnsureImport(ctx, feature); err == nil {
-				result["warmed"], result["action"] = true, "installed"
-			}
-		}
-		if err != nil {
-			ttsLog().Debug(fmt.Sprintf("[TTS] SDK warm-up for %s skipped: %s", name, pyrepr.ExceptionMessage(err)))
-			result["action"], result["error"] = "error", pyrepr.ExceptionMessage(err)
-		}
 	}
 	return result
 }

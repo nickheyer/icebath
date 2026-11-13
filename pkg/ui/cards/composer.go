@@ -93,6 +93,12 @@ type Composer struct {
 	SessionID   string
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
+	// Hands every sent line to the app as typed, commands and shell lines included
+	Literal bool
+	// Text an empty prompt shows in place of the command and palette legend
+	Hint string
+	// Called with each line the history takes, for an app keeping its own history file
+	OnRemember func(text string)
 }
 
 // File the draft of a session is kept in under dir
@@ -231,6 +237,35 @@ func (c *Composer) SetBusy(on bool) { c.busy = on }
 
 // Text typed so far
 func (c *Composer) Value() string { return c.ta.Value() }
+
+// Replaces the text with the cursor at its end, the completion popup following what it now reads
+func (c *Composer) SetValue(text string) tea.Cmd {
+	c.ta.SetValue(text)
+	c.ta.MoveToEnd()
+	c.comp = nil
+	c.autoComplete()
+	return c.persist()
+}
+
+// Inserts text at the cursor as if typed
+func (c *Composer) Insert(text string) tea.Cmd {
+	c.ta.InsertString(text)
+	c.autoComplete()
+	return c.persist()
+}
+
+// Replaces the remembered lines, oldest first, for an app that keeps the history file itself
+func (c *Composer) Seed(lines []string) {
+	if len(lines) > historyLimit {
+		lines = lines[len(lines)-historyLimit:]
+	}
+	c.history = append([]string(nil), lines...)
+	c.cursor = len(c.history)
+	c.historyPath = ""
+}
+
+// Position in the remembered lines while recalling, false at the unsent draft
+func (c *Composer) Recalling() (int, bool) { return c.cursor, c.cursor < len(c.history) }
 
 // Lines the composer remembers, oldest first
 func (c *Composer) History() []string { return append([]string(nil), c.history...) }
@@ -421,6 +456,9 @@ func (c *Composer) remember(text string) {
 		return
 	}
 	c.history = append(c.history, text)
+	if c.OnRemember != nil {
+		c.OnRemember(text)
+	}
 	if len(c.history) > historyLimit {
 		c.history = c.history[len(c.history)-historyLimit:]
 	}
@@ -463,6 +501,15 @@ func (c *Composer) submit() tea.Cmd {
 	c.comp = nil
 	c.quiet = ""
 	cmd := c.persist()
+	if c.Literal {
+		files := make([]Attachment, 0, len(c.attachments))
+		for _, a := range c.attachments {
+			files = append(files, Attachment{Path: a.Path, MediaType: a.Media, Data: a.Data})
+		}
+		c.attachments = nil
+		id := c.SessionID
+		return tea.Batch(cmd, func() tea.Msg { return SubmitMsg{Session: id, Text: text, Attachments: files} })
+	}
 	if line, ok := strings.CutPrefix(text, "!"); ok && strings.TrimSpace(line) != "" {
 		id := c.SessionID
 		return tea.Batch(cmd, func() tea.Msg { return RunMsg{Session: id, Line: strings.TrimSpace(line)} })
@@ -758,6 +805,10 @@ func (c *Composer) placeholder(w int) string {
 	prompt := t.TextDim
 	if c.focused {
 		prompt = t.Accent
+	}
+	if c.Hint != "" {
+		line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(c.Hint)
+		return render.Fit(line, w, t)
 	}
 	hint := lipgloss.NewStyle().Foreground(t.TextDim).Render(`type `) + "/" + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for commands`)
 	if chord := c.keys.Display("palette"); chord != "" {

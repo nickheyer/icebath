@@ -498,19 +498,9 @@ func TestCheckFnDoesNotProbeNetwork(t *testing.T) {
 		t.Error("check_fn must not perform network I/O")
 	}))
 	defer srv.Close()
-	pin(t, &browserExecAvailable, func(*tools.Env) bool { return true })
 	t.Setenv("BROWSER_CDP_URL", srv.URL)
 	if !browserCDPCheck(env) {
 		t.Fatal("check closed with a configured CDP url")
-	}
-}
-
-func TestCheckFnFalseWhenBrowserRequirementsFail(t *testing.T) {
-	env := testEnv(t)
-	pin(t, &browserExecAvailable, func(*tools.Env) bool { return false })
-	t.Setenv("BROWSER_CDP_URL", "ws://localhost:9222/devtools/browser/x")
-	if browserCDPCheck(env) {
-		t.Fatal("check open without the browser harness")
 	}
 }
 

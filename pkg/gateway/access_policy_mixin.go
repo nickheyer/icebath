@@ -16,10 +16,12 @@ var accessOptinTruthy = map[string]bool{"true": true, "1": true, "yes": true}
 type OwnAccessPolicyMixin struct {
 	// AllowAllEnvPrefix is the platform prefix of the allow all users env name
 	AllowAllEnvPrefix string
-	DMPolicy          string
-	GroupPolicy       string
-	AllowFrom         map[string]bool
-	GroupAllowFrom    map[string]bool
+	// ExtraAllowAllEnvNames are further opt in names a host adds after the global and platform ones
+	ExtraAllowAllEnvNames []string
+	DMPolicy              string
+	GroupPolicy           string
+	AllowFrom             map[string]bool
+	GroupAllowFrom        map[string]bool
 	// EntryMatches is the platform allowlist match, plain membership when nil
 	EntryMatches func(ctx context.Context, entries map[string]bool, target string) (bool, error)
 	// LiveDMAllowFrom is the allowlist enforced right now, the construction allowlist when nil
@@ -85,7 +87,7 @@ func (p *OwnAccessPolicyMixin) EnforcesOwnAccessPolicy() bool { return true }
 
 // The global and platform allow all users env names
 func (p *OwnAccessPolicyMixin) AllowAllEnvNames() []string {
-	return []string{"GATEWAY_ALLOW_ALL_USERS", p.AllowAllEnvPrefix + "_ALLOW_ALL_USERS"}
+	return append([]string{"GATEWAY_ALLOW_ALL_USERS", p.AllowAllEnvPrefix + "_ALLOW_ALL_USERS"}, p.ExtraAllowAllEnvNames...)
 }
 
 // Whether a profile scoped allow all users opt in is set, failing closed

@@ -160,7 +160,7 @@ func recoverEmptyResponse(ctx context.Context, a *AIAgent, s *LoopState, assista
 		interim := a.buildAssistantMessage(assistantMessage, "incomplete")
 		interim["_thinking_prefill"] = true
 		appendLiveMessage(&s.Messages, interim)
-		a.sessionMessages = s.Messages
+		a.setSessionMessages(s.Messages)
 		return PhaseVerdict{Action: "continue"}, nil
 	}
 	trulyEmpty := pystr.Strip(a.stripThinkBlocks(finalResponse)) == ""

@@ -33,7 +33,7 @@ var _ closePersister = (*agent.AIAgent)(nil)
 
 // Flushes the agent's in memory turn before the session row ends, adopting the agent's session id afterwards
 func (c *CLI) persistActiveSessionBeforeClose() {
-	persister, ok := c.agent.(closePersister)
+	persister, ok := c.agentRef().(closePersister)
 	if !ok {
 		return
 	}
@@ -45,7 +45,7 @@ func (c *CLI) persistActiveSessionBeforeClose() {
 	if !persister.PersistActiveSessionBeforeClose(c.ctx, func() []map[string]any { return c.conversationHistory }) {
 		return
 	}
-	if sid := c.agent.SessionID(); sid != "" {
+	if sid := c.agentRef().SessionID(); sid != "" {
 		c.uiMu.Lock()
 		c.sessionID = sid
 		c.uiMu.Unlock()

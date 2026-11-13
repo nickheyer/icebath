@@ -75,7 +75,7 @@ func brLoopAgent(t *testing.T, responses []brScriptedResponse) (*AIAgent, contex
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
 	a, err := NewAIAgent(ctx, AIAgentOptions{Model: "test/model", APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", Platform: "cli",
-		MaxIterations: 10, QuietMode: true, SkipMemory: true, SkipContextFiles: true, Cwd: h, Env: env, EnabledToolsets: []string{"file"}})
+		MaxIterations: new(10), QuietMode: true, SkipMemory: true, SkipContextFiles: true, Cwd: h, Env: env, EnabledToolsets: []string{"file"}})
 	if err != nil {
 		t.Fatal(err)
 	}

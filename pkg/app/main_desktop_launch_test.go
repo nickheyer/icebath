@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
@@ -41,6 +42,8 @@ func guiPackagedExe(t *testing.T, root string) string {
 func guiLaunchFixture(t *testing.T, root string) {
 	t.Helper()
 	swapGUISteps(t)
+	logging.ResetQueuedHandlers()
+	t.Cleanup(logging.ResetQueuedHandlers)
 	t.Setenv("ICEBATH_HOME", filepath.Join(filepath.Dir(root), "icebath-home"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(filepath.Dir(root), "xdg"))
 	gui.projectRoot = func() string { return root }

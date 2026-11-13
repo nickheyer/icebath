@@ -3,6 +3,7 @@
 package plugins
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,6 +57,33 @@ func shellHookReturnCode(ps *os.ProcessState) int {
 		return -int(ws.Signal())
 	}
 	return ps.ExitCode()
+}
+
+// Takes LOCK_EX on the sibling lock file, the release unlocking before the handle closes
+func lockShellHookAllowlist(p string) (func(), error) {
+	handle, err := os.OpenFile(p+".lock", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
+	if err != nil {
+		return nil, err
+	}
+	for {
+		err = unix.Flock(int(handle.Fd()), unix.LOCK_EX)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, unix.EINTR) {
+			_ = handle.Close()
+			return nil, err
+		}
+	}
+	return func() {
+		flockUnlock(handle)
+		_ = handle.Close()
+	}, nil
+}
+
+// Drops the flock held on the handle, swallowing OS errors
+func flockUnlock(handle *os.File) {
+	_ = unix.Flock(int(handle.Fd()), unix.LOCK_UN)
 }
 
 // POSIX hosts never raise WinError 193

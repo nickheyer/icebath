@@ -166,12 +166,17 @@ func RefreshAccountUsageAsync(ctx context.Context, providers []string) []<-chan 
 		done := make(chan struct{})
 		go func(provider string) {
 			defer close(done)
-			defer releaseAccountUsageRefresh(key)
-			FetchAccountUsage(detached, provider, AccountUsageFetchOptions{})
+			refreshAccountUsageLegacy(detached, provider, key)
 		}(provider)
 		started = append(started, done)
 	}
 	return started
+}
+
+// Fetches the provider wide usage, which remembers its own result, then frees the slot's refresh right
+func refreshAccountUsageLegacy(ctx context.Context, provider string, key accountUsageKey) {
+	defer releaseAccountUsageRefresh(key)
+	FetchAccountUsage(ctx, provider, AccountUsageFetchOptions{})
 }
 
 // AccountUsageRefreshRequest is one live credential whose usage slot a background refresh reads
@@ -207,15 +212,20 @@ func RefreshAccountUsageEntriesAsync(ctx context.Context, requests []AccountUsag
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for _, r := range due {
-			func() {
-				defer releaseAccountUsageRefresh(accountUsageSlot(detached, r.Provider, r.IdentityID, ""))
-				FetchAccountUsage(detached, r.Provider, AccountUsageFetchOptions{BaseURL: r.BaseURL, APIKey: r.APIKey,
-					ReadOnly: true, IdentityID: r.IdentityID})
-			}()
-		}
+		refreshAccountUsageEntries(detached, due)
 	}()
 	return []<-chan struct{}{done}
+}
+
+// Reads each due credential's usage in turn without repairing it, freeing every slot's refresh right
+func refreshAccountUsageEntries(ctx context.Context, requests []AccountUsageRefreshRequest) {
+	for _, r := range requests {
+		func() {
+			defer releaseAccountUsageRefresh(accountUsageSlot(ctx, r.Provider, r.IdentityID, ""))
+			FetchAccountUsage(ctx, r.Provider, AccountUsageFetchOptions{BaseURL: r.BaseURL, APIKey: r.APIKey,
+				ReadOnly: true, IdentityID: r.IdentityID})
+		}()
+	}
 }
 
 // Provider usage support as the model options inventory reads it

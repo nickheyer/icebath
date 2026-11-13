@@ -2,7 +2,6 @@ package pyfs
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -22,43 +21,33 @@ func (e *EncodeError) Error() string { return e.Msg }
 // File flush every atomic writer runs before the replace, the os.fsync hermes tests fail
 var Fsync = func(f *os.File) error { return f.Sync() }
 
-// Writes text through a temp file beside the published target, fsync, and an atomic rename
-func AtomicWriteText(ctx context.Context, path, content, prefix string) error {
-	return atomicWriteText(ctx, path, content, prefix, nil, false)
+// Keyword arguments of the shared atomic writer, Mode applying only when ModeSet
+type WriteOptions struct {
+	Prefix        string
+	Mode          uint32
+	ModeSet       bool
+	PreserveOwner bool
+	FsyncDir      bool
 }
 
-// Writes like AtomicWriteText with the permission bits forced and the existing owner carried across
-func AtomicWriteTextMode(ctx context.Context, path, content, prefix string, mode os.FileMode) error {
-	return atomicWriteText(ctx, path, content, prefix, &mode, true)
-}
-
-func atomicWriteText(ctx context.Context, path, content, prefix string, forced *os.FileMode, preserveOwner bool) error {
-	if !utf8.ValidString(content) {
-		return unicodeEncodeError(content)
-	}
+// Temp file beside the target, fsync and atomic replace with owner and mode reapplied, the temp removed on failure
+func AtomicWrite(ctx context.Context, path string, write func(*os.File) error, o WriteOptions) error {
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
-	var mode uint32
-	modeSet := false
-	if forced != nil {
-		mode, modeSet = posixModeBits(*forced), true
-	} else if _, err := os.Stat(path); err != nil {
-		var fresh os.FileMode
-		fresh, modeSet = defaultNewFileMode()
-		mode = posixModeBits(fresh)
+	mode, modeSet := o.Mode, o.ModeSet
+	if !modeSet {
+		if _, err := os.Stat(path); err != nil {
+			var fresh os.FileMode
+			fresh, modeSet = defaultNewFileMode()
+			mode = PosixModeBits(fresh)
+		}
 	}
 	var owner *FileOwner
-	if preserveOwner {
+	if o.PreserveOwner {
 		owner = PreserveFileOwner(path)
 	}
-	publish := publishPath(path)
-	linkDir := filepath.Dir(path)
-	stageDir := filepath.Dir(publish)
-	tmp, err := os.CreateTemp(stageDir, prefix+"*.tmp")
-	if err != nil && errors.Is(err, os.ErrPermission) && stageDir != linkDir {
-		tmp, err = os.CreateTemp(linkDir, prefix+"*.tmp")
-	}
+	tmp, err := MkstempBeside(path, o.Prefix, ".tmp")
 	if err != nil {
 		return err
 	}
@@ -73,7 +62,7 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 			return fail(err)
 		}
 	}
-	if _, err := tmp.WriteString(platformNewlines(content)); err != nil {
+	if err := write(tmp); err != nil {
 		return fail(err)
 	}
 	if err := Fsync(tmp); err != nil {
@@ -83,12 +72,75 @@ func atomicWriteText(ctx context.Context, path, content, prefix string, forced *
 		os.Remove(tmpName)
 		return err
 	}
-	if err := atomicReplace(tmpName, publish); err != nil {
+	replaced, err := AtomicReplace(tmpName, path)
+	if err != nil {
 		os.Remove(tmpName)
 		return err
 	}
-	restoreFileMetadata(publish, owner, mode, modeSet)
+	restoreFileMetadata(replaced, owner, mode, modeSet)
+	if o.FsyncDir {
+		FsyncDirectory(filepath.Dir(replaced))
+	}
 	return nil
+}
+
+// Existing permission bits of path when preserving, else the create mode for a file that does not exist
+func ModeForWrite(path string, createMode uint32, createSet, preserve bool) (uint32, bool) {
+	if preserve {
+		if mode, ok := PreserveFileMode(path); ok {
+			return mode, true
+		}
+	}
+	if _, err := os.Stat(path); err == nil {
+		return 0, false
+	}
+	return createMode, createSet
+}
+
+// Keyword arguments of an atomic text write, Mode forcing the bits and CreateMode applying to a new file only
+type TextWrite struct {
+	Prefix       string
+	PreserveMode bool
+	CreateMode   *os.FileMode
+	Mode         *os.FileMode
+	FsyncDir     bool
+}
+
+// Writes utf-8 text through the shared atomic writer under the given keyword arguments
+func AtomicWriteTextWith(ctx context.Context, path, content string, o TextWrite) error {
+	prefix := o.Prefix
+	if prefix == "" {
+		prefix = ".tmp_"
+	}
+	var mode uint32
+	var modeSet bool
+	if o.Mode != nil {
+		mode, modeSet = PosixModeBits(*o.Mode), true
+	} else {
+		var create uint32
+		if o.CreateMode != nil {
+			create = PosixModeBits(*o.CreateMode)
+		}
+		mode, modeSet = ModeForWrite(path, create, o.CreateMode != nil, o.PreserveMode)
+	}
+	write := func(f *os.File) error {
+		if !utf8.ValidString(content) {
+			return unicodeEncodeError(content)
+		}
+		_, err := f.WriteString(PlatformNewlines(content))
+		return err
+	}
+	return AtomicWrite(ctx, path, write, WriteOptions{Prefix: prefix, Mode: mode, ModeSet: modeSet, PreserveOwner: o.PreserveMode, FsyncDir: o.FsyncDir})
+}
+
+// Writes text through a temp file beside the published target, fsync, and an atomic rename
+func AtomicWriteText(ctx context.Context, path, content, prefix string) error {
+	return AtomicWriteTextWith(ctx, path, content, TextWrite{Prefix: prefix})
+}
+
+// Writes like AtomicWriteText with the permission bits forced
+func AtomicWriteTextMode(ctx context.Context, path, content, prefix string, mode os.FileMode) error {
+	return AtomicWriteTextWith(ctx, path, content, TextWrite{Prefix: prefix, Mode: &mode})
 }
 
 // Real file a symlink points at, else the target itself

@@ -77,8 +77,8 @@ func resetModelToConfigDefault(c *CLI, silent bool) {
 		}
 		return
 	}
-	if c.agent != nil && !c.gatewaySessionOpen {
-		if _, err := c.agent.SwitchModel(r.NewModel, r.TargetProvider, false, false, ""); err != nil {
+	if c.agentRef() != nil && !c.gatewaySessionOpen {
+		if _, err := c.agentRef().SwitchModel(r.NewModel, r.TargetProvider, false, false, ""); err != nil {
 			cliLogger.Debug("/new model reset to config default failed")
 			return
 		}
@@ -169,10 +169,10 @@ func (c *CLI) showSessionStatus() {
 	in := statusFieldsInput{ctx: c.ctx, sessionID: c.sessionID, meta: meta, model: c.model, provider: c.provider,
 		createdFallback: &start, agentRunning: c.agentRunning}
 	reasoning := c.reasoningConfig
-	if c.agent != nil {
-		in.agentModel, in.agentProvider = c.agent.Model(), c.agent.Provider()
-		in.agentTokens = c.agent.StatusBarUsage(c.ctx).Counters["session_total_tokens"]
-		if rc := c.agent.ReasoningConfig(); len(rc) > 0 {
+	if c.agentRef() != nil {
+		in.agentModel, in.agentProvider = c.agentRef().Model(), c.agentRef().Provider()
+		in.agentTokens = c.agentRef().StatusBarUsage(c.ctx).Counters["session_total_tokens"]
+		if rc := c.agentRef().ReasoningConfig(); len(rc) > 0 {
 			reasoning = rc
 		}
 	}
@@ -326,8 +326,8 @@ func (c *CLI) showHistory() {
 func (c *CLI) notifySessionBoundary(eventType string) {
 	defer func() { _ = recover() }()
 	var sessionID any
-	if c.agent != nil {
-		sessionID = c.agent.SessionID()
+	if c.agentRef() != nil {
+		sessionID = c.agentRef().SessionID()
 	}
 	reason := "session_boundary"
 	if eventType == "on_session_reset" {
@@ -347,6 +347,9 @@ func (c *CLI) notifySessionBoundary(eventType string) {
 func (c *CLI) newSession(silent bool, title string) {
 	oldSessionID := c.sessionID
 	if c.sessionDB != nil && oldSessionID != "" {
+		if g := agentGateway(c.agentRef()); g != nil {
+			g.flushMessagesToSessionDB()
+		}
 		if err := c.sessionDB.EndSession(c.ctx, oldSessionID, "new_session"); err != nil {
 			cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", oldSessionID, err))
 		}
@@ -371,11 +374,11 @@ func (c *CLI) newSession(silent bool, title string) {
 	c.resolveCLIReasoning()
 	syncProcessSessionID(c.ctx, c.env, c.sessionID)
 	shownTitle := title
-	if c.agent != nil {
-		c.agent.SetSessionID(c.sessionID)
-		c.agent.SetReasoningConfig(c.reasoningConfig)
-		c.agent.ResetSessionState()
-		c.agent.setTodoStore(tools.NewTodoStore())
+	if c.agentRef() != nil {
+		c.agentRef().SetSessionID(c.sessionID)
+		c.agentRef().SetReasoningConfig(c.reasoningConfig)
+		c.agentRef().ResetSessionState()
+		c.agentRef().setTodoStore(tools.NewTodoStore())
 		if c.sessionDB != nil && title != "" {
 			shownTitle, _ = applyNewSessionTitle(c, title)
 		}
@@ -503,10 +506,10 @@ func (c *CLI) saveOnOlderGateway(connection *gatewaycli.GatewayConnection, forma
 // Installs a rewound history and mirrors it onto the agent's transcript
 func (c *CLI) publishTruncatedHistory(truncated []map[string]any) {
 	c.conversationHistory = truncated
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		return
 	}
-	c.agent.setSessionMessages(c.conversationHistory)
+	c.agentRef().setSessionMessages(c.conversationHistory)
 }
 
 // Drops the last exchange and returns the user text to send again, false when nothing can be retried
@@ -671,7 +674,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		printLines(c.t("cli.session.compress_too_short", map[string]any{"min": agent.MinCompressMessages}))
 		return
 	}
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		printLines(c.t("cli.session.compress_no_agent", nil))
 		return
 	}
@@ -687,7 +690,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		}
 	}
 	if request.Preview {
-		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agent), c.conversationHistory, request)
+		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agentRef()), c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}
@@ -711,7 +714,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		default:
 			printLines(c.t("cli.session.compress_plain", map[string]any{"count": originalCount}))
 		}
-		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agent), c.conversationHistory, request)
+		result, err := compressNowOnGateway(c.ctx, agentGateway(c.agentRef()), c.conversationHistory, request)
 		if err != nil {
 			panic(err)
 		}
@@ -722,11 +725,14 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 			return
 		}
 		c.conversationHistory = result.AfterMessages
-		if agentSID := c.agent.SessionID(); agentSID != "" && agentSID != c.sessionID {
+		if agentSID := c.agentRef().SessionID(); agentSID != "" && agentSID != c.sessionID {
 			tools.TransferSessionYolo(c.sessionID, agentSID)
 			c.sessionID = agentSID
 			c.writeTerminalBreadcrumb()
 			c.pendingTitle = ""
+			if g := agentGateway(c.agentRef()); g != nil {
+				g.flushMessagesToSessionDB()
+			}
 		}
 		summary := result.Summary
 		icon := "✅"

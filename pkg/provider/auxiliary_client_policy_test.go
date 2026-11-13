@@ -387,6 +387,7 @@ func TestActualAliasesAndProfileMetadata(t *testing.T) {
 }
 
 func TestNormalizeAuxProviderWrapsUnexported(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	for _, name := range []string{"OpenRouter", " main ", "codex", ""} {
 		if got, want := NormalizeAuxProvider(ctx, name), auxNormalizeAuxProvider(ctx, name); got != want {

@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Azure flow seams, swappable so tests script the credential probe, the endpoint detection and the context lookup
@@ -65,13 +64,6 @@ type azureEntraPreflight struct {
 // Entra ID credential preflight, the token provider and the persisted scope override
 func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azureEntraPreflight {
 	fmt.Fprintln(r.Out)
-	if !HasAzureIdentityInstalled() {
-		flowSay(r.Out, "◐ The 'azure-identity' package is not installed yet.",
-			"  The preflight requests it through PM if lazy installs are enabled.",
-			"  To install explicitly, run from the Hermes environment:",
-			fmt.Sprintf("    %s", pm.InstallHint("azure-identity")),
-			"  Then restart Hermes.")
-	}
 	entraOverrides := map[string]any{}
 	persistedScopeOverride := pystr.Strip(pyOrStr(currentEntra["scope"]))
 	entraScope := persistedScopeOverride

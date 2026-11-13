@@ -165,7 +165,7 @@ func WarnConfigParseFailure(ctx context.Context, configPath string, err error, f
 
 // Recorded parse error while the active config file is byte identical to the one that failed
 func ActiveConfigParseFailure(h string) (string, bool) {
-	path := home.ConfigPath(h)
+	path := GetConfigPath(h)
 	parseFailureMu.Lock()
 	record, ok := configParseFailure[path]
 	parseFailureMu.Unlock()

@@ -272,15 +272,6 @@ func ShouldBypassProxy(targetHosts []string) bool {
 	return provider.ShouldBypassProxy(targetHosts, nil)
 }
 
-// Socks scheme rewritten to socks5 and surrounding space trimmed, empty for no proxy
-func normalizeGatewayProxyURL(proxyURL string) string {
-	candidate := pystr.Strip(proxyURL)
-	if strings.HasPrefix(pystr.Lower(candidate), "socks://") {
-		return "socks5://" + candidate[len("socks://"):]
-	}
-	return candidate
-}
-
 // Proxy URL from the scoped platform var, the configured value, the trusted env or the macOS system proxy
 func ResolveProxyURL(ctx context.Context, platformEnvVar string, targetHosts []string, configured string) (string, error) {
 	value := ""
@@ -303,7 +294,7 @@ func ResolveProxyURL(ctx context.Context, platformEnvVar string, targetHosts []s
 	if value == "" {
 		value = detectMacOSSystemProxy(ctx)
 	}
-	p := normalizeGatewayProxyURL(value)
+	p := config.NormalizeProxyURL(value)
 	if p != "" && ShouldBypassProxy(targetHosts) {
 		return "", nil
 	}
@@ -515,6 +506,16 @@ func GatewayTrustEnv(ctx context.Context) bool {
 		return true
 	}
 	return pyrepr.Truthy(value)
+}
+
+// HTTP client with a total timeout reading proxy env vars only when the gateway trusts the environment
+func TrustEnvHTTPClient(ctx context.Context, timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	if GatewayTrustEnv(ctx) {
+		transport.Proxy = http.ProxyFromEnvironment
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
 // Reports whether the host matches a NO_PROXY entry, the given value overriding the environment
@@ -765,20 +766,29 @@ func CacheAudioFromURL(ctx context.Context, rawURL, ext string, retries int) (st
 
 // Scope aware credential read, an unscoped default profile falling back to the process env
 func GetScopedSecret(ctx context.Context, name, def string, externalFallback bool) (string, error) {
-	val, found, err := provider.GetSecret(ctx, name)
-	var unscoped *provider.UnscopedSecretError
-	if errors.As(err, &unscoped) {
-		val, found = os.LookupEnv(name)
-	} else if err != nil {
+	val, found, err := LookupScopedSecret(ctx, name, externalFallback)
+	if err != nil {
 		return "", err
-	}
-	if !found && externalFallback && provider.CurrentSecretScope(ctx) == nil {
-		val, found = unscopedProfileSecrets(ctx)[name]
 	}
 	if !found {
 		return def, nil
 	}
 	return val, nil
+}
+
+// Scope aware credential read reporting whether the name is set at all, the None of get_scoped_secret as false
+func LookupScopedSecret(ctx context.Context, name string, externalFallback bool) (string, bool, error) {
+	val, found, err := provider.GetSecret(ctx, name)
+	var unscoped *provider.UnscopedSecretError
+	if errors.As(err, &unscoped) {
+		val, found = os.LookupEnv(name)
+	} else if err != nil {
+		return "", false, err
+	}
+	if !found && externalFallback && provider.CurrentSecretScope(ctx) == nil {
+		val, found = unscopedProfileSecrets(ctx)[name]
+	}
+	return val, found, nil
 }
 
 var unscopedProfileSecretsCache struct {

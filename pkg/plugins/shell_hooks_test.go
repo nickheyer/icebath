@@ -23,6 +23,31 @@ import (
 // Production allowlist writer, restored by tests that swap in a failing one
 var defaultShellHookAtomicWrite = shellHookAtomicWrite
 
+// Specs and outbound targets share one matcher, and a home scoped forget keeps other profiles' keys
+func TestToolMatcherSharedAndHomeScopedForget(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	spec := NewShellHookSpec("pre_tool_call", "x", "  term.*  ", 5, false)
+	target := NewOutboundWebhookTarget("https://example.com", []string{"pre_tool_call"}, "", "", " term.* ", 5)
+	for _, m := range []*toolMatcher{&spec.toolMatcher, &target.toolMatcher} {
+		if ok, err := m.MatchesTool("terminal"); m.Matcher != "term.*" || !ok || err != nil {
+			t.Fatalf("matcher %q %v %v", m.Matcher, ok, err)
+		}
+		if _, err := m.MatchesTool(7); err == nil || !strings.Contains(err.Error(), "expected string or bytes-like object") {
+			t.Fatalf("non string name %v", err)
+		}
+	}
+	if _, err := makeOutboundWebhookCallback("pre_tool_call", target)(context.Background(), map[string]any{"tool_name": 7}); err == nil {
+		t.Fatal("outbound callback swallowed the matcher TypeError")
+	}
+	ctx := context.Background()
+	reg := map[shellHookKey]bool{{home: shellHomeKey(ctx), event: "e"}: true, {home: "/other", event: "e"}: true}
+	var mu sync.Mutex
+	forgetHomeRegistrations(ctx, reg, &mu, func(k shellHookKey) string { return k.home })
+	if len(reg) != 1 || !reg[shellHookKey{home: "/other", event: "e"}] {
+		t.Fatalf("registry %v", reg)
+	}
+}
+
 // Isolated home with a fresh manager, cleared shell hook state and a non TTY stdin
 func shellHookWorld(t *testing.T) string {
 	t.Helper()

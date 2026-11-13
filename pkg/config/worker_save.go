@@ -2,7 +2,7 @@ package config
 
 // Config a save persists, a frozen worker landing only its own edits on the live file
 func RebaseForSave(cfg, liveRaw map[string]any, mergeExisting bool, loadConfig func() map[string]any) map[string]any {
-	if snapshot := WorkerConfigSnapshot(); snapshot != nil {
+	if snapshot := workerConfigSnapshot(); snapshot != nil {
 		live := liveRaw
 		if len(live) == 0 {
 			live = map[string]any{}

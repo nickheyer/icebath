@@ -144,13 +144,7 @@ func (b *BasePlatformAdapter) textDebounceStore() map[string]*TextDebounceState 
 	return lazyAttr(&b.textDebounce)
 }
 
-// Remaining bounded debounce delay of a session, zero when nothing is buffered
-func (b *BasePlatformAdapter) textDebounceDelay(sessionKey string) float64 {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.textDebounceDelayLocked(sessionKey)
-}
-
+// Remaining bounded debounce delay of a session under the held adapter lock, zero when nothing is buffered
 func (b *BasePlatformAdapter) textDebounceDelayLocked(sessionKey string) float64 {
 	state := b.textDebounce[sessionKey]
 	if state == nil {

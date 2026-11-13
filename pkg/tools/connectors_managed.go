@@ -97,7 +97,7 @@ var EnsureGuestIdentity = ensureGuestIdentity
 func NewManagedClient(env *Env, createsGuest bool, initiator string, call *CallRef) (*ConnectorClient, error) {
 	if createsGuest {
 		if msg := EnsureGuestIdentity(env); msg != "" {
-			return nil, &ToolGatewayError{Message: msg, Code: GuestSetupFailed, Retryable: true}
+			return nil, newToolGatewayError("", msg, GuestSetupFailed, 0, "", true)
 		}
 	}
 	return NewConnectorClient(env, call, initiator), nil

@@ -101,7 +101,7 @@ func (c *CLI) handleRollbackCommand(command string) {
 
 // Prints that no agent session exists, a gateway agent holding no manager raising on its enabled check as main does
 func (c *CLI) checkpointManager() {
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		printLines("  " + c.commandsT("shared.no_active_agent_session", nil))
 		return
 	}

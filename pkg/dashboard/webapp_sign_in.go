@@ -15,8 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const webappRefreshTokenLifetime = 30 * 24 * 60 * 60
@@ -150,9 +152,9 @@ func webappGateway(conn *HTTPConnection) string {
 	if home == "" {
 		return ""
 	}
-	abs, err := filepath.Abs(home)
-	if err != nil {
-		abs = home
+	abs := pypath.PathStr(home)
+	if wd, err := os.Getwd(); err == nil && !filepath.IsAbs(abs) {
+		abs = pypath.PathStr(wd + string(filepath.Separator) + abs)
 	}
 	sum := sha256.Sum256([]byte(abs))
 	return hex.EncodeToString(sum[:])[:16]
@@ -165,11 +167,15 @@ func webappLoaded(home string) *pyjson.Object {
 	}
 	records := pyjson.NewObject()
 	if home != "" {
-		text, err := pyfs.ReadTextChars(filepath.Join(home, webappRecordPath), -1, true)
+		raw, err := os.ReadFile(filepath.Join(home, webappRecordPath))
+		var text string
+		if err == nil {
+			text, err = pycodecs.Decode(raw, "utf-8-sig")
+		}
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 		case err != nil:
-			webappSignInLog().Warn(fmt.Sprintf("Could not read the Webapp's record of native sign-ins: %s", err))
+			webappSignInLog().Warn(fmt.Sprintf("Could not read the Webapp's record of native sign-ins: %s", pypath.OSErrorText(err)))
 		default:
 			stored, err := pyjson.Loads(text)
 			if err != nil {

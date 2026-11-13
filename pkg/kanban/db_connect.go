@@ -74,10 +74,20 @@ func sqliteConnect(path string) (state.SQLiteConn, error) {
 	return conn, nil
 }
 
+// One non blocking exclusive lock attempt, false when held elsewhere, a one byte range at offset zero on Windows
+func tryLockNB(handle *os.File) (bool, error) {
+	return pyfs.TryLockFile(handle)
+}
+
+// Releases the lock tryLockNB took on the same byte range or flock, the OS error surfacing
+func unlock(handle *os.File) error {
+	return pyfs.UnlockFile(handle)
+}
+
 var crossProcessInitLockFn = crossProcessInitLock
 
 // Takes the cross process init lock within the bounded wait, proceeding unlocked with a warning after the deadline
-func crossProcessInitLock(path string) (func(), error) {
+func crossProcessInitLock(path string) (func() error, error) {
 	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
 		return nil, err
 	}
@@ -87,7 +97,7 @@ func crossProcessInitLock(path string) (func(), error) {
 		return nil, err
 	}
 	acquired := provider.PollUntil(func() (bool, bool) {
-		ok, err := pyfs.TryLockFile(handle)
+		ok, err := tryLockNB(handle)
 		ok = ok && err == nil
 		return ok, ok
 	}, initLockTimeout, initLockPoll)
@@ -97,11 +107,12 @@ func crossProcessInitLock(path string) (func(), error) {
 			"init are the correctness backstop). A stuck holder is no longer "+
 			"able to block this connect indefinitely (#36644).", lockPath, initLockTimeout.Seconds()))
 	}
-	return func() {
+	return func() error {
+		defer handle.Close()
 		if acquired {
-			pyfs.UnlockFile(handle)
+			return unlock(handle)
 		}
-		handle.Close()
+		return nil
 	}, nil
 }
 
@@ -115,11 +126,11 @@ func dispatchTickLock(dbPath string) (bool, func()) {
 	if err != nil {
 		return true, func() {}
 	}
-	acquired, err := pyfs.TryLockFile(handle)
+	acquired, err := tryLockNB(handle)
 	acquired = acquired && err == nil
 	return acquired, func() {
 		if acquired {
-			pyfs.UnlockFile(handle)
+			_ = unlock(handle)
 		}
 		handle.Close()
 	}
@@ -454,7 +465,7 @@ type RepairResult struct {
 }
 
 // Probes a kanban database and applies the narrow REINDEX repair, reporting instead of raising
-func RepairDB(ctx context.Context, dbPath string, board *string) (*RepairResult, error) {
+func RepairDB(ctx context.Context, dbPath string, board *string) (result *RepairResult, err error) {
 	path := dbPath
 	if path == "" {
 		p, err := KanbanDBPath(ctx, board)
@@ -474,7 +485,11 @@ func RepairDB(ctx context.Context, dbPath string, board *string) (*RepairResult,
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer func() {
+		if uerr := release(); uerr != nil {
+			result, err = nil, uerr
+		}
+	}()
 	messages, reason, opened, err := probeForCorruption(ctx, resolved)
 	if err != nil {
 		return nil, err
@@ -599,7 +614,7 @@ func Connect(ctx context.Context, dbPath string, board *string) (state.SQLiteCon
 }
 
 // Connect behind the connectFn seam
-func connectImpl(ctx context.Context, dbPath string, board *string) (state.SQLiteConn, error) {
+func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.SQLiteConn, err error) {
 	path := dbPath
 	if path == "" {
 		p, err := KanbanDBPath(ctx, board)
@@ -645,7 +660,14 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (state.SQLit
 	if err != nil {
 		return nil, err
 	}
-	defer release()
+	defer func() {
+		if uerr := release(); uerr != nil {
+			if conn != nil {
+				conn.Close()
+			}
+			conn, err = nil, uerr
+		}
+	}()
 	if err := state.PreflightDBWritability(ctx, path, fmt.Sprintf("kanban.db (%s)", pypath.PathName(path)), false); err != nil {
 		return nil, err
 	}

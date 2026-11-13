@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/media/edgetts"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -375,16 +375,22 @@ var managedPythonCommand = func(ctx context.Context) ([]string, error) {
 	return pm.VenvCommand(ctx, root, venv, []string{"-I"})
 }
 
-// Edge rate argument from a speed multiplier, Python round half to even percent with a sign
+// Edge rate from a speed multiplier as a signed whole percentage
 func edgeRate(speed float64) string {
 	return fmt.Sprintf("%+d%%", int(math.RoundToEven((speed-1.0)*100)))
 }
 
-// Free Edge neural speech through the edge-tts package of the managed environment
-func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
-	if err := ttsImportEdgeTTS(ctx); err != nil {
-		return "", err
+// Speaks through the Edge read aloud service into a file, the seam tests replace
+var edgeSynthesize = func(ctx context.Context, text string, opts edgetts.Options, outputPath string) error {
+	var audio bytes.Buffer
+	if err := edgetts.Default.Synthesize(ctx, text, opts, &audio); err != nil {
+		return err
 	}
+	return os.WriteFile(outputPath, audio.Bytes(), 0o644)
+}
+
+// Free Edge neural speech as MP3 within the sixty second synthesis deadline
+func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
 	edgeConfig, err := orEmptyDict(ttsConfig, "edge")
 	if err != nil {
 		return "", err
@@ -393,43 +399,20 @@ func generateEdgeTTS(ctx context.Context, env *tools.Env, text, outputPath strin
 	if err != nil {
 		return "", err
 	}
-	args := []string{"-m", "edge_tts", "--text", text, "--voice", pyrepr.Str(dictGetDefault(edgeConfig, "voice", defaultEdgeVoice)), "--write-media", outputPath}
+	opts := edgetts.Options{Voice: pyrepr.Str(dictGetDefault(edgeConfig, "voice", defaultEdgeVoice))}
 	if speed != 1.0 {
-		args = append(args, "--rate="+edgeRate(speed))
-	}
-	return outputPath, runEdgeTTS(ctx, args)
-}
-
-// Runs the edge-tts module with the sixty second synthesis deadline
-var runEdgeTTS = func(ctx context.Context, args []string) error {
-	command, err := managedPythonCommand(ctx)
-	if err != nil {
-		return err
+		opts.Rate = edgeRate(speed)
 	}
 	rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(rctx, command[0], append(command[1:], args...)...)
-	hideConsoleWindow(cmd)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	if rctx.Err() == context.DeadlineExceeded {
-		return &ttsTimeoutError{}
-	}
-	if runErr != nil {
-		lines := pystr.Splitlines(pystr.Strip(strings.ToValidUTF8(stderr.String(), "�")), false)
-		if len(lines) > 0 {
-			return &ttsRuntimeError{msg: lines[len(lines)-1]}
+	if err := edgeSynthesize(rctx, text, opts, outputPath); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			return "", &ttsRuntimeError{msg: "Edge TTS did not finish within 60 seconds", cause: err}
 		}
-		return &ttsRuntimeError{msg: runErr.Error()}
+		return "", &ttsRuntimeError{msg: err.Error(), cause: err}
 	}
-	return nil
+	return outputPath, nil
 }
-
-// Python TimeoutError of a synthesis that outlived its deadline
-type ttsTimeoutError struct{}
-
-func (e *ttsTimeoutError) Error() string { return "" }
 
 // ElevenLabs text to speech convert, Opus 48k for ogg paths and MP3 44.1k otherwise
 func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {

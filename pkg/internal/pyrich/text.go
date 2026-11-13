@@ -22,5 +22,9 @@ func (t *Text) MeasureMax(width int) int { return width }
 
 // Prints any renderable fitted to the console width
 func (c *Console) PrintRenderable(r Renderable) {
+	if c.Capture != nil {
+		c.captured(strings.Join(r.RenderLines(false, c.system(), c.Width), "\n"))
+		return
+	}
 	c.write(r.RenderLines(c.Color, c.system(), c.Width))
 }

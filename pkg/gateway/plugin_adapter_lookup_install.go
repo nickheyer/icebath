@@ -8,15 +8,17 @@ import (
 
 // Installs the profile aware runner lookup and the default profile fallback the plugin platform actions use
 func init() {
-	plugins.RunnerAuthorizationAdapter = func(ctx context.Context, runner any, value, profile string) (any, bool) {
+	plugins.RunnerAuthorizationAdapter = func(runner any) (func(context.Context, string, string) any, bool) {
 		resolver, ok := runner.(AuthorizationAdapterRunner)
 		if !ok {
 			return nil, false
 		}
-		if adapter := resolver.AuthorizationAdapter(ctx, Platform(value), &profile); adapter != nil {
-			return adapter, true
-		}
-		return nil, true
+		return func(ctx context.Context, value, profile string) any {
+			if adapter := resolver.AuthorizationAdapter(ctx, Platform(value), &profile); adapter != nil {
+				return adapter
+			}
+			return nil
+		}, true
 	}
 	plugins.RunnerAdapterByValue = func(runner any, value string) (any, bool) {
 		registry, ok := runner.(primaryAdaptersRunner)

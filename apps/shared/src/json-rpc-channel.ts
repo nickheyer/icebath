@@ -139,7 +139,7 @@ export interface JsonRpcRequestChannelOptions {
    * What resets the heartbeat deadline. `'response'` (default): only a
    * `gateway.ping` pong or a response to one of our requests — a backend
    * whose request loop is wedged but still streams deltas is dead for the
-   * caller and must be dropped (the Ink TUI's original contract).
+   * caller and must be dropped (the terminal UI's original contract).
    * `'any-inbound'`: every frame, notifications included (the desktop/web
    * WebSocket client's original contract).
    */
@@ -201,7 +201,7 @@ const unrefTimer = (timer: unknown) => {
  * The transport-agnostic half of a JSON-RPC gateway connection: request ids,
  * the pending map with per-call timeouts and AbortSignal, response → typed
  * error mapping, event-notification decoding, and the `gateway.ping`
- * heartbeat. Owners (`JsonRpcGatewayClient` over WebSocket, the Ink TUI over
+ * heartbeat. Owners (`JsonRpcGatewayClient` over WebSocket, the terminal UI over
  * stdio / an attached socket) supply a `JsonRpcTransport` per connection
  * generation and call `handleFrame` for every inbound text frame.
  */

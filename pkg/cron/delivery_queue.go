@@ -2,7 +2,9 @@ package cron
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -97,7 +99,13 @@ func initializeDeliverySchema(ctx context.Context, conn state.SQLiteConn) error 
 	for _, table := range []string{"deliveries", "delivery_tombstones"} {
 		var ddl string
 		err := conn.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&ddl)
-		if err != nil || strings.Contains(ddl, "'suppressed'") {
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if strings.Contains(ddl, "'suppressed'") {
 			continue
 		}
 		if _, err := conn.ExecContext(ctx, "SAVEPOINT notification_disposition"); err != nil {

@@ -23,22 +23,6 @@ func loadExternalProviderPlugin(ctx context.Context, dir, source, homeKey string
 	return profilesFromHosted(ctx, hosted), err
 }
 
-// Every installed icebath_agent.plugins entry point with loaders that run its target in the plugin host
-func installedProviderEntryPoints(ctx context.Context) ([]ProviderEntryPoint, error) {
-	var out []ProviderEntryPoint
-	for _, ep := range plugins.ProviderEntryPoints() {
-		out = append(out, ProviderEntryPoint{Name: ep.Name, Value: ep.Value, Load: func(ctx context.Context) (ProviderEntryPointTarget, error) {
-			loaded, err := plugins.LoadProviderEntryPoint(ctx, ep)
-			return ProviderEntryPointTarget{Profiles: profilesFromHosted(ctx, loaded.Profiles), Callable: loaded.Callable, RequiresArguments: loaded.RequiresArguments,
-				Invoke: func(ctx context.Context) ([]Profile, error) {
-					hosted, err := plugins.InvokeProviderEntryPoint(ctx, ep)
-					return profilesFromHosted(ctx, hosted), err
-				}}, err
-		}})
-	}
-	return out, nil
-}
-
 // Runs one hosted profile method or callable field in the plugin host, replaced in tests
 var hostedProfileCallFn = func(ctx context.Context, h *plugins.HostedProfile, attr string, args []any, kwargs map[string]any) (any, error) {
 	return h.Call(ctx, attr, args, kwargs)

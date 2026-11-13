@@ -49,6 +49,9 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 		approvals = map[string]any{"mode": "manual"}
 	}
 	env := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": approvals}, Values: &sync.Map{}}
+	if os.Getenv("ICEBATH_HOME") == "" {
+		t.Setenv("ICEBATH_HOME", env.Home)
+	}
 	env.Values.Store("session.key", sessionKey)
 	for k, v := range markers {
 		env.Values.Store("session."+k, v)

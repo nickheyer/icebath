@@ -184,6 +184,7 @@ func TestXAIProviderSearchErrors(t *testing.T) {
 }
 
 func TestXAIBackendWiring(t *testing.T) {
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
 	pools := &fakePools{}
 	usePools(t, pools)
 	env := httpxProviderEnv(t, "XAI_API_KEY=xai-test-key\n", map[string]any{"web.keyless_fallback": false})
@@ -196,6 +197,7 @@ func TestXAIBackendWiring(t *testing.T) {
 	if !CheckWebAPIKey(httpxProviderEnv(t, "XAI_API_KEY=k\n", map[string]any{"web.backend": "xai"})) {
 		t.Fatal("configured xai did not light the gate")
 	}
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
 	if CheckWebAPIKey(httpxProviderEnv(t, "", map[string]any{"web.backend": nil, "web.keyless_fallback": false})) {
 		t.Fatal("null backend lit the gate")
 	}

@@ -689,7 +689,7 @@ func TestCliNoticeAndWaitCallbacksKeepDefaultOutput(t *testing.T) {
 				t.Fatalf("NewAIAgent: %v", err)
 			}
 			a.SetSuppressStatusOutput(true)
-			c.agent = offlineAgent(t, c)
+			c.setAgent(offlineAgent(t, c))
 			a.EmitNotice(provider.AgentNotice{Level: "warn", Text: "arbitrary warning wording"})
 			a.EmitDiagnosticWait("arbitrary retry wording")
 			c.flushCreditNotices()

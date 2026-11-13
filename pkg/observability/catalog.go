@@ -78,18 +78,26 @@ func catalogSafe(name string) ValueSet {
 	return out
 }
 
-// Lower case stems of the shipped locale catalogs
-func displayLanguages() ([]string, error) {
-	locales := i18n.LocalesDir()
-	matches, err := fs.Glob(locales.FS, "*.yaml")
+// Lower case stems of the yaml files directly under a tree, none when the tree cannot be listed
+func YamlStems(root fs.FS) []string {
+	matches, err := fs.Glob(root, "*.yaml")
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	out := make([]string, 0, len(matches))
 	for _, m := range matches {
-		out = append(out, pystr.Lower(strings.TrimSuffix(path.Base(m), ".yaml")))
+		stem := path.Base(m)
+		if dot := strings.LastIndex(stem, "."); dot > 0 {
+			stem = stem[:dot]
+		}
+		out = append(out, pystr.Lower(stem))
 	}
-	return out, nil
+	return out
+}
+
+// Lower case stems of the shipped locale catalogs
+func displayLanguages() ([]string, error) {
+	return YamlStems(i18n.LocalesDir().FS), nil
 }
 
 // Stripped lower case text of a string, empty for anything else

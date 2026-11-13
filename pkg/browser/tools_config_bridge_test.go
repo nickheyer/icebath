@@ -18,10 +18,6 @@ func TestToolsConfigBridgeExposesTheRuntime(t *testing.T) {
 		t.Fatal("constants not forwarded")
 	}
 	env := &tools.Env{Home: t.TempDir()}
-	pin(t, &findCLI, func(*tools.Env) []string { return []string{"py", "-m", "browser_harness.run"} })
-	if got := hooks.FindBrowserUseCLI(env); len(got) != 3 {
-		t.Fatalf("harness %v", got)
-	}
 	pin(t, &runtimePMExecutable, func() string { return "/pm/chromium/chrome" })
 	if got := hooks.ChromiumExecutable(env); got != "/pm/chromium/chrome" {
 		t.Fatalf("chromium %q", got)
@@ -45,7 +41,6 @@ func TestToolsPostSetupChromiumPrintsTheImageHint(t *testing.T) {
 	pin(t, &runtimePMExecutable, func() string { return "" })
 	pin(t, &runtimePMHasNoChromium, func() bool { return false })
 	pin(t, &runtimeIsTermux, func() bool { return false })
-	pin(t, &findCLI, func(*tools.Env) []string { return []string{"harness"} })
 	out := &bytes.Buffer{}
 	con := &cliui.Console{In: strings.NewReader(""), Out: out, Getenv: func(string) (string, bool) { return "", false },
 		StdinTTY: func() bool { return false }, StdoutTTY: func() bool { return false }}
@@ -54,7 +49,7 @@ func TestToolsPostSetupChromiumPrintsTheImageHint(t *testing.T) {
 		t.Fatalf("exit %d output %q", code, out.String())
 	}
 	want := "  Running post-setup hook: chromium\n" +
-		"✓     browser_exec ready (browser-harness, bundled with Icebath)\n" +
+		"✓     browser_exec ready (built in)\n" +
 		"⚠     The image's Chromium is missing: pull the current Icebath image and recreate the container " +
 		"(a volume mounted over the image's tool store hides it).\n" +
 		"✓ Post-setup 'chromium' complete\n"

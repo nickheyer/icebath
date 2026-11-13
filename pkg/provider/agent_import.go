@@ -321,9 +321,15 @@ func agentImportChild(ctx context.Context, source ImportSource, icebathHome stri
 	if err != nil {
 		return 0, err
 	}
-	if returncode == 2 && updateAgentImportersPlugin(ctx, source) {
-		if returncode, err = agentImportRunChild(argv, env); err != nil {
+	if returncode == 2 {
+		updated, err := updateAgentImportersPlugin(ctx, source)
+		if err != nil {
 			return 0, err
+		}
+		if updated {
+			if returncode, err = agentImportRunChild(argv, env); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if returncode == 2 {
@@ -354,14 +360,14 @@ func runAgentImportChild(argv []string, env map[string]string) (int, error) {
 }
 
 // Brings the installed plugin to the catalog's current pin, false when that update failed
-func updateAgentImportersPlugin(ctx context.Context, source ImportSource) bool {
+func updateAgentImportersPlugin(ctx context.Context, source ImportSource) (bool, error) {
 	SetupInfo(nil, fmt.Sprintf("Your '%s' plugin predates the %s importer. Updating it...", AgentImportersPlugin, source.Label))
 	err := agentImportUpdate(ctx, AgentImportersPlugin, agentImportOut())
 	var exit *plugins.CommandExit
 	if errors.As(err, &exit) {
-		return false
+		return false, nil
 	}
-	return err == nil
+	return err == nil, err
 }
 
 // MigrateFromAgents runs setup's import step on demand, a named agent installed and imported, bare offering what was found

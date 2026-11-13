@@ -83,12 +83,12 @@ func paAdapterByValue(runner any, value string) (any, bool) {
 }
 
 // Profile aware lookup of a fake runner carrying _authorization_adapter, callable false for one without it
-func paAuthorizationAdapter(_ context.Context, runner any, value, profile string) (any, bool) {
+func paAuthorizationAdapter(runner any) (func(context.Context, string, string) any, bool) {
 	r, ok := runner.(paMultiplexRunner)
 	if !ok {
 		return nil, false
 	}
-	return r.AuthorizationAdapter(value, profile), true
+	return func(_ context.Context, value, profile string) any { return r.AuthorizationAdapter(value, profile) }, true
 }
 
 // Runner with the fail closed profile ladder, the default profile reading the default adapters
@@ -234,6 +234,18 @@ func TestPlatformActionsMultiplexProfileRouting(t *testing.T) {
 	if r := pa.AddReaction(home.WithOverride(ctx, profile), "telegram", "1", "2", "x"); r["error"] != "adapter_not_registered" || len(def.reacted) != 0 {
 		t.Fatalf("unregistered profile %v", r)
 	}
+	previousProfile := activeProfileName
+	t.Cleanup(func() { activeProfileName = previousProfile })
+	activeProfileName = func(context.Context) string { panic(errors.New("Could not determine home directory.")) }
+	r := pa.AddReaction(ctx, "telegram", "1", "2", "x")
+	if r["error"] != "adapter_not_registered" || r["detail"] != "no telegram adapter is registered (active profile could not be resolved)" || len(def.reacted) != 0 {
+		t.Fatalf("unresolvable profile did not fail closed %v", r)
+	}
+	plain := telegramPA()
+	ctx = paSetup(t, paGranted, paRunner{map[string]any{"telegram": plain}})
+	if r := pa.AddReaction(ctx, "telegram", "1", "2", "x"); r["ok"] != true || len(plain.reacted) != 1 {
+		t.Fatalf("runner without the profile ladder resolved a profile %v", r)
+	}
 }
 
 // test_platform_actions.py TestPluginContextWiring plus the hosted binding of both verbs
@@ -258,5 +270,36 @@ func TestPlatformActionsContextWiringAndHostCall(t *testing.T) {
 	}
 	if _, err := pa.HostCall(ctx, "add_reaction", []any{"telegram", "1", "2"}, nil); err == nil || !strings.Contains(err.Error(), "PlatformActions.add_reaction()") {
 		t.Fatalf("binding err %v", err)
+	}
+}
+
+// A facade built from the plugin id answers exact result dicts, detail only on a non empty reason
+func TestPlatformActionsResultShapes(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	memWrite(t, filepath.Join(h, "config.yaml"), paGranted)
+	previous := installedServices()
+	t.Cleanup(func() { InstallServices(previous) })
+	InstallServices(&Services{GatewayRunnerRef: func() PlatformActionRunner { return nil }})
+	pa := NewPlatformActions("p")
+	if pa.pluginID != "p" {
+		t.Fatalf("plugin id %q", pa.pluginID)
+	}
+	r := pa.AddReaction(context.Background(), "telegram", "1", "2", "x")
+	if len(r) != 3 || r["ok"] != false || r["error"] != "gateway_unavailable" || r["detail"] != "no gateway runner is active in this process" {
+		t.Fatalf("no runner %v", r)
+	}
+	if e := actionErr("gateway_unavailable", ""); len(e) != 2 || e["ok"] != false {
+		t.Fatalf("bare error %v", e)
+	}
+	if ok := actionOK(map[string]any{"action": "add_reaction", "ok": "kept"}); len(ok) != 2 || ok["ok"] != "kept" || ok["action"] != "add_reaction" {
+		t.Fatalf("fields %v", ok)
+	}
+	previousLookup := RunnerAdapterByValue
+	t.Cleanup(func() { RunnerAdapterByValue = previousLookup })
+	RunnerAdapterByValue = paAdapterByValue
+	InstallServices(&Services{GatewayRunnerRef: func() PlatformActionRunner { return paRunner{map[string]any{"telegram": telegramPA()}} }})
+	if r := pa.AddReaction(context.Background(), "telegram", "1", "2", "x"); len(r) != 2 || r["ok"] != true || r["action"] != "add_reaction" {
+		t.Fatalf("reaction %v", r)
 	}
 }

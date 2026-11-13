@@ -3,7 +3,6 @@ package plugins
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"testing"
 )
@@ -99,57 +98,6 @@ def register(ctx):
     for fn in (legacy, named, catch_all, positional_only, first_named_source, first_positional_only, switch):
         ctx.register_command(fn.__name__.replace("_", "-"), fn)
 `
-
-// test_plugin_ask_choice.py and test_plugin_command_choice.py plugin halves plus test_plugin_command_source.py through a hosted child
-func TestLiveHostedCommandsAskChoiceAndDeclareContext(t *testing.T) {
-	installLiveServices(t)
-	raw, _ := json.Marshal(testChoices)
-	h, m := liveHome(t, liveInterpreters(t)["system"], map[string]string{"pick": fmt.Sprintf(pickPlugin, string(raw))})
-	if e := loadedError(m, "pick"); e != "" {
-		t.Fatalf("load error %q", e)
-	}
-	ctx := homeCtx(h)
-	handler := func(name string) PluginCommandHandler {
-		entry, ok := m.PluginCommands()[name]
-		if !ok {
-			t.Fatalf("command %s not registered", name)
-		}
-		return entry.Handler
-	}
-	panel, shown := choicePanel(1)
-	if out, err := InvokePluginCommand(BindAsker(ctx, ClarifyAsker(panel)), handler("delegation"), "", nil); err != nil || out != "MODE=model_map" {
-		t.Fatalf("panel pick %v %v", out, err)
-	}
-	if len(*shown) != 1 || !reflect.DeepEqual((*shown)[0][0].(map[string]any)["choices"], testChoiceLabels) {
-		t.Fatalf("shown %v", *shown)
-	}
-	if out, err := InvokePluginCommand(ctx, handler("delegation"), "", nil); err != nil || out != "MODE=None" {
-		t.Fatalf("no asker %v %v", out, err)
-	}
-	gwPanel, _ := choicePanel(2)
-	if out, err := InvokePluginCommand(BindAsker(ctx, ClarifyAsker(gwPanel)), handler("gwdelegation"), "", nil); err != nil || out != "MODE=profile_routes" {
-		t.Fatalf("gateway pick %v %v", out, err)
-	}
-	context := map[string]any{"source": "src", "session_id": "sid", "session_key": "key", "platform": "telegram"}
-	for name, want := range map[string]string{
-		"legacy": `["a"]`, "named": `["a", "sid", "telegram"]`,
-		"catch-all":             `["a", {"source": "src", "session_id": "sid", "session_key": "key", "platform": "telegram"}]`,
-		"positional-only":       `["a", null]`,
-		"first-named-source":    `["a", ["platform", "session_id", "session_key"]]`,
-		"first-positional-only": `["a", "src"]`,
-	} {
-		out, err := InvokePluginCommand(ctx, handler(name), "a", context)
-		if err != nil || !jsonEqual(t, out, want) {
-			t.Fatalf("%s got %v %v", name, out, err)
-		}
-	}
-	if out, err := InvokePluginCommand(ctx, handler("switch"), "default", map[string]any{"session_key": "chat-a"}); err != nil || out != "default|chat-a" {
-		t.Fatalf("delegation switch session key %v %v", out, err)
-	}
-	if out, err := handler("switch")(ctx, " direct "); err != nil || out != "direct|" {
-		t.Fatalf("direct call passes no context %v %v", out, err)
-	}
-}
 
 func jsonEqual(t *testing.T, got any, want string) bool {
 	t.Helper()

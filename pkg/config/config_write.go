@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Strings a YAML 1.1 reader resolves to a bool or null, quoted on write at every depth
@@ -24,10 +25,10 @@ var yaml11AmbiguousWords = map[string]bool{
 // Mapping of an existing config file, refusing an unreadable or unparseable one before a write replaces it
 func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (map[string]any, error) {
 	if configPath == "" {
-		if snapshot := WorkerConfigSnapshot(); snapshot != nil {
+		if snapshot := workerConfigSnapshot(); snapshot != nil {
 			return Clone(snapshot).(map[string]any), nil
 		}
-		configPath = home.ConfigPath(home.Dir(ctx))
+		configPath = GetConfigPath(home.Dir(ctx))
 	}
 	if _, err := ConfigVersion(ctx, configPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -98,68 +99,27 @@ func roundtripDump(ctx context.Context, path string, doc *yaml.Node, source []by
 	return atomicPreservingWrite(ctx, path, []byte(buf.String()+extra), "."+strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))+"_")
 }
 
-// Flushes a written temp file to disk before the replace, swapped by tests counting syncs
-var fsyncFile = (*os.File).Sync
-
 // Replaces the symlink resolved target through a synced temp file keeping its mode and owner
 func atomicPreservingWrite(ctx context.Context, path string, data []byte, prefix string) error {
-	return atomicWriteMode(ctx, path, data, prefix, 0, false)
+	mode, ok := pyfs.PreserveFileMode(path)
+	return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: mode, ModeSet: ok, PreserveOwner: true})
 }
 
-// Atomic replace of the symlink resolved target, the forced mode when set, else the existing or umask mode
-func atomicWriteMode(ctx context.Context, path string, data []byte, prefix string, forced os.FileMode, force bool) error {
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
+// Atomic replace keeping the owner, the forced mode when set, else the existing bits or the umask mode
+func atomicWriteMode(ctx context.Context, path string, data []byte, prefix string, forced os.FileMode, force, fsyncDir bool) error {
+	if !force {
+		mode, ok := pyfs.PreserveFileMode(path)
+		return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: mode, ModeSet: ok, PreserveOwner: true, FsyncDir: fsyncDir})
+	}
+	return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: pyfs.PosixModeBits(forced), ModeSet: true, PreserveOwner: true, FsyncDir: fsyncDir})
+}
+
+// Serialized document written as text through the shared atomic writer
+func atomicWriteDoc(ctx context.Context, path string, data []byte, o pyfs.WriteOptions) error {
+	return pyfs.AtomicWrite(ctx, path, func(f *os.File) error {
+		_, err := f.WriteString(pyfs.PlatformNewlines(string(data)))
 		return err
-	}
-	target := path
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		target = resolved
-	}
-	mode, haveMode := os.FileMode(0), false
-	var owner fileOwnerID
-	if fi, err := os.Stat(target); err == nil {
-		mode, haveMode = fi.Mode().Perm(), true
-		owner = fileOwnerOf(fi)
-	} else {
-		mode, haveMode = defaultNewFileMode()
-	}
-	if force {
-		mode, haveMode = forced, true
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(target), prefix+"*.tmp")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	fail := func(err error) error {
-		tmp.Close()
-		os.Remove(name)
-		return err
-	}
-	if haveMode {
-		if err := tmp.Chmod(mode); err != nil {
-			return fail(err)
-		}
-	}
-	if _, err := tmp.Write(data); err != nil {
-		return fail(err)
-	}
-	if err := fsyncFile(tmp); err != nil {
-		return fail(err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(name)
-		return err
-	}
-	if err := os.Rename(name, target); err != nil {
-		os.Remove(name)
-		return err
-	}
-	restoreFileOwner(target, owner)
-	if haveMode {
-		_ = os.Chmod(target, mode)
-	}
-	return nil
+	}, o)
 }
 
 // Plain value as a node with YAML 1.1 ambiguous strings quoted in the given style at every depth

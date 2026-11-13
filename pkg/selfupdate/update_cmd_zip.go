@@ -44,7 +44,6 @@ var zipPreservedNested = map[string][]string{
 	"apps":    {"desktop/release", "desktop/dist", "desktop/dist-webapp", "desktop/node_modules", "desktop/build"},
 	"cmd":     {"icebath/web_dist"},
 	"scripts": {"whatsapp-bridge/node_modules"},
-	"ui-tui":  {"dist", "node_modules", "packages/hermes-ink/dist"},
 	"web":     {"node_modules"},
 }
 

@@ -661,6 +661,24 @@ func (a *GatewayAgent) SetServiceTier(tier string) {
 	state.Unlock()
 }
 
+// Writes nothing, the gateway persists the transcript of its own session
+func (a *GatewayAgent) flushMessagesToSessionDB() {}
+
+// Writes nothing, the gateway owns the session log
+func (a *GatewayAgent) persistSession() {}
+
+// Creates nothing, the gateway created the session row before this agent attached
+func (a *GatewayAgent) ensureDBSession() {}
+
+// Releases nothing, the LLM clients live in the gateway
+func (a *GatewayAgent) releaseClients() {}
+
+// Stops nothing, the gateway runs the memory providers of its session
+func (a *GatewayAgent) shutdownMemoryProvider() {}
+
+// Restores nothing and reports false, the gateway owns the primary runtime of its session
+func (a *GatewayAgent) restorePrimaryRuntime() bool { return false }
+
 // Cached gateway state of the current session
 func (a *GatewayAgent) state() *gatewaycli.SessionState { return a.connection.State(a.SessionID()) }
 

@@ -270,7 +270,7 @@ type ExecutorHost interface {
 	ToolCompleteCallback() func(toolCallID, name string, args map[string]any, result string)
 	ToolResultMetadataCallback() func(toolCallID, name string, args map[string]any, result string) map[string]any
 	CheckpointManager() *CheckpointManager
-	FlushMessagesToSessionDB(messages []*state.Message) (bool, error)
+	FlushMessagesToSessionDB(messages []*state.Message) state.FlushOutcome
 	BeforeToolFlush(messages *[]*state.Message)
 	IncrementalPersistenceFailed() bool
 	MarkIncrementalPersistenceFailed(cause string)
@@ -859,7 +859,7 @@ func (e *Executor) runToolExecutionMiddleware(ctx context.Context, in managedInp
 	st := &ManagedToolResult{Args: in.args, Trace: trace}
 	var dispatchMu sync.Mutex
 	ids := e.hookIDs(in.taskID, in.toolCallID)
-	authorizedDispatch := func(finalArgs map[string]any) (string, error) {
+	authorizedDispatch := func(dctx context.Context, finalArgs map[string]any) (string, error) {
 		dispatchMu.Lock()
 		if st.Dispatched {
 			dispatchMu.Unlock()
@@ -875,28 +875,22 @@ func (e *Executor) runToolExecutionMiddleware(ctx context.Context, in managedInp
 			}
 		}
 		ref := &ToolCallRef{Name: in.name, Args: finalArgs, TaskID: in.taskID, CallID: in.toolCallID, Trace: trace}
-		return e.dispatchAuthorizedOnce(ctx, st, ref, dispatchOnceInput{execute: in.execute, scopeBlock: in.scopeBlock,
+		return e.dispatchAuthorizedOnce(dctx, st, ref, dispatchOnceInput{execute: in.execute, scopeBlock: in.scopeBlock,
 			displayIndex: in.displayIndex, beginExecution: in.beginExecution, gate: in.gate, slot: in.slot})
 	}
-	pipeline := func(relayArgs map[string]any) (string, error) {
-		requestArgs, _, requestTrace := e.Dispatcher.ApplyToolRequestMiddleware(ctx, env, in.name, relayArgs, in.args, ids)
+	pipeline := func(pctx context.Context, relayArgs map[string]any) (string, error) {
+		requestArgs, _, requestTrace := e.Dispatcher.ApplyToolRequestMiddleware(pctx, env, in.name, relayArgs, in.args, ids)
 		trace = trace[:0]
 		trace = append(trace, requestTrace...)
 		st.Trace = trace
-		return e.Dispatcher.RunToolExecutionMiddleware(ctx, env, in.name, requestArgs, in.args, ids, func(nextArgs map[string]any) (string, error) {
+		return e.Dispatcher.RunToolExecutionMiddleware(pctx, env, in.name, requestArgs, in.args, ids, func(nextArgs map[string]any) (string, error) {
 			if nextArgs == nil {
 				nextArgs = requestArgs
 			}
-			return authorizedDispatch(nextArgs)
+			return authorizedDispatch(pctx, nextArgs)
 		})
 	}
-	var result string
-	var err error
-	if e.Dispatcher.Relay != nil {
-		result, _, err = e.Dispatcher.Relay(ctx, env, in.name, in.args, ids, pipeline)
-	} else {
-		result, err = pipeline(in.args)
-	}
+	result, _, err := e.Dispatcher.Relay(ctx, env, in.name, in.args, ids, pipeline)
 	if err != nil {
 		return st, err
 	}
@@ -1005,16 +999,18 @@ func (e *Executor) emitToolCompleteAndRisk(ref *ToolCallRef, result string, risk
 	}
 }
 
-// Flushes tool progress to the session DB before projecting it to any UI
-func (e *Executor) flushAfterToolProgress(messages *[]*state.Message, stage string) bool {
+// Flushes tool progress to the session DB before projecting it to any UI, a disabled store counting as persisted
+func (e *Executor) flushAfterToolProgress(messages *[]*state.Message, stage string) (persisted bool) {
 	host := e.Host
 	host.BeforeToolFlush(messages)
-	persisted, err := host.FlushMessagesToSessionDB(*messages)
-	if err != nil {
-		host.MarkIncrementalPersistenceFailed(ClassifyPersistenceError(err))
-		toolsLogger(host.Env()).Warn("Incremental tool-call persistence failed", "stage", stage, "error", err)
-		return false
-	}
+	defer func() {
+		if r := recover(); r != nil {
+			host.MarkIncrementalPersistenceFailed(state.ClassifyPersistenceError(r))
+			toolsLogger(host.Env()).Warn(fmt.Sprintf("Incremental tool-call persistence failed after %s: %v", stage, r))
+			persisted = false
+		}
+	}()
+	persisted = host.FlushMessagesToSessionDB(*messages) != state.FlushFailed
 	if !persisted {
 		host.MarkIncrementalPersistenceFailed("")
 	}
@@ -1244,27 +1240,19 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 	return &committed{persisted: persisted, display: result, risk: risk}
 }
 
-// Marks a tool message with its sorted data use requirements in the message and its display metadata
+// Marks a tool message with its sorted data use requirements in the message and a copy of its display metadata
 func stampMessageDataUse(msg *state.Message, requires []string) {
-	if len(requires) == 0 {
+	row := map[string]any{"display_metadata": msg.DisplayMetadata}
+	state.StampDataUse(row, slices.Sorted(slices.Values(requires)))
+	stamped, ok := row[state.DataUse]
+	if !ok {
 		return
-	}
-	sorted := slices.Sorted(slices.Values(requires))
-	list := func() []any {
-		out := make([]any, len(sorted))
-		for i, r := range sorted {
-			out[i] = r
-		}
-		return out
 	}
 	if msg.Extra == nil {
 		msg.Extra = map[string]any{}
 	}
-	msg.Extra[state.DataUse] = list()
-	if msg.DisplayMetadata == nil {
-		msg.DisplayMetadata = map[string]any{}
-	}
-	msg.DisplayMetadata[state.DataUse] = list()
+	msg.Extra[state.DataUse] = stamped
+	msg.DisplayMetadata, _ = row["display_metadata"].(map[string]any)
 }
 
 // Per turn aggregate budget enforcement then steer injection
@@ -2366,63 +2354,6 @@ func (e *Executor) ExecuteToolCallsSegmented(ctx context.Context, toolCalls []st
 		e.finalizeToolBatch(ctx, messages, taskID, len(toolCalls), e.budget())
 	}
 	return nil
-}
-
-var diskFullMarkers = []string{"no space left on device", "not enough space", "database or disk is full", "disk full", "full disk", "enospc"}
-
-var dbCorruptionMarkers = []string{"malformed", "file is not a database", "not a database", "database corruption"}
-
-type persistenceCausePhrase struct {
-	markers []string
-	cause   string
-}
-
-var persistenceCauseByPhrase = []persistenceCausePhrase{
-	{[]string{"turn lease"}, "turn_lease"},
-	{[]string{"closed by compression"}, "compression_closed"},
-	{[]string{"being compressed", "compression lease"}, "compression"},
-	{[]string{"deleted state.db-wal", "deleted state.db-shm"}, "deleted_wal"},
-	{[]string{"was replaced underneath"}, "replaced"},
-	{dbCorruptionMarkers, "corrupt"},
-	{[]string{"locked", "busy"}, "locked"},
-	{[]string{"foreign key constraint failed"}, "session_row_missing"},
-}
-
-func containsAnyMarker(text string, markers []string) bool {
-	for _, m := range markers {
-		if strings.Contains(text, m) {
-			return true
-		}
-	}
-	return false
-}
-
-// Corruption SQLite attributes to the FTS index layer rather than the transcript store
-func isFTSScopedCorruption(text string) bool {
-	if !containsAnyMarker(text, dbCorruptionMarkers) {
-		return false
-	}
-	return strings.Contains(text, "fts5:") || strings.Contains(text, "messages_fts")
-}
-
-// ClassifyPersistenceError buckets a session write failure so the user's guidance matches the cause
-func ClassifyPersistenceError(err error) string {
-	if err == nil {
-		return "unknown"
-	}
-	text := strings.ToLower(err.Error())
-	if isFTSScopedCorruption(text) {
-		return "fts_index"
-	}
-	for _, p := range persistenceCauseByPhrase {
-		if containsAnyMarker(text, p.markers) {
-			return p.cause
-		}
-	}
-	if containsAnyMarker(text, diskFullMarkers) || containsAnyMarker(text, []string{"disk", "readonly", "read-only"}) {
-		return "disk"
-	}
-	return "unknown"
 }
 
 // json.dumps with its default ensure_ascii and separators

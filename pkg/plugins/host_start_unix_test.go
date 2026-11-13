@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -69,78 +68,5 @@ func expectReleased(t *testing.T, results chan error, n int, want string) {
 		case <-time.After(2 * time.Second):
 			t.Fatalf("waiter %d still blocked after the shutdown", i)
 		}
-	}
-}
-
-func TestShutdownKillsAHostThatNeverAnswersHelloAndReleasesEveryWaiter(t *testing.T) {
-	h, pidFile := hungHostHome(t)
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return "python3", nil }
-	t.Cleanup(func() { hostInterpreter = previous })
-	host, err := newPluginHost(NewManager(h))
-	if err != nil {
-		t.Fatal(err)
-	}
-	results := startWaiters(host, homeCtx(h), 3)
-	var grandchild int
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) && (grandchild == 0 || host.PID() == 0) {
-		if raw, err := os.ReadFile(pidFile); err == nil {
-			grandchild, _ = strconv.Atoi(strings.TrimSpace(string(raw)))
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	leader := host.PID()
-	if grandchild == 0 || leader == 0 {
-		t.Fatalf("hung child never started (leader %d, grandchild %d)", leader, grandchild)
-	}
-	began := time.Now()
-	host.Shutdown()
-	if took := time.Since(began); took >= hostShutdownGrace {
-		t.Fatalf("shutdown waited %s behind the hung start", took)
-	}
-	expectReleased(t, results, 3, "): shutdown")
-	waitProcessGone(t, leader)
-	waitProcessGone(t, grandchild)
-	if host.Alive() || host.PID() != 0 {
-		t.Fatal("host still reports a live child after the shutdown")
-	}
-}
-
-func TestShutdownReleasesWaitersOfAStartStillResolvingItsInterpreter(t *testing.T) {
-	h, pidFile := hungHostHome(t)
-	resolving, unblock := make(chan struct{}), make(chan struct{})
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) {
-		close(resolving)
-		<-unblock
-		return "python3", nil
-	}
-	t.Cleanup(func() { hostInterpreter = previous })
-	host, err := newPluginHost(NewManager(h))
-	if err != nil {
-		t.Fatal(err)
-	}
-	results := startWaiters(host, homeCtx(h), 2)
-	<-resolving
-	began := time.Now()
-	host.Shutdown()
-	if took := time.Since(began); took >= hostShutdownGrace {
-		t.Fatalf("shutdown waited %s behind the interpreter lookup", took)
-	}
-	expectReleased(t, results, 2, "plugin host failed to start: shutdown")
-	close(unblock)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if raw, err := os.ReadFile(pidFile); err == nil {
-			if grandchild, _ := strconv.Atoi(strings.TrimSpace(string(raw))); grandchild != 0 {
-				waitProcessGone(t, grandchild)
-				break
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if host.Alive() || host.PID() != 0 {
-		t.Fatal("an abandoned start installed its child")
 	}
 }

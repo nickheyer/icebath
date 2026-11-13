@@ -82,14 +82,14 @@ func TestCompletionDisplayKeepsPayloadSeparateAcrossSurfaces(t *testing.T) {
 			t.Fatal(err)
 		}
 		c.conversationHistory, c.turnCtx = []map[string]any{}, ctx
-		c.agent = &inProcessStageAgent{GatewayAgent: offlineAgent(t, c), real: real}
+		c.setAgent(&inProcessStageAgent{GatewayAgent: offlineAgent(t, c), real: real})
 		var runMessage any
 		var runOptions agent.RunConversationOptions
 		patchTurn(t, func(_ context.Context, _ cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 			runMessage, runOptions = message, o
 			return map[string]any{}, nil
 		})
-		c.chatStageUserMessage(c.agent, queuedMessage)
+		c.chatStageUserMessage(c.agentRef(), queuedMessage)
 		c.chatRunAgent(&chatTurn{}, queuedMessage.Text)
 		staged := c.conversationHistory[len(c.conversationHistory)-1]
 		if content, isText := staged["content"].(string); !isText || content != payload || staged["display_kind"] != "async_delegation_complete" {

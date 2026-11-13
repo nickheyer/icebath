@@ -594,11 +594,7 @@ func codexBuildToolsMCPEntry() *pyjson.Object {
 
 // Atomic rewrite of config.toml carrying an existing file's permission bits and owner across
 func codexWriteAtomic(ctx context.Context, target, text string) error {
-	if st, err := os.Stat(target); err == nil {
-		mode := st.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-		return pyfs.AtomicWriteTextMode(ctx, target, text, ".config.toml.", mode)
-	}
-	return pyfs.AtomicWriteText(ctx, target, text, ".config.toml.")
+	return pyfs.AtomicWriteTextWith(ctx, target, text, pyfs.TextWrite{Prefix: ".config.toml.", PreserveMode: true})
 }
 
 // Codex home of the options, else CODEX_HOME, else the user's .codex directory

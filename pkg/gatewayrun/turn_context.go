@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -92,6 +93,7 @@ type TurnContext struct {
 	persistUserDisplayMetadata      map[string]any
 	userConfig                      map[string]any
 	muteNotificationReply           bool
+	capturedResult                  *pyjson.Object
 	voiceTurn                       bool
 	enabledToolsets                 []string
 	disabledToolsets                []string

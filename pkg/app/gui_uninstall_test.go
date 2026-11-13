@@ -151,6 +151,12 @@ func guiRetentionInstall(t *testing.T, recordOnly bool) (protected, guiFiles map
 	guiIsolate(t, tmp)
 	h := filepath.Join(tmp, ".icebath")
 	t.Setenv("ICEBATH_HOME", h)
+	// The running source tree is a git checkout as in hermes, so the steward refusal stays silent
+	checkout := filepath.Join(tmp, "checkout")
+	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	swap(t, &uninstallProjectRoot, func() string { return checkout })
 	root := filepath.Join(h, "icebath-agent")
 	protected = map[string]string{
 		filepath.Join(root, "hermes_cli", "__init__.py"):                  "# agent source\n",

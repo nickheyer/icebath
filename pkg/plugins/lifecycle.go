@@ -64,7 +64,12 @@ type ReplacementCoordinator struct {
 	active  map[any][]*ReplacementLease
 }
 
-var replacementCoordinator = &ReplacementCoordinator{active: map[any][]*ReplacementLease{}}
+// Coordinator with no active generations and its re-entrant lock free
+func newReplacementCoordinator() *ReplacementCoordinator {
+	return &ReplacementCoordinator{active: map[any][]*ReplacementLease{}}
+}
+
+var replacementCoordinator = newReplacementCoordinator()
 
 // Runs fn while serialized against every acquire and dispose, re-entrant on the owning goroutine
 func (c *ReplacementCoordinator) Transaction(fn func()) {

@@ -29,6 +29,7 @@ func freshLedger(t *testing.T) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("ICEBATH_HOME", dir)
 	db := filepath.Join(dir, "state.db")
 	patch(t, &ledgerDBPath, func() string { return db })
 	return db

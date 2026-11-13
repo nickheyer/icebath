@@ -15,7 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pytiktoken"
+	"github.com/nickheyer/icebath/pkg/tokenizers/tiktoken"
 )
 
 // A configurator run over a temp home with captured output and no input
@@ -51,6 +51,7 @@ func TestToolsetHasKeysForVisionAcceptsCodexAuth(t *testing.T) {
 }
 
 func TestApiServerPlatformConfigDefaultApiServerIncludesTerminalToolset(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	if !Default.PlatformTools(context.Background(), "", config.Tree{}, "api_server", PlatformToolsOptions{IncludeDefaultMCPServers: true})["terminal"] {
 		t.Fatal("terminal missing from the api_server toolsets")
 	}
@@ -357,18 +358,22 @@ func TestCmdToolsRoutesListEnableDisable(t *testing.T) {
 }
 
 // Byte level vocabulary where every byte is its own token
-func byteEncoding() *pytiktoken.Encoding {
+func byteEncoding() *tiktoken.Encoding {
 	ranks := map[string]int{}
 	for b := 0; b < 256; b++ {
 		ranks[string([]byte{byte(b)})] = b
 	}
-	return pytiktoken.NewEncoding("bytes", `\s+|\S+`, ranks, map[string]int{"<|endoftext|>": 256})
+	enc, err := tiktoken.New("bytes", `\s+|\S+`, ranks, map[string]int{"<|endoftext|>": 256})
+	if err != nil {
+		panic(err)
+	}
+	return enc
 }
 
 func TestEstimateToolTokensCountsTheWireSchemaOncePerGeneration(t *testing.T) {
 	s, _, _ := flowSetup(t)
 	loads := 0
-	swapFor(t, &toolTokenEncoding, func() (*pytiktoken.Encoding, error) { loads++; return byteEncoding(), nil })
+	swapFor(t, &toolTokenEncoding, func() (*tiktoken.Encoding, error) { loads++; return byteEncoding(), nil })
 	counts, err := estimateToolTokens(s.ctx())
 	if err != nil || loads != 1 || len(counts) == 0 {
 		t.Fatalf("counts %d loads %d %v", len(counts), loads, err)
@@ -389,7 +394,7 @@ func TestEstimateToolTokensCountsTheWireSchemaOncePerGeneration(t *testing.T) {
 func TestEstimateToolTokensWithoutTheEncodingIsEmptyAndCached(t *testing.T) {
 	s, _, _ := flowSetup(t)
 	loads := 0
-	swapFor(t, &toolTokenEncoding, func() (*pytiktoken.Encoding, error) { loads++; return nil, os.ErrNotExist })
+	swapFor(t, &toolTokenEncoding, func() (*tiktoken.Encoding, error) { loads++; return nil, os.ErrNotExist })
 	for i := 0; i < 2; i++ {
 		if counts, err := estimateToolTokens(s.ctx()); err != nil || len(counts) != 0 || loads != 1 {
 			t.Fatalf("counts %v loads %d %v", counts, loads, err)

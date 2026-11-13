@@ -46,7 +46,7 @@ describe('JsonRpcRequestChannel', () => {
   })
 
   // A stdout line that parses to a non-object used to reach `frame.id` and
-  // throw out of the readline handler (uncaughtException in the Ink process).
+  // throw out of the readline handler (uncaughtException in the terminal UI process).
   it.each(['null', '42', '"str"', 'true'])('ignores the non-object JSON line %s without throwing', text => {
     const events: string[] = []
     const channel = new JsonRpcRequestChannel({ onEvent: ev => void events.push(ev.type) })

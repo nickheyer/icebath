@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/selfupdate"
 )
 
 // fakeLease is the active session slot the tests hand the CLI
@@ -28,6 +29,7 @@ func (l *fakeLease) Release() error { l.released.Store(true); return nil }
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
+	selfupdate.DispatchCustodyLauncher()
 	home.DispatchScratchPruneEntry(context.Background())
 	DispatchUninstallModuleEntry(context.Background())
 	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {

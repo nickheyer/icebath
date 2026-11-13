@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -418,7 +419,7 @@ func TestSshBackendStagedTextAttachmentStillExpands(t *testing.T) {
 	tmp := t.TempDir()
 	ctx, payload := stageOutsideWorkspace(t, tmp, "composer-pastes", "Pasted content (3-5.4 KB).txt")
 	writeText(t, payload, "pasted body\n")
-	result := preprocessRooted(t, ctx, "Summarize @file:"+FormatReferenceValue(payload), sshWorkspace, sshWorkspace, 100_000)
+	result := preprocessRooted(t, ctx, "Summarize @file:"+state.FormatReferenceValue(payload), sshWorkspace, sshWorkspace, 100_000)
 	if !result.Expanded || len(result.Warnings) != 0 || !strings.Contains(result.Message, "pasted body") {
 		t.Fatalf("%+v", result)
 	}
@@ -529,7 +530,7 @@ func TestFormatReferenceValueRoundTripsThroughTheParser(t *testing.T) {
 	for _, value := range []string{"/tmp/plain.png", "/Users/me/Library/Application Support/Hermes/composer-images/a.png", `C:\Users\John Doe\Pictures\cat.png`,
 		"/tmp/report (final).pdf", "/tmp/it's here.png", `/tmp/say "hi".png`} {
 		t.Run(value, func(t *testing.T) {
-			matches := findAllReferenceMatches(ReferencePattern, "@file:"+FormatReferenceValue(value))
+			matches := findAllReferenceMatches(ReferencePattern, "@file:"+state.FormatReferenceValue(value))
 			if len(matches) == 0 {
 				t.Fatal("no match")
 			}

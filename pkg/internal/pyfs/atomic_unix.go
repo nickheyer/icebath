@@ -16,7 +16,7 @@ func defaultNewFileMode() (os.FileMode, bool) {
 }
 
 // Text mode writes keep LF on POSIX hosts
-func platformNewlines(s string) string { return s }
+func PlatformNewlines(s string) string { return s }
 
 // Contended rename retries only exist on Windows
 func IsContendedReplaceError(err error) bool { return false }

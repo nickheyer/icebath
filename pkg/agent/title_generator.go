@@ -279,7 +279,7 @@ func titleUpgradeStarted(t *memory.ContextThread) bool {
 }
 
 // Joins the title upgrades still running within one shared deadline
-func waitForTitleUpgrades(timeout time.Duration) {
+var waitForTitleUpgrades = func(timeout time.Duration) {
 	deadline := time.Now().Add(timeout)
 	titleUpgradeMu.Lock()
 	threads := make([]*memory.ContextThread, 0, len(titleUpgradeThreads))

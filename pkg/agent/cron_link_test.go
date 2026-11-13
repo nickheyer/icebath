@@ -33,6 +33,9 @@ func TestCronAgentOptionsCarryEveryKeywordCronPasses(t *testing.T) {
 			continue
 		}
 		field := got.FieldByName(name)
+		if field.IsValid() && field.Kind() == reflect.Pointer && want.Field(i).Kind() != reflect.Pointer && !field.IsNil() {
+			field = field.Elem()
+		}
 		if !field.IsValid() || !reflect.DeepEqual(field.Interface(), want.Field(i).Interface()) {
 			t.Fatalf("%s did not reach the agent keywords", name)
 		}

@@ -252,6 +252,7 @@ func pluginAPIRuntimeGate(ctx context.Context, req *Request, callNext CallNext) 
 
 // Application of web_server.py, its middlewares and own routes in import order with the routers include adds at L780
 func buildWebServerApp(include func(app *FastAPI)) *FastAPI {
+	normalizeWebAssetMIMETypes()
 	info, err := updaterecord.GetVersionInfo()
 	if err != nil {
 		panic(err)

@@ -699,7 +699,7 @@ func (k *sessionKernel) spawn(ctx context.Context, env *tools.Env, childPython, 
 			return err
 		}
 	}
-	childEnv, err := buildChildEnv(ctx, env, childEnvSpec{RPCEndpoint: endpoint, RPCToken: k.rpcToken, TmpDir: tmpdir, ChildPython: childPython})
+	childEnv, err := buildChildEnv(ctx, env, childEnvSpec{RPCEndpoint: endpoint, RPCToken: k.rpcToken, TmpDir: tmpdir})
 	if err != nil {
 		return err
 	}

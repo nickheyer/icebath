@@ -185,11 +185,12 @@ func (a *AIAgent) MemoryFlushPending(timeout time.Duration) bool {
 
 // Session messages as dicts for the provider shutdown, nil when the agent holds none
 func (a *AIAgent) RetiringSessionMessages() []map[string]any {
-	if a.sessionMessages == nil {
+	messages := a.liveSessionMessages()
+	if messages == nil {
 		return nil
 	}
-	out := make([]map[string]any, 0, len(a.sessionMessages))
-	for _, m := range a.sessionMessages {
+	out := make([]map[string]any, 0, len(messages))
+	for _, m := range messages {
 		out = append(out, state.MessageToDict(m))
 	}
 	return out
@@ -235,10 +236,10 @@ func (s *clarifyState) settle(answer any) {
 
 // The worker's stop, finish, approval and clarify controls read from the owner's stdin pipe
 type WorkerControls struct {
-	channel        *WorkerChannel
+	channel        WorkerSender
 	route          string
 	mu             sync.Mutex
-	agent          *AIAgent
+	agent          managedWorkerAgent
 	stopped        chan struct{}
 	stopOnce       sync.Once
 	finish         chan struct{}
@@ -248,7 +249,7 @@ type WorkerControls struct {
 }
 
 // Controls bound to the route, their reader started on the input pipe
-func NewWorkerControls(channel *WorkerChannel, route string, input io.Reader, env *tools.Env) *WorkerControls {
+func NewWorkerControls(channel WorkerSender, route string, input io.Reader, env *tools.Env) *WorkerControls {
 	c := &WorkerControls{channel: channel, route: route, stopped: make(chan struct{}), finish: make(chan struct{}),
 		clarifications: map[string]*clarifyState{}, env: env}
 	go c.read(bufio.NewReader(input))
@@ -256,7 +257,7 @@ func NewWorkerControls(channel *WorkerChannel, route string, input io.Reader, en
 }
 
 // Binds the constructed agent a stop interrupts
-func (c *WorkerControls) SetAgent(a *AIAgent) {
+func (c *WorkerControls) SetAgent(a managedWorkerAgent) {
 	c.mu.Lock()
 	c.agent = a
 	c.mu.Unlock()
@@ -293,7 +294,7 @@ func (c *WorkerControls) Stop() {
 	}
 	c.mu.Unlock()
 	if agent != nil {
-		RequestHardInterrupt(agent, "", "")
+		RequestHardInterruptOf(agent, nil, nil)
 	}
 	for _, s := range pending {
 		s.settle(interruptedAnswer{})

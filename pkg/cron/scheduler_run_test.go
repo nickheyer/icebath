@@ -247,6 +247,28 @@ func TestRunJobAgentPathFramesTheRunDocument(t *testing.T) {
 	}
 }
 
+func TestRunJobRepairsMediaPathFromAgentRows(t *testing.T) {
+	s, _ := newTestStore(t)
+	resetDeliver(t)
+	captureName := "computer_use_0123456789abcdef0123456789abcdef.png"
+	canonical := `C:\Users\Alice\AppData\Local\icebath\cache\images\` + captureName
+	toolResult := `{"screenshot_path": "` + strings.ReplaceAll(canonical, `\`, `\\`) + `"}`
+	job := mustCreate(t, s, CreateJobOptions{Prompt: strPtr("capture"), Schedule: "every 1h", Name: strPtr("shooter"), Model: "m1"})
+	fake := &fakeCronAgent{result: map[string]any{
+		"final_response": "Here is the screenshot.\nMEDIA:/Users/Alice/AppData/Local/icebath/cache/images/" + captureName,
+		"completed":      true,
+		"messages": []map[string]any{
+			{"role": "assistant", "tool_calls": []any{map[string]any{"id": "capture", "function": map[string]any{"name": "computer_use"}}}},
+			{"role": "tool", "tool_call_id": "capture", "content": toolResult},
+		},
+	}}
+	ctx, execID := ownerRun(t, s, job, fake)
+	out, err := s.runJob(ctx, job, runJobOptions{ExecutionID: &execID})
+	if want := "Here is the screenshot.\nMEDIA:" + canonical; err != nil || !out.Success || out.FinalResponse != want {
+		t.Fatalf("outcome %+v err %v", out, err)
+	}
+}
+
 func TestRunJobInactivityTimeoutInterruptsTheAgent(t *testing.T) {
 	s, _ := newTestStore(t)
 	resetDeliver(t)

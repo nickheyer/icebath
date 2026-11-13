@@ -280,7 +280,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 			return nil, bindMoaRuntime(ctx, a, fbModel, nil)
 		}
 		a.provider, a.requestedProvider = fbProvider, fbProvider
-		a.model = fbModel
+		a.model, a.modelNone = fbModel, false
 		if resolvedModel != "" {
 			a.model = resolvedModel
 		}
@@ -348,14 +348,7 @@ func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]
 		cpBaseURL = a.baseURL
 	}
 	provider.ApplyCustomProviderTLSToClientKwargs(kwargs, cpBaseURL, entries, cfg)
-	if extra := provider.CustomProviderExtraHeaders(cpBaseURL, entries, cfg); len(extra) > 0 {
-		merged := stringHeaders(kwargs["default_headers"])
-		if merged == nil {
-			merged = map[string]string{}
-		}
-		maps.Copy(merged, extra)
-		kwargs["default_headers"] = merged
-	}
+	provider.ApplyCustomProviderExtraHeadersToClientKwargs(kwargs, cpBaseURL, entries, cfg)
 }
 
 // Config model.default_headers merged onto the OpenAI client kwargs, user values winning, never on Anthropic or Bedrock

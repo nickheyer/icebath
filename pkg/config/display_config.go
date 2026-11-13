@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -55,7 +56,7 @@ var (
 )
 
 // Registered display tier and overrides of a plugin platform, assigned by the gateway platform registry
-var PlatformDisplayLookup func(ctx context.Context, platformKey string) (tier string, overrides map[string]any, found bool)
+var PlatformDisplayLookup func(ctx context.Context, platformKey string) (tier string, overrides map[string]any)
 
 // Built in defaults of a platform, the core table else the registered plugin tier with its overrides on top
 func platformDisplayDefaults(ctx context.Context, platformKey string) map[string]any {
@@ -72,7 +73,7 @@ func platformDisplayDefaults(ctx context.Context, platformKey string) map[string
 				failed = true
 			}
 		}()
-		tierName, overrides, _ = PlatformDisplayLookup(ctx, platformKey)
+		tierName, overrides = PlatformDisplayLookup(ctx, platformKey)
 	}()
 	if failed {
 		return map[string]any{}
@@ -225,10 +226,15 @@ func normChoice(choices ...string) func(any) any {
 	}
 }
 
+// Python int of the value, zero on a type or value error while an overflow propagates as a panic
 func normDisplayInt(value any) any {
 	n, err := pyint.Of(value)
 	if err != nil {
-		return 0
+		var intErr *pyint.Error
+		if errors.As(err, &intErr) && (intErr.Kind == "TypeError" || intErr.Kind == "ValueError") {
+			return 0
+		}
+		panic(err)
 	}
 	return pyint.Native(n)
 }

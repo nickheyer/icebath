@@ -85,7 +85,7 @@ func testAgent(t *testing.T, o agent.AIAgentOptions) *agent.AIAgent {
 	if o.APIKey == nil || o.APIKey == "" {
 		o.APIKey = "test"
 	}
-	o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = 5, true, true, true
+	o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = new(5), true, true, true
 	a, err := agent.NewAIAgent(context.Background(), o)
 	if err != nil {
 		t.Fatal(err)

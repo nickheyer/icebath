@@ -257,7 +257,11 @@ func EnableProfileLogRouting(profileHomes []string) (bool, error) {
 	replacement := make([]Handler, 0, len(queueState.handlers))
 	for _, existing := range queueState.handlers {
 		if m, ok := existing.(*managedRotatingFileHandler); ok {
-			replacement = append(replacement, newProfileRoutingFileHandler(m, homes))
+			router, err := newProfileRoutingFileHandler(m, homes)
+			if err != nil {
+				return false, err
+			}
+			replacement = append(replacement, router)
 			quietly(m.Close)
 		} else {
 			replacement = append(replacement, existing)

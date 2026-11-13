@@ -371,7 +371,7 @@ func TestCheckVoiceRequirementsAllRequirementsMet(t *testing.T) {
 	})
 	swapVoice(t, &voiceGetSTTProvider, func(context.Context, map[string]any) (string, error) { return "openai", nil })
 	result, err := CheckVoiceRequirements(context.Background())
-	if err != nil || !result.Available || !result.AudioAvailable || !result.STTAvailable || len(result.MissingPackages) != 0 {
+	if err != nil || !result.Available || !result.AudioAvailable || !result.STTAvailable {
 		t.Fatalf("%+v %v", result, err)
 	}
 }

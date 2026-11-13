@@ -195,12 +195,18 @@ func readGatewaySnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
 	return BuildGatewayHealthSnapshot(runtime, true, safeProfile(), otlpInstallID(cfg), safeVersion(), supervisionMode())
 }
 
-// Non negative count from a live counter, zero with a debug line when the counter is absent
-func liveCount(failureMsg string, read func() int) int {
+// Non negative count from a live counter, zero with a debug line when the counter is absent or panics
+func liveCount(failureMsg string, read func() int) (n int) {
 	if read == nil {
 		healthExportLog().Debug(failureMsg)
 		return 0
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			healthExportLog().Debug(fmt.Sprintf("%s: %v", failureMsg, r))
+			n = 0
+		}
+	}()
 	return max(0, read())
 }
 
@@ -511,7 +517,7 @@ func StartGatewayHealthExport(cfg map[string]any) *GatewayHealthExportRuntime {
 		runtime.LogStreamer = logStreamer
 	}
 	if diagnosticsOn && pyrepr.Truthy(gatewayHealthOption(cfg, "warning_error_events_enabled", true)) {
-		handler := &GatewayDiagnosticLogHandler{Profile: safeProfile(), Version: safeVersion()}
+		handler := NewGatewayDiagnosticLogHandler(safeProfile(), safeVersion())
 		logging.GetLogger("").AddHandler(handler)
 		runtime.LogHandler = handler
 	}

@@ -242,7 +242,7 @@ func TestNamedEntryKeyCmdMintsPerRequest(t *testing.T) {
 	cfg := map[string]any{"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "key_cmd": printTokenCmd("minted-token"), "api_key": "static-ignored"}}}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	rt := mustResolve(t, r, "custom:gw", "", "", "")
-	if rt.TokenSource == nil || rt.APIKey != NoKeyPlaceholder || rt.KeyCmd != printTokenCmd("minted-token") {
+	if rt.TokenSource == nil || rt.APIKey != "" || rt.KeyCmd != printTokenCmd("minted-token") {
 		t.Fatalf("got %+v", rt)
 	}
 	if tok, err := rt.TokenSource(context.Background()); err != nil || tok != "minted-token" {

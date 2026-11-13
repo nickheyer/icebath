@@ -30,7 +30,7 @@ afterEach(() => {
 
 type ClientSessionState = ReturnType<typeof createClientSessionState>
 
-// TUI-26: a Desktop viewer of a LOCAL session whose voice chat another viewer (Ink) turned on types
+// TUI-26: a Desktop viewer of a LOCAL session whose voice chat another viewer (the terminal UI) turned on types
 // a bare "stop". The owner ends that voice chat and admits nothing: `{voice_stopped: true}`. The send
 // is settled (no error bubble, no retry identity left), and its bubble goes, since no turn holds it.
 it('a voice_stopped receipt settles the send with no turn, no error and no retained retry', async () => {

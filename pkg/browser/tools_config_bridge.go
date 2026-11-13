@@ -6,7 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Installs the browser runtime, harness and provider registry facts the tools picker reads
+// Installs the browser runtime and provider registry facts the tools picker reads
 func init() {
 	hooks := &tools.ToolsConfigHooks
 	hooks.BrowserRegistry = &tools.PickerRegistry{
@@ -24,7 +24,6 @@ func init() {
 			return nil
 		},
 	}
-	hooks.FindBrowserUseCLI = func(env *tools.Env) []string { return findCLI(env) }
 	hooks.LightpandaBinary = findLightpandaBinary
 	hooks.LightpandaInstallHint = func() string { return lightpandaInstallHint }
 	hooks.ChromiumExecutable = func(env *tools.Env) string { return chromiumExecutable(env, true) }

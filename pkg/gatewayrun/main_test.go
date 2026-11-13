@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 )
 
 func TestMain(m *testing.M) {
@@ -23,7 +22,6 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
-	pluginhost.DispatchPluginHostEntry(context.Background())
 	dir, err := os.MkdirTemp("", "gatewayrun-home-")
 	if err != nil {
 		panic(err)

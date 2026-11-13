@@ -29,7 +29,7 @@ func cronAgentOptions(o cron.AgentOptions) AIAgentOptions {
 	return AIAgentOptions{
 		Model:                    o.Model,
 		Runtime:                  o.Runtime,
-		MaxIterations:            o.MaxIterations,
+		MaxIterations:            new(o.MaxIterations),
 		ReasoningConfig:          o.ReasoningConfig,
 		PrefillMessages:          o.PrefillMessages,
 		FallbackModel:            o.FallbackModel,

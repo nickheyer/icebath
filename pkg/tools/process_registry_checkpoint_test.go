@@ -42,10 +42,11 @@ func cpStillRunning(cmd *exec.Cmd) bool {
 	return isHostPidAlive(cmd.Process.Pid)
 }
 
-// Registry env with the crash checkpoint redirected into a temp home
+// Registry env and process home on one temp home with the crash checkpoint redirected into it
 func cpProcEnv(t *testing.T) (*Env, string) {
 	t.Helper()
 	home := cpTempDir(t)
+	t.Setenv("ICEBATH_HOME", home)
 	checkpoint := filepath.Join(home, "processes.json")
 	cpSwap(t, &checkpointPathFn, func(*Env) string { return checkpoint })
 	return &Env{Home: home}, checkpoint

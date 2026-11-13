@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -21,10 +23,19 @@ type ManagedToolGatewayConfig struct {
 
 // Reads the TOOL_GATEWAY_USER_TOKEN override through the secret scope then the process env
 func readUserTokenOverride(env *Env) string {
-	if v := strings.TrimSpace(secretValue(env, "TOOL_GATEWAY_USER_TOKEN")); v != "" {
+	if v := cleanGatewayValue(secretValue(env, "TOOL_GATEWAY_USER_TOKEN")); v != "" {
 		return v
 	}
-	return strings.TrimSpace(os.Getenv("TOOL_GATEWAY_USER_TOKEN"))
+	return cleanGatewayValue(os.Getenv("TOOL_GATEWAY_USER_TOKEN"))
+}
+
+// Value stripped when it is a non blank string, empty for a blank string or any other value
+func cleanGatewayValue(value any) string {
+	s, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return pystr.Strip(s)
 }
 
 // Cheap token probe with no expiry check and no network
@@ -35,7 +46,7 @@ func peekNousAccessToken(env *Env) string {
 	if NousAccount == nil {
 		return ""
 	}
-	return strings.TrimSpace(NousAccount.PeekAccessToken(env))
+	return cleanGatewayValue(NousAccount.PeekAccessToken(env))
 }
 
 // Stored Nous access token read without a refresh, empty when none
@@ -52,7 +63,7 @@ func readNousAccessToken(env *Env) string {
 	if NousAccount == nil {
 		return ""
 	}
-	return strings.TrimSpace(NousAccount.ReadAccessToken(env))
+	return cleanGatewayValue(NousAccount.ReadAccessToken(env))
 }
 
 // ToolGatewayScheme returns the configured shared gateway URL scheme

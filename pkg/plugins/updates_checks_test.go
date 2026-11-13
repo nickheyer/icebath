@@ -196,48 +196,6 @@ func TestLsRemoteLifecycleAgainstRealRepos(t *testing.T) {
 	}
 }
 
-func TestCheckPipPlugins(t *testing.T) {
-	ctx := context.Background()
-	installed := func(string) (string, bool) { return "1.0", true }
-	unknown := func(context.Context, string) (string, bool) { return "", false }
-	rs := checkPipPlugins(ctx, installed, unknown, []PipEntryPoint{{Name: "local-only", Value: "x:y", DistName: "x"}})
-	if rs[0].UpdateAvailable != nil || !strings.Contains(rs[0].Reason, "not on PyPI") {
-		t.Fatalf("%+v", rs[0])
-	}
-	dist := filepath.Join(t.TempDir(), "mnemosyne_hermes-0.5.0.dist-info")
-	os.MkdirAll(dist, 0o755)
-	os.WriteFile(filepath.Join(dist, "METADATA"), []byte("Metadata-Version: 2.1\nName: mnemosyne-hermes\nVersion: 0.5.0\n"), 0o644)
-	var seen []string
-	rs = checkPipPlugins(ctx, func(d string) (string, bool) { seen = append(seen, d); return "0.5.0", true }, unknown,
-		[]PipEntryPoint{{Name: "mnemosyne", Value: "some.module:register", Dist: dist}})
-	if strings.Join(seen, ",") != "mnemosyne-hermes" || rs[0].Current != "0.5.0" {
-		t.Fatalf("owning distribution %v %+v", seen, rs[0])
-	}
-	rs = checkPipPlugins(ctx, func(d string) (string, bool) { t.Fatalf("guessed dist %q", d); return "", false },
-		func(context.Context, string) (string, bool) { t.Fatal("no fetch without a dist"); return "", false },
-		[]PipEntryPoint{{Name: "orphan", Value: "some.module:register"}})
-	if rs[0].UpdateAvailable != nil || rs[0].Latest != "" || !strings.Contains(rs[0].Reason, "distribution") {
-		t.Fatalf("orphan %+v", rs[0])
-	}
-	rs = checkPipPlugins(ctx, func(string) (string, bool) { return "", false }, unknown, []PipEntryPoint{{Name: "gone", DistName: "gone"}})
-	if rs[0].Reason != "distribution 'gone' not importable" {
-		t.Fatalf("%q", rs[0].Reason)
-	}
-	rs = checkPipPlugins(ctx, installed, func(context.Context, string) (string, bool) { return "2.0", true }, []PipEntryPoint{{Name: "n", DistName: "n"}})
-	if ucAvail(rs[0]) != "true" || rs[0].Latest != "2.0" {
-		t.Fatalf("%+v", rs[0])
-	}
-	site := t.TempDir()
-	ep := filepath.Join(site, "demo_plug-1.0.dist-info")
-	os.MkdirAll(ep, 0o755)
-	os.WriteFile(filepath.Join(ep, "METADATA"), []byte("Name: demo-plug\nVersion: 1.0\n"), 0o644)
-	os.WriteFile(filepath.Join(ep, "entry_points.txt"), []byte("[console_scripts]\nx = y:z\n\n[icebath_agent.plugins]\ndemo = demo_plug:register\n"), 0o644)
-	found := pipEntryPoints([]string{site})
-	if len(found) != 1 || found[0].Name != "demo" || found[0].Value != "demo_plug:register" || owningDistribution(found[0]) != "demo-plug" {
-		t.Fatalf("%+v", found)
-	}
-}
-
 func TestRunChecksNeverMutates(t *testing.T) {
 	plugins := filepath.Join(t.TempDir(), "plugins")
 	os.MkdirAll(filepath.Join(plugins, "plug", ".git"), 0o755)
@@ -245,7 +203,7 @@ func TestRunChecksNeverMutates(t *testing.T) {
 	os.WriteFile(meta, []byte(`{"plug": {"pinned": false, "revision": "`+strings.Repeat("a", 40)+`", "source": "https://example/o/r"}}`), 0o644)
 	before, _ := os.ReadFile(meta)
 	p9NoGit(t)
-	results := RunChecks(context.Background(), plugins, RunChecksOptions{Fetch: ucNo(t), LsRemote: ucConst(strings.Repeat("b", 40)), SkipPip: true})
+	results := RunChecks(context.Background(), plugins, RunChecksOptions{Fetch: ucNo(t), LsRemote: ucConst(strings.Repeat("b", 40))})
 	if ucAvail(results[0]) != "true" {
 		t.Fatalf("%+v", results[0])
 	}

@@ -218,9 +218,7 @@ func stopCronProvider(p cron.CronScheduler) {
 			runLog().Debug(fmt.Sprintf("Cron provider stop() error: %v", rec))
 		}
 	}()
-	if stopper, ok := p.(interface{ Stop() }); ok {
-		stopper.Stop()
-	}
+	cron.SchedulerStop(p)
 }
 
 // MCP discovery then the runner start, the exit verdict when the process must end before running mode
@@ -508,7 +506,9 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	if err := startGatewayConfigureLogging(ctx, o.Verbosity); err != nil {
 		return false, err
 	}
-	provider.RecoverLeftCoreAtStartup(ctx, func(line string) { runLog().Warn(line) }, true)
+	if err := recoverLeftCoreAtGatewayStart(ctx); err != nil {
+		return false, err
+	}
 	pin := pinLaunchStore(ctx)
 	r, err = func() (*GatewayRunner, error) {
 		defer unpinLaunchStore(pin)
@@ -544,9 +544,6 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	bestEffort(func() (bool, error) {
 		return provider.StartNousAuthKeepalive(provider.HomePoolEnv(home.Dir(ctx)), provider.NousKeepaliveStartOptions{}), nil
 	}, "Nous auth keepalive did not start: %s")
-	if err := ensureWindowsGatewayVenvImports(ctx); err != nil {
-		return false, err
-	}
 	early, err := startGatewayRunRunner(ctx, r, &signalInitiated)
 	if err != nil {
 		return false, err

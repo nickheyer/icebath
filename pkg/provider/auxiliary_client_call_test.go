@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,9 @@ func auxCallOK(text string) map[string]any {
 // Restores every fallback seam and the main provider reader after the test
 func auxSwapFallbackSeams(t *testing.T) {
 	t.Helper()
+	if os.Getenv("ICEBATH_HOME") == "" {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+	}
 	route, configured, mainChain, payment, chain, readProvider := auxTryMainProviderRouteFn, auxTryConfiguredFallbackChainFn,
 		auxTryMainFallbackChainFn, auxTryPaymentFallbackFn, auxProviderChainFn, auxReadMainProvider
 	t.Cleanup(func() {
@@ -388,6 +392,7 @@ func TestKimiTemperatureOmittedAsyncCallOmitsTemperature(t *testing.T) {
 }
 
 func TestKimiTemperatureOmittedNonKimiModelsPreserveTemperature(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	temp := 0.3
 	for _, model := range []string{"anthropic/claude-sonnet-4-6", "gpt-4.1", "deepseek-chat"} {
 		kwargs, err := auxBuildCallKwargs(context.Background(), "openrouter", model, []any{map[string]any{"role": "user", "content": "hello"}},

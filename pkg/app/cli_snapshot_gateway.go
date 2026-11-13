@@ -132,7 +132,7 @@ func (c *CLI) rejoinAfterSnapshot(store *gatewaycli.GatewaySessionStore) (err er
 
 // Reattaches the CLI to its session on the relaunched owner, minting a replacement when the snapshot predates it
 func (c *CLI) rejoinCLI(store *gatewaycli.GatewaySessionStore) error {
-	c.agent = nil
+	c.setAgent(nil)
 	c.goalManager, c.loopManager, c.heartbeatManager = nil, nil, nil
 	err := c.leaseHandedOver(c.activeSessionLease != nil, func() error {
 		snapshot, err := store.Attach(c.ctx, c.sessionID, false)

@@ -154,6 +154,14 @@ func (w *WindowConnectionRoutes) Get(windowID string) *WindowConnectionRoute {
 	return w.routes[windowID]
 }
 
+// Profile of the route a window published, nil when it has no route or the route names no profile
+func (w *WindowConnectionRoutes) Profile(windowID string) *string {
+	if route := w.Get(windowID); route != nil {
+		return route.Profile
+	}
+	return nil
+}
+
 // Forgets the route of a closed window
 func (w *WindowConnectionRoutes) Delete(windowID string) {
 	w.mu.Lock()

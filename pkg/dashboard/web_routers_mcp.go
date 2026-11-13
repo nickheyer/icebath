@@ -248,7 +248,7 @@ func authMCPServer(ctx context.Context, c *Call) (any, error) {
 	mcpOAuthFlows[flowID] = flow
 	mcpOAuthFlowsMu.Unlock()
 	workerCtx := context.WithoutCancel(ctx)
-	go mcp.RunDashboardMCPOAuth(workerCtx, &tools.Env{Home: flowHome, TerminalScope: tools.GetTerminalScope(workerCtx)}, flow, cfg)
+	go runDashboardMCPOAuth(workerCtx, &tools.Env{Home: flowHome, TerminalScope: tools.GetTerminalScope(workerCtx)}, flow, cfg)
 	if _, err := flow.WaitForAuthorizationURL(ctx, mcpAuthorizationURLTimeout); err != nil {
 		flow.MarkError(mcp.ExceptionMessage(err), false)
 	}

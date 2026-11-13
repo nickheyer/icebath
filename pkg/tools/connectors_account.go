@@ -65,9 +65,7 @@ func FindOrStartAccountOperation(ctx context.Context, env *Env, names []string, 
 	if op, err := matchingOpenAccountOperation(names, alias, repairID, profileHome); err != nil {
 		return nil, err
 	} else if op != nil {
-		start := &AccountOperationStart{Operation: op, Started: false, done: make(chan struct{})}
-		start.finish()
-		return start, nil
+		return &AccountOperationStart{Operation: op, Started: false, done: make(chan struct{})}, nil
 	}
 	targets := make([]*ConnTarget, 0, len(names))
 	for _, name := range names {

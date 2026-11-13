@@ -399,15 +399,16 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 }
 
 // Registers a connected primary adapter and wires its voice mode and voice input
-func (r *GatewayRunner) publishPrimaryAdapter(ctx context.Context, platform gateway.Platform, adapter gateway.PlatformAdapter) {
+func (r *GatewayRunner) publishPrimaryAdapter(ctx context.Context, platform gateway.Platform, adapter gateway.PlatformAdapter) error {
 	r.adapters.Set(platform, adapter)
 	if platform == gateway.PlatformAPIServer {
 		if err := gateway.RecoverAPITurns(ctx, adapter); err != nil {
-			runLog().Error("api_server turn recovery failed", "exc_info", err)
+			return err
 		}
 	}
 	r.syncVoiceModeStateToAdapter(ctx, adapter)
 	r.bindVoiceInputCallback(ctx, adapter)
+	return nil
 }
 
 // Replays the owed planned restart notice in the background after a reconnect
@@ -424,7 +425,9 @@ func (r *GatewayRunner) schedulePlannedRestartReplay(ctx context.Context) {
 
 // Publishes a reconnected primary adapter and replays what it missed while down
 func (r *GatewayRunner) installReconnectedAdapter(ctx context.Context, platform gateway.Platform, adapter gateway.PlatformAdapter) error {
-	r.publishPrimaryAdapter(ctx, platform, adapter)
+	if err := r.publishPrimaryAdapter(ctx, platform, adapter); err != nil {
+		return err
+	}
 	r.deliveryRouter.Adapters = r.adapters
 	entry, _ := r.failedPlatforms.Get(platform)
 	r.failedPlatforms.Delete(platform)

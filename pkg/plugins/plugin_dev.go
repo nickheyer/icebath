@@ -33,17 +33,13 @@ type PluginPathNotFoundError struct{ Msg string }
 
 func (e *PluginPathNotFoundError) Error() string { return e.Msg }
 
-type doctorNetworkKey struct{}
-
-func withNetworkDenied(ctx context.Context) context.Context {
-	return context.WithValue(ctx, doctorNetworkKey{}, true)
+// RuntimeError a guest network request raises while Plugin Doctor runs
+func doctorDenyNetwork() error {
+	return &HostBuiltinError{Type: "RuntimeError", Message: "network access is disabled while Plugin Doctor runs"}
 }
 
-// Whether plugin children started under this context must refuse outbound connects
-func networkDenied(ctx context.Context) bool {
-	denied, _ := ctx.Value(doctorNetworkKey{}).(bool)
-	return denied
-}
+// Whether this host serves a Plugin Doctor load whose guests must not reach the network
+func (h *PluginHost) networkDenied() bool { return h.envOverride[HostDenyNetworkEnv] == "1" }
 
 var doctorManifestNames = []string{"plugin.yaml", "plugin.yml", "plugin.json"}
 
@@ -140,7 +136,7 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 			return err
 		}
 	}
-	hctx := withNetworkDenied(home.WithOverride(ctx, tmp))
+	hctx := home.WithOverride(ctx, tmp)
 	manager := NewManager(tmp)
 	host, err := manager.pluginHost()
 	if err != nil {
@@ -448,27 +444,6 @@ func checkManifestV2(r *PluginDoctorReport, mf *Manifest) {
 			r.addWarning(fmt.Sprintf("requires plugin %s (%s) — version ranges are advisory; a missing dependency logs a warning at load",
 				config.PyRepr(dep.ID), dep.VersionRange))
 		}
-	}
-	var missing, unpinned []string
-	for _, req := range mf.PythonDeps {
-		dist := strings.TrimSpace(pyDepDistSplit.Split(req, 2)[0])
-		if !pyDepUpperPin.MatchString(req) {
-			unpinned = append(unpinned, req)
-		}
-		if dist == "" {
-			continue
-		}
-		if _, ok := findDistributionVersion(dist, processImportPath()); !ok {
-			missing = append(missing, req)
-		}
-	}
-	for _, req := range unpinned {
-		r.addWarning(fmt.Sprintf("python_dependencies entry %s has no upper bound — pin an upper bound (e.g. 'pkg>=1.0,<2') per the dependency policy",
-			config.PyRepr(req)))
-	}
-	if len(missing) > 0 {
-		r.addWarning("declared python_dependencies not installed: " + strings.Join(missing, ", ") +
-			" — install and enable the plugin with icebath plugins. For an enabled plugin, run icebath pm repair, then restart Icebath.")
 	}
 	for _, key := range configSchemaKeys(mf) {
 		spec := mf.ConfigSchema[key]

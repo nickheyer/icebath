@@ -79,7 +79,7 @@ func (a *AIAgent) collapseContinuationTrail(ctx context.Context, messages *[]*st
 	if partial != "" {
 		appendLiveMessage(messages, map[string]any{"role": "assistant", "content": partial, "finish_reason": finishReason})
 	}
-	a.sessionMessages = *messages
+	a.setSessionMessages(*messages)
 	return partial
 }
 
@@ -297,7 +297,7 @@ func (st *truncState) contentFilterFallback(ctx context.Context, retry *TurnRetr
 				delete(m.Extra, lengthNudgeKey)
 			}
 		}
-		a.sessionMessages = st.Messages
+		a.setSessionMessages(st.Messages)
 		st.LengthContinueRetries = 0
 		st.TruncatedResponseParts = nil
 		st.RetryCount = 0
@@ -357,7 +357,7 @@ func (st *truncState) continueText(ctx context.Context, retry *TurnRetryState, a
 		appendLiveMessage(&st.Messages, map[string]any{
 			"role": "user", "content": getContinuationPrompt(st.cutStream(), dropped), lengthNudgeKey: true,
 		})
-		a.sessionMessages = st.Messages
+		a.setSessionMessages(st.Messages)
 		retry.RestartWithLengthContinuation = true
 		return st.done("break", nil), nil
 	}
@@ -695,7 +695,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 
 	if reasoningOnly && streak >= 3 {
 		if a.tryActivateFallback(ctx, provider.ReasonIncompleteResponse) {
-			if apiCallCount >= a.maxIterations || a.iterationBudget.Remaining() <= 0 {
+			if apiCallCount >= a.maxIterations || a.iterationBudget.Load().Remaining() <= 0 {
 				a.budgetGraceCall = true
 			}
 			a.codexIncompleteRetries = 0
@@ -704,7 +704,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 				a.vprint(fmt.Sprintf("%s↻ Codex reasoning-only stall after %d attempts — switching to fallback %s (%s)", a.logPrefix, streak, a.model, a.provider), false, true)
 			}
 			a.emitDiagnosticWait("↻ model stuck on internal reasoning — switching to fallback provider")
-			a.sessionMessages = *messages
+			a.setSessionMessages(*messages)
 			return nil, true, nil
 		}
 	} else if n < 3 || reasoningOnly {
@@ -734,7 +734,7 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 			a.vprint(fmt.Sprintf("%s↻ Codex response incomplete; continuing turn (%d/3)", a.logPrefix, n), false, true)
 		}
 		a.emitDiagnosticWait(fmt.Sprintf("↻ model returned reasoning with no final answer — asking it to continue (%d/3)", n))
-		a.sessionMessages = *messages
+		a.setSessionMessages(*messages)
 		return nil, false, nil
 	}
 

@@ -24,15 +24,12 @@ func TestCLIPluginsTreeMatchesBuildPluginsParser(t *testing.T) {
 		flag("force", "f", "Reinstall over an existing plugin (from the same source, your untracked files are kept)"),
 		parserFlag{"ref", "", "string", "", "Install exactly one immutable 40-character Git commit SHA"},
 		flag("allow-removed", "", "DANGEROUS: bypass the catalog removed-plugin blocklist check"),
-		flag("no-deps", "", "Download without dependency consent and leave disabled; cannot replace an active plugin"),
-		flag("yes-deps", "", "Answer the Python dependency consent question yourself, so non-interactive installs (SSH automation, CI, Docker entrypoints) finish in one run instead of being refused"),
 		flag("enable", "", "Auto-enable the plugin after install (skip confirmation prompt)"),
 		flag("no-enable", "", "Install disabled (skip confirmation prompt); enable later with `icebath plugins enable <name>`"))
 	assertParser(t, c, "plugins search", "Search the curated Icebath plugin catalog", "",
 		"  term   Query matched against entry names, descriptions and declared tools (omit to list the whole catalog)", json("Print machine-readable JSON"))
 	assertParser(t, c, "plugins browse", "List every curated plugin catalog entry", "", "")
 	assertParser(t, c, "plugins validate", "Validate a plugin directory for catalog admission (CI gate)", "", "  path   Path to the plugin directory",
-		flag("install-deps", "", "Install the plugin's declared Python dependencies (pyproject/python_dependencies) into this venv before the capability probe, exactly as `plugins install` would — the catalog CI gate"),
 		json("Print machine-readable JSON (for CI)"))
 	assertParser(t, c, "plugins update", "Update an installed plugin, or with no name every plugin that has an update", "",
 		"  name   Plugin name to update (default: list every plugin with an update and offer them all)",
@@ -78,7 +75,7 @@ func TestCLIPluginsTreeMatchesBuildPluginsParser(t *testing.T) {
 	}
 }
 
-// Parser halves of test_plugins_update_all.py and the yes-deps case with the mutually exclusive install and enable groups
+// Parser cases of plugins update with the mutually exclusive install and enable groups
 func TestPluginsArgsParse(t *testing.T) {
 	type upd struct {
 		name       string
@@ -101,19 +98,11 @@ func TestPluginsArgsParse(t *testing.T) {
 			t.Fatalf("%s = %+v %v", argv, got, err)
 		}
 	}
-	for _, argv := range [][]string{{"plugins", "install", "x", "--enable", "--no-enable"}, {"plugins", "install", "x", "--no-deps", "--yes-deps"},
+	for _, argv := range [][]string{{"plugins", "install", "x", "--enable", "--no-enable"},
 		{"plugins", "enable", "x", "--allow-tool-override", "--no-allow-tool-override"}} {
 		if _, err := parse(strings.Join(argv[:2], " "), argv...); err == nil {
 			t.Fatalf("%v parsed", argv)
 		}
-	}
-	deps, err := pmParse(t, "plugins install", []string{"plugins", "install", "x", "--yes-deps"}, func(cmd *cobra.Command, _ []string) any {
-		yes, _ := cmd.Flags().GetBool("yes-deps")
-		no, _ := cmd.Flags().GetBool("no-deps")
-		return [2]bool{yes, no}
-	})
-	if err != nil || deps != [2]bool{true, false} {
-		t.Fatalf("--yes-deps = %v %v", deps, err)
 	}
 }
 

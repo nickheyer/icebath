@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 /**
- * Sends `/copy` over the open PTY WebSocket, waits long enough for Ink's
+ * Sends `/copy` over the open PTY WebSocket, waits long enough for the terminal UI's
  * tokenizer to emit a keypress event per character (not coalesce them into
  * a paste), then sends Return as its own event. The 100ms timing is
  * empirical — safely past Node's default stdin coalescing window and well

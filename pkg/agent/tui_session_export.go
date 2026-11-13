@@ -22,7 +22,7 @@ func (a *AIAgent) RebindSubdirectoryHints(workingDir string) {
 func (a *AIAgent) UserTurnCount() int { return a.userTurnCount }
 
 // Model API calls of the current conversation loop
-func (a *AIAgent) APICallCount() int { return a.apiCallCount }
+func (a *AIAgent) APICallCount() int { return int(a.apiCallCount.Load()) }
 
 // Marks the session store this agent holds as its own to close
 func (a *AIAgent) SetOwnsSessionDB(owns bool) { a.ownsSessionDB = owns }

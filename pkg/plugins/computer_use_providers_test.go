@@ -1,10 +1,6 @@
 package plugins
 
-import (
-	"path/filepath"
-	"strings"
-	"testing"
-)
+import ()
 
 // Hermes backend plugin fixture whose provider and backend live in the host child
 const cuProviderFixture = `
@@ -41,77 +37,3 @@ def register(ctx):
     ctx.register_tool("ignored", None, None, None)
     ctx.register_computer_use_provider(FakeProvider())
 `
-
-func TestComputerUseProviderInHostAnswersHostedBackend(t *testing.T) {
-	ctx, h := engineHome(t)
-	dir := filepath.Join(h, "plugins", "cu-beta")
-	writeTree(t, dir, map[string]string{"__init__.py": cuProviderFixture, "plugin.yaml": "name: cu-beta\n"})
-	provider, err := LoadComputerUseProviderInHost(ctx, dir, "_icebath_user_computer_use.cu-beta")
-	if err != nil || provider == nil || provider.Base != computerUseProviderBase {
-		t.Fatalf("provider %v err %v", provider, err)
-	}
-	if name, err := provider.Get(ctx, "name"); err != nil || name != "cu-beta" {
-		t.Fatalf("name %v err %v", name, err)
-	}
-	raw, err := provider.Call(ctx, "create_backend", nil, map[string]any{"permission_mode": "standard"})
-	backend, ok := raw.(*HostedObject)
-	if err != nil || !ok || backend.Base != "tools.computer_use.backend:ComputerUseBackend" {
-		t.Fatalf("create_backend %T %v err %v", raw, raw, err)
-	}
-	if _, err := backend.Call(ctx, "start", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	clicked, err := backend.Call(ctx, "click", nil, map[string]any{"element": 3})
-	rec, ok := clicked.(Record)
-	if err != nil || !ok || rec["ok"] != true || rec["action"] != "click" {
-		t.Fatalf("click %T %v err %v", clicked, clicked, err)
-	}
-	captured, err := backend.Call(ctx, "capture", nil, map[string]any{"mode": "ax", "app": "Safari"})
-	cap, ok := captured.(Record)
-	if err != nil || !ok || cap["mode"] != "ax" || cap["app"] != "Safari" {
-		t.Fatalf("capture %T %v err %v", captured, captured, err)
-	}
-	elements, _ := cap["elements"].([]any)
-	if len(elements) != 1 {
-		t.Fatalf("elements %v", cap["elements"])
-	}
-	if el, ok := elements[0].(Record); !ok || el["role"] != "AXButton" || el["label"] != "OK" {
-		t.Fatalf("element %T %v", elements[0], elements[0])
-	}
-	apps, err := backend.Call(ctx, "list_apps", nil, nil)
-	list, _ := apps.([]any)
-	if err != nil || len(list) != 1 {
-		t.Fatalf("list_apps %v err %v", apps, err)
-	}
-	app, _ := list[0].(map[string]any)
-	if app["backend"] != "cu-beta" || !strings.HasPrefix(app["file"].(string), dir) {
-		t.Fatalf("app %v", app)
-	}
-	calls, _ := app["calls"].([]any)
-	if len(calls) != 2 || calls[0].([]any)[0] != "start" || calls[0].([]any)[1] != "standard" || calls[1].([]any)[1] != int64(3) {
-		t.Fatalf("calls %v", calls)
-	}
-	if waited, err := backend.Call(ctx, "wait", []any{0.0}, nil); err != nil || waited.(Record)["action"] != "wait" {
-		t.Fatalf("wait %v err %v", waited, err)
-	}
-}
-
-func TestComputerUseProviderInHostSubclassFallbackAndEmptyDir(t *testing.T) {
-	ctx, h := engineHome(t)
-	sub := filepath.Join(h, "plugins", "cu-sub")
-	writeTree(t, sub, map[string]string{"__init__.py": "from tools.computer_use.backend import ComputerUseProvider\n" +
-		"class Sub(ComputerUseProvider):\n    name = 'cu-sub'\n    def create_backend(self, *, permission_mode): return None\n" +
-		"def register(ctx):\n    raise RuntimeError('boom')\n"})
-	provider, err := LoadComputerUseProviderInHost(ctx, sub, "_icebath_user_computer_use.cu-sub")
-	if err != nil || provider == nil {
-		t.Fatalf("provider %v err %v", provider, err)
-	}
-	if name, _ := provider.Get(ctx, "name"); name != "cu-sub" {
-		t.Fatalf("name %v", name)
-	}
-	empty := filepath.Join(h, "plugins", "cu-empty")
-	writeTree(t, empty, map[string]string{"__init__.py": "VALUE = 1\n"})
-	if got, err := LoadComputerUseProviderInHost(ctx, empty, "_icebath_user_computer_use.cu-empty"); err != nil || got != nil {
-		t.Fatalf("empty dir %v err %v", got, err)
-	}
-}

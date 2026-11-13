@@ -45,7 +45,13 @@ func testEnv(t *testing.T) *tools.Env {
 	return &tools.Env{Home: dir, Config: config.Tree{}, Values: &sync.Map{}, Cwd: dir}
 }
 
-// Host python3 standing in for the managed runtime interpreter
+// A Python interpreter with the prefix it reports
+type interpreter struct {
+	Python string
+	Prefix string
+}
+
+// Host python3 standing in for the interpreter found on PATH
 func hostRuntime(t *testing.T) interpreter {
 	t.Helper()
 	python, err := exec.LookPath("python3")
@@ -61,9 +67,9 @@ func hostRuntime(t *testing.T) interpreter {
 		t.Fatal(err)
 	}
 	rt := interpreter{Python: python, Prefix: prefix}
-	prev := runtimeInterpreter
-	runtimeInterpreter = func(context.Context, *tools.Env) (interpreter, error) { return rt, nil }
-	t.Cleanup(func() { runtimeInterpreter = prev })
+	prev := userPython
+	userPython = func(context.Context, *tools.Env) (string, error) { return python, nil }
+	t.Cleanup(func() { userPython = prev })
 	return rt
 }
 
@@ -129,4 +135,13 @@ func (s *shellEnv) FetchFile(ctx context.Context, remotePath, localDest string, 
 }
 func (s *shellEnv) FetchRealpath(ctx context.Context, remotePath string) string {
 	return filepath.Clean(remotePath)
+}
+
+// Removes an environment variable until the test ends
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+	if prev, ok := os.LookupEnv(name); ok {
+		os.Unsetenv(name)
+		t.Cleanup(func() { os.Setenv(name, prev) })
+	}
 }

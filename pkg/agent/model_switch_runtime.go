@@ -172,7 +172,7 @@ func buildSwitchedClient(ctx context.Context, a *AIAgent, newProvider, apiKey, b
 // Swaps identity and transport fields, reloads the pool on a provider change and rebuilds the client
 func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, apiKey, baseURL, apiMode, oldProvider, oldNorm, newNorm string) error {
 	a.configContextLength = 0
-	a.model = newModel
+	a.model, a.modelNone = newModel, false
 	a.provider, a.requestedProvider = newProvider, newProvider
 	a.reasoningEchoFlag = readReasoningEchoFromConfig(ctx)
 	if baseURL != "" {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -220,33 +219,6 @@ func TestInprocessProviderTicksAndStops(t *testing.T) {
 	opts, _ := rec.snapshot()
 	if len(opts) < 1 || opts[0].Sync {
 		t.Fatalf("ticks %+v", opts)
-	}
-}
-
-func TestCronProviderPackageDoesNotShadowCoreCronPackage(t *testing.T) {
-	sdk, err := filepath.Abs(filepath.Join("..", "plugins", "hostchild", "sdk"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	probe := `import sys
-from importlib.machinery import PathFinder
-from pathlib import Path
-root = Path(sys.argv[1])
-sys.path.insert(0, str(root))
-sys.path.insert(0, str(root / "plugins"))
-cron_spec = PathFinder.find_spec("cron")
-assert cron_spec is not None
-assert Path(cron_spec.origin).resolve() == root / "cron" / "__init__.py", cron_spec.origin
-provider_spec = PathFinder.find_spec("cron.scheduler_provider", [str(root / "cron")])
-assert provider_spec is not None
-assert Path(provider_spec.origin).resolve() == root / "cron" / "scheduler_provider.py", provider_spec.origin
-`
-	if out, err := exec.Command(python, "-I", "-c", probe, sdk).CombinedOutput(); err != nil {
-		t.Fatalf("%v %s", err, out)
 	}
 }
 

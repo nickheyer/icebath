@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -189,7 +188,6 @@ type childEnvSpec struct {
 	RPCEndpoint string
 	RPCToken    string
 	TmpDir      string
-	ChildPython string
 }
 
 // Configured IANA timezone handed to children as TZ, swapped by tests
@@ -219,104 +217,48 @@ func buildChildEnv(ctx context.Context, env *tools.Env, spec childEnvSpec) (map[
 		child["ICEBATH_HOME"] = override
 		home.ApplyScratchTmpEnv(tools.WithEnvHome(ctx, env), child)
 	}
-	rt, err := runtimeInterpreter(ctx, env)
-	if err != nil {
-		return nil, err
-	}
-	sep := string(os.PathListSeparator)
-	runtimePath := ""
-	if spec.ChildPython == rt.Python {
-		venv, ok, err := tools.ValidatedRuntimeVenv(child)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
-			candidate, err := pm.SitePackages(venv)
-			if err != nil {
-				return nil, err
-			}
-			for _, entry := range strings.Split(child["PYTHONPATH"], sep) {
-				if entry != "" && tools.SamePath(entry, candidate) {
-					runtimePath = candidate
-					break
-				}
-			}
-		}
-	}
 	if err := tools.StripIcebathOwnedPythonpath(child); err != nil {
 		return nil, err
 	}
-	existing := child["PYTHONPATH"]
 	parts := []string{spec.TmpDir}
-	if runtimePath != "" {
-		parts = append(parts, runtimePath)
-	}
-	uses, err := usesIcebathPythonEnvironment(ctx, env, spec.ChildPython)
-	if err != nil {
-		return nil, err
-	}
-	if uses {
-		parts = append(parts, pm.RepoRoot())
-	} else if markExternalLogged(spec.ChildPython) {
-		logger(env).Info("execute_code: child interpreter is outside the Icebath environment; icebath root omitted from PYTHONPATH",
-			"python", spec.ChildPython)
-	}
-	if existing != "" {
+	if existing := child["PYTHONPATH"]; existing != "" {
 		parts = append(parts, existing)
 	}
-	child["PYTHONPATH"] = strings.Join(parts, sep)
+	child["PYTHONPATH"] = strings.Join(parts, string(os.PathListSeparator))
 	return child, nil
 }
 
-// Interpreter of the managed runtime and its resolved prefix, the counterpart of sys.executable and sys.prefix
-type interpreter struct {
-	Python string
-	Prefix string
+// File names the user's Python interpreter goes by on PATH, in lookup order
+func pythonNames() []string {
+	if isWindows {
+		return []string{"python.exe", "python3.exe"}
+	}
+	return []string{"python3", "python"}
 }
 
-// Managed runtime interpreter resolver, swapped by tests for a host python
-var runtimeInterpreter = resolveRuntimeInterpreter
+// First usable Python interpreter on the session's PATH, the seam tests replace
+var userPython = func(ctx context.Context, env *tools.Env) (string, error) {
+	return PythonOnPath(ctx, env, "execute_code runs Python scripts")
+}
 
-// Selected managed venv python, else the pinned toolchain python with its probed prefix
-func resolveRuntimeInterpreter(ctx context.Context, env *tools.Env) (interpreter, error) {
-	python, venv, err := runtimePython(ctx)
-	if err != nil {
-		return interpreter{}, err
-	}
-	if venv != "" {
-		prefix, err := pypath.Realpath(venv, pypath.Lax)
-		if err != nil {
-			return interpreter{}, err
+// First Python 3.8 or newer on the session's PATH, an error naming what needed it when PATH holds none
+func PythonOnPath(ctx context.Context, env *tools.Env, needs string) (string, error) {
+	for _, dir := range filepath.SplitList(toolchainEnviron(env)["PATH"]) {
+		if dir == "" {
+			continue
 		}
-		return interpreter{Python: python, Prefix: prefix}, nil
+		for _, name := range pythonNames() {
+			candidate := filepath.Join(dir, name)
+			if isRegularFile(candidate) && isExecutable(candidate) && isUsablePython(env, candidate) {
+				return candidate, nil
+			}
+		}
 	}
-	return interpreter{Python: python, Prefix: pythonEnvironmentPrefix(env, python)}, nil
+	return "", errors.New(needs + " and found no Python 3.8 or newer interpreter on PATH")
 }
 
-// Interpreter execute_code runs with the venv holding it, empty venv for the pinned toolchain python
-func runtimePython(ctx context.Context) (string, string, error) {
-	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
-	if err != nil {
-		return "", "", err
-	}
-	if python := pm.VenvPython(venv); isRegularFile(python) {
-		return python, venv, nil
-	}
-	_, pinned, found, err := pm.Toolchain(ctx, false, false)
-	if err != nil {
-		return "", "", err
-	}
-	if !found {
-		return "", "", errors.New("no Python interpreter is installed for execute_code")
-	}
-	return pinned, "", nil
-}
-
-// Path of the managed Python interpreter execute_code runs, an error when none is installed
-func RuntimePython(ctx context.Context) (string, error) {
-	python, _, err := runtimePython(ctx)
-	return python, err
-}
+// Path of the Python interpreter execute_code runs, an error when PATH holds none
+func RuntimePython(ctx context.Context) (string, error) { return userPython(ctx, nil) }
 
 func isRegularFile(p string) bool {
 	st, err := os.Stat(p)
@@ -362,22 +304,8 @@ func (c *probeCache[V]) clear() {
 }
 
 var (
-	usablePythonCache   probeCache[bool]
-	pythonPrefixCache   probeCache[string]
-	externalEnvLoggedMu sync.Mutex
-	externalEnvLogged   = map[string]bool{}
+	usablePythonCache probeCache[bool]
 )
-
-// Records a child interpreter as logged and reports whether this is its first notice
-func markExternalLogged(python string) bool {
-	externalEnvLoggedMu.Lock()
-	defer externalEnvLoggedMu.Unlock()
-	if externalEnvLogged[python] {
-		return false
-	}
-	externalEnvLogged[python] = true
-	return true
-}
 
 type probeResult struct {
 	returnCode int
@@ -416,58 +344,10 @@ func isUsablePython(env *tools.Env, python string) bool {
 	return usable
 }
 
-// Resolved sys.prefix the interpreter reports, empty on failure and failures are never cached
-func pythonEnvironmentPrefix(env *tools.Env, python string) string {
-	if cached, ok := pythonPrefixCache.get(python); ok {
-		return cached
-	}
-	result, ok := probePython(env, python, "import sys; print(sys.prefix)")
-	if ok && result.returnCode == 0 && pystr.Strip(result.stdout) != "" {
-		prefix, err := pypath.Realpath(pystr.Strip(result.stdout), pypath.Lax)
-		if err != nil {
-			return ""
-		}
-		pythonPrefixCache.put(python, prefix)
-		return prefix
-	}
-	return ""
-}
-
-// Reports whether the interpreter belongs to the managed runtime environment, by path first and then by prefix
-func usesIcebathPythonEnvironment(ctx context.Context, env *tools.Env, python string) (bool, error) {
-	rt, err := runtimeInterpreter(ctx, env)
-	if err != nil {
-		return false, err
-	}
-	if python == rt.Python {
-		return true, nil
-	}
-	resolved, err := pypath.Realpath(python, pypath.Lax)
-	if err != nil {
-		return false, err
-	}
-	runtimeResolved, err := pypath.Realpath(rt.Python, pypath.Lax)
-	if err != nil {
-		return false, err
-	}
-	if resolved == runtimeResolved {
-		return true, nil
-	}
-	prefix, err := pypath.Realpath(rt.Prefix, pypath.Lax)
-	if err != nil {
-		return false, err
-	}
-	return pythonEnvironmentPrefix(env, python) == prefix, nil
-}
-
-// Child interpreter, the runtime one in strict mode and the active venv or conda python in project mode
+// Child interpreter, the active venv or conda python in project mode, else the one on PATH
 func resolveChildPython(ctx context.Context, env *tools.Env, mode string) (string, error) {
-	rt, err := runtimeInterpreter(ctx, env)
-	if err != nil {
-		return "", err
-	}
 	if mode != "project" {
-		return rt.Python, nil
+		return userPython(ctx, env)
 	}
 	environ := toolchainEnviron(env)
 	subdir, exeNames := "bin", []string{"python", "python3"}
@@ -487,12 +367,12 @@ func resolveChildPython(ctx context.Context, env *tools.Env, mode string) (strin
 			if isUsablePython(env, candidate) {
 				return candidate, nil
 			}
-			logger(env).Info("execute_code: skipping interpreter (Python version < 3.8 or broken). Using the runtime interpreter instead.",
+			logger(env).Info("execute_code: skipping interpreter (Python version < 3.8 or broken). Using the interpreter on PATH instead.",
 				"var", name, "python", candidate)
-			return rt.Python, nil
+			return userPython(ctx, env)
 		}
 	}
-	return rt.Python, nil
+	return userPython(ctx, env)
 }
 
 func isDir(p string) bool {

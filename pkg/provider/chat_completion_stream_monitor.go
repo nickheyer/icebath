@@ -12,29 +12,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
 	streamHeartbeatInterval = 30 * time.Second
 	streamMonitorPoll       = 300 * time.Millisecond
-	sleepThreshold          = 5 * time.Second
 )
-
-// Reports how long the process stood still past one check interval, ignoring gaps under five seconds
-type sleepWatch struct {
-	interval time.Duration
-	wall     time.Time
-}
-
-// Seconds stopped since the previous check or zero
-func (w *sleepWatch) slept(now time.Time) time.Duration {
-	stopped := now.Round(0).Sub(w.wall.Round(0)) - w.interval
-	w.wall = now
-	if stopped >= sleepThreshold {
-		return stopped
-	}
-	return 0
-}
 
 var localLoadNotice = managedLocalLoadNotice
 
@@ -64,7 +48,7 @@ type streamWaitMonitor struct {
 	loadNoticeMisses  int
 	waitNoticeStarted time.Time
 	notice            WaitNoticeState
-	sleep             *sleepWatch
+	sleep             *tools.SleepWatch
 }
 
 // Monitor armed at the attempt start with the stale timeout in seconds
@@ -76,7 +60,7 @@ func newStreamWaitMonitor(h streamMonitorHost, baseURL string, stale float64, no
 	m := &streamWaitMonitor{h: h, model: model, baseURL: baseURL, stale: stale, lastHeartbeat: now,
 		localBase: baseURL != "" && IsLocalEndpoint(baseURL)}
 	if u, err := url.Parse(baseURL); baseURL != "" && err == nil && IsLoopbackHost(u.Hostname()) {
-		m.sleep = &sleepWatch{interval: streamMonitorPoll, wall: now}
+		m.sleep = tools.NewSleepWatch(streamMonitorPoll.Seconds())
 	}
 	return m
 }
@@ -93,7 +77,8 @@ func (m *streamWaitMonitor) touch(text string) error {
 func (m *streamWaitMonitor) tick(now time.Time, lastChunk *time.Time) (bool, error) {
 	moved := false
 	if m.sleep != nil {
-		if slept := m.sleep.slept(now); slept > 0 {
+		if seconds := m.sleep.Slept(); seconds > 0 {
+			slept := time.Duration(seconds * float64(time.Second))
 			moved = true
 			*lastChunk = minTime(lastChunk.Add(slept), now)
 			m.lastHeartbeat = minTime(m.lastHeartbeat.Add(slept), now)

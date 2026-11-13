@@ -595,13 +595,17 @@ type PluginLlm struct {
 	asyncCaller  pluginLlmCaller
 }
 
-func newPluginLlm(pluginID string) *PluginLlm {
-	return &PluginLlm{pluginID: pluginID, policyLoader: resolveTrustPolicy}
+// Facade bound to the plugin id, the config trust policy when no loader is given, callers replacing the host path
+func newPluginLlm(pluginID string, policyLoader func(ctx context.Context, pluginID string) trustPolicy, sync, async pluginLlmCaller) *PluginLlm {
+	if policyLoader == nil {
+		policyLoader = resolveTrustPolicy
+	}
+	return &PluginLlm{pluginID: pluginID, policyLoader: policyLoader, syncCaller: sync, asyncCaller: async}
 }
 
 // Facade with an injected policy and caller, no config and no provider
 func makePluginLlmForTest(pluginID string, policy trustPolicy, sync, async pluginLlmCaller) *PluginLlm {
-	return &PluginLlm{pluginID: pluginID, policyLoader: func(context.Context, string) trustPolicy { return policy }, syncCaller: sync, asyncCaller: async}
+	return newPluginLlm(pluginID, func(context.Context, string) trustPolicy { return policy }, sync, async)
 }
 
 // Host chat completion against the active model, overrides gated per plugin
@@ -678,7 +682,11 @@ func (l *PluginLlm) gate(ctx context.Context, o PluginLlmOptions, messages []any
 }
 
 func (l *PluginLlm) finishInvoked(ctx context.Context, name string, agent *string, kw pluginLlmCall, purpose *string, spec *PluginLlmStructuredRequest, async bool) (any, error) {
-	provider, model, response, err := l.invoke(ctx, kw, async)
+	invoke := l.invokeSync
+	if async {
+		invoke = l.invokeAsync
+	}
+	provider, model, response, err := invoke(ctx, kw)
 	if err != nil {
 		return nil, err
 	}
@@ -740,25 +748,45 @@ func hostKwargs(kw pluginLlmCall) *AuxLLMRequest {
 	return req
 }
 
-// Injected caller, or the host call_llm or async_call_llm with attribution of what ran
-func (l *PluginLlm) invoke(ctx context.Context, kw pluginLlmCall, async bool) (string, string, any, error) {
-	if caller := map[bool]pluginLlmCaller{false: l.syncCaller, true: l.asyncCaller}[async]; caller != nil {
-		return caller(ctx, kw)
+// Provider and model that ran for the response, followed by the response itself
+func attributed(kw pluginLlmCall, response any, routeInfo map[string]string) (string, string, any) {
+	provider, model := resolveAttribution(kw.ProviderOverride, kw.ModelOverride, response, routeInfo)
+	return provider, model, response
+}
+
+// Injected sync caller, or the host call_llm with attribution of what ran
+func (l *PluginLlm) invokeSync(ctx context.Context, kw pluginLlmCall) (string, string, any, error) {
+	if l.syncCaller != nil {
+		return l.syncCaller(ctx, kw)
 	}
 	client, err := needService("PluginLLM", func(s *Services) PluginLLMClient { return s.PluginLLM })
 	if err != nil {
 		return "", "", nil, err
 	}
 	req := hostKwargs(kw)
-	call := client.CallLLM
-	if async {
-		call = client.AsyncCallLLM
-	}
-	response, err := call(ctx, req)
+	response, err := client.CallLLM(ctx, req)
 	if err != nil {
 		return "", "", nil, err
 	}
-	provider, model := resolveAttribution(kw.ProviderOverride, kw.ModelOverride, response, req.RouteInfo)
+	provider, model, response := attributed(kw, response, req.RouteInfo)
+	return provider, model, response, nil
+}
+
+// Injected async caller, or the host async_call_llm with attribution of what ran
+func (l *PluginLlm) invokeAsync(ctx context.Context, kw pluginLlmCall) (string, string, any, error) {
+	if l.asyncCaller != nil {
+		return l.asyncCaller(ctx, kw)
+	}
+	client, err := needService("PluginLLM", func(s *Services) PluginLLMClient { return s.PluginLLM })
+	if err != nil {
+		return "", "", nil, err
+	}
+	req := hostKwargs(kw)
+	response, err := client.AsyncCallLLM(ctx, req)
+	if err != nil {
+		return "", "", nil, err
+	}
+	provider, model, response := attributed(kw, response, req.RouteInfo)
 	return provider, model, response, nil
 }
 

@@ -202,7 +202,7 @@ func (c *CLI) handleBackgroundCommand(cmd string) {
 			browser.SetCodePromptCallback(ctx, nil)
 		}()
 		bgAgent, err := agent.NewAIAgent(ctx, agent.AIAgentOptions{
-			Model: route.model, ACPCommand: rt.Command, ACPArgs: rt.Args, MaxIterations: c.maxTurns,
+			Model: route.model, ACPCommand: rt.Command, ACPArgs: rt.Args, MaxIterations: new(c.maxTurns),
 			APIKey: rt.APIKey, BaseURL: rt.BaseURL, Provider: rt.Provider, APIMode: rt.APIMode,
 			EnabledToolsets: c.enabledToolsets, QuietMode: true, VerboseLogging: false, SessionID: taskID, Platform: "cli",
 			SideAgent: true, ReasoningConfig: c.reasoningConfig, ServiceTier: c.serviceTier,
@@ -339,8 +339,8 @@ func (c *CLI) handleBtwCommand(cmd string) {
 	route := c.resolveTurnAgentConfig(question)
 	rt := route.runtime
 	var parentSession any
-	if c.agent != nil {
-		parentSession = c.agent.SessionID()
+	if a := c.agentRef(); a != nil {
+		parentSession = a.SessionID()
 	}
 	mainRuntime := map[string]any{
 		"model": route.model, "provider": rt.Provider, "base_url": rt.BaseURL, "api_key": rt.APIKey, "api_mode": rt.APIMode,

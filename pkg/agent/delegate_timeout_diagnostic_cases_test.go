@@ -22,8 +22,8 @@ func timeoutStubChild(env *tools.Env, apiCalls int) *AIAgent {
 	child.enabledToolsets = []string{"web", "terminal"}
 	child.validToolNames = map[string]bool{"web_search": true, "terminal": true}
 	child.tools = []any{map[string]any{"name": "web_search", "description": "search"}, map[string]any{"name": "terminal", "description": "shell"}}
-	child.apiCallCount = apiCalls
-	child.iterationBudget = NewIterationBudget(30)
+	child.apiCallCount.Store(int64(apiCalls))
+	child.iterationBudget.Store(NewIterationBudget(30))
 	return child
 }
 
@@ -43,7 +43,7 @@ func hangChildConversation(t *testing.T, child *AIAgent, hang time.Duration) {
 		case <-release:
 		case <-time.After(hang):
 		}
-		return map[string]any{"final_response": "", "completed": false, "api_calls": a.apiCallCount}, nil
+		return map[string]any{"final_response": "", "completed": false, "api_calls": int(a.apiCallCount.Load())}, nil
 	}
 	t.Cleanup(func() {
 		close(release)

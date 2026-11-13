@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -27,29 +26,16 @@ const (
 )
 
 var (
-	frontendWorkspaces = map[string]string{"tui": "ui-tui", "web": "web", "desktop": "apps/desktop"}
+	frontendWorkspaces = map[string]string{"web": "web", "desktop": "apps/desktop"}
 	frontendGenerated  = map[string]bool{"node_modules": true, "dist": true, "dist-webapp": true, "build": true, "release": true,
 		".cache": true, ".git": true, "coverage": true, "test-results": true, "playwright-report": true}
-	frontendTestFile  = regexp.MustCompile(`\.(test|spec)(-d)?\.[cm]?[jt]sx?$`)
-	frontendTUIInputs = func() []string {
-		var out []string
-		for _, root := range []string{"ui-tui", "ui-tui/packages/hermes-ink", "apps/shared"} {
-			out = append(out, root+"/src", root+"/package.json", root+"/tsconfig.json")
-		}
-		return append(out, "tsconfig.json", "package.json", "package-lock.json", ".npmrc", "pm/lock.json",
-			"scripts/build/tui.mjs", "scripts/build/frontend-common.mjs", "scripts/build/freshness.mjs",
-			"ui-tui/scripts/gateway_bootstrap.py", "ui-tui/scripts/clipboard_image.py")
-	}()
 	frontendWebappInputs = []string{"apps/desktop", "apps/shared", "package.json", "package-lock.json", ".npmrc", "pm/lock.json",
 		"scripts/build/webapp.mjs", "scripts/build/node-deps.mjs", "scripts/build/frontend-common.mjs", "scripts/build/freshness.mjs"}
 )
 
 // Source paths whose bytes decide whether a product is current
 func frontendProductInputs(product string) ([]string, error) {
-	switch product {
-	case "tui":
-		return frontendTUIInputs, nil
-	case "webapp":
+	if product == "webapp" {
 		return frontendWebappInputs, nil
 	}
 	workspace, ok := frontendWorkspaces[product]
@@ -76,12 +62,6 @@ func frontendSkipInput(product string) func(string) bool {
 			if strings.HasPrefix(p, ".dist-") || strings.HasPrefix(p, ".staging-") || p == "__pycache__" {
 				return true
 			}
-			if product == "tui" && p == "__tests__" {
-				return true
-			}
-		}
-		if product == "tui" && frontendTestFile.MatchString(name) {
-			return true
 		}
 		return strings.HasSuffix(name, ".tsbuildinfo") || strings.HasSuffix(name, ".pyc")
 	}

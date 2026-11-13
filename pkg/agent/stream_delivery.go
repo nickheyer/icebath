@@ -93,7 +93,7 @@ func (a *AIAgent) streamHookBasePayload() map[string]any {
 		surface = "cli"
 	}
 	return map[string]any{
-		"turn_id": a.currentTurnID, "iteration": a.apiCallCount, "session_id": a.sessionID,
+		"turn_id": a.currentTurnID, "iteration": int(a.apiCallCount.Load()), "session_id": a.sessionID,
 		"model": a.model, "provider": a.provider, "surface": surface,
 	}
 }

@@ -6,19 +6,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -30,7 +28,7 @@ type execFix struct {
 	attached [][2]string
 }
 
-// Isolated exec state with the session layer, supervisor, provider lookup and CLI discovery replaced
+// Isolated exec state with the session layer, supervisor, provider lookup, interpreter and code runner replaced
 func newExecFix(t *testing.T, section map[string]any) *execFix {
 	t.Helper()
 	isolateSessions(t)
@@ -56,29 +54,47 @@ func newExecFix(t *testing.T, section map[string]any) *execFix {
 	})
 	pin(t, &execCloudProvider, func(*tools.Env) (BrowserProvider, error) { return nil, nil })
 	pin(t, &execCDPOverride, func(context.Context, *tools.Env) string { return "" })
-	pin(t, &harnessSiteDir, func() string { return "" })
-	pin(t, &findCLI, func(*tools.Env) []string { return nil })
+	f.runner(t, func(execRun) execProc { return execProc{stdout: "ok\n"} })
+	pin(t, &execPython, func(context.Context, *tools.Env) (string, error) { return "/usr/bin/python3", nil })
 	pin(t, &execNativeVision, func(context.Context, *tools.Env) bool { return false })
 	pin(t, &execRouteIsSidecar, map[string]bool{})
 	pin(t, &realProfileFallbackNotes, map[string]string{})
 	pin(t, &realProfileNoteDelivered, map[string]bool{})
-	pin(t, &drivenDaemons, map[string]drivenDaemon{})
-	pin(t, &ownedDaemonGroups, map[string]int{})
 	return f
 }
 
-// Executable fake browser-use CLI the exec runs instead of the harness
-func (f *execFix) cli(t *testing.T, body string) string {
+// Replaces the code runner, which then sees everything one call runs with
+func (f *execFix) runner(t *testing.T, fn func(run execRun) execProc) {
 	t.Helper()
-	path := filepath.Join(f.dir, "browser-use")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	pin(t, &findCLI, func(*tools.Env) []string { return []string{path} })
-	return path
+	pin(t, &execRunCode, func(_ context.Context, _ *tools.Env, run execRun) execProc { return fn(run) })
 }
 
-func (f *execFix) raw(t *testing.T, code, session any, timeout any, task string, local bool) string {
+// Makes the code runner answer with one route field, default when the route leaves it unset
+func (f *execFix) echo(t *testing.T, field string) {
+	t.Helper()
+	f.runner(t, func(run execRun) execProc {
+		if v := run.route[field]; v != "" {
+			return execProc{stdout: v}
+		}
+		return execProc{stdout: "default"}
+	})
+}
+
+// Code opening each URL in turn
+func nav(urls ...string) string {
+	lines := make([]string, len(urls))
+	for i, u := range urls {
+		lines[i] = fmt.Sprintf("new_tab(%q)", u)
+	}
+	return strings.Join(lines, "\n")
+}
+
+const pageInfo = "print(page_info())"
+
+// The interpreter lookup the package ships with, before any fixture replaces it
+var realExecPython = execPython
+
+func (f *execFix) raw(t *testing.T, code string, session string, timeout any, task string, local bool) string {
 	t.Helper()
 	out, err := browserExec(context.Background(), f.env, code, session, timeout, task, local, nil)
 	if err != nil {
@@ -87,7 +103,7 @@ func (f *execFix) raw(t *testing.T, code, session any, timeout any, task string,
 	return out
 }
 
-func (f *execFix) run(t *testing.T, code, session string, task string) map[string]any {
+func (f *execFix) run(t *testing.T, code string, session string, task string) map[string]any {
 	t.Helper()
 	return decodeExecResult(t, f.raw(t, code, session, execDefaultTimeoutS, task, false))
 }
@@ -123,60 +139,9 @@ func sessionInfoOf(info map[string]any, err error, seen *[]string) func(context.
 	}
 }
 
-func TestSubprocessEnvironmentBrowserUseTelemetryDefaultsOff(t *testing.T) {
-	f := newExecFix(t, nil)
-	pin(t, &execBrowserEnv, func(*tools.Env) map[string]string { return map[string]string{} })
-	if got := baseSubprocessEnv(context.Background(), f.env)["ANONYMIZED_TELEMETRY"]; got != "false" {
-		t.Fatalf("ANONYMIZED_TELEMETRY = %q", got)
-	}
-}
-
-func TestSubprocessEnvironmentSubprocessEnvReplacesParentPythonImportPaths(t *testing.T) {
-	f := newExecFix(t, nil)
-	pin(t, &execBrowserEnv, func(*tools.Env) map[string]string {
-		return map[string]string{"PYTHONPATH": "/icebath:/icebath/venv/lib/site-packages", "PYTHONHOME": "/icebath/venv", "KEEP_ME": "yes"}
-	})
-	pin(t, &harnessSiteDir, func() string { return "/harness-site" })
-	env := baseSubprocessEnv(context.Background(), f.env)
-	if env["PYTHONPATH"] != "/harness-site" || env["KEEP_ME"] != "yes" {
-		t.Fatalf("env = %v", env)
-	}
-	if _, ok := env["PYTHONHOME"]; ok {
-		t.Fatal("PYTHONHOME reached the harness child")
-	}
-}
-
-func TestSubprocessEnvironmentSubprocessEnvFloorsVersionManagerOnlyPath(t *testing.T) {
-	f := newExecFix(t, nil)
-	pin(t, &execBrowserEnv, func(*tools.Env) map[string]string {
-		return map[string]string{"PATH": strings.Repeat("/home/u/.nvm/versions/node/v24.18.0/bin:", 6) + "/home/u/.nvm/versions/node/v24.18.0/bin"}
-	})
-	parts := strings.Split(baseSubprocessEnv(context.Background(), f.env)["PATH"], ":")
-	if !slices.Contains(parts, "/usr/bin") || !slices.Contains(parts, "/bin") {
-		t.Fatalf("PATH = %v", parts)
-	}
-}
-
-func TestSubprocessEnvironmentFloorPreservesExistingEntriesAndOrder(t *testing.T) {
-	original := []string{"/opt/toolchain/bin", "/usr/bin", "/snap/bin"}
-	merged := strings.Split(floorSubprocessPath(strings.Join(original, ":")), ":")
-	positions := []int{}
-	for _, p := range original {
-		i := slices.Index(merged, p)
-		if i < 0 {
-			t.Fatalf("%s dropped from %v", p, merged)
-		}
-		positions = append(positions, i)
-	}
-	if !slices.IsSorted(positions) {
-		t.Fatalf("order changed %v", merged)
-	}
-}
-
 func TestVaultSupervisorAttachExecAttachesSupervisorToTheBrowserItDrives(t *testing.T) {
 	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\necho ok\n")
-	result := f.run(t, "print(1)", "", "t-vault")
+	result := f.run(t, pageInfo, "", "t-vault")
 	if result["success"] != true {
 		t.Fatalf("result = %v", result)
 	}
@@ -186,18 +151,11 @@ func TestVaultSupervisorAttachExecAttachesSupervisorToTheBrowserItDrives(t *test
 	}
 }
 
-func TestBackendSwapRetargetsDaemonsBrowserSwapRestartsEveryDaemonOnTheNewEndpoint(t *testing.T) {
+func TestBackendSwapRetargetsEverySessionOnTheNewEndpoint(t *testing.T) {
 	f := newExecFix(t, nil)
 	pin(t, &execCDPOverride, func(_ context.Context, env *tools.Env) string { return cfgOf(env).cdpOverrideRaw() })
-	f.cli(t, `latch="`+f.dir+`/daemon-${BU_NAME:-default}"
-if [ "${1:-}" = "--reload" ]; then rm -f "$latch"; exit 0; fi
-cat > /dev/null
-[ -f "$latch" ] || echo "$BU_CDP_URL" > "$latch"
-cat "$latch"
-`)
-	drive := func(session string) string {
-		return strings.TrimSpace(f.run(t, "print(1)", session, "t-swap")["output"].(string))
-	}
+	f.echo(t, "BU_CDP_URL")
+	drive := func(session string) string { return f.run(t, pageInfo, session, "t-swap")["output"].(string) }
 	t.Setenv("BROWSER_CDP_URL", "http://127.0.0.1:9400")
 	if a, b := drive(""), drive("research"); a != "http://127.0.0.1:9400" || b != a {
 		t.Fatalf("before swap %q %q", a, b)
@@ -209,12 +167,14 @@ cat "$latch"
 	}
 }
 
-func TestVaultEgressRedactionExecRedactsRegisteredVaultSecretFromStdoutAndStderr(t *testing.T) {
+func TestVaultEgressRedactionExecRedactsRegisteredVaultSecretFromOutputAndStderr(t *testing.T) {
 	f := newExecFix(t, nil)
 	secret := "vault-filled-password-112693"
-	f.cli(t, "cat > /dev/null\necho \"stdout="+secret+"\"\necho \"stderr="+secret+"\" >&2\n")
+	f.runner(t, func(execRun) execProc {
+		return execProc{returnCode: 1, stdout: "output=" + secret, stderr: "failure=" + secret}
+	})
 	tools.RegisterVaultRedactionValue(secret)
-	out := f.raw(t, "print(1)", "", execDefaultTimeoutS, "", false)
+	out := f.raw(t, pageInfo, "", execDefaultTimeoutS, "", false)
 	tools.ClearVaultRedactionValues(context.Background())
 	if strings.Contains(out, secret) || strings.Count(out, "«redacted-vault-secret»") != 2 {
 		t.Fatalf("result = %s", out)
@@ -263,23 +223,6 @@ func TestLegacyCloudMigrationAutoDetectWithKeyMigrates(t *testing.T) {
 	t.Setenv("BROWSERBASE_PROJECT_ID", "bb-project")
 	if !isLegacyBrowserUseCloudConfig(env) {
 		t.Fatal("autodetect with key did not migrate")
-	}
-}
-
-func TestLegacyCloudMigrationMigratedConfigGetsBUAutospawn(t *testing.T) {
-	f := newExecFix(t, map[string]any{"cloud_provider": "browser-use"})
-	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
-	f.cli(t, "cat > /dev/null\necho \"autospawn:$BU_AUTOSPAWN\"\n")
-	if out := f.run(t, "print(1)", "", "")["output"].(string); !strings.Contains(out, "autospawn:1") {
-		t.Fatalf("output = %q", out)
-	}
-}
-
-func TestLegacyCloudMigrationNonLegacyConfigDoesNotSetBUAutospawn(t *testing.T) {
-	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\necho \"autospawn:[$BU_AUTOSPAWN]\"\n")
-	if out := f.run(t, "print(1)", "", "")["output"].(string); !strings.Contains(out, "autospawn:[]") {
-		t.Fatalf("output = %q", out)
 	}
 }
 
@@ -384,8 +327,10 @@ func TestBackendCdpResolutionNamedSessionComposesWithProviderBackend(t *testing.
 		seen = append(seen, key)
 		return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
 	})
-	f.cli(t, "cat > /dev/null\necho \"bu:$BU_NAME ws:$BU_CDP_WS\"\n")
-	result := f.run(t, "print(1)", "r7k2", "")
+	f.runner(t, func(run execRun) execProc {
+		return execProc{stdout: "bu:" + run.route["BU_NAME"] + " ws:" + run.route["BU_CDP_WS"]}
+	})
+	result := f.run(t, pageInfo, "r7k2", "")
 	out := result["output"].(string)
 	if result["success"] != true || !slices.Equal(seen, []string{"bu-named-r7k2"}) || !strings.Contains(out, "bu:r7k2") ||
 		!strings.Contains(out, "ws:wss://browser.example/cdp/bu-named-r7k2") {
@@ -406,17 +351,18 @@ func TestBackendCdpResolutionNamedSessionKeyStableAcrossTasks(t *testing.T) {
 	}
 }
 
-func TestBackendCdpResolutionNamedSessionDirectAPIBUCloudStillSkipsProvider(t *testing.T) {
+func TestBackendCdpResolutionNamedSessionDirectAPIBUCloudGetsAProviderSession(t *testing.T) {
 	f := newExecFix(t, map[string]any{"cloud_provider": "browser-use"})
 	pin(t, &execCloudProvider, providerOf("browser-use"))
-	pin(t, &execSessionInfo, func(context.Context, *tools.Env, string) (map[string]any, error) {
-		t.Fatal("must skip provider")
-		return nil, nil
+	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
+		f.keys = append(f.keys, key)
+		return map[string]any{"cdp_url": "wss://cloud.example/" + key}, nil
 	})
 	t.Setenv("BROWSER_USE_API_KEY", "bu-key")
 	penv := map[string]string{}
-	if err := resolveFor(f, penv, "t1", "r7k2"); err != "" || hasCDPEnv(penv) {
-		t.Fatalf("%q %v", err, penv)
+	if err := resolveFor(f, penv, "t1", "r7k2"); err != "" || penv["BU_CDP_WS"] != "wss://cloud.example/bu-named-r7k2" ||
+		penv[cloudBrowserSentinel] != activateAlways || penv[privateBrowserSentinel] != "1" || !slices.Equal(f.keys, []string{"bu-named-r7k2"}) {
+		t.Fatalf("%q %v %v", err, penv, f.keys)
 	}
 }
 
@@ -457,7 +403,8 @@ func TestBackendCdpResolutionLegacyUseGatewayFlagStillResolvesGatewayProvider(t 
 	gatewayResolves(t, map[string]any{"use_gateway": true}, "wss://gateway.example/cdp/legacy")
 }
 
-func ownTabRun(t *testing.T, session string, provider bool, sharedCDP string) map[string]any {
+// Whether a call on the given browser pins its named session to a tab of its own
+func ownTabRun(t *testing.T, session string, provider bool, sharedCDP string) bool {
 	t.Helper()
 	f := newExecFix(t, nil)
 	pin(t, &execCDPOverride, cdpOverrideOf(sharedCDP))
@@ -467,56 +414,26 @@ func ownTabRun(t *testing.T, session string, provider bool, sharedCDP string) ma
 			return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
 		})
 	}
-	f.cli(t, "cat\n")
-	return f.run(t, "print('payload')", session, "")
-}
-
-func TestOwnTabPreambleNamedSharedBrowserGetsPreamble(t *testing.T) {
-	result := ownTabRun(t, "r7k2", false, "http://127.0.0.1:9222")
-	out := result["output"].(string)
-	i, j := strings.Index(out, "_icebath_ensure_own_tab"), strings.Index(out, "print('payload')")
-	if result["success"] != true || i < 0 || j < 0 || i > j {
-		t.Fatalf("%v", result)
-	}
-}
-
-func TestOwnTabPreambleNamedPackagedChromiumSkipsPreamble(t *testing.T) {
-	result := ownTabRun(t, "r7k2", false, "")
-	if result["success"] != true || strings.Contains(result["output"].(string), "_icebath_ensure_own_tab") {
-		t.Fatalf("%v", result)
-	}
-}
-
-func TestOwnTabPreambleUnnamedSessionGetsNoPreamble(t *testing.T) {
-	result := ownTabRun(t, "", false, "")
-	if result["success"] != true || strings.Contains(result["output"].(string), "_icebath_ensure_own_tab") {
-		t.Fatalf("%v", result)
-	}
-}
-
-func TestOwnTabPreambleNamedProviderBrowserSkipsPreamble(t *testing.T) {
-	result := ownTabRun(t, "r7k2", true, "")
-	if result["success"] != true || strings.Contains(result["output"].(string), "_icebath_ensure_own_tab") {
-		t.Fatalf("%v", result)
-	}
-}
-
-func TestOwnTabPreambleSentinelNeverReachesSubprocessEnv(t *testing.T) {
-	f := newExecFix(t, nil)
-	pin(t, &execCloudProvider, providerOf("scripted"))
-	pin(t, &execSessionInfo, func(_ context.Context, _ *tools.Env, key string) (map[string]any, error) {
-		return map[string]any{"cdp_url": "wss://browser.example/cdp/" + key}, nil
+	own := false
+	f.runner(t, func(run execRun) execProc {
+		own = run.ownTab
+		return execProc{}
 	})
-	f.cli(t, "cat > /dev/null\necho \"sentinel:${"+privateBrowserSentinel+":-unset}\"\n")
-	if out := f.run(t, "print(1)", "r7k2", "")["output"].(string); !strings.Contains(out, "sentinel:unset") {
-		t.Fatalf("output = %q", out)
+	if result := f.run(t, pageInfo, session, ""); result["success"] != true {
+		t.Fatalf("%v", result)
 	}
+	return own
 }
 
-func TestOwnTabPreamblePreambleIsValidPython(t *testing.T) {
-	for _, src := range []string{ownTabPreamble, ownTabPreamble + "print('x')"} {
-		if _, err := pyast.Parse(src); err != nil {
-			t.Fatal(err)
+func TestOwnTabOnlyANamedSessionOnASharedBrowserGetsItsOwnTab(t *testing.T) {
+	for _, c := range []struct {
+		session   string
+		provider  bool
+		sharedCDP string
+		own       bool
+	}{{"r7k2", false, "http://127.0.0.1:9222", true}, {"r7k2", false, "", false}, {"", false, "", false}, {"r7k2", true, "", false}} {
+		if got := ownTabRun(t, c.session, c.provider, c.sharedCDP); got != c.own {
+			t.Errorf("%+v pinned %v", c, got)
 		}
 	}
 }
@@ -524,42 +441,21 @@ func TestOwnTabPreamblePreambleIsValidPython(t *testing.T) {
 func shotFile(t *testing.T, dir, name string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, []byte("\x89PNG fake"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("\x89PNG\r\n\x1a\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func nowSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-
-func TestNativeScreenshotsFindScreenshotReturnsLastFreshPath(t *testing.T) {
-	dir := t.TempDir()
-	a, b := shotFile(t, dir, "shot.png"), shotFile(t, dir, "b.png")
-	if got := findScreenshot("step one saved "+a+"\nthen saved "+b+"\n", nowSeconds()-5); got != b {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestNativeScreenshotsFindScreenshotRejectsStaleAndMissing(t *testing.T) {
-	stale := shotFile(t, t.TempDir(), "shot.png")
-	old := time.Now().Add(-900 * time.Second)
-	if err := os.Chtimes(stale, old, old); err != nil {
-		t.Fatal(err)
-	}
-	if got := findScreenshot(stale+"\n/nonexistent/dir/x.png\n", nowSeconds()); got != "" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 func TestNativeScreenshotsVisionModelGetsMultimodalEnvelope(t *testing.T) {
 	f := newExecFix(t, nil)
 	shot := shotFile(t, f.dir, "shot.png")
-	f.cli(t, "cat > /dev/null\necho \""+shot+"\"\n")
+	f.runner(t, func(execRun) execProc { return execProc{stdout: shot + "\n"} })
 	pin(t, &execNativeVision, func(context.Context, *tools.Env) bool { return true })
 	pin(t, &execResizeForVision, func(*tools.Env, string, string, tools.ResizeOptions) (string, error) {
 		return "data:image/png;base64,QUJD", nil
 	})
-	result := decodeExecResult(t, f.raw(t, "print(capture_screenshot())", "", execDefaultTimeoutS, "", false))
+	result := decodeExecResult(t, f.raw(t, pageInfo, "", execDefaultTimeoutS, "", false))
 	content, _ := result["content"].([]any)
 	kinds := []string{}
 	for _, part := range content {
@@ -575,67 +471,111 @@ func TestNativeScreenshotsVisionModelGetsMultimodalEnvelope(t *testing.T) {
 func TestNativeScreenshotsTextOnlyModelGetsPlainResultWithPath(t *testing.T) {
 	f := newExecFix(t, nil)
 	shot := shotFile(t, f.dir, "shot.png")
-	f.cli(t, "cat > /dev/null\necho \""+shot+"\"\n")
-	if got := f.run(t, "print(capture_screenshot())", "", "")["screenshot_path"]; got != shot {
+	f.runner(t, func(execRun) execProc { return execProc{stdout: "saved " + shot + " and /no/such/old.png\n"} })
+	if got := f.run(t, pageInfo, "", "")["screenshot_path"]; got != shot {
 		t.Fatalf("screenshot_path = %v", got)
 	}
 }
 
 func TestNativeScreenshotsNoScreenshotKeepsStringResult(t *testing.T) {
 	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\necho \"no images here\"\n")
-	if _, ok := f.run(t, "print(1)", "", "")["screenshot_path"]; ok {
+	if _, ok := f.run(t, pageInfo, "", "")["screenshot_path"]; ok {
 		t.Fatal("screenshot_path present")
 	}
 }
 
-func TestBrowserExecMissingCliReturnsInstallHint(t *testing.T) {
+func TestBrowserExecRejectsCallsWithoutCode(t *testing.T) {
 	f := newExecFix(t, nil)
-	if f.run(t, "print(page_info())", "", "")["error"] == nil {
-		t.Fatal("no install hint")
+	for _, code := range []string{"", "   ", "\n\t"} {
+		if msg, _ := f.run(t, code, "", "")["error"].(string); !strings.HasPrefix(msg, "No code provided. Pass Python that uses the pre-imported helpers") {
+			t.Fatalf("code %q gave %q", code, msg)
+		}
 	}
 }
 
-func TestBrowserExecEmptyCodeRejected(t *testing.T) {
+func TestBrowserExecHandsTheCodeToTheRunnerWithItsInterpreterAndEnvironment(t *testing.T) {
 	f := newExecFix(t, nil)
-	if _, ok := f.run(t, "   ", "", "")["error"]; !ok {
-		t.Fatal("blank code accepted")
-	}
-}
-
-func TestBrowserExecCodePipedOnStdin(t *testing.T) {
-	f := newExecFix(t, nil)
-	f.cli(t, "code=$(cat)\necho \"got:$code\"\n")
-	result := f.run(t, `print("hi")`, "", "")
+	var seen []execRun
+	f.runner(t, func(run execRun) execProc {
+		seen = append(seen, run)
+		return execProc{stdout: "{'url': 'about:blank'}\n"}
+	})
+	result := f.run(t, pageInfo, "", "")
 	_, hasSession := result["session"]
-	if result["success"] != true || result["exit_code"] != float64(0) || !strings.Contains(result["output"].(string), `got:print("hi")`) || hasSession {
+	_, hasStderr := result["stderr"]
+	if result["success"] != true || result["exit_code"] != 0.0 || result["output"] != "{'url': 'about:blank'}\n" || hasSession || hasStderr || result["workspace"] == "" {
 		t.Fatalf("%v", result)
 	}
+	run := seen[0]
+	if len(seen) != 1 || run.code != pageInfo || run.python != "/usr/bin/python3" || run.timeout != execDefaultTimeoutS ||
+		run.childEnv["BH_AGENT_WORKSPACE"] != result["workspace"] || run.childEnv["BU_CDP_WS"] != run.route["BU_CDP_WS"] || run.childEnv["PYTHONPATH"] != "" {
+		t.Fatalf("%+v", seen)
+	}
+	for k := range run.childEnv {
+		if strings.HasPrefix(k, "_ICEBATH_BU_") {
+			t.Fatalf("route sentinel %s reached the interpreter", k)
+		}
+	}
 }
 
-func TestBrowserExecSessionSetsBUName(t *testing.T) {
+func TestBrowserExecWithoutPythonOnPathSaysSo(t *testing.T) {
 	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\necho \"bu:$BU_NAME\"\n")
-	result := f.run(t, "print(1)", "r7k2", "")
-	if !strings.Contains(result["output"].(string), "bu:r7k2") || result["session"] != "r7k2" {
+	pin(t, &execPython, realExecPython)
+	t.Setenv("PATH", t.TempDir())
+	if msg, _ := f.run(t, pageInfo, "", "")["error"].(string); msg != "browser_exec runs Python code and found no Python 3.8 or newer interpreter on PATH" {
+		t.Fatalf("error = %q", msg)
+	}
+}
+
+func TestBrowserExecSessionNamesTheRoute(t *testing.T) {
+	f := newExecFix(t, nil)
+	f.echo(t, "BU_NAME")
+	if result := f.run(t, pageInfo, "r7k2", ""); result["output"] != "r7k2" || result["session"] != "r7k2" {
 		t.Fatalf("%v", result)
 	}
 }
 
 func TestBrowserExecInvalidSessionNameRejected(t *testing.T) {
 	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\n")
-	msg, _ := f.run(t, "print(1)", "bad name!", "")["error"].(string)
+	msg, _ := f.run(t, pageInfo, "bad name!", "")["error"].(string)
 	if !strings.Contains(strings.ToLower(msg), "session") {
 		t.Fatalf("error = %q", msg)
 	}
 }
 
-func TestBrowserExecNonzeroExitReportsFailureAndStderr(t *testing.T) {
+func TestBrowserExecFailingCodeReportsExitCodeOutputAndStderr(t *testing.T) {
 	f := newExecFix(t, nil)
-	f.cli(t, "cat > /dev/null\necho \"boom\" >&2\nexit 3\n")
-	result := f.run(t, "print(1)", "", "")
-	if result["success"] != false || result["exit_code"] != float64(3) || !strings.Contains(result["stderr"].(string), "boom") {
+	f.runner(t, func(execRun) execProc {
+		return execProc{returnCode: 1, stdout: "T1\n", stderr: "Traceback (most recent call last):\nRuntimeError: boom\n"}
+	})
+	result := f.run(t, pageInfo, "", "")
+	if result["success"] != false || result["exit_code"] != 1.0 || result["output"] != "T1\n" || result["stderr"] != "Traceback (most recent call last):\nRuntimeError: boom" {
+		t.Fatalf("%v", result)
+	}
+	f.runner(t, func(execRun) execProc { return execProc{returnCode: -9, stderr: strings.Repeat("e", 5000)} })
+	result = f.run(t, pageInfo, "", "")
+	if result["exit_code"] != -9.0 || result["stderr"] != strings.Repeat("e", 4000)+"\n… (stderr truncated)" {
+		t.Fatalf("%v", result)
+	}
+}
+
+func TestBrowserExecTimeoutAndLaunchFailureSaySo(t *testing.T) {
+	f := newExecFix(t, nil)
+	pin(t, &execMinTimeoutS, 1)
+	var timeouts []int
+	f.runner(t, func(run execRun) execProc {
+		timeouts = append(timeouts, run.timeout)
+		return execProc{timedOut: true}
+	})
+	result := decodeExecResult(t, f.raw(t, pageInfo, "", 1, "", false))
+	if msg, _ := result["error"].(string); !strings.HasPrefix(msg, "browser_exec timed out after 1s. The browser may still be working; retry with a larger timeout_s (max 1800)") || !slices.Equal(timeouts, []int{1}) {
+		t.Fatalf("%v %v", result, timeouts)
+	}
+	f.runner(t, func(execRun) execProc {
+		return execProc{launchErr: &os.PathError{Op: "fork/exec", Path: "/usr/bin/python3", Err: syscall.EACCES}}
+	})
+	result = decodeExecResult(t, f.raw(t, pageInfo, "", 30, "", false))
+	if msg, _ := result["error"].(string); msg != "Failed to launch Python for browser_exec: [Errno 13] Permission denied: '/usr/bin/python3'" {
 		t.Fatalf("%v", result)
 	}
 }
@@ -737,66 +677,11 @@ func TestLightpandaBackendResolutionCloudProviderWins(t *testing.T) {
 	}
 }
 
-func TestLightpandaPreambleLightpandaSessionSkipsOwnTabPreamble(t *testing.T) {
+func TestLightpandaNamedSessionKeepsItsSinglePage(t *testing.T) {
 	f, _ := lightpandaSetup(t, true, nil, nil)
-	f.cli(t, "cat\n")
-	result := f.run(t, "print('payload')", "r7k2", "")
-	out := result["output"].(string)
-	if result["success"] != true || strings.Contains(out, "_icebath_ensure_own_tab") || !strings.Contains(out, "print('payload')") {
+	f.echo(t, privateBrowserSentinel)
+	if result := f.run(t, pageInfo, "r7k2", ""); result["success"] != true || result["output"] != "1" {
 		t.Fatalf("%v", result)
-	}
-}
-
-func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
-
-func TestTimeoutProcessGroupKillTimeoutKillsGrandchildAndReturnsPromptly(t *testing.T) {
-	f := newExecFix(t, nil)
-	pidFile := filepath.Join(f.dir, "grandchild.pid")
-	f.cli(t, "cat > /dev/null\nsleep 60 &\necho $! > \""+pidFile+"\"\nsleep 60\n")
-	pin(t, &execMinTimeoutS, 1)
-	start := time.Now()
-	result := decodeExecResult(t, f.raw(t, "print(1)", "", 1, "", false))
-	if msg, _ := result["error"].(string); !strings.Contains(msg, "timed out") {
-		t.Fatalf("%v", result)
-	}
-	if time.Since(start) >= 30*time.Second {
-		t.Fatalf("returned after %s", time.Since(start))
-	}
-	data, err := os.ReadFile(pidFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && pidAlive(pid) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if pidAlive(pid) {
-		t.Fatalf("grandchild %d survived the group kill", pid)
-	}
-}
-
-func TestTimeoutProcessGroupKillPostKillDrainIsBounded(t *testing.T) {
-	dir := t.TempDir()
-	cli := filepath.Join(dir, "browser-use")
-	if err := os.WriteFile(cli, []byte("#!/bin/sh\nexec sleep 60\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var stuck int
-	pin(t, &killCLIGroup, func(pid int) { stuck = pid })
-	pin(t, &postKillDrain, 200*time.Millisecond)
-	t.Cleanup(func() {
-		if stuck > 0 {
-			syscall.Kill(-stuck, syscall.SIGKILL)
-		}
-	})
-	start := time.Now()
-	_, err := runCLIKillingProcessGroup([]string{cli}, "code", map[string]string{"PATH": os.Getenv("PATH")}, time.Second)
-	if !errors.Is(err, errCLITimeout) || time.Since(start) > 10*time.Second {
-		t.Fatalf("err = %v after %s", err, time.Since(start))
 	}
 }
 
@@ -842,18 +727,22 @@ func newHybridFix(t *testing.T, autoLocal bool) *hybridFix {
 		ip := netip.MustParseAddr(resolve(u.Hostname()))
 		return !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified())
 	})
-	f.cli(t, "cat >/dev/null; printf \"%s\" \"${BU_NAME:-default}\"\n")
+	f.echo(t, "BU_NAME")
 	return f
 }
 
 func TestExecHybridPrivateURLRoutingPrivateURLRunsOnLocalSidecarOrIsRefused(t *testing.T) {
-	cases := []struct{ name, code, refusal, first, later string }{
-		{"lan", `new_tab("` + hybridLAN + `")`, "", "", ""},
-		{"mixed", "new_tab(\"https://example.com/x\")\nnew_tab(\"" + hybridLAN + "\")", "", "", ""},
-		{"rebind-private-then-public", `new_tab("http://rebind.example/login")`, "", "192.168.1.5", "93.184.216.34"},
-		{"imds", `new_tab("http://169.254.169.254/latest/meta-data/")`, "cloud metadata", "", ""},
-		{"hybrid-off", `new_tab("` + hybridLAN + `")`, "private or internal", "", ""},
-		{"rebind-public-then-private", `new_tab("http://flip.example/x")`, "private or internal", "93.184.216.34", "192.168.1.5"},
+	cases := []struct {
+		name                  string
+		code                  string
+		refusal, first, later string
+	}{
+		{"lan", nav(hybridLAN), "", "", ""},
+		{"mixed", nav("https://example.com/x", hybridLAN), "", "", ""},
+		{"rebind-private-then-public", nav("http://rebind.example/login"), "", "192.168.1.5", "93.184.216.34"},
+		{"imds", nav("http://169.254.169.254/latest/meta-data/"), "cloud metadata", "", ""},
+		{"hybrid-off", nav(hybridLAN), "private or internal", "", ""},
+		{"rebind-public-then-private", nav("http://flip.example/x"), "private or internal", "93.184.216.34", "192.168.1.5"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -883,13 +772,15 @@ func TestExecHybridPrivateURLRoutingPrivateURLRunsOnLocalSidecarOrIsRefused(t *t
 	}
 }
 
-func TestExecHybridPrivateURLRoutingSidecarRouteHasItsOwnDaemonAndSticksForURLLessCalls(t *testing.T) {
+func TestExecHybridPrivateURLRoutingSidecarRouteHasItsOwnSessionAndSticksForURLLessCalls(t *testing.T) {
 	f := newHybridFix(t, true)
-	steps := [][2]string{{`new_tab("https://example.com/")`, "default"}, {`new_tab("` + hybridLAN + `")`, "_local_default"},
-		{`print(js("document.title"))`, "_local_default"}}
-	for _, step := range steps {
-		if got := f.run(t, step[0], "", "t")["output"]; got != step[1] {
-			t.Fatalf("%s ran on %v", step[0], got)
+	calls := []struct {
+		code string
+		name string
+	}{{nav("https://example.com/"), "default"}, {nav(hybridLAN), "_local_default"}, {"print(js('document.title'))", "_local_default"}}
+	for _, call := range calls {
+		if got := f.run(t, call.code, "", "t")["output"]; got != call.name {
+			t.Fatalf("%v ran on %v", call.code, got)
 		}
 	}
 	if !slices.Equal(f.cloudKeys, []string{"t"}) || !slices.Equal(f.localKeys, []string{"t::local", "t::local"}) {

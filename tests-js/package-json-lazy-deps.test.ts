@@ -5,8 +5,8 @@
  * including users who never opted into a given browser backend. Anything
  * listed in ``dependencies`` therefore runs its npm postinstall script for
  * everyone, and — per #43564 — is also part of the npm workspace install
- * graph, where a workspace-scoped ``npm ci`` (``--workspace ui-tui
- * --workspace web``) can silently prune it right back out on the next
+ * graph, where a workspace-scoped ``npm ci`` (``--workspace web``) can
+ * silently prune it right back out on the next
  * ``icebath update``.
  *
  * The contract:

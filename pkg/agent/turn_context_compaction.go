@@ -83,9 +83,9 @@ func applyGrownWindow(a *AIAgent, compressor ContextEngine, grown int) {
 // Refunds the call count and iteration budget of a pass that never reached the provider
 func refundAPICall(a *AIAgent, apiCallCount int) int {
 	apiCallCount--
-	a.apiCallCount = apiCallCount
-	if a.iterationBudget != nil {
-		a.iterationBudget.Refund()
+	a.apiCallCount.Store(int64(apiCallCount))
+	if budget := a.iterationBudget.Load(); budget != nil {
+		budget.Refund()
 	}
 	return apiCallCount
 }

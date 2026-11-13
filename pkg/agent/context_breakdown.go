@@ -92,6 +92,9 @@ var breakdownPromptParts = func(ctx context.Context, a *AIAgent) (SystemPromptPa
 	return BuildSystemPromptParts(ctx, a, nil)
 }
 
+// Rough token estimate of a text, the shared character heuristic
+func charsToTokens(text string) int { return provider.EstimateTokens(text) }
+
 // Python str.format of one constant spec, a malformed spec raising as in Python
 func breakdownFormat(spec string, kw map[string]any) string {
 	out, err := i18n.PyFormat(spec, kw)
@@ -115,7 +118,7 @@ func breakdownJSONTokens(tools []map[string]any) int {
 	if err != nil {
 		return 0
 	}
-	return provider.EstimateTokens(text)
+	return charsToTokens(text)
 }
 
 // Tokens of a byte size at four characters a token rounded up, nil for an unknown size
@@ -216,13 +219,13 @@ func ContextUsageFieldsOf(engine ContextEngine) (ContextUsageFields, bool) {
 func breakdownCategoriesOf(ctx context.Context, systemPrompt, skills string, tools []map[string]any, messages []map[string]any, rules, memory string) ContextBreakdown {
 	builtin, mcp, subagent := splitBreakdownTools(tools)
 	tokens := map[string]int{
-		"system_prompt":        provider.EstimateTokens(systemPrompt),
+		"system_prompt":        charsToTokens(systemPrompt),
 		"tool_definitions":     breakdownJSONTokens(builtin),
-		"rules":                provider.EstimateTokens(rules),
-		"skills":               provider.EstimateTokens(skills),
+		"rules":                charsToTokens(rules),
+		"skills":               charsToTokens(skills),
 		"mcp":                  breakdownJSONTokens(mcp),
 		"subagent_definitions": breakdownJSONTokens(subagent),
-		"memory":               provider.EstimateTokens(memory),
+		"memory":               charsToTokens(memory),
 		"conversation":         provider.EstimateRowsTokens(messages, provider.CurrentImageTokenCost(ctx)),
 	}
 	out := ContextBreakdown{Categories: []ContextCategory{}}
@@ -259,7 +262,7 @@ func ComputeSessionContextBreakdown(ctx context.Context, a *AIAgent, messages []
 		contextMax = engineContextLength(a.contextCompressor)
 	}
 	rows := rowsToMessages(messages)
-	anchor := a.turnBaseUsageAnchor
+	anchor := a.turnBaseUsageAnchor.Load()
 	contextUsed, anchored := provider.AnchoredContextTokens(ctx, rows, anchor, false)
 	if !anchored {
 		anchor = a.usageAnchor

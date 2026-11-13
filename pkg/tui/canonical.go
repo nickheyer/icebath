@@ -25,7 +25,7 @@ type sharedControl struct {
 	PromptID            string
 }
 
-// Order the launch options take on session.create, the order the ui-tui builds them in
+// Order the launch options take on session.create
 var creationOptionOrder = []string{
 	"model", "provider", "cwd", "toolsets", "skills", "client_env", "max_turns", "yolo", "ignore_rules",
 	"safe_mode", "ignore_user_config", "checkpoints", "pass_session_id", "accept_hooks", "source", "request_id",
@@ -138,7 +138,7 @@ func withKeys(base map[string]any, kv ...any) map[string]any {
 	return out
 }
 
-// Result reshaped the way the ui-tui expects it, receipts carrying their target and resumes their display rows
+// Result reshaped for the UI, receipts carrying their target and resumes their display rows
 func canonicalResult(method string, value any, request map[string]any) any {
 	obj, isDict := value.(map[string]any)
 	if !isDict {

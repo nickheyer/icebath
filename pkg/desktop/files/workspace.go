@@ -200,7 +200,7 @@ func (w Workspace) ReadDefaultProjectDir() string {
 		return ""
 	}
 	dir, ok := parsed["dir"].(string)
-	if !ok || strings.TrimSpace(dir) == "" {
+	if !ok || jsTrim(dir) == "" {
 		return ""
 	}
 	resolved := resolvePath(dir)
@@ -248,7 +248,7 @@ type WorkspaceCwd struct {
 func (w Workspace) SanitizeWorkspaceCwd(cwd any) WorkspaceCwd {
 	trimmed := ""
 	if s, ok := cwd.(string); ok {
-		trimmed = strings.TrimSpace(s)
+		trimmed = jsTrim(s)
 	}
 	if trimmed == "" || w.IsPackagedInstallPath(trimmed) {
 		return WorkspaceCwd{Cwd: w.ResolveHermesCwd(), Sanitized: trimmed != ""}

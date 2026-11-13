@@ -50,7 +50,8 @@ func withKanbanConn(t *testing.T, ctx context.Context, fn func(conn state.SQLite
 // Output of one /kanban invocation, failing on a returned error
 func slashKanban(t *testing.T, ctx context.Context, rest string) string {
 	t.Helper()
-	out, err := RunKanbanSlash(ctx, rest)
+	kanban.ParseSlash = ParseKanbanSlash
+	out, err := kanban.RunSlash(ctx, rest)
 	if err != nil {
 		t.Fatal(err)
 	}

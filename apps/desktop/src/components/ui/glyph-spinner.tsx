@@ -54,7 +54,7 @@ interface GlyphSpinnerProps {
 
 /**
  * One-char glyph spinner driven by `unicode-animations` (braille, orbit, scan,
- * etc. — pick any `spinner` name). Mirrors the spinner used by the Ink TUI so
+ * etc. — pick any `spinner` name). Mirrors the spinner used by the terminal UI so
  * the desktop and terminal experiences read the same visually. Renders inside
  * an `inline-flex` cell with `leading-none` and `items-center` so it sits
  * vertically centred inside its parent's line-box.

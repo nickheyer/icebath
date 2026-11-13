@@ -163,7 +163,7 @@ describe('useMessageStream status-bar usage scoping', () => {
     expect(meters($currentUsage.get())).toEqual(METERS)
   })
 
-  it('maps latency and active subagents from a canonical tick the same way Ink does', () => {
+  it('maps latency and active subagents from a canonical tick the same way the terminal UI does', () => {
     mountStream()
 
     act(() =>

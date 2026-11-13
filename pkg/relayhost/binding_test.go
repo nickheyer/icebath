@@ -122,9 +122,8 @@ func TestLoadProvisionsTheRuntimeSetOnFirstUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, dist := range []string{"nemo_relay-0.11.0.dist-info", "browser_harness-0.1.13.dist-info"} {
-		if _, err := os.Stat(filepath.Join(site, dist)); err != nil {
-			t.Fatalf("%s missing from %s: %v", dist, site, err)
-		}
+	dist := "nemo_relay-0.11.0.dist-info"
+	if _, err := os.Stat(filepath.Join(site, dist)); err != nil {
+		t.Fatalf("%s missing from %s: %v", dist, site, err)
 	}
 }

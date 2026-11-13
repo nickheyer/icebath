@@ -30,8 +30,8 @@ type HeartbeatAutomation interface {
 	State() *HeartbeatState
 	HasHeartbeat() bool
 	IsActive() bool
-	StatusLine() string
-	Set(prompt string, intervalSeconds int64) (*HeartbeatState, error)
+	StatusLine() (string, error)
+	Set(prompt string, intervalSeconds any) (*HeartbeatState, error)
 	Pause() *HeartbeatState
 	Resume() *HeartbeatState
 	Clear() bool

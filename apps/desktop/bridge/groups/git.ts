@@ -1,4 +1,4 @@
-// git group bridge, its Go service GitService lands with the git lane
+// Git group bridge over the Go GitService binding
 import * as GitService from '../bindings/github.com/nickheyer/icebath/apps/desktop/gitservice.js'
 import { fire } from '../runtime'
 

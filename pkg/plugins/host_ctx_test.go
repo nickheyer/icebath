@@ -1,9 +1,7 @@
 package plugins
 
 import (
-	"context"
 	"math"
-	"reflect"
 	"testing"
 )
 
@@ -18,17 +16,6 @@ func TestArgFloatConvertsLikeFloatAndFallsBack(t *testing.T) {
 	}
 	if got := ArgFloat(math.NaN(), 15); !math.IsNaN(got) {
 		t.Fatalf("nan became %v", got)
-	}
-}
-
-func TestSwapHostInterpreterRestoresTheResolver(t *testing.T) {
-	restore := SwapHostInterpreter(func(context.Context) (string, error) { return "/bin/probe-python", nil })
-	if got, err := hostInterpreter(context.Background()); err != nil || got != "/bin/probe-python" {
-		t.Fatalf("swapped %q %v", got, err)
-	}
-	restore()
-	if reflect.ValueOf(hostInterpreter).Pointer() != reflect.ValueOf(pluginInterpreter).Pointer() {
-		t.Fatal("resolver not restored")
 	}
 }
 

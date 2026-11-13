@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/skills"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -747,54 +748,10 @@ func anyToMessages(v any) []map[string]any {
 	return out
 }
 
-// Display metadata key holding the typed text of a vetoed user row
-const withheldPromptKey = "withheld_prompt"
-
-// Rows with the vetoed typed text dropped from display metadata, copies only where one is present
+// Rows with the vetoed typed text dropped from display metadata through the shared message metadata helper
 func withoutWithheldPrompts(messages []map[string]any) []map[string]any {
-	if messages == nil {
-		return nil
-	}
-	found := false
-	for _, msg := range messages {
-		if _, ok := withheldPromptText(msg); ok {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return messages
-	}
-	out := make([]map[string]any, len(messages))
-	for i, msg := range messages {
-		if _, ok := withheldPromptText(msg); !ok {
-			out[i] = msg
-			continue
-		}
-		meta := msg["display_metadata"].(map[string]any)
-		trimmed := make(map[string]any, len(meta))
-		for k, v := range meta {
-			if k != withheldPromptKey {
-				trimmed[k] = v
-			}
-		}
-		row := make(map[string]any, len(msg))
-		for k, v := range msg {
-			row[k] = v
-		}
-		row["display_metadata"] = trimmed
-		out[i] = row
-	}
+	out, _ := state.WithoutWithheldPrompts(messages).([]map[string]any)
 	return out
-}
-
-func withheldPromptText(msg map[string]any) (string, bool) {
-	meta, ok := msg["display_metadata"].(map[string]any)
-	if !ok {
-		return "", false
-	}
-	text, ok := meta[withheldPromptKey].(string)
-	return text, ok
 }
 
 // Scrubbed copies of whole transcript rows for a provider with vetoed typed text removed

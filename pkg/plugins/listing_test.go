@@ -88,30 +88,6 @@ func writeEntryPointSite(t *testing.T, dist, version, summary, entryPoints strin
 	return site
 }
 
-func TestDiscoverAllPluginsIncludesEntrypointPlugins(t *testing.T) {
-	ctx, _ := listWorld(t)
-	t.Setenv("PYTHONPATH", writeEntryPointSite(t, "wiki", "0.1.0", "Karpathy-style LLM Wikis for Icebath",
-		"[icebath_agent.plugins]\nwiki = adapters.icebath.cli_plugin\n"))
-	entries, err := discoverAllPlugins(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []PluginEntry{{Name: "wiki", Version: "0.1.0", Description: "Karpathy-style LLM Wikis for Icebath", Source: "entrypoint", Dir: "adapters.icebath.cli_plugin", Key: "wiki"}}
-	if !slices.Equal(entries, want) {
-		t.Fatalf("%+v", entries)
-	}
-}
-
-func TestDeclaredCapabilitiesForEntrypointUsesDistributionMetadata(t *testing.T) {
-	ctx, _ := listWorld(t)
-	t.Setenv("PYTHONPATH", writeEntryPointSite(t, "thread_namer", "1.0", "",
-		"[icebath_agent.plugins]\nthread-namer = thread_namer.plugin:register\n\n[icebath_agent.plugin_capabilities]\nthread-namer.gateway.platform_actions = thread_namer.plugin:register\n"))
-	got, err := declaredCapabilitiesForKey(ctx, "thread-namer")
-	if err != nil || !slices.Equal(got, []string{"gateway.platform_actions"}) {
-		t.Fatalf("%v %v", got, err)
-	}
-}
-
 func TestEntrypointSpecDoesNotAbortPluginStatus(t *testing.T) {
 	_, h := listWorld(t)
 	status, err := pluginStatus(h, PluginEntry{Name: "mnemosyne_icebath", Key: "mnemosyne_icebath", Source: "entrypoint", Dir: "mnemosyne_icebath:register"},

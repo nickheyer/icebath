@@ -689,7 +689,7 @@ func seedNousSingleton(seed *seeder, data AuthData) {
 
 // Rows a plugin provider profile seeds itself from ambient tokens it validates or exchanges
 func seedProfileSingleton(seed *seeder) {
-	hooks := providerProfileHooks(seed.provider)
+	hooks := providerProfileHooks(seed.env.ctx(), seed.provider)
 	if hooks == nil || hooks.SeedPoolCredentials == nil {
 		return
 	}
@@ -710,8 +710,8 @@ func seedProfileSingleton(seed *seeder) {
 }
 
 // Whether the provider's profile owns pool seeding so the env loop must not overwrite it
-func profileSeedsPool(provider string) bool {
-	hooks := providerProfileHooks(provider)
+func profileSeedsPool(env PoolEnv, provider string) bool {
+	hooks := providerProfileHooks(env.ctx(), provider)
 	return hooks != nil && hooks.SeedPoolCredentials != nil
 }
 
@@ -901,7 +901,7 @@ func containsString(list []string, s string) bool {
 
 func seedFromEnv(env PoolEnv, provider string, entries *[]PooledCredential) (bool, map[string]bool) {
 	seed := newSeeder(env, provider, entries)
-	if profileSeedsPool(provider) {
+	if profileSeedsPool(env, provider) {
 		return seed.changed, seed.activeSources
 	}
 	if provider == "openrouter" {

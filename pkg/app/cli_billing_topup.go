@@ -610,8 +610,8 @@ func (c *CLI) billingSetKeepGoing(state *provider.BillingState, turnOn, allowSte
 		key = "cli.billing.keep_going_turned_on"
 	}
 	infoPrint("  " + c.t(key, nil))
-	if c.agent != nil {
-		probeCall(func() { provider.ApplyKeepGoingChange(c.agent.CreditsCapture(), turnOn) })
+	if c.agentRef() != nil {
+		probeCall(func() { provider.ApplyKeepGoingChange(c.agentRef().CreditsCapture(), turnOn) })
 	}
 }
 

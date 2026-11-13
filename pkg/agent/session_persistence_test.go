@@ -70,8 +70,8 @@ func persistJSONEqual(t *testing.T, x, y any) bool {
 
 func mustFlush(t *testing.T, a *AIAgent, rows []map[string]any) {
 	t.Helper()
-	if ok, err := a.flushMessagesToSessionDB(rows); !ok || err != nil {
-		t.Fatalf("flush failed: %v %v", ok, err)
+	if ok := a.flushMessagesToSessionDB(rows); ok != state.FlushPersisted {
+		t.Fatalf("flush failed: %v", ok)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestSessionPersistenceHelpers(t *testing.T) {
 	if got := a.getMessagesUpToLastAssistant([]*state.Message{{Role: "user"}, {Role: "assistant"}, {Role: "tool"}}); len(got) != 1 {
 		t.Fatalf("rollback point %d", len(got))
 	}
-	if ok, err := (&AIAgent{persistDisabled: true}).flushMessagesToSessionDB(nil); ok || err != nil {
+	if ok := (&AIAgent{persistDisabled: true}).flushMessagesToSessionDB(nil); ok != state.FlushDisabled {
 		t.Fatal("a persistence isolated agent never writes")
 	}
 }
@@ -315,8 +315,8 @@ func TestPersistSessionReentersTheLockAndMarksLiveMessages(t *testing.T) {
 	}
 	history := []*state.Message{messages[0], messages[1]}
 	messages = append(messages, &state.Message{Role: "user", Content: "next"})
-	if ok, err := a.flushLiveMessages(messages, history); !ok || err != nil {
-		t.Fatalf("flush %v %v", ok, err)
+	if ok := a.flushLiveMessages(messages, history); ok != state.FlushPersisted {
+		t.Fatalf("flush %v", ok)
 	}
 	if n := persistRowCount(t, db, a.sessionID); n != 3 {
 		t.Fatalf("rows %d", n)

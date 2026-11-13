@@ -36,7 +36,11 @@ var (
 	facadeHooks   FacadeHooks
 	policyNote    func(setter, homeKey string, raw any)
 	savedObserver func(h string, oldRaw, newConfig map[string]any)
+	rawRecorder   RawConfigWriteRecorder
 )
+
+// Runner of one raw user config write that reports what it changed in the file it replaced
+type RawConfigWriteRecorder func(ctx context.Context, h, configPath string, userConfig map[string]any, write func(configPath string, userConfig map[string]any) error) error
 
 // Installs the facade collaborators, called from an init of the package that owns them
 func RegisterConfigFacade(h FacadeHooks) {
@@ -56,6 +60,13 @@ func RegisterPolicyNote(note func(setter, homeKey string, raw any)) {
 func RegisterConfigSavedObserver(observe func(h string, oldRaw, newConfig map[string]any)) {
 	facadeMu.Lock()
 	savedObserver = observe
+	facadeMu.Unlock()
+}
+
+// Installs the recorder every raw user config write runs through
+func RegisterRawConfigWriteRecorder(record RawConfigWriteRecorder) {
+	facadeMu.Lock()
+	rawRecorder = record
 	facadeMu.Unlock()
 }
 
@@ -244,6 +255,9 @@ func pyDictOf(v any) (map[string]any, error) {
 		out := make(map[string]any, len(c))
 		for k, val := range c {
 			out[k] = val
+			if pk, ok := MappingPyKey(c, k); ok {
+				SetMappingPyKey(out, k, pk)
+			}
 		}
 		SetMappingKeys(out, MappingKeys(c))
 		return out, nil
@@ -394,10 +408,10 @@ func loadConfigImpl(ctx context.Context, h string, lookup Lookup, wantDeepcopy b
 	if lookup == nil {
 		lookup = processLookup
 	}
-	if snap := WorkerConfigSnapshot(); snap != nil {
+	if snap := workerConfigSnapshot(); snap != nil {
 		return Tree(DeepMerge(Clone(map[string]any(Defaults())).(map[string]any), snap)), nil
 	}
-	path := home.ConfigPath(h)
+	path := GetConfigPath(h)
 	loadCacheMu.Lock()
 	_, cached := loadCache[path]
 	loadCacheMu.Unlock()
@@ -514,10 +528,10 @@ func rawConfigCacheStore(path string, sig []any, data map[string]any) {
 
 // Raw user document of a home as written, a failed read marked so writers refuse it
 func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
-	if snap := WorkerConfigSnapshot(); snap != nil {
+	if snap := workerConfigSnapshot(); snap != nil {
 		return snap, nil
 	}
-	path := home.ConfigPath(h)
+	path := GetConfigPath(h)
 	if sig, err := ConfigCacheVersion(ctx, path); err == nil {
 		if hit, ok := rawConfigCacheHit(path, sig); ok {
 			return hit, nil

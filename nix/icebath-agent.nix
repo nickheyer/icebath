@@ -1,12 +1,18 @@
-# The icebath binary with the dashboard bundle embedded by the webdist build tag
+# The icebath binary with the dashboard bundle embedded by webdist and Matrix encryption compiled in by goolm
 {
   lib,
+  callPackage,
   buildGoModule,
+  makeWrapper,
   web,
   rev ? null,
+  extraPythonPackages ? [ ],
 }:
 let
   version = if rev != null then "0-unstable-${builtins.substring 0 12 rev}" else "0-unstable";
+  python = (callPackage ./pythonLock.nix { }).interpreter;
+  # Site directories of the plugin packages and every Python module they require, for the plugin host
+  pythonPath = lib.makeSearchPath python.sitePackages (python.pkgs.requiredPythonModules extraPythonPackages);
 in
 buildGoModule {
   pname = "icebath-agent";
@@ -21,9 +27,12 @@ buildGoModule {
       ../third_party
     ];
   };
-  vendorHash = "sha256-VFIkMT8wdu0vYlB000FE4lSlH8IXTuYs4hq8ELkR3ow=";
+  vendorHash = "sha256-lOM8xlhVJTgqRJWAieHLac11iwou4H1cas5aNm86+8M=";
   subPackages = [ "cmd/icebath" ];
-  tags = [ "webdist" ];
+  tags = [
+    "webdist"
+    "goolm"
+  ];
   env.CGO_ENABLED = 0;
   ldflags = [
     "-s"
@@ -35,11 +44,17 @@ buildGoModule {
     cp -r ${web} cmd/icebath/web_dist
     chmod -R u+w cmd/icebath/web_dist
   '';
+  nativeBuildInputs = lib.optional (extraPythonPackages != [ ]) makeWrapper;
   postInstall = ''
     printf 'nix\n' > $out/bin/.install_method
+  ''
+  + lib.optionalString (extraPythonPackages != [ ]) ''
+    wrapProgram $out/bin/icebath --suffix PYTHONPATH : "${pythonPath}"
   '';
   doCheck = false;
-  passthru = { inherit web; };
+  passthru = {
+    inherit web python extraPythonPackages;
+  };
   meta = {
     description = "Tiling agentic harness and netrunner toolkit";
     homepage = "https://icebath.app";

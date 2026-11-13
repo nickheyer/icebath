@@ -185,7 +185,8 @@ func (a *AIAgent) resetSessionState(previousMessages []map[string]any, oldSessio
 	a.sessionPromptTokens, a.sessionCompletionTokens = 0, 0
 	a.sessionCacheReadTokens, a.sessionCacheWriteTokens, a.sessionReasoningTokens, a.sessionAPICalls = 0, 0, 0, 0
 	a.sessionEstimatedCostUSD, a.sessionCostStatus, a.sessionCostSource = 0.0, "unknown", "none"
-	a.usageAnchor, a.turnBaseUsageAnchor, a.frozenWorkspaceSnapshot = nil, nil, nil
+	a.usageAnchor, a.frozenWorkspaceSnapshot = nil, nil
+	a.turnBaseUsageAnchor.Store(nil)
 	a.userTurnCount, a.compactionPromptDriftLogged, a.turnAuthor = 0, false, nil
 	a.providerHookFailures, a.isUserInitiatedTurn = map[string]bool{}, false
 	a.transitionContextEngineSession(oldSessionID, a.sessionID, previousMessages, carryOverContext, true, nil)

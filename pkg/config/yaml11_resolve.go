@@ -49,7 +49,7 @@ func resolveYAMLVersion(n *yaml.Node, isKey, v12 bool) {
 			}
 		case yaml11Float.MatchString(v):
 			if f, ok := yaml11FloatValue(v); ok {
-				n.Tag, n.Value = "!!float", strconv.FormatFloat(f, 'g', -1, 64)
+				n.Tag, n.Value = "!!float", floatNodeText(f)
 			}
 		case n.Tag == "!!int" || n.Tag == "!!float":
 			n.Tag = "!!str"
@@ -69,7 +69,7 @@ func resolveYAML12Scalar(n *yaml.Node) {
 	case yaml12Float.MatchString(v):
 		f, err := strconv.ParseFloat(strings.ToLower(strings.ReplaceAll(v, "_", "")), 64)
 		if err == nil {
-			n.Tag, n.Value = "!!float", strconv.FormatFloat(f, 'g', -1, 64)
+			n.Tag, n.Value = "!!float", floatNodeText(f)
 		}
 	case n.Tag == "!!int" || n.Tag == "!!float":
 		n.Tag = "!!str"
@@ -243,4 +243,13 @@ func pyTimedeltaRepr(seconds int) string {
 		return "datetime.timedelta(0)"
 	}
 	return "datetime.timedelta(" + strings.Join(parts, ", ") + ")"
+}
+
+// Float text the decoder reads back as that same float, a fraction kept so negative zero and whole values stay float
+func floatNodeText(f float64) string {
+	s := strconv.FormatFloat(f, 'g', -1, 64)
+	if !strings.ContainsAny(s, ".eEnN") {
+		s += ".0"
+	}
+	return s
 }

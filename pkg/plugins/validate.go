@@ -3,23 +3,17 @@ package plugins
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"gopkg.in/yaml.v3"
 )
@@ -30,12 +24,6 @@ const (
 	probeTimeout  = 30
 	probeSentinel = "ICEBATH_VALIDATE_JSON:"
 )
-
-// Python argv prefix and environment of the dependency environment the capability probe imports from
-type validationProbe struct {
-	Command []string
-	Env     []string
-}
 
 // One admission check outcome
 type ValidationCheck struct {
@@ -438,146 +426,6 @@ func pluginContextMethods() []string {
 	return out
 }
 
-func probeOptions(manifest map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
-	kind := ""
-	if config.PyTruthy(manifest["kind"]) {
-		kind = config.PyStr(manifest["kind"])
-	}
-	out.Set("kind", kind)
-	methods := pluginContextMethods()
-	list := make([]any, len(methods))
-	for i, m := range methods {
-		list[i] = m
-	}
-	out.Set("context_methods", list)
-	return out
-}
-
-// Value of a KEY=value environment entry, empty when absent
-func envListGet(env []string, key string) string {
-	for i := len(env) - 1; i >= 0; i-- {
-		if k, v, ok := strings.Cut(env[i], "="); ok && k == key {
-			return v
-		}
-	}
-	return ""
-}
-
-// Environment list with every entry of a key replaced by one KEY=value entry
-func envListSet(env []string, key, value string) []string {
-	out := make([]string, 0, len(env)+1)
-	for _, kv := range env {
-		if k, _, ok := strings.Cut(kv, "="); ok && k == key {
-			continue
-		}
-		out = append(out, kv)
-	}
-	return append(out, key+"="+value)
-}
-
-// Python returncode of a finished process, the negated signal number when a signal ended it
-func processReturnCode(state *os.ProcessState) int {
-	if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-		return -int(ws.Signal())
-	}
-	return state.ExitCode()
-}
-
-// Runs the recording probe in a scratch child and answers what register recorded or a failure description
-func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[string]any, probe *validationProbe) (map[string]any, string, error) {
-	scratch, err := os.MkdirTemp("", "icebath-validate-")
-	if err != nil {
-		return nil, "", err
-	}
-	defer os.RemoveAll(scratch)
-	var env []string
-	if probe != nil {
-		env = append(env, probe.Env...)
-	} else {
-		env = os.Environ()
-	}
-	env = envListSet(env, "ICEBATH_HOME", scratch)
-	sdk, err := pluginSDKPythonPath(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	parts := []string{}
-	for _, p := range []string{sdk, envListGet(env, "PYTHONPATH")} {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	env = envListSet(env, "PYTHONPATH", strings.Join(parts, string(os.PathListSeparator)))
-	var command []string
-	if probe != nil {
-		command = probe.Command
-	} else {
-		python, err := pluginInterpreter(ctx)
-		if err != nil {
-			return nil, "", err
-		}
-		command = []string{python}
-	}
-	if len(command) == 0 {
-		return nil, "", errors.New("ValueError: not enough values to unpack (expected at least 1, got 0)")
-	}
-	options, err := pyjson.Dumps(probeOptions(manifest))
-	if err != nil {
-		return nil, "", err
-	}
-	argv := append([]string{"-P"}, command[1:]...)
-	argv = append(argv, "-c", probeScript, pluginDir, probeSentinel, options)
-	runCtx, cancel := context.WithTimeout(ctx, probeTimeout*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(runCtx, command[0], argv...)
-	cmd.Env = env
-	cmd.WaitDelay = time.Second
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	runErr := cmd.Run()
-	if err := ctx.Err(); err != nil {
-		return nil, "", err
-	}
-	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		return nil, fmt.Sprintf("capability probe timed out after %ds", probeTimeout), nil
-	}
-	returncode := 0
-	if runErr != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(runErr, &exitErr) {
-			return nil, "", runErr
-		}
-		returncode = processReturnCode(exitErr.ProcessState)
-	}
-	var payload any
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(stdout.Bytes()), false) {
-		if strings.HasPrefix(line, probeSentinel) {
-			v, err := pyjson.Loads(line[len(probeSentinel):])
-			if err != nil {
-				payload = nil
-			} else {
-				payload = v
-			}
-		}
-	}
-	if payload == nil {
-		msg := fmt.Sprintf("capability probe produced no result (exit %d)", returncode)
-		if text := strings.TrimSpace(pystr.DecodeUTF8Replace(stderr.Bytes())); text != "" {
-			msg += ": " + text
-		}
-		return nil, msg, nil
-	}
-	recorded, ok := pyjson.Plain(payload).(map[string]any)
-	if !ok {
-		return nil, "", fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(pyjson.Plain(payload)))
-	}
-	if e, has := recorded["error"]; has {
-		return nil, pyrepr.Str(e), nil
-	}
-	return recorded, "", nil
-}
-
 // String items of a manifest list, empty when the key is not a list
 func declaredList(manifest map[string]any, key string) []string {
 	raw, ok := manifest[key].([]any)
@@ -593,71 +441,8 @@ func declaredList(manifest map[string]any, key string) []string {
 	return out
 }
 
-// String items of a recorded probe list
-func recordedList(recorded map[string]any, key string) []string {
-	out := []string{}
-	items, _ := recorded[key].([]any)
-	for _, item := range items {
-		out = append(out, pyrepr.Str(item))
-	}
-	return out
-}
-
-// Sorted members of a not in b
-func sortedDifference(a, b []string) []string {
-	exclude := toSet(b)
-	set := map[string]bool{}
-	for _, x := range a {
-		if !exclude[x] {
-			set[x] = true
-		}
-	}
-	return sortedKeys(set)
-}
-
-// Probes the real registrations and diffs them against the declared capabilities
-func checkCapabilities(ctx context.Context, report *ValidationReport, manifest map[string]any, pluginDir string, probe *validationProbe) (map[string]any, error) {
-	if !isFile(filepath.Join(pluginDir, "__init__.py")) {
-		report.warn("no __init__.py — capability probe skipped (manifest-only plugin)")
-		report.add("capability probe", true, "skipped (no __init__.py)")
-		return nil, nil
-	}
-	recorded, failure, err := runCapabilityProbe(ctx, pluginDir, manifest, probe)
-	if err != nil {
-		return nil, err
-	}
-	if recorded == nil {
-		report.add("capability probe", false, failure)
-		return nil, nil
-	}
-	if providers := recordedList(recorded, "providers"); len(providers) > 0 {
-		report.add("capability probe", true, "import registered provider(s): "+strings.Join(providers, ", "))
-	} else {
-		report.add("capability probe", true, "register() ran in isolation")
-	}
-	for _, pair := range [][2]string{{"tools", "provides_tools"}, {"hooks", "provides_hooks"}, {"middleware", "provides_middleware"}} {
-		kind, key := pair[0], pair[1]
-		declared := declaredList(manifest, key)
-		actual := recordedList(recorded, kind)
-		undeclared := sortedDifference(actual, declared)
-		unregistered := sortedDifference(declared, actual)
-		if len(undeclared) > 0 {
-			report.add("declared "+kind, false, fmt.Sprintf("undeclared %s registered (not in %s): %s", kind, key, strings.Join(undeclared, ", ")))
-		} else {
-			report.add("declared "+kind, true, "matches registrations")
-		}
-		if len(unregistered) > 0 {
-			report.warn(fmt.Sprintf("%s declares %s but register() did not register them", key, strings.Join(unregistered, ", ")))
-		}
-	}
-	return recorded, nil
-}
-
-func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any, recorded map[string]any) {
+func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any) {
 	candidates := toSet(declaredList(manifest, "provides_tools"))
-	for _, name := range recordedList(recorded, "tools") {
-		candidates[name] = true
-	}
 	if len(candidates) == 0 {
 		report.add("built-in tool collisions", true, "no tools to check")
 		return
@@ -676,27 +461,7 @@ func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any, r
 	}
 }
 
-// Surfaces trusted_inbound platforms and fails one naming a core platform as the loader refuses it
-func checkTrustedInbound(report *ValidationReport, recorded map[string]any) error {
-	names := recordedList(recorded, "trusted_inbound")
-	if len(names) == 0 {
-		return nil
-	}
-	registry, err := needService("Platforms", func(s *Services) PlatformRegistry { return s.Platforms })
-	if err != nil {
-		return err
-	}
-	for _, name := range names {
-		if registry.CoreShipsPlatform(name) {
-			report.add("trusted inbound", false, fmt.Sprintf("platform '%s' ships with core; trusted_inbound is refused for it", name))
-		} else {
-			report.add("trusted inbound", true, fmt.Sprintf("platform '%s' is trusted_inbound: its events skip user allowlists and pairing", name))
-		}
-	}
-	return nil
-}
-
-var loadableEntrypoints = []string{"__init__.py", "desktop/plugin.js", "plugin.json"}
+var loadableEntrypoints = []string{"desktop/plugin.js", "plugin.json"}
 
 // Fails a manifest with nothing beside it that icebath can load
 func checkLoadable(report *ValidationReport, pluginDir string, manifest map[string]any) {
@@ -709,44 +474,14 @@ func checkLoadable(report *ValidationReport, pluginDir string, manifest map[stri
 	if config.PyTruthy(manifest["provides_locales"]) && isDir(filepath.Join(pluginDir, "locales")) {
 		present = append(present, "locales/ (language pack)")
 	}
+	if entry, ok := manifest["entry"]; ok && config.PyTruthy(entry) {
+		present = append(present, "entry (runtime)")
+	}
 	if len(present) > 0 {
 		report.add("loadable", true, "entry: "+strings.Join(present, ", "))
 		return
 	}
-	report.add("loadable", false, "nothing to load: no __init__.py, desktop/plugin.js, plugin.json or provides_locales + locales/ beside "+
-		"plugin.yaml (pip-layout packages need a directory-plugin wrapper with a pyproject.toml declaring the deps)")
-}
-
-// Declared Python dependencies must be PEP 508 specs the installer accepts
-func checkPythonDependencies(report *ValidationReport, pluginDir string) {
-	decl, err := pm.ReadPythonDeclaration(pluginDir)
-	var urls, installable []string
-	if err == nil {
-		if decl.External() {
-			report.add("python dependencies", true, "external runtime (plugin manages its own)")
-			return
-		}
-		if urls, err = pm.UnsupportedRequirements(decl.Requirements); err == nil {
-			installable, err = decl.InstallRequirements()
-		}
-	}
-	if err != nil {
-		report.add("python dependencies", false, "declaration invalid: "+err.Error())
-		return
-	}
-	if len(urls) > 0 {
-		report.warn("python dependencies: direct URL requirement(s) are not managed by PM; " +
-			"use a plugin-owned external runtime: " + strings.Join(urls, ", "))
-	}
-	source := "manifest"
-	if decl.Pyproject != "" {
-		source = "pyproject"
-	}
-	detail := "none declared"
-	if len(decl.Requirements) > 0 {
-		detail = fmt.Sprintf("%d requirements from %s", len(installable), source)
-	}
-	report.add("python dependencies", true, detail)
+	report.add("loadable", false, "nothing to load: no runtime entry, desktop/plugin.js, plugin.json or provides_locales + locales/ beside plugin.yaml; "+PluginFormsText)
 }
 
 // Install time scanner at admission, dangerous fails and caution findings warn the reviewer
@@ -847,8 +582,8 @@ func jsonObjectKeyOrder(file string, path ...string) []string {
 }
 
 // Runs every admission check against a plugin directory and returns the report
-func validatePluginDir(ctx context.Context, path string, probe *validationProbe) (*ValidationReport, error) {
-	report, manifest, err := validateManifestAndProbe(ctx, path, probe)
+func validatePluginDir(ctx context.Context, path string) (*ValidationReport, error) {
+	report, manifest, err := validateManifestAndProbe(ctx, path)
 	if err != nil || manifest == nil {
 		return report, err
 	}
@@ -869,7 +604,7 @@ func validatePluginDir(ctx context.Context, path string, probe *validationProbe)
 }
 
 // Manifest, dependency, probe and scan checks of a native plugin, a nil manifest when the report is final
-func validateManifestAndProbe(ctx context.Context, path string, probe *validationProbe) (*ValidationReport, map[string]any, error) {
+func validateManifestAndProbe(ctx context.Context, path string) (*ValidationReport, map[string]any, error) {
 	report := &ValidationReport{}
 	if !isDir(path) {
 		report.add("plugin directory", false, fmt.Sprintf("%s is not a directory", pypath.PurePathStr(path)))
@@ -913,15 +648,8 @@ func validateManifestAndProbe(ctx context.Context, path string, probe *validatio
 		return nil, nil, err
 	}
 	checkLoadable(report, path, manifest)
-	checkPythonDependencies(report, path)
-	recorded, err := checkCapabilities(ctx, report, manifest, path, probe)
-	if err != nil {
-		return nil, nil, err
-	}
-	checkBuiltinCollisions(report, manifest, recorded)
-	if err := checkTrustedInbound(report, recorded); err != nil {
-		return nil, nil, err
-	}
+	checkPluginForm(report, manifest, path)
+	checkBuiltinCollisions(report, manifest)
 	checkSecurityScan(report, path)
 	return report, manifest, nil
 }
@@ -1040,4 +768,32 @@ func pyLen(v any) int {
 		return len([]rune(t))
 	}
 	return 0
+}
+
+// Reports the form a plugin takes, failing Python source and a runtime whose entry cannot be started
+func checkPluginForm(report *ValidationReport, manifest map[string]any, pluginDir string) {
+	mf := manifestFromData(manifest, pluginDir, "user", "")
+	if manifestRuntime(mf) == "" {
+		if isPythonPluginSource(mf) {
+			report.add("plugin form", false, "the plugin is Python source; "+PluginFormsText)
+			return
+		}
+		report.add("plugin form", true, "manifest only plugin, no runtime entry")
+		return
+	}
+	spec, err := guestSpecOf(mf, filepath.Dir(filepath.Dir(pluginDir)))
+	if err == nil && spec.runtime == RuntimeWasm {
+		var entry string
+		if entry, err = guestEntryPath(spec); err == nil && !isFile(entry) {
+			err = fmt.Errorf("entry %s is not a file of the plugin directory", spec.entry[0])
+		}
+	}
+	if err == nil && spec.runtime == RuntimeProgram {
+		_, err = guestProgramPath(spec)
+	}
+	if err != nil {
+		report.add("plugin form", false, err.Error())
+		return
+	}
+	report.add("plugin form", true, "runtime "+spec.runtime+", entry "+strings.Join(spec.entry, " "))
 }

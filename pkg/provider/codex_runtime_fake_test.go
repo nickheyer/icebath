@@ -3,6 +3,7 @@ package provider
 import (
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -33,7 +34,7 @@ type fakeCodexAgent struct {
 	compressor                                                  CodexContextCompressor
 	anchor                                                      *UsageAnchor
 	anchorSet                                                   int
-	flush                                                       func([]map[string]any) (bool, error)
+	flush                                                       func([]map[string]any) state.FlushOutcome
 	hooks                                                       map[string]bool
 	panics                                                      map[string]bool
 	env                                                         *tools.Env
@@ -105,12 +106,12 @@ func (a *fakeCodexAgent) EnsureDBSession() error {
 	return nil
 }
 func (a *fakeCodexAgent) SessionSource() string { return "cli" }
-func (a *fakeCodexAgent) FlushMessagesToSessionDB(m []map[string]any) (bool, error) {
+func (a *fakeCodexAgent) FlushMessagesToSessionDB(m []map[string]any) state.FlushOutcome {
 	a.record("flush", len(m))
 	if a.flush != nil {
 		return a.flush(m)
 	}
-	return true, nil
+	return state.FlushPersisted
 }
 func (a *fakeCodexAgent) AddSessionAPICalls(n int)               { a.apiCalls += n }
 func (a *fakeCodexAgent) AddSessionUsage(key string, value int)  { a.usage[key] += value }

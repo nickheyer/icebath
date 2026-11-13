@@ -1,0 +1,19 @@
+usage: icebath pets [-h] {list,install,select,show,off,scale,remove,doctor} ...
+
+Petdex (https://github.com/crafter-station/petdex) is a public gallery of animated sprite pets for
+coding agents. Install one and Icebath shows it reacting to agent activity across the CLI, TUI,
+and desktop app.
+
+positional arguments:
+  {list,install,select,show,off,scale,remove,doctor}
+    list                Browse the petdex gallery
+    install             Install a pet from the gallery
+    select              Set the active pet (writes display.pet.*)
+    show                Animate the active pet in the terminal
+    off                 Disable the pet display
+    scale               Resize the pet everywhere (display.pet.scale)
+    remove              Delete an installed pet
+    doctor              Check pet setup + terminal graphics support
+
+options:
+  -h, --help            show this help message and exit

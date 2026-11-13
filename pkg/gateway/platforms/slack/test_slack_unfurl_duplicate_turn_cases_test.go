@@ -161,13 +161,13 @@ func TestClaimHelperBoundedClaimMapIsEvictedOldestFirst(t *testing.T) {
 		a.rememberProcessedMessageTS(fmt.Sprintf("%d.0", i))
 		time.Sleep(time.Millisecond)
 	}
-	if len(a.processedMessageTS) > 10 {
-		t.Fatalf("claims = %d", len(a.processedMessageTS))
+	if a.processedMessageTS.Len() > 10 {
+		t.Fatalf("claims = %d", a.processedMessageTS.Len())
 	}
-	if _, ok := a.processedMessageTS["24.0"]; !ok {
+	if !a.processedMessageTS.Has("24.0") {
 		t.Fatal("newest claim evicted")
 	}
-	if _, ok := a.processedMessageTS["0.0"]; ok {
+	if a.processedMessageTS.Has("0.0") {
 		t.Fatal("oldest claim kept")
 	}
 }
@@ -176,8 +176,8 @@ func TestClaimHelperBoundedClaimMapIsEvictedOldestFirst(t *testing.T) {
 func TestClaimHelperBoundedEmptyTsIsIgnored(t *testing.T) {
 	a, _ := unfurlAdapter(t)
 	a.rememberProcessedMessageTS("")
-	if len(a.processedMessageTS) != 0 {
-		t.Fatalf("claims = %v", a.processedMessageTS)
+	if a.processedMessageTS.Len() != 0 {
+		t.Fatalf("claims = %v", a.processedMessageTS.Keys())
 	}
 }
 
@@ -195,7 +195,7 @@ func TestClaimReleasedOnFailureFailedFirstCopyReleasesClaimSoEditCanRedrive(t *t
 	if raised, _ := handleCatching(a, unfurlOriginalEvent()); raised == nil {
 		t.Fatal("the failing first copy did not raise")
 	}
-	if _, ok := a.processedMessageTS[unfurlOriginalTS]; ok {
+	if a.processedMessageTS.Has(unfurlOriginalTS) {
 		t.Fatal("the failed copy kept its claim")
 	}
 	if err := a.handleSlackMessage(context.Background(), unfurlUserEdit(), unfurlBody()); err != nil {
@@ -213,14 +213,14 @@ func TestClaimReleasedOnFailureFailureDoesNotReleaseAPreexistingClaim(t *testing
 	if err := a.handleSlackMessage(context.Background(), unfurlOriginalEvent(), unfurlBody()); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := a.processedMessageTS[unfurlOriginalTS]; !ok {
+	if !a.processedMessageTS.Has(unfurlOriginalTS) {
 		t.Fatal("the delivered copy holds no claim")
 	}
 	resolveUserNameFn = func(*SlackAdapter, context.Context, string, string, string) string { panic("boom") }
 	second := unfurlOriginalEvent()
 	second["client_msg_id"] = "cmid-replay"
 	_, _ = handleCatching(a, second)
-	if _, ok := a.processedMessageTS[unfurlOriginalTS]; !ok {
+	if !a.processedMessageTS.Has(unfurlOriginalTS) {
 		t.Fatal("a failing duplicate released the earlier claim")
 	}
 	if n := len(delivered.all()); n != 1 {

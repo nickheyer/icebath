@@ -15,7 +15,6 @@ import (
 	"unicode"
 	"unicode/utf16"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"gopkg.in/yaml.v3"
@@ -439,7 +438,7 @@ func exitIfKeyManaged(ctx context.Context, h, key, action string) error {
 	if err != nil {
 		return err
 	}
-	level, locked, err := backend.Locked(ctx, filepath.Dir(home.ConfigPath(h)), key)
+	level, locked, err := backend.Locked(ctx, filepath.Dir(GetConfigPath(h)), key)
 	if err != nil {
 		return err
 	}
@@ -464,28 +463,19 @@ func touchSkinFile(h, key string, value any) {
 	}
 }
 
-// Writes the raw user config, reporting the change to the saved observer when one is installed
+// Writes the raw user config through the installed raw write recorder, which diffs the file it replaces
 func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[string]any) error {
 	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
+	write := func(path string, doc map[string]any) error { return AtomicConfigReplace(ctx, h, path, doc, "") }
 	facadeMu.RLock()
-	observe := savedObserver
+	record := rawRecorder
 	facadeMu.RUnlock()
-	var before map[string]any
-	snapshot := false
-	if observe != nil && ctx.Value(appliedWriteKey{}) == nil {
-		if raw, err := ReadUserConfigRaw(ctx, configPath); err == nil {
-			before, snapshot = raw, true
-		}
+	if record == nil {
+		return write(configPath, userConfig)
 	}
-	if err := AtomicConfigReplace(ctx, h, configPath, userConfig, ""); err != nil {
-		return err
-	}
-	if snapshot {
-		observe(h, before, userConfig)
-	}
-	return nil
+	return record(ctx, h, configPath, userConfig, write)
 }
 
 func printUnknownKeyNotice(key, suggestion string) {
@@ -503,7 +493,7 @@ func printUnknownKeyNotice(key, suggestion string) {
 
 // Sets a dotted config key, routing env shaped keys to .env and refusing wrong shapes, managed and locked keys
 func SetConfigValue(ctx context.Context, h, key, value string, force bool, src ConfigCommandSources) error {
-	if ManagedSystem(ctx, h) != "" {
+	if IsManaged(ctx, h) {
 		ManagedError(ctx, h, "set configuration values")
 		return nil
 	}
@@ -524,14 +514,14 @@ func SetConfigValue(ctx context.Context, h, key, value string, force bool, src C
 		if err := save(ctx, h, strings.ToUpper(key), value); err != nil {
 			return exitInvalid("✗ " + err.Error())
 		}
-		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", key, home.EnvPath(h))
+		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", key, GetEnvPath(h))
 		return nil
 	}
 	if src.IsEnvSettingKey(key) {
 		if err := src.SaveEnvSetting(ctx, h, key, value); err != nil {
 			return exitInvalid("✗ " + err.Error())
 		}
-		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", strings.ToUpper(key), home.EnvPath(h))
+		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", strings.ToUpper(key), GetEnvPath(h))
 		return nil
 	}
 	legacy := legacyGatewayPlatformsKey(key)
@@ -548,7 +538,7 @@ func SetConfigValue(ctx context.Context, h, key, value string, force bool, src C
 			return exitInvalid(msg)
 		}
 	}
-	configPath := home.ConfigPath(h)
+	configPath := GetConfigPath(h)
 	userConfig, err := RequireReadableConfigBeforeWrite(ctx, configPath)
 	if err != nil {
 		return err
@@ -698,7 +688,7 @@ func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src Co
 
 // Removes a user set config or .env value, refusing managed and locked keys
 func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSources) error {
-	if ManagedSystem(ctx, h) != "" {
+	if IsManaged(ctx, h) {
 		ManagedError(ctx, h, "unset configuration values")
 		return nil
 	}
@@ -717,7 +707,7 @@ func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSourc
 		if !found {
 			return exitInvalid("Config key not set: " + key)
 		}
-		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, home.EnvPath(h))
+		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
 		return nil
 	}
 	if src.IsEnvSettingKey(key) {
@@ -728,10 +718,10 @@ func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSourc
 		if !found {
 			return exitInvalid("Config key not set: " + key)
 		}
-		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, home.EnvPath(h))
+		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
 		return nil
 	}
-	configPath := home.ConfigPath(h)
+	configPath := GetConfigPath(h)
 	userConfig, err := RequireReadableConfigBeforeWrite(ctx, configPath)
 	if err != nil {
 		return err
@@ -1160,9 +1150,9 @@ func ConfigCommand(ctx context.Context, h string, args ConfigArgs, src ConfigCom
 	case "unset":
 		handler = func() error { return cmdConfigUnset(ctx, h, args, src) }
 	case "path":
-		handler = func() error { fmt.Fprintln(FacadeStdout, home.ConfigPath(h)); return nil }
+		handler = func() error { fmt.Fprintln(FacadeStdout, GetConfigPath(h)); return nil }
 	case "env-path":
-		handler = func() error { fmt.Fprintln(FacadeStdout, home.EnvPath(h)); return nil }
+		handler = func() error { fmt.Fprintln(FacadeStdout, GetEnvPath(h)); return nil }
 	case "migrate":
 		handler = func() error { return cmdConfigMigrate(ctx, h) }
 	case "check":

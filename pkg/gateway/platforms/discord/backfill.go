@@ -67,9 +67,13 @@ func timeSnowflake(t time.Time, high bool) string {
 	return strconv.FormatUint(n, 10)
 }
 
-// The running recovery task, a new one when none runs, joined to the startup restore gate
-func (a *DiscordAdapter) ensureMissedMessageBackfillTask(ctx context.Context) *bgTask {
+// The running recovery task, a new one when none runs on a live link, joined to the startup restore gate
+func (a *DiscordAdapter) ensureMissedMessageBackfillTask(ctx context.Context, link *gatewayLink) *bgTask {
 	a.mu.Lock()
+	if a.disconnecting || a.link != link {
+		a.mu.Unlock()
+		return nil
+	}
 	task := a.missedMessageBackfillTask
 	if task != nil && !task.isDone() {
 		a.mu.Unlock()

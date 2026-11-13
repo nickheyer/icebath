@@ -750,7 +750,8 @@ func aliasLegacyDesktopEntry(applicationsDir, execCommand, icon string) (bool, e
 	if text == alias {
 		return false, nil
 	}
-	if err := pyfs.AtomicWriteText(context.Background(), legacy, alias, ".tmp_"); err != nil {
+	createMode := os.FileMode(0o755)
+	if err := pyfs.AtomicWriteTextWith(context.Background(), legacy, alias, pyfs.TextWrite{CreateMode: &createMode}); err != nil {
 		if pypath.IsOSError(err) {
 			return false, nil
 		}
@@ -802,7 +803,8 @@ func installDesktopEntry(projectRoot string) (string, error) {
 		unchanged = text == contents
 	}
 	if !unchanged {
-		if err := pyfs.AtomicWriteText(context.Background(), entryPath, contents, ".tmp_"); err != nil {
+		createMode := os.FileMode(0o755)
+		if err := pyfs.AtomicWriteTextWith(context.Background(), entryPath, contents, pyfs.TextWrite{CreateMode: &createMode}); err != nil {
 			if pypath.IsOSError(err) {
 				return "", nil
 			}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"sync"
@@ -85,10 +86,91 @@ func runManagedWorker(ctx context.Context, channel *WorkerChannel) error {
 }
 
 // Connects the profile's configured MCP servers allowed by the frozen toolsets before tool discovery, never prompting for OAuth
-func discoverProfileMCP(ctx context.Context, env *tools.Env, policy *gateway.LocalSessionPolicy) error {
+var discoverProfileMCP = func(ctx context.Context, env *tools.Env, policy *gateway.LocalSessionPolicy) error {
 	_, err := mcp.ConnectAll(mcp.SuppressInteractiveOAuth(ctx), env, append([]string{}, policy.Toolsets...))
 	return err
 }
+
+// WorkerSender is the framed event writer execute and its controls send through
+type WorkerSender interface {
+	Send(kind string, payload *pyjson.Object) error
+}
+
+// Owner connection execute adopts through and closes last
+type managedWorkerRPC interface {
+	Call(ctx context.Context, method string, params *pyjson.Object) (any, error)
+	Close()
+}
+
+// Session store execute builds the agent on, then flushes, finishes and closes
+type managedWorkerStore interface {
+	SessionStore
+	FlushTokenCountsChecked(timeoutS float64) (bool, error)
+	Finish(ctx context.Context) (any, error)
+	Close() error
+}
+
+// Stop, finish, approval and clarify controls execute binds its agent to
+type managedWorkerControls interface {
+	SetAgent(agent managedWorkerAgent)
+	Stopped() bool
+	WaitFinish(timeout time.Duration) bool
+	Approval(data map[string]any) error
+	Clarify(ctx context.Context, questions []any) map[string]any
+}
+
+// Agent execute runs the adopted turn on and retires once it settles
+type managedWorkerAgent interface {
+	WorkerTurnAgent
+	retiringAgent
+}
+
+var (
+	_ WorkerSender          = (*WorkerChannel)(nil)
+	_ managedWorkerRPC      = (*WorkerRPC)(nil)
+	_ managedWorkerStore    = (*RuntimeSessionStore)(nil)
+	_ managedWorkerControls = (*WorkerControls)(nil)
+	_ managedWorkerAgent    = (*AIAgent)(nil)
+)
+
+// Collaborators execute reaches by name, each holding the real constructor or call
+var (
+	bindWorkerPolicy  = BindWorkerPolicy
+	bindWorkerContext = gateway.BindWorkerContext
+	retireAgent       = func(ctx context.Context, agent managedWorkerAgent) { RetireAgent(ctx, agent) }
+	newWorkerRPC      = func(home string) (managedWorkerRPC, error) {
+		rpc, err := NewWorkerRPC(home)
+		if err != nil {
+			return nil, err
+		}
+		return rpc, nil
+	}
+	newRuntimeSessionStore = func(ctx context.Context, rpc WorkerCall, scope *pyjson.Object, outboxDir string, adopted any, maxBytes int) (managedWorkerStore, error) {
+		store, err := NewRuntimeSessionStore(ctx, rpc, scope, outboxDir, adopted, maxBytes)
+		if err != nil {
+			return nil, err
+		}
+		return store, nil
+	}
+	newWorkerControls = func(channel WorkerSender, route string, input io.Reader, env *tools.Env) managedWorkerControls {
+		return NewWorkerControls(channel, route, input, env)
+	}
+	recoverProcessCheckpoint = func(ctx context.Context, env *tools.Env) error {
+		_, err := tools.DefaultProcessRegistry().RecoverFromCheckpoint(ctx, env)
+		return err
+	}
+	newManagedAIAgent = func(ctx context.Context, kwargs map[string]any) (managedWorkerAgent, error) {
+		o, err := AIAgentOptionsFromKwargs(kwargs)
+		if err != nil {
+			return nil, err
+		}
+		agent, err := NewAIAgent(ctx, o)
+		if err != nil {
+			return nil, err
+		}
+		return agent, nil
+	}
+)
 
 // Optional text of a policy pointer field as a keyword value, None when unset
 func optionalText(text *string) any {
@@ -99,13 +181,13 @@ func optionalText(text *string) any {
 }
 
 // Adopts the execution, builds the agent under the frozen policy, runs the turn and settles it with the owner
-func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *WorkerChannel, input *bufio.Reader) error {
-	if err := BindWorkerPolicy(frame); err != nil {
+func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel WorkerSender, input *bufio.Reader) (err error) {
+	if err := bindWorkerPolicy(frame); err != nil {
 		return err
 	}
 	scope := frame.Vals["scope"].(*pyjson.Object).Copy()
 	profileHome := frame.Vals["home"].(string)
-	rpc, err := NewWorkerRPC(profileHome)
+	rpc, err := newWorkerRPC(profileHome)
 	if err != nil {
 		return err
 	}
@@ -134,11 +216,11 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *Wo
 	if err != nil {
 		return err
 	}
-	store, err := NewRuntimeSessionStore(ctx, rpc.Call, scope, outbox, adopted, 0)
+	store, err := newRuntimeSessionStore(ctx, rpc.Call, scope, outbox, adopted, 0)
 	if err != nil {
 		return err
 	}
-	if err := gateway.BindWorkerContext(ctx, frame); err != nil {
+	if err := bindWorkerContext(ctx, frame); err != nil {
 		return err
 	}
 	cwd, err := os.Getwd()
@@ -147,7 +229,7 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *Wo
 	}
 	env := &tools.Env{Home: home.Dir(ctx), Cwd: cwd, Values: &sync.Map{}}
 	ctx = tools.WithToolEnv(ctx, env)
-	if _, err := tools.DefaultProcessRegistry().RecoverFromCheckpoint(ctx, env); err != nil {
+	if err := recoverProcessCheckpoint(ctx, env); err != nil {
 		return err
 	}
 	policy, err := gateway.RestorePolicy(frame.Vals["policy"])
@@ -173,10 +255,25 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *Wo
 	for _, key := range inputs.Keys {
 		construct[key] = pyjson.Plain(inputs.Vals[key])
 	}
-	controls := NewWorkerControls(channel, route, input, env)
+	controls := newWorkerControls(channel, route, input, env)
 	tools.RegisterGatewayNotify(route, controls.Approval)
-	var agent *AIAgent
-	runErr := gateway.WorkerPolicyScope(ctx, policy, func(ctx context.Context) error {
+	var agent managedWorkerAgent
+	defer func() {
+		raised := recover()
+		tools.UnregisterGatewayNotify(route)
+		if agent != nil {
+			retireAgent(ctx, agent)
+		}
+		defer closeWorkerRPC(rpc)
+		if closeErr := store.Close(); closeErr != nil {
+			err = closeErr
+			return
+		}
+		if raised != nil {
+			panic(raised)
+		}
+	}()
+	return gateway.WorkerPolicyScope(ctx, policy, func(ctx context.Context) error {
 		kwargs, err := managedAgentKwargs(ctx, frame, policy, store, scope, channel, controls, construct)
 		if err != nil {
 			return err
@@ -187,21 +284,21 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel *Wo
 		}
 		return runManagedTurn(ctx, frame, scope, channel, controls, store, &agent)
 	})
-	tools.UnregisterGatewayNotify(route)
-	if agent != nil {
-		RetireAgent(ctx, agent)
-	}
-	closeErr := store.Close()
+}
+
+// Closes the owner connection, a failing close never replacing the turn's outcome
+func closeWorkerRPC(rpc managedWorkerRPC) {
+	defer func() {
+		if r := recover(); r != nil && isUserInterruptPanic(r) {
+			panic(r)
+		}
+	}()
 	rpc.Close()
-	if closeErr != nil {
-		return closeErr
-	}
-	return runErr
 }
 
 // The keyword arguments execute builds the worker's AIAgent from, before the worker route overrides
-func managedAgentKwargs(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, store *RuntimeSessionStore,
-	scope *pyjson.Object, channel *WorkerChannel, controls *WorkerControls, construct map[string]any) (map[string]any, error) {
+func managedAgentKwargs(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, store managedWorkerStore,
+	scope *pyjson.Object, channel WorkerSender, controls managedWorkerControls, construct map[string]any) (map[string]any, error) {
 	cfg, _, err := policy.EffectiveFor(ctx, nil, true)
 	if err != nil {
 		return nil, err
@@ -257,7 +354,7 @@ func routeText(value any) string {
 }
 
 // Sends one tool lifecycle frame built from the callback arguments, raising into the executor's callback guard on failure
-func sendToolFrame(ctx context.Context, channel *WorkerChannel, kind, callID, name string, args map[string]any, result ...any) {
+func sendToolFrame(ctx context.Context, channel WorkerSender, kind, callID, name string, args map[string]any, result ...any) {
 	frame, err := gateway.ToolFrame(ctx, callID, name, args, result...)
 	if err == nil {
 		err = channel.Send(kind, frame)
@@ -268,8 +365,8 @@ func sendToolFrame(ctx context.Context, channel *WorkerChannel, kind, callID, na
 }
 
 // Builds the worker's agent with the worker route applied, booking a kanban start failure before the error propagates
-func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, kwargs map[string]any) (*AIAgent, error) {
-	agent, err := func() (*AIAgent, error) {
+func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, kwargs map[string]any) (managedWorkerAgent, error) {
+	agent, err := func() (managedWorkerAgent, error) {
 		route, err := gateway.WorkerRoute(ctx, policy, kwargs)
 		if err != nil {
 			return nil, err
@@ -281,11 +378,7 @@ func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *ga
 		for key, value := range route {
 			merged[key] = value
 		}
-		o, err := AIAgentOptionsFromKwargs(merged)
-		if err != nil {
-			return nil, err
-		}
-		return NewAIAgent(ctx, o)
+		return newManagedAIAgent(ctx, merged)
 	}()
 	if err != nil {
 		if recordErr := gateway.RecordStartFailure(ctx, frame, err); recordErr != nil {
@@ -297,12 +390,12 @@ func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *ga
 }
 
 // Runs the adopted turn and settles it, the agent retired here once its turn is done
-func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel *WorkerChannel, controls *WorkerControls,
-	store *RuntimeSessionStore, agentRef **AIAgent) error {
+func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel WorkerSender, controls managedWorkerControls,
+	store managedWorkerStore, agentRef *managedWorkerAgent) error {
 	agent := *agentRef
 	controls.SetAgent(agent)
 	if controls.Stopped() {
-		RequestHardInterrupt(agent, "", "")
+		RequestHardInterruptOf(agent, nil, nil)
 	}
 	if err := channel.Send("ready", pyjson.ObjectOf("pid", int64(os.Getpid()))); err != nil {
 		return err
@@ -317,22 +410,15 @@ func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel *W
 			return err
 		}
 	}
-	beforeIn, beforeOut := agent.SessionPromptTokens(), agent.SessionCompletionTokens()
+	beforeIn, beforeOut := managedSessionTokens(agent)
 	turn, err := RunWorkerTurns(ctx, agent, frame, history)
 	if err != nil {
 		return err
 	}
 	result := pyjson.NewObject()
-	if provider := agent.Provider(); provider != "" {
-		result.Set("provider", provider)
-	} else {
-		result.Set("provider", nil)
-	}
-	if model := agent.Model(); model != "" {
-		result.Set("model", model)
-	} else {
-		result.Set("model", nil)
-	}
+	provider, model := managedAgentRoute(agent)
+	result.Set("provider", provider)
+	result.Set("model", model)
 	keys := make([]string, 0, len(turn))
 	for key := range turn {
 		keys = append(keys, key)
@@ -341,9 +427,10 @@ func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel *W
 	for _, key := range keys {
 		result.Set(key, objectTree(turn[key]))
 	}
-	result.Set("_turn_input_tokens", int64(max(0, agent.SessionPromptTokens()-beforeIn)))
-	result.Set("_turn_output_tokens", int64(max(0, agent.SessionCompletionTokens()-beforeOut)))
-	RetireAgent(ctx, agent)
+	afterIn, afterOut := managedSessionTokens(agent)
+	result.Set("_turn_input_tokens", int64(max(0, afterIn-beforeIn)))
+	result.Set("_turn_output_tokens", int64(max(0, afterOut-beforeOut)))
+	retireAgent(ctx, agent)
 	*agentRef = nil
 	waitForTitleUpgrades(10 * time.Second)
 	if _, err := store.FlushTokenCountsChecked(5.0); err != nil {
@@ -362,6 +449,36 @@ func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel *W
 		return err
 	}
 	return channel.Send("finished", nil)
+}
+
+// Provider and model the agent names, None for one it does not carry the way getattr falls back
+func managedAgentRoute(agent any) (provider, model any) {
+	if named, ok := agent.(interface{ Provider() string }); ok {
+		provider = named.Provider()
+	}
+	if named, ok := agent.(interface{ ModelOrNone() any }); ok {
+		model = named.ModelOrNone()
+	}
+	return provider, model
+}
+
+// Model the agent was built with or switched to, None while the constructor's explicit None model stands
+func (a *AIAgent) ModelOrNone() any {
+	if a.modelNone {
+		return nil
+	}
+	return a.model
+}
+
+// Session prompt and completion token totals of the agent, zero for a total it does not keep
+func managedSessionTokens(agent any) (prompt, completion int) {
+	if counted, ok := agent.(interface{ SessionPromptTokens() int }); ok {
+		prompt = counted.SessionPromptTokens()
+	}
+	if counted, ok := agent.(interface{ SessionCompletionTokens() int }); ok {
+		completion = counted.SessionCompletionTokens()
+	}
+	return prompt, completion
 }
 
 // Bootstrap frame whose text carries the committed attachments as native content parts, refusing one that cannot be read

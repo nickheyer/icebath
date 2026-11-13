@@ -95,7 +95,7 @@ func WorkerRoute(ctx context.Context, policy *LocalSessionPolicy, construct map[
 	}
 	apiKey := construct["api_key"]
 	if !pyrepr.Truthy(apiKey) {
-		apiKey = runtime.APIKey
+		apiKey = runtime.APIKeyValue()
 	}
 	return map[string]any{"api_key": apiKey, "base_url": runtime.BaseURL, "api_mode": apiMode}, nil
 }

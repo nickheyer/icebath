@@ -32,7 +32,7 @@ func TestWindowsLiveChildOffsetMatchesOSZoneWhenTimezoneIsConfigured(t *testing.
 	withTimezone(t, "America/Los_Angeles")
 	rt := hostRuntime(t)
 	child, err := buildChildEnv(t.Context(), testEnv(t), childEnvSpec{RPCEndpoint: "socket", RPCToken: "token",
-		TmpDir: "/tmp/icebath-code-execution-test", ChildPython: rt.Python})
+		TmpDir: "/tmp/icebath-code-execution-test"})
 	if err != nil {
 		t.Fatal(err)
 	}

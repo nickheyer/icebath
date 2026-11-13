@@ -94,7 +94,7 @@ type SlackAdapter struct {
 	dmConversationCache *pydict.Dict[string, string]
 
 	dedup               *gateway.MessageDeduplicator
-	processedMessageTS  map[string]float64
+	processedMessageTS  *pydict.Dict[string, float64]
 	botMessageTS        map[any]bool
 	mentionedThreads    map[any]bool
 	mentionedThreadsCap int
@@ -152,7 +152,7 @@ func NewSlackAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *SlackAda
 		channelTeams:           pydict.New[string, map[string]bool](),
 		dmConversationCache:    pydict.New[string, string](),
 		dedup:                  gateway.NewMessageDeduplicator(2000, slackDedupTTLSeconds(ctx)),
-		processedMessageTS:     map[string]float64{},
+		processedMessageTS:     pydict.New[string, float64](),
 		botMessageTS:           map[any]bool{},
 		mentionedThreads:       map[any]bool{},
 		mentionedThreadsCap:    mentionedThreadsMax,
@@ -494,6 +494,8 @@ func (a *SlackAdapter) ensureDMConversation(ctx context.Context, chatID, teamID 
 	}
 	client := a.getClient(chatID, teamID)
 	if client == nil {
+		slog.Warn(fmt.Sprintf("[Slack] conversations.open failed for user target %s: 'NoneType' object has no attribute "+
+			"'client' (check the bot's im:write scope)", chatID))
 		return chatID
 	}
 	result, err := client.call(ctx, "conversations.open", map[string]any{"users": chatID})
@@ -822,7 +824,7 @@ func (a *SlackAdapter) postChunks(ctx context.Context, chatID, teamID, content, 
 	broadcast := pyrepr.Truthy(a.extra()["reply_broadcast"])
 	var blocks []any
 	if len(chunks) == 1 {
-		blocks = a.maybeBlocks(content)
+		blocks = a.maybeBlocks(ctx, content)
 	}
 	var last *apiResult
 	for i, chunk := range chunks {
@@ -940,7 +942,7 @@ func (a *SlackAdapter) editMessage(ctx context.Context, chatID, messageID, conte
 	}
 	kwargs := map[string]any{"channel": chatID, "ts": messageID, "text": formatted}
 	if finalize {
-		if blocks := a.maybeBlocks(content); len(blocks) > 0 {
+		if blocks := a.maybeBlocks(ctx, content); len(blocks) > 0 {
 			kwargs["blocks"] = blocks
 		}
 	}
@@ -1200,7 +1202,7 @@ func (a *SlackAdapter) commitStream(ctx context.Context, key threadKey, stream *
 		sealed = a.sealStream(ctx, key, stream, "")
 	}
 	var committed bool
-	if sealed && !replace && len(a.maybeBlocks(text)) == 0 {
+	if sealed && !replace && len(a.maybeBlocks(ctx, text)) == 0 {
 		committed = true
 	} else {
 		shown := text

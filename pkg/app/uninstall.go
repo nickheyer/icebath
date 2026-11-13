@@ -187,11 +187,6 @@ func stripShellConfigPath(content string) string {
 	return out
 }
 
-// Permission bits of an existing file the way stat.S_IMODE reads them
-func fileModeBits(st os.FileInfo) os.FileMode {
-	return st.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-}
-
 // Strips icebath PATH entries from each shell rc atomically, keeping its mode, owner and symlink
 func removePathFromShellConfigs(ctx context.Context, w io.Writer) []string {
 	var removedFrom []string
@@ -210,11 +205,7 @@ func removePathFromShellConfigs(ctx context.Context, w io.Writer) []string {
 			if updated == original {
 				return nil
 			}
-			st, err := os.Stat(cfg)
-			if err != nil {
-				return err
-			}
-			if err := pyfs.AtomicWriteTextMode(ctx, cfg, updated, ".tmp_", fileModeBits(st)); err != nil {
+			if err := pyfs.AtomicWriteTextWith(ctx, cfg, updated, pyfs.TextWrite{PreserveMode: true}); err != nil {
 				return err
 			}
 			removedFrom = append(removedFrom, cfg)

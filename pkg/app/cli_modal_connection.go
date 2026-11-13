@@ -26,11 +26,11 @@ type connectionModalState struct {
 var (
 	openConnectionURL = provider.OpenBrowserURL
 	connectionRespond = func(ctx context.Context, c *CLI, opID string, result map[string]any) error {
-		_, err := c.agent.ConnectionRespond(opID, result)
+		_, err := c.agentRef().ConnectionRespond(opID, result)
 		return err
 	}
 	connectionRetryFn = func(ctx context.Context, c *CLI, name string) error {
-		_, err := c.agent.ConnectionRetry(name)
+		_, err := c.agentRef().ConnectionRetry(name)
 		return err
 	}
 )
@@ -199,7 +199,7 @@ func (c *CLI) connectionCallback(args ...any) {
 // Sends one card answer off the loop, a refusal shown on the card as failed
 func (c *CLI) connectionSend(call func(ctx context.Context) error) {
 	state := c.connectionModal()
-	if state == nil || c.agent == nil {
+	if state == nil || c.agentRef() == nil {
 		c.connectionClose()
 		return
 	}

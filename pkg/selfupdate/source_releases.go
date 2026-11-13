@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -279,7 +278,7 @@ func sourceRead(ctx context.Context, target string, missingOK bool) (string, boo
 	req.Header.Set("User-Agent", "icebath-update")
 	req.Header.Set("Cache-Control", "no-cache")
 	req.Header.Set("Accept", "application/json, text/html")
-	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: sourceUrlopenProxy}}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", false, err

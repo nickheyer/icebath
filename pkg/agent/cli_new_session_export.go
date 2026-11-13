@@ -84,12 +84,12 @@ func (a *AIAgent) PublishTruncatedHistory(ctx context.Context, history []map[str
 		messages[i] = state.MessageFromDict(m)
 		keys[i] = rowIdentity(m)
 	}
-	a.sessionMessages = messages
+	a.setSessionMessages(messages)
 	a.dbFlushScanPrefix = keys
 }
 
 // Flushes the CLI history to the session store with the history rows stamped as durable
-func (a *AIAgent) FlushHistoryToSessionDB(messages, conversationHistory []map[string]any) (bool, error) {
+func (a *AIAgent) FlushHistoryToSessionDB(messages, conversationHistory []map[string]any) state.FlushOutcome {
 	return a.flushMessagesToSessionDBWithHistory(messages, conversationHistory)
 }
 

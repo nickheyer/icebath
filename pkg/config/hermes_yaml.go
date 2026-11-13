@@ -198,7 +198,7 @@ func loadYAMLDocument(data []byte) (any, error) {
 	}
 	doc = restoreYAMLBigInts(normalizeMaps(doc))
 	recordNodeOrder(node, doc)
-	return doc, nil
+	return pythonizeDocument(node, doc, v12, src)
 }
 
 // Duplicate key refusal of a round trip mapping, keys compared by the value they construct

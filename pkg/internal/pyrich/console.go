@@ -50,7 +50,20 @@ type Console struct {
 	NoColor bool
 	// Forced color system truecolor, 256 or standard as Console(color_system=...), the terminal's own when empty
 	ColorSystem string
-	mu          sync.Mutex
+	// Receives the raw markup of every print in place of output, a renderable arriving as its plain render
+	Capture func(raw string)
+	mu      sync.Mutex
+}
+
+// Hands raw to the capture under the console lock, false when no capture is set
+func (c *Console) captured(raw string) bool {
+	if c.Capture == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Capture(raw)
+	return true
 }
 
 // Console over a writer, styled and animated only when the writer is a terminal
@@ -162,27 +175,44 @@ func attributeCodes(seq string) string {
 // Prints markup wrapped at the console width, an empty call printing a blank line
 func (c *Console) Print(markup ...string) {
 	text := strings.Join(markup, " ")
+	if c.captured(text) {
+		return
+	}
 	c.write(WrapStyled(renderHighlighted(text, c.Color, !c.NoHighlight, c.system()), c.Width, true))
 }
 
 // Prints markup wrapped at the console width with repr highlighting off, as print(..., highlight=False)
 func (c *Console) PrintNoHighlight(markup ...string) {
 	text := strings.Join(markup, " ")
+	if c.captured(text) {
+		return
+	}
 	c.write(WrapStyled(renderHighlighted(text, c.Color, false, c.system()), c.Width, true))
 }
 
 // Prints markup on unwrapped lines, as print(..., soft_wrap=True)
 func (c *Console) PrintSoft(markup string) {
+	if c.captured(markup) {
+		return
+	}
 	c.write([]string{renderHighlighted(markup, c.Color, !c.NoHighlight, c.system())})
 }
 
 // Prints a table fitted to the console width
 func (c *Console) PrintTable(t *Table) {
+	if c.Capture != nil {
+		c.captured(t.renderWidth(false, c.system(), c.Width))
+		return
+	}
 	c.write(strings.Split(t.renderWidth(c.Color, c.system(), c.Width), "\n"))
 }
 
 // Prints a panel expanded to the console width
 func (c *Console) PrintPanel(p Panel) {
+	if c.Capture != nil {
+		c.captured(p.render(false, c.system(), c.Width))
+		return
+	}
 	c.write(strings.Split(p.render(c.Color, c.system(), c.Width), "\n"))
 }
 

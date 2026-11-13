@@ -49,9 +49,11 @@ func (o *Object) Pop(key string) (any, bool) {
 	return v, ok
 }
 
-// Deep copy keeping every Object ordered, copying maps and lists and leaving scalars unchanged
+// Deep copy keeping every Object ordered, copying maps, lists and values that rebuild themselves
 func Clone(v any) any {
 	switch t := v.(type) {
+	case interface{ PyDeepcopy() any }:
+		return t.PyDeepcopy()
 	case *Object:
 		if t == nil {
 			return t

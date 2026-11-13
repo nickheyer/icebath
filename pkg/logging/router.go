@@ -36,8 +36,8 @@ type profileRoutingFileHandler struct {
 	pick              func(home string) (*managedRotatingFileHandler, error)
 }
 
-// Router taking over the path, level, rotation, formatter and filters of existing
-func newProfileRoutingFileHandler(existing *managedRotatingFileHandler, profileHomes []string) *profileRoutingFileHandler {
+// Router taking over the path, level, rotation, formatter and filters of existing, failing on an unexpandable home
+func newProfileRoutingFileHandler(existing *managedRotatingFileHandler, profileHomes []string) (*profileRoutingFileHandler, error) {
 	resolved := resolvePath(existing.baseFilename)
 	r := &profileRoutingFileHandler{
 		baseFilename:      resolved,
@@ -51,9 +51,11 @@ func newProfileRoutingFileHandler(existing *managedRotatingFileHandler, profileH
 		livenessCheckedAt: map[string]float64{},
 	}
 	for _, h := range profileHomes {
-		if resolvedHome, err := resolveHome(h); err == nil {
-			r.profileHomes[resolvedHome] = true
+		resolvedHome, err := resolveHome(h)
+		if err != nil {
+			return nil, err
 		}
+		r.profileHomes[resolvedHome] = true
 	}
 	r.level = existing.Level()
 	existing.mu.Lock()
@@ -62,7 +64,7 @@ func newProfileRoutingFileHandler(existing *managedRotatingFileHandler, profileH
 	existing.mu.Unlock()
 	r.pick = r.handlerForHome
 	registerHandler(r)
-	return r
+	return r, nil
 }
 
 // Lexically resolved path with symlinks followed where they exist, the Path.resolve form

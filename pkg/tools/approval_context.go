@@ -296,7 +296,12 @@ func normalizeApprovalMode(mode any) string {
 
 // Live approvals config block, callers must not mutate it
 func getApprovalConfig(env *Env) map[string]any {
-	section := cfgTree(env).Map("approvals")
+	tree, err := liveConfigTree(env)
+	if err != nil {
+		envLog(env).Warn(fmt.Sprintf("Failed to load approval config: %s", err))
+		return map[string]any{}
+	}
+	section := tree.Map("approvals")
 	if section == nil {
 		return map[string]any{}
 	}
@@ -404,7 +409,11 @@ func getUnattendedApprovalMode(env *Env) string  { return binaryApprovalMode(env
 
 // Explicitly selected approval transport and the fail closed fallback, empty when none
 func getApprovalTransportConfig(env *Env) (string, string) {
-	section := config.AsMap(cfgTree(env).Get("security.approval"))
+	tree, err := liveConfigTree(env)
+	if err != nil {
+		return "config-error", ""
+	}
+	section := config.AsMap(tree.Get("security.approval"))
 	selected := strings.ToLower(strings.TrimSpace(pyStrOrEmpty(section["transport"])))
 	fallback := strings.ToLower(strings.TrimSpace(pyStrOrEmpty(section["transport_fallback"])))
 	if selected == "" {

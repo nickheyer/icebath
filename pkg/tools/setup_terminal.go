@@ -56,8 +56,6 @@ var (
 	setupFindDocker              = FindDocker
 	setupManagedNousToolsEnabled = func(env *Env) bool { return managedNousToolsEnabled(env, false) }
 	setupManagedGatewayReady     = func(env *Env, vendor string) bool { return IsManagedToolGatewayReady(env, vendor, nil, nil) }
-	setupExtraImportable         = pm.Available
-	setupSyncVenv                = pm.SyncVenv
 	setupHomeDir                 = os.UserHomeDir
 	setupRunSSH                  = runSetupSSH
 )
@@ -314,26 +312,6 @@ var setupHandledPyClasses = []string{"OSError", "IOError", "EnvironmentError", "
 	"ProcessLookupError", "ConnectionError", "BrokenPipeError", "ConnectionAbortedError", "ConnectionRefusedError",
 	"ConnectionResetError", "ValueError", "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError", "JSONDecodeError"}
 
-// Installs a declared SDK extra the selected environment cannot import without touching the running process
-func (s *terminalSetup) ensureSDK(extra string) error {
-	importable, err := setupExtraImportable(s.ctx, extra)
-	if err != nil || importable {
-		return err
-	}
-	s.ui.PrintInfo(fmt.Sprintf("Installing %s SDK...", extra))
-	err = setupSyncVenv(s.ctx, pm.SyncVenvOptions{Extras: []string{extra}, Explicit: true})
-	switch {
-	case err == nil:
-		s.ui.PrintSuccess(fmt.Sprintf("%s SDK installed. Restart Icebath to use it.", extra))
-	case setupSyncFailureHandled(err):
-		s.ui.PrintWarning(fmt.Sprintf("Install failed: %s", err.Error()))
-		s.ui.PrintInfo("Retry with: icebath setup terminal")
-	default:
-		return err
-	}
-	return nil
-}
-
 // Prints where a binary was found or warns with the install hint
 func (s *terminalSetup) reportBinary(found, missing, installHint, foundPrefix string) {
 	if found != "" {
@@ -444,9 +422,6 @@ func (s *terminalSetup) backendModal(cfg map[string]any) error {
 	}
 	terminal["modal_mode"] = "direct"
 	s.ui.PrintInfo("Requires a Modal account: https://modal.com")
-	if err := s.ensureSDK("modal"); err != nil {
-		return err
-	}
 	s.info(nil, "Modal authentication:", "  Get your token at: https://modal.com/settings")
 	if keeps, err := s.existingSecretKeeps("MODAL_TOKEN_ID", "Modal token", "  Update Modal credentials?"); err != nil || keeps {
 		return err
@@ -463,9 +438,6 @@ func (s *terminalSetup) backendDaytona(cfg map[string]any) error {
 	s.info("Persistent cloud development environments.",
 		"Each session gets a dedicated sandbox with filesystem persistence.",
 		"Sign up at: https://daytona.io")
-	if err := s.ensureSDK("daytona"); err != nil {
-		return err
-	}
 	s.ui.Println()
 	existing, err := s.getEnv("DAYTONA_API_KEY")
 	if err != nil {
@@ -492,14 +464,10 @@ func (s *terminalSetup) backendDaytona(cfg map[string]any) error {
 	return nil
 }
 
-// Installs the Vercel SDK and prompts for the sandbox settings
+// Announces the Vercel backend and prompts for the sandbox settings
 func (s *terminalSetup) backendVercel(cfg map[string]any) error {
 	s.ui.PrintSuccess("Terminal backend: Vercel Sandbox")
-	s.info("Cloud microVM sandboxes with snapshot-backed filesystem persistence.",
-		"Requires the optional Vercel SDK (installed through Icebath PM).")
-	if err := s.ensureSDK("vercel"); err != nil {
-		return err
-	}
+	s.info("Cloud microVM sandboxes with snapshot-backed filesystem persistence.")
 	return s.promptVercelSandboxSettings(cfg)
 }
 

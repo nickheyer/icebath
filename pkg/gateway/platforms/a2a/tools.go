@@ -839,7 +839,8 @@ func toolSpecs() []plugins.ToolSpec {
 }
 
 // Registers the five client tools in the a2a toolset behind the config gate
-func RegisterTools(ctx context.Context, pctx *plugins.Context) error {
+func RegisterTools(pctx *plugins.Context) error {
+	ctx := pctx.HomeContext()
 	for _, spec := range toolSpecs() {
 		if _, err := pctx.RegisterTool(ctx, spec); err != nil {
 			return err

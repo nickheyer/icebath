@@ -241,7 +241,7 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	pconfig, err := providerConfig(env.Ctx, "minimax-oauth")
+	pconfig, err := providerConfig(env.ctx(), "minimax-oauth")
 	if err != nil {
 		return nil, err
 	}

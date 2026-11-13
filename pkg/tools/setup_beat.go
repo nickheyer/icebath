@@ -50,19 +50,11 @@ func sortedSetKeys(set map[string]bool) []string {
 
 // The connectors this account can connect as the card lists them, nil when unreachable
 func onbHostedNames(env *Env) map[string]bool {
-	if !ConnectorsAvailable(env) {
+	names, ok := HostedNames(context.Background(), env)
+	if !ok {
 		return nil
 	}
-	items, err := NewConnectorClient(env, nil, "").ListConnectors(context.Background(), 0)
-	if err != nil {
-		toolsLogger(env).Debug("connector list for the routing check failed", "error", err)
-		return nil
-	}
-	set := map[string]bool{}
-	for _, item := range items {
-		set[strings.ToLower(fmt.Sprint(item["connector"]))] = true
-	}
-	return set
+	return names
 }
 
 // Hook panics when the package that must install it did not

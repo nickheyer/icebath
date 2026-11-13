@@ -86,7 +86,7 @@ func chatCLI(t *testing.T) *CLI {
 	t.Helper()
 	recordPrints(t)
 	c := configuredCLI(t, map[string]any{"tool_progress": "all"}, CLIOptions{})
-	c.agent = offlineAgent(t, c)
+	c.setAgent(offlineAgent(t, c))
 	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
 	return c
 }
@@ -114,7 +114,7 @@ func TestUnacknowledgedInterruptMessageIsRequeuedNotDropped(t *testing.T) {
 	if !slices.ContainsFunc(queued, func(q any) bool { return strings.Contains(interruptText(q), "urgent new message") }) {
 		t.Fatalf("interrupt message was dropped; pending_input=%#v", queued)
 	}
-	if c.agent.InterruptRequested() {
+	if c.agentRef().InterruptRequested() {
 		t.Fatal("the stale interrupt flag must be cleared so the next turn does not abort itself")
 	}
 }
@@ -176,7 +176,7 @@ func TestChatMultimodalNotePersistsCleanInputOnce(t *testing.T) {
 		client.record(method, params)
 		return map[string]any{"attached": true, "path": "/owner/cache/images/upload_1.png", "mime": "image/png"}, true, nil
 	}
-	c.agent = scriptedAgentOn(t, scriptedConnection(t, client), gatewayAgentOptions{})
+	c.setAgent(scriptedAgentOn(t, scriptedConnection(t, client), gatewayAgentOptions{}))
 	cleanParts := []any{
 		map[string]any{"type": "text", "text": "Describe this screenshot"},
 		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,AAAA"}},
@@ -214,7 +214,7 @@ func TestChatMultimodalNotePersistsCleanInputOnce(t *testing.T) {
 
 func TestChatClearsPreviousTurnPersistenceOverrideBeforeStaging(t *testing.T) {
 	c := chatCLI(t)
-	c.agent.SetPendingCLIUserMessage(map[string]any{"role": "user", "content": "previous clean prompt", "timestamp": 123.0})
+	c.agentRef().SetPendingCLIUserMessage(map[string]any{"role": "user", "content": "previous clean prompt", "timestamp": 123.0})
 	var stagedMessage map[string]any
 	patchTurn(t, func(_ context.Context, a cliAgent, _ any, _ agent.RunConversationOptions) (map[string]any, error) {
 		a.gateway().mu.Lock()
@@ -262,7 +262,7 @@ func TestChatTurnAdoptsChainAddedAfterTheCliOpenedAndKeepsItOnTornConfig(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.agent = chainHoldingAgent{offlineAgent(t, c), chainOwner}
+	c.setAgent(chainHoldingAgent{offlineAgent(t, c), chainOwner})
 	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
 	patchTurn(t, func(context.Context, cliAgent, any, agent.RunConversationOptions) (map[string]any, error) {
 		return doneResult(), nil

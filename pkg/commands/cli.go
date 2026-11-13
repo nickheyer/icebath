@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -54,6 +55,8 @@ type CLI struct {
 	positionals map[*cobra.Command][]posSpec
 	flagAliases map[*cobra.Command]map[string]string
 	argv        []string
+	// Whether the parsed separator of an mcp add line came from its --args remainder option
+	mcpAddArgs bool
 }
 
 type posSpec struct {
@@ -252,8 +255,6 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	c.aliasFlag(root, "tui-native", "native")
 	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
 	c.inherited(root, "cli")
-	f.Bool("dev", false, "With --tui: run TypeScript sources via tsx (skip dist build)")
-	c.inherited(root, "dev")
 	pf := root.PersistentFlags()
 	pf.StringP("profile", "p", "", "Run against a named profile's home (consumed before parsing, also carried over on relaunch)")
 	root.RegisterFlagCompletionFunc("profile", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -326,8 +327,6 @@ func (c *CLI) addChat(root *cobra.Command) {
 	c.aliasFlag(chat, "tui-native", "native")
 	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
 	c.inherited(chat, "cli")
-	f.Bool("dev", false, "With --tui: run TypeScript sources via tsx (skip dist build)")
-	c.inherited(chat, "dev")
 	c.chatArgparseShape(chat)
 }
 
@@ -370,7 +369,12 @@ func (c *CLI) inherited(cmd *cobra.Command, name string) {
 }
 
 func (c *CLI) choice(cmd *cobra.Command, name string, choices ...string) {
-	_ = cmd.Flags().SetAnnotation(name, "choices", choices)
+	c.typedChoice(cmd, name, "", choices...)
+}
+
+// Restricts a flag to choices whose refusal prints msg, the argparse type function raising ArgumentTypeError
+func (c *CLI) typedChoice(cmd *cobra.Command, name, msg string, choices ...string) {
+	restrictChoices(cmd, name, msg, choices)
 	_ = cmd.RegisterFlagCompletionFunc(name, func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 		return choices, cobra.ShellCompDirectiveNoFileComp
 	})
@@ -387,7 +391,7 @@ func (c *CLI) argparseAbbrev(cmd *cobra.Command) {
 		}
 		var hits []string
 		f.VisitAll(func(fl *pflag.Flag) {
-			if strings.HasPrefix(fl.Name, name) {
+			if _, removed := fl.Value.(removedHelp); !removed && strings.HasPrefix(fl.Name, name) {
 				hits = append(hits, fl.Name)
 			}
 		})
@@ -553,23 +557,27 @@ func (c *CLI) positionalArgs(specs []posSpec) cobra.PositionalArgs {
 			if s.Variadic || s.Remain {
 				break
 			}
-			if len(s.Choices) > 0 && !contains(s.Choices, a) {
-				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid choice: '%s' (choose from %s)", s.display(), a, quotedList(s.Choices))}
-			}
+			value, repr := a, pyrepr.StrRepr
 			if s.Int {
-				if _, err := strconv.Atoi(a); err != nil {
-					return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: '%s'", s.display(), a)}
+				n, err := strconv.Atoi(a)
+				if err != nil {
+					return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), pyrepr.StrRepr(a))}
 				}
+				value, repr = strconv.Itoa(n), func(v string) string { return v }
+			}
+			if len(s.Choices) > 0 && !contains(s.Choices, value) {
+				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid choice: %s (choose from %s)", s.display(), repr(value), reprList(s.Choices, repr))}
 			}
 		}
 		return nil
 	}
 }
 
-func quotedList(items []string) string {
+// Choices joined the way argparse lists them, each in Python repr
+func reprList(items []string, repr func(string) string) string {
 	q := make([]string, len(items))
 	for i, s := range items {
-		q[i] = "'" + s + "'"
+		q[i] = repr(s)
 	}
 	return strings.Join(q, ", ")
 }
@@ -629,6 +637,39 @@ func (c *CLI) Bind(path string, h CLIHandler) bool {
 	return true
 }
 
+// Set failure of the help option on a parser built without add_help, reported as an unrecognized argument
+var errHelpRemoved = errors.New("help option removed")
+
+// Value a bare --help hands the removed help option, telling it apart from --help=value
+const removedHelpBare = "\x00bare"
+
+// Occupies the help flag name so cobra adds no -h or --help to the command
+type removedHelp struct{}
+
+func (removedHelp) String() string   { return "false" }
+func (removedHelp) Set(string) error { return errHelpRemoved }
+func (removedHelp) Type() string     { return "bool" }
+
+// Reports whether the help flag of cmd is the removed help an add_help=False parser carries
+func helpRemoved(cmd *cobra.Command) bool {
+	fl := cmd.Flags().Lookup("help")
+	if fl == nil {
+		return false
+	}
+	_, ok := fl.Value.(removedHelp)
+	return ok
+}
+
+// DisableHelp drops -h and --help from the command at path the way argparse add_help=False builds it
+func (c *CLI) DisableHelp(path string) bool {
+	cmd := c.find(path)
+	if cmd == nil {
+		return false
+	}
+	cmd.Flags().AddFlag(&pflag.Flag{Name: "help", Shorthand: "h", Value: removedHelp{}, DefValue: "false", NoOptDefVal: removedHelpBare, Hidden: true})
+	return true
+}
+
 func (c *CLI) find(path string) *cobra.Command {
 	if path == "" {
 		return c.Root
@@ -660,39 +701,11 @@ func (c *CLI) Unbound() []string {
 }
 
 func (c *CLI) dispatch(path string, cmd *cobra.Command, args []string) error {
-	if err := c.validateChoices(cmd); err != nil {
-		return err
-	}
 	h, ok := c.handlers[path]
 	if !ok {
 		return &UnboundCLIError{Path: path}
 	}
 	return h(cmd, args)
-}
-
-func (c *CLI) validateChoices(cmd *cobra.Command) error {
-	var err error
-	cmd.Flags().VisitAll(func(fl *pflag.Flag) {
-		if err != nil || !fl.Changed {
-			return
-		}
-		choices := fl.Annotations["choices"]
-		if len(choices) == 0 {
-			return
-		}
-		if sl, ok := fl.Value.(pflag.SliceValue); ok {
-			for _, v := range sl.GetSlice() {
-				if !contains(choices, v) {
-					err = fmt.Errorf("argument --%s: invalid choice: '%s' (choose from %s)", fl.Name, v, quotedList(choices))
-				}
-			}
-			return
-		}
-		if !contains(choices, fl.Value.String()) {
-			err = fmt.Errorf("argument --%s: invalid choice: '%s' (choose from %s)", fl.Name, fl.Value.String(), quotedList(choices))
-		}
-	})
-	return err
 }
 
 // AddPluginCommand registers a plugin provided top level command
@@ -866,32 +879,113 @@ func CoalesceSessionNameArgs(argv []string) []string {
 	return out
 }
 
-// Joins an optional value flag with its following token so pflag sees one argument
+// Joins an optional value flag with the following token argparse reads as its value, parser level by level
 func (c *CLI) joinOptionalValues(argv []string) []string {
-	cmd, _, err := c.Root.Traverse(argv)
-	if err != nil || cmd == nil {
-		cmd = c.Root
-	}
-	lookup := func(tok string) *pflag.Flag {
-		if strings.HasPrefix(tok, "--") {
-			return cmd.Flags().Lookup(tok[2:])
-		}
-		if len(tok) == 2 && tok[0] == '-' {
-			return cmd.Flags().ShorthandLookup(tok[1:])
-		}
-		return nil
-	}
-	var out []string
+	level := c.Root
+	out := make([]string, 0, len(argv))
 	for i := 0; i < len(argv); i++ {
 		tok := argv[i]
-		if fl := lookup(tok); fl != nil && fl.NoOptDefVal != "" && fl.Value.Type() != "bool" && fl.Value.Type() != "count" && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "-") && !sessionNameSubcommands[argv[i+1]] {
+		if tok == "--" {
+			return append(out, argv[i:]...)
+		}
+		fl := levelFlag(level, tok)
+		valued := fl != nil && fl.Value.Type() != "bool" && fl.Value.Type() != "count"
+		switch {
+		case valued && fl.NoOptDefVal != "" && i+1 < len(argv) && argparsePositionalToken(level, argv[i+1]):
 			out = append(out, "--"+fl.Name+"="+argv[i+1])
 			i++
 			continue
+		case valued && fl.Annotations["nargs_plus"] != nil:
+			out = append(out, tok)
+			for i+1 < len(argv) && argv[i+1] != "--" && !looksLikeOption(argv[i+1]) {
+				out = append(out, argv[i+1])
+				i++
+			}
+			continue
+		case valued && fl.NoOptDefVal == "" && i+1 < len(argv):
+			out = append(out, tok, argv[i+1])
+			i++
+			continue
+		case fl == nil && !strings.HasPrefix(tok, "-"):
+			if sub := findSubcommand(level, tok); sub != nil {
+				level = sub
+			}
 		}
 		out = append(out, tok)
 	}
 	return out
+}
+
+// ParseReadyArgs joins multi word session names and the optional flag values the way argparse reads argv
+func (c *CLI) ParseReadyArgs(argv []string) []string {
+	return c.joinOptionalValues(CoalesceSessionNameArgs(argv))
+}
+
+// Flag a bare option token names at a parser level, its own flags first then the persistent flags above it
+func levelFlag(level *cobra.Command, tok string) *pflag.Flag {
+	find := func(fs *pflag.FlagSet) *pflag.Flag {
+		switch {
+		case strings.HasPrefix(tok, "--") && len(tok) > 2:
+			return fs.Lookup(tok[2:])
+		case len(tok) == 2 && tok[0] == '-' && tok[1] != '-':
+			return fs.ShorthandLookup(tok[1:])
+		}
+		return nil
+	}
+	if fl := find(level.Flags()); fl != nil {
+		return fl
+	}
+	for p := level.Parent(); p != nil; p = p.Parent() {
+		if fl := find(p.PersistentFlags()); fl != nil {
+			return fl
+		}
+	}
+	return nil
+}
+
+// Whether a parser level has a long option the prefix abbreviates
+func levelHasLongPrefix(level *cobra.Command, prefix string) bool {
+	found := false
+	visit := func(fl *pflag.Flag) {
+		if strings.HasPrefix(fl.Name, prefix) {
+			found = true
+		}
+	}
+	level.Flags().VisitAll(visit)
+	for p := level.Parent(); p != nil && !found; p = p.Parent() {
+		p.PersistentFlags().VisitAll(visit)
+	}
+	return found
+}
+
+var argparseNegativeNumberRe = regexp.MustCompile(`^-\.?\d`)
+
+// Whether argparse reads the token as a positional at this parser level rather than an option
+func argparsePositionalToken(level *cobra.Command, tok string) bool {
+	if tok == "" || tok[0] != '-' {
+		return true
+	}
+	if levelFlag(level, tok) != nil {
+		return false
+	}
+	if len(tok) == 1 {
+		return true
+	}
+	if name, _, sep := strings.Cut(tok, "="); sep && levelFlag(level, name) != nil {
+		return false
+	}
+	if strings.HasPrefix(tok, "--") {
+		name, _, _ := strings.Cut(tok[2:], "=")
+		if levelHasLongPrefix(level, name) {
+			return false
+		}
+	} else if levelFlag(level, tok[:2]) != nil {
+		return false
+	}
+	if argparseNegativeNumberRe.MatchString(tok) {
+		return true
+	}
+	return strings.Contains(tok, " ")
 }
 
 // Execute parses argv, strips the profile flag, and runs the resolved handler
@@ -905,25 +999,26 @@ func (c *CLI) Execute(argv []string) error {
 		argv = append(append([]string{}, argv[:index]...), argv[index+consume:]...)
 	}
 	argv = c.joinOptionalValues(CoalesceSessionNameArgs(argv))
-	argv = c.expandNargsPlus(rewriteMCPAddArgs(argv))
+	argv, c.mcpAddArgs = rewriteMCPAddArgs(argv)
+	argv = c.expandNargsPlus(argv)
 	c.argv = argv
 	c.Root.SetArgs(argv)
 	return argparseFlagError(c.Root, c.Root.Execute())
 }
 
-// Turns the mcp add passthrough marker into the plain argument separator
-func rewriteMCPAddArgs(argv []string) []string {
+// Turns the mcp add passthrough marker into the plain argument separator, reporting whether it did
+func rewriteMCPAddArgs(argv []string) ([]string, bool) {
 	for i, tok := range argv {
 		if tok == "--args" && insideMCPAddArgs(argv, i) {
 			out := append([]string{}, argv...)
 			out[i] = "--"
-			return out
+			return out, true
 		}
 		if tok == "--" {
 			break
 		}
 	}
-	return argv
+	return argv, false
 }
 
 // Positional returns the named positional argument or its declared default

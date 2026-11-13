@@ -46,7 +46,7 @@ pipx install icebath-cli
 nix profile add github:nickheyer/nixpkg#icebath
 mise use -g github:nickheyer/icebath
 docker run -it --rm -v "$PWD:/work" ghcr.io/nickheyer/icebath
-go install github.com/nickheyer/icebath/cmd/icebath@latest
+go install -tags goolm github.com/nickheyer/icebath/cmd/icebath@latest
 # apt, dnf and apk https://icebath.app
 ```
 

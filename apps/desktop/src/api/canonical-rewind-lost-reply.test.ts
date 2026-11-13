@@ -4,7 +4,7 @@ import { CanonicalDesktopProtocol } from './canonical-protocol'
 
 // A typed /undo or /retry derives its target from a fresh snapshot. After a lost reply the owner has
 // already rewound, so the repeat's snapshot names the turn before: the retained rewind, not a new one at
-// that target, must be what the repeat sends (as Ink's mutateCanonical and the classic CLI do).
+// that target, must be what the repeat sends (as the terminal UI's mutateCanonical and the classic CLI do).
 function primed() {
   const protocol = new CanonicalDesktopProtocol()
   protocol.result('session.resume', { session_id: 's' }, { session_id: 's', revision: 7, execution_generation: 3 })

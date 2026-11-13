@@ -107,18 +107,10 @@ func (f NousSubscriptionFeatures) Items() []NousFeatureState {
 
 // Local stack probes pkg/browser and pkg/media install at init, each accessor panics when its owner never linked
 var (
-	BrowserHarnessCLI       func(env *tools.Env) []string
 	ChromiumExecutable      func(env *tools.Env, allowOverride bool) string
 	FasterWhisperImportable func() bool
 	ManagedImageRoute       func(provider, modelID any) string
 )
-
-func browserHarnessCLI(env *tools.Env) []string {
-	if BrowserHarnessCLI == nil {
-		panic("provider.BrowserHarnessCLI is not installed: pkg/browser assigns findCLI at init")
-	}
-	return BrowserHarnessCLI(env)
-}
 
 func chromiumExecutable(env *tools.Env, allowOverride bool) string {
 	if ChromiumExecutable == nil {
@@ -147,7 +139,6 @@ var (
 		return getNousPortalAccountInfoIn(env, forceFresh, 60)
 	}
 	nousSubToolsetEnabledFn = nousSubToolsetEnabled
-	nousSubHarnessFn        = func(env PoolEnv) bool { return browserHarnessCLI(nousSubToolsEnv(env)) != nil }
 	nousSubChromiumFn       = func(env PoolEnv) string { return chromiumExecutable(nousSubToolsEnv(env), true) }
 	nousSubFasterWhisperFn  = fasterWhisperImportable
 	nousSubAudioKeyFn       = func(env PoolEnv) string { return tools.ResolveOpenAIAudioAPIKey(nousSubToolsEnv(env)) }
@@ -295,11 +286,8 @@ func nousSubToolsetEnabled(env PoolEnv, cfg map[string]any, toolsetKey string) b
 	return false
 }
 
-// Local browser starts when the harness exists and lightpanda or a runnable Chromium backs it
+// Local browser starts when lightpanda or a runnable Chromium backs it
 func nousLocalBrowserRunnable(env PoolEnv, browserCfg map[string]any) bool {
-	if !nousSubHarnessFn(env) {
-		return false
-	}
 	if nousNorm(browserCfg["engine"], "auto") == "lightpanda" {
 		return true
 	}
@@ -481,15 +469,13 @@ func nousBrowserFeature(env PoolEnv, browserCfg map[string]any, toolEnabled, man
 	}
 	directBrowserbase := nousSubEnvValueFn(env, "BROWSERBASE_API_KEY") != "" && nousSubEnvValueFn(env, "BROWSERBASE_PROJECT_ID") != "" && !browserGW
 	directBrowserUse := nousAnyEnv(env, "BROWSER_USE_API_KEY") && !browserGW
-	localAvailable := nousSubHarnessFn(env)
 	localRunnable := nousLocalBrowserRunnable(env, browserCfg)
-	browserUseManaged := toolEnabled && localAvailable && managed && !directBrowserUse
+	browserUseManaged := toolEnabled && managed && !directBrowserUse
 	var current string
 	var available, managedNow bool
 	switch {
 	case explicit:
-		cloud := map[string]bool{"browserbase": localAvailable && directBrowserbase, "browser-use": localAvailable && (managed || directBrowserUse),
-			"firecrawl": localAvailable && directFirecrawl}
+		cloud := map[string]bool{"browserbase": directBrowserbase, "browser-use": managed || directBrowserUse, "firecrawl": directFirecrawl}
 		current = "local"
 		if _, ok := cloud[provider]; ok {
 			current = provider
@@ -500,9 +486,9 @@ func nousBrowserFeature(env PoolEnv, browserCfg map[string]any, toolEnabled, man
 		}
 		managedNow = current == "browser-use" && browserUseManaged
 	case managed || directBrowserUse:
-		current, available, managedNow = "browser-use", localAvailable, browserUseManaged
+		current, available, managedNow = "browser-use", true, browserUseManaged
 	case directBrowserbase:
-		current, available = "browserbase", localAvailable
+		current, available = "browserbase", true
 	default:
 		current, available = "local", localRunnable
 	}

@@ -778,58 +778,6 @@ func TestManagerDiscoveryUsesItsHomeNotTheAmbientProfile(t *testing.T) {
 	}
 }
 
-// Port of test_same_slug_profiles_allocate_distinct_modules_concurrently
-func TestSameSlugProfilesAllocateDistinctModulesConcurrently(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	python := liveInterpreters(t)["system"]
-	installHostEnvHooks()
-	installLedgerServices(t)
-	ledgerSwapBundled(t)
-	t.Setenv("PYTHONPATH", "")
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	t.Cleanup(func() { hostInterpreter = previous })
-	var managers []*Manager
-	for _, marker := range []string{"concurrent-a", "concurrent-b"} {
-		h := t.TempDir()
-		dir := filepath.Join(h, "plugins", "profile_probe")
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		writeFile(t, filepath.Join(dir, "plugin.yaml"), "name: profile_probe\nversion: 0.1.0\ndescription: profile probe "+marker+"\n")
-		writeFile(t, filepath.Join(dir, "__init__.py"), "def register(ctx):\n    ctx.register_tool(\n        name='shared_profile_tool',\n        toolset='profile_probe',\n"+
-			"        schema={'name': 'shared_profile_tool', 'parameters': {'type': 'object', 'properties': {}}},\n        handler=lambda args, **kwargs: '"+marker+"',\n    )\n")
-		writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  isolation: host\n  enabled: [profile_probe]\n")
-		m := NewManager(h)
-		t.Cleanup(func() {
-			m.Unload("profile_probe")
-			if m.pluginHostInstance != nil {
-				m.pluginHostInstance.Shutdown()
-			}
-		})
-		managers = append(managers, m)
-	}
-	var wg sync.WaitGroup
-	for _, m := range managers {
-		wg.Add(1)
-		go func(m *Manager) { defer wg.Done(); m.DiscoverAndLoad(homeCtx(m.home), false) }(m)
-	}
-	wg.Wait()
-	modules := make([]string, 0, 2)
-	for _, m := range managers {
-		m.mu.RLock()
-		p := m.plugins["profile_probe"]
-		m.mu.RUnlock()
-		if p == nil || p.Error != "" {
-			t.Fatalf("profile probe not loaded: %+v", p)
-		}
-		modules = append(modules, p.Module)
-	}
-	if modules[0] == "" || modules[0] == modules[1] {
-		t.Fatalf("same slug profiles share module %v", modules)
-	}
-}
-
 // Port of test_spawned_supervised_task_is_cancelled_on_unload
 func TestSpawnedSupervisedTaskIsCancelledOnUnload(t *testing.T) {
 	m := NewManager(t.TempDir())

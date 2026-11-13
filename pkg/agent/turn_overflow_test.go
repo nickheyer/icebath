@@ -235,7 +235,7 @@ func TestRetryBufferClassificationSurvivesTerminalFlush(t *testing.T) {
 					t.Fatalf("%v %s: buffered %T", policy, shape, line.message)
 				}
 			}
-			if a.sessionMessages != nil {
+			if a.liveSessionMessages() != nil {
 				t.Fatalf("%v %s: persisted before the terminal failure", policy, shape)
 			}
 			v, err := r.failTurn("Requested task failed.", overflowFailure{notices: []string{"diagnostic terminal detail"}, log: "offline terminal failure"})
@@ -245,7 +245,7 @@ func TestRetryBufferClassificationSurvivesTerminalFlush(t *testing.T) {
 			if v.Result["failed"] != true || v.Result["final_response"] != "Requested task failed." {
 				t.Fatalf("%v %s: result %v", policy, shape, v.Result)
 			}
-			if len(a.sessionMessages) != len(s.Messages) || a.sessionMessages == nil {
+			if len(a.liveSessionMessages()) != len(s.Messages) || a.liveSessionMessages() == nil {
 				t.Fatalf("%v %s: terminal failure not persisted", policy, shape)
 			}
 			if len(a.retryStatusBuffer) != 0 {

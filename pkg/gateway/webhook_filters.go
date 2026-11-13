@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"math/big"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -428,18 +429,16 @@ func (p *WebhookRouteProcessor) RouteFiltersMatch(ctx context.Context, routeConf
 	return false, nil
 }
 
-// Interpreter the application runs under, the selected dependency environment python
-func webhookSysExecutable(ctx context.Context) (string, error) {
-	root := pm.RepoRoot()
-	venv, err := pm.SelectedVenv(ctx, root)
-	if err != nil {
-		return "", err
+// First python3 or python on PATH, the interpreter Python route scripts run on
+func webhookSysExecutable() (string, error) {
+	for _, name := range []string{"python3", "python"} {
+		path, err := exec.LookPath(name)
+		if err != nil || (runtime.GOOS == "windows" && strings.Contains(strings.ToLower(path), `\microsoft\windowsapps\`)) {
+			continue
+		}
+		return path, nil
 	}
-	command, err := pm.VenvCommand(ctx, root, venv, nil)
-	if err != nil {
-		return "", err
-	}
-	return command[0], nil
+	return "", errors.New("webhook route scripts in Python need a Python interpreter on PATH (python3 or python), none was found")
 }
 
 // Runs a route script on the payload, false drops the webhook and a JSON object replaces the payload
@@ -462,7 +461,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 			return false, nil, nil
 		}
 		interpreter = bash
-	} else if interpreter, err = webhookSysExecutable(ctx); err != nil {
+	} else if interpreter, err = webhookSysExecutable(); err != nil {
 		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
 		return false, nil, nil
 	}

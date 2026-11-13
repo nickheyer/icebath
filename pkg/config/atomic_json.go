@@ -7,21 +7,17 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Mode carrying atomic JSON write that also syncs the resolved target directory so the rename survives power loss
 func AtomicJSONWriteModeSyncDir(ctx context.Context, path string, data any, mode os.FileMode, opts ...pyjson.Option) error {
-	if err := AtomicJSONWriteMode(ctx, path, data, mode, opts...); err != nil {
+	text, err := atomicJSONText(data, opts)
+	if err != nil {
 		return err
 	}
-	target := path
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		target = resolved
-	}
-	pyfs.FsyncDirectory(filepath.Dir(target))
-	return nil
+	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	return atomicWriteMode(ctx, path, []byte(text), "."+stem+"_", mode, true, true)
 }
 
 // Writes data as two space indented JSON through a synced temp file keeping the existing mode and owner
@@ -56,7 +52,7 @@ func AtomicJSONWriteMode(ctx context.Context, path string, data any, mode os.Fil
 		return err
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	return atomicWriteMode(ctx, path, []byte(text), "."+stem+"_", mode, true)
+	return atomicWriteMode(ctx, path, []byte(text), "."+stem+"_", mode, true, false)
 }
 
 // JSON text of data under the dump options, raw UTF-8 unless the payload holds surrogate escapes

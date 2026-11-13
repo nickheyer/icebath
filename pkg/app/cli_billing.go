@@ -113,8 +113,8 @@ func (c *CLI) printNousCreditsBlock() bool {
 		}
 	}
 	var state *provider.CreditsState
-	if c.agent != nil {
-		state = c.agent.CreditsCapture().Credits()
+	if c.agentRef() != nil {
+		state = c.agentRef().CreditsCapture().Credits()
 	}
 	lines := provider.NousCreditsLines(c.ctx, false, 10*time.Second, state)
 	if len(lines) == 0 {

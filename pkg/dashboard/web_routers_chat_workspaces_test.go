@@ -10,12 +10,9 @@ import (
 func TestResolveChatCwdFailsClosedAndReachesTheTuiEnv(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	tmp := t.TempDir()
-	prev := TUILaunch
-	t.Cleanup(func() { TUILaunch = prev })
-	TUILaunch.MakeArgv = func(context.Context, string, bool) ([]string, string, error) {
-		return []string{"node", "fake-tui.js"}, tmp, nil
-	}
-	TUILaunch.ApplyPythonEnv = func(map[string]string) error { return nil }
+	prev := TUIArgv
+	t.Cleanup(func() { TUIArgv = prev })
+	TUIArgv = func() ([]string, error) { return []string{"icebath", "--tui"}, nil }
 
 	empty := ""
 	if got, err := resolveChatCwd(&empty); got != nil || err != nil {

@@ -101,7 +101,7 @@ func Icebath() (string, error) {
 		}
 		built.dir = dir
 		out := filepath.Join(dir, "icebath")
-		cmd, err := Limited(BuildLimit, "go", "build", "-o", out, "../../cmd/icebath")
+		cmd, err := Limited(BuildLimit, "go", "build", "-tags", "goolm", "-o", out, "../../cmd/icebath")
 		if err != nil {
 			built.err = err
 			return

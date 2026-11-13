@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/goals"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -265,7 +266,7 @@ func safeHeartbeatSnapshot(s *HeartbeatState) *pyjson.Object {
 	if s == nil || s.Status == "cleared" {
 		return nil
 	}
-	return pyjson.ObjectOf("prompt", s.Prompt, "status", s.Status, "interval_seconds", s.IntervalSeconds,
+	return pyjson.ObjectOf("prompt", s.Prompt, "status", s.Status, "interval_seconds", pyint.Value(s.IntervalSeconds),
 		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount)
 }
 

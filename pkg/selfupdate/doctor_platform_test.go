@@ -656,25 +656,3 @@ func TestRequiredPackagesNamesNoPythonLibraryCompiledIntoTheBinary(t *testing.T)
 		}
 	}
 }
-
-func TestRequiredPackagesProbesTheRuntimeEnvironmentForTheBrowserHarness(t *testing.T) {
-	d, out := toolsDoctor(t)
-	var asked []string
-	toolsSeam(t, &doctorModuleImportable, func(_ context.Context, module string) bool {
-		asked = append(asked, module)
-		return false
-	})
-	var harness []doctorPackage
-	for _, p := range doctorPackages {
-		if strings.HasPrefix(p.Name, "browser-harness") {
-			harness = append(harness, p)
-		}
-	}
-	toolsSeam(t, &doctorPackages, harness)
-	if _, err := checkRequiredPackages(context.Background(), d, false); err != nil {
-		t.Fatal(err)
-	}
-	if len(asked) != 1 || asked[0] != "browser_harness" || !strings.Contains(out.String(), "⚠ browser-harness (browser_exec) (optional, not installed)") {
-		t.Fatalf("asked %q, output:\n%s", asked, out.String())
-	}
-}

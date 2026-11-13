@@ -4,7 +4,6 @@ import (
 	"errors"
 	"maps"
 	"reflect"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -104,7 +104,11 @@ func desktopEmit(env *tools.Env, sid, event string, payload map[string]any) erro
 	if target == nil {
 		return errors.New("no Hermes desktop window is attached to this turn")
 	}
-	target.publish(event, maps.Clone(payload))
+	copied := maps.Clone(payload)
+	if copied == nil {
+		copied = map[string]any{}
+	}
+	target.publish(event, copied)
 	return nil
 }
 
@@ -276,8 +280,8 @@ func desktopTheme(t *TurnRunner, a *agent.AIAgent, payload map[string]any) any {
 	if picked, ok := result.GetOr("picked", nil).(*pyjson.Object); ok {
 		return pyjson.ObjectOf("success", true, "picked", picked)
 	}
-	if said, ok := result.GetOr("said", nil).(string); ok && strings.TrimSpace(said) != "" {
-		return pyjson.ObjectOf("said", strings.TrimSpace(said))
+	if said, ok := result.GetOr("said", nil).(string); ok && pystr.Strip(said) != "" {
+		return pyjson.ObjectOf("said", pystr.Strip(said))
 	}
 	return pyjson.ObjectOf("cancelled", true)
 }

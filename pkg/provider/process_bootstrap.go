@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Stagger between dual stack connection attempts
@@ -180,7 +182,7 @@ func happyEyeballsDial(ctx context.Context, network, address string, timeout tim
 // First proxy URL of HTTPS_PROXY, HTTP_PROXY or ALL_PROXY in either case, empty when none is set
 func getProxyFromEnv() string {
 	if value := FirstProxyEnvValue(); value != "" {
-		return normalizeProxyURL(value)
+		return config.NormalizeProxyURL(value)
 	}
 	return ""
 }

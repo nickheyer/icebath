@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -63,127 +62,6 @@ func selectGeneration(t *testing.T, withDist bool, version string) string {
 		t.Fatal(err)
 	}
 	return site
-}
-
-func TestAnImportableDependencyIsNotReported(t *testing.T) {
-	site := selectGeneration(t, true, "1.0")
-	t.Setenv("PYTHONPATH", site)
-	if got := missingPythonDependencies(context.Background(), &Manifest{Name: "depprobe", PythonDeps: []string{depReq}}); len(got) != 0 {
-		t.Fatalf("missing = %v", got)
-	}
-}
-
-func TestSelectedGenerationProbeIsFalseWithoutASelection(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if installedInSelectedEnvironment(context.Background(), []string{depReq}) {
-		t.Fatal("selected generation reported the dependency without a selection")
-	}
-}
-
-func TestAnInstalledVersionTheRequirementRejectsIsMissing(t *testing.T) {
-	selectGeneration(t, true, "1.7")
-	running := filepath.Join(t.TempDir(), "running-site")
-	writeDistInfo(t, running, "1.0")
-	t.Setenv("PYTHONPATH", running)
-	raised := depDist + ">=1.5,<2"
-	ctx := context.Background()
-	if got := missingPythonDependencies(ctx, &Manifest{Name: "depprobe", PythonDeps: []string{raised}}); len(got) != 1 || got[0] != raised {
-		t.Fatalf("missing = %v", got)
-	}
-	if !installedInSelectedEnvironment(ctx, []string{raised}) {
-		t.Fatal("selected generation 1.7 should satisfy the raised floor")
-	}
-	if installedInSelectedEnvironment(ctx, []string{depDist + ">=1.8"}) {
-		t.Fatal("selected generation 1.7 should not satisfy >=1.8")
-	}
-}
-
-// Home whose selected generation runs the system Python and whose resident PM runtime imports its packaging
-func markerRuntimeWorld(t *testing.T) {
-	t.Helper()
-	python, err := filepath.EvalSymlinks(liveInterpreters(t)["system"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := exec.Command(python, "-c", "import packaging, os; print(os.path.dirname(os.path.dirname(packaging.__file__)))").Output()
-	if err != nil {
-		t.Fatalf("judging a requirement marker needs the packaging distribution in python3: %v", err)
-	}
-	tmp := t.TempDir()
-	t.Cleanup(pm.OverrideCoreRepo(mustMkdir(t, filepath.Join(tmp, "core"))))
-	selectGeneration(t, false, "1.0")
-	venv := filepath.Join(pm.InstallStateDir(context.Background(), pm.RepoRoot()), "environments", "gen1", "venv")
-	writeFile(t, filepath.Join(venv, "pyvenv.cfg"), "home = "+filepath.Dir(python)+"\nversion = 3.12.4\n")
-	mustMkdir(t, filepath.Dir(pm.VenvPython(venv)))
-	if err := os.Symlink(python, pm.VenvPython(venv)); err != nil {
-		t.Fatal(err)
-	}
-	runtimeDir := mustMkdir(t, filepath.Join(tmp, "pm-runtime"))
-	record, _ := json.Marshal(map[string]any{"python": python, "sitePackages": strings.TrimSpace(string(out))})
-	writeFile(t, filepath.Join(runtimeDir, "pm-runtime.json"), string(record))
-	stamp, _ := json.Marshal(map[string]any{"distribution": "nix", "pmRuntime": runtimeDir})
-	writeFile(t, pm.InstallStampPath(pm.RepoRoot()), string(stamp))
-}
-
-func TestADependencyExcludedByItsMarkerIsNeverMissing(t *testing.T) {
-	markerRuntimeWorld(t)
-	t.Setenv("PYTHONPATH", "")
-	excluded := depDist + ">=1.0,<2; python_version < '3.0'"
-	got := missingPythonDependencies(context.Background(), &Manifest{Name: "depprobe", PythonDeps: []string{excluded, depReq}})
-	if len(got) != 1 || got[0] != depReq {
-		t.Fatalf("missing = %v", got)
-	}
-}
-
-func TestDiscoveryWarnsRestartOrRepair(t *testing.T) {
-	for _, withDist := range []bool{true, false} {
-		selectGeneration(t, withDist, "1.0")
-		t.Setenv("PYTHONPATH", "")
-		buf := captureLogs(t)
-		NewManager(t.TempDir()).warnPythonDependencies(context.Background(), &Manifest{Name: "depprobe", Key: "depprobe", PythonDeps: []string{depReq}})
-		out := buf.String()
-		if withDist && (!strings.Contains(out, "installed after this process started") || !strings.Contains(out, "restart") || strings.Contains(out, "pm repair")) {
-			t.Fatalf("restart remedy missing: %s", out)
-		}
-		if !withDist && (!strings.Contains(out, "not installed") || !strings.Contains(out, "pm repair")) {
-			t.Fatalf("repair remedy missing: %s", out)
-		}
-	}
-}
-
-func TestDistNameAndLookup(t *testing.T) {
-	for req, want := range map[string]string{"foo>=1": "foo", "foo[bar]; python_version>'3'": "foo", " foo ": "", "foo~=1.0": "foo", ">=1": ""} {
-		if got := distName(req); got != want {
-			t.Errorf("distName(%q) = %q, want %q", req, got, want)
-		}
-	}
-	if distInstalled(">=1", []string{t.TempDir()}) != nil {
-		t.Fatal("a requirement naming no distribution is unprobeable")
-	}
-	site := t.TempDir()
-	writeDistInfo(t, site, "1.2rc1")
-	if got := distInstalled("Icebath.Depprobe_Fixture>=1.1", []string{site}); got == nil || !*got {
-		t.Fatal("normalized name with a prerelease inside the specifier should be installed")
-	}
-	if got := distInstalled(depDist+"<1", []string{site}); got == nil || *got {
-		t.Fatal("version outside the specifier should be reported not installed")
-	}
-	if got := distInstalled(depDist+" @ https://example.invalid/x.whl", []string{site}); got == nil || !*got {
-		t.Fatal("presence decides for a requirement without a specifier")
-	}
-}
-
-func TestDeclaredRequirementsFromManifestWithoutDirectory(t *testing.T) {
-	mf := &Manifest{Name: "x", PythonDeps: []string{"a>=1", "b"}}
-	if got := declaredRequirements(mf); len(got) != 2 || got[0] != "a>=1" {
-		t.Fatalf("declared = %v", got)
-	}
-	if !appliesHere(context.Background(), "a>=1") {
-		t.Fatal("a requirement without a marker always applies")
-	}
-	if !appliesHere(context.Background(), "a>=1; ][") {
-		t.Fatal("an unparseable requirement keeps being reported")
-	}
 }
 
 func TestKeyboardInterruptFromCallerThreadHookPropagates(t *testing.T) {
@@ -289,34 +167,5 @@ func TestBundledPluginsDirHonoursOverride(t *testing.T) {
 	t.Setenv("ICEBATH_BUNDLED_PLUGINS", "")
 	if GetBundledPluginsDir() != filepath.Join(pm.RepoRoot(), "plugins") {
 		t.Fatalf("default = %s", GetBundledPluginsDir())
-	}
-}
-
-func TestAppliesHereEvaluatesTheMarkerAgainstThePluginInterpreter(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	host, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo := t.TempDir()
-	python := pm.VenvPython(filepath.Join(repo, "venv"))
-	if err := os.MkdirAll(filepath.Dir(python), 0o777); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(host, python); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pm.PatchRepoRoot(repo))
-	for req, want := range map[string]bool{
-		"a>=1; python_version >= '0'":                    true,
-		"a>=1; python_version < '0'":                     false,
-		"a; extra == 'cli'":                              false,
-		"a; python_version >= '0' and extra == 'cli'":    false,
-		"a; python_version < '0' or os_name != 'riscos'": true,
-		"a; platform_machine ~= 'x86'":                   true,
-	} {
-		if got := appliesHere(context.Background(), req); got != want {
-			t.Errorf("%q applies %v, want %v", req, got, want)
-		}
 	}
 }

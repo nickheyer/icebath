@@ -26,16 +26,21 @@ const searchLimitCap = 20
 // Provider credential through the bound profile scope, failing closed while multiplexing without one
 func providerEnv(ctx context.Context, env *Env, name string) (string, error) {
 	if !IsGlobalEnv(name) {
-		if ProfileSecrets != nil {
-			if scope := ProfileSecrets.CurrentSecretScope(ctx); scope != nil {
-				return scopedProviderEnv(scope, env, name), nil
-			}
+		scopeBound, multiplexActive := secretScopeState(ctx, env)
+		if scopeBound {
+			return scopedProviderEnv(ProfileSecrets.CurrentSecretScope(ctx), env, name), nil
 		}
-		if isMultiplexActive(env) && (env == nil || env.Secrets == nil) {
+		if multiplexActive && (env == nil || env.Secrets == nil) {
 			return "", ErrUnscopedSecret
 		}
 	}
 	return secretValue(env, name), nil
+}
+
+// Whether a profile secret scope is bound to this call and whether the process multiplexes profiles
+func secretScopeState(ctx context.Context, env *Env) (bool, bool) {
+	scopeBound := ProfileSecrets != nil && ProfileSecrets.CurrentSecretScope(ctx) != nil
+	return scopeBound, isMultiplexActive(env)
 }
 
 // Scope value, else the process env for the launch profile only, else the profile .env
@@ -238,6 +243,8 @@ func pyAttributeError(v any, attr string) error {
 type pyAttrError struct{ msg string }
 
 func (e *pyAttrError) Error() string { return e.msg }
+
+func (e *pyAttrError) PyTypeName() string { return "AttributeError" }
 
 // TypeError raised while iterating, joining or slicing a decoded payload
 type pyTypeError struct{ msg string }

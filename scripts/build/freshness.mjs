@@ -8,7 +8,7 @@ import { isMain } from './frontend-common.mjs'
 const receiptName = 'hermes-build.json'
 // What `icebath update` leaves in a product it could not rebuild (STALE_MARKER in hermes_cli/webapp.py).
 const staleMarker = '.icebath-stale'
-const workspaces = { tui: 'ui-tui', web: 'web', desktop: 'apps/desktop' }
+const workspaces = { web: 'web', desktop: 'apps/desktop' }
 // Another product's output under a workspace is never this product's input.
 const generated = new Set(['node_modules', 'dist', 'dist-webapp', 'build', 'release', '.cache', '.git', 'coverage', 'test-results', 'playwright-report'])
 
@@ -23,17 +23,6 @@ const osMetadata = name => {
     || base === 'Thumbs.db' || base === 'Desktop.ini' || base.startsWith('._')
 }
 
-// buildTui bundles these source roots (including the Ink source alias), not
-// the workspaces' documentation, test runners or other product recipes.
-const tuiInputs = [
-  ...['ui-tui', 'ui-tui/packages/hermes-ink', 'apps/shared'].flatMap(root => [
-    `${root}/src`, `${root}/package.json`, `${root}/tsconfig.json`,
-  ]),
-  'tsconfig.json', 'package.json', 'package-lock.json', '.npmrc', 'pm/lock.json',
-  'scripts/build/tui.mjs', 'scripts/build/frontend-common.mjs', 'scripts/build/freshness.mjs',
-  'ui-tui/scripts/gateway_bootstrap.py', 'ui-tui/scripts/clipboard_image.py',
-]
-
 // The browser renderer compiles Desktop and its shared package in a prepared
 // workspace. Release metadata (pyproject.toml, uv.lock, icons) is not its input.
 const webappInputs = [
@@ -43,7 +32,6 @@ const webappInputs = [
 ]
 
 function productInputs(product) {
-  if (product === 'tui') return tuiInputs
   if (product === 'webapp') return webappInputs
   const workspace = workspaces[product]
   if (!workspace) throw new Error(`Unknown frontend product: ${product}`)
@@ -57,15 +45,12 @@ function productInputs(product) {
   ]
 }
 
-function skipInput(product) {
-  return name => {
-    // Build scripts are inputs; workspace build directories are outputs.
-    const parts = name.split('/')
-    return (!name.startsWith('scripts/') && parts.some(part => generated.has(part)))
-      || (product === 'tui' && (parts.includes('__tests__') || /\.(test|spec)(-d)?\.[cm]?[jt]sx?$/.test(name)))
-      || parts.some(part => part.startsWith('.dist-') || part.startsWith('.staging-') || part === '__pycache__')
-      || name.endsWith('.tsbuildinfo') || name.endsWith('.pyc')
-  }
+function skipInput(name) {
+  // Build scripts are inputs; workspace build directories are outputs.
+  const parts = name.split('/')
+  return (!name.startsWith('scripts/') && parts.some(part => generated.has(part)))
+    || parts.some(part => part.startsWith('.dist-') || part.startsWith('.staging-') || part === '__pycache__')
+    || name.endsWith('.tsbuildinfo') || name.endsWith('.pyc')
 }
 
 // Pre-order walk: a directory is reported before its sorted children.
@@ -92,13 +77,13 @@ function treeHash(root, inputs, skip, contents = () => true) {
 }
 
 export function sourceHash(source, product) {
-  return treeHash(source, productInputs(product), skipInput(product))
+  return treeHash(source, productInputs(product), skipInput)
 }
 
 /** The present entries a product's source hash covers, for mirroring a prepared workspace. */
 export function sourceEntries(source, product) {
   const entries = []
-  walkTree(source, productInputs(product), skipInput(product), (name, kind) => {
+  walkTree(source, productInputs(product), skipInput, (name, kind) => {
     if (kind !== 'missing') entries.push({ name, kind })
   })
   return entries
@@ -191,7 +176,7 @@ function preparedPaths(inputs) {
 // the clock it read at bundleElectronMain: re-reading the stamp here would record
 // a restamp that landed in between as the baked value, and productCurrent would
 // then certify a product whose packaged clock disagrees with electron-main.mjs.
-// Undefined (tui/web, which have no stamp) is dropped from the receipt, which is
+// Undefined (web, which has no stamp) is dropped from the receipt, which is
 // exactly the "predates this" shape productCurrent already tolerates.
 export function recordProduct({ source, product, out, inputs, stampClock }) {
   if (JSON.stringify(buildInputs(source, product, preparedPaths(inputs))) !== JSON.stringify(inputs)) {

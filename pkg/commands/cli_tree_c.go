@@ -52,7 +52,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.pos(tEnable, pMany("names").withMetavar("NAME").withHelp("Toolset name or MCP tool in server:tool form"))
 	sf(tEnable, "platform", "", "cli", "Platform to apply to (default: cli)")
 	tPost := c.newCmd(tools, "post-setup", "Run a provider's post-setup install hook (npm/pip/binary)",
-		"Run the install/bootstrap hook a tool backend declares — the\nsame step `icebath tools` runs after you pick a provider that\nneeds extra dependencies (browser Chromium, Lightpanda, cua-driver,\nKittenTTS/Piper, ddgs, xAI, Codex). Stable,\nnon-interactive target the dashboard spawns to drive backend\nsetup. Keys: chromium, lightpanda, cua_driver, kittentts,\npiper, ddgs, xai_grok, openai_codex.")
+		"Run the install/bootstrap hook a tool backend declares — the\nsame step `icebath tools` runs after you pick a provider that\nneeds extra dependencies (browser Chromium, Lightpanda, cua-driver,\nKittenTTS, ddgs, xAI, Codex). Stable,\nnon-interactive target the dashboard spawns to drive backend\nsetup. Keys: chromium, lightpanda, cua_driver, kittentts,\nddgs, xai_grok, openai_codex.")
 	c.pos(tPost, p("post_setup_key").withMetavar("KEY").withHelp("Post-setup hook key (e.g. chromium, cua_driver, kittentts)"))
 
 	c.addComputerUse(root)
@@ -61,14 +61,13 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 		"Manage MCP server connections.\n\nMCP servers provide additional tools via the Model Context Protocol.\nUse 'icebath mcp add' to connect to a new server. Running Icebath itself as an\nMCP server is the mcp-serve plugin: `icebath plugins install mcp-serve`.")
 	mAdd := c.newCmd(mcp, "add", "Add an MCP server (discovery-first install)", "")
 	c.pos(mAdd, p("name"), pRem("args").withHelp("Arguments for stdio command; must be the last option"))
-	mAdd.Long = "Add an MCP server. Everything after --args (or --) is the stdio command argv; it must be the last option."
 	sf(mAdd, "url", "", "", "HTTP/SSE endpoint URL")
 	sf(mAdd, "command", "", "", "Stdio command (e.g. npx)")
 	sf(mAdd, "auth", "", "", "Auth method")
 	c.choice(mAdd, "auth", "oauth", "header")
 	sf(mAdd, "preset", "", "", "Known MCP preset name")
 	ff(mAdd, "connect-timeout", "", 0, "Timeout in seconds for initial connection and tool discovery")
-	sliceF(mAdd, "env", "Environment variables for stdio servers (KEY=VALUE)")
+	nargsStarFlag(mAdd, "env", "Environment variables for stdio servers (KEY=VALUE)")
 	mRm := c.newCmd(mcp, "remove", "Remove an MCP server", "", "rm")
 	c.pos(mRm, p("name"))
 	c.newCmd(mcp, "list", "List configured MCP servers", "", "ls")
@@ -216,7 +215,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	serve := c.newCmd(root, "serve", "Start the Icebath backend server (headless; powers the desktop app and remote backends)",
 		"Run the Icebath backend server — the JSON-RPC/WebSocket gateway the desktop app and remote clients connect to. Headless: it never opens a browser UI.")
 	serverRuntime(serve)
-	bf(serve, "no-open", "", "")
+	serve.Flags().Bool("no-open", true, "")
 	hide(serve, "no-open")
 	sf(serve, "ssh-session-token-file", "", "", "Read a one-shot Desktop SSH session token from PATH")
 	sf(serve, "ssh-owner-nonce", "", "", "Identify a Desktop-owned SSH backend process")

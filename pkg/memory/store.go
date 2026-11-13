@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Block header titles the prompt renderer and compression share to spot a leftover block
@@ -1023,13 +1023,13 @@ func ReadEntriesFile(path string) []string {
 
 // Atomic temp file and rename of the joined entries, a write failure wrapped as the runtime error
 func writeEntriesFile(ctx context.Context, path string, entries []string) error {
-	err := atomicWriteText(ctx, path, strings.Join(entries, EntryDelimiter), ".mem_")
+	err := pyfs.AtomicWriteText(ctx, path, strings.Join(entries, EntryDelimiter), ".mem_")
 	if err == nil {
 		return nil
 	}
-	var pe *pyError
-	if errors.As(err, &pe) && pe.class == "UnicodeEncodeError" {
-		return err
+	var ee *pyfs.EncodeError
+	if errors.As(err, &ee) {
+		return &pyError{class: "UnicodeEncodeError", msg: ee.Msg}
 	}
 	return &pyError{class: "RuntimeError", msg: fmt.Sprintf("Failed to write memory file %s: %s", path, osErrorText(err))}
 }
@@ -1066,195 +1066,6 @@ func (s *Store) driftBackup(target, raw string) string {
 		}
 		return bak
 	}
-}
-
-// Writes text through a temp file beside the published target, fsync, and an atomic rename
-func atomicWriteText(ctx context.Context, path, content, prefix string) error {
-	if !utf8.ValidString(content) {
-		return unicodeEncodeError(content)
-	}
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		return err
-	}
-	var mode os.FileMode
-	modeSet := false
-	if _, err := os.Stat(path); err != nil {
-		mode, modeSet = defaultNewFileMode()
-	}
-	publish := publishPath(path)
-	linkDir := filepath.Dir(path)
-	stageDir := filepath.Dir(publish)
-	tmp, err := os.CreateTemp(stageDir, prefix+"*.tmp")
-	if err != nil && errors.Is(err, os.ErrPermission) && stageDir != linkDir {
-		tmp, err = os.CreateTemp(linkDir, prefix+"*.tmp")
-	}
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	fail := func(err error) error {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if modeSet && canFchmod {
-		if err := tmp.Chmod(mode); err != nil {
-			return fail(err)
-		}
-	}
-	if _, err := tmp.WriteString(platformNewlines(content)); err != nil {
-		return fail(err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fail(err)
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if err := atomicReplace(tmpName, publish); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if modeSet {
-		os.Chmod(publish, mode)
-	}
-	return nil
-}
-
-// Real file a symlink points at, else the target itself
-func publishPath(target string) string {
-	st, err := os.Lstat(target)
-	if err != nil || st.Mode()&os.ModeSymlink == 0 {
-		return target
-	}
-	return realpathNonStrict(target)
-}
-
-// Resolves every symlink it can and keeps the unresolved remainder like a non strict realpath
-func realpathNonStrict(p string) string {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return p
-	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved
-	}
-	cur := abs
-	for hops := 0; hops < 40; hops++ {
-		st, err := os.Lstat(cur)
-		if err != nil || st.Mode()&os.ModeSymlink == 0 {
-			break
-		}
-		link, err := os.Readlink(cur)
-		if err != nil {
-			break
-		}
-		if !filepath.IsAbs(link) {
-			link = filepath.Join(filepath.Dir(cur), link)
-		}
-		cur = filepath.Clean(link)
-	}
-	dir, base := filepath.Split(cur)
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		return filepath.Join(resolved, base)
-	}
-	return cur
-}
-
-// Renames tmp onto target, copying across devices and retrying a contended Windows rename
-func atomicReplace(tmp, target string) error {
-	err := os.Rename(tmp, target)
-	if err == nil {
-		return nil
-	}
-	contended := isContendedReplaceError(err)
-	if !isCrossDeviceError(err) && !contended {
-		return err
-	}
-	if contended {
-		for attempt := 1; attempt <= 4; attempt++ {
-			time.Sleep(jitteredBackoff(attempt, 0.02, 0.1))
-			retryErr := os.Rename(tmp, target)
-			if retryErr == nil {
-				return nil
-			}
-			if isCrossDeviceError(retryErr) {
-				contended = false
-				break
-			}
-			if !isContendedReplaceError(retryErr) {
-				return retryErr
-			}
-		}
-	}
-	if contended {
-		return rewriteInPlace(tmp, target)
-	}
-	return copyFallback(tmp, target)
-}
-
-// Overwrites the target through its existing handle as the last resort for a held file
-func rewriteInPlace(tmp, target string) error {
-	data, err := os.ReadFile(tmp)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(target, os.O_WRONLY, 0)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Truncate(int64(len(data))); err != nil {
-		f.Close()
-		return err
-	}
-	f.Sync()
-	if err := f.Close(); err != nil {
-		return err
-	}
-	return os.Remove(tmp)
-}
-
-// Copies tmp onto target with its mode, fsyncs and unlinks tmp for cross device renames
-func copyFallback(tmp, target string) error {
-	data, err := os.ReadFile(tmp)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if st, err := os.Stat(tmp); err == nil {
-		os.Chmod(target, st.Mode().Perm())
-		os.Chtimes(target, st.ModTime(), st.ModTime())
-	}
-	if rf, err := os.Open(target); err == nil {
-		rf.Sync()
-		rf.Close()
-	}
-	return os.Remove(tmp)
-}
-
-// Exponential delay capped at the max plus up to half again of uniform jitter
-func jitteredBackoff(attempt int, base, maxDelay float64) time.Duration {
-	exponent := max(0, attempt-1)
-	delay := maxDelay
-	if exponent < 63 && base > 0 {
-		delay = math.Min(base*math.Pow(2, float64(exponent)), maxDelay)
-	}
-	return time.Duration((delay + rand.Float64()*0.5*delay) * float64(time.Second))
 }
 
 // Translates CRLF and lone CR to LF like Python universal newline reads
@@ -1641,24 +1452,6 @@ func hashable(v any) error {
 		return &pyError{class: "TypeError", msg: fmt.Sprintf("unhashable type: '%s'", pyTypeName(v))}
 	}
 	return nil
-}
-
-// Python UnicodeEncodeError text for the first lone surrogate in WTF-8 text
-func unicodeEncodeError(s string) error {
-	pos := 0
-	for i := 0; i < len(s); {
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if r == utf8.RuneError && size == 1 {
-			if i+2 < len(s) && s[i] == 0xed && s[i+1] >= 0xa0 {
-				sur := rune(s[i]&0x0f)<<12 | rune(s[i+1]&0x3f)<<6 | rune(s[i+2]&0x3f)
-				return &pyError{class: "UnicodeEncodeError", msg: fmt.Sprintf("'utf-8' codec can't encode character '\\u%04x' in position %d: surrogates not allowed", sur, pos)}
-			}
-			return &pyError{class: "UnicodeEncodeError", msg: fmt.Sprintf("'utf-8' codec can't encode character '\\x%02x' in position %d: surrogates not allowed", s[i], pos)}
-		}
-		i += size
-		pos++
-	}
-	return &pyError{class: "UnicodeEncodeError", msg: "'utf-8' codec can't encode characters: surrogates not allowed"}
 }
 
 // Stat failures Python pathlib treats as a missing path

@@ -90,16 +90,16 @@ func turnDone(done <-chan struct{}) bool {
 
 // Provider of the running agent, the CLI's own when no agent holds one
 func (c *CLI) turnProvider() string {
-	if c.agent != nil && c.agent.Provider() != "" {
-		return c.agent.Provider()
+	if c.agentRef() != nil && c.agentRef().Provider() != "" {
+		return c.agentRef().Provider()
 	}
 	return c.provider
 }
 
 // Model of the running agent, the CLI's own when no agent holds one
 func (c *CLI) turnModel() string {
-	if c.agent != nil && c.agent.Model() != "" {
-		return c.agent.Model()
+	if c.agentRef() != nil && c.agentRef().Model() != "" {
+		return c.agentRef().Model()
 	}
 	return c.model
 }
@@ -112,7 +112,7 @@ func (c *CLI) syncFallbackChainWithConfig() {
 		return
 	}
 	c.fallbackModel = provider.GetFallbackChain(cfg)
-	if applier, ok := c.agent.(fallbackChainApplier); ok {
+	if applier, ok := c.agentRef().(fallbackChainApplier); ok {
 		applier.ApplyFallbackChain(c.fallbackModel)
 	}
 }
@@ -144,7 +144,7 @@ func (c *CLI) chat(message any, images []string, voiceInput bool) (response stri
 		retireAgent(c)
 	}
 	initializing := ""
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		initializing = c.t("cli.chat.initializing_agent", nil)
 		c.setSpinnerText(initializing)
 	}
@@ -161,7 +161,7 @@ func (c *CLI) chat(message any, images []string, voiceInput bool) (response stri
 	if !built {
 		return "", false
 	}
-	a := c.agent
+	a := c.agentRef()
 	if a == nil {
 		return "", false
 	}
@@ -370,7 +370,7 @@ func (c *CLI) chatRunAgent(turn *chatTurn, message any) {
 		sessionKey = "default"
 	}
 	tools.SetCurrentSessionKey(c.env, sessionKey)
-	a := c.agent
+	a := c.agentRef()
 	agentMessage, changed := message, false
 	if turn.voicePrefix != "" {
 		agentMessage, changed = turn.voicePrefix+message.(string), true
@@ -539,7 +539,7 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 		if turn.stopEvent != nil {
 			turn.stopEvent.Set()
 		}
-		interruptTurnAgent(c.agent, interruptText(msg))
+		interruptTurnAgent(c.agentRef(), interruptText(msg))
 		c.clearActiveOverlaysForInterrupt()
 		c.writeInterruptDebugLog(msg)
 		break
@@ -606,7 +606,7 @@ func (c *CLI) writeInterruptDebugLog(msg any) {
 	}
 	defer f.Close()
 	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
-		pyrepr.StrRepr(pystr.Slice(pyrepr.Str(msg), 0, 60)), pyrepr.Repr(c.agent.InterruptRequested()))
+		pyrepr.StrRepr(pystr.Slice(pyrepr.Str(msg), 0, 60)), pyrepr.Repr(c.agentRef().InterruptRequested()))
 }
 
 // Transcript rows of a turn result, false when the result carries no messages key
@@ -665,7 +665,7 @@ func (c *CLI) chatSettleTurn(turn *chatTurn) {
 			c.conversationHistory = msgs
 		}
 	}
-	if a := c.agent; a != nil && a.SessionID() != "" && a.SessionID() != c.sessionID {
+	if a := c.agentRef(); a != nil && a.SessionID() != "" && a.SessionID() != c.sessionID {
 		tools.TransferSessionYolo(c.sessionID, a.SessionID())
 		c.sessionID = a.SessionID()
 		c.writeTerminalBreadcrumb()
@@ -774,9 +774,9 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		apiCalls, _ := progressNumber(mapValueOr(result, "api_calls", 0))
 		maxIter := 500
 		var notificationConfig map[string]any
-		if c.agent != nil {
-			maxIter = c.agent.MaxIterations()
-			notificationConfig = c.agent.NotificationConfig()
+		if c.agentRef() != nil {
+			maxIter = c.agentRef().MaxIterations()
+			notificationConfig = c.agentRef().NotificationConfig()
 		}
 		if int(apiCalls) >= maxIter {
 			_, _ = config.RenderNotification(c.ctx, func() error {
@@ -865,8 +865,8 @@ func (c *CLI) chatResolveInterrupt(turn *chatTurn, done <-chan struct{}, interru
 	if pyrepr.Truthy(interruptPayloadValue(interruptMsg)) {
 		func() {
 			defer func() { _ = recover() }()
-			if turnDone(done) && c.agent != nil && c.agent.InterruptRequested() {
-				c.agent.ClearInterrupt()
+			if turnDone(done) && c.agentRef() != nil && c.agentRef().InterruptRequested() {
+				c.agentRef().ClearInterrupt()
 			}
 		}()
 		return interruptMsg, false

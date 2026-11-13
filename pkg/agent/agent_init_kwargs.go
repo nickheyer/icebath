@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Constructor options of AIAgent keyword arguments, the TypeError of an unknown keyword or a value its parameter cannot take
@@ -71,6 +72,27 @@ func agentKwargInt(name string, value any) (int, error) {
 		return math.MaxInt, nil
 	}
 	return int(n), nil
+}
+
+// Keyword value as an int an explicit zero keeps, nil for None so the constructor default applies
+func agentKwargOptInt(name string, value any) (*int, error) {
+	if value == nil {
+		return nil, nil
+	}
+	n, err := agentKwargInt(name, value)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+// Keyword value through Python int the way the checkpoint manager converts it
+func agentKwargCheckpointInt(value any) (*int, error) {
+	n, err := tools.CheckpointLimit(value)
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
 }
 
 // Keyword value as an optional float
@@ -146,9 +168,9 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "args":
 		o.Args, err = agentKwargTexts(name, value)
 	case "model":
-		o.Model = agentKwargText(value)
+		o.Model, o.ModelNone = agentKwargText(value), value == nil
 	case "max_iterations":
-		o.MaxIterations, err = agentKwargInt(name, value)
+		o.MaxIterations, err = agentKwargOptInt(name, value)
 	case "tool_delay":
 		o.ToolDelay, err = agentKwargFloat(name, value)
 	case "enabled_toolsets":
@@ -162,11 +184,11 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "quiet_mode":
 		o.QuietMode = pyrepr.Truthy(value)
 	case "tool_progress_mode":
-		o.ToolProgressMode = agentKwargText(value)
+		o.ToolProgressMode = new(agentKwargText(value))
 	case "ephemeral_system_prompt":
 		o.EphemeralSystemPrompt = agentKwargText(value)
 	case "log_prefix_chars":
-		o.LogPrefixChars, err = agentKwargInt(name, value)
+		o.LogPrefixChars, err = agentKwargOptInt(name, value)
 	case "log_prefix":
 		o.LogPrefix = agentKwargText(value)
 	case "providers_allowed":
@@ -322,11 +344,11 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "checkpoints_enabled":
 		o.CheckpointsEnabled = pyrepr.Truthy(value)
 	case "checkpoint_max_snapshots":
-		o.CheckpointMaxSnapshots, err = agentKwargInt(name, value)
+		o.CheckpointMaxSnapshots, err = agentKwargCheckpointInt(value)
 	case "checkpoint_max_total_size_mb":
-		o.CheckpointMaxTotalSizeMB, err = agentKwargInt(name, value)
+		o.CheckpointMaxTotalSizeMB, err = agentKwargCheckpointInt(value)
 	case "checkpoint_max_file_size_mb":
-		o.CheckpointMaxFileSizeMB, err = agentKwargInt(name, value)
+		o.CheckpointMaxFileSizeMB, err = agentKwargCheckpointInt(value)
 	case "pass_session_id":
 		o.PassSessionID = pyrepr.Truthy(value)
 	case "requested_provider":

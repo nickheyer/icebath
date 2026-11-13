@@ -2158,6 +2158,22 @@ func (r *ProcessRegistry) waitDict(ctx context.Context, env *Env, sessionID stri
 	return result
 }
 
+// Blocks until a tracked process finished and builds its completion event, false once its outcome was read
+func (r *ProcessRegistry) UnreadCompletionEvent(procID string, s *ProcessSession) (map[string]any, bool) {
+	<-s.completionEvent.ch
+	if r.IsCompletionConsumed(procID) {
+		return nil, false
+	}
+	s.mu.Lock()
+	snapshot := exitSnapshot(s, "exited")
+	s.mu.Unlock()
+	evt := map[string]any{"type": "completion", "session_id": procID}
+	for _, key := range snapshot.Keys {
+		evt[key] = snapshot.Vals[key]
+	}
+	return evt, true
+}
+
 // Result for an exited session with exit metadata and the completion sized output tail
 func exitSnapshot(s *ProcessSession, status string) *pyjson.Object {
 	result := Dict("status", status, "command", s.Command)

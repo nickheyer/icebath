@@ -22,6 +22,9 @@ import (
 func newTestToolEnv(t *testing.T) *Env {
 	t.Helper()
 	h := t.TempDir()
+	if os.Getenv("ICEBATH_HOME") == "" {
+		t.Setenv("ICEBATH_HOME", h)
+	}
 	installTestEnvHooks(t)
 	return &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 }

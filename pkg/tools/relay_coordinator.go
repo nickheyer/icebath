@@ -157,6 +157,15 @@ func relayWarnOnError[T any](ctx context.Context, what string, fn func() (T, err
 	return v
 }
 
+// Deferred guard of a telemetry hook that logs a failure inside the hook as a warning and keeps it from the caller
+func relayFailOpen(ctx context.Context, what string) func() {
+	return func() {
+		if failure := recover(); failure != nil {
+			relayLogger().WarnContext(ctx, "Icebath Relay "+what+" failed", "err", failure)
+		}
+	}
+}
+
 // Sets a pending rotation or close flag unless the session is already closing
 func relayFlagOpenSession(session *RelaySession, flag *bool) {
 	session.Mu.Lock()
@@ -385,6 +394,7 @@ func (c *RelaySessionCoordinator) closeTurnScope(ctx context.Context, host *Rela
 
 // Closes a session whose rotating compaction close was deferred once its last live turn left
 func (c *RelaySessionCoordinator) consumeDeferredClose(ctx context.Context, lease *ConversationLease) {
+	defer relayFailOpen(ctx, "deferred session close")()
 	host := lease.LiveRuntime()
 	if host == nil {
 		return
@@ -399,6 +409,7 @@ func (c *RelaySessionCoordinator) consumeDeferredClose(ctx context.Context, leas
 
 // Flags rotation for an in place compaction or closes the old session of a rotating one
 func (c *RelaySessionCoordinator) NotifySessionCompacted(ctx context.Context, profileKey, sessionID, oldSessionID string) {
+	defer relayFailOpen(ctx, "compaction notification")()
 	if !relaySegmentsConfigLazy.get(ctx).onCompaction {
 		return
 	}

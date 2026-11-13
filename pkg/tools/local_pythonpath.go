@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -154,7 +155,7 @@ func samePathParts(left, right string, normcase func(string) string) bool {
 // Tree the running binary lives in, the install root the runtime venv belongs to
 var runtimeRepoRootDir = pm.RepoRoot
 
-// Source checkout the binary was compiled from, a rooted build path taking the current drive, empty when trimmed or absent
+// Source checkout the binary was compiled from, a rooted build path taking the current drive, the located tree when trimmed
 var runtimeSourceRootDir = func() string {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -162,7 +163,7 @@ var runtimeSourceRootDir = func() string {
 	}
 	if !filepath.IsAbs(file) {
 		if !strings.HasPrefix(file, "/") && !strings.HasPrefix(file, `\`) {
-			return ""
+			return config.RunningSourceTree()
 		}
 		abs, err := filepath.Abs(file)
 		if err != nil {

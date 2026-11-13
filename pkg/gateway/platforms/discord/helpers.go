@@ -241,7 +241,7 @@ func readURLImageWithRedirectGuard(ctx context.Context, env *tools.Env, client *
 	guarded.Timeout = timeout
 	currentURL := rawURL
 	for i := 0; i < discordImageMaxRedirects+1; i++ {
-		if !tools.IsSafeURL(env, currentURL) {
+		if !isSafeURL(env, currentURL) {
 			return 0, nil, nil, errors.New("Blocked unsafe image URL redirect")
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, currentURL, nil)
@@ -276,7 +276,7 @@ func readURLImageWithRedirectGuard(ctx context.Context, env *tools.Env, client *
 				return 0, nil, nil, err
 			}
 			nextURL := base.ResolveReference(ref).String()
-			if !tools.IsSafeURL(env, nextURL) {
+			if !isSafeURL(env, nextURL) {
 				return 0, nil, nil, errors.New("Blocked redirect to private/internal address")
 			}
 			currentURL = nextURL

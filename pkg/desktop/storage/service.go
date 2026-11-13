@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/desktop/desktoplog"
+	"github.com/nickheyer/icebath/pkg/desktop/files"
 
 	"github.com/nickheyer/icebath/pkg/desktop/hardening"
 )
@@ -19,6 +20,10 @@ type Host interface {
 	ShowItemInFolder(path string)
 	// Native folder picker that may create folders, false when the user cancels
 	PickDirectory(title, defaultPath string) (string, bool, error)
+	// Native save dialog over the main window as dialog.showSaveDialog shows it
+	ShowSaveDialog(o files.SaveDialogOptions) (files.SaveDialogResult, error)
+	// Downloads folder of the user as app.getPath downloads gives it, empty when the OS has none
+	DownloadsDir() string
 }
 
 // Directories and the desktop log the storage group works in
@@ -27,6 +32,8 @@ type Options struct {
 	UserData   string
 	Log        *desktoplog.Log
 	Host       Host
+	// Session working directory resolution of the files group
+	Workspace files.Workspace
 }
 
 // Storage group of the preload API over the machine root home and the app user data
@@ -35,13 +42,14 @@ type Service struct {
 	userData   string
 	log        *desktoplog.Log
 	host       Host
+	workspace  files.Workspace
 	prefs      *UIPreferences
 	dataURLMax *dataURLReadMax
 }
 
 // Opens the storage group and starts watching the machine preferences store
 func NewService(o Options) *Service {
-	s := &Service{hermesHome: o.HermesHome, userData: o.UserData, log: o.Log, host: o.Host, dataURLMax: loadDataURLReadMax(o.UserData)}
+	s := &Service{hermesHome: o.HermesHome, userData: o.UserData, log: o.Log, host: o.Host, workspace: o.Workspace, dataURLMax: loadDataURLReadMax(o.UserData)}
 	s.prefs = NewUIPreferences(o.HermesHome, func(snap UIPreferencesSnapshot) { o.Host.Broadcast(uiPrefsChangedEvent, snap) })
 	return s
 }
@@ -162,7 +170,7 @@ func FormatRendererBoundaryReport(label, boundary, message, componentStack any) 
 	return head
 }
 
-// String conversion of a JSON value as String(value ?? ”) does
+// JavaScript String of a JSON value with null and undefined read as empty
 func jsString(v any) string {
 	switch t := v.(type) {
 	case nil:

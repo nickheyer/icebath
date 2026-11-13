@@ -91,6 +91,7 @@ func TestVisionClientFallbackVisionAutoIncludesActiveProviderWhenConfigured(t *t
 }
 
 func TestVisionClientFallbackAnthropicAuxiliaryClientAggregatesStreamResponse(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ev := func(name, data string) string { return fmt.Sprintf("event: %s\ndata: %s\n\n", name, data) }
 	sse := ev("message_start", `{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"usage":{"input_tokens":3,"output_tokens":0}}}`) +
 		ev("content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`) +

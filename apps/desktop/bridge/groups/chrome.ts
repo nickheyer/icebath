@@ -1,4 +1,4 @@
-// chrome group bridge, its Go service ChromeService lands with the chrome lane
+// chrome group bridge over ChromeService
 import * as ChromeService from '../bindings/github.com/nickheyer/icebath/apps/desktop/chromeservice.js'
 import { fire } from '../runtime'
 

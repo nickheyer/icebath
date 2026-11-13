@@ -19,9 +19,14 @@ const (
 var previewHTML string
 
 // Loader script posting a frame's preview HTML into the shell
-//
-//go:embed webapp_preview_loader.js
-var previewLoader string
+const previewLoader = `const frame = document.querySelector('iframe[data-preview-html]');
+function send() {
+  frame.contentWindow.postMessage({type: 'hermes-preview-document',
+    html: frame.dataset.previewHtml, scripts: true}, '*');
+}
+frame.addEventListener('load', send);
+send();
+`
 
 // Mounts the credential free preview shell, guest shell and loader on the browser files surface
 func mountPreviewAssets(application *FastAPI) {

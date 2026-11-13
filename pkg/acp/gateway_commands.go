@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -214,11 +216,21 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 	retry := command == "retry"
 	turns := int64(1)
 	if !retry && arg != "" {
-		n, ok := pystr.IntText(arg)
-		if !pystr.StrIsDigit(arg) || !ok || n.Sign() <= 0 || !n.IsInt64() {
+		if !pystr.StrIsDigit(arg) {
 			return "", nil, &CommandRefused{Msg: "Usage: /undo [N]"}
 		}
-		turns = n.Int64()
+		n, err := pyint.Of(arg)
+		if err != nil {
+			return "", nil, err
+		}
+		if n.Sign() <= 0 {
+			return "", nil, &CommandRefused{Msg: "Usage: /undo [N]"}
+		}
+		// A count past int64 exceeds every transcript, so the largest int64 finds the same nothing
+		turns = math.MaxInt64
+		if n.IsInt64() {
+			turns = n.Int64()
+		}
 	}
 	target := RewindTo(turns, retry)
 	var payload MutationDerive = func(snapshot map[string]any) (map[string]any, error) {

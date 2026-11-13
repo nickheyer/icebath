@@ -484,7 +484,6 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	unsetEnv(t, "FIRST_KEY", "SECOND_KEY")
 	row := toolRow("Two Keys", "paid", "", []any{toolKey("FIRST_KEY", "First key", "https://first.example"), toolKey("SECOND_KEY", "Second key", "")},
 		"tts_provider", "twokeys", "post_setup", "browserbase")
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"h"} })
 	s, out := newTestToolsSetup(t, "")
 	writeHomeEnv(t, s.home(), map[string]string{"FIRST_KEY": "one"})
 	secretAnswers(s)
@@ -507,7 +506,7 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	want := "✓   TTS provider set to: twokeys\n" +
 		"    FIRST_KEY: configured (one-1234...)\n    Get yours at: https://first.example\n      Kept current\n" +
 		"✓     Updated\n" +
-		"✓     browser_exec ready (browser-harness, bundled with Icebath)\n"
+		"✓     browser_exec ready (built in)\n"
 	if out.String() != want {
 		t.Fatalf("reconfigure output %q", out.String())
 	}

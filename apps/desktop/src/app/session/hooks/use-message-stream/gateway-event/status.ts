@@ -209,7 +209,7 @@ export function handleStatusEvent(ctx: GatewayEventContext): boolean {
     // Self-improvement background review saved something to memory/skills
     // and emitted a persistent summary (Python formats it as
     // "💾 Self-improvement review: …"). The CLI prints this via
-    // prompt_toolkit and the Ink TUI renders it as a system line; the
+    // prompt_toolkit and the terminal UI renders it as a system line; the
     // desktop has neither, so without this handler the skill/memory
     // change happens silently. Surface it as a persistent system message
     // in the transcript so the user is always informed — it must not be a
@@ -274,7 +274,7 @@ export function handleStatusEvent(ctx: GatewayEventContext): boolean {
 
   if (event.type === 'notification.show') {
     // Driver-agnostic agent notice (credits usage/grant/depleted/restored
-    // from `agent/credits_tracker.py`). The Ink TUI renders these in its
+    // from `agent/credits_tracker.py`). The terminal UI renders these in its
     // status bar; the desktop renders them as toasts. The notice key doubles
     // as the toast id, so the escalating 50→75→90 credits line replaces in
     // place instead of stacking. Account-wide signal — shown regardless of

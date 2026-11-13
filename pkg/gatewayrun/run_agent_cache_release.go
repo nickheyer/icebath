@@ -125,7 +125,7 @@ func (r *GatewayRunner) interruptAndClearSession(ctx context.Context, sessionKey
 	}
 	if adapter != nil {
 		base := adapter.Base()
-		base.InterruptSessionActivity(ctx, sessionKey, source.ChatID, r.threadMetadataForSource(source, nil))
+		adapter.InterruptSessionActivity(ctx, sessionKey, source.ChatID, r.threadMetadataForSource(source, nil))
 		var wake *gateway.MessageEvent
 		if parked := base.GetPendingMessage(sessionKey); parked != nil && parked.Internal {
 			wake = parked

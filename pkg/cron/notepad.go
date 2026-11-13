@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -43,6 +44,11 @@ func openNotepad(s *Store) *Notepad {
 		path = filepath.Join(s.cronDir, "notepad.db")
 	}
 	return &Notepad{s: s, path: path}
+}
+
+// Context resolving the store home so the journal mode reads the same profile config the notepad lives in
+func (n *Notepad) homeContext() context.Context {
+	return home.WithOverride(context.Background(), n.s.home)
 }
 
 // Opens the notepad database with its schema initialised and the cron dir secured
@@ -112,7 +118,7 @@ func (n *Notepad) Set(jobID, key, value string) (*pyjson.Object, error) {
 		return nil, err
 	}
 	now := FormatISO(n.s.clk.now())
-	ctx := context.Background()
+	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID, key); err != nil {
 			return err
@@ -146,7 +152,7 @@ func (n *Notepad) Set(jobID, key, value string) (*pyjson.Object, error) {
 // Stored value of one key, nil when the key is absent
 func (n *Notepad) Get(jobID, key string) (*string, error) {
 	var value *string
-	ctx := context.Background()
+	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID, key); err != nil {
 			return err
@@ -167,7 +173,7 @@ func (n *Notepad) Get(jobID, key string) (*string, error) {
 // Deletes one key and reports whether a row went away
 func (n *Notepad) Delete(jobID, key string) (bool, error) {
 	var removed int64
-	ctx := context.Background()
+	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID, key); err != nil {
 			return err
@@ -185,7 +191,7 @@ func (n *Notepad) Delete(jobID, key string) (bool, error) {
 // Every entry of one job sorted by key, each in column order
 func (n *Notepad) List(jobID string) ([]*pyjson.Object, error) {
 	notes := []*pyjson.Object{}
-	ctx := context.Background()
+	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID); err != nil {
 			return err
@@ -224,7 +230,7 @@ func (n *Notepad) Clear(jobID string) (int64, error) {
 		return 0, err
 	}
 	var removed int64
-	ctx := context.Background()
+	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID); err != nil {
 			return err

@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -23,14 +22,29 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalDNS()
 	dispatchFakeLlamaServerEntry()
 	home.DispatchScratchPruneEntry(context.Background())
-	pluginhost.DispatchPluginHostEntry(context.Background())
 	installLocalStackProbeDoubles()
 	installSpilloverWiring()
 	DispatchCodexToolsMCPServerEntry()
 	dispatchLeftCoreAgentStartEntry()
 	dispatchMoAPresetProbeEntry()
 	dispatchRemoteBootChildEntry()
-	os.Exit(m.Run())
+	os.Exit(runUnderPrivateHome(m))
+}
+
+// Runs the package cases under a private product home unless the caller named one, removing it afterwards
+func runUnderPrivateHome(m *testing.M) int {
+	if os.Getenv(home.EnvHome) != "" {
+		return m.Run()
+	}
+	dir, err := os.MkdirTemp("", "icebath-provider-home-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Setenv(home.EnvHome, dir); err != nil {
+		panic(err)
+	}
+	return m.Run()
 }
 
 // Session deletion reaches the retirement hooks the process wiring installs, tools real and gateway doubles
@@ -45,7 +59,6 @@ func installSpilloverWiring() {
 
 // Local stack probes report no harness, no Chromium, no faster_whisper and no managed image route
 func installLocalStackProbeDoubles() {
-	BrowserHarnessCLI = func(*tools.Env) []string { return nil }
 	ChromiumExecutable = func(*tools.Env, bool) string { return "" }
 	FasterWhisperImportable = func() bool { return false }
 	ManagedImageRoute = func(any, any) string { return "" }

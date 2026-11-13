@@ -45,6 +45,9 @@ var (
 	desktopUTCDay = func() string { return time.Now().UTC().Format(time.DateOnly) }
 )
 
+// Profile home the daily latches of this scope are keyed by
+func desktopHome(ctx context.Context) string { return home.Dir(ctx) }
+
 // Stripped lower case text of a string value, empty for anything else
 func desktopWord(value any) string {
 	if s, ok := value.(string); ok {
@@ -59,7 +62,7 @@ func claimDaily(ctx context.Context, key string, cap int, day string) bool {
 	if day == "" {
 		day = today
 	}
-	slot := [3]string{home.Dir(ctx), day, key}
+	slot := [3]string{desktopHome(ctx), day, key}
 	desktopLatchMu.Lock()
 	defer desktopLatchMu.Unlock()
 	for k := range desktopDaily {

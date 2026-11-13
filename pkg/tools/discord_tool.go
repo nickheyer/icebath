@@ -66,7 +66,7 @@ func readLimitedResponseBody(r io.Reader, limit int, label string) ([]byte, erro
 		return nil, err
 	}
 	if len(body) > limit {
-		return nil, &DiscordAPIError{Status: 502, Body: fmt.Sprintf("Discord API %s exceeded %d bytes.", label, limit)}
+		return nil, newDiscordAPIError(502, fmt.Sprintf("Discord API %s exceeded %d bytes.", label, limit))
 	}
 	return body, nil
 }
@@ -111,7 +111,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 		case err == nil:
 			errorBody = pystr.DecodeUTF8Replace(raw)
 		}
-		return nil, &DiscordAPIError{Status: resp.StatusCode, Body: errorBody}
+		return nil, newDiscordAPIError(resp.StatusCode, errorBody)
 	}
 	if resp.StatusCode == 204 {
 		return nil, nil

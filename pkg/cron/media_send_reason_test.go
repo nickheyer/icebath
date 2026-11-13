@@ -27,13 +27,21 @@ func (a voiceOnlyAdapter) SendVoice(ctx context.Context, chatID, audioPath strin
 	return a.send(ctx)
 }
 
+// Sends one clip with the adapter media filter keeping it, the clip dir allowlisted wherever the temp root resolves
 func sendClipThrough(t *testing.T, send func(ctx context.Context) (any, error)) (string, string) {
 	t.Helper()
 	s, _ := newTestStore(t)
-	media := filepath.Join(t.TempDir(), "clip.mp3")
+	dir := t.TempDir()
+	t.Setenv("ICEBATH_MEDIA_ALLOW_DIRS", dir)
+	media := filepath.Join(dir, "clip.mp3")
 	if err := os.WriteFile(media, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	prev := gateway.FilterMediaDeliveryPathsFor
+	gateway.FilterMediaDeliveryPathsFor = func(context.Context, []gateway.MediaRef, string, *[]map[string]any) ([]gateway.MediaRef, error) {
+		return []gateway.MediaRef{{Path: media}}, nil
+	}
+	t.Cleanup(func() { gateway.FilterMediaDeliveryPathsFor = prev })
 	errs := s.sendMediaViaAdapter(context.Background(), voiceOnlyAdapter{send: send}, "C123", []gateway.MediaRef{{Path: media}}, nil, inlineLoop{}, &Job{ID: "job-x"}, nil)
 	if len(errs) != 1 {
 		t.Fatalf("got %q", errs)

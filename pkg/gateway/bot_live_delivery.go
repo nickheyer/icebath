@@ -21,6 +21,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -197,6 +198,18 @@ func checkDeliveryID(value string) (string, error) {
 	return value, nil
 }
 
+// ValueError a door call raises for a delivery id outside 32 to 64 lowercase hex characters
+func CheckDeliveryID(value string) error {
+	_, err := checkDeliveryID(value)
+	return err
+}
+
+// ValueError a door call raises for an owner pin before it looks at the message
+func CheckLiveOwner(profileHome string, owner map[string]any) error {
+	_, err := liveOwnerPin(profileHome, owner)
+	return err
+}
+
 func deliveryRoot(profileHome string) string {
 	return filepath.Join(deliveryResolveHome(profileHome), "runtime", DeliveryDirName)
 }
@@ -287,10 +300,11 @@ func lockedMailbox(ctx context.Context, profileHome string, body func(root strin
 	lock, err := prepareMailbox(ctx, root)
 	var release func()
 	if err == nil {
-		release, err = acquireFileLock(lock)
+		release, err = activesessions.FileLock(lock, activesessions.NoLockTimeout)
 	}
 	if err != nil {
-		if deliveryPermission(err) {
+		var unavailable *activesessions.LockUnavailableError
+		if deliveryPermission(err) && !errors.As(err, &unavailable) {
 			return mailboxUnusable(root, err)
 		}
 		return err
@@ -435,7 +449,8 @@ func nextDeliverySequence(ctx context.Context, root string) (*big.Int, error) {
 		sequence = scanned
 	}
 	sequence = new(big.Int).Add(sequence, big.NewInt(1))
-	if err := pyfs.AtomicWriteTextMode(ctx, counter, sequence.String(), ".tmp_", 0o600); err != nil {
+	counterMode := os.FileMode(0o600)
+	if err := pyfs.AtomicWriteTextWith(ctx, counter, sequence.String(), pyfs.TextWrite{Mode: &counterMode, FsyncDir: true}); err != nil {
 		return nil, err
 	}
 	return sequence, nil

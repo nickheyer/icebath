@@ -709,7 +709,7 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 		delete(modelCfg, "default")
 	}
 	pyDictSet(cfg, "model", modelCfg)
-	if err := atomicConfigReplace(env.Ctx, h, cfg); err != nil {
+	if err := atomicConfigReplace(env.ctx(), h, cfg); err != nil {
 		return "", err
 	}
 	return configPath, nil
@@ -768,7 +768,7 @@ func resetConfigProvider(env PoolEnv) (string, error) {
 			model["base_url"] = OpenRouterBaseURL
 		}
 	}
-	if err := atomicConfigReplace(env.Ctx, h, cfg); err != nil {
+	if err := atomicConfigReplace(env.ctx(), h, cfg); err != nil {
 		return "", err
 	}
 	return configPath, nil

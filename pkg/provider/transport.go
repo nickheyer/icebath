@@ -152,7 +152,10 @@ func (anthropicMessagesTransport) BuildKwargs(model string, messages []map[strin
 
 // Normalized raw Messages response, guardrail substitutions as content_filter and OAuth tool names unprefixed on request
 func (anthropicMessagesTransport) NormalizeResponse(response any, kwargs map[string]any) (*Response, error) {
-	message, _ := response.(map[string]any)
+	message, isMap := response.(map[string]any)
+	if !isMap {
+		message, _ = toPlainData(response, 0, nil).(map[string]any)
+	}
 	c := &anthropicClient{oauthWire: kwargBool(kwargs, "strip_tool_prefix", false), transport: &anthBedrockTransport{}}
 	return c.normalizeResponse(message, 200, nil, 0)
 }

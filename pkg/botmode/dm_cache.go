@@ -42,13 +42,16 @@ func dmDir() (string, error) {
 	if owner, ok := ownerUID(info); hasUID && ok && owner != uid {
 		return "", &fs.PathError{Op: "DM temp directory is owned by another user", Path: path, Err: fs.ErrPermission}
 	}
-	if info.Mode().Perm() != 0o700 {
+	if info.Mode().Perm() != 0o700 || info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
 		if err := os.Chmod(path, 0o700); err != nil {
 			return "", err
 		}
 	}
 	return path, nil
 }
+
+// Per user DM payload directory a message file is written into
+func DMDir() (string, error) { return dmDir() }
 
 // Deletes orphaned DM payload files and live delivery intents older than maxAgeHours, returning the count
 func CleanupBotDMCache(maxAgeHours float64, now *float64) int {

@@ -3,7 +3,6 @@ package plugins
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -238,36 +237,6 @@ func TestTheReportedShaIsTheCommitReadEvenAfterTheSourceMoves(t *testing.T) {
 	setInspectTTL(t, -time.Second)
 	if got := mustInspect(t, ctx, fileURI(repo), "")["sha"]; got != moved {
 		t.Fatalf("expired %v", got)
-	}
-}
-
-func TestDetectionMatchesTheSharedCases(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(hermesReferenceTree, "tests", "fixtures", "plugin_component_detection.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Cases []struct {
-			Name   string            `json:"name"`
-			Root   string            `json:"root"`
-			Files  map[string]string `json:"files"`
-			Expect map[string]any    `json:"expect"`
-		} `json:"cases"`
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil || len(doc.Cases) == 0 {
-		t.Fatalf("%v", err)
-	}
-	for _, c := range doc.Cases {
-		t.Run(c.Name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), c.Root)
-			_ = os.MkdirAll(root, 0o755)
-			for rel, text := range c.Files {
-				c6Write(t, filepath.Join(root, rel), text)
-			}
-			if got := detectComponents(root, c.Root); !maps.Equal(got, c.Expect) {
-				t.Fatalf("%#v want %#v", got, c.Expect)
-			}
-		})
 	}
 }
 

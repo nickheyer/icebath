@@ -48,8 +48,8 @@ jobs:
         run: |
           gh api repos/nickheyer/nixpkg/contents/default.nix -q .content | base64 -d | grep -F 'pkgs/icebath' \
             || { echo "::error::nickheyer/nixpkg default.nix does not call ./pkgs/icebath"; exit 1; }
-      - run: go vet ./...
-      - run: go test ./...
+      - run: go vet -tags goolm ./...
+      - run: go test -tags goolm ./...
 
   goreleaser:
     needs: preflight
@@ -127,8 +127,8 @@ jobs:
         run: |
           choco install icebath --source "$env:RUNNER_TEMP/nupkg" -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          $got = & C:\ProgramData\chocolatey\bin\icebath.exe -version
-          if ($got -ne "icebath $env:GITHUB_REF_NAME") { throw "chocolatey installed '$got'" }
+          $got = & C:\ProgramData\chocolatey\bin\icebath.exe --version
+          if (-not ($got -like "Icebath Agent $env:GITHUB_REF_NAME (*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "chocolatey installed '$got'" }
       - name: Push to the community repository or log why the publish was skipped
         env:
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
@@ -190,18 +190,20 @@ jobs:
     needs: goreleaser
     runs-on: ubuntu-latest
     env:
-      WANT: icebath ${{ github.ref_name }}
+      WANT: Icebath Agent ${{ github.ref_name }} (
+      CHECK: "index($0, want) == 1 { v = 1 } /^Matrix E2EE: goolm/ { m = 1 } END { exit !(v && m) }"
     steps:
       - name: docker
         run: |
-          docker run --rm "ghcr.io/nickheyer/icebath:${GITHUB_REF_NAME#v}" -version | grep -Fx "$WANT"
-          docker run --rm ghcr.io/nickheyer/icebath:latest -version | grep -Fx "$WANT"
+          docker run --rm "ghcr.io/nickheyer/icebath:${GITHUB_REF_NAME#v}" --version | awk -v want="$WANT" "$CHECK"
+          docker run --rm ghcr.io/nickheyer/icebath:latest --version | awk -v want="$WANT" "$CHECK"
 
   verify-linux:
     needs: [goreleaser, pypi, site]
     runs-on: ubuntu-latest
     env:
-      WANT: icebath ${{ github.ref_name }}
+      WANT: Icebath Agent ${{ github.ref_name }} (
+      CHECK: "index($0, want) == 1 { v = 1 } /^Matrix E2EE: goolm/ { m = 1 } END { exit !(v && m) }"
     steps:
       - name: apt
         run: |
@@ -211,24 +213,24 @@ jobs:
             curl -fsSL https://icebath.app/keys/icebath.gpg -o /etc/apt/keyrings/icebath.gpg
             echo "deb [signed-by=/etc/apt/keyrings/icebath.gpg] https://icebath.app/apt stable main" > /etc/apt/sources.list.d/icebath.list
             apt-get update -qq && apt-get install -qq -y icebath > /dev/null
-            icebath -version' | tail -1 | grep -Fx "$WANT"
+            icebath --version' | awk -v want="$WANT" "$CHECK"
       - name: dnf
         run: |
           docker run --rm fedora:latest bash -ec '
             curl -fsSL https://icebath.app/rpm/icebath.repo -o /etc/yum.repos.d/icebath.repo
             dnf -y -q install icebath > /dev/null
-            icebath -version' | tail -1 | grep -Fx "$WANT"
+            icebath --version' | awk -v want="$WANT" "$CHECK"
       - name: apk
         run: |
           docker run --rm alpine:latest sh -ec '
             wget -qO /etc/apk/keys/icebath.rsa.pub https://icebath.app/keys/icebath.rsa.pub
             echo https://icebath.app/apk >> /etc/apk/repositories
             apk add -q icebath
-            icebath -version' | tail -1 | grep -Fx "$WANT"
+            icebath --version' | awk -v want="$WANT" "$CHECK"
       - name: install.sh
-        run: docker run --rm debian:trixie bash -ec 'apt-get update -qq && apt-get install -qq -y curl ca-certificates > /dev/null; curl -fsSL icebath.app | sh > /dev/null; ~/.local/bin/icebath -version' | tail -1 | grep -Fx "$WANT"
+        run: docker run --rm debian:trixie bash -ec 'apt-get update -qq && apt-get install -qq -y curl ca-certificates > /dev/null; curl -fsSL icebath.app | sh > /dev/null; ~/.local/bin/icebath --version' | awk -v want="$WANT" "$CHECK"
       - name: homebrew
-        run: docker run --rm homebrew/brew:latest bash -ec 'brew update -q > /dev/null; brew install -q nickheyer/tap/icebath > /dev/null; icebath -version' | tail -1 | grep -Fx "$WANT"
+        run: docker run --rm homebrew/brew:latest bash -ec 'brew update -q > /dev/null; brew install -q nickheyer/tap/icebath > /dev/null; icebath --version' | awk -v want="$WANT" "$CHECK"
       - name: aur
         run: |
           for pkg in icebath-bin icebath; do
@@ -237,42 +239,43 @@ jobs:
               useradd -m builder
               su builder -c 'cd ~ && git clone -q https://aur.archlinux.org/$pkg.git && cd $pkg && makepkg --noconfirm > /dev/null'
               pacman -U --noconfirm /home/builder/$pkg/*.pkg.tar.zst > /dev/null
-              icebath -version" | tail -1 | grep -Fx "$WANT"
+              icebath --version" | awk -v want="$WANT" "$CHECK"
           done
       - uses: cachix/install-nix-action@v31
       - name: nix
-        run: nix run --refresh github:nickheyer/nixpkg#icebath -- -version | grep -Fx "$WANT"
+        run: nix run --refresh github:nickheyer/nixpkg#icebath -- --version | awk -v want="$WANT" "$CHECK"
       - name: pipx
         env:
           PIP_NO_CACHE_DIR: "1"
         run: |
           for _ in $(seq 20); do pipx install "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
-          "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
+          "$(pipx environment --value PIPX_BIN_DIR)/icebath" --version | awk -v want="$WANT" "$CHECK"
           pipx uninstall icebath-cli
       - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: go install
         run: |
-          GOBIN="$RUNNER_TEMP/gobin" go install "github.com/nickheyer/icebath/cmd/icebath@$GITHUB_REF_NAME"
-          "$RUNNER_TEMP/gobin/icebath" -version | grep -Fx "$WANT"
+          GOBIN="$RUNNER_TEMP/gobin" go install -tags goolm "github.com/nickheyer/icebath/cmd/icebath@$GITHUB_REF_NAME"
+          "$RUNNER_TEMP/gobin/icebath" --version | awk -v want="$WANT" "$CHECK"
       - name: mise
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           curl -fsSL https://mise.run | sh
-          ~/.local/bin/mise exec "github:nickheyer/icebath@${GITHUB_REF_NAME#v}" -- icebath -version | tail -1 | grep -Fx "$WANT"
+          ~/.local/bin/mise exec "github:nickheyer/icebath@${GITHUB_REF_NAME#v}" -- icebath --version | awk -v want="$WANT" "$CHECK"
 
   verify-macos:
     needs: [goreleaser, pypi, site]
     runs-on: macos-latest
     env:
-      WANT: icebath ${{ github.ref_name }}
+      WANT: Icebath Agent ${{ github.ref_name }} (
+      CHECK: "index($0, want) == 1 { v = 1 } /^Matrix E2EE: goolm/ { m = 1 } END { exit !(v && m) }"
     steps:
       - name: homebrew
         run: |
           brew install nickheyer/tap/icebath
-          "$(brew --prefix)/bin/icebath" -version | grep -Fx "$WANT"
+          "$(brew --prefix)/bin/icebath" --version | awk -v want="$WANT" "$CHECK"
           if xattr "$(brew --prefix)/Caskroom/icebath/${GITHUB_REF_NAME#v}/icebath" | grep -q com.apple.quarantine; then
             echo "::error::the cask left com.apple.quarantine on icebath"
             exit 1
@@ -281,13 +284,13 @@ jobs:
       - name: install.sh
         run: |
           curl -fsSL icebath.app | sh
-          ~/.local/bin/icebath -version | grep -Fx "$WANT"
+          ~/.local/bin/icebath --version | awk -v want="$WANT" "$CHECK"
       - name: pipx
         env:
           PIP_NO_CACHE_DIR: "1"
         run: |
           for _ in $(seq 20); do pipx install --force "icebath-cli==${GITHUB_REF_NAME#v}" && break; sleep 15; done
-          "$(pipx environment --value PIPX_BIN_DIR)/icebath" -version | grep -Fx "$WANT"
+          "$(pipx environment --value PIPX_BIN_DIR)/icebath" --version | awk -v want="$WANT" "$CHECK"
 
   verify-windows:
     needs: [goreleaser, pypi, site]
@@ -296,7 +299,7 @@ jobs:
       run:
         shell: pwsh
     env:
-      WANT: icebath ${{ github.ref_name }}
+      WANT: Icebath Agent ${{ github.ref_name }} (
     steps:
       - name: scoop
         run: |
@@ -304,13 +307,13 @@ jobs:
           $env:Path = "$env:USERPROFILE\scoop\shims;$env:Path"
           scoop bucket add nickheyer https://github.com/nickheyer/scoop-bucket
           scoop install nickheyer/icebath
-          $got = & "$env:USERPROFILE\scoop\shims\icebath.exe" -version
-          if ($got -ne $env:WANT) { throw "scoop installed '$got'" }
+          $got = & "$env:USERPROFILE\scoop\shims\icebath.exe" --version
+          if (-not ($got -like "$env:WANT*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "scoop installed '$got'" }
       - name: install.ps1
         run: |
           irm https://icebath.app/install.ps1 | iex
-          $got = & "$env:LOCALAPPDATA\Programs\icebath\icebath.exe" -version
-          if ($got -ne $env:WANT) { throw "install.ps1 installed '$got'" }
+          $got = & "$env:LOCALAPPDATA\Programs\icebath\icebath.exe" --version
+          if (-not ($got -like "$env:WANT*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "install.ps1 installed '$got'" }
       - name: powershell user agent
         run: |
           $script = Invoke-RestMethod https://icebath.app
@@ -320,5 +323,5 @@ jobs:
           PIP_NO_CACHE_DIR: "1"
         run: |
           foreach ($i in 1..20) { pipx install --force "icebath-cli==$($env:GITHUB_REF_NAME.TrimStart('v'))"; if ($LASTEXITCODE -eq 0) { break }; Start-Sleep 15 }
-          $got = & "$(pipx environment --value PIPX_BIN_DIR)\icebath.exe" -version
-          if ($got -ne $env:WANT) { throw "pipx installed '$got'" }
+          $got = & "$(pipx environment --value PIPX_BIN_DIR)\icebath.exe" --version
+          if (-not ($got -like "$env:WANT*") -or -not ($got -like 'Matrix E2EE: goolm*')) { throw "pipx installed '$got'" }

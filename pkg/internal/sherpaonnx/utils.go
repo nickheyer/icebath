@@ -1,6 +1,7 @@
 package sherpaonnx
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypinyin"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysentencepiece"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tokenizers/sentencepiece"
 )
 
 // What text2token reaches outside the package, the pypinyin dictionaries of the runtime environment and the stream print writes to
@@ -104,10 +105,15 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 	if tokensType == "" {
 		tokensType = "cjkchar"
 	}
-	py, err := m.env.ImportPypinyin()
-	if err != nil {
-		fmt.Fprint(m.env.Stdout, "Please run\n  icebath pm install --extra wake-sherpa\nbefore you continue\n")
-		return nil, err
+	var py *pypinyin.Module
+	if strings.Contains(tokensType, "pinyin") {
+		if m.env.ImportPypinyin == nil {
+			return nil, errors.New("token type " + tokensType + " needs pinyin dictionaries and the module was loaded without a source for them")
+		}
+		var err error
+		if py, err = m.env.ImportPypinyin(); err != nil {
+			return nil, err
+		}
 	}
 	if !isFile(tokens) {
 		return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + tokens}
@@ -135,7 +141,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 			tokensTable[toks[0]] = id
 		}
 	}
-	var sp *pysentencepiece.Processor
+	var sp *sentencepiece.Processor
 	if strings.Contains(tokensType, "bpe") {
 		if o.BPEModel == nil {
 			return nil, &PyError{Class: "TypeError", Msg: "argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'NoneType'"}
@@ -143,7 +149,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		if !isFile(*o.BPEModel) {
 			return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + *o.BPEModel}
 		}
-		if sp, err = pysentencepiece.Load(*o.BPEModel); err != nil {
+		if sp, err = sentencepiece.Load(*o.BPEModel); err != nil {
 			return nil, err
 		}
 	}

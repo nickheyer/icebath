@@ -65,7 +65,7 @@ func TestACardClosedByAMessageEndsTheTurnWithoutAnotherModelCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, err := NewAIAgent(ctx, AIAgentOptions{Model: "test-model", APIKey: "test-key", BaseURL: srv.URL + "/v1", Platform: "desktop",
-		MaxIterations: 4, QuietMode: true, SkipMemory: true, Cwd: h, Env: env, SessionID: "s1", SessionDB: db,
+		MaxIterations: new(4), QuietMode: true, SkipMemory: true, Cwd: h, Env: env, SessionID: "s1", SessionDB: db,
 		EnabledToolsets:   []string{"onboarding"},
 		SetupBeatCallback: func(payload map[string]any) map[string]any { return map[string]any{"wrote_instead": true} }})
 	if err != nil {

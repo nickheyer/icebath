@@ -27,36 +27,27 @@ var reasoningEchoRules = []echoRule{
 // MatchesReasoningEchoFamily reports membership in one must echo family, a KeyError text for an unknown family
 func MatchesReasoningEchoFamily(family, provider, model, baseURL string) (bool, error) {
 	for _, rule := range reasoningEchoRules {
-		if rule.family == family {
-			return rule.matches(provider, model, baseURL), nil
+		if rule.family != family {
+			continue
 		}
+		if rule.raw[provider] || rule.lowered[pystr.Lower(provider)] {
+			return true, nil
+		}
+		modelLower := pystr.Lower(model)
+		for _, sub := range rule.modelSubs {
+			if strings.Contains(modelLower, sub) {
+				return true, nil
+			}
+		}
+		return anyHostMatches(baseURL, rule.hosts), nil
 	}
 	return false, fmt.Errorf("KeyError: %s", pyrepr.Repr(family))
-}
-
-// True when the provider, model substring or base URL host belongs to the rule
-func (rule echoRule) matches(provider, model, baseURL string) bool {
-	if rule.raw[provider] || rule.lowered[pystr.Lower(provider)] {
-		return true
-	}
-	modelLower := pystr.Lower(model)
-	for _, sub := range rule.modelSubs {
-		if strings.Contains(modelLower, sub) {
-			return true
-		}
-	}
-	for _, h := range rule.hosts {
-		if hostMatches(baseURL, h) {
-			return true
-		}
-	}
-	return false
 }
 
 // ReasoningEchoFamily names the first must echo family the route matches in table order, empty for none
 func ReasoningEchoFamily(provider, model, baseURL string) string {
 	for _, rule := range reasoningEchoRules {
-		if rule.matches(provider, model, baseURL) {
+		if matched, err := MatchesReasoningEchoFamily(rule.family, provider, model, baseURL); err == nil && matched {
 			return rule.family
 		}
 	}

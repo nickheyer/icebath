@@ -131,9 +131,6 @@ func clearPluginSubmodules(m *Manager) {
 	}
 	m.mu.RUnlock()
 	for _, name := range names {
-		if err := evictModules(m, name); err != nil {
-			logDebug(fmt.Sprintf("plugin host of %s left before evicting %s: %s", m.home, name, err))
-		}
 		moduleNamespaceMu.Lock()
 		if bareModuleScope[name] == m.home {
 			delete(bareModuleScope, name)

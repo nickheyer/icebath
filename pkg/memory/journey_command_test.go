@@ -3,6 +3,8 @@ package memory
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,6 +44,42 @@ func TestDefaultCaptureIsPlainForChatBubbles(t *testing.T) {
 	}
 }
 
+// Seeded memories render title, legend, field, axis, footer and charted signals through the command entry
+func TestJourneyShowRendersSeededFrame(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	if err := os.MkdirAll(filepath.Join(h, "memories"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entries := "# Prefers tabs over spaces\nalways tabs" + EntryDelimiter + "# Deploys only on weekdays\nnever on friday"
+	if err := os.WriteFile(filepath.Join(h, "memories", "MEMORY.md"), []byte(entries), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	show := func(ns map[string]any) string {
+		var out bytes.Buffer
+		code, err := JourneyCommand(context.Background(), &tools.Env{Home: h}, ns, &out)
+		if err != nil || code != 0 {
+			t.Fatalf("code %d err %v output %q", code, err, out.String())
+		}
+		return out.String()
+	}
+	plain := show(map[string]any{"no_color": true, "width": 80, "height": 30, "reveal": 0.125})
+	for _, want := range []string{"✦ Journey · learned skills & memories over time", "/2 revealed · 12%", "◷ "} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("missing %q in %q", want, plain)
+		}
+	}
+	if strings.Contains(plain, "\x1b[") {
+		t.Fatal("no color frame emitted ANSI")
+	}
+	full := show(map[string]any{"force_color": true, "width": 80, "height": 30})
+	for _, want := range []string{"charted signals", "2/2 revealed · 100%", "memories (2)", "Deploys only on weekdays", "\x1b[38;2;"} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("missing %q in %q", want, full)
+		}
+	}
+}
+
 func TestChartedSignalLabelsClearReadableContrastFloor(t *testing.T) {
 	palette := map[string]string{"bg": "#08080C", "dim": "#525255", "label": "#A9A9AA", "memory": "#FFDC1F", "skill": "#043D92"}
 	payload := map[string]any{
@@ -53,7 +91,7 @@ func TestChartedSignalLabelsClearReadableContrastFloor(t *testing.T) {
 		"clusters": []any{map[string]any{"category": "research", "count": float64(2)}},
 		"stats":    map[string]any{"learned_skills": float64(2), "memory_nodes": float64(0), "related_edges": float64(0), "memory_skill_edges": float64(0)},
 	}
-	lines, err := journeyFrameLines(context.Background(), palette, payload, 72, 24, 1.0, true)
+	lines, err := journeyFrameLines(palette, payload, 72, 24, 1.0, true)
 	if err != nil {
 		t.Fatal(err)
 	}

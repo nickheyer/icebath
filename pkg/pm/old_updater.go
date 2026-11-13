@@ -242,7 +242,7 @@ func runInCustody(ctx context.Context, argv []string, root string, env []string)
 		if err != nil {
 			return 0, err
 		}
-		return exitStatus(cmd.Wait())
+		return waitCustody(ctx, cmd)
 	}
 	cmd.SysProcAttr = suspendedProcAttr()
 	if err := cmd.Start(); err != nil {
@@ -256,7 +256,26 @@ func runInCustody(ctx context.Context, argv []string, root string, env []string)
 		cmd.Wait()
 		return 0, err
 	}
-	return exitStatus(cmd.Wait())
+	return waitCustody(ctx, cmd)
+}
+
+// Waits for the takeover without bound, killing and reaping it when ctx ends before it exits
+func waitCustody(ctx context.Context, cmd *exec.Cmd) (int, error) {
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	select {
+	case err := <-exited:
+		return exitStatus(err)
+	case <-ctx.Done():
+		select {
+		case err := <-exited:
+			return exitStatus(err)
+		default:
+		}
+		cmd.Process.Kill()
+		<-exited
+		return 0, ctx.Err()
+	}
 }
 
 // Python truthiness of a value decoded by pyJSONLoads

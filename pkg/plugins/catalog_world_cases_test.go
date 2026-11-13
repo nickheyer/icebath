@@ -35,38 +35,6 @@ func TestCatalogPlatformMismatchRefusesBeforeInstall(t *testing.T) {
 	}
 }
 
-func TestCatalogNameInstallsPinnedShaWithSidecarThenUpdateRepins(t *testing.T) {
-	w := catWorld(t)
-	entry := GetLiveCatalogEntry(w.ctx, "cat-plugin")
-	if entry == nil {
-		t.Fatal("no live catalog entry")
-	}
-	target, _, name, err := installCatalogEntry(w.ctx, entry, CatalogInstallOptions{})
-	if err != nil || name != "cat-plugin" {
-		t.Fatalf("install %q %v", name, err)
-	}
-	if head := catHead(t, target); head != w.sha1 || w.sha1 == w.sha2 {
-		t.Fatalf("head %s", head)
-	}
-	sidecar := noErr(catalogInstallRecord(w.h, target))
-	if sidecar["catalog_name"] != "cat-plugin" || sidecar["sha"] != w.sha1 {
-		t.Fatalf("sidecar %v", sidecar)
-	}
-	if got := noErr(catalogAnnotation(w.h, target)); got != "catalog:community@"+w.sha1[:8] {
-		t.Fatalf("annotation %q", got)
-	}
-	result, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
-	want := map[string]any{"ok": true, "name": "cat-plugin", "sha": w.sha1, "unchanged": true, "python_dependencies": []string{}, "warnings": []string{}}
-	if err != nil || !reflect.DeepEqual(result, want) {
-		t.Fatalf("no-op update %#v %v", result, err)
-	}
-	w.pin = w.sha2
-	result, err = DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
-	if err != nil || result["unchanged"] != false || catHead(t, filepath.Join(w.pluginsDir, "cat-plugin")) != w.sha2 {
-		t.Fatalf("repin %v %v", result, err)
-	}
-}
-
 func TestOwnerRepoHashSubdirShorthandResolvesLikeTheCatalogSpelling(t *testing.T) {
 	url, subdir, err := resolveGitURL("plastic-labs/honcho#hermes-plugin-honcho")
 	if err != nil || url != "https://github.com/plastic-labs/honcho.git" || subdir != "hermes-plugin-honcho" {
@@ -82,7 +50,7 @@ func TestInTreeSidecarCannotForgeCatalogProvenance(t *testing.T) {
 	w := catWorld(t)
 	evil := filepath.Join(w.root, "evil")
 	c6Write(t, filepath.Join(evil, "plugin.yaml"), "name: evil-plugin\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(evil, "__init__.py"), "def register(ctx):\n    pass\n")
+	c6Write(t, filepath.Join(evil, "helper.py"), "def register(ctx):\n    pass\n")
 	c6Write(t, filepath.Join(evil, CatalogSidecar), `{"catalog_name": "cat-plugin", "tier": "official", "sha": "`+strings.Repeat("0", 40)+`", "repo": "x"}`)
 	c6Git(t, evil, "init", "-q")
 	c6Commit(t, evil, "v1")

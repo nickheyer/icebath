@@ -45,7 +45,7 @@ func runProjectionTurn(t *testing.T, projected []any, iterations int) (*AIAgent,
 	t.Setenv("ICEBATH_HOME", h)
 	env := &tools.Env{Home: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
-	a, err := NewAIAgent(ctx, AIAgentOptions{Model: "test-model", APIKey: "test-key", BaseURL: srv.URL + "/v1", Platform: "cli", MaxIterations: 3,
+	a, err := NewAIAgent(ctx, AIAgentOptions{Model: "test-model", APIKey: "test-key", BaseURL: srv.URL + "/v1", Platform: "cli", MaxIterations: new(3),
 		QuietMode: true, SkipMemory: true, Cwd: h, Env: env})
 	if err != nil {
 		t.Fatal(err)

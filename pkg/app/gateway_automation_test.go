@@ -155,8 +155,8 @@ func TestIdlePollsCostNoRoundTrip(t *testing.T) {
 	if _, err := hb.Set("pulse", 60); err != nil {
 		t.Fatal(err)
 	}
-	if !hb.IsActive() || !strings.HasPrefix(hb.StatusLine(), "♥ Heartbeat (every 1m") {
-		t.Fatalf("heartbeat %q", hb.StatusLine())
+	if line, err := hb.StatusLine(); err != nil || !hb.IsActive() || !strings.HasPrefix(line, "♥ Heartbeat (every 1m") {
+		t.Fatalf("heartbeat %q %v", line, err)
 	}
 	interval := int64(60)
 	if _, err := loop.Set(c.ctx, "check", &interval, 1, "", nil); err != nil {

@@ -31,9 +31,6 @@ func RegistryRow(ctx context.Context, key string) *Profile {
 	return providerRegistry().get(ctx, key)
 }
 
-// Rewrites the proxy and no proxy env vars of the process to their canonical forms in place
-func NormalizeProxyEnvVars() { oauthNormalizeProxyEnvVars() }
-
 // Key env names then the base URL env name of a profile, the order its env_vars tuple lists them
 func ProfileEnvVars(p Profile) []string { return profileEnvVars(p) }
 
@@ -50,12 +47,9 @@ func AnthropicOAuthProbeBetas() (full, withoutContext1M string) {
 }
 
 // Normalized Anthropic base URL with the default query Azure endpoints need, nil for every other endpoint
-func AnthropicBaseClientQuery(baseURL string) (normalized string, defaultQuery map[string]string) {
-	normalized = anthNormalizedBaseURL(baseURL)
-	if normalized != "" && isAzureAnthropicEndpoint(normalized) && !strings.Contains(normalized, "api-version") {
-		defaultQuery = map[string]string{"api-version": "2025-04-15"}
-	}
-	return normalized, defaultQuery
+func AnthropicBaseClientQuery(baseURL string) (string, map[string]string) {
+	normalized, kwargs := anthBaseClientKwargs(baseURL, 0)
+	return normalized, kwargs.defaultQuery
 }
 
 // Whether an Anthropic compatible base URL authenticates with a bearer token instead of x-api-key

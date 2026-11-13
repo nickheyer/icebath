@@ -124,16 +124,3 @@ func TestBuildSourceWebAppliesLimits(t *testing.T) {
 		t.Fatalf("label %v", captured["label"])
 	}
 }
-
-func TestBuildScriptHasHeapAndThreadCaps(t *testing.T) {
-	raw, err := os.ReadFile("testdata/hermes/scripts/build/web.mjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(raw)
-	for _, want := range []string{"--max-old-space-size=", "RAYON_NUM_THREADS", "isMain(import.meta.url)"} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("web.mjs lacks %q", want)
-		}
-	}
-}

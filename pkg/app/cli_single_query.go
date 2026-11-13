@@ -83,7 +83,7 @@ func runKanbanGoalLoopQ(c *CLI, firstResponse string, runTurn func(string) (any,
 		return nil
 	}
 	quietTurn := func(prompt string) (any, error) {
-		result, rerr := c.agent.RunConversation(c.turnCtx, prompt, agent.RunConversationOptions{ConversationHistory: c.conversationHistory})
+		result, rerr := c.agentRef().RunConversation(c.turnCtx, prompt, agent.RunConversationOptions{ConversationHistory: c.conversationHistory})
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -139,8 +139,8 @@ func runKanbanGoalLoopChat(c *CLI, firstResponse string) error {
 
 // Keeps the CLI session id in sync when mid run compression rotated the agent's session
 func syncCLISessionIDFromAgent(c *CLI) {
-	if c.agent != nil && c.agent.SessionID() != "" && c.agent.SessionID() != c.sessionID {
-		c.sessionID = c.agent.SessionID()
+	if c.agentRef() != nil && c.agentRef().SessionID() != "" && c.agentRef().SessionID() != c.sessionID {
+		c.sessionID = c.agentRef().SessionID()
 	}
 }
 
@@ -187,7 +187,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 	func() {
 		defer bindQuietSessionKey(c.env, sessionKey)()
 		var err error
-		result, err = c.agent.RunConversation(c.turnCtx, effectiveQuery, agent.RunConversationOptions{ConversationHistory: c.conversationHistory, TurnAuthor: author})
+		result, err = c.agentRef().RunConversation(c.turnCtx, effectiveQuery, agent.RunConversationOptions{ConversationHistory: c.conversationHistory, TurnAuthor: author})
 		if tools.IsKeyboardInterrupt(c.turnCtx, err) {
 			emitInterruptedSessionEnd(c, "keyboard_interrupt")
 			if emitter != nil {
@@ -206,7 +206,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 			if history == nil {
 				history = c.conversationHistory
 			}
-			recovered, rerr := c.agent.RunConversation(c.turnCtx, nudge, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
+			recovered, rerr := c.agentRef().RunConversation(c.turnCtx, nudge, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
 			if tools.IsKeyboardInterrupt(c.turnCtx, rerr) {
 				panic(keyboardInterrupt{})
 			}
@@ -236,7 +236,7 @@ func runQuietSingleQuery(c *CLI, effectiveQuery any, emitter *StreamJSONEmitter)
 				history = c.conversationHistory
 			}
 			followUp := func(text string) map[string]any {
-				follow, ferr := c.agent.RunConversation(c.turnCtx, text, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
+				follow, ferr := c.agentRef().RunConversation(c.turnCtx, text, agent.RunConversationOptions{ConversationHistory: history, TurnAuthor: author})
 				if tools.IsKeyboardInterrupt(c.turnCtx, ferr) {
 					panic(keyboardInterrupt{})
 				}
@@ -386,7 +386,7 @@ func installSingleQuerySignalHandlers(c *CLI) {
 		for sig := range ch {
 			cliLogger.Debug(fmt.Sprintf("Received signal %s in single-query mode", signalNumber(sig)))
 			armExitWatchdogOnShutdownSignal(c.ctx)
-			interruptAgentForSignal(c.agent, sig)
+			interruptAgentForSignal(c.agentRef(), sig)
 			if os.Getenv("ICEBATH_KANBAN_TASK") != "" {
 				time.AfterFunc(5*time.Second, killForegroundAndExit)
 				func() {
@@ -451,12 +451,12 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON 
 			effectiveQuery := routeSingleQueryImages(c, query, query, images, imageURLs)
 			turnRoute := c.resolveTurnAgentConfig(effectiveQuery)
 			if turnRoute.signature != c.activeAgentRouteSignature {
-				c.agent = nil
+				c.setAgent(nil)
 			}
 			if c.initAgent(turnRoute.model, turnRoute.runtime, turnRoute.requestOverrides) {
-				configureQuietAgent(agentGateway(c.agent))
+				configureQuietAgent(agentGateway(c.agentRef()))
 				if emitter != nil {
-					emitter.Attach(c.agent)
+					emitter.Attach(c.agentRef())
 				}
 				runQuietSingleQuery(c, effectiveQuery, emitter)
 			}

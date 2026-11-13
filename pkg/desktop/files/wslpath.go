@@ -34,7 +34,7 @@ func normalizeWslBridgeProfile(profile *string) string {
 	if profile == nil {
 		return defaultWslBridgeProfile
 	}
-	if p := strings.TrimSpace(*profile); p != "" {
+	if p := jsTrim(*profile); p != "" {
 		return p
 	}
 	return defaultWslBridgeProfile
@@ -79,7 +79,7 @@ func IsWslBridgeActive(profile *string) bool {
 // Default distro from wsl.exe -l -q output, NUL bytes of UTF-16 output stripped
 func ParseDefaultDistro(raw string) string {
 	for _, line := range regexp.MustCompile(`\r?\n`).Split(strings.ReplaceAll(raw, "\x00", ""), -1) {
-		line = strings.TrimSpace(strings.TrimLeft(strings.TrimPrefix(line, "*"), " \t\r\n\f\v"))
+		line = jsTrim(strings.TrimPrefix(line, "*"))
 		if line != "" {
 			return line
 		}
@@ -158,7 +158,7 @@ func pathExists(p string) bool {
 
 // A WSL POSIX path as the Windows host opens it, drvfs mounts to drives and the rest to the UNC share
 func WslPosixToWindowsAccessible(posixPath, distro string, resolveDistro func() string) string {
-	value := strings.TrimSpace(posixPath)
+	value := jsTrim(posixPath)
 	normalized := strings.ReplaceAll(value, `\`, "/")
 	if !strings.HasPrefix(normalized, "/") {
 		return value
@@ -188,7 +188,7 @@ func ResolvePickerDefaultPath(defaultPath, distro string, profile *string) strin
 	if !IsWslBridgeActive(profile) {
 		return defaultPath
 	}
-	value := strings.TrimSpace(defaultPath)
+	value := jsTrim(defaultPath)
 	if strings.HasPrefix(value, "/") && !winDriveSepRE.MatchString(value) {
 		return WslPosixToWindowsAccessible(value, distro, nil)
 	}
@@ -213,7 +213,7 @@ func ShellDriveToNativePath(value string, exists func(string) bool) string {
 
 // fs read path, a WSL cwd made readable on Windows through its UNC or drive form
 func ResolveLocalReadPath(dirPath, distro string, profile *string) string {
-	value := strings.TrimSpace(dirPath)
+	value := jsTrim(dirPath)
 	if hostOS == "windows" {
 		if native := ShellDriveToNativePath(value, nil); native != "" {
 			return native

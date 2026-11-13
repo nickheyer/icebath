@@ -740,10 +740,8 @@ func floatArg(v any) (float64, bool) {
 	return f, err == nil
 }
 
-// Offered only with a static CDP url and the browser harness importable, without network traffic
-func browserCDPCheck(env *tools.Env) bool {
-	return browserExecAvailable(env) && cfgOf(env).cdpOverrideRaw() != ""
-}
+// Offered only with a static CDP url, without network traffic
+func browserCDPCheck(env *tools.Env) bool { return cfgOf(env).cdpOverrideRaw() != "" }
 
 // Raw CDP command with the timeout defaulting to 30 seconds and params kept in the order the model wrote them
 func handleBrowserCDP(ctx context.Context, call *tools.Call) string {

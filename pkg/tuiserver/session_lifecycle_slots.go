@@ -62,7 +62,7 @@ func canonicalLedgerRefusal(ctx context.Context, session *tuigateway.Session) *a
 	})
 	if err != nil {
 		logger().Warn("canonical ledger read failed for "+key, "error", err)
-		return &activesessions.Refusal{Message: tuigateway.SessionOwnershipUnavailable, Reason: activesessions.SessionCoordinationUnavailable}
+		return activesessions.NewRefusal(tuigateway.SessionOwnershipUnavailable, activesessions.SessionCoordinationUnavailable)
 	}
 	if !found {
 		return nil
@@ -73,10 +73,10 @@ func canonicalLedgerRefusal(ctx context.Context, session *tuigateway.Session) *a
 	if ledger == "unknown" {
 		kind = "outcome-unknown"
 	}
-	return &activesessions.Refusal{
-		Message: fmt.Sprintf("Session %s has %s work in the gateway's durable queue. Resume it through the gateway "+
-			"(icebath chat --resume, Desktop or the TUI) to resolve it; nothing was run here.", key, kind),
-		Reason: activesessions.SessionNotOwned, LedgerStatus: ledger}
+	refusal := activesessions.NewRefusal(fmt.Sprintf("Session %s has %s work in the gateway's durable queue. Resume it through the gateway "+
+		"(icebath chat --resume, Desktop or the TUI) to resolve it; nothing was run here.", key, kind), activesessions.SessionNotOwned)
+	refusal.LedgerStatus = ledger
+	return refusal
 }
 
 // Sibling runtime of the same key and profile holding an unreleased lease with no client, under sessionsLock

@@ -31,7 +31,14 @@ func writeScript(t *testing.T, dir, name, body string) string {
 	return p
 }
 
+func resolveDesktopBackendIn(args []string, icebathHome string, env func(string) string, isWSL bool, log func(string)) backend.ResolvedBackend {
+	home := backend.HomeInputs{Home: os.Getenv("HOME"), Env: map[string]string{}, Platform: "linux"}
+	return ResolveDesktopBackend(context.Background(), args, DesktopResolveOptions{Home: home, IcebathHome: icebathHome, Env: env, IsWSL: isWSL, Log: log,
+		Gate: backend.NewInstalledRuntimeGate[backend.ResolvedBackend](env, log)})
+}
+
 func TestResolveIcebathBackendPrefersTheOverrideThenTheInstallThenABootstrap(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	cli := writeScript(t, t.TempDir(), "icebath", "exit 0\n")
 	env := func(v string) func(string) string {
 		return func(k string) string {
@@ -41,17 +48,16 @@ func TestResolveIcebathBackendPrefersTheOverrideThenTheInstallThenABootstrap(t *
 			return ""
 		}
 	}
-	got := ResolveIcebathBackend(context.Background(), []string{"gateway", "ensure", "--json"}, t.TempDir(), env(cli), false, func(string) {})
+	got := resolveDesktopBackendIn([]string{"gateway", "ensure", "--json"}, t.TempDir(), env(cli), false, func(string) {})
 	if got.Kind != "command" || got.Command != cli || !reflect.DeepEqual(got.Args, []string{"gateway", "ensure", "--json"}) || got.Label != "existing Icebath CLI at "+cli {
 		t.Fatalf("%+v", got)
 	}
 	var logs []string
-	wsl := ResolveIcebathBackend(context.Background(), nil, t.TempDir(), env(`C:\icebath\icebath.exe`), true, func(l string) { logs = append(logs, l) })
+	wsl := resolveDesktopBackendIn(nil, t.TempDir(), env(`C:\icebath\icebath.exe`), true, func(l string) { logs = append(logs, l) })
 	if wsl.Kind != "bootstrap-needed" || len(logs) == 0 || !strings.Contains(logs[0], "Ignoring Windows Icebath override under WSL") {
 		t.Fatalf("%+v %v", wsl, logs)
 	}
-	t.Setenv("HOME", t.TempDir())
-	if none := ResolveIcebathBackend(context.Background(), nil, t.TempDir(), env(""), false, func(string) {}); none.Kind != "bootstrap-needed" || !none.Bootstrap {
+	if none := resolveDesktopBackendIn(nil, t.TempDir(), env(""), false, func(string) {}); none.Kind != "bootstrap-needed" || !none.Bootstrap {
 		t.Fatalf("%+v", none)
 	}
 }

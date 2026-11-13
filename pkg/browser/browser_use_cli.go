@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/observability"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -34,7 +33,7 @@ const (
 	execMaxTimeoutS     = 1800
 )
 
-const execHeaderBase = "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). `code` runs as full " +
+const execHeaderBase = "Drive a real browser for JS pages, logins, forms and clicks. `code` runs as full " +
 	"Python (stdlib available) with pre-imported browser helpers; stdout comes back in the result. Start `code` with a one-line " +
 	"comment describing the step for the user in plain language, max 60 chars " +
 	"(e.g. `# Searching Amazon for paper towels`) \u2014 the UI shows it as the step label.\n\n" +
@@ -77,17 +76,16 @@ const execLocalDescription = "Drive the user's own local browser (an Icebath-man
 	"cloud browser backend. Use when the user asks to act as themselves \u2014 their " +
 	"accounts, their sessions. No-op when the backend is already local. Default false."
 
-// Static browser_exec schema, the description used only while the managed CLI is unavailable
+// Static browser_exec schema, its description tailored per session by the overrides
 func BrowserExecSchema() map[string]any {
 	return map[string]any{
-		"name": "browser_exec",
-		"description": execHeaderBase + execHelpersDigest +
-			"\n\n(The browser-use CLI is not installed yet. Install it with `icebath tools` (Browser Automation \u2192 Browser Use).)",
+		"name":        "browser_exec",
+		"description": execHeaderBase + execHelpersDigest,
 		"parameters": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"code":    map[string]any{"type": "string", "description": "Python code to execute using the pre-imported browser helpers. Use print(...) for any data you need back."},
-				"session": map[string]any{"type": "string", "description": "Named isolated browser session \u2014 its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."},
+				"session": map[string]any{"type": "string", "description": "Named isolated browser session \u2014 its own tab and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session."},
 				"timeout_s": map[string]any{"type": "integer", "default": execDefaultTimeoutS,
 					"description": fmt.Sprintf("Max seconds to wait for the code to finish (default %d, max %d).", execDefaultTimeoutS, execMaxTimeoutS)},
 			},
@@ -130,20 +128,11 @@ func BrowserExecSchemaOverrides(env *tools.Env) map[string]any {
 	return overrides
 }
 
-// Browser harness importable, never launching or opening sockets
-var browserExecAvailable = func(env *tools.Env) bool { return findCLI(env) != nil }
-
 // Runs browser_exec counted against the backend that served it, a raised error reaching the dispatcher
 func handleBrowserExec(ctx context.Context, call *tools.Call) string {
 	args := call.Args
-	code, ok := args["code"]
-	if !ok {
-		code = ""
-	}
-	session := args["session"]
-	if !pyrepr.Truthy(session) {
-		session = ""
-	}
+	code, _ := args["code"].(string)
+	session, _ := args["session"].(string)
 	timeout, ok := args["timeout_s"]
 	if !ok {
 		timeout = execDefaultTimeoutS
@@ -161,7 +150,5 @@ func handleBrowserExec(ctx context.Context, call *tools.Call) string {
 
 func registerBrowserExecTool() {
 	tools.Register(tools.Def{Name: "browser_exec", Toolset: "browser-use", Schema: BrowserExecSchema(), Handler: handleBrowserExec,
-		Check: browserExecAvailable, DynamicSchema: BrowserExecSchemaOverrides, Emoji: "\U0001F310"})
+		DynamicSchema: BrowserExecSchemaOverrides, Emoji: "\U0001F310"})
 }
-
-func init() { provider.BrowserHarnessCLI = findCLI }

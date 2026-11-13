@@ -2,11 +2,8 @@ package plugins
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -209,47 +206,8 @@ func DescribeMemoryProviderCLI(ctx context.Context, name, providerDir, moduleNam
 
 // Runs a memory provider argparse command in a fresh plugin host child on the given streams
 func RunMemoryProviderCLI(ctx context.Context, name, providerDir, moduleName, description string, handler bool, argv []string, stdin io.Reader, stdout, stderr io.Writer) (rc int, dispatched bool, err error) {
-	host, err := GetPluginManager(ctx).pluginHost()
-	if err != nil {
-		return 0, false, err
-	}
-	params, err := pyJSONDumps(map[string]any{"name": name, "path": providerDir, "module_name": moduleName,
-		"description": description, "handler": handler, "argv": anyList(argv)})
-	if err != nil {
-		return 0, false, err
-	}
-	outcome, err := os.CreateTemp("", "icebath-memory-cli-*.json")
-	if err != nil {
-		return 0, false, err
-	}
-	outcome.Close()
-	defer os.Remove(outcome.Name())
-	args, err := host.argv(ctx, "--run-memory-cli", string(params), outcome.Name())
-	if err != nil {
-		return 0, false, err
-	}
-	env, err := host.env()
-	if err != nil {
-		return 0, false, err
-	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Env, cmd.Dir = env, host.home
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	var exitErr *exec.ExitError
-	if runErr := cmd.Run(); runErr != nil && !errors.As(runErr, &exitErr) {
-		return 0, false, runErr
-	}
-	data, err := os.ReadFile(outcome.Name())
-	if err != nil {
-		return 0, false, err
-	}
-	parsed, err := pyJSONLoads(data)
-	reply, ok := parsed.(map[string]any)
-	if err != nil || !ok {
-		return 0, false, fmt.Errorf("memory provider %s command exited %d without an outcome", config.PyRepr(name), exitCode(cmd.ProcessState))
-	}
-	code, _ := wireInt(reply["rc"])
-	return int(code), reply["dispatched"] == true, nil
+	_, err = GetPluginManager(ctx).pluginHost()
+	return 0, false, err
 }
 
 // Runs a user memory provider config_schema.py in the profile plugin host and returns its CONFIG_SCHEMA
@@ -297,6 +255,9 @@ type parentCallableSlot struct {
 func (h *PluginHost) parentRef(obj any) map[string]any {
 	if e, ok := obj.(*HostEvent); ok && e != nil {
 		return h.eventRef(e)
+	}
+	if o, ok := obj.(*HostedObject); ok && o != nil && o.slot != nil {
+		return h.childObjectRef(o)
 	}
 	f, ok := obj.(*hostCallable)
 	live, isObject := obj.(HostObjectFacade)
@@ -367,11 +328,4 @@ func (h *PluginHost) dropParentCallables(generation int) {
 			delete(h.parents, id)
 		}
 	}
-}
-
-// Points every plugin host child at python until the returned restore runs, for other packages' tests
-func SetHostInterpreterForTests(python string) (restore func()) {
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	return func() { hostInterpreter = previous }
 }

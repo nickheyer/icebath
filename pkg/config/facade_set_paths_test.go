@@ -431,7 +431,7 @@ func TestFastSafeLoadResolvesYAML11Scalars(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{"a": true, "b": false, "c": true, "d": 15, "e": 1000, "f": 90, "g": "0o17", "h": "off", "i": "on",
-		"j": 1000.5, "k": ".5e3", "on": 1, "l": []any{false, "5", 31}, "m": 90.5}
+		"j": 1000.5, "k": ".5e3", PyKeyString(true): 1, "l": []any{false, "5", 31}, "m": 90.5}
 	if !reflect.DeepEqual(doc, want) {
 		t.Fatalf("got %#v", doc)
 	}

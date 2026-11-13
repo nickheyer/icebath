@@ -134,6 +134,9 @@ func (r *GatewayRunner) runAgentInner(ctx context.Context, p runAgentParams) (ma
 		}
 		if response != nil {
 			response["_notification_reply_muted"] = tc.muteNotificationReply
+			if tc.capturedResult != nil {
+				tc.capturedResult.Set("_notification_reply_muted", tc.muteNotificationReply)
+			}
 		}
 		if err := r.runAgentEvictOnFallback(ctx, tc); err != nil {
 			return nil, nil, false, err

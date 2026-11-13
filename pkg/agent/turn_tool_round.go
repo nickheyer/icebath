@@ -118,8 +118,7 @@ func flushToolTurn(a *AIAgent, s *LoopState) (persisted bool) {
 			conversationLoopLog().Warn(fmt.Sprintf("Incremental tool-call persistence failed before execution (session=%s): %s", sessionID, exc))
 		}
 	}()
-	_, err := a.flushLiveMessages(s.Messages, s.ConversationHistory)
-	return err == nil
+	return a.flushLiveMessages(s.Messages, s.ConversationHistory) != state.FlushFailed
 }
 
 // Runs one tool round in order, persisting the tool call turn before any tool side effect
@@ -225,7 +224,7 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 
 	a.streamNeedsBreak = true
 	if onlyExecuteCode(msg.ToolCalls) {
-		a.iterationBudget.Refund()
+		a.iterationBudget.Load().Refund()
 	}
 
 	endTurn, err := compressAfterToolResults(ctx, a, s)
@@ -236,7 +235,7 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 	if endTurn {
 		return PhaseVerdict{Action: "break"}, nil
 	}
-	a.sessionMessages = s.Messages
+	a.setSessionMessages(s.Messages)
 	a.TouchActivity(fmt.Sprintf("tool results posted, continuing iteration #%d", s.APICallCount))
 	return PhaseVerdict{Action: "continue"}, nil
 }

@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -459,11 +458,8 @@ func ptyFail(ctx context.Context, ws *WebSocket, exc error, surface string) erro
 	return ws.Close(ctx, 1011, "")
 }
 
-// TUI launcher of pkg/app the chat PTY runs, assigned at startup
-var TUILaunch struct {
-	MakeArgv       func(ctx context.Context, tuiDir string, dev bool) ([]string, string, error)
-	ApplyPythonEnv func(env map[string]string) error
-}
+// Command line of the terminal UI the chat PTY runs, assigned at startup
+var TUIArgv func() ([]string, error)
 
 // Sets a key of a child env only when it is absent
 func envSetDefault(env map[string]string, key, value string) {
@@ -483,9 +479,13 @@ func resolveChatArgv(ctx context.Context, app *FastAPI, resume, sidecarURL, prof
 		}
 		profileDir = dir
 	}
-	argv, cwd, err := TUILaunch.MakeArgv(ctx, filepath.Join(ProjectRoot(), "ui-tui"), false)
+	argv, err := TUIArgv()
 	if err != nil {
 		return nil, "", nil, err
+	}
+	cwd := workspaceCwd
+	if cwd == "" {
+		cwd = ProjectRoot()
 	}
 	env, err := tools.BuildSubprocessEnv(ctx, nil, tools.SubprocessEnvOptions{ScrubSecrets: false, InheritProfileHome: true})
 	if err != nil {
@@ -501,10 +501,6 @@ func resolveChatArgv(ctx context.Context, app *FastAPI, resume, sidecarURL, prof
 		env["ICEBATH_CWD"] = workspaceCwd
 		env["ICEBATH_TUI_CWD"] = workspaceCwd
 	}
-	if err := TUILaunch.ApplyPythonEnv(env); err != nil {
-		return nil, "", nil, err
-	}
-	envSetDefault(env, "NODE_ENV", "production")
 	envSetDefault(env, "ICEBATH_TUI_DISABLE_MOUSE", "1")
 	envSetDefault(env, "ICEBATH_TUI_INLINE", "1")
 	envSetDefault(env, "COLORTERM", "truecolor")

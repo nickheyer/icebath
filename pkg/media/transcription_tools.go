@@ -27,8 +27,6 @@ func newFindSpecFlag(module string) func() bool {
 
 var (
 	hasFasterWhisper = newFindSpecFlag("faster_whisper")
-	hasOpenAI        = newFindSpecFlag("openai")
-	hasMistral       = newFindSpecFlag("mistralai")
 	hasPilk          = newFindSpecFlag("pilk")
 )
 
@@ -134,11 +132,10 @@ func isLocalSTTProvider(providerName string) bool {
 	return p == "local" || p == "local_command"
 }
 
-// Availability probe of an optional SDK flag and a resolvable API key
-func hasKeyProbe(envVar, providerID string, needsOpenAI, needsMistral bool) func(context.Context) (bool, error) {
+// Availability probe of a resolvable API key for a provider the binary speaks over HTTP
+func hasKeyProbe(envVar, providerID string) func(context.Context) (bool, error) {
 	return func(ctx context.Context) (bool, error) {
-		sdkOK := (!needsOpenAI || hasOpenAI()) && (!needsMistral || hasMistral())
-		return sdkOK && resolveSTTProviderKey(ctx, envVar, providerID) != "", nil
+		return resolveSTTProviderKey(ctx, envVar, providerID) != "", nil
 	}
 }
 
@@ -152,10 +149,6 @@ func hasXAISTTCredentialsQuietly(ctx context.Context) (ok bool, err error) {
 
 // Explicit openai selection resolved with the real unavailability reason logged
 func resolveExplicitOpenAI(ctx context.Context) (string, error) {
-	if !hasOpenAI() {
-		sttLog().Warn("STT provider 'openai' configured but no API key available")
-		return "none", nil
-	}
 	reason, err := openAIAudioUnavailableReason(ctx)
 	if err != nil {
 		return "", err
@@ -217,14 +210,11 @@ var (
 
 // Cloud providers in auto detect priority order with deepinfra last, and the explicit resolvers
 func init() {
-	groq := hasKeyProbe("GROQ_API_KEY", "groq", true, false)
-	mistral := hasKeyProbe("MISTRAL_API_KEY", "mistral", false, true)
-	elevenlabs := hasKeyProbe("ELEVENLABS_API_KEY", "elevenlabs", false, false)
-	deepinfra := hasKeyProbe("DEEPINFRA_API_KEY", "deepinfra", true, false)
+	groq := hasKeyProbe("GROQ_API_KEY", "groq")
+	mistral := hasKeyProbe("MISTRAL_API_KEY", "mistral")
+	elevenlabs := hasKeyProbe("ELEVENLABS_API_KEY", "elevenlabs")
+	deepinfra := hasKeyProbe("DEEPINFRA_API_KEY", "deepinfra")
 	openaiAuto := func(ctx context.Context) (bool, error) {
-		if !hasOpenAI() {
-			return false, nil
-		}
 		reason, err := openAIAudioUnavailableReason(ctx)
 		return err == nil && reason == "", err
 	}
@@ -232,10 +222,10 @@ func init() {
 	cloudSTTProviderSpecs = []cloudSTTSpec{
 		{"groq", groq, groq, "STT provider 'groq' configured but GROQ_API_KEY not set", "No local STT available, using Groq Whisper API"},
 		{"openai", nil, openaiAuto, "", "No local STT available, using OpenAI Whisper API"},
-		{"mistral", mistral, mistral, "STT provider 'mistral' configured but mistralai package not installed or MISTRAL_API_KEY not set", "No local STT available, using Mistral Voxtral Transcribe API"},
+		{"mistral", mistral, mistral, "STT provider 'mistral' configured but MISTRAL_API_KEY not set", "No local STT available, using Mistral Voxtral Transcribe API"},
 		{"xai", xaiExplicit, hasXAISTTCredentialsQuietly, "STT provider 'xai' configured but no xAI credentials are available", "No local STT available, using xAI Grok STT API"},
 		{"elevenlabs", elevenlabs, elevenlabs, "STT provider 'elevenlabs' configured but ELEVENLABS_API_KEY not set", "No local STT available, using ElevenLabs Scribe STT API"},
-		{"deepinfra", deepinfra, deepinfra, "STT provider 'deepinfra' configured but DEEPINFRA_API_KEY not set (or openai package missing)", "No local STT available, using DeepInfra Whisper API"},
+		{"deepinfra", deepinfra, deepinfra, "STT provider 'deepinfra' configured but DEEPINFRA_API_KEY not set", "No local STT available, using DeepInfra Whisper API"},
 	}
 	explicitSTTResolvers = map[string]func(context.Context) (string, error){
 		"local": resolveExplicitLocal, "local_command": resolveExplicitLocalCommand, "openai": resolveExplicitOpenAI}
@@ -662,7 +652,7 @@ func noProviderError(ctx context.Context, providerName string, sttConfig map[str
 	if v := sttConfig["provider"]; pyTruthy(v) {
 		configured = pyrepr.Str(v)
 	}
-	if key == "none" && configured == "openai" && hasOpenAI() {
+	if key == "none" && configured == "openai" {
 		reason, err := openAIAudioUnavailableReason(ctx)
 		if err != nil {
 			return nil, err

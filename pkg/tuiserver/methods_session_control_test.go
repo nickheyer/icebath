@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 	"sync"
@@ -129,7 +130,7 @@ func saveLoop(key string, edit func(*agent.SessionLoopState)) {
 }
 
 func saveHeartbeat(key string, edit func(*agent.HeartbeatState)) {
-	st := &agent.HeartbeatState{Prompt: "Check the deployment", IntervalSeconds: 600, Status: "active", CreatedAt: 100.0,
+	st := &agent.HeartbeatState{Prompt: "Check the deployment", IntervalSeconds: big.NewInt(600), Status: "active", CreatedAt: 100.0,
 		LastFiredAt: 150.0, FireCount: 2}
 	if edit != nil {
 		edit(st)

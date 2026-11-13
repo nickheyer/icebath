@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -300,30 +299,3 @@ class ScopedProvMemoryProvider(MemoryProvider):
     def get_tool_schemas(self):
         return []
 `
-
-func TestMemoryEndpointsPluginsHubResolvesLaunchProfileSecretsUnderMultiplex(t *testing.T) {
-	c, h := memoryProviderClient(t)
-	if err := os.MkdirAll(filepath.Join(h, "memories"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	writeTestFile(t, filepath.Join(h, ".env"), "SCOPEDPROV_API_KEY=launch-key\n")
-	installMemoryPlugin(t, h, "scopedprov", map[string]string{"__init__": scopedprovInit})
-	invalidatePluginsHubCache()
-	t.Cleanup(invalidatePluginsHubCache)
-	provider.ActivateMultiProfileHosting()
-	t.Cleanup(func() { provider.SetMultiplexActive(false) })
-	hub := c.get("/api/dashboard/plugins/hub")
-	if hub.Status != 200 {
-		t.Fatalf("status %d %s", hub.Status, hub.Body)
-	}
-	options := jsonObject(t, hub)["providers"].(map[string]any)["memory_options"].([]any)
-	for _, p := range options {
-		if row := p.(map[string]any); row["name"] == "scopedprov" {
-			if row["available"] != true || row["status"] != "ready" {
-				t.Fatalf("row %v", row)
-			}
-			return
-		}
-	}
-	t.Fatalf("memory options list no scopedprov: %v", options)
-}

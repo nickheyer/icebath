@@ -38,7 +38,7 @@ func dockCLI(t *testing.T, a *GatewayAgent, sessionID string) *CLI {
 	c := bareCLI()
 	c.sessionID, c.pendingInput = sessionID, &inputQueue{}
 	if a != nil {
-		c.agent = a
+		c.setAgent(a)
 	}
 	return c
 }

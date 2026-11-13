@@ -4,12 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pvporcupine"
 	"github.com/nickheyer/icebath/pkg/internal/pyopenwakeword"
-	"github.com/nickheyer/icebath/pkg/internal/pypinyin"
 	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -140,36 +139,17 @@ func (k sherpaSpotter) ResetStream(s sherpaStream) error {
 	return nil
 }
 
-// sherpa_onnx of the installed distribution over its C API library, text2token loading the pypinyin dictionaries on first use
+// Whether the process runs the speech engine on the GPU, the Piper setting every engine user follows
+func speechOnGPU(ctx context.Context) bool {
+	return pyTruthy(dictGetDefault(ttsSection(wakeLoadTTSConfig(ctx), "piper"), "use_cuda", false))
+}
+
+// Native speech engine of the process, the seam tests replace
+var wakeSpeechEngine = func(ctx context.Context) (*sherpaonnx.Module, error) { return speech.Engine(ctx, speechOnGPU(ctx)) }
+
+// Keyword spotting over the native speech engine, its library fetched on first use
 func importSherpaOnnx(ctx context.Context) (sherpaOnnxModule, error) {
-	dir, err := wakeInstalledPackage(ctx, "sherpa_onnx")
-	if err != nil {
-		return nil, err
-	}
-	var (
-		mu     sync.Mutex
-		pinyin *pypinyin.Module
-	)
-	module, err := sherpaonnx.Import(dir, sherpaonnx.Environment{
-		Stdout: os.Stdout,
-		ImportPypinyin: func() (*pypinyin.Module, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			if pinyin != nil {
-				return pinyin, nil
-			}
-			pinyinDir, err := wakeInstalledPackage(ctx, "pypinyin")
-			if err != nil {
-				return nil, err
-			}
-			loaded, err := pypinyin.Import(pinyinDir)
-			if err != nil {
-				return nil, err
-			}
-			pinyin = loaded
-			return pinyin, nil
-		},
-	})
+	module, err := wakeSpeechEngine(ctx)
 	if err != nil {
 		return nil, &WakeWordError{Class: "ImportError", Msg: err.Error(), Cause: err}
 	}
@@ -189,11 +169,8 @@ func LoadPorcupineLibrary(ctx context.Context) error {
 	return module.LoadLibrary()
 }
 
-// Loads the sherpa-onnx C API library from the sherpa_onnx package in the runtime environment
-func LoadSherpaOnnxLibrary(ctx context.Context) error {
-	_, err := importSherpaOnnx(ctx)
-	return err
-}
+// Whether the speech engine behind the sherpa wake word publishes a library for this platform
+func SherpaOnnxAvailable() bool { return wakeSpeechSupported() }
 
 // Loads the tensorflowlite_c library from the pyopen_wakeword package in the runtime environment
 func LoadOpenWakeWordLibrary(ctx context.Context) error {

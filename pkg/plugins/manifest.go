@@ -34,6 +34,7 @@ var knownManifestFields = map[string]bool{
 	"requires_hermes": true, "requires_icebath": true, "python_runtime": true, "provides_locales": true,
 	"requires_auth": true, "oauth": true, "config_keys": true, "update_url": true,
 	"entry": true, "skills": true, "commands": true, "mcp_servers": true, "settings": true, "provides_middleware": true,
+	"runtime": true, "grants": true, "limits": true,
 }
 
 // Config schema type names and the Go kinds a setting value must have

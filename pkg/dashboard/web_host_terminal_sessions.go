@@ -140,10 +140,13 @@ func newHostTerminalRegistry() *hostTerminalRegistry {
 	r := &hostTerminalRegistry{owners: map[string]*hostOwner{}, drainSlots: make(chan struct{}, hostTerminalMaxShells)}
 	r.PtySessionRegistry = tools.NewPtySessionRegistry(tools.PtySessionRegistryOptions{
 		TTL: hostTerminalRetention, MaxSessions: hostTerminalMaxShells, BufferCap: 1024 * 1024,
-		ReadTimeout: 200 * time.Millisecond, DrainExecutor: r.drain, RetainIdle: true, ReapIdle: r.reapIdle,
+		ReadTimeout: 200 * time.Millisecond, DrainExecutor: r.drain, ReapOneIdleOrRaise: r.reapOneIdleOrRaise, ReapIdle: r.reapIdle,
 	})
 	return r
 }
+
+// Refuses a new shell at capacity, retention never evicting a live shell for another pane
+func (r *hostTerminalRegistry) reapOneIdleOrRaise() error { return tools.NewRegistryFull("") }
 
 // Runs one PTY read once one of the registry's reader slots is free
 func (r *hostTerminalRegistry) drain(task func()) {

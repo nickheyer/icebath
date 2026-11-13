@@ -254,7 +254,7 @@ func maybeTitleSessionAtTurnStart(ctx context.Context, a *AIAgent, messages []*s
 		applySubagentTitle(ctx, a.sessionDB, a.sessionID, userText)
 		return
 	}
-	mainRuntime := map[string]any{"model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_key": a.apiKey, "api_mode": a.apiMode, "session_id": a.sessionID}
+	mainRuntime := map[string]any{"model": a.model, "provider": a.provider, "base_url": a.baseURL, "api_key": a.apiKeyValue(ctx), "api_mode": a.apiMode, "session_id": a.sessionID}
 	failure := a.titleFailureCallback
 	if failure == nil {
 		failure = a.emitAuxiliaryFailure
@@ -501,7 +501,7 @@ func resetPerTurnAgentState(ctx context.Context, a *AIAgent) {
 	if a.hasPendingStartupWarnings() {
 		a.replayStartupWarnings()
 	}
-	a.iterationBudget = NewIterationBudget(a.maxIterations)
+	a.iterationBudget.Store(NewIterationBudget(a.maxIterations))
 	a.runBudgetStartedAt = 0
 	if a.runBudgetSeconds != 0 {
 		a.runBudgetStartedAt = nowSeconds()
@@ -973,7 +973,7 @@ func buildTurnContext(ctx context.Context, a *AIAgent, r TurnContextRequest) (*T
 	ensureSessionRow(a, pendingCLI)
 	for _, m := range conversationHistory {
 		if pyTruthy(m[state.PersistAfterAdmissionInterrupt]) {
-			_, _ = a.flushMessagesToSessionDBWithHistory(conversationHistory, conversationHistory)
+			a.flushMessagesToSessionDBWithHistory(conversationHistory, conversationHistory)
 			for i, row := range conversationHistory {
 				*messages[i] = *state.MessageFromDict(row)
 			}

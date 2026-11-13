@@ -223,7 +223,7 @@ func pruneRowInt(row *pyjson.Object, key string) int64 {
 	return n.Int64()
 }
 
-// Reclaim figures of a read only store, an error when the store could not be read
+// Reclaim figures of a read only store, keeping the figures read before an error stopped the estimate
 func autoPruneEstimate(ctx context.Context, h string, retention int64, snap *DiskSnapshot) (prunable, total, prunableBytes, totalBytes int64, err error) {
 	db, err := Open(filepath.Join(pruneAdvisorHome(ctx, h), "state.db"), Options{ReadOnly: true})
 	if err != nil {
@@ -245,11 +245,11 @@ func autoPruneEstimate(ctx context.Context, h string, retention int64, snap *Dis
 	}
 	rowBytes, err := autoPruneRowBytesSQL(ctx, db)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return prunable, total, 0, 0, err
 	}
 	share, err := db.readOne(ctx, "SELECT COALESCE(SUM("+rowBytes+"), 0) AS n FROM messages m WHERE m.session_id IN (SELECT s.id FROM sessions s WHERE "+where+")", params...)
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return prunable, total, 0, 0, err
 	}
 	prunableBytes = pruneRowInt(share, "n")
 	cached, ok := autoPruneCachedTotalBytes(ctx, h, snap.DBBytes)
@@ -258,7 +258,7 @@ func autoPruneEstimate(ctx context.Context, h string, retention int64, snap *Dis
 	} else {
 		all, err := db.readOne(ctx, "SELECT COALESCE(SUM("+rowBytes+"), 0) AS n FROM messages m")
 		if err != nil {
-			return 0, 0, 0, 0, err
+			return prunable, total, prunableBytes, 0, err
 		}
 		totalBytes = pruneRowInt(all, "n")
 		autoPruneStoreEstimate(ctx, h, "total_bytes", totalBytes, "total_at_db_bytes", snap.DBBytes)
@@ -284,7 +284,7 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 	prunable, total, prunableBytes, totalBytes, err := autoPruneEstimate(ctx, h, retention, snap)
 	if err != nil {
 		slog.Debug(fmt.Sprintf("auto-prune advice: reclaim estimate unavailable: %s", err))
-		prunable, total, prunableBytes, totalBytes, estimateOK = 0, 0, 0, 0, false
+		estimateOK = false
 	}
 	reclaim := int64(0)
 	if totalBytes != 0 {

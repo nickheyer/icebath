@@ -60,7 +60,7 @@ func (r *GatewayRunner) executeMCPReload(ctx context.Context, event *gateway.Mes
 		if err != nil {
 			return "", err
 		}
-		return r.executeMCPReload(gateway.ProfileRuntimeScope(ctx, profileHome, false), event)
+		return r.executeMCPReload(gateway.ProfileRuntimeScope(ctx, profileHome, true), event)
 	}
 	reply, err := r.mcpReloadBody(ctx, event, multiplex)
 	if err != nil {

@@ -148,26 +148,11 @@ func terminalBootstrapLine(message string) string {
 	return ""
 }
 
-// Grant of the in process bootstrap, its verdict text as the error
+// Grant of the in process bootstrap within the bootstrap deadline
 func localBootstrap(ctx context.Context, start, recover bool) (localGrant, error) {
 	ctx, cancel := context.WithTimeout(ctx, bootstrapTimeout)
 	defer cancel()
-	obj, err := GatewayBootstrap(ctx, start, recover)
-	if err != nil {
-		return localGrant{}, errors.New(BootstrapVerdict(err))
-	}
-	plain, _ := pyjson.Plain(obj).(map[string]any)
-	grant := localGrant{}
-	grant.URL, _ = plain["url"].(string)
-	grant.ProfileID, _ = plain["profile_id"].(string)
-	grant.InstanceID, _ = plain["instance_id"].(string)
-	protocols, _ := plain["protocols"].([]any)
-	for _, p := range protocols {
-		if s, isStr := p.(string); isStr {
-			grant.Protocols = append(grant.Protocols, s)
-		}
-	}
-	return grant, nil
+	return GatewayBootstrap(ctx, start, recover)
 }
 
 // Socket on a gateway or sidecar URL with no frame size cap, as a browser WebSocket reads
@@ -226,7 +211,7 @@ type unsettledCreate struct {
 	requestID any
 }
 
-// Shared gateway client with bootstrap, attach, readiness, heartbeat, reconnect and sidecar mirror, as the ui-tui one
+// Shared gateway client with bootstrap, attach, readiness, heartbeat, reconnect and sidecar mirror
 type gatewayClient struct {
 	bootstrap func(ctx context.Context, start, recover bool) (localGrant, error)
 	dial      func(ctx context.Context, target string, protocols []string) (gateway.GatewaySocket, error)
@@ -1285,7 +1270,7 @@ func (c *gatewayClient) call(ctx context.Context, conn *gatewayConn, method stri
 	if params == nil {
 		params = map[string]any{}
 	}
-	result, err := conn.link.RPCTimeout(callCtx, method, params, -1)
+	result, err := conn.link.RPCTimeout(callCtx, method, wireValue(params).(map[string]any), -1)
 	if err != nil {
 		if refusal, isRefusal := err.(*gateway.GatewayRPCError); isRefusal {
 			return nil, rpcErrorFromFrame(refusal.Raw)
@@ -1572,7 +1557,36 @@ func (c *gatewayClient) stopHeartbeatLocked() {
 	c.heartbeatStop, c.heartbeatToken = nil, nil
 }
 
-// Value in the JavaScript data model the ui-tui client decoded, objects as maps and numbers as float64
+// Request value as it goes on the wire, whole numbers as integers so the owner reads counts and revisions as such
+func wireValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, item := range x {
+			out[k] = wireValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = wireValue(item)
+		}
+		return out
+	case []map[string]any:
+		out := make([]any, len(x))
+		for i, item := range x {
+			out[i] = wireValue(item)
+		}
+		return out
+	case float64:
+		if x == math.Trunc(x) && math.Abs(x) < 1<<53 {
+			return int64(x)
+		}
+	}
+	return v
+}
+
+// Value in the JSON data model the wire carries, objects as maps and numbers as float64
 func jsValue(v any) (any, error) {
 	raw, err := pyjson.Dumps(v, pyjson.SortKeys(false))
 	if err != nil {

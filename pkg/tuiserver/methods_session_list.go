@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -97,17 +96,6 @@ func listingRows(ctx context.Context, db *state.DB, limit int, includeHidden, in
 	return out, nil
 }
 
-// Whether sessions.show_subagents of a home's own config is truthy, false when unreadable
-func showSubagentSessions(ctx context.Context, profileHome string) bool {
-	homeCtx := home.WithOverride(ctx, profileHome)
-	tree, err := config.LoadReadonly(homeCtx, home.Dir(homeCtx), config.EnvRefLookupContext(homeCtx))
-	if err != nil {
-		return false
-	}
-	sessions, isDict := tree["sessions"].(map[string]any)
-	return isDict && isTruthyValue(sessions["show_subagents"])
-}
-
 // Unarchives a recoverable row, a read only listing handle escalating to a short lived writer
 func unarchiveRecoverable(ctx context.Context, db *state.DB, sessionID string) (bool, error) {
 	if !db.IsReadOnly() {
@@ -188,7 +176,7 @@ func sessionList(ctx context.Context, rid any, params map[string]any, db *state.
 		panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C ssize_t"})
 	}
 	limit := int(parsed.Int64())
-	includeSubagents := db.Path() != "" && showSubagentSessions(ctx, filepath.Dir(db.Path()))
+	includeSubagents := db.Path() != "" && state.ShowSubagentSessions(ctx, filepath.Dir(db.Path()))
 	rows, err := listingRows(ctx, db, max(limit*2, 200), flagParam(params, "include_hidden"), includeSubagents)
 	panicIf(err)
 	rows = rows[:sliceStop(limit, len(rows))]

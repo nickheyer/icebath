@@ -168,6 +168,7 @@ func (f *insightsFixture) report(t *testing.T, days int, source string) (*Insigh
 }
 
 func TestInsightsPricingHelpers(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	for _, m := range []string{"FP16_Hermes_4.5", "my-custom-model", "glm-5", "", "some-opus-model", "future-sonnet-v2"} {
 		if provider.HasKnownPricing(ctx, m, "", "", "") {

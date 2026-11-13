@@ -1,0 +1,72 @@
+usage: icebath kanban [-h] [--board <slug>]
+                      {init,boards,create,swarm,list,ls,show,assign,set-model,reclaim,reassign,diagnostics,diag,link,unlink,claim,comment,attach,attachments,attach-rm,complete,edit,block,schedule,unblock,request-review,request-changes,reopen-review,promote,archive,tail,dispatch,daemon,watch,stats,notify-subscribe,notify-list,notify-unsubscribe,log,runs,heartbeat,assignees,context,specify,decompose,gc,repair} ...
+
+Durable SQLite-backed task board shared across Icebath profiles. Tasks are claimed atomically, can
+depend on other tasks, and are executed by a named profile in an isolated workspace. See
+https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban.
+
+positional arguments:
+  {init,boards,create,swarm,list,ls,show,assign,set-model,reclaim,reassign,diagnostics,diag,link,unlink,claim,comment,attach,attachments,attach-rm,complete,edit,block,schedule,unblock,request-review,request-changes,reopen-review,promote,archive,tail,dispatch,daemon,watch,stats,notify-subscribe,notify-list,notify-unsubscribe,log,runs,heartbeat,assignees,context,specify,decompose,gc,repair}
+    init                Create kanban.db if missing (idempotent)
+    boards              Manage kanban boards (one board per project / workstream)
+    create              Create a new task
+    swarm               Create a Kanban Swarm v1 graph (parallel workers → verifier → synthesizer)
+    list (ls)           List tasks
+    show                Show a task with comments + events
+    assign              Assign or reassign a task
+    set-model           Set or clear a task's model/provider override (takes effect on the next
+                        dispatch)
+    reclaim             Release an active worker claim on a running task
+    reassign            Reassign a task to a different profile, optionally reclaiming first
+    diagnostics (diag)  List active diagnostics on the current board
+    link                Add a parent->child dependency
+    unlink              Remove a parent->child dependency
+    claim               Atomically claim a ready task (prints resolved workspace path)
+    comment             Append a comment
+    attach              Attach a local file to a task
+    attachments         List a task's attachments
+    attach-rm           Delete an attachment by id
+    complete            Mark one or more tasks done
+    edit                Edit task fields or recovery fields on an already-completed task
+    block               Mark one or more tasks blocked
+    schedule            Park one or more tasks in Scheduled (waiting on time, not human input)
+    unblock             Return blocked/scheduled tasks to ready, or todo while parents remain open
+    request-review      Move a task to 'review' (implementation done, awaiting review) — NOT a
+                        block
+    request-changes     Reviewer verdict: return the active review run to its implementer
+    reopen-review       Send one or more review tasks back for changes (review -> ready/todo)
+    promote             Manually move one or more todo/blocked tasks to ready (recovery path)
+    archive             Archive one or more tasks
+    tail                Follow a task's event stream
+    dispatch            One dispatcher pass: reclaim stale, promote ready, spawn workers
+    daemon              DEPRECATED — dispatcher now runs in the gateway. Use `icebath gateway
+                        start`.
+    watch               Live-stream task_events to the terminal (Ctrl+C to exit)
+    stats               Per-status + per-assignee counts + oldest-ready age
+    notify-subscribe    Subscribe a gateway source to a task's terminal events (used by /kanban
+                        subscribe in the gateway adapter)
+    notify-list         List notification subscriptions (optionally for a single task)
+    notify-unsubscribe  Remove a gateway subscription from a task
+    log                 Print the worker log for a task (from <kanban-root>/kanban/logs/)
+    runs                Show attempt history for a task (one row per run: profile, outcome,
+                        elapsed, summary)
+    heartbeat           Emit a heartbeat event for a running task (worker liveness signal)
+    assignees           List known profiles + per-profile task counts (union of
+                        ~/.icebath/profiles/ and current assignees on the board)
+    context             Print the full context a worker sees for a task (title + body + parent
+                        results + comments).
+    specify             Flesh out a triage-column task into a concrete spec (title + body) and
+                        promote it to todo. Uses the auxiliary LLM configured under
+                        auxiliary.triage_specifier.
+    decompose           Decompose a triage-column task into a graph of child tasks routed to
+                        specialist profiles by description. Falls back to specify-style single-
+                        task promotion when the task doesn't benefit from fan-out. Uses
+                        auxiliary.kanban_decomposer.
+    gc                  Garbage-collect archived-task workspaces, old events, and old logs
+    repair              Check kanban.db integrity and auto-repair index-only corruption
+
+options:
+  -h, --help            show this help message and exit
+  --board <slug>        Board slug to operate on. Defaults to the current board (set via `icebath
+                        kanban boards switch <slug>` or the ICEBATH_KANBAN_BOARD env var). Use
+                        `icebath kanban boards list` to see all boards.

@@ -569,7 +569,7 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 		return rpcErr(rid, 4001, "slug and api_key are required", nil), nil
 	}
 	h := home.Dir(ctx)
-	if config.ManagedSystem(ctx, h) != "" {
+	if config.IsManaged(ctx, h) {
 		return rpcErr(rid, 4006, "managed install — credentials are read-only", nil), nil
 	}
 	pconfig := provider.RegistryRow(ctx, slug)

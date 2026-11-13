@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -68,7 +69,11 @@ func (c *CLI) handleHeartbeatCommand(cmd string) {
 	}
 	switch {
 	case arg == "" || lower == "status":
-		cp("  " + mgr.StatusLine())
+		line, err := mgr.StatusLine()
+		if err != nil {
+			panic(err)
+		}
+		cp("  " + line)
 	case lower == "pause":
 		if st := mgr.Pause(); st != nil {
 			cp("  " + c.commandsT("heartbeat.paused", map[string]any{"prompt": st.Prompt}))
@@ -97,25 +102,29 @@ func (c *CLI) handleHeartbeatCommand(cmd string) {
 // Sets the heartbeat from every 10m prompt or 10m prompt
 func (c *CLI) heartbeatSet(mgr agent.HeartbeatAutomation, arg string) {
 	tokens := pystr.SplitWhitespace(arg, 2)
-	var interval int64
-	parsed := false
+	var interval *big.Int
+	var err error
 	prompt := ""
 	if len(tokens) >= 2 && pystr.Lower(tokens[0]) == "every" {
-		interval, parsed = agent.ParseHeartbeatInterval("every " + tokens[1])
+		if interval, err = agent.ParseHeartbeatInterval("every " + tokens[1]); err != nil {
+			panic(err)
+		}
 		if len(tokens) > 2 {
 			prompt = tokens[2]
 		}
 	} else if len(tokens) > 0 {
-		interval, parsed = agent.ParseHeartbeatInterval(tokens[0])
-		if parsed && interval > 0 {
+		if interval, err = agent.ParseHeartbeatInterval(tokens[0]); err != nil {
+			panic(err)
+		}
+		if interval != nil && interval.Sign() > 0 {
 			prompt = pystr.Strip(arg[len(tokens[0]):])
 		}
 	}
-	if !parsed {
+	if interval == nil {
 		cp("  "+c.commandsT("heartbeat.usage", nil), dimLine(c.commandsT("heartbeat.usage_also", nil)))
 		return
 	}
-	if interval < 0 {
+	if interval.Sign() < 0 {
 		cp("  " + c.commandsT("heartbeat.interval_too_small", map[string]any{"min_seconds": agent.MinHeartbeatIntervalSeconds}))
 		return
 	}
@@ -166,7 +175,7 @@ func raisedText(step func()) (text string, raised bool) {
 // Starts the background memory and skill review fork on the agent with the optional focus text
 func (c *CLI) handleRefineCommand(cmd string) {
 	focus := commandArg(cmd, false)
-	a := c.agent
+	a := c.agentRef()
 	if a == nil {
 		cp(dimLine(c.commandsT("refine.nothing_yet", nil)))
 		return
@@ -204,7 +213,7 @@ func (c *CLI) handleRefineCommand(cmd string) {
 // Dispatches an independent reviewer subagent over the recent conversation with the argument as its instructions
 func (c *CLI) handleReviewCommand(cmd string) {
 	prompt := commandArg(cmd, false)
-	a := c.agent
+	a := c.agentRef()
 	if a == nil {
 		cp(dimLine(c.commandsT("review.nothing_yet", nil)))
 		return

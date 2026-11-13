@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -78,21 +79,16 @@ type selfRepoShellContext struct {
 	quote  byte
 }
 
-// RunningSourceRoot is the source checkout backing this binary when one exists
+// RunningSourceRoot is the git checkout holding this binary's own source when one exists
 func RunningSourceRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
+	root := config.RunningSourceTree()
+	if root == "" {
 		return ""
 	}
-	root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".git")); err != nil {
 		return ""
 	}
-	if _, err := os.Stat(filepath.Join(resolved, ".git")); err != nil {
-		return ""
-	}
-	return resolved
+	return root
 }
 
 func selfRepoResolve(pathStr, base string) string {

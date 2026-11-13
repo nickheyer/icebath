@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
@@ -108,10 +109,6 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 	if !ok || len(digests) != len(manifest) {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	prompt, _ := attested.Get("prompt")
-	promptText, _ := prompt.(string)
-	promptDigest := sha256.Sum256([]byte(promptText))
-	owner, _ := attested.Get("owner")
 	manifestList := make([]any, len(manifest))
 	for i, item := range manifest {
 		manifestList[i] = item
@@ -121,6 +118,15 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 		size := int64(item["size"].(int))
 		var data []byte
 		for int64(len(data)) < size {
+			prompt, err := pyItem(attested, "prompt")
+			if err != nil {
+				return nil, err
+			}
+			promptText, isText := prompt.(string)
+			if !isText {
+				return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'encode'", pyTypeName(prompt))}
+			}
+			promptDigest := sha256.Sum256([]byte(promptText))
 			chunk, err := hostedAttest(ctx, binding, "attachment", map[string]any{
 				"task": params["task"], "execution_generation": params["execution_generation"],
 				"prompt_sha256": hex.EncodeToString(promptDigest[:]), "attachments": manifestList, "index": index, "offset": len(data)})
@@ -138,6 +144,10 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 			}
 			expected := min(int64(hostedChunkBytes), size-int64(len(data)))
 			chunkOwner, err := pyItem(chunk, "owner")
+			if err != nil {
+				return nil, err
+			}
+			owner, err := pyItem(attested, "owner")
 			if err != nil {
 				return nil, err
 			}

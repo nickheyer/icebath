@@ -102,6 +102,13 @@ type automationRemote[S any] struct {
 	state      *S
 }
 
+// Mirror of the session's row of kind over connection, loaded from the gateway before it is returned
+func newAutomationRemote[S any](ctx context.Context, sessionID, kind string, connection *gatewaycli.GatewayConnection,
+	fromJSON func(string) (*S, error), status func(*S) any) (*automationRemote[S], error) {
+	r := &automationRemote[S]{ctx: ctx, sessionID: sessionID, kind: kind, connection: connection, fromJSON: fromJSON, status: status}
+	return r, r.refresh()
+}
+
 // Answer of one remote call, the mirrored state when the gateway returned its row
 type automationAnswer[S any] struct {
 	value   any
@@ -230,9 +237,9 @@ var _ goals.Manager = (*GatewayGoalManager)(nil)
 
 // Goal manager over the gateway connection with the session's row loaded
 func NewGatewayGoalManager(ctx context.Context, sessionID string, connection *gatewaycli.GatewayConnection) (*GatewayGoalManager, error) {
-	m := &GatewayGoalManager{remote: &automationRemote[goals.GoalState]{ctx: ctx, sessionID: sessionID, kind: "goal", connection: connection,
-		fromJSON: goals.GoalStateFromJSON, status: func(s *goals.GoalState) any { return s.Status }}}
-	return m, m.remote.refresh()
+	remote, err := newAutomationRemote(ctx, sessionID, "goal", connection, goals.GoalStateFromJSON,
+		func(s *goals.GoalState) any { return s.Status })
+	return &GatewayGoalManager{remote: remote}, err
 }
 
 // Local manager whose reads run on the mirrored state
@@ -438,9 +445,9 @@ var _ agent.LoopAutomation = (*GatewayLoopManager)(nil)
 
 // Loop manager over the gateway connection with the session's row loaded
 func NewGatewayLoopManager(ctx context.Context, sessionID string, connection *gatewaycli.GatewayConnection) (*GatewayLoopManager, error) {
-	m := &GatewayLoopManager{remote: &automationRemote[agent.SessionLoopState]{ctx: ctx, sessionID: sessionID, kind: "loop", connection: connection,
-		fromJSON: agent.SessionLoopStateFromJSON, status: func(s *agent.SessionLoopState) any { return s.Status }}}
-	return m, m.remote.refresh()
+	remote, err := newAutomationRemote(ctx, sessionID, "loop", connection, agent.SessionLoopStateFromJSON,
+		func(s *agent.SessionLoopState) any { return s.Status })
+	return &GatewayLoopManager{remote: remote}, err
 }
 
 // Local manager whose reads run on the mirrored state
@@ -528,9 +535,9 @@ var _ agent.HeartbeatAutomation = (*GatewayHeartbeatManager)(nil)
 
 // Heartbeat manager over the gateway connection with the session's row loaded
 func NewGatewayHeartbeatManager(ctx context.Context, sessionID string, connection *gatewaycli.GatewayConnection) (*GatewayHeartbeatManager, error) {
-	m := &GatewayHeartbeatManager{remote: &automationRemote[agent.HeartbeatState]{ctx: ctx, sessionID: sessionID, kind: "heartbeat", connection: connection,
-		fromJSON: agent.HeartbeatStateFromJSON, status: func(s *agent.HeartbeatState) any { return s.Status }}}
-	return m, m.remote.refresh()
+	remote, err := newAutomationRemote(ctx, sessionID, "heartbeat", connection, agent.HeartbeatStateFromJSON,
+		func(s *agent.HeartbeatState) any { return s.Status })
+	return &GatewayHeartbeatManager{remote: remote}, err
 }
 
 // Local manager whose reads run on the mirrored state
@@ -542,7 +549,7 @@ func (m *GatewayHeartbeatManager) Session() string              { return m.remot
 func (m *GatewayHeartbeatManager) State() *agent.HeartbeatState { return m.remote.current() }
 func (m *GatewayHeartbeatManager) HasHeartbeat() bool           { return m.local().HasHeartbeat() }
 func (m *GatewayHeartbeatManager) IsActive() bool               { return m.local().IsActive() }
-func (m *GatewayHeartbeatManager) StatusLine() string           { return m.local().StatusLine() }
+func (m *GatewayHeartbeatManager) StatusLine() (string, error)  { return m.local().StatusLine() }
 
 // Rereads the gateway's row into the mirror
 func (m *GatewayHeartbeatManager) Refresh() {
@@ -552,7 +559,7 @@ func (m *GatewayHeartbeatManager) Refresh() {
 }
 
 // Sets the heartbeat on the gateway, its refusal raised as the local manager's ValueError
-func (m *GatewayHeartbeatManager) Set(prompt string, intervalSeconds int64) (*agent.HeartbeatState, error) {
+func (m *GatewayHeartbeatManager) Set(prompt string, intervalSeconds any) (*agent.HeartbeatState, error) {
 	answer, err := m.remote.rpc("set", []any{prompt, intervalSeconds}, nil)
 	if err != nil {
 		var refusal *pyint.Error

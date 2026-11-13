@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -37,6 +38,9 @@ func auxRelayAnswer(model, content string) map[string]any {
 // Restores the relay execute and completion seams after the test
 func auxSwapRelaySeams(t *testing.T) {
 	t.Helper()
+	if os.Getenv("ICEBATH_HOME") == "" {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+	}
 	exec, asyncExec, complete := relayExecuteCurrentFn, relayExecuteCurrentAsyncFn, relayCompleteLogicalCallFn
 	t.Cleanup(func() {
 		relayExecuteCurrentFn, relayExecuteCurrentAsyncFn, relayCompleteLogicalCallFn = exec, asyncExec, complete

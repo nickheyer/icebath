@@ -55,11 +55,25 @@ func StringifyProviderMap(providers any) map[string]any {
 	}
 	out := make(map[string]any, len(m))
 	for stored, value := range m {
-		if key := CoerceProviderID(stored); key != "" {
+		if key := storedProviderID(m, stored); key != "" {
 			out[key] = value
 		}
 	}
 	return out
+}
+
+// Provider id of a stored providers key, a non string YAML key coerced from its own value
+func storedProviderID(providers map[string]any, stored string) string {
+	if pyKey, isPy := config.MappingPyKey(providers, stored); isPy {
+		return CoerceProviderID(pyKey)
+	}
+	if text, marked := strings.CutPrefix(stored, config.PyKeyString(nil)[:1]); marked {
+		if text == "None" {
+			return ""
+		}
+		return strings.TrimSpace(text)
+	}
+	return CoerceProviderID(stored)
 }
 
 // FindProviderEntry returns the stored key and block matching a provider key by string identity
@@ -76,7 +90,7 @@ func FindProviderEntry(providers any, key any) (string, map[string]any) {
 		return want, exact
 	}
 	for stored, entry := range m {
-		if e, ok := entry.(map[string]any); ok && CoerceProviderID(stored) == want {
+		if e, ok := entry.(map[string]any); ok && storedProviderID(m, stored) == want {
 			return stored, e
 		}
 	}
@@ -460,7 +474,7 @@ func ProvidersDictToCustomProviders(providersDict any) []map[string]any {
 		if block, ok := entry.(map[string]any); ok && !IsProviderEnabled(block) {
 			continue
 		}
-		if normalized := NormalizeCustomProviderEntry(entry, CoerceProviderID(key)); normalized != nil {
+		if normalized := NormalizeCustomProviderEntry(entry, storedProviderID(m, key)); normalized != nil {
 			out = append(out, normalized)
 		}
 	}
@@ -657,6 +671,25 @@ func CustomProviderExtraHeaders(baseURL string, customProviders []map[string]any
 		}
 	}
 	return map[string]string{}
+}
+
+// Merges the route entry's extra headers onto the client kwargs default headers, the entry winning over existing values
+func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, baseURL string, customProviders []map[string]any, cfg map[string]any) {
+	extra := CustomProviderExtraHeaders(baseURL, customProviders, cfg)
+	if len(extra) == 0 {
+		return
+	}
+	merged := make(map[string]string, len(extra))
+	switch existing := clientKwargs["default_headers"].(type) {
+	case map[string]string:
+		maps.Copy(merged, existing)
+	case map[string]any:
+		for k, v := range existing {
+			merged[k] = fmt.Sprint(v)
+		}
+	}
+	maps.Copy(merged, extra)
+	clientKwargs["default_headers"] = merged
 }
 
 // MergeExtraHeaders layers route headers over default headers with the route winning

@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -176,9 +175,5 @@ func hostPluginsRoot() (string, error) {
 	if dir := bundledOverrideDir(); dir != "" {
 		return dir, nil
 	}
-	root, err := materializeHostChild()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, "sdk", "plugins"), nil
+	return "", errPythonSource()
 }

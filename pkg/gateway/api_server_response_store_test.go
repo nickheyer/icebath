@@ -11,6 +11,7 @@ import (
 )
 
 func TestReopenPrunesSettledIdentitiesToTheBound(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "response_store.db")
 	store, err := NewResponseStore(ctx, 10, path, 10)

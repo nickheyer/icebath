@@ -45,7 +45,7 @@ func TestStartAndQuitClosesTheGatewaySessionWithNoAgent(t *testing.T) {
 	if got := host.closingSessionID(); got != "" {
 		t.Fatalf("closing id %q with no gateway session", got)
 	}
-	host.agent = offlineAgent(t, &CLI{ctx: context.Background(), sessionID: "local-agent"})
+	host.setAgent(offlineAgent(t, &CLI{ctx: context.Background(), sessionID: "local-agent"}))
 	if got := host.closingSessionID(); got != "local-agent" {
 		t.Fatalf("closing id %q with an agent", got)
 	}

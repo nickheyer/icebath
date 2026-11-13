@@ -5,13 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
-
-// Dependency sync the wizard runs for the matrix extra, the pm.sync_venv name its tests patch
-var setupSyncVenv = pm.SyncVenv
 
 // Matrix wizard of icebath gateway setup writing the homeserver, auth, E2EE, allowlist and home room to the home .env
 func InteractiveSetup(ctx context.Context) error {
@@ -73,17 +68,9 @@ func InteractiveSetup(ctx context.Context) error {
 			return err
 		}
 		cli.PrintSuccess("E2EE enabled")
-	}
-	cli.PrintInfo("Preparing Matrix dependencies...")
-	if err := setupSyncVenv(ctx, pm.SyncVenvOptions{Extras: []string{"matrix"}, Explicit: true}); err != nil {
-		detail := err.Error()
-		if pypath.IsOSError(err) {
-			detail = pypath.OSErrorText(err)
+		if !checkE2EEDeps() {
+			cli.PrintWarning("This build has no olm implementation for E2EE. " + e2eeInstallHint)
 		}
-		cli.PrintWarning("Matrix dependencies could not be prepared: " + detail)
-		cli.PrintInfo("Run `icebath pm install`, then restart Icebath.")
-	} else {
-		cli.PrintSuccess("Matrix dependencies prepared. Restart Icebath to use them.")
 	}
 	cli.PrintInfo("🔒 Security: Restrict who can use your bot")
 	cli.PrintInfo("   Matrix user IDs look like @username:server")

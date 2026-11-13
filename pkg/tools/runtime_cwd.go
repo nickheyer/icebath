@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 const sessionCwdKey = "session.cwd"
@@ -14,18 +16,15 @@ func isWorkerProcess() bool {
 }
 
 // PackageRoot is the running install tree the context discovery fallback guards, resolved once at startup
-var PackageRoot = RunningSourceRoot()
+var PackageRoot = config.GetProjectRoot()
 
-// IsInstallTree reports whether a path is the running install tree or sits inside it
+// IsInstallTree reports whether a path, resolved without requiring it to exist, is the install tree or inside it
 func IsInstallTree(p string) bool {
 	root := PackageRoot
 	if root == "" {
 		return false
 	}
-	resolved, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return false
-	}
+	resolved := resolveNonStrict(p)
 	rootResolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		rootResolved = root

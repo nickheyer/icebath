@@ -24,6 +24,11 @@ func homeTargetEnvVar(ctx context.Context, platformName string) string {
 	return strings.ToUpper(platformName) + "_HOME_CHANNEL"
 }
 
+// Optional thread or topic env var of a platform home target
+func homeThreadEnvVar(ctx context.Context, platformName string) string {
+	return homeTargetEnvVar(ctx, platformName) + "_THREAD_ID"
+}
+
 // Home channel value of the env var, the process env only for an unscoped single profile read
 func homeChannelSecret(ctx context.Context, envKey string) string {
 	value, _, err := provider.GetSecret(ctx, envKey)

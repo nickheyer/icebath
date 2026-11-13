@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/desktop/desktoplog"
+	"github.com/nickheyer/icebath/pkg/desktop/files"
 )
 
 type recordingHost struct {
@@ -23,6 +24,10 @@ func (h *recordingHost) PickDirectory(title, defaultPath string) (string, bool, 
 	h.picked = append(h.picked, title+"|"+defaultPath)
 	return h.pick, h.pick != "", nil
 }
+func (h *recordingHost) ShowSaveDialog(files.SaveDialogOptions) (files.SaveDialogResult, error) {
+	return files.SaveDialogResult{Canceled: true}, nil
+}
+func (h *recordingHost) DownloadsDir() string { return "" }
 
 func serviceForTest(t *testing.T) (*Service, *recordingHost) {
 	t.Helper()

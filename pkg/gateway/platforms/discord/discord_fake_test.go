@@ -1,11 +1,14 @@
 package discord
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -42,6 +45,7 @@ func newTestAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
 	}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformDiscord, a)
 	a.handleMessage = a.BasePlatformAdapter.HandleMessage
+	applyDiscordTraits(a)
 	a.voiceState = newVoiceState()
 	if os.Getenv("ICEBATH_HOME") == "" {
 		t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -114,12 +118,23 @@ func (f *fakeDiscordAPI) serve(w http.ResponseWriter, req *http.Request) {
 	raw, _ := io.ReadAll(req.Body)
 	body := map[string]any{}
 	if strings.HasPrefix(req.Header.Get("Content-Type"), "multipart/") {
-		if _, after, ok := strings.Cut(string(raw), `name="payload_json"`); ok {
-			if i := strings.Index(after, "{"); i >= 0 {
-				json.NewDecoder(strings.NewReader(after[i:])).Decode(&body)
+		var names []any
+		var data []string
+		_, params, _ := mime.ParseMediaType(req.Header.Get("Content-Type"))
+		mr := multipart.NewReader(bytes.NewReader(raw), params["boundary"])
+		for {
+			part, err := mr.NextPart()
+			if err != nil {
+				break
+			}
+			content, _ := io.ReadAll(part)
+			if part.FormName() == "payload_json" {
+				json.Unmarshal(content, &body)
+			} else if part.FileName() != "" {
+				names, data = append(names, part.FileName()), append(data, string(content))
 			}
 		}
-		body["_files"] = strings.Count(string(raw), `filename="`)
+		body["_files"], body["_filenames"], body["_filedata"] = len(names), names, data
 	} else {
 		json.Unmarshal(raw, &body)
 	}
@@ -150,7 +165,22 @@ func (f *fakeDiscordAPI) serve(w http.ResponseWriter, req *http.Request) {
 		f.nextID++
 		id := f.nextID
 		f.mu.Unlock()
-		fmt.Fprintf(w, `{"id":"%d","channel_id":"%s"}`, id, parts[1])
+		echo := map[string]any{"id": fmt.Sprint(id), "channel_id": parts[1]}
+		for _, k := range []string{"content", "embeds", "components"} {
+			if v, ok := body[k]; ok && v != nil {
+				echo[k] = v
+			}
+		}
+		if names, _ := body["_filenames"].([]any); len(names) > 0 {
+			var atts []map[string]any
+			for i, n := range names {
+				atts = append(atts, map[string]any{"id": fmt.Sprint(i + 1), "filename": n})
+			}
+			echo["attachments"] = atts
+		}
+		json.NewEncoder(w).Encode(echo)
+	case req.Method == http.MethodPatch && parts[0] == "webhooks":
+		io.WriteString(w, `{"id":"0","channel_id":"0"}`)
 	case req.Method == http.MethodPatch && len(parts) == 4:
 		fmt.Fprintf(w, `{"id":"%s","channel_id":"%s"}`, parts[3], parts[1])
 	case req.Method == http.MethodPost && len(parts) == 3 && parts[2] == "threads":
@@ -246,4 +276,39 @@ func (f *fakeDiscordAPI) historyPage(channelID string, q url.Values) []*discordg
 		out = []*discordgo.Message{}
 	}
 	return out
+}
+
+// Component click on a sent message by a guild member, the select values when given
+func clickOn(msg *discordgo.Message, customID string, kind discordgo.ComponentType, userID string, values ...string) *discordgo.Interaction {
+	clickSeq++
+	return &discordgo.Interaction{ID: fmt.Sprintf("int%d", clickSeq), AppID: "app", Token: "tok", Type: discordgo.InteractionMessageComponent,
+		ChannelID: msg.ChannelID, GuildID: "999", Message: msg,
+		Member: &discordgo.Member{User: &discordgo.User{ID: userID, Username: "alice"}},
+		Data:   discordgo.MessageComponentInteractionData{CustomID: customID, ComponentType: kind, Values: values}}
+}
+
+var clickSeq int
+
+// Interaction callback bodies posted for one interaction
+func (f *fakeDiscordAPI) callbacks(i *discordgo.Interaction) []map[string]any {
+	var out []map[string]any
+	for _, c := range f.matching(http.MethodPost, "/interactions/"+i.ID+"/"+i.Token+"/callback") {
+		out = append(out, c.Body)
+	}
+	return out
+}
+
+// Content of the single ephemeral reply to an interaction, failing on any other shape
+func ephemeralReply(t *testing.T, f *fakeDiscordAPI, i *discordgo.Interaction) string {
+	t.Helper()
+	cbs := f.callbacks(i)
+	if len(cbs) != 1 {
+		t.Fatalf("callbacks = %v", cbs)
+	}
+	data, _ := cbs[0]["data"].(map[string]any)
+	if cbs[0]["type"] != float64(discordgo.InteractionResponseChannelMessageWithSource) || data["flags"] != float64(discordgo.MessageFlagsEphemeral) {
+		t.Fatalf("not an ephemeral reply %v", cbs[0])
+	}
+	s, _ := data["content"].(string)
+	return s
 }

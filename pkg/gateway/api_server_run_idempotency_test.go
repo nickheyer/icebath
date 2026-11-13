@@ -8,9 +8,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Store at the path, failing the test when it cannot open
+// Store at the path under a temp home, failing the test when it cannot open
 func openRunIdempotencyStore(t *testing.T, path string) *RunIdempotencyStore {
 	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	store, err := NewRunIdempotencyStore(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)

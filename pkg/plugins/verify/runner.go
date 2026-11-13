@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -204,8 +205,19 @@ func runPhaseCommandReal(phase, command, root string, timeout float64, onOutput 
 			_ = cmd.Process.Kill()
 			<-exited
 		}
-		output = pystr.DecodeUTF8Replace(out.snapshot())
-		r.Close()
+		if runtime.GOOS == "windows" {
+			// Windows collects the whole remaining output as text after the kill
+			if !pipeDone {
+				<-eof
+			}
+			r.Close()
+			if output, err = decodeOutput(out.snapshot()); err != nil {
+				return nil, err
+			}
+		} else {
+			output = pystr.DecodeUTF8Replace(out.snapshot())
+			r.Close()
+		}
 		result.TimedOut = true
 	} else {
 		r.Close()
@@ -369,25 +381,77 @@ type composeProbeResult struct {
 	Stdout, Stderr string
 }
 
-// Read only docker compose ps in root, FileNotFoundError and TimeoutExpired surfacing as their own errors
+// Read only docker compose ps in root, 15 s bounding exit and both pipes, FileNotFoundError and TimeoutExpired surfacing as their own errors
 var composeProbe = func(root string) (*composeProbeResult, error) {
 	cmd := exec.Command("docker", "compose", "ps", "--status", "running", "--format", "{{.Name}}")
 	cmd.Dir = root
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Start(); err != nil {
-		return nil, startError(err)
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		return nil, &OSError{Err: err}
 	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		outR.Close()
+		outW.Close()
+		return nil, &OSError{Err: err}
+	}
+	cmd.Stdout, cmd.Stderr = outW, errW
+	startErr := cmd.Start()
+	outW.Close()
+	errW.Close()
+	if startErr != nil {
+		outR.Close()
+		errR.Close()
+		return nil, startError(startErr)
+	}
+	var stdout, stderr lockedBuffer
+	outEOF, errEOF := make(chan struct{}), make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&stdout, outR)
+		close(outEOF)
+	}()
+	go func() {
+		_, _ = io.Copy(&stderr, errR)
+		close(errEOF)
+	}()
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
 	var waitErr error
-	select {
-	case waitErr = <-exited:
-	case <-time.After(15 * time.Second):
-		_ = cmd.Process.Kill()
-		<-exited
+	procDone, timedOut := false, false
+	for !(procDone && outEOF == nil && errEOF == nil) && !timedOut {
+		select {
+		case waitErr = <-exited:
+			procDone = true
+		case <-outEOF:
+			outEOF = nil
+		case <-errEOF:
+			errEOF = nil
+		case <-timer.C:
+			timedOut = true
+		}
+	}
+	if timedOut {
+		if !procDone {
+			_ = cmd.Process.Kill()
+			<-exited
+		}
+		if runtime.GOOS == "windows" {
+			// Windows drains both pipes to their end after the kill before raising
+			if outEOF != nil {
+				<-outEOF
+			}
+			if errEOF != nil {
+				<-errEOF
+			}
+		}
+		outR.Close()
+		errR.Close()
 		return nil, errComposeProbeTimeout
 	}
+	outR.Close()
+	errR.Close()
 	res := &composeProbeResult{}
 	var ee *exec.ExitError
 	if errors.As(waitErr, &ee) {
@@ -396,11 +460,11 @@ var composeProbe = func(root string) (*composeProbeResult, error) {
 		return nil, &OSError{Err: waitErr}
 	}
 	enc := pycodecs.LocaleEncoding()
-	out, err := pycodecs.Decode(stdout.Bytes(), enc)
+	out, err := pycodecs.Decode(stdout.snapshot(), enc)
 	if err != nil {
 		return nil, err
 	}
-	errText, err := pycodecs.Decode(stderr.Bytes(), enc)
+	errText, err := pycodecs.Decode(stderr.snapshot(), enc)
 	if err != nil {
 		return nil, err
 	}

@@ -39,8 +39,8 @@ func TestRestartDrainRecoveryDedup(t *testing.T) {
 		a.persistUserMessageIdx, a.persistUserMessagePlatformID = &idx, &platformID
 		messages := []map[string]any{{"role": "user", "content": "please do the thing"}}
 		a.applyPersistUserMessageOverride(messages)
-		if _, err := a.flushMessagesToSessionDBWithHistory(messages, nil); err != nil {
-			t.Fatal(err)
+		if outcome := a.flushMessagesToSessionDBWithHistory(messages, nil); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		if found, err := db.HasPlatformMessageID(t.Context(), sessionID, "discord-4242"); err != nil || !found {
 			t.Fatalf("the interrupted turn carries no platform_message_id %v %v", found, err)
@@ -53,8 +53,8 @@ func TestRestartDrainRecoveryDedup(t *testing.T) {
 		a.persistUserMessageIdx, a.persistUserMessageOverride, a.persistUserMessagePlatformID = &idx, "clean transcript text", &platformID
 		messages := []map[string]any{{"role": "user", "content": "api-facing text with context"}}
 		a.applyPersistUserMessageOverride(messages)
-		if _, err := a.flushMessagesToSessionDBWithHistory(messages, nil); err != nil {
-			t.Fatal(err)
+		if outcome := a.flushMessagesToSessionDBWithHistory(messages, nil); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		if found, err := db.HasPlatformMessageID(t.Context(), sessionID, "discord-7777"); err != nil || !found {
 			t.Fatalf("override lost the platform id %v %v", found, err)

@@ -727,7 +727,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	embedded := ""
 	rootPath := opts.InstallRoot
 	if rootPath == "" {
-		embedded = os.Getenv("ICEBATH_REVISION")
+		embedded = sourceGetenv(ctx, "ICEBATH_REVISION")
 		rootPath = checkProjectRoot()
 	}
 	root := resolvedPath(rootPath)

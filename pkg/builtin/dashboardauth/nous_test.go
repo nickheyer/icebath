@@ -78,6 +78,25 @@ func TestProtocolCompliance(t *testing.T) {
 	}
 }
 
+// Register builds the provider with the instance id, trailing slashes trimmed, derived endpoints and leeway
+func TestNousConstructionDerivesEndpoints(t *testing.T) {
+	nousRegisterCase(t, "    token_leeway: 7\n")
+	t.Setenv(nousOAuthClientIDEnv, "agent:inst9")
+	t.Setenv(nousPortalURLEnv, "https://portal.example.com///")
+	p := registerNous(t)
+	if p == nil {
+		t.Fatal(NousLastSkipReason())
+	}
+	if p.clientID != "agent:inst9" || p.agentInstanceID != "inst9" || p.portalURL != "https://portal.example.com" || p.tokenLeeway != 7 ||
+		p.jwksURL != "https://portal.example.com/.well-known/jwks.json" || p.authorizeURL != "https://portal.example.com/oauth/authorize" ||
+		p.tokenURL != "https://portal.example.com/api/oauth/token" || p.jwksClient != nil {
+		t.Fatalf("provider %+v", p)
+	}
+	if _, err := NewNousDashboardAuthProvider("agent-inst9", "https://x", nil); err == nil || err.Error() != "client_id must match contract shape 'agent:{instance_id}', got 'agent-inst9'" {
+		t.Fatal(err)
+	}
+}
+
 // test_nous_provider.py TestConstruction test_rejects_malformed_client_id
 func TestRejectsMalformedClientID(t *testing.T) {
 	_, err := NewNousDashboardAuthProvider("hermes-dashboard", "https://x", nil)

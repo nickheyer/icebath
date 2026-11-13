@@ -249,7 +249,7 @@ func cleanupBrowser(ctx context.Context, env *tools.Env, taskID string) error {
 	return nil
 }
 
-// Closes one profile's sessions, supervisors and harness daemons and drops its cached provider
+// Closes one profile's sessions, supervisors and browser_exec connections and drops its cached provider
 func cleanupProfileBrowsers(ctx context.Context, env *tools.Env, homeKey string) error {
 	var keys []string
 	sessionsMu.Lock()
@@ -266,7 +266,7 @@ func cleanupProfileBrowsers(ctx context.Context, env *tools.Env, homeKey string)
 	}
 	log := cfgOf(env).logger()
 	bestEffort(log, "CDP supervisor stop", func() error { supervisorStopHome(homeKey); return nil })
-	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(env, homeKey); return nil })
+	bestEffort(log, "browser_exec connection close", func() error { closeExecSessions(homeKey); return nil })
 	resetCaches(homeKey)
 	return nil
 }
@@ -281,7 +281,7 @@ func cleanupAllBrowsers(ctx context.Context, env *tools.Env) {
 		bestEffort(log, "browser cleanup for "+key, func() error { return cleanupSingleSession(tools.WithEnvHome(ctx, env), sessionOwnerEnv(env, key), key) })
 	}
 	bestEffort(log, "CDP supervisor stop", func() error { supervisorStopAll(); return nil })
-	bestEffort(log, "Browser Use harness daemon stop", func() error { stopHarnessDaemons(env, ""); return nil })
+	bestEffort(log, "browser_exec connection close", func() error { closeExecSessions(""); return nil })
 	bestEffort(log, "Chromium stop", func() error { stopAllBrowsers(tools.WithEnvHome(ctx, env)); return nil })
 	bestEffort(log, "Lightpanda stop", func() error { stopAllLightpanda(env); return nil })
 	resetCaches("")

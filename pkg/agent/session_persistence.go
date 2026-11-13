@@ -60,7 +60,7 @@ func rowIdentity(v any) any {
 func (a *AIAgent) shareSessionMessageOrigins(messages []*state.Message, origins []map[string]any, turnStart bool) {
 	if turnStart {
 		kept, stamps := map[*state.Message]map[string]any{}, map[*state.Message]map[string]any{}
-		for _, m := range a.sessionMessages {
+		for _, m := range a.liveSessionMessages() {
 			if origin, ok := a.sessionMessageOrigins[m]; ok {
 				kept[m] = origin
 			}
@@ -277,7 +277,7 @@ func (a *AIAgent) PersistUserMessageStaging() (idx *int, override, timestamp any
 func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHistory func() []map[string]any) bool {
 	defer persistLock(a)()
 	cliHistory := readCLIHistory()
-	live := a.sessionMessages
+	live := a.liveSessionMessages()
 	var rows []map[string]any
 	var keys []any
 	var lives []*state.Message
@@ -349,9 +349,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 			before[i] = maps.Clone(row)
 		}
 	}
-	if _, err := a.flushRowsUnlocked(rows, keys, historyKeys, 1); err != nil {
-		sessionPersistenceLog().Debug("session flush failed", "error", err)
-	}
+	a.flushRowsUnlocked(rows, keys, historyKeys, 1)
 	for i, row := range rows {
 		if lives[i] == nil {
 			if delta := flushStampDelta(before[i], row); len(delta) > 0 {
@@ -369,7 +367,7 @@ func (a *AIAgent) PersistActiveSessionBeforeClose(ctx context.Context, readCLIHi
 		persisted[i] = state.MessageFromDict(row)
 	}
 	a.shareSessionMessageOrigins(persisted, origins, false)
-	a.sessionMessages = persisted
+	a.setSessionMessages(persisted)
 	if a.sessionDB != nil {
 		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
 			sessionPersistenceLog().Debug(fmt.Sprintf("Could not persist active CLI session before close: %s", err))
@@ -795,10 +793,8 @@ func (a *AIAgent) applyPersistUserMessageOverride(messages []map[string]any) {
 func (a *AIAgent) persistSession(messages *[]*state.Message, conversationHistory []*state.Message) error {
 	defer persistLock(a)()
 	a.dropTrailingEmptyResponseScaffolding(messages)
-	a.sessionMessages = *messages
-	if _, err := a.flushLiveMessages(*messages, conversationHistory); err != nil {
-		sessionPersistenceLog().Debug("session flush failed", "error", err)
-	}
+	a.setSessionMessages(*messages)
+	a.flushLiveMessages(*messages, conversationHistory)
 	if a.sessionDB != nil {
 		if _, err := sessionDBFlushTokenCounts(a.sessionDB, 5.0); err != nil {
 			return err
@@ -825,7 +821,7 @@ func (a *AIAgent) dropTrailingEmptyResponseScaffolding(messages *[]*state.Messag
 }
 
 // Flushes live messages through their dict views under the persist lock and writes every change back
-func (a *AIAgent) flushLiveMessages(messages, conversationHistory []*state.Message) (bool, error) {
+func (a *AIAgent) flushLiveMessages(messages, conversationHistory []*state.Message) state.FlushOutcome {
 	defer persistLock(a)()
 	rows := make([]map[string]any, len(messages))
 	keys := make([]any, len(messages))
@@ -841,22 +837,22 @@ func (a *AIAgent) flushLiveMessages(messages, conversationHistory []*state.Messa
 			historyKeys[h] = true
 		}
 	}
-	ok, err := a.flushRowsUnlocked(rows, keys, historyKeys, 1)
+	outcome := a.flushRowsUnlocked(rows, keys, historyKeys, 1)
 	for i, m := range messages {
 		if m != nil && rows[i] != nil {
 			*m = *state.MessageFromDict(rows[i])
 		}
 	}
-	return ok, err
+	return outcome
 }
 
-// Serialized flush of message dicts, written true, disabled false with no error, failed false with the error
-func (a *AIAgent) flushMessagesToSessionDB(messages []map[string]any) (bool, error) {
+// Serialized flush of message dicts, disabled, persisted or failed with the cause already classified and logged
+func (a *AIAgent) flushMessagesToSessionDB(messages []map[string]any) state.FlushOutcome {
 	return a.flushMessagesToSessionDBWithHistory(messages, nil)
 }
 
 // Dict flush that stamps the identity matched conversation history rows as already durable
-func (a *AIAgent) flushMessagesToSessionDBWithHistory(messages, conversationHistory []map[string]any) (bool, error) {
+func (a *AIAgent) flushMessagesToSessionDBWithHistory(messages, conversationHistory []map[string]any) state.FlushOutcome {
 	defer persistLock(a)()
 	keys := make([]any, len(messages))
 	for i, m := range messages {
@@ -871,13 +867,23 @@ func (a *AIAgent) flushMessagesToSessionDBWithHistory(messages, conversationHist
 	return a.flushRowsUnlocked(messages, keys, historyKeys, 1)
 }
 
-// Persists unflushed rows deduplicated by the durable marker, retrying once after a tip adoption or a row heal
-func (a *AIAgent) flushRowsUnlocked(rows []map[string]any, keys []any, historyKeys map[any]bool, adoptionBudget int) (bool, error) {
+// Persists unflushed rows by the durable marker, a raised or returned write failure retried once after adoption or heal
+func (a *AIAgent) flushRowsUnlocked(rows []map[string]any, keys []any, historyKeys map[any]bool, adoptionBudget int) state.FlushOutcome {
 	if a.persistDisabled || a.sessionDB == nil {
-		return false, nil
+		return state.FlushDisabled
 	}
 	var batchRows []map[string]any
-	err := func() error {
+	err := func() (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				if isUserInterruptPanic(r) {
+					panic(r)
+				}
+				if err, _ = r.(error); err == nil {
+					err = fmt.Errorf("%v", r)
+				}
+			}
+		}()
 		if !a.sessionDBCreated {
 			if err := a.ensureDBSession(); err != nil {
 				return err
@@ -893,12 +899,25 @@ func (a *AIAgent) flushRowsUnlocked(rows []map[string]any, keys []any, historyKe
 		a.flushedDBMessageIDs = map[any]bool{}
 		a.lastFlushedDBIdx = len(rows)
 		a.dbFlushScanPrefix = append([]any(nil), keys...)
-		return true, nil
+		return state.FlushPersisted
 	}
 	if dbFlushFailed(a, err, batchRows, adoptionBudget, rows) == "" {
-		return false, err
+		return state.FlushFailed
 	}
 	return a.flushRowsUnlocked(rows, keys, historyKeys, 0)
+}
+
+// Runs a transcript flush, a raised failure other than a user interrupt handed to the caller's except branch
+func guardedFlush(flush func(), raised func(exc *OuterLoopError)) {
+	defer func() {
+		if r := recover(); r != nil {
+			if isUserInterruptPanic(r) {
+				panic(r)
+			}
+			raised(RecoveredOuterLoopError(r))
+		}
+	}()
+	flush()
 }
 
 // Messages before the last assistant turn, the rollback point for a malformed final answer, all when none

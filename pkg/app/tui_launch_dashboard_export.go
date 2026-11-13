@@ -1,14 +1,12 @@
 package app
 
-import (
-	"context"
-	"os"
-)
+import "os"
 
-// TUI argv and cwd for a tui dir, progress and errors on the process stdout and stderr
-func MakeTUIArgv(ctx context.Context, tuiDir string, dev bool) ([]string, string, error) {
-	return makeTUIArgvTo(os.Stdout, os.Stderr)(ctx, tuiDir, dev)
+// Command line that runs the terminal UI of this binary, for the dashboard chat tab
+func TUIArgv() ([]string, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return []string{self, "--tui"}, nil
 }
-
-// Seeds the source root, cwd and interpreter variables the TUI gateway bootstrap reads
-func ApplyTUIPythonEnv(env map[string]string) error { return applyTUIPythonEnv(env) }

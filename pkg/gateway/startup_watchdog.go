@@ -473,16 +473,24 @@ func armedStartupWatchdog() *StartupWatchdogHandle {
 	return startupWatchdogHandle
 }
 
+// Calls the armed watchdog handle, doing nothing when unarmed and logging a panic at debug
+func withArmedStartupWatchdog(failureMsg string, call func(h *StartupWatchdogHandle)) {
+	defer func() {
+		if r := recover(); r != nil {
+			startupWatchdogLog().Debug(failureMsg, "exc_info", fmt.Sprintf("%v", r))
+		}
+	}()
+	if handle := armedStartupWatchdog(); handle != nil {
+		call(handle)
+	}
+}
+
 // Extends the armed watchdog deadline before an intentional idle wait, doing nothing when unarmed
 func KickStartupWatchdog(extraS any) {
-	if handle := armedStartupWatchdog(); handle != nil {
-		handle.Kick(extraS)
-	}
+	withArmedStartupWatchdog("Failed to kick gateway startup watchdog", func(h *StartupWatchdogHandle) { h.Kick(extraS) })
 }
 
 // Declares a phase owned progress lease on the armed watchdog, doing nothing when unarmed
 func ReportStartupProgress(expectedS any, phase string) {
-	if handle := armedStartupWatchdog(); handle != nil {
-		handle.Lease(expectedS, phase)
-	}
+	withArmedStartupWatchdog("Failed to report startup progress", func(h *StartupWatchdogHandle) { h.Lease(expectedS, phase) })
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -48,7 +49,7 @@ func legFailure(err error) string {
 // The real client for the model's read and execute legs, never creating an identity
 func defaultConnectorClient(env *Env, call *CallRef) (*ConnectorClient, error) {
 	if guestIdentityPending(env) {
-		return nil, &ToolGatewayError{Message: connectorNotSetUpMsg, Code: connectorNotSetUp, Kind: gatewayKindAuth}
+		return nil, newToolGatewayError(gatewayKindAuth, connectorNotSetUpMsg, connectorNotSetUp, 0, "", false)
 	}
 	return NewConnectorClient(env, call, ""), nil
 }
@@ -265,6 +266,11 @@ type FileInputError struct {
 	Hint string
 }
 
+// File input refusal with its code, message and the optional hint the model reads
+func newFileInputError(code, message, hint string) *FileInputError {
+	return &FileInputError{Code: code, Msg: message, Hint: hint}
+}
+
 func (e *FileInputError) Error() string { return e.Msg }
 
 // Result is the call's error entry in the shape execute errors take
@@ -434,16 +440,15 @@ func hasText(value any) bool {
 	return false
 }
 
+// Copy of the value with the leaf at path staged, missing or non path leaves left as they are
 func substituteFileInput(value any, path []string, stage func(string) (any, error)) (any, error) {
 	if len(path) == 0 {
 		if s, ok := value.(string); ok {
 			return stage(s)
 		}
 		if m, ok := value.(map[string]any); ok {
-			if _, staged := value.(stagedDescriptor); !staged {
-				if _, hasKey := m["s3key"]; hasKey {
-					return nil, &FileInputError{Code: "FILE_NOT_ALLOWED", Msg: "File inputs take a local file path, not a storage descriptor.", Hint: "Pass the path of the local file to send."}
-				}
+			if _, hasKey := m["s3key"]; hasKey {
+				return nil, newFileInputError("FILE_NOT_ALLOWED", "File inputs take a local file path, not a storage descriptor.", "Pass the path of the local file to send.")
 			}
 		}
 		return value, nil
@@ -465,6 +470,9 @@ func substituteFileInput(value any, path []string, stage func(string) (any, erro
 		return out, nil
 	}
 	m, ok := value.(map[string]any)
+	if staged, isStaged := value.(stagedDescriptor); isStaged {
+		m, ok = staged, true
+	}
 	if !ok {
 		return value, nil
 	}
@@ -507,13 +515,16 @@ func stageOne(ctx context.Context, env *Env, client *ConnectorClient, plan Plann
 	if err != nil {
 		var ge *ToolGatewayError
 		if errors.As(err, &ge) && ge.Code == "TOOL_NOT_ALLOWED" {
-			return nil, &FileInputError{Code: "TOOL_NOT_ALLOWED", Msg: ge.Message}
+			return nil, newFileInputError("TOOL_NOT_ALLOWED", ge.Message, "")
 		}
-		return nil, &FileInputError{Code: "FILE_UPLOAD_FAILED", Msg: fmt.Sprintf("The tool gateway could not stage %s: %v", name, err)}
+		return nil, newFileInputError("FILE_UPLOAD_FAILED", fmt.Sprintf("The tool gateway could not stage %s: %v", name, err), "")
 	}
-	headers, _ := staged["headers"].(map[string]string)
+	headers := map[string]string{}
+	for k, v := range asMap(staged["headers"]) {
+		headers[k], _ = v.(string)
+	}
 	if err := client.PutFile(ctx, asStr(staged["upload_url"]), headers, data); err != nil {
-		return nil, &FileInputError{Code: "FILE_UPLOAD_FAILED", Msg: fmt.Sprintf("Uploading %s to storage failed: %v", name, err)}
+		return nil, newFileInputError("FILE_UPLOAD_FAILED", fmt.Sprintf("Uploading %s to storage failed: %v", name, err), "")
 	}
 	return stagedDescriptor(asMap(staged["descriptor"])), nil
 }
@@ -531,10 +542,10 @@ func readableFile(env *Env, raw, taskID string) (string, error) {
 		return allowed, nil
 	}
 	if !isFile(candidate) {
-		return "", &FileInputError{Code: "FILE_NOT_FOUND", Msg: raw + " is not a regular file on this machine.", Hint: "Pass the path of an existing file."}
+		return "", newFileInputError("FILE_NOT_FOUND", raw+" is not a regular file on this machine.", "Pass the path of an existing file.")
 	}
-	return "", &FileInputError{Code: "FILE_NOT_ALLOWED", Msg: raw + " may not leave this machine: the file-sending policy refuses it.",
-		Hint: "Files under the Icebath downloads and cache folders, or a folder listed in gateway.media_delivery_allow_dirs, can be sent."}
+	return "", newFileInputError("FILE_NOT_ALLOWED", raw+" may not leave this machine: the file-sending policy refuses it.",
+		"Files under the Icebath downloads and cache folders, or a folder listed in gateway.media_delivery_allow_dirs, can be sent.")
 }
 
 // The raw path resolved the way the file tools resolve it, refusing off host backends
@@ -547,8 +558,8 @@ func backendPath(env *Env, raw, taskID string) (string, error) {
 		backend = active.EnvType()
 	}
 	if !hostReadableBackends[backend] {
-		return "", &FileInputError{Code: "FILE_NOT_ALLOWED", Msg: fmt.Sprintf("Files in the %s terminal backend are not on this machine, so they cannot be sent as a connector file input.", backend),
-			Hint: "Use a file on this machine, or switch to the local or Docker terminal backend."}
+		return "", newFileInputError("FILE_NOT_ALLOWED", fmt.Sprintf("Files in the %s terminal backend are not on this machine, so they cannot be sent as a connector file input.", backend),
+			"Use a file on this machine, or switch to the local or Docker terminal backend.")
 	}
 	return resolvePathForTask(env, raw)
 }
@@ -556,17 +567,17 @@ func backendPath(env *Env, raw, taskID string) (string, error) {
 func readFileBytes(raw, path string) ([]byte, error) {
 	st, err := os.Stat(path)
 	if err != nil {
-		return nil, &FileInputError{Code: "FILE_NOT_FOUND", Msg: fmt.Sprintf("%s could not be read: %v.", raw, errnoText(err))}
+		return nil, newFileInputError("FILE_NOT_FOUND", fmt.Sprintf("%s could not be read: %v.", raw, errnoText(err)), "")
 	}
 	if st.Size() > connectorFileMaxBytes {
-		return nil, &FileInputError{Code: "FILE_TOO_LARGE", Msg: fmt.Sprintf("%s is %d MiB; connector file inputs are limited to %d MiB.", raw, st.Size()/(1024*1024), connectorFileMaxBytes/(1024*1024))}
+		return nil, newFileInputError("FILE_TOO_LARGE", fmt.Sprintf("%s is %d MiB; connector file inputs are limited to %d MiB.", raw, st.Size()/(1024*1024), connectorFileMaxBytes/(1024*1024)), "")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &FileInputError{Code: "FILE_NOT_FOUND", Msg: fmt.Sprintf("%s could not be read: %v.", raw, errnoText(err))}
+		return nil, newFileInputError("FILE_NOT_FOUND", fmt.Sprintf("%s could not be read: %v.", raw, errnoText(err)), "")
 	}
 	if len(data) == 0 {
-		return nil, &FileInputError{Code: "FILE_NOT_FOUND", Msg: raw + " is empty."}
+		return nil, newFileInputError("FILE_NOT_FOUND", raw+" is empty.", "")
 	}
 	return data, nil
 }
@@ -592,12 +603,22 @@ func SaveOutputs(ctx context.Context, env *Env, client *ConnectorClient, result 
 	return out
 }
 
+// Value with every returned file downloaded, objects keeping their key order
 func savedOutputs(ctx context.Context, env *Env, client *ConnectorClient, value any) any {
 	switch v := value.(type) {
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
 			out[i] = savedOutputs(ctx, env, client, item)
+		}
+		return out
+	case *pyjson.Object:
+		if isFileOutput(v.Vals) {
+			return downloadOutputObject(ctx, env, client, v)
+		}
+		out := pyjson.NewObject()
+		for _, k := range v.Keys {
+			out.Set(k, savedOutputs(ctx, env, client, v.Vals[k]))
 		}
 		return out
 	case map[string]any:
@@ -611,6 +632,23 @@ func savedOutputs(ctx context.Context, env *Env, client *ConnectorClient, value 
 		return out
 	}
 	return value
+}
+
+// Downloaded file entry of an ordered file object, its url and expiry dropped and its path or error added
+func downloadOutputObject(ctx context.Context, env *Env, client *ConnectorClient, file *pyjson.Object) *pyjson.Object {
+	kept := pyjson.NewObject()
+	for _, k := range file.Keys {
+		if k != "url" && k != "expiresAt" {
+			kept.Set(k, file.Vals[k])
+		}
+	}
+	result := downloadOutput(ctx, env, client, file.Vals)
+	for _, k := range []string{"path", "error"} {
+		if v, has := result[k]; has {
+			kept.Set(k, v)
+		}
+	}
+	return kept
 }
 
 func isFileOutput(v map[string]any) bool {
@@ -673,10 +711,10 @@ func fetchToDownloads(ctx context.Context, env *Env, client *ConnectorClient, u,
 	return target, nil
 }
 
+// Empty file created under a fresh UTC stamped name in the folder, the download then replacing it
 func reserveDownloadName(folder, name string) (string, error) {
 	stamp := time.Now().UTC().Format("20060102T150405Z")
-	ext := filepath.Ext(name)
-	stem := strings.TrimSuffix(name, ext)
+	stem, ext := pypath.Splitext(name)
 	for attempt := 0; attempt < 1000; attempt++ {
 		candidate := stamp + "-" + name
 		if attempt > 0 {
@@ -696,6 +734,7 @@ func reserveDownloadName(folder, name string) (string, error) {
 	return "", fmt.Errorf("no free name for %s", name)
 }
 
+// Basename safe on every OS with no separators, control characters or leading and trailing dots
 func safeFileName(name string) string {
 	parts := regexp.MustCompile(`[\\/]`).Split(name, -1)
 	base := parts[len(parts)-1]

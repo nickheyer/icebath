@@ -247,22 +247,6 @@ func coreRequirementError(pluginDir string) string {
 	return reason
 }
 
-// Reports missing Python dependencies without installing during discovery
-func (m *Manager) warnPythonDependencies(ctx context.Context, mf *Manifest) {
-	missing := missingPythonDependencies(ctx, mf)
-	if len(missing) == 0 {
-		return
-	}
-	key := mf.ID()
-	if installedInSelectedEnvironment(ctx, missing) {
-		logWarn(fmt.Sprintf("Plugin %s's Python dependencies were installed after this process started: %s. A running process never switches dependency environments; restart icebath (icebath gateway restart for the gateway) to load them.",
-			key, strings.Join(missing, ", ")))
-		return
-	}
-	logWarn(fmt.Sprintf("Plugin %s declares Python dependencies that are not installed: %s. For an enabled plugin, run icebath pm repair, then restart icebath. Discovery does not install dependencies.",
-		key, strings.Join(missing, ", ")))
-}
-
 // Warns without blocking on plugin settings that violate the manifest config schema
 func (m *Manager) validatePluginConfigSchema(mf *Manifest) {
 	if len(mf.ConfigSchema) == 0 {
@@ -314,7 +298,7 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 	m.trackToolOverridePolicy(mf, moduleName)
 	pctx := newContext(mf, m)
 	pctx.module = moduleName
-	inHost := m.runsInPluginHost(mf)
+	attempt := &loadAttempt{}
 	importAndRegister := func(ctx context.Context) (bool, error) {
 		m.registerDeclaredLocales(mf, pctx)
 		if isManifestOnlyLanguagePack(mf) {
@@ -324,33 +308,33 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 		predeclared, hasPredeclared := m.predeclaredModules[key]
 		delete(m.predeclaredModules, key)
 		m.mu.Unlock()
-		loaded.Module, loaded.ModuleFile = moduleName, ""
 		if hasPredeclared {
-			loaded.Module, loaded.ModuleFile = predeclared.name, predeclared.file
+			attempt.setModule(predeclared.name, predeclared.file)
+		} else {
+			attempt.setModule(moduleName, "")
 		}
-		if inHost {
-			var file string
-			var err error
-			if mf.Source == "user" || mf.Source == "project" || mf.Source == "bundled" {
-				file, err = m.loadDirectoryModule(ctx, mf, pctx, moduleName, hasPredeclared)
-			} else {
-				file, err = m.loadEntrypointModule(ctx, mf, pctx, moduleName)
-			}
+		if manifestRuntime(mf) != "" {
+			file, err := m.loadGuest(ctx, mf, pctx)
 			if err != nil {
 				return false, err
 			}
-			loaded.ModuleFile = file
+			attempt.setModuleFile(file)
 			return true, nil
 		}
 		plugin, ok := bundledPlugin(key)
-		if !ok {
-			loaded.Error = "no register() function"
-			logWarn(fmt.Sprintf("Plugin '%s' has no register() function", mf.Name))
+		if !ok || mf.Path != "" {
+			reason := "the plugin declares no runtime and entry; " + PluginFormsText
+			if isPythonPluginSource(mf) {
+				reason = "the plugin is Python source; " + PluginFormsText
+			}
+			attempt.fail(reason)
+			logWarn(fmt.Sprintf("Plugin '%s' not loaded: %s", mf.Name, reason))
 			return false, nil
 		}
 		return true, plugin.Register(pctx)
 	}
 	ok, err := runWithLoadDeadline(ctx, key, pctx, importAndRegister)
+	attempt.publish(loaded)
 	if err != nil && isUserInterrupt(ctx, err) {
 		return err
 	}
@@ -383,32 +367,78 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 	return nil
 }
 
+// Module and failure an import and register step records, published once so an abandoned worker never writes the stored record
+type loadAttempt struct {
+	mu          sync.Mutex
+	published   bool
+	moduleSet   bool
+	module      string
+	moduleFile  string
+	errorSet    bool
+	errorReason string
+}
+
+// Records the module the step imports and its file, dropped once the attempt was published
+func (a *loadAttempt) setModule(module, file string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.published {
+		a.moduleSet, a.module, a.moduleFile = true, module, file
+	}
+}
+
+// Records the file the plugin host loaded the module from, dropped once the attempt was published
+func (a *loadAttempt) setModuleFile(file string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.published {
+		a.moduleFile = file
+	}
+}
+
+// Records the load failure the step itself names, dropped once the attempt was published
+func (a *loadAttempt) fail(reason string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.published {
+		a.errorSet, a.errorReason = true, reason
+	}
+}
+
+// Copies what the step recorded by the deadline into the loaded record, later writes of an abandoned worker landing nowhere
+func (a *loadAttempt) publish(loaded *LoadedPlugin) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.published = true
+	if a.moduleSet {
+		loaded.Module, loaded.ModuleFile = a.module, a.moduleFile
+	}
+	if a.errorSet {
+		loaded.Error = a.errorReason
+	}
+}
+
 func (m *Manager) storeLoaded(key string, loaded *LoadedPlugin) {
 	m.mu.Lock()
 	m.putPluginLocked(key, loaded)
 	m.mu.Unlock()
 }
 
-// Whether every plugin carrying Python code goes to the profile plugin host, compiled-in plugins staying in process
-func (m *Manager) runsInPluginHost(mf *Manifest) bool {
-	_, compiled := bundledPlugin(mf.ID())
-	return !compiled || mf.Path != ""
+// Reports whether a plugin directory or pip entry point carries Python source instead of a runtime entry
+func isPythonPluginSource(mf *Manifest) bool {
+	if mf.Source == "entrypoint" {
+		return true
+	}
+	return mf.Path != "" && (isFile(filepath.Join(mf.Path, "__init__.py")) || mf.PythonRuntime != "" || len(mf.PythonDeps) > 0)
 }
 
-// This manager plugin host, created once on first use and retried after a failed creation
-func (m *Manager) pluginHost() (*PluginHost, error) {
-	pluginHostMu.Lock()
-	defer pluginHostMu.Unlock()
-	if m.pluginHostInstance != nil {
-		return m.pluginHostInstance, nil
-	}
-	host, err := newPluginHost(m)
-	if err != nil {
-		return nil, err
-	}
-	m.pluginHostInstance = host
-	return host, nil
+// Error every path that would run Python plugin source returns
+func errPythonSource() error {
+	return &PluginHostUnsupported{Msg: "Python plugin source is not loaded; " + PluginFormsText}
 }
+
+// Refusal every loader of Python plugin source answers, no interpreter being hosted
+func (m *Manager) pluginHost() (*PluginHost, error) { return nil, errPythonSource() }
 
 // Whether a provides_locales plugin ships no Python and is complete from its locale files
 func isManifestOnlyLanguagePack(mf *Manifest) bool {
@@ -613,43 +643,6 @@ func (m *Manager) policyModuleName(mf *Manifest) string {
 		}
 	}
 	return m.directoryModuleName(mf)
-}
-
-// Imports a directory plugin in the plugin host under its namespaced module and replays its register onto pctx
-func (m *Manager) loadDirectoryModule(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, predeclared bool) (string, error) {
-	if mf.Path != "" && !pathExists(filepath.Join(mf.Path, "__init__.py")) {
-		return "", &FileNotFoundError{Msg: "No __init__.py in " + mf.Path}
-	}
-	if moduleName == "" {
-		moduleName = m.directoryModuleName(mf)
-	}
-	host, err := m.pluginHost()
-	if err != nil {
-		return "", err
-	}
-	file, err := host.Load(ctx, mf, pctx, moduleName, false, predeclared)
-	return file, inProcessLoadFailure(ctx, err)
-}
-
-// Loads a pip installed plugin in the plugin host through its entry point, a missing one failing the load
-func (m *Manager) loadEntrypointModule(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) (string, error) {
-	host, err := m.pluginHost()
-	if err != nil {
-		return "", err
-	}
-	file, err := host.Load(ctx, mf, pctx, moduleName, true, false)
-	return file, inProcessLoadFailure(ctx, err)
-}
-
-// Drops a plugin module and every submodule of it from the interpreter a manager plugin host runs
-func evictModules(m *Manager, moduleName string) error {
-	pluginHostMu.Lock()
-	host := m.pluginHostInstance
-	pluginHostMu.Unlock()
-	if host == nil {
-		return nil
-	}
-	return host.evictModules(moduleName)
 }
 
 // Runs a registrar body inside the replacement coordinator so snapshot, write and lease attach are one transaction

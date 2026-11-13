@@ -12,11 +12,18 @@ import (
 )
 
 // OperationAlreadyOpen is the refusal to open a second live operation in one profile session
-type OperationAlreadyOpen struct{ Existing *ConnectionOperation }
-
-func (e *OperationAlreadyOpen) Error() string {
-	return fmt.Sprintf("session %s already has operation %s open", pyrepr.StrRepr(e.Existing.SessionKey), e.Existing.OpID)
+type OperationAlreadyOpen struct {
+	Existing *ConnectionOperation
+	msg      string
 }
+
+// Refusal naming the session and the operation it already holds open
+func newOperationAlreadyOpen(existing *ConnectionOperation) *OperationAlreadyOpen {
+	return &OperationAlreadyOpen{Existing: existing,
+		msg: fmt.Sprintf("session %s already has operation %s open", pyrepr.StrRepr(existing.SessionKey), existing.OpID)}
+}
+
+func (e *OperationAlreadyOpen) Error() string { return e.msg }
 
 type liveKey struct{ profile, session string }
 
@@ -40,7 +47,7 @@ func LiveOpen(ctx context.Context, op *ConnectionOperation) error {
 	liveMu.Lock()
 	if existing := liveOpen[key]; existing != nil && !existing.Settled() {
 		liveMu.Unlock()
-		return &OperationAlreadyOpen{Existing: existing}
+		return newOperationAlreadyOpen(existing)
 	}
 	liveOpen[key] = op
 	liveMu.Unlock()

@@ -493,6 +493,7 @@ func TestBuildersPropagateDamagedRuntimeRecord(t *testing.T) {
 	for name, build := range builders {
 		t.Run(name, func(t *testing.T) {
 			env := newTestToolEnv(t)
+			t.Setenv("ICEBATH_HOME", env.Home)
 			t.Setenv("VIRTUAL_ENV", damageRuntimeRecord(t))
 			t.Setenv("PYTHONPATH", "/home/user/my-lib")
 			if out, err := build(env); err == nil {
@@ -674,6 +675,7 @@ func TestRuntimeProvenanceIsIndependentOfAliasesAndVirtualEnv(t *testing.T) {
 	for _, hasFacts := range []bool{true, false} {
 		t.Run(fmt.Sprint(hasFacts), func(t *testing.T) {
 			env := newTestToolEnv(t)
+			t.Setenv("ICEBATH_HOME", env.Home)
 			tmp := t.TempDir()
 			root := filepath.Join(tmp, "icebath-agent")
 			if err := os.MkdirAll(filepath.Join(root, "tools"), 0o755); err != nil {

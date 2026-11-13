@@ -285,11 +285,16 @@ type selfRemovalDelivery struct {
 	removed bool
 }
 
+// Marker of one run of the job that has not removed its own record yet
+func newSelfRemovalDelivery(jobID string) *selfRemovalDelivery {
+	return &selfRemovalDelivery{jobID: jobID}
+}
+
 type selfRemovalKey struct{}
 
 // Context permitting this run's final delivery after it removes its own job record
 func selfRemovalDeliveryScope(ctx context.Context, jobID string) (context.Context, *selfRemovalDelivery) {
-	marker := &selfRemovalDelivery{jobID: jobID}
+	marker := newSelfRemovalDelivery(jobID)
 	return context.WithValue(ctx, selfRemovalKey{}, marker), marker
 }
 

@@ -36,7 +36,7 @@ func NormalizeTodoState(value any) *pyjson.Object {
 	if len(todos) == 0 && revision.Sign() == 0 {
 		return nil
 	}
-	return pyjson.ObjectOf("todos", append([]any(nil), todos...), "revision", pyint.Value(revision))
+	return pyjson.ObjectOf("todos", append([]any{}, todos...), "revision", pyint.Value(revision))
 }
 
 // Rows of a transcript field that is a list of dicts

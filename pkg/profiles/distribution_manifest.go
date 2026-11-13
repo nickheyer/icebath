@@ -228,12 +228,5 @@ func pyExcText(err error) string {
 // Atomically writes distribution.yaml, keeping an existing file's mode and creating a new one 0644
 func WriteManifest(ctx context.Context, profileDir string, manifest *DistributionManifest) (string, error) {
 	path := filepath.Join(profileDir, ManifestFilename)
-	if _, err := os.Stat(path); err == nil {
-		return path, config.AtomicYAMLWrite(ctx, path, manifest.ToDict(), "")
-	}
-	text, err := config.SafeDump(manifest.ToDict())
-	if err != nil {
-		return path, err
-	}
-	return path, pyfs.AtomicWriteTextMode(ctx, path, string(text), ".distribution_", 0o644)
+	return path, config.AtomicYAMLWriteCreateMode(ctx, path, manifest.ToDict(), "", 0o644)
 }

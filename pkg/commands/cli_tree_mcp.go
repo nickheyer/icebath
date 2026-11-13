@@ -17,7 +17,7 @@ func (c *CLI) bindMCP() {
 	for _, path := range []string{"mcp", "mcp add", "mcp remove", "mcp list", "mcp test", "mcp configure", "mcp login",
 		"mcp reauth", "mcp picker", "mcp catalog", "mcp install"} {
 		action := strings.TrimPrefix(strings.TrimPrefix(path, "mcp"), " ")
-		c.Bind(path, func(cmd *cobra.Command, args []string) error { return runMCP(cmd, action, args) })
+		c.Bind(path, func(cmd *cobra.Command, args []string) error { return runMCP(cmd, action, args, c.mcpAddArgs) })
 	}
 	for _, action := range []string{"list", "disable", "enable"} {
 		c.Bind("tools "+action, func(cmd *cobra.Command, args []string) error {
@@ -31,8 +31,23 @@ func (c *CLI) bindMCP() {
 	}
 }
 
+// Server name and the stdio argv after --args of an mcp add line, refusing extra positionals like argparse
+func mcpAddPositionals(cmd *cobra.Command, args []string, remainder bool) (string, []string, error) {
+	positionals, rest := args, []string{}
+	if at := cmd.ArgsLenAtDash(); remainder && at >= 0 {
+		positionals, rest = args[:at], args[at:]
+	}
+	if len(positionals) == 0 {
+		return "", nil, &ArgparseError{Cmd: cmd, Msg: "the following arguments are required: name"}
+	}
+	if len(positionals) > 1 {
+		return "", nil, &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + strings.Join(positionals[1:], " ")}
+	}
+	return positionals[0], rest, nil
+}
+
 // Parses one mcp command line into MCPArgs and runs it, a nonzero status becoming an ExitError
-func runMCP(cmd *cobra.Command, action string, args []string) error {
+func runMCP(cmd *cobra.Command, action string, args []string, remainder bool) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -41,12 +56,16 @@ func runMCP(cmd *cobra.Command, action string, args []string) error {
 	a := mcp.MCPArgs{Action: action}
 	switch action {
 	case "add":
-		a.Name, a.Args = args[0], args[1:]
+		name, rest, err := mcpAddPositionals(cmd, args, remainder)
+		if err != nil {
+			return err
+		}
+		a.Name, a.Args = name, rest
 		a.URL, _ = f.GetString("url")
 		a.Command, _ = f.GetString("command")
 		a.Auth, _ = f.GetString("auth")
 		a.Preset, _ = f.GetString("preset")
-		a.Env, _ = f.GetStringSlice("env")
+		a.Env, _ = f.GetStringArray("env")
 		if f.Changed("connect-timeout") {
 			v, _ := f.GetFloat64("connect-timeout")
 			a.ConnectTimeout = &v

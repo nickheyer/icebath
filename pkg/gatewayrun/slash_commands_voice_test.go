@@ -185,16 +185,27 @@ func TestVoiceChannelCommandsJoinSuccess(t *testing.T) {
 	}
 }
 
+// Join failure naming a missing native voice library and the command installing it
+type voiceDependencyError struct{}
+
+func (voiceDependencyError) Error() string {
+	return "RuntimeError: libdave library needed in order to use E2EE voice"
+}
+
+func (voiceDependencyError) VoiceDependencyHint() string {
+	return "sudo unzip -oj /tmp/libdave.zip lib/libdave.so -d /usr/lib && sudo ldconfig"
+}
+
 func TestVoiceChannelCommandsJoinMissingVoiceDependencies(t *testing.T) {
 	r := voiceCommandRunner(t)
 	adapter := newFakeVoiceAdapter(gateway.PlatformDiscord)
-	adapter.channel, adapter.joinErr = namedVoiceChannel("General"), errors.New("PyNaCl library needed in order to use voice")
+	adapter.channel, adapter.joinErr = namedVoiceChannel("General"), voiceDependencyError{}
 	r.adapters.Set(gateway.PlatformDiscord, adapter)
 	result, err := r.handleVoiceChannelJoin(context.Background(), discordVoiceEvent("/voice channel"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, "PyNaCl") {
+	if !strings.Contains(result, "libdave") || !strings.Contains(result, "sudo ldconfig") {
 		t.Fatalf("result %q", result)
 	}
 }

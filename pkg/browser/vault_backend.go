@@ -21,6 +21,11 @@ import (
 // The backend is locked for this session, so the surface must prompt for the master password
 type UnlockRequired struct{ Backend LoginBackend }
 
+// Lock error of a backend whose message names it as locked
+func newUnlockRequired(backend LoginBackend) *UnlockRequired {
+	return &UnlockRequired{Backend: backend}
+}
+
 func (e *UnlockRequired) Error() string { return e.Backend.DisplayName() + " is locked" }
 
 // Login source of the browser credential vault, listing metadata and resolving one secret at fill time

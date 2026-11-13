@@ -266,7 +266,8 @@ func initUsageState(a *AIAgent) {
 	}
 	a.subdirectoryHints = tools.NewSubdirectoryHintTrackerFor(a.env, workingDir, !a.skipContextFiles)
 	a.userTurnCount, a.isUserInitiatedTurn = 0, false
-	a.usageAnchor, a.turnBaseUsageAnchor, a.requestPressureAnchored = nil, nil, false
+	a.usageAnchor, a.requestPressureAnchored = nil, false
+	a.turnBaseUsageAnchor.Store(nil)
 	a.sessionPromptTokens, a.sessionCompletionTokens, a.sessionTotalTokens, a.sessionAPICalls = 0, 0, 0, 0
 	a.sessionInputTokens, a.sessionOutputTokens = 0, 0
 	a.sessionCacheReadTokens, a.sessionCacheWriteTokens, a.sessionReasoningTokens = 0, 0, 0
@@ -284,7 +285,7 @@ var agentConfigLoader = func(ctx context.Context) (map[string]any, error) {
 func loadAgentConfig(ctx context.Context) map[string]any {
 	tree, err := agentConfigLoader(ctx)
 	if err != nil {
-		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Check the active Hermes Python environment and dependencies; run 'icebath config check' after configuration imports work again.", pyErrorClass(err)))
+		runAgentLog().Warn(fmt.Sprintf("Agent configuration could not be loaded (%s); using defaults for memory, skills, compression and related settings. Run 'icebath config check' and correct the reported configuration.", pyErrorClass(err)))
 		return map[string]any{}
 	}
 	return tree
@@ -307,10 +308,11 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	}
 	a.env = withToolMetricSink(ctx, a.env)
 	a.sessionCwd = o.Cwd
-	a.iterationBudget = o.IterationBudget
-	if a.iterationBudget == nil {
-		a.iterationBudget = NewIterationBudget(o.MaxIterations)
+	budget := o.IterationBudget
+	if budget == nil {
+		budget = NewIterationBudget(*o.MaxIterations)
 	}
+	a.iterationBudget.Store(budget)
 	a.printFn, a.backgroundReviewCallback = nil, nil
 	a.memoryNotifications = "on"
 	a.skipBackgroundReview = o.SkipBackgroundReview

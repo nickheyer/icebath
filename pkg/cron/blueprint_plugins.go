@@ -37,13 +37,41 @@ func blueprintText(name string, value any) (string, error) {
 	return pystr.Strip(s), nil
 }
 
-func blueprintStrings(name string, value []string) ([]string, error) {
-	for _, v := range value {
-		if pystr.Strip(v) == "" {
+// Members of an iterable of non empty strings, a string or non iterable value refused
+func blueprintStrings(name string, value any) ([]string, error) {
+	items, iterable := blueprintIterable(value)
+	if _, isStr := value.(string); isStr || !iterable {
+		return nil, fmt.Errorf("%s must be a list of strings", name)
+	}
+	out := make([]string, 0, len(items))
+	for _, v := range items {
+		s, ok := v.(string)
+		if !ok || pystr.Strip(s) == "" {
 			return nil, fmt.Errorf("%s must be a list of non-empty strings", name)
 		}
+		out = append(out, s)
 	}
-	return append([]string(nil), value...), nil
+	return out, nil
+}
+
+// Members a Python iteration of a wire value yields, mapping keys in order, false for a non iterable
+func blueprintIterable(value any) ([]any, bool) {
+	switch t := value.(type) {
+	case []any:
+		return t, true
+	case []string:
+		return stringsToAny(t), true
+	case *pyjson.Object:
+		return stringsToAny(t.Keys), true
+	case map[string]any:
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		return stringsToAny(keys), true
+	}
+	return nil, false
 }
 
 // Tuple of a wire options value, an empty one for a falsy value
@@ -229,18 +257,26 @@ func validatePluginBlueprint(b *AutomationBlueprint) error {
 }
 
 // Validated plugin blueprint keyed plugin colon key, the BuildPluginBlueprint service of the plugin host
-func BuildPluginBlueprint(plugin, key string, spec plugins.BlueprintSpec) (string, any, error) {
+func BuildPluginBlueprint(plugin string, key any, spec plugins.BlueprintSpec) (string, any, error) {
 	if !pyReMatches(blueprintNamespaceRe, plugin) {
 		return "", nil, fmt.Errorf("plugin name %s cannot namespace a blueprint key", pyrepr.StrRepr(plugin))
 	}
-	if !pyReMatches(blueprintKeyRe, key) {
-		return "", nil, fmt.Errorf("invalid key %s: use lowercase letters, digits, '-' or '_' (the '%s:' namespace is added automatically)", pyrepr.StrRepr(key), plugin)
+	keyText, isStr := key.(string)
+	if !isStr || !pyReMatches(blueprintKeyRe, keyText) {
+		return "", nil, fmt.Errorf("invalid key %s: use lowercase letters, digits, '-' or '_' (the '%s:' namespace is added automatically)", pyrepr.Repr(key), plugin)
 	}
-	b := AutomationBlueprint{Key: plugin + ":" + key, Plugin: plugin}
+	slots, iterable := blueprintIterable(spec.Slots)
+	_, isStr = spec.Slots.(string)
+	_, isObject := spec.Slots.(*pyjson.Object)
+	_, isMap := spec.Slots.(map[string]any)
+	if isStr || isObject || isMap || !iterable {
+		return "", nil, fmt.Errorf("slots must be a list")
+	}
+	b := AutomationBlueprint{Key: plugin + ":" + keyText, Plugin: plugin}
 	var err error
 	for _, f := range []struct {
 		name string
-		src  string
+		src  any
 		dst  *string
 	}{{"title", spec.Title, &b.Title}, {"description", spec.Description, &b.Description}, {"category", spec.Category, &b.Category},
 		{"schedule_template", spec.ScheduleTemplate, &b.ScheduleTemplate}, {"prompt_template", spec.PromptTemplate, &b.PromptTemplate}} {
@@ -248,7 +284,7 @@ func BuildPluginBlueprint(plugin, key string, spec plugins.BlueprintSpec) (strin
 			return "", nil, err
 		}
 	}
-	for _, raw := range spec.Slots {
+	for _, raw := range slots {
 		slot, err := blueprintSlotFrom(raw)
 		if err != nil {
 			return "", nil, err

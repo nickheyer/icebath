@@ -494,6 +494,7 @@ type Channel struct {
 	contexts         map[int64]context.Context
 	closedReason     *string
 	closed           chan struct{}
+	notifyCancel     bool
 }
 
 // Channel over the streams serving peer requests with handler, the plugin host child end of the wire
@@ -588,6 +589,9 @@ func (c *Channel) Request(ctx context.Context, method string, params map[string]
 	case <-expired:
 		return nil, &HostBuiltinError{Type: "TimeoutError"}
 	case <-ctx.Done():
+		if c.notifyCancel {
+			_ = c.send(map[string]any{"method": "cancel", "params": map[string]any{"id": id}})
+		}
 		return nil, &UserInterrupt{Err: ctx.Err()}
 	}
 }

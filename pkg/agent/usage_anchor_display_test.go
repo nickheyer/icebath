@@ -73,11 +73,11 @@ func TestInvalidationSitesClearTurnBaseAnchorClearingTheAnchorClearsTheTurnBaseT
 	first := provider.CaptureUsageAnchor(1_000, 10, messages)
 	a.setUsageAnchor(first, true)
 	a.setUsageAnchor(provider.CaptureUsageAnchor(2_000, 10, messages), false)
-	if a.turnBaseUsageAnchor != first {
-		t.Fatalf("turn base %+v", a.turnBaseUsageAnchor)
+	if a.turnBaseUsageAnchor.Load() != first {
+		t.Fatalf("turn base %+v", a.turnBaseUsageAnchor.Load())
 	}
 	a.setUsageAnchor(nil, false)
-	if a.usageAnchor != nil || a.turnBaseUsageAnchor != nil {
-		t.Fatalf("anchors %+v %+v", a.usageAnchor, a.turnBaseUsageAnchor)
+	if a.usageAnchor != nil || a.turnBaseUsageAnchor.Load() != nil {
+		t.Fatalf("anchors %+v %+v", a.usageAnchor, a.turnBaseUsageAnchor.Load())
 	}
 }

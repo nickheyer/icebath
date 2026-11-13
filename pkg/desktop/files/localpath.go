@@ -44,7 +44,7 @@ func ResolvePreviewTargetPath(rawTarget string, expandUserPath func(string) stri
 
 // Tilde expansion against the user home, the main process expandUserPath
 func ExpandUserPath(filePath string) string {
-	value := strings.TrimSpace(filePath)
+	value := jsTrim(filePath)
 	if value == "~" {
 		return userHome()
 	}

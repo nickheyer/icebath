@@ -263,6 +263,9 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 			return "", "", runtimeRefusal("invalid_params")
 		}
 		parts := pystr.SplitWhitespace(pystr.LstripChars(pystr.Strip(target), "/"), 1)
+		if len(parts) == 0 {
+			return "", "", &PyError{Kind: "IndexError", Msg: "list index out of range"}
+		}
 		name = parts[0]
 		var joined []string
 		for _, part := range append(parts[1:], arg) {

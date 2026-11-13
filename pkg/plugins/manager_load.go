@@ -253,14 +253,6 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	for _, mf := range manifests {
 		directoryKeys[mf.ID()] = true
 	}
-	var epManifests []*Manifest
-	for _, mf := range m.scanEntryPoints(ctx) {
-		if !directoryKeys[mf.ID()] {
-			epManifests = append(epManifests, mf)
-		}
-	}
-	logDebug(fmt.Sprintf("  entrypoints: %d manifest(s)", len(epManifests)))
-	manifests = append(manifests, epManifests...)
 	cfg := loadConfigOrEmpty(m.home)
 	disabled := DisabledPlugins(m.home)
 	enabled, enabledPresent := enabledPlugins(cfg)
@@ -300,7 +292,6 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	}
 	for _, key := range ResolveLoadOrder(toLoad) {
 		mf := toLoad[key]
-		m.warnPythonDependencies(ctx, mf)
 		m.validatePluginConfigSchema(mf)
 		if err := m.loadPlugin(ctx, mf); err != nil {
 			return err

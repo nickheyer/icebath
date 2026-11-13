@@ -33,10 +33,41 @@ type auxAttemptConnHolder interface {
 
 // Raw connection under an SDK event stream, nil when the stream has none or already released it
 func auxAttemptStreamSocket(stream any) net.Conn {
-	if s, ok := stream.(auxAttemptConnHolder); ok {
-		return s.auxAttemptConn()
+	if _, ok := stream.(auxAttemptConnHolder); ok {
+		return socketFromStream(stream)
 	}
 	return nil
+}
+
+// Raw socket behind one network stream, the attempt connection a stream still holds or the connection itself
+func socketFromStream(stream any) net.Conn {
+	switch s := stream.(type) {
+	case auxAttemptConnHolder:
+		return s.auxAttemptConn()
+	case net.Conn:
+		return s
+	}
+	return nil
+}
+
+// Raw socket behind one wrapper of a nested connection, its inner stream first and the wrapper itself after
+func socketFromCandidate(candidate any) net.Conn {
+	if wrapper, ok := candidate.(interface{ NetConn() net.Conn }); ok {
+		if inner := wrapper.NetConn(); inner != nil {
+			if sock := socketFromStream(inner); sock != nil {
+				return sock
+			}
+		}
+	}
+	return socketFromStream(candidate)
+}
+
+// Raw socket behind a response through the stream that carries it, nil when it holds none
+func socketFromResponse(response any) net.Conn {
+	if response == nil {
+		return nil
+	}
+	return socketFromCandidate(response)
 }
 
 // Closes the target when it can be closed, a failure logged at debug under the note and silent without one
@@ -446,7 +477,7 @@ func auxPoolSockets(client any) []net.Conn {
 			}
 		}
 		for _, conn := range conns {
-			raw := auxRawConn(conn)
+			raw := socketFromCandidate(auxRawConn(conn))
 			if raw != nil && !seen[raw] {
 				seen[raw] = true
 				out = append(out, raw)

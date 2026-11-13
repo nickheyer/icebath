@@ -452,23 +452,6 @@ func pinSecretEval(t *testing.T, result string) *[]string {
 	return scripts
 }
 
-func TestBrowserVaultToolsCheckFnFollowsTheBrowserNotTheItemCount(t *testing.T) {
-	_, env, _, _ := vaultStore(t)
-	pin(t, &vaultCDPOverrideRaw, func(*tools.Env) string { return "" })
-	pin(t, &browserExecAvailable, func(*tools.Env) bool { return true })
-	if !checkVaultAvailable(env) {
-		t.Fatal("an empty vault hides the tool although a browser exists")
-	}
-	browserExecAvailable = func(*tools.Env) bool { return false }
-	if checkVaultAvailable(env) {
-		t.Fatal("the tool shows without any browser")
-	}
-	vaultCDPOverrideRaw = func(*tools.Env) string { return "ws://127.0.0.1:9222/devtools/browser/x" }
-	if !checkVaultAvailable(env) {
-		t.Fatal("a configured CDP endpoint is a browser too")
-	}
-}
-
 func TestBrowserVaultToolsListReturnsIdentifierNeverPassword(t *testing.T) {
 	ctx, env, store, _ := vaultStore(t)
 	addLogin(t, store, "https://example.com", "s3cret-pw")

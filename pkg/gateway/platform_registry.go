@@ -34,7 +34,9 @@ type PlatformEntry struct {
 	Label                      string                                                                                                                       `py:"label"`
 	AdapterFactory             AdapterFactory                                                                                                               `py:"adapter_factory"`
 	CheckFn                    func() bool                                                                                                                  `py:"check_fn"`
+	ScopedCheckFn              func(ctx context.Context) bool                                                                                               `py:"scoped_check_fn"`
 	ValidateConfig             func(cfg *PlatformConfig) (bool, error)                                                                                      `py:"validate_config"`
+	ScopedValidateConfig       func(ctx context.Context, cfg *PlatformConfig) (bool, error)                                                                 `py:"scoped_validate_config"`
 	EnsureDepsFn               func(ctx context.Context) (bool, error)                                                                                      `py:"ensure_deps_fn"`
 	IsConnected                func(ctx context.Context, cfg *PlatformConfig) (bool, error)                                                                 `py:"is_connected"`
 	RequiredEnv                []string                                                                                                                     `py:"required_env"`
@@ -75,6 +77,27 @@ type PlatformEntry struct {
 	EnvValueRules              map[string]EnvValueRule                                                                                                      `py:"env_value_rules"`
 	EnvOverrides               []EnvStep                                                                                                                    `py:"env_overrides"`
 	EnvEnableCredentials       []string                                                                                                                     `py:"env_enable_credentials"`
+}
+
+// Result of the entry's check, the scoped check reading the caller's profile secret scope when declared
+func (e *PlatformEntry) RunCheck(ctx context.Context) bool {
+	if e.ScopedCheckFn != nil {
+		return e.ScopedCheckFn(ctx)
+	}
+	return e.CheckFn()
+}
+
+// Whether the entry declares a config validator, scoped or plain
+func (e *PlatformEntry) HasValidateConfig() bool {
+	return e.ScopedValidateConfig != nil || e.ValidateConfig != nil
+}
+
+// Result of the entry's config validator, the scoped one reading the caller's profile secret scope when declared
+func (e *PlatformEntry) RunValidateConfig(ctx context.Context, cfg *PlatformConfig) (bool, error) {
+	if e.ScopedValidateConfig != nil {
+		return e.ScopedValidateConfig(ctx, cfg)
+	}
+	return e.ValidateConfig(cfg)
 }
 
 // Entry with the dataclass defaults, plugin source, plug emoji and the update command allowed
@@ -715,7 +738,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		if entry.CheckFn == nil {
 			return false, errors.New("'NoneType' object is not callable")
 		}
-		return entry.CheckFn(), nil
+		return entry.RunCheck(ctx), nil
 	}, "Platform '%s' check_fn raised: %s")
 	if !depsOK && entry.EnsureDepsFn != nil {
 		slog.Info(fmt.Sprintf("Platform '%s' dependencies missing — attempting install...", entry.Label))
@@ -729,8 +752,8 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 		slog.Warn(fmt.Sprintf("Platform '%s' requirements not met%s", entry.Label, hint))
 		return nil
 	}
-	if entry.ValidateConfig != nil {
-		valid, err := guardedCall(func() (bool, error) { return entry.ValidateConfig(cfg) })
+	if entry.HasValidateConfig() {
+		valid, err := guardedCall(func() (bool, error) { return entry.RunValidateConfig(ctx, cfg) })
 		if err != nil {
 			slog.Warn(fmt.Sprintf("Platform '%s' config validation error: %s", entry.Label, err))
 			return nil
@@ -764,6 +787,30 @@ func guardedCall[T any](fn func() (T, error)) (out T, err error) {
 	return fn()
 }
 
+// Converts a plugin's register_platform keywords into Go field values, installed by the process wiring over the hosted platform package
+var HostedEntryKeywords func(name string, kwargs map[string]any) (map[string]any, error)
+
+// Whether a keyword value holds a callable or object living in the plugin host
+func containsHosted(v any) bool {
+	switch x := v.(type) {
+	case *plugins.HostedCallable, *plugins.HostedObject:
+		return true
+	case []any:
+		for _, item := range x {
+			if containsHosted(item) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, item := range x {
+			if containsHosted(item) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // The registry as the plugin manager's platform service, scopes given as home paths
 type platformRegistryService struct{ r *PlatformRegistry }
 
@@ -786,6 +833,16 @@ func (s platformRegistryService) NewEntry(spec plugins.PlatformSpec) (any, error
 		"required_env": spec.RequiredEnv, "install_hint": spec.InstallHint}
 	for k, v := range spec.Extra {
 		kwargs[k] = v
+	}
+	if containsHosted(kwargs) {
+		if HostedEntryKeywords == nil {
+			return nil, &PyError{"RuntimeError", "hosted platform keyword conversion is not wired"}
+		}
+		converted, err := HostedEntryKeywords(spec.Name, kwargs)
+		if err != nil {
+			return nil, err
+		}
+		kwargs = converted
 	}
 	if err := e.SetKeywords(kwargs); err != nil {
 		return nil, err

@@ -318,42 +318,6 @@ func (f fakeOWWModule) ModelFromModel(path string) (owwModel, error) {
 	return fakeOWWModel{id: strings.TrimSuffix(base, filepath.Ext(base))}, nil
 }
 
-func TestEngineConstructionEnsuresAudioIOOnlyForLocalCapture(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := context.Background()
-	var ensured []string
-	swap(t, &wakeEnsureImport, func(_ context.Context, feature string) error { ensured = append(ensured, feature); return nil })
-	swap(t, &wakePMAvailable, func(_ context.Context, feature string) (bool, error) { return slices.Contains(ensured, feature), nil })
-	swap(t, &wakeImportPyOpenWakeWord, func(context.Context) (pyOpenWakeWordModule, error) { return fakeOWWModule{}, nil })
-	cfg := map[string]any{"provider": "openwakeword"}
-	with := func(capture string) map[string]any {
-		return map[string]any{"provider": "openwakeword", "capture": capture}
-	}
-	if _, err := newOpenWakeWordEngine(ctx, with("client")); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(ensured, "wake-openwakeword") || slices.Contains(ensured, "audio-io") {
-		t.Fatalf("client capture ensured %v", ensured)
-	}
-	ensured = nil
-	if _, err := newOpenWakeWordEngine(ctx, with("local")); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(ensured, "wake-openwakeword") || !slices.Contains(ensured, "audio-io") {
-		t.Fatalf("local capture ensured %v", ensured)
-	}
-	ensured = nil
-	swap(t, &wakeLockPath, func() string { return filepath.Join(t.TempDir(), "wake.lock") })
-	owner := new(int)
-	defer StopListening(owner)
-	if _, err := StartListening(ctx, func() error { return nil }, owner, cfg, true); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Contains(ensured, "wake-openwakeword") || slices.Contains(ensured, "audio-io") {
-		t.Fatalf("client listener ensured %v", ensured)
-	}
-}
-
 func TestLoadedProviderRequirementsPreserveChoicesAndRequireKeys(t *testing.T) {
 	providers := append([]string{"auto"}, WakeProviderNames...)
 	for _, plat := range []struct{ system, machine string }{{"win32", "ARM64"}, {"darwin", "x86_64"}} {
@@ -425,26 +389,18 @@ func TestRequirementsOpenwakewordAvailable(t *testing.T) {
 	}
 }
 
-func TestTTSReadyIsAProbeNeverAnInstaller(t *testing.T) {
+func TestTTSReadyDefersToTheRequirementsCheck(t *testing.T) {
 	ctx := context.Background()
-	checks := 0
 	checkOK := false
 	swap(t, &wakeGetTTSProvider, func(map[string]any) (string, error) { return "edge", nil })
 	swap(t, &wakeLoadTTSConfig, func(context.Context) map[string]any { return map[string]any{} })
-	swap(t, &wakeCheckTTS, func(context.Context) (bool, error) { checks++; return checkOK, nil })
-	swap(t, &wakePMAvailable, wakeAvailable(false))
-	swap(t, &wakeLazyInstallsAllowed, wakeLazy(true))
-	if !ttsReady(ctx) || checks != 0 {
-		t.Fatalf("missing lazily installable deps must be ready without a check, checks=%d", checks)
-	}
-	swap(t, &wakeLazyInstallsAllowed, wakeLazy(false))
-	if ttsReady(ctx) || checks != 0 {
-		t.Fatalf("missing deps with lazy installs off must be unready without a check, checks=%d", checks)
+	swap(t, &wakeCheckTTS, func(context.Context) (bool, error) { return checkOK, nil })
+	if ttsReady(ctx) {
+		t.Fatal("a failing requirements check read as ready")
 	}
 	checkOK = true
-	swap(t, &wakePMAvailable, wakeAvailable(true))
-	if !ttsReady(ctx) || checks != 1 {
-		t.Fatalf("present deps must defer to the requirements check, checks=%d", checks)
+	if !ttsReady(ctx) {
+		t.Fatal("a passing requirements check read as unready")
 	}
 }
 

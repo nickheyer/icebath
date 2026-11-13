@@ -76,11 +76,7 @@ func loadRemovedList(dir string) []RemovedEntry {
 		}
 		raw, err = os.ReadFile(path)
 	}
-	if err != nil {
-		logWarn("Plugin catalog: failed to read "+label, "error", err)
-		return nil
-	}
-	data, ok := readCatalogYAML(raw, label).(map[string]any)
+	data, ok := readCatalogYAML(raw, err, label).(map[string]any)
 	if !ok {
 		return nil
 	}

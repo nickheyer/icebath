@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,8 +16,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -383,10 +384,7 @@ func collectImageUploads(ctx context.Context, chunk []gateway.ImageRef) ([]fileU
 			comments = append(comments, img.Alt)
 		}
 		if strings.HasPrefix(img.URL, "file://") {
-			localPath, err := url.PathUnescape(img.URL[7:])
-			if err != nil {
-				localPath = img.URL[7:]
-			}
+			localPath := pyurl.Unquote(img.URL[7:])
 			if _, err := os.Stat(localPath); err != nil {
 				slog.Warn(fmt.Sprintf("[Slack] Skipping missing image: %s", localPath))
 				continue
@@ -475,24 +473,24 @@ func (a *SlackAdapter) extraFlag(key string, def bool) bool {
 }
 
 // Blocks with feedback controls appended when enabled and the block budget allows
-func (a *SlackAdapter) appendFeedbackBlock(blocks []any) []any {
+func (a *SlackAdapter) appendFeedbackBlock(ctx context.Context, blocks []any) []any {
 	if len(blocks) > 0 && a.extraFlag("feedback_buttons", false) && len(blocks) < 50 {
-		return append(append([]any(nil), blocks...), feedbackBlock(context.Background()))
+		return append(append([]any(nil), blocks...), feedbackBlock(ctx))
 	}
 	return blocks
 }
 
 // Block Kit for the content, native markdown blocks over the local renderer, nil when disabled
-func (a *SlackAdapter) maybeBlocks(content string) []any {
+func (a *SlackAdapter) maybeBlocks(ctx context.Context, content string) []any {
 	if a.extraFlag("markdown_blocks", false) {
 		if md := markdownBlockPayload(content); md != nil {
-			return SanitizeBlocks(a.appendFeedbackBlock(md))
+			return SanitizeBlocks(a.appendFeedbackBlock(ctx, md))
 		}
 	}
 	if !a.extraFlag("rich_blocks", false) {
 		return nil
 	}
-	return SanitizeBlocks(a.appendFeedbackBlock(RenderBlocks(content, a.FormatMessage)))
+	return SanitizeBlocks(a.appendFeedbackBlock(ctx, RenderBlocks(content, a.FormatMessage)))
 }
 
 // Compact tool arguments kept out of mrkdwn emphasis conversion
@@ -534,8 +532,8 @@ func (a *SlackAdapter) RemoveReaction(ctx context.Context, chatID, messageID str
 }
 
 // Whether message reactions are enabled, SLACK_REACTIONS then config, on by default
-func (a *SlackAdapter) ReactionsEnabled() bool {
-	configured, _ := gateway.ExtraOrSecret(context.Background(), a.extra(), "reactions", "SLACK_REACTIONS", "true", true)
+func (a *SlackAdapter) ReactionsEnabled(ctx context.Context) bool {
+	configured, _ := gateway.ExtraOrSecret(ctx, a.extra(), "reactions", "SLACK_REACTIONS", "true", true)
 	switch pystr.Lower(pyrepr.Str(configured)) {
 	case "false", "0", "no":
 		return false
@@ -544,8 +542,8 @@ func (a *SlackAdapter) ReactionsEnabled() bool {
 }
 
 // Message ts, team and marker of an event under reaction tracking, ok false otherwise
-func (a *SlackAdapter) reactingTarget(event *gateway.MessageEvent) (string, string, any, bool) {
-	if !a.ReactionsEnabled() {
+func (a *SlackAdapter) reactingTarget(ctx context.Context, event *gateway.MessageEvent) (string, string, any, bool) {
+	if !a.ReactionsEnabled(ctx) {
 		return "", "", nil, false
 	}
 	ts := derefString(event.MessageID)
@@ -568,7 +566,7 @@ func (a *SlackAdapter) reactingTarget(event *gateway.MessageEvent) (string, stri
 
 // Adds the in progress reaction when processing of a tracked message begins
 func (a *SlackAdapter) OnProcessingStart(ctx context.Context, event *gateway.MessageEvent) error {
-	ts, teamID, _, ok := a.reactingTarget(event)
+	ts, teamID, _, ok := a.reactingTarget(ctx, event)
 	if !ok {
 		return nil
 	}
@@ -580,7 +578,7 @@ func (a *SlackAdapter) OnProcessingStart(ctx context.Context, event *gateway.Mes
 
 // Swaps the in progress reaction for the success or failure reaction
 func (a *SlackAdapter) OnProcessingComplete(ctx context.Context, event *gateway.MessageEvent, outcome gateway.ProcessingOutcome) error {
-	ts, teamID, marker, ok := a.reactingTarget(event)
+	ts, teamID, marker, ok := a.reactingTarget(ctx, event)
 	if !ok {
 		return nil
 	}
@@ -933,31 +931,33 @@ func (a *SlackAdapter) agentViewContextForEvent(event map[string]any, teamID, us
 	return map[string]string{"context_channel_id": ctxChannel, "team_id": teamID, "user_id": userID}
 }
 
-// Claims a message ts for the message_changed guard, keeping the newest entries under the cap
+// Claims a message ts for the message_changed guard, keeping the newest by stamp with insertion order breaking ties
 func (a *SlackAdapter) rememberProcessedMessageTS(ts string) {
 	if ts == "" {
 		return
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.processedMessageTS[ts] = wallTime()
-	if len(a.processedMessageTS) > a.processedTSCap {
-		type entry struct {
-			ts string
-			at float64
-		}
-		entries := make([]entry, 0, len(a.processedMessageTS))
-		for k, v := range a.processedMessageTS {
-			entries = append(entries, entry{k, v})
-		}
-		sortEntries := func(i, j int) bool { return entries[i].at < entries[j].at }
-		sort.Slice(entries, sortEntries)
-		kept := map[string]float64{}
-		for _, e := range entries[len(entries)-a.processedTSCap:] {
-			kept[e.ts] = e.at
-		}
-		a.processedMessageTS = kept
+	a.processedMessageTS.Set(ts, wallTime())
+	if a.processedMessageTS.Len() <= a.processedTSCap {
+		return
 	}
+	keys := a.processedMessageTS.Keys()
+	sort.SliceStable(keys, func(i, j int) bool {
+		ti, _ := a.processedMessageTS.Get(keys[i])
+		tj, _ := a.processedMessageTS.Get(keys[j])
+		return ti < tj
+	})
+	from := -a.processedTSCap
+	if from < 0 {
+		from = max(from+len(keys), 0)
+	}
+	kept := pydict.New[string, float64]()
+	for _, k := range keys[min(from, len(keys)):] {
+		v, _ := a.processedMessageTS.Get(k)
+		kept.Set(k, v)
+	}
+	a.processedMessageTS = kept
 }
 
 // Remembers workspace local assistant identity for later message events

@@ -374,10 +374,7 @@ func (f *jsonStateFile) write(ctx context.Context, data any, ensureASCII bool) e
 	if err != nil {
 		return err
 	}
-	if st, statErr := os.Stat(f.Path); statErr == nil {
-		return pyfs.AtomicWriteTextMode(ctx, f.Path, text+"\n", ".tmp_", st.Mode().Perm())
-	}
-	return pyfs.AtomicWriteText(ctx, f.Path, text+"\n", ".tmp_")
+	return pyfs.AtomicWriteTextWith(ctx, f.Path, text+"\n", pyfs.TextWrite{PreserveMode: true})
 }
 
 // Re reads, mutates and saves under the ten second lock, unlocked with a warning when the lock is unusable

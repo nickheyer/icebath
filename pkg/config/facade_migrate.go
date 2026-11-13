@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
@@ -97,7 +96,7 @@ func persistMigration(ctx context.Context, h string, cfg map[string]any) error {
 		if err != nil {
 			return err
 		}
-		return backend.ApplyInMemory(ctx, filepath.Dir(home.ConfigPath(h)), cfg)
+		return backend.ApplyInMemory(ctx, filepath.Dir(GetConfigPath(h)), cfg)
 	}
 	return SaveConfig(AppliedWrite(ctx), h, cfg, SaveOptions{})
 }
@@ -628,7 +627,7 @@ func withEnvWriteLock(path string, fn func() error) error {
 
 // Rewrites the home .env with normalized line formatting and returns how many lines changed
 func SanitizeEnvFile(ctx context.Context, h string) (int, error) {
-	path := home.EnvPath(h)
+	path := GetEnvPath(h)
 	if _, err := os.Stat(path); err != nil {
 		return 0, nil
 	}

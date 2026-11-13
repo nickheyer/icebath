@@ -118,6 +118,7 @@ type MessageEvent struct {
 	ingressSHA256          string
 	consumerReply          *string
 	webhookDuplicate       bool
+	webhookReceipt         *webhookReceiptBinding
 	OnCommit               func()
 	admittedBeforeDrain    bool
 	notificationReplyMuted *bool

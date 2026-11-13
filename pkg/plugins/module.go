@@ -45,7 +45,7 @@ type Services struct {
 	BuiltinAuxTaskKeys                func() []string
 	RegisterRedactionPatterns         func(patterns any, source string) (int, error)
 	PluginSDK                         func(ctx context.Context, home, op string, args []any, kwargs map[string]any) (any, error)
-	BuildPluginBlueprint              func(pluginName, key string, spec BlueprintSpec) (string, any, error)
+	BuildPluginBlueprint              func(pluginName string, key any, spec BlueprintSpec) (string, any, error)
 	SecretSources                     SecretSources
 	PlatformDeclarations              PlatformDeclarations
 	OAuthSurface                      func(manifest map[string]any) map[string]bool

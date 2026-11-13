@@ -27,6 +27,11 @@ type gatewayRuntimeAPI struct {
 	mount  *gatewayDashboardMount
 }
 
+// Runtime API serving app for runner, the socket checks reading the boundary state of mount
+func newGatewayRuntimeAPI(app ASGIApp, runner gateway.GatewayAPIRunner, mount *gatewayDashboardMount) *gatewayRuntimeAPI {
+	return &gatewayRuntimeAPI{app: app, runner: runner, mount: mount}
+}
+
 // Python text of a scope peer, the host and port tuple or None
 func socketPeerText(peer *Address) string {
 	if peer == nil {
@@ -187,8 +192,7 @@ func (l *gatewayListenerServer) Mount() gateway.GatewayDashboardMount { return l
 
 // Wraps the loaded server app with the runtime API outside the proxy headers middleware, where the socket peer is visible
 func (l *gatewayListenerServer) Load(context.Context) error {
-	api := &gatewayRuntimeAPI{app: l.server.app, runner: l.runner, mount: l.mount}
-	l.server.app = api.ASGI
+	l.server.app = newGatewayRuntimeAPI(l.server.app, l.runner, l.mount).ASGI
 	return nil
 }
 
@@ -221,7 +225,7 @@ func BuildGatewayListener(ctx context.Context, runner gateway.GatewayAPIRunner, 
 			return nil, &gateway.PyError{Kind: "RuntimeError", Msg: "gateway API already started"}
 		}
 	}
-	mount := &gatewayDashboardMount{runner: runner, state: state, webapp: webapp}
+	mount := newGatewayDashboardMount(runner, state, webapp)
 	graceful := 5 * time.Second
 	cfg, server := BuildListenerServer(ctx, mount.ASGI, host, port, ListenerOptions{AuthRequired: state.AuthRequired,
 		TimeoutGracefulShutdown: &graceful, Lifespan: LifespanOff})

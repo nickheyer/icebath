@@ -41,9 +41,9 @@ func sttTestEnv(t *testing.T) context.Context {
 	}
 	saved := []func(){}
 	keep := func(restore func()) { saved = append(saved, restore) }
-	ensure, find, fw, oa, mi, pi := sttEnsureImport, safeFindSpec, hasFasterWhisper, hasOpenAI, hasMistral, hasPilk
+	ensure, find, fw, pi := sttEnsureImport, safeFindSpec, hasFasterWhisper, hasPilk
 	keep(func() {
-		sttEnsureImport, safeFindSpec, hasFasterWhisper, hasOpenAI, hasMistral, hasPilk = ensure, find, fw, oa, mi, pi
+		sttEnsureImport, safeFindSpec, hasFasterWhisper, hasPilk = ensure, find, fw, pi
 	})
 	sel, inst, bin, sys, client, getProv, prep := sttReadSelection, sttPMInstalled, sttFindBinary, sttPlatformSystem, sttNewOpenAIClient, sttGetProvider, sttPrepareAudio
 	keep(func() {
@@ -55,8 +55,7 @@ func sttTestEnv(t *testing.T) context.Context {
 	})
 	sttEnsureImport = func(context.Context, string) error { return nil }
 	safeFindSpec = func(string) bool { return false }
-	hasFasterWhisper, hasOpenAI = func() bool { return true }, func() bool { return true }
-	hasMistral, hasPilk = func() bool { return false }, func() bool { return false }
+	hasFasterWhisper, hasPilk = func() bool { return true }, func() bool { return false }
 	sttReadSelection = func(context.Context) string { return "" }
 	sttPMInstalled = func(context.Context, string, bool) (*pm.InstalledPackage, error) { return nil, nil }
 	sttFindBinary = func(string) string { return "" }
@@ -277,16 +276,6 @@ func TestTranscribeGroqNoKey(t *testing.T) {
 	ctx := sttTestEnv(t)
 	r, _ := transcribeGroq(ctx, "/tmp/test.ogg", "whisper-large-v3-turbo", sttHints{})
 	if r["success"] != false || !strings.Contains(r["error"].(string), "GROQ_API_KEY") {
-		t.Fatalf("result = %v", r)
-	}
-}
-
-func TestTranscribeGroqOpenaiPackageNotInstalled(t *testing.T) {
-	ctx := sttTestEnv(t)
-	t.Setenv("GROQ_API_KEY", "gsk-test")
-	hasOpenAI = func() bool { return false }
-	r, _ := transcribeGroq(ctx, "/tmp/test.ogg", "whisper-large-v3-turbo", sttHints{})
-	if r["success"] != false || !strings.Contains(r["error"].(string), "openai package") {
 		t.Fatalf("result = %v", r)
 	}
 }

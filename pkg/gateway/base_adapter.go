@@ -207,6 +207,7 @@ type PlatformAdapter interface {
 	SendPlainFallback(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (SendResult, error)
 	ProcessMessageBackground(ctx context.Context, event *MessageEvent, sessionKey string) error
 	KeepTyping(ctx context.Context, chatID string, interval float64, metadata map[string]any, stopEvent *InterruptEvent)
+	InterruptSessionActivity(ctx context.Context, sessionKey, chatID string, metadata map[string]any)
 	CancelBackgroundTasks(ctx context.Context)
 	ToolsetsForSource(source *SessionSource) ([]string, bool)
 	FormatMessage(content string) string

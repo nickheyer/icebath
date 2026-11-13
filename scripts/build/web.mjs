@@ -53,8 +53,8 @@ function readCgroupLimitMb() {
   return null
 }
 
-// 75% of the cgroup limit when constrained (mirrors the TUI launcher's heap
-// sizing), else the conservative ceiling. Never below the GC-thrash floor.
+// 75% of the cgroup limit when constrained, else the conservative ceiling.
+// Never below the GC-thrash floor.
 function boundedHeapMb() {
   const limitMb = readCgroupLimitMb()
   const sized = limitMb ? Math.floor(limitMb * 0.75) : MAX_HEAP_MB

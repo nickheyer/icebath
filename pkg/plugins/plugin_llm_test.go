@@ -407,3 +407,46 @@ func TestPluginLlmTaskOwnerIsCanonicalID(t *testing.T) {
 		t.Fatal("other plugin passed")
 	}
 }
+
+// Context facade reads trust from config, host calls run sync and async, live notes and stream names resolve
+func TestPluginFacadeConstructionAndHelpers(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	cfg := "plugins:\n  entries:\n    my-plugin:\n      llm:\n        allow_model_override: true\n"
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeAuxClient{response: map[string]any{"model": "served-model", "choices": []any{map[string]any{"message": map[string]any{"content": "ok"}}}}}
+	installLlmServices(t, nil, client)
+	llm := newContext(&Manifest{Name: "my-plugin", Key: "my-plugin"}, NewManager(h)).LLM()
+	msgs := []any{map[string]any{"role": "user", "content": "hi"}}
+	r, err := llm.Complete(context.Background(), msgs, PluginLlmOptions{Model: sp("gpt-x")})
+	if err != nil || *client.seen[0].Model != "gpt-x" || client.async[0] || r.Model != "served-model" || r.Text != "ok" {
+		t.Fatalf("sync %+v %v", r, err)
+	}
+	if r, err = llm.AComplete(context.Background(), msgs, PluginLlmOptions{}); err != nil || !client.async[1] || r.Model != "served-model" {
+		t.Fatalf("async %+v %v", r, err)
+	}
+	_, err = llm.Complete(context.Background(), msgs, PluginLlmOptions{Provider: sp("openai")})
+	if err == nil || err.Error() != "Plugin 'my-plugin' cannot override the provider (set plugins.entries.my-plugin.llm.allow_provider_override to true to allow)." {
+		t.Fatalf("provider gate %v", err)
+	}
+	if p, m, resp := attributed(pluginLlmCall{ProviderOverride: sp("p1")}, "raw", map[string]string{"provider": "p2", "model": "m2"}); p != "p2" || m != "m2" || resp != "raw" {
+		t.Fatalf("attributed %s %s %v", p, m, resp)
+	}
+	notes := &PluginLiveNotes{}
+	if keys, queued := queuedNotes(notes); keys != nil || queued == nil || len(queued) != 0 {
+		t.Fatalf("empty queue %v %v", keys, queued)
+	}
+	QueuePluginNotice(notes, "a", "first a")
+	QueuePluginNotice(notes, "b", "b")
+	QueuePluginNotice(notes, "a", "second a")
+	if got := PopPluginNotices(notes); got != "b\n\nsecond a" || PopPluginNotices(notes) != "" {
+		t.Fatalf("notices %q", got)
+	}
+	if streamCallbackName(&hookEntry{name: "on_delta"}) != "on_delta" || streamCallbackName(&hookEntry{fn: resolveStreamNameProbe}) != "resolveStreamNameProbe" {
+		t.Fatal("stream callback names")
+	}
+}
+
+func resolveStreamNameProbe(context.Context, map[string]any) (any, error) { return nil, nil }

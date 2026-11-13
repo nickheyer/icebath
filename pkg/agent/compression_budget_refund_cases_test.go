@@ -62,7 +62,7 @@ func runMarathonTurn(t *testing.T, iterations, providerPromptTokens int) (*AIAge
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
 	a, err := NewAIAgent(ctx, AIAgentOptions{Model: "anthropic/claude-sonnet-4-20250514", Provider: "openrouter", APIMode: "chat_completions",
-		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxIterations: 20, QuietMode: true, SkipMemory: true, SkipContextFiles: true,
+		APIKey: "test-key-1234567890", BaseURL: srv.URL + "/v1", MaxIterations: new(20), QuietMode: true, SkipMemory: true, SkipContextFiles: true,
 		Cwd: h, Env: env, EnabledToolsets: []string{}})
 	if err != nil {
 		t.Fatal(err)

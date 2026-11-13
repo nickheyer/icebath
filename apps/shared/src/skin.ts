@@ -7,7 +7,7 @@
  * `config.get skin`). This is the ONE shape every TypeScript surface consumes;
  * each owns a resolver that normalizes it into its render model:
  *
- *   • TUI     → `fromSkin` → ansi-safe `Theme` (Ink)
+ *   • TUI     → `fromSkin` → ansi-safe `Theme` (the terminal UI)
  *   • Desktop → `skinToDesktopTheme` → CSS custom properties (Tailwind/shadcn)
  *   • CLI     → `hermes_cli/skin_engine` → prompt_toolkit / Rich styles (Python)
  *

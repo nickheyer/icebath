@@ -30,8 +30,6 @@ var (
 	}
 )
 
-const relaySyncLoopError = "Synchronous Relay LLM execution cannot run on an event-loop thread"
-
 // Python str of a metadata value or empty when the value is falsy
 func relayTruthyStr(v any) string {
 	if !pyrepr.Truthy(v) {
@@ -183,14 +181,21 @@ func (a *relayManagedAttempt) invoke(callback func(ctx context.Context, request 
 			}
 			return v, err
 		})
-		if err != nil {
-			a.rawMu.Lock()
-			a.rawErr = err
-			a.rawMu.Unlock()
+		if err := a.recordingErrors(err); err != nil {
 			return nil, err
 		}
 		return a.record(raw), nil
 	}
+}
+
+// Keeps the error a provider callback raised for the failure resolution and returns it unchanged
+func (a *relayManagedAttempt) recordingErrors(err error) error {
+	if err != nil {
+		a.rawMu.Lock()
+		a.rawErr = err
+		a.rawMu.Unlock()
+	}
+	return err
 }
 
 // Runs the Relay call inside the session context and awaits it
@@ -287,10 +292,11 @@ func relayExecute(ctx context.Context, request map[string]any, callback func(ctx
 		return llm.Execute(c, attempt.operation, attempt.relayRequest, attempt.invoke(callback, async), attempt.relayKwargs)
 	}
 	var managed any
-	if !async && tools.RelayHasRunningEventLoop(ctx) {
-		err = errors.New(relaySyncLoopError)
+	awaitable := tools.RelayAwaitable(func(c context.Context) (any, error) { return attempt.runManaged(c, call) })
+	if async {
+		managed, err = awaitable(tools.RelayWithRunningLoop(ctx))
 	} else {
-		managed, err = attempt.runManaged(tools.RelayWithRunningLoop(ctx), call)
+		managed, err = tools.RelayRunAwaitable(ctx, awaitable, "")
 	}
 	if err != nil {
 		return attempt.resolveFailure(ctx, err, o.DeferLogicalCompletion)
@@ -515,9 +521,15 @@ func NewManagedLlmStream(ctx context.Context, request map[string]any, streamFact
 		_ = s.closeStream(ctx, "cancelled", nil)
 		return nil, err
 	}
-	runtime.SetFinalizer(s, func(s *ManagedLlmStream) { _ = s.closeStream(s.ctx, "cancelled", nil) })
+	runtime.SetFinalizer(s, (*ManagedLlmStream).finalize)
 	return s, nil
 }
+
+// Cancels the logical call of a stream the collector reclaims before it was closed or drained
+func (s *ManagedLlmStream) finalize() { _ = s.closeStream(s.ctx, "cancelled", nil) }
+
+// Iterator the stream is consumed through, the stream itself
+func (s *ManagedLlmStream) Iter() *ManagedLlmStream { return s }
 
 func (s *ManagedLlmStream) startUnmanaged(ctx context.Context, request map[string]any) error {
 	raw, err := s.factory(ctx, request)
@@ -1078,43 +1090,58 @@ func (a *AnthropicStreamAccumulator) Observe(event any) error {
 	}
 	switch payload["type"] {
 	case "message_start":
-		if message, ok := payload["message"].(map[string]any); ok {
-			for _, k := range []string{"id", "type", "role", "model", "usage"} {
-				if v, has := message[k]; has {
-					a.message[k] = v
-				}
-			}
-		}
+		a.onMessageStart(payload)
 	case "content_block_start":
-		index, iok := relayPyInt(payload["index"])
-		if block, ok := payload["content_block"].(map[string]any); ok && iok {
-			a.blocks[index] = relayCopyMap(block)
-		}
+		a.onContentBlockStart(payload)
 	case "content_block_delta":
 		return a.onContentBlockDelta(payload)
 	case "message_delta":
-		if delta, ok := payload["delta"].(map[string]any); ok {
-			for _, k := range []string{"stop_reason", "stop_sequence", "stop_details"} {
-				if v, has := delta[k]; has {
-					a.message[k] = v
-				}
-			}
-		}
-		if usage, has := payload["usage"]; has {
-			current, cok := a.message["usage"].(map[string]any)
-			if update, uok := usage.(map[string]any); cok && uok {
-				merged := relayCopyMap(current)
-				for k, v := range update {
-					if v != nil {
-						merged[k] = v
-					}
-				}
-				usage = merged
-			}
-			a.message["usage"] = usage
-		}
+		a.onMessageDelta(payload)
 	}
 	return nil
+}
+
+// Takes the id, type, role, model and usage the opening event's message carries
+func (a *AnthropicStreamAccumulator) onMessageStart(payload map[string]any) {
+	if message, ok := payload["message"].(map[string]any); ok {
+		for _, k := range []string{"id", "type", "role", "model", "usage"} {
+			if v, has := message[k]; has {
+				a.message[k] = v
+			}
+		}
+	}
+}
+
+// Opens the content block at the event's integer index with a copy of its block
+func (a *AnthropicStreamAccumulator) onContentBlockStart(payload map[string]any) {
+	index, iok := relayPyInt(payload["index"])
+	if block, ok := payload["content_block"].(map[string]any); ok && iok {
+		a.blocks[index] = relayCopyMap(block)
+	}
+}
+
+// Takes the stop fields of the closing delta and merges its usage over the opening usage
+func (a *AnthropicStreamAccumulator) onMessageDelta(payload map[string]any) {
+	if delta, ok := payload["delta"].(map[string]any); ok {
+		for _, k := range []string{"stop_reason", "stop_sequence", "stop_details"} {
+			if v, has := delta[k]; has {
+				a.message[k] = v
+			}
+		}
+	}
+	if usage, has := payload["usage"]; has {
+		current, cok := a.message["usage"].(map[string]any)
+		if update, uok := usage.(map[string]any); cok && uok {
+			merged := relayCopyMap(current)
+			for k, v := range update {
+				if v != nil {
+					merged[k] = v
+				}
+			}
+			usage = merged
+		}
+		a.message["usage"] = usage
+	}
 }
 
 func (a *AnthropicStreamAccumulator) onContentBlockDelta(payload map[string]any) error {

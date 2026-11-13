@@ -135,6 +135,19 @@ func gatewaySettingUnbounded(canonical, arg string) bool {
 	return gateway.CronRead(tokens) == ""
 }
 
+// Gateway reply of a setting command, a cron write waiting with no deadline and true when Ctrl+C stopped it
+func callGatewaySetting(c *CLI, connection *gatewaycli.GatewayConnection, canonical, arg string) (any, bool, error) {
+	command := canonical
+	if arg != "" {
+		command += " " + arg
+	}
+	if !gatewaySettingUnbounded(canonical, arg) {
+		raw, err := connection.Call(c.ctx, "slash.exec", map[string]any{"session_id": c.sessionID, "command": command})
+		return raw, false, err
+	}
+	return callUnbounded(c, connection, canonical, command)
+}
+
 // Runs a per session setting command on the gateway and prints its reply, true when the gateway answered it
 func runGatewaySetting(c *CLI, canonical, cmd string) bool {
 	mirror, known := gatewaySettings[canonical]
@@ -150,26 +163,15 @@ func runGatewaySetting(c *CLI, canonical, cmd string) bool {
 	if len(parts) > 1 {
 		arg = pystr.Strip(parts[1])
 	}
-	command := canonical
-	if arg != "" {
-		command += " " + arg
-	}
-	var raw any
-	var err error
-	if gatewaySettingUnbounded(canonical, arg) {
-		var stopped bool
-		raw, stopped, err = callUnbounded(c, connection, canonical, command)
-		if err == nil && stopped {
-			return true
-		}
-	} else {
-		raw, err = connection.Call(c.ctx, "slash.exec", map[string]any{"session_id": c.sessionID, "command": command})
-	}
+	raw, stopped, err := callGatewaySetting(c, connection, canonical, arg)
 	if err != nil {
 		if !isGatewayClientError(err) {
 			panic(err)
 		}
 		cprint(fmt.Sprintf("  /%s: %s", canonical, err.Error()))
+		return true
+	}
+	if stopped {
 		return true
 	}
 	reply, _ := pyjson.Plain(raw).(map[string]any)

@@ -42,7 +42,9 @@ func configureSuppressWarnings(t *testing.T, home string, setting any) *tools.En
 func crashingDelegateChild(t *testing.T, env *tools.Env, msg string) *AIAgent {
 	t.Helper()
 	child := &AIAgent{model: "test-model", env: env, delegateDepth: 1, platform: "subagent", quietMode: true, suppressStatusOutput: true,
-		iterationBudget: NewIterationBudget(5), maxIterations: 5, apiCallCount: 1}
+		maxIterations: 5}
+	child.apiCallCount.Store(1)
+	child.iterationBudget.Store(NewIterationBudget(5))
 	prev := conversationLoopRun
 	conversationLoopRun = func(ctx context.Context, a *AIAgent, userMessage any, o RunConversationOptions, apiMode string) (map[string]any, error) {
 		if a != child {

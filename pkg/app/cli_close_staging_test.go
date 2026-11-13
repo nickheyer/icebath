@@ -94,7 +94,7 @@ func TestCloseWaitsForAtomicCliStagingBeforeSnapshot(t *testing.T) {
 			"messages":  append(append([]map[string]any{}, prefix...), map[string]any{"role": "assistant", "content": "done"}),
 			"api_calls": 1, "completed": true, "partial": true, "response_previewed": true}}
 	double.blockAppend.Store(true)
-	c.agent = double
+	c.setAgent(double)
 	c.conversationHistory = append([]map[string]any{}, prefix...)
 	patchTurn(t, func(ctx context.Context, a cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		return a.RunConversation(ctx, message, o)

@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -479,11 +478,6 @@ func (e *doctorProbeEnv) probeAzureEntra() (doctorProbeResult, error) {
 	if !ok || pystr.Lower(text(modelCfg["provider"])) != "azure-foundry" || pystr.Lower(text(modelCfg["auth_mode"])) != "entra_id" {
 		return doctorConnectivitySkip(name), nil
 	}
-	if !provider.HasAzureIdentityInstalled() {
-		return e.doctorConnectivityRow(name, "warn", "(azure-identity not installed)", []string{"From the Icebath environment, run: " +
-			pm.InstallHint("azure-identity") + ". " +
-			"Then restart Icebath."}, label), nil
-	}
 	scope := ""
 	if entraCfg, isMap := modelCfg["entra"].(map[string]any); isMap {
 		scope = text(entraCfg["scope"])
@@ -652,7 +646,7 @@ func (e *doctorProbeEnv) doctorBuildProbes() []doctorProbe {
 
 // Runs every probe on at most eight workers and returns the results in submission order
 func doctorRunProbes(probes []doctorProbe) ([]doctorProbeResult, error) {
-	provider.NormalizeProxyEnvVars()
+	config.NormalizeProxyEnvVars()
 	imdsPrev, imdsSet := os.LookupEnv("AWS_EC2_METADATA_DISABLED")
 	os.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 	defer func() {

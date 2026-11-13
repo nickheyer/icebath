@@ -65,11 +65,40 @@ func looksLikeOption(tok string) bool {
 	return err != nil
 }
 
-// Spreads the values after each nargs plus flag into one flag occurrence per value
+// String list flag taking zero or more following non option tokens, last occurrence winning like argparse nargs star
+func nargsStarFlag(cmd *cobra.Command, name, help string) {
+	cmd.Flags().StringArray(name, nil, help)
+	_ = cmd.Flags().SetAnnotation(name, "nargs_star", []string{"true"})
+}
+
+// Name and star kind of the nargs plus or star long option a token spells, empty when it spells none
+func nargsOption(target *cobra.Command, tok string) (name string, star bool) {
+	name, ok := strings.CutPrefix(tok, "--")
+	if !ok {
+		return "", false
+	}
+	name, _, _ = strings.Cut(name, "=")
+	f := target.Flags().Lookup(name)
+	if f == nil || (f.Annotations["nargs_plus"] == nil && f.Annotations["nargs_star"] == nil) {
+		return "", false
+	}
+	return name, f.Annotations["nargs_star"] != nil
+}
+
+// Spreads nargs plus and star flag values into one occurrence per value, a star flag keeping its last occurrence
 func (c *CLI) expandNargsPlus(argv []string) []string {
 	target, _, err := c.Root.Find(argv)
 	if err != nil || target == nil {
 		return argv
+	}
+	last := map[string]int{}
+	for i, tok := range argv {
+		if tok == "--" {
+			break
+		}
+		if name, star := nargsOption(target, tok); star {
+			last[name] = i
+		}
 	}
 	out := make([]string, 0, len(argv))
 	for i := 0; i < len(argv); i++ {
@@ -77,22 +106,26 @@ func (c *CLI) expandNargsPlus(argv []string) []string {
 		if tok == "--" {
 			return append(out, argv[i:]...)
 		}
-		name, ok := strings.CutPrefix(tok, "--")
-		if !ok || strings.Contains(name, "=") {
+		name, star := nargsOption(target, tok)
+		if name == "" {
 			out = append(out, tok)
 			continue
 		}
-		f := target.Flags().Lookup(name)
-		if f == nil || f.Annotations["nargs_plus"] == nil {
-			out = append(out, tok)
+		keep := !star || last[name] == i
+		if strings.Contains(tok, "=") {
+			if keep {
+				out = append(out, tok)
+			}
 			continue
 		}
 		j := i + 1
 		for j < len(argv) && argv[j] != "--" && !looksLikeOption(argv[j]) {
-			out = append(out, "--"+name+"="+argv[j])
+			if keep {
+				out = append(out, "--"+name+"="+argv[j])
+			}
 			j++
 		}
-		if j == i+1 {
+		if j == i+1 && !star {
 			out = append(out, tok)
 		}
 		i = j - 1

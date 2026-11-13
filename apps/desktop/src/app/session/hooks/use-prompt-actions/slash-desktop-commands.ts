@@ -14,7 +14,7 @@ import type { GatewayRequest } from './utils'
 // T11 (#134889): /rollback, /agents (/tasks), /config and /history on the session owner's existing
 // verbs. The shared gateway refuses these as `slash.exec` (`gateway/session_commands.py`), and
 // `/config` / `/history` were marked terminal-only, so Desktop either dead-ended or never offered them.
-// Each verb here is the one Ink and the owner already serve: rollback.list|diff|restore,
+// Each verb here is the one the terminal UI and the owner already serve: rollback.list|diff|restore,
 // subagent.list + process.list, config.get key=full (the presentation-only projection) and the
 // session.resume transcript snapshot.
 

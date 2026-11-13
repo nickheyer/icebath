@@ -1,5 +1,5 @@
 /**
- * Wire types for the `tui_gateway` JSON-RPC surface shared by the Ink TUI, Desktop and the
+ * Wire types for the `tui_gateway` JSON-RPC surface shared by the terminal UI, Desktop and the
  * web dashboard.
  *
  * Every shape here is GENERATED from `tui_gateway/contracts` (Python is the single source):
@@ -26,7 +26,7 @@ export interface CanonicalPromptEvent {
 }
 
 /**
- * Client-local synthetic events. Never emitted by `tui_gateway`; the Ink TUI's `gatewayClient`
+ * Client-local synthetic events. Never emitted by `tui_gateway`; the terminal UI's `gatewayClient`
  * publishes them into the same handler stream to report transport state.
  */
 export interface ClientLocalGatewayEventMap {

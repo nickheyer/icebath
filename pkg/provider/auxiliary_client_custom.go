@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -108,7 +109,7 @@ var auxProxyEnvKeys = []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_
 
 // Fails fast on a malformed proxy env URL after normalizing the proxy variables in place
 func auxValidateProxyEnvURLs() error {
-	oauthNormalizeProxyEnvVars()
+	config.NormalizeProxyEnvVars()
 	for _, key := range auxProxyEnvKeys {
 		value := pystr.Strip(os.Getenv(key))
 		if value == "" {

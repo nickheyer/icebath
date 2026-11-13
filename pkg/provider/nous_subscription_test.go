@@ -30,10 +30,10 @@ func subPaid() *NousPortalAccountInfo { yes := true; return subAccount(true, &ye
 // Restores every subscription seam and pins the account, faster whisper probe off
 func subSeams(t *testing.T, account *NousPortalAccountInfo) PoolEnv {
 	t.Helper()
-	envFn, acct, toolset, harness, chromium, whisper := nousSubEnvValueFn, nousSubAccountInfoFn, nousSubToolsetEnabledFn, nousSubHarnessFn, nousSubChromiumFn, nousSubFasterWhisperFn
+	envFn, acct, toolset, chromium, whisper := nousSubEnvValueFn, nousSubAccountInfoFn, nousSubToolsetEnabledFn, nousSubChromiumFn, nousSubFasterWhisperFn
 	audio, modal, fal, ready, creds, checklist, save := nousSubAudioKeyFn, nousSubDirectModalFn, nousSubFalKeyFn, nousSubGatewayReadyFn, nousSubDirectCredsFn, nousSubChecklistFn, nousSubSaveConfigFn
 	t.Cleanup(func() {
-		nousSubEnvValueFn, nousSubAccountInfoFn, nousSubToolsetEnabledFn, nousSubHarnessFn, nousSubChromiumFn, nousSubFasterWhisperFn = envFn, acct, toolset, harness, chromium, whisper
+		nousSubEnvValueFn, nousSubAccountInfoFn, nousSubToolsetEnabledFn, nousSubChromiumFn, nousSubFasterWhisperFn = envFn, acct, toolset, chromium, whisper
 		nousSubAudioKeyFn, nousSubDirectModalFn, nousSubFalKeyFn, nousSubGatewayReadyFn, nousSubDirectCredsFn, nousSubChecklistFn, nousSubSaveConfigFn = audio, modal, fal, ready, creds, checklist, save
 	})
 	nousSubAccountInfoFn = func(PoolEnv, bool) *NousPortalAccountInfo { return account }
@@ -41,12 +41,11 @@ func subSeams(t *testing.T, account *NousPortalAccountInfo) PoolEnv {
 	return testEnv(t, newTestHome(t))
 }
 
-// The web feature tests patch env reads, the toolset gate, the harness, audio key and modal probes
+// The web feature tests patch env reads, the toolset gate, audio key and modal probes
 func subWebProbes(t *testing.T, vals map[string]string, toolsetKey string) PoolEnv {
 	env := subSeams(t, subAccount(false, nil))
 	nousSubEnvValueFn = func(_ PoolEnv, name string) string { return vals[name] }
 	nousSubToolsetEnabledFn = func(_ PoolEnv, _ map[string]any, key string) bool { return key == toolsetKey }
-	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	nousSubAudioKeyFn = func(PoolEnv) string { return "" }
 	nousSubDirectModalFn = func(PoolEnv) bool { return false }
 	return env
@@ -84,9 +83,8 @@ func TestNousSubscriptionUnconfiguredWebWithoutKeysIsUnavailable(t *testing.T) {
 	}
 }
 
-func subBrowserProbes(t *testing.T, harness, chromium bool) PoolEnv {
+func subBrowserProbes(t *testing.T, chromium bool) PoolEnv {
 	env := subWebProbes(t, nil, "browser")
-	nousSubHarnessFn = func(PoolEnv) bool { return harness }
 	nousSubGatewayReadyFn = func(PoolEnv, string) bool { return false }
 	nousSubChromiumFn = func(PoolEnv) string {
 		if chromium {
@@ -98,7 +96,7 @@ func subBrowserProbes(t *testing.T, harness, chromium bool) PoolEnv {
 }
 
 func TestNousSubscriptionLocalBrowserUnavailableWithoutChromium(t *testing.T) {
-	env := subBrowserProbes(t, true, false)
+	env := subBrowserProbes(t, false)
 	browser := GetNousSubscriptionFeatures(env, map[string]any{"browser": map[string]any{"cloud_provider": "local"}}, false).Feature("browser")
 	if browser.Available || browser.Active || browser.ManagedByNous || browser.CurrentProvider != "Local browser" {
 		t.Fatalf("browser = %+v", browser)
@@ -107,11 +105,11 @@ func TestNousSubscriptionLocalBrowserUnavailableWithoutChromium(t *testing.T) {
 
 func TestNousSubscriptionLocalBrowserAvailabilityFollowsEngineAndChromium(t *testing.T) {
 	for _, row := range []struct {
-		harness, chromium bool
-		engine            string
-		available         bool
-	}{{true, true, "auto", true}, {true, false, "lightpanda", true}, {false, true, "auto", false}} {
-		env := subBrowserProbes(t, row.harness, row.chromium)
+		chromium  bool
+		engine    string
+		available bool
+	}{{true, "auto", true}, {false, "lightpanda", true}, {false, "auto", false}} {
+		env := subBrowserProbes(t, row.chromium)
 		browser := GetNousSubscriptionFeatures(env, map[string]any{"browser": map[string]any{"cloud_provider": "local", "engine": row.engine}}, false).Feature("browser")
 		if browser.Available != row.available || browser.CurrentProvider != "Local browser" {
 			t.Fatalf("%+v browser = %+v", row, browser)
@@ -123,7 +121,6 @@ func TestNousSubscriptionLoggedInEntitledAccountYieldsAStateForEveryFeature(t *t
 	env := subSeams(t, subPoolAccount())
 	nousSubGatewayReadyFn = func(PoolEnv, string) bool { return true }
 	nousSubEnvValueFn = func(PoolEnv, string) string { return "" }
-	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	nousSubAudioKeyFn = func(PoolEnv) string { return "" }
 	nousSubDirectModalFn = func(PoolEnv) bool { return false }
 	result := GetNousSubscriptionFeatures(env, map[string]any{"model": map[string]any{"provider": "nous"}}, false)
@@ -311,12 +308,11 @@ func TestNousSubscriptionPromptEnableToolGatewayChoosingDeclinedToolClearsDeclin
 	}
 }
 
-// Managed defaults with the FAL key absent for the given account and the host browser harness probe pinned
+// Managed defaults with the FAL key absent for the given account
 func subDefaultsFor(t *testing.T, account *NousPortalAccountInfo, cfg map[string]any, toolset string) map[string]bool {
 	t.Setenv("FAL_KEY", "")
 	env := subSeams(t, account)
 	nousSubFalKeyFn = func(PoolEnv) bool { return false }
-	nousSubHarnessFn = func(PoolEnv) bool { return false }
 	return ApplyNousManagedDefaults(env, cfg, []string{toolset}, false)
 }
 

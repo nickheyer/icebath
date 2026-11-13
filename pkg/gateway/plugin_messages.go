@@ -247,7 +247,7 @@ func sendPluginMessage(ctx context.Context, target *PostTarget, text string) (ma
 	}
 	if !result.Success {
 		detail := ""
-		if result.Error != nil {
+		if pyrepr.Truthy(result.Error) {
 			detail = pyrepr.Str(result.Error)
 		}
 		return pluginMessageErr("send_failed", runePrefix(detail, 512)), nil
@@ -341,13 +341,13 @@ func editPluginMessage(ctx context.Context, t *PostTarget, messageID, text, plug
 			editError = errText(err)
 		} else {
 			edited = sent.Success
-			if sent.Error != nil {
+			if pyrepr.Truthy(sent.Error) {
 				editError = pyrepr.Str(sent.Error)
 			}
 		}
 		if edited {
 			out := messageID
-			if sent.MessageID != nil && pyrepr.Str(sent.MessageID) != "" {
+			if pyrepr.Truthy(sent.MessageID) {
 				out = pyrepr.Str(sent.MessageID)
 			}
 			return map[string]any{"ok": true, "message_id": out, "edited": true}, nil

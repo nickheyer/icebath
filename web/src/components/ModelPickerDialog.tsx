@@ -25,7 +25,7 @@ import {
 /**
  * Two-stage model picker modal.
  *
- * Mirrors ui-tui/src/components/modelPicker.tsx:
+ * Mirrors the terminal UI model picker (pkg/tui/pickers.go):
  *   Stage 1: pick provider (authenticated providers only)
  *   Stage 2: pick model within that provider
  *

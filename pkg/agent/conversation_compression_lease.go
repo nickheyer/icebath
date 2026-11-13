@@ -679,8 +679,7 @@ func adoptGrownDurableParent(ctx context.Context, a *AIAgent, lease *compression
 		preflushOK = false
 		func() {
 			defer func() { _ = recover() }()
-			written, err := a.flushMessagesToSessionDBWithHistory(messages, messages[:*idx])
-			preflushOK = err == nil && written
+			preflushOK = a.flushMessagesToSessionDBWithHistory(messages, messages[:*idx]) == state.FlushPersisted
 		}()
 	}
 	if !preflushOK {

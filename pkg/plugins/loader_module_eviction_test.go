@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 )
 
@@ -80,20 +79,6 @@ def register(ctx):
         ctx.register_tool(name=name, toolset="evictprobe", schema=_SCHEMA(name), handler=handler)
 `
 
-// Live host of every interpreter running the probe plugin whose tools plant and list interpreter modules
-func evictionHosts(t *testing.T, run func(t *testing.T, h string, m *Manager)) {
-	for label, python := range liveInterpreters(t) {
-		t.Run(label, func(t *testing.T) {
-			installLiveServices(t)
-			h, m := liveHome(t, python, map[string]string{"evictprobe": evictionProbePlugin})
-			if e := loadedError(m, "evictprobe"); e != "" {
-				t.Fatalf("evictprobe failed to load: %s", e)
-			}
-			run(t, h, m)
-		})
-	}
-}
-
 // Module names of the host interpreter starting with any of the prefixes, sorted
 func hostModuleNames(t *testing.T, h string, prefixes ...string) []string {
 	t.Helper()
@@ -102,41 +87,4 @@ func hostModuleNames(t *testing.T, h string, prefixes ...string) []string {
 		t.Fatal(err)
 	}
 	return names
-}
-
-func TestEvictModulesDropsModuleAndSubmodules(t *testing.T) {
-	evictionHosts(t, func(t *testing.T, h string, m *Manager) {
-		dispatchLive(t, h, "evict_plant", map[string]any{"names": []string{"icebath_plugins.aop", "icebath_plugins.aop.client", "icebath_plugins.aop_other"}})
-		if err := evictModules(m, "icebath_plugins.aop"); err != nil {
-			t.Fatal(err)
-		}
-		if got := hostModuleNames(t, h, "icebath_plugins.aop"); len(got) != 1 || got[0] != "icebath_plugins.aop_other" {
-			t.Fatalf("modules left after eviction: %v", got)
-		}
-	})
-}
-
-func TestEvictModulesToleratesConcurrentImports(t *testing.T) {
-	evictionHosts(t, func(t *testing.T, h string, m *Manager) {
-		dispatchLive(t, h, "evict_churn_start", map[string]any{"unrelated": evictionModuleCount})
-		var failure error
-		for i := 0; i < evictionRounds && failure == nil; i++ {
-			name := fmt.Sprintf("icebath_plugins.victim_%d", i)
-			dispatchLive(t, h, "evict_plant", map[string]any{"names": []string{name, name + ".sub"}})
-			failure = evictModules(m, name)
-		}
-		var rounds int
-		if err := json.Unmarshal([]byte(dispatchLive(t, h, "evict_churn_stop", nil)), &rounds); err != nil {
-			t.Fatal(err)
-		}
-		if failure != nil {
-			t.Fatalf("eviction raised under concurrent import: %v", failure)
-		}
-		if rounds <= 0 {
-			t.Fatal("churn thread never ran, the race window was never opened")
-		}
-		if leftover := hostModuleNames(t, h, "icebath_plugins.victim_"); len(leftover) != 0 {
-			t.Fatalf("eviction left entries behind: %v", leftover)
-		}
-	})
 }

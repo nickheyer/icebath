@@ -34,7 +34,7 @@ func kernelOwnerEntry() {
 	}
 	homeDir := os.Getenv("ICEBATH_HOME")
 	rt := interpreter{Python: os.Getenv("CODEEXEC_KERNEL_PYTHON"), Prefix: os.Getenv("CODEEXEC_KERNEL_PREFIX")}
-	runtimeInterpreter = func(context.Context, *tools.Env) (interpreter, error) { return rt, nil }
+	userPython = func(context.Context, *tools.Env) (string, error) { return rt.Python, nil }
 	env := &tools.Env{Home: homeDir, Config: config.Tree{}, Values: &sync.Map{}, Cwd: homeDir}
 	k := newSessionKernel(kernelKey{owner: role})
 	if err := k.spawn(context.Background(), env, rt.Python, "", nil, 1); err != nil {

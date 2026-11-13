@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // ---- tests/hermes_cli/test_plugin_provider_requests.py ----
@@ -194,5 +196,21 @@ func TestNotSignedInNamesTheSignInCommand(t *testing.T) {
 	}
 	if len(allowed.requests()) != 0 {
 		t.Fatal("a request was sent without a sign in")
+	}
+}
+
+func TestInTreePluginsAreCallersUnlessABundledDirectoryIsNamed(t *testing.T) {
+	allowed, _, h := providerRequestAPIs(t)
+	providerRequestSignIn(t, h, providerRequestJWT())
+	tree := t.TempDir()
+	t.Cleanup(pm.PatchRepoRoot(tree))
+	t.Setenv("ICEBATH_BUNDLED_PLUGINS", "")
+	mint := providerRequestPlugin(t, tree, true)
+	if result, err := mint(allowed.url + "/v1/realtime/client_secrets"); err != nil || result.Status != 200 {
+		t.Fatalf("in tree plugin result=%v err=%v", result, err)
+	}
+	t.Setenv("ICEBATH_BUNDLED_PLUGINS", t.TempDir())
+	if _, err := mint(allowed.url); !errors.Is(err, os.ErrPermission) || !strings.Contains(err.Error(), "installed plugin") {
+		t.Fatalf("named bundled directory err=%v", err)
 	}
 }

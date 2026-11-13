@@ -26,7 +26,7 @@ func TestCheckpointRearmsPerTurnWithoutChangingBudgetOrDurableRows(t *testing.T)
 					resetPerTurnAgentState(ctx, a)
 					a.interruptRequested.Store(interrupted)
 					for range 3 {
-						a.iterationBudget.Consume()
+						a.iterationBudget.Load().Consume()
 					}
 					id := fmt.Sprintf("t%d", turn)
 					messages := rowsToMessages([]map[string]any{{"role": "user", "content": fmt.Sprintf("work %d", turn)},
@@ -34,8 +34,8 @@ func TestCheckpointRearmsPerTurnWithoutChangingBudgetOrDurableRows(t *testing.T)
 						{"role": "tool", "tool_call_id": id, "content": content()}})
 					host := a.toolExecutor().Host
 					host.BeforeToolFlush(&messages)
-					if persisted, err := host.FlushMessagesToSessionDB(messages); err != nil || !persisted {
-						t.Fatalf("checkpoint flush %v %v", persisted, err)
+					if persisted := host.FlushMessagesToSessionDB(messages); persisted != state.FlushPersisted {
+						t.Fatalf("checkpoint flush %v", persisted)
 					}
 					stored, err := a.sessionDB.GetMessagesAsConversation(ctx, a.sessionID, state.ConversationOptions{})
 					if err != nil {
@@ -67,7 +67,7 @@ func TestCheckpointRearmsPerTurnWithoutChangingBudgetOrDurableRows(t *testing.T)
 					if got := messagesToRows(s.Messages); !reflect.DeepEqual(got, snapshot) {
 						t.Fatalf("turn %d durable rows rewritten %v", turn, got)
 					}
-					if !a.iterationBudget.Consume() || a.iterationBudget.Consume() {
+					if !a.iterationBudget.Load().Consume() || a.iterationBudget.Load().Consume() {
 						t.Fatalf("turn %d budget changed", turn)
 					}
 				}

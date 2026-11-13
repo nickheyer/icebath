@@ -2,33 +2,25 @@ package browser
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"math"
 	"math/big"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -39,73 +31,27 @@ const (
 	realProfileFallbackSentinel = "_ICEBATH_BU_REAL_PROFILE_FALLBACK"
 	localFallbackSentinel       = "_ICEBATH_BU_LOCAL_FALLBACK"
 	cloudBrowserSentinel        = "_ICEBATH_BU_CLOUD_BROWSER"
-	execStderrCapChars          = 4000
-	ownDuringCall               = 500 * time.Millisecond
-	harnessDaemonPurpose        = "browser-harness-daemon"
+	activateNever               = "never"
+	activateAlways              = "always"
 	fenceTakeoverPrefix         = "A human took over the bot's screen while this browser command ran"
 )
 
-// Lowest timeout a call may ask for and the bounded drain after a group kill, swapped by tests
-var (
-	execMinTimeoutS = 5
-	postKillDrain   = 10 * time.Second
-	killCLIGroup    = killCLIProcessGroup
-)
-
-// The one credential the harness itself reads
-var harnessPassthroughKeys = []string{"BROWSER_USE_API_KEY"}
+// Lowest timeout a call may ask for, swapped by tests
+var execMinTimeoutS = 5
 
 const execPySpace = `\t\n\v\f\r\x1c-\x20\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}`
 
 var (
-	execSessionRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\n?$`)
-	execTaskIDSafe  = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
-	execImagePathRE = regexp.MustCompile(`(?i)((?:[A-Za-z]:[\\/]|/)[^` + execPySpace + `"']+?\.(?:png|jpe?g|webp))`)
-	execURLRE       = regexp.MustCompile(`(?i)https?://[^` + execPySpace + `'"\\)]+`)
-	fhsBinDirs      = []string{"/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin",
-		"/usr/bin", "/sbin", "/bin"}
+	execSessionRE  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+	execTaskIDSafe = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+	execURLRE      = regexp.MustCompile(`(?i)https?://[^` + execPySpace + `'"\\)]+`)
 )
 
-const ownTabPreamble = `# icebath: pin this named session to its own tab (once per daemon process)
-def _icebath_ensure_own_tab():
-    import os as _os, tempfile as _tf
-    _name = _os.environ.get("BU_NAME", "default")
-    try:
-        # Key the marker by the daemon's pid so a daemon restart (which
-        # re-attaches to the first shared page) re-pins automatically,
-        # while agent-driven tab switches mid-session are left alone.
-        from browser_harness import _ipc as _bipc
-        _dpid = _bipc.pid_path(_name).read_text().strip() or "0"
-    except Exception:
-        _dpid = "0"
-    _uid = _os.getuid() if hasattr(_os, "getuid") else 0
-    _marker = _os.path.join(
-        _tf.gettempdir(), "icebath-bu-owntab-%s-%s-%s" % (_uid, _name, _dpid)
-    )
-    if _os.path.exists(_marker):
-        return
-    try:
-        # Force a fresh target: new_tab() would REUSE a blank current tab,
-        # which is exactly the tab a sibling daemon may also hold.
-        _tid = cdp("Target.createTarget", url="about:blank").get("targetId")
-        if _tid:
-            switch_tab(_tid)
-    except Exception:
-        pass  # worst case is pre-fix behavior
-    try:
-        open(_marker, "w").close()
-    except OSError:
-        pass
-_icebath_ensure_own_tab()
-del _icebath_ensure_own_tab
-`
-
-// Seams tests replace, the session layer, provider lookup, supervisor attach and browser child env
+// Seams tests replace, the session layer, provider lookup and supervisor attach
 var (
 	execSessionInfo      = getSessionInfo
 	execCloudProvider    = getCloudProvider
 	execAttachSupervisor = supervisorGetOrStart
-	execBrowserEnv       = buildBrowserEnv
 	execRealProfileCDP   = func(env *tools.Env) (string, string) { return realProfileCDP(env) }
 	execLiveGeneration   = func(env *tools.Env) int { return LiveCDPGeneration(cfgOf(env).homeKey()) }
 	execCDPOverride      = func(ctx context.Context, env *tools.Env) string { return cfgOf(env).cdpOverride(ctx) }
@@ -114,26 +60,15 @@ var (
 	execResizeForVision  = tools.ResizeImageForVision
 )
 
-// Route bookkeeping across browser_exec calls, keyed by route cache key and daemon identity
+// Route bookkeeping across browser_exec calls, keyed by route cache key
 var (
 	execStateMu              sync.Mutex
 	execRouteIsSidecar       = map[string]bool{}
 	realProfileFallbackNotes = map[string]string{}
 	realProfileNoteDelivered = map[string]bool{}
-	drivenDaemonsMu          sync.Mutex
-	drivenDaemons            = map[string]drivenDaemon{}
-	ownedDaemonGroupsMu      sync.Mutex
-	ownedDaemonGroups        = map[string]int{}
 )
 
-type drivenDaemon struct {
-	identity []string
-	home     string
-}
-
-func identityKey(identity []string) string { return strings.Join(identity, "\x00") }
-
-// Exports a CDP endpoint as BU_CDP_URL for http and https, as BU_CDP_WS otherwise
+// Records a DevTools endpoint on the route, BU_CDP_URL for http and https, BU_CDP_WS otherwise
 func setCDPEnv(penv map[string]string, cdp string) {
 	if strings.HasPrefix(cdp, "http://") || strings.HasPrefix(cdp, "https://") {
 		penv["BU_CDP_URL"] = cdp
@@ -164,7 +99,7 @@ func exportSessionCDP(penv map[string]string, info func(string) (map[string]any,
 	return ""
 }
 
-// Blocking error of the first unsafe URL literal and whether any literal routes to the local sidecar
+// Blocking error of the first unsafe URL in the steps and whether any URL routes to the local sidecar
 func codeURLVerdict(env *tools.Env, code string) (string, bool, error) {
 	localSidecar := false
 	for _, u := range execURLRE.FindAllString(code, -1) {
@@ -184,164 +119,9 @@ func codeURLVerdict(env *tools.Env, code string) (string, bool, error) {
 	return "", localSidecar, nil
 }
 
-// Harness credential from the active profile scope, never the launch profile's process environment
-func harnessCredentials(ctx context.Context, env *tools.Env) map[string]string {
-	out := map[string]string{}
-	routed := provider.ServesRoutedProfile(ctx)
-	scope := provider.CurrentSecretScope(ctx)
-	for _, key := range harnessPassthroughKeys {
-		var value string
-		var ok bool
-		if routed {
-			value, ok = scope[key]
-		} else {
-			value, ok = cfgOf(env).secretLookup(key)
-		}
-		if ok {
-			out[key] = value
-		}
-	}
-	return out
-}
-
-// Secret as get_secret returns it, absent when neither the home's env nor the process sets it
-func (s settings) secretLookup(name string) (string, bool) {
-	if s.env != nil && s.env.Secrets != nil {
-		return s.env.Secrets.Get(name)
-	}
-	return os.LookupEnv(name)
-}
-
-// Harness child env with its own import path, a floored PATH, telemetry off, served profile dirs and a spawn tag
-func baseSubprocessEnv(ctx context.Context, env *tools.Env) map[string]string {
-	out := maps.Clone(execBrowserEnv(env))
-	if out == nil {
-		out = map[string]string{}
-	}
-	maps.Copy(out, harnessCredentials(ctx, env))
-	delete(out, "PYTHONHOME")
-	if site := harnessSiteDir(); site != "" {
-		out["PYTHONPATH"] = site
-	} else {
-		delete(out, "PYTHONPATH")
-	}
-	out["PATH"] = floorSubprocessPath(out["PATH"])
-	if _, ok := out["ANONYMIZED_TELEMETRY"]; !ok {
-		out["ANONYMIZED_TELEMETRY"] = "false"
-	}
-	namespaceHarnessDirs(out, servedProfileTag(ctx))
-	maps.Copy(out, tools.SpawnEnv(harnessDaemonPurpose, ""))
-	return out
-}
-
-// PATH with the standard system bin dirs appended when missing, unchanged on Windows
-func floorSubprocessPath(path string) string {
-	if runtime.GOOS == "windows" {
-		return path
-	}
-	sep := string(os.PathListSeparator)
-	parts := []string{}
-	for _, p := range strings.Split(path, sep) {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	original := slices.Clone(parts)
-	for _, d := range fhsBinDirs {
-		if !slices.Contains(original, d) && isDirPath(d) {
-			parts = append(parts, d)
-		}
-	}
-	return strings.Join(parts, sep)
-}
-
 func isDirPath(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
-}
-
-func browserUseAPIKeySet(env *tools.Env) bool {
-	return cfgOf(env).rawSecret("BROWSER_USE_API_KEY") != ""
-}
-
-const harnessSpecProbe = "import importlib.util\nspec = importlib.util.find_spec('browser_harness')\n" +
-	"print(spec.origin if spec is not None and spec.origin else '')\n"
-
-var harnessProbeCache struct {
-	sync.Mutex
-	key    string
-	python string
-	site   string
-	ok     bool
-}
-
-// Repo root, isolated interpreter command and site-packages of the runtime environment, swapped by tests
-var harnessRuntime = func(ctx context.Context) (string, []string, string, error) {
-	root := pm.RepoRoot()
-	venv, err := pm.SelectedVenv(ctx, root)
-	if err != nil {
-		return "", nil, "", err
-	}
-	command, err := pm.VenvCommand(ctx, root, venv, []string{"-I"})
-	if err != nil {
-		return "", nil, "", err
-	}
-	sitePackages, _ := pm.SitePackages(venv)
-	return root, command, sitePackages, nil
-}
-
-// Runtime interpreter and the site dir it imports browser_harness from, memoized until site-packages changes
-func probeHarness(ctx context.Context) (string, string) {
-	root, command, sitePackages, err := harnessRuntime(ctx)
-	if err != nil || len(command) == 0 || !isRegularFile(command[0]) {
-		return "", ""
-	}
-	stamp := ""
-	if st, err := os.Stat(sitePackages); err == nil {
-		stamp = st.ModTime().String()
-	}
-	key := identityKey(append(slices.Clone(command), stamp))
-	harnessProbeCache.Lock()
-	defer harnessProbeCache.Unlock()
-	if harnessProbeCache.ok && harnessProbeCache.key == key {
-		return harnessProbeCache.python, harnessProbeCache.site
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	c := exec.CommandContext(probeCtx, command[0], append(slices.Clone(command[1:]), "-c", harnessSpecProbe)...)
-	c.Dir = root
-	out, err := c.Output()
-	if err != nil {
-		return command[0], ""
-	}
-	site := ""
-	if origin := pystr.Strip(string(out)); origin != "" {
-		if resolved, err := pypath.Resolve(origin); err == nil {
-			site = filepath.Dir(filepath.Dir(resolved))
-		}
-	}
-	harnessProbeCache.key, harnessProbeCache.python, harnessProbeCache.site, harnessProbeCache.ok = key, command[0], site, true
-	return command[0], site
-}
-
-// Site dir the runtime interpreter imports browser_harness from, empty when it is not installed
-var harnessSiteDir = func() string {
-	_, site := probeHarness(context.Background())
-	return site
-}
-
-// The runtime interpreter that runs the harness
-var harnessInterpreter = func() string {
-	python, _ := probeHarness(context.Background())
-	return python
-}
-
-// The harness module command on the runtime interpreter, nil when browser_harness is not importable
-var findCLI = func(env *tools.Env) []string {
-	if harnessSiteDir() == "" {
-		return nil
-	}
-	return []string{harnessInterpreter(), "-m", "browser_harness.run"}
 }
 
 // Per task workspace dir persisting across calls, BH_AGENT_WORKSPACE when the process sets it
@@ -365,22 +145,6 @@ func workspaceDir(env *tools.Env, taskID string) string {
 		return ""
 	}
 	return path
-}
-
-// Last screenshot path printed during this exec that exists and was written after it started
-func findScreenshot(stdout string, since float64) string {
-	matches := execImagePathRE.FindAllStringSubmatch(stdout, -1)
-	for i := len(matches) - 1; i >= 0; i-- {
-		path := matches[i][1]
-		st, err := os.Stat(path)
-		if err != nil || !st.Mode().IsRegular() {
-			continue
-		}
-		if float64(st.ModTime().UnixNano())/1e9 >= since-1 {
-			return path
-		}
-	}
-	return ""
 }
 
 // Multimodal result attaching the screenshot for a native vision model, empty otherwise
@@ -435,8 +199,8 @@ func backendCacheKey(ctx context.Context, taskID, sessionName string, sidecar bo
 	return key
 }
 
-// BU_NAME of the daemon serving the hybrid local sidecar
-func sidecarDaemonName(name string) string {
+// Session name of the hybrid local sidecar browser
+func sidecarSessionName(name string) string {
 	if name == "" {
 		name = "default"
 	}
@@ -505,7 +269,7 @@ func resolveLocalCDP(ctx context.Context, env *tools.Env, penv map[string]string
 	return err
 }
 
-// Points the harness at the configured backend, operator overrides first, then sidecar, provider and local engine
+// Routes to the configured backend, operator overrides first, then sidecar, provider and local engine
 func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]string, taskID, sessionName string, forceLocalSidecar bool) string {
 	if hasCDPEnv(penv) {
 		return ""
@@ -524,12 +288,6 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 	}
 	if prov == nil {
 		return resolveLocalCDP(ctx, env, penv, taskID, sessionName, false)
-	}
-	providerKey := strings.ToLower(pystr.Strip(prov.Name()))
-	if providerKey == browserUseProvider && !cfgOf(env).useGateway() && browserUseAPIKeySet(env) {
-		penv[privateBrowserSentinel] = "1"
-		penv[cloudBrowserSentinel] = activateIfCloud
-		return ""
 	}
 	providerName := providerClassName(prov)
 	session := map[string]any{}
@@ -558,7 +316,7 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 	return err
 }
 
-// Points the harness at the consented real profile browser when the backend is local or local was forced
+// Routes to the consented real profile browser when the backend is local or local was forced
 func resolveRealProfileCDP(env *tools.Env, penv map[string]string, forceLocal bool) string {
 	if !realProfileConsented(env) || hasCDPEnv(penv) {
 		return ""
@@ -598,7 +356,7 @@ func attachVaultSupervisor(ctx context.Context, env *tools.Env, penv map[string]
 	}
 }
 
-// Where the harness connects, real profile consent first, the error message when it cannot
+// Where the steps run, real profile consent first, the error message when no browser can serve them
 func routeBackend(ctx context.Context, env *tools.Env, penv map[string]string, session, taskID string, local, forceLocalSidecar, realProfile bool) string {
 	rpErr := ""
 	if realProfile {
@@ -656,253 +414,6 @@ func clampTimeout(timeoutS any) int {
 	return int(n.Int64())
 }
 
-type cliResult struct {
-	code           int
-	stdout, stderr string
-}
-
-var errCLITimeout = errors.New("browser-use CLI timed out")
-
-// Executable the child env's PATH resolves, the Popen FileNotFoundError when none does
-func lookCLIPath(name string, penv map[string]string) (string, error) {
-	if strings.ContainsRune(name, os.PathSeparator) || (runtime.GOOS == "windows" && strings.ContainsRune(name, '/')) {
-		return name, nil
-	}
-	pathVar, ok := penv["PATH"]
-	if !ok {
-		pathVar = os.Getenv("PATH")
-	}
-	var last error = syscall.ENOENT
-	for _, dir := range filepath.SplitList(pathVar) {
-		if dir == "" {
-			dir = "."
-		}
-		candidate := filepath.Join(dir, name)
-		if p, err := exec.LookPath(candidate); err == nil {
-			return p, nil
-		} else if errors.Is(err, os.ErrPermission) {
-			last = syscall.EACCES
-		}
-	}
-	return "", &os.PathError{Op: "exec", Path: name, Err: last}
-}
-
-// Text mode decoding of a CLI pipe, UTF-8 with replacement and universal newlines
-func decodeCLIText(data []byte) string {
-	text, err := pycodecs.DecodeReplace(data, "utf-8")
-	if err != nil {
-		text = strings.ToValidUTF8(string(data), "�")
-	}
-	return pystr.TranslateNewlines(text)
-}
-
-// Runs the CLI in its own process group, killing the whole group and draining briefly on timeout
-var runCLIKillingProcessGroup = func(cmd []string, code string, penv map[string]string, timeout time.Duration) (*cliResult, error) {
-	path, err := lookCLIPath(cmd[0], penv)
-	if err != nil {
-		return nil, err
-	}
-	c := exec.Command(path, cmd[1:]...)
-	c.Args[0] = cmd[0]
-	c.Env = envList(penv)
-	c.SysProcAttr = detachedSpawnAttrs()
-	stdinR, stdinW, err := os.Pipe()
-	if err != nil {
-		return nil, err
-	}
-	outR, outW, err := os.Pipe()
-	if err != nil {
-		stdinR.Close()
-		stdinW.Close()
-		return nil, err
-	}
-	errR, errW, err := os.Pipe()
-	if err != nil {
-		stdinR.Close()
-		stdinW.Close()
-		outR.Close()
-		outW.Close()
-		return nil, err
-	}
-	c.Stdin, c.Stdout, c.Stderr = stdinR, outW, errW
-	startErr := c.Start()
-	stdinR.Close()
-	outW.Close()
-	errW.Close()
-	if startErr != nil {
-		stdinW.Close()
-		outR.Close()
-		errR.Close()
-		var pe *os.PathError
-		if errors.As(startErr, &pe) {
-			pe.Path = cmd[0]
-		}
-		return nil, startErr
-	}
-	go func() {
-		input := code
-		if runtime.GOOS == "windows" {
-			input = strings.ReplaceAll(input, "\n", "\r\n")
-		}
-		stdinW.WriteString(input)
-		stdinW.Close()
-	}()
-	var stdout, stderr []byte
-	var wg sync.WaitGroup
-	wg.Add(3)
-	go func() { defer wg.Done(); stdout, _ = readAllFile(outR) }()
-	go func() { defer wg.Done(); stderr, _ = readAllFile(errR) }()
-	var state *os.ProcessState
-	go func() { defer wg.Done(); c.Wait(); state = c.ProcessState }()
-	done := make(chan struct{})
-	go func() { wg.Wait(); close(done) }()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case <-done:
-		outR.Close()
-		errR.Close()
-		return &cliResult{code: popenReturnCode(state), stdout: decodeCLIText(stdout), stderr: decodeCLIText(stderr)}, nil
-	case <-timer.C:
-	}
-	killCLIGroup(c.Process.Pid)
-	select {
-	case <-done:
-	case <-time.After(postKillDrain):
-	}
-	outR.Close()
-	errR.Close()
-	return nil, errCLITimeout
-}
-
-func readAllFile(f *os.File) ([]byte, error) {
-	var out []byte
-	buf := make([]byte, 32*1024)
-	for {
-		n, err := f.Read(buf)
-		out = append(out, buf[:n]...)
-		if err != nil {
-			return out, err
-		}
-	}
-}
-
-func envList(penv map[string]string) []string {
-	out := make([]string, 0, len(penv))
-	for _, k := range slices.Sorted(maps.Keys(penv)) {
-		out = append(out, k+"="+penv[k])
-	}
-	return out
-}
-
-// Stops every harness daemon this process drove, only homeKey's when given, through the harness reload
-func stopHarnessDaemons(env *tools.Env, homeKey string) {
-	drivenDaemonsMu.Lock()
-	var daemons [][]string
-	for key, d := range drivenDaemons {
-		if homeKey == "" || d.home == homeKey {
-			daemons = append(daemons, d.identity)
-			delete(drivenDaemons, key)
-		}
-	}
-	drivenDaemonsMu.Unlock()
-	slices.SortFunc(daemons, slices.Compare)
-	reloadDaemons(env, daemons)
-}
-
-// Pid the harness published for the daemon env drives, JSON with a pid field or a bare pid
-func publishedDaemonPid(penv map[string]string) (int, bool) {
-	data, err := os.ReadFile(harnessPidFile(penv))
-	if err != nil {
-		return 0, false
-	}
-	data = []byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))
-	if !utf8.Valid(data) {
-		return 0, false
-	}
-	raw := pystr.Strip(string(data))
-	var value any = nil
-	if strings.HasPrefix(raw, "{") {
-		parsed, err := pyjson.Loads(raw)
-		if err != nil {
-			return 0, false
-		}
-		obj, ok := parsed.(*pyjson.Object)
-		if !ok {
-			return 0, false
-		}
-		v, ok := obj.Get("pid")
-		if !ok {
-			return 0, false
-		}
-		value = v
-	} else {
-		fields := pystr.SplitWhitespace(raw, -1)
-		if len(fields) == 0 {
-			return 0, false
-		}
-		value = fields[0]
-	}
-	n, ok := pyIntOf(value)
-	if !ok || !n.IsInt64() {
-		return 0, false
-	}
-	return int(n.Int64()), true
-}
-
-type daemonOwnership int
-
-const (
-	ownNothingYet daemonOwnership = iota
-	ownNever
-	ownOwned
-)
-
-// Hands the daemon group to the owner death supervisor, releasing the group it replaced once empty
-func recordOwnedDaemon(ctx context.Context, daemon []string, pid int) {
-	key := identityKey(daemon)
-	ownedDaemonGroupsMu.Lock()
-	replaced, had := ownedDaemonGroups[key]
-	ownedDaemonGroups[key] = pid
-	ownedDaemonGroupsMu.Unlock()
-	tools.OwnProcessGroups([]int{pid})
-	tools.RegisterChild(ctx, pid, harnessDaemonPurpose, "")
-	if had {
-		tools.ReleaseProcessGroupOnceEmpty(replaced, nil, 0)
-	}
-}
-
-func alreadyOwned(daemon []string, pid int) bool {
-	ownedDaemonGroupsMu.Lock()
-	defer ownedDaemonGroupsMu.Unlock()
-	got, ok := ownedDaemonGroups[identityKey(daemon)]
-	return ok && got == pid
-}
-
-func isWorkerProcess() bool { return tools.IsWorkerProcess != nil && tools.IsWorkerProcess() }
-
-// Reloads each daemon through the harness, releasing its owned group once it is gone
-func reloadDaemons(env *tools.Env, daemons [][]string) {
-	if len(daemons) == 0 {
-		return
-	}
-	cmd := findCLI(env)
-	if cmd == nil {
-		return
-	}
-	base := baseSubprocessEnv(context.Background(), env)
-	for _, daemon := range daemons {
-		runCLIKillingProcessGroup(append(slices.Clone(cmd), "--reload"), "", daemonEnv(base, daemon), 15*time.Second)
-		ownedDaemonGroupsMu.Lock()
-		pgid, had := ownedDaemonGroups[identityKey(daemon)]
-		delete(ownedDaemonGroups, identityKey(daemon))
-		ownedDaemonGroupsMu.Unlock()
-		if had {
-			tools.ReleaseProcessGroupOnceEmpty(pgid, nil, time.Second)
-		}
-	}
-}
-
 // Routes one call and remembers a real profile fallback so the route keeps its fresh browser
 func routeExec(ctx context.Context, env *tools.Env, penv map[string]string, session, taskID string, local, localSidecar bool, routeKey string) (string, bool) {
 	execStateMu.Lock()
@@ -924,32 +435,19 @@ func routeExec(ctx context.Context, env *tools.Env, penv map[string]string, sess
 }
 
 // Routes a copy of the env, again up to three tries while a new endpoint publishes meanwhile
-func routeExecCurrent(ctx context.Context, env *tools.Env, penv map[string]string, session, taskID string, local, localSidecar bool, routeKey string) (map[string]string, string, bool, int) {
+func routeExecCurrent(ctx context.Context, env *tools.Env, penv map[string]string, session, taskID string, local, localSidecar bool, routeKey string) (map[string]string, string, bool) {
 	var routed map[string]string
 	var routeErr string
 	var sidecar bool
-	var generation int
 	for range 3 {
 		routed = maps.Clone(penv)
-		generation = execLiveGeneration(env)
+		generation := execLiveGeneration(env)
 		routeErr, sidecar = routeExec(ctx, env, routed, session, taskID, local, localSidecar, routeKey)
 		if routeErr != "" || execLiveGeneration(env) == generation {
 			break
 		}
 	}
-	return routed, routeErr, sidecar, generation
-}
-
-// Stops this call's daemon when the profile published a new endpoint while it spawned on the old one
-func reloadIfRepublished(env *tools.Env, penv map[string]string, generation int) {
-	if execLiveGeneration(env) == generation {
-		return
-	}
-	daemon := daemonIdentity(penv)
-	drivenDaemonsMu.Lock()
-	delete(drivenDaemons, identityKey(daemon))
-	drivenDaemonsMu.Unlock()
-	reloadDaemons(env, [][]string{daemon})
+	return routed, routeErr, sidecar
 }
 
 // The fallback note for the first result after a route fell back, nothing afterwards
@@ -979,110 +477,124 @@ func fenceRefusal(m map[string]any) *pyjson.Object {
 	return out
 }
 
-// Runs Python code through the browser harness CLI on the routed browser and returns its output
-func browserExec(ctx context.Context, env *tools.Env, code, session, timeoutS any, taskID string, local bool, localEngine *string) (string, error) {
-	if !pyrepr.Truthy(code) {
-		return toolErr("No code provided. Pass Python that uses the pre-imported helpers, e.g. new_tab(\"https://example.com\") then print(page_info())."), nil
+// Characters of stderr a result carries before the rest is cut
+const execStderrCapChars = 4000
+
+// Screenshot paths the code prints, POSIX or Windows drive letter absolute
+var execImagePathRE = regexp.MustCompile(`(?i)((?:[A-Za-z]:[\\/]|/)[^` + execPySpace + `"']+?\.(?:png|jpe?g|webp))`)
+
+// Interpreter the code runs on, the user's Python from PATH, the seam tests replace
+var execPython = func(ctx context.Context, env *tools.Env) (string, error) {
+	return codeexec.PythonOnPath(ctx, env, "browser_exec runs Python code")
+}
+
+// Last screenshot path printed during this call that exists and was written after the call started
+func findScreenshot(stdout string, since time.Time) string {
+	paths := execImagePathRE.FindAllString(stdout, -1)
+	for i := len(paths) - 1; i >= 0; i-- {
+		if st, err := os.Stat(paths[i]); err == nil && st.Mode().IsRegular() && !st.ModTime().Before(since.Add(-time.Second)) {
+			return paths[i]
+		}
 	}
-	codeText, ok := code.(string)
-	if !ok {
-		return "", pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(code)))
+	return ""
+}
+
+// The one credential the code's helpers read, from the active profile's secrets, never another profile's
+func harnessCredentials(env *tools.Env) map[string]string {
+	out := map[string]string{}
+	if key := cfgOf(env).rawSecret("BROWSER_USE_API_KEY"); key != "" {
+		out["BROWSER_USE_API_KEY"] = key
 	}
-	if pystr.Strip(codeText) == "" {
-		return toolErr("No code provided. Pass Python that uses the pre-imported helpers, e.g. new_tab(\"https://example.com\") then print(page_info())."), nil
+	return out
+}
+
+// PATH with the standard system directories that exist appended, unchanged on Windows
+func floorSubprocessPath(path string) string {
+	if runtime.GOOS == "windows" {
+		return path
 	}
-	blocked, verdictSidecar, err := codeURLVerdict(env, codeText)
+	return mergeSanePath(path)
+}
+
+// Environment of the code's interpreter, the browser child env with the harness credential, the route and no Python path override
+func execChildEnv(env *tools.Env, route map[string]string, workspace string) map[string]string {
+	penv := buildBrowserEnv(env)
+	maps.Copy(penv, harnessCredentials(env))
+	delete(penv, "PYTHONHOME")
+	delete(penv, "PYTHONPATH")
+	penv["PATH"] = floorSubprocessPath(penv["PATH"])
+	for k, v := range route {
+		if strings.HasPrefix(k, "BU_") {
+			penv[k] = v
+		}
+	}
+	if workspace != "" {
+		penv["BH_AGENT_WORKSPACE"] = workspace
+	}
+	return penv
+}
+
+// Runs the model's Python on the user's interpreter against the routed browser and returns its output
+func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, timeoutS any, taskID string, local bool, localEngine *string) (string, error) {
+	if pystr.Strip(code) == "" {
+		return toolErr(`No code provided. Pass Python that uses the pre-imported helpers, e.g. new_tab("https://example.com") then print(page_info()).`), nil
+	}
+	blocked, verdictSidecar, err := codeURLVerdict(env, code)
 	if err != nil {
 		return "", err
 	}
 	if blocked != "" {
 		return toolErr(blocked), nil
 	}
-	sessionName := ""
-	if pyrepr.Truthy(session) {
-		sessionName = pyrepr.Str(session)
-	}
 	routeKey := backendCacheKey(ctx, taskID, sessionName, false)
 	localSidecar := verdictSidecar
-	if !execURLRE.MatchString(codeText) {
+	if !execURLRE.MatchString(code) {
 		execStateMu.Lock()
 		localSidecar = execRouteIsSidecar[routeKey]
 		execStateMu.Unlock()
 	}
-	cmd := findCLI(env)
-	if cmd == nil {
-		return toolErr("browser-harness is missing from Icebath's Python environment. Run `icebath update` to re-sync it."), nil
+	python, err := execPython(ctx, env)
+	if err != nil {
+		return toolErr(err.Error()), nil
 	}
-	penv := baseSubprocessEnv(ctx, env)
+	if sessionName != "" && !execSessionRE.MatchString(sessionName) {
+		return toolErr(fmt.Sprintf("Invalid session name %s: use 1-64 letters, digits, dashes, or underscores (e.g. 'r7k2').", pyrepr.StrRepr(sessionName))), nil
+	}
+	route := map[string]string{}
 	if sessionName != "" {
-		text, isStr := session.(string)
-		if !isStr {
-			return "", pyError("TypeError", fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(session)))
-		}
-		if !execSessionRE.MatchString(text) {
-			return toolErr(fmt.Sprintf("Invalid session name %s: use 1-64 letters, digits, dashes, or underscores (e.g. 'r7k2').", pyrepr.StrRepr(text))), nil
-		}
-		penv["BU_NAME"] = text
+		route["BU_NAME"] = sessionName
 	}
-	penv, routeErr, localSidecar, generation := routeExecCurrent(ctx, env, penv, sessionName, taskID, local, localSidecar, routeKey)
+	route, routeErr, localSidecar := routeExecCurrent(ctx, env, route, sessionName, taskID, local, localSidecar, routeKey)
 	if routeErr != "" {
 		return toolErr(routeErr), nil
 	}
 	if localSidecar {
-		penv["BU_NAME"] = sidecarDaemonName(sessionName)
+		route["BU_NAME"] = sidecarSessionName(sessionName)
 	}
-	fitDefaultSocketDir(penv)
 	execStateMu.Lock()
 	execRouteIsSidecar[routeKey] = localSidecar
 	execStateMu.Unlock()
-	engine := penv[botDesktopBrowserSentinel]
-	delete(penv, botDesktopBrowserSentinel)
+	engine := route[botDesktopBrowserSentinel]
 	if localEngine != nil {
 		*localEngine = engine
 	}
-	private := penv[privateBrowserSentinel]
-	delete(penv, privateBrowserSentinel)
-	if sessionName != "" && private == "" {
-		codeText = ownTabPreamble + codeText
-	}
-	activate := penv[cloudBrowserSentinel]
-	delete(penv, cloudBrowserSentinel)
-	if activate == "" {
-		activate = activateNever
-	}
-	if cmd, err = harnessCommand(cmd, activate); err != nil {
-		return "", err
-	}
 	workspace := workspaceDir(env, taskID)
-	if workspace != "" {
-		penv["BH_AGENT_WORKSPACE"] = workspace
-	}
-	if _, ok := penv["BU_AUTOSPAWN"]; !ok && isLegacyBrowserUseCloudConfig(env) {
-		penv["BU_AUTOSPAWN"] = "1"
-	}
 	timeout := clampTimeout(timeoutS)
-	started := float64(time.Now().UnixNano()) / 1e9
+	started := time.Now()
+	run := execRun{python: python, childEnv: execChildEnv(env, route, workspace), route: route, code: code, workspace: workspace,
+		timeout: timeout, activate: route[cloudBrowserSentinel] == activateAlways, ownTab: sessionName != "" && route[privateBrowserSentinel] == ""}
 	dispatch := func() map[string]any {
-		attachVaultSupervisor(ctx, env, penv, taskID)
-		daemon := daemonIdentity(penv)
-		drivenDaemonsMu.Lock()
-		drivenDaemons[identityKey(daemon)] = drivenDaemon{identity: daemon, home: cfgOf(env).homeKey()}
-		drivenDaemonsMu.Unlock()
-		owning := cron.SchedulePeriodic(ctx, func(context.Context) bool {
-			return ownHarnessDaemon(tools.WithEnvHome(ctx, env), penv) == ownNothingYet
-		}, ownDuringCall)
-		defer owning.Cancel(5 * time.Second)
-		res, err := runCLIKillingProcessGroup(cmd, codeText, penv, time.Duration(timeout)*time.Second)
-		if errors.Is(err, errCLITimeout) {
-			return map[string]any{"error_result": toolErr(fmt.Sprintf(
-				"browser-use exec timed out after %ds. The daemon may still be working; retry "+
-					"with a larger timeout_s (max %d), or split the work into several calls that "+
-					"append to workspace files — anything already written to the workspace is preserved.", timeout, execMaxTimeoutS))}
+		attachVaultSupervisor(ctx, env, route, taskID)
+		proc := execRunCode(tools.WithEnvHome(ctx, env), env, run)
+		if proc.timedOut {
+			return map[string]any{"error_result": toolErr(fmt.Sprintf("browser_exec timed out after %ds. The browser may still be working; retry "+
+				"with a larger timeout_s (max %d), or split the work into several calls that "+
+				"append to workspace files — anything already written to the workspace is preserved.", timeout, execMaxTimeoutS))}
 		}
-		if err != nil {
-			return map[string]any{"error_result": toolErr("Failed to launch browser-use CLI: " + pypath.OSErrorText(err))}
+		if proc.launchErr != nil {
+			return map[string]any{"error_result": toolErr("Failed to launch Python for browser_exec: " + pypath.OSErrorText(proc.launchErr))}
 		}
-		return map[string]any{"proc": res}
+		return map[string]any{"proc": proc}
 	}
 	var dispatched map[string]any
 	if engine != "" {
@@ -1090,29 +602,27 @@ func browserExec(ctx context.Context, env *tools.Env, code, session, timeoutS an
 	} else {
 		dispatched = dispatch()
 	}
-	reloadIfRepublished(env, penv, generation)
-	ownHarnessDaemon(tools.WithEnvHome(ctx, env), penv)
-	proc, ok := dispatched["proc"].(*cliResult)
+	proc, ok := dispatched["proc"].(execProc)
 	if !ok {
-		if er, ok := dispatched["error_result"]; ok {
-			return er.(string), nil
+		if refusal, ok := dispatched["error_result"].(string); ok {
+			return refusal, nil
 		}
 		return tools.ToolResult(fenceRefusal(dispatched)), nil
 	}
 	redact := func(s string) string { return tools.RedactSensitiveTextWith(env, s, tools.RedactOptions{Force: true}) }
-	result := pyjson.ObjectOf("success", proc.code == 0, "exit_code", proc.code, "output", redact(proc.stdout))
+	result := pyjson.ObjectOf("success", proc.returnCode == 0, "exit_code", proc.returnCode, "output", redact(proc.stdout))
 	if workspace != "" {
 		result.Set("workspace", workspace)
 	}
 	if sessionName != "" {
-		result.Set("session", session)
+		result.Set("session", sessionName)
 	}
 	if note, ok := takeRealProfileNote(routeKey); ok {
 		result.Set("real_profile_unavailable", note)
 	}
 	stderr := redact(pystr.Strip(proc.stderr))
-	if r := []rune(stderr); len(r) > execStderrCapChars {
-		stderr = string(r[:execStderrCapChars]) + "\n… (stderr truncated)"
+	if runes := []rune(stderr); len(runes) > execStderrCapChars {
+		stderr = string(runes[:execStderrCapChars]) + "\n… (stderr truncated)"
 	}
 	if stderr != "" {
 		result.Set("stderr", stderr)

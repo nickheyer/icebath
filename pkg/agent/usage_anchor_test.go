@@ -98,11 +98,11 @@ func TestSetUsageAnchorMirrorsTheSessionRowAndRestoreHonoursThePricedPrefix(t *t
 	rows := anchorHistoryWithImages(1)
 	anchor := provider.CaptureUsageAnchor(3_000, 20, rowsToMessages(rows))
 	a.setUsageAnchor(anchor, true)
-	if a.usageAnchor != anchor || a.turnBaseUsageAnchor != anchor {
-		t.Fatalf("set %+v %+v", a.usageAnchor, a.turnBaseUsageAnchor)
+	if a.usageAnchor != anchor || a.turnBaseUsageAnchor.Load() != anchor {
+		t.Fatalf("set %+v %+v", a.usageAnchor, a.turnBaseUsageAnchor.Load())
 	}
 	a.setUsageAnchor(provider.CaptureUsageAnchor(3_100, 20, rowsToMessages(rows)), false)
-	if a.turnBaseUsageAnchor != anchor {
+	if a.turnBaseUsageAnchor.Load() != anchor {
 		t.Fatal("non turn base anchor replaced the turn base")
 	}
 	fresh := &AIAgent{sessionID: "s1", sessionDB: db}
@@ -119,7 +119,7 @@ func TestSetUsageAnchorMirrorsTheSessionRowAndRestoreHonoursThePricedPrefix(t *t
 		t.Fatalf("stale blob kept %v", raw)
 	}
 	a.setUsageAnchor(nil, false)
-	if a.usageAnchor != nil || a.turnBaseUsageAnchor != nil {
+	if a.usageAnchor != nil || a.turnBaseUsageAnchor.Load() != nil {
 		t.Fatal("nil anchor did not clear both")
 	}
 }

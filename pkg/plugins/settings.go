@@ -303,6 +303,12 @@ func settingsValueTyped(kind string, v any) bool {
 	return false
 }
 
+// PluginSettingsValueError is a settings edit the schema refuses, the ValueError a form shows back
+type PluginSettingsValueError struct{ Msg string }
+
+func (e *PluginSettingsValueError) Error() string      { return e.Msg }
+func (e *PluginSettingsValueError) PyTypeName() string { return "ValueError" }
+
 // Validates every edit against the schema then writes each one, returning the keys written in order
 func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, values []PluginSettingValue) ([]string, error) {
 	schema := map[string]map[string]any{}
@@ -318,14 +324,14 @@ func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, valu
 	for _, kv := range values {
 		spec, ok := schema[kv.Key]
 		if !ok {
-			return nil, fmt.Errorf("%s is not declared in the plugin's config_schema", config.PyRepr(kv.Key))
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is not declared in the plugin's config_schema", config.PyRepr(kv.Key))}
 		}
 		kind := settingsFieldType(spec)
 		if kind == "secret" {
-			return nil, fmt.Errorf("%s is a secret; it is stored in .env, not config.yaml", config.PyRepr(kv.Key))
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s is a secret; it is stored in .env, not config.yaml", config.PyRepr(kv.Key))}
 		}
 		if !settingsValueTyped(kind, kv.Value) {
-			return nil, fmt.Errorf("%s should be %s (got %s)", config.PyRepr(kv.Key), kind, config.PyTypeName(kv.Value))
+			return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s should be %s (got %s)", config.PyRepr(kv.Key), kind, config.PyTypeName(kv.Value))}
 		}
 		if kind == "enum" {
 			allowed := false
@@ -336,12 +342,12 @@ func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, valu
 				}
 			}
 			if !allowed {
-				return nil, fmt.Errorf("%s must be one of the declared choices", config.PyRepr(kv.Key))
+				return nil, &PluginSettingsValueError{Msg: fmt.Sprintf("%s must be one of the declared choices", config.PyRepr(kv.Key))}
 			}
 		}
 		segments, err := PluginRelativeSegments(kv.Key)
 		if err != nil {
-			return nil, err
+			return nil, &PluginSettingsValueError{Msg: err.Error()}
 		}
 		plan = append(plan, planned{kv.Key, segments, kv.Value})
 	}

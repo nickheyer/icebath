@@ -524,7 +524,7 @@ func ShouldDeferLocalEnumeration(route RegistryLocalRoute, poolKeys []string, co
 // RosterProfileMetadata is the display metadata a source reports for one profile
 type RosterProfileMetadata struct {
 	DisplayName string         `json:"display_name,omitempty"`
-	Title       string         `json:"title,omitempty"`
+	Title       *string        `json:"title,omitempty"`
 	UIMeta      map[string]any `json:"ui_meta,omitempty"`
 	HasAvatar   *bool          `json:"has_avatar,omitempty"`
 }

@@ -328,10 +328,10 @@ func resumePanelColors(c *CLI) [4]string {
 
 // Drops the agent so the next turn rebuilds it, releasing the LLM clients of an agent that holds its own first
 func retireAgent(c *CLI) {
-	if holder, ok := c.agent.(interface{ ReleaseClients(context.Context) }); ok {
-		holder.ReleaseClients(c.ctx)
+	if holder, ok := c.agentRef().(interface{ releaseClients() }); ok {
+		holder.releaseClients()
 	}
-	c.agent = nil
+	c.setAgent(nil)
 }
 
 // Re-resolves provider credentials before agent use, false on an auth failure
@@ -414,7 +414,7 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 		c.resolveCLIReasoning()
 		cliLogger.Info(fmt.Sprintf("Model moved to %s: reasoning_config resolved: %v", c.model, c.reasoningConfig))
 	}
-	if (credentialsChanged || routingChanged || modelChanged) && c.agent != nil {
+	if (credentialsChanged || routingChanged || modelChanged) && c.agentRef() != nil {
 		retireAgent(c)
 		c.activeAgentRouteSignature = ""
 	}
@@ -771,7 +771,7 @@ func (c *CLI) loadResumedHistoryLate() bool {
 
 // Builds the agent on first use, restoring history from SQLite when resuming, true on success
 func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, requestOverrides map[string]any) bool {
-	if c.agent != nil {
+	if c.agentRef() != nil {
 		return true
 	}
 	if err := c.finalizePreloadedSkills(); err != nil {
@@ -834,7 +834,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		}
 		return false
 	}
-	c.agent = a
+	c.setAgent(a)
 	setActiveAgent(a)
 	a.SetControlUpdateCallback(c.markAutomationStale)
 	a.SetPrintFn(c.agentStatusPrint)
@@ -846,6 +846,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		c.reasoningUserSet = false
 	}
 	if c.pendingTitle != "" && c.sessionDB != nil {
+		a.ensureDBSession()
 		if _, terr := c.sessionDB.SetSessionTitle(c.ctx, c.sessionID, c.pendingTitle); terr != nil {
 			cprint("  " + i18n.T(c.ctx, "cli.resume.title_apply_failed", "", map[string]any{"error": terr}))
 		} else {

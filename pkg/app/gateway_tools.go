@@ -119,9 +119,14 @@ func bindGatewayView(connection *gatewaycli.GatewayConnection, sessionID func() 
 	defer gatewayViewMu.Unlock()
 	gatewayView = nil
 	if connection != nil {
-		gatewayView = &GatewayProcessView{connection: connection, sessionID: sessionID, dirty: true}
+		gatewayView = newGatewayProcessView(connection, sessionID)
 	}
 	return gatewayView
+}
+
+// Stale view with no rows or subagents yet, its session id read from sessionID on every call
+func newGatewayProcessView(connection *gatewaycli.GatewayConnection, sessionID func() string) *GatewayProcessView {
+	return &GatewayProcessView{connection: connection, sessionID: sessionID, dirty: true}
 }
 
 // Binds the view to the CLI's gateway agent once it is built
@@ -129,13 +134,27 @@ func bindGatewayAgent(a *GatewayAgent) *GatewayProcessView {
 	return bindGatewayView(a.connection, a.SessionID)
 }
 
+// CLI's open gateway session before any chat agent exists, its id following the CLI's
+type openedSession struct {
+	cli        *CLI
+	connection *gatewaycli.GatewayConnection
+}
+
+func newOpenedSession(c *CLI, connection *gatewaycli.GatewayConnection) *openedSession {
+	return &openedSession{cli: c, connection: connection}
+}
+
+// Session id the CLI currently holds
+func (s *openedSession) sessionID() string {
+	s.cli.uiMu.Lock()
+	defer s.cli.uiMu.Unlock()
+	return s.cli.sessionID
+}
+
 // Binds the view to the CLI's open gateway session before any agent exists, following the CLI's id
 func bindGatewaySession(c *CLI, connection *gatewaycli.GatewayConnection) *GatewayProcessView {
-	return bindGatewayView(connection, func() string {
-		c.uiMu.Lock()
-		defer c.uiMu.Unlock()
-		return c.sessionID
-	})
+	opened := newOpenedSession(c, connection)
+	return bindGatewayView(opened.connection, opened.sessionID)
 }
 
 // Marks the bound view stale after a tool may have started or stopped a process

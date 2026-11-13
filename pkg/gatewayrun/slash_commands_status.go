@@ -58,8 +58,40 @@ func intValue(v any) int {
 	return int(n)
 }
 
+// Counter read from the agent, zero when there is none
+func agentCount(a *agent.AIAgent, read func(*agent.AIAgent) int) int {
+	if a == nil {
+		return 0
+	}
+	return read(a)
+}
+
 // Integer with thousands separators
 func fmtThousands(n int) string { return pystr.GroupThousands(int64(n)) }
+
+// Result of a call that may fail, the fallback when it does
+func quiet[T any](call func() (T, error), fallback T) (out T) {
+	defer func() {
+		if recover() != nil {
+			out = fallback
+		}
+	}()
+	value, err := call()
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+// Result of a call that reports no error, the fallback when it breaks
+func quietSync[T any](call func() T, fallback T) (out T) {
+	defer func() {
+		if recover() != nil {
+			out = fallback
+		}
+	}()
+	return call()
+}
 
 // Occupancy percentage clamped to one hundred, zero for an unknown window
 func occupancyPct(used, total int) float64 {
@@ -150,7 +182,7 @@ func statusModelRoute(ctx context.Context, statusAgent *agent.AIAgent, activeOve
 	modelName, providerName := winner.model, winner.provider
 	var userConfig map[string]any
 	if modelName == "" || providerName == "" {
-		userConfig = gateway.LoadGatewayConfigMap(ctx, "")
+		userConfig = quietSync(func() map[string]any { return gateway.LoadGatewayConfigMap(ctx, "") }, map[string]any{})
 	}
 	modelCfg, _ := userConfig["model"].(map[string]any)
 	if modelName == "" {
@@ -189,11 +221,8 @@ func contextCompressorLines(ctx context.Context, a *agent.AIAgent, engine agent.
 	if compressor, ok := engine.(*agent.ContextCompressor); ok && compressions != 0 {
 		lines = append(lines, i18n.T(ctx, "gateway.context.last_savings", "", map[string]any{"savings": fmt0(compressor.LastCompressionSavingsPct())}))
 	}
-	calls, input, output, reasoning, total := 0, 0, 0, 0, 0
-	if a != nil {
-		calls, input, output = a.SessionAPICalls(), a.SessionInputTokens(), a.SessionOutputTokens()
-		reasoning, total = a.SessionReasoningTokens(), a.SessionTotalTokens()
-	}
+	calls, input, output := agentCount(a, (*agent.AIAgent).SessionAPICalls), agentCount(a, (*agent.AIAgent).SessionInputTokens), agentCount(a, (*agent.AIAgent).SessionOutputTokens)
+	reasoning, total := agentCount(a, (*agent.AIAgent).SessionReasoningTokens), agentCount(a, (*agent.AIAgent).SessionTotalTokens)
 	return append(lines, "",
 		i18n.T(ctx, "gateway.context.totals_header", "", map[string]any{"calls": calls}),
 		i18n.T(ctx, "gateway.context.totals_line", "", map[string]any{"input": fmtThousands(input), "output": fmtThousands(output), "reasoning": fmtThousands(reasoning)}),
@@ -325,12 +354,15 @@ func (r *GatewayRunner) statusSessionDBFacts(ctx context.Context, sessionID stri
 		return nil, pyjson.NewObject(), 0, pyjson.NewObject()
 	}
 	db := asyncDB.DB()
-	var title *string
-	if text, has, err := db.GetSessionTitle(ctx, sessionID); err == nil && has {
-		title = &text
-	}
-	sessionRow, err := db.GetSession(ctx, sessionID)
-	if err != nil || sessionRow == nil {
+	title := quiet(func() (*string, error) {
+		text, has, err := db.GetSessionTitle(ctx, sessionID)
+		if err != nil || !has {
+			return nil, err
+		}
+		return &text, nil
+	}, nil)
+	sessionRow := quiet(func() (*pyjson.Object, error) { return db.GetSession(ctx, sessionID) }, nil)
+	if sessionRow == nil {
 		sessionRow = pyjson.NewObject()
 	}
 	total := 0
@@ -338,8 +370,8 @@ func (r *GatewayRunner) statusSessionDBFacts(ctx context.Context, sessionID stri
 		v, _ := sessionRow.Get(k)
 		total += intValue(v)
 	}
-	route, err := db.GetRecentSessionModelRoute(ctx, sessionID)
-	if err != nil || route == nil {
+	route := quiet(func() (*pyjson.Object, error) { return db.GetRecentSessionModelRoute(ctx, sessionID) }, nil)
+	if route == nil {
 		route = pyjson.NewObject()
 	}
 	return title, sessionRow, total, route
@@ -433,7 +465,7 @@ func (r *GatewayRunner) resolveContextFigures(ctx context.Context, a *agent.AIAg
 	}
 	if modelName == "" {
 		if asyncDB := r.sessionDB(ctx); asyncDB != nil {
-			if row, err := asyncDB.DB().GetSession(ctx, entry.SessionID); err == nil && row != nil {
+			if row := quiet(func() (*pyjson.Object, error) { return asyncDB.DB().GetSession(ctx, entry.SessionID) }, nil); row != nil {
 				v, _ := row.Get("model")
 				modelName = cleanStr(v)
 			}
@@ -448,34 +480,31 @@ func (r *GatewayRunner) resolveContextFigures(ctx context.Context, a *agent.AIAg
 		}
 	}
 	if contextLength == 0 && modelName != "" {
-		contextLength = func() (n int) {
-			defer func() {
-				if recover() != nil {
-					n = 0
-				}
-			}()
+		contextLength = quietSync(func() int {
 			return provider.GetModelContextLength(ctx, provider.ContextLengthRequest{Model: modelName})
-		}()
+		}, 0)
 	}
 	return used, contextLength, modelName
 }
 
 // Gateway model context of a non resident session inside the profile serving the source, false on any failure
-func (r *GatewayRunner) resolveRouteContext(ctx context.Context, source *gateway.SessionSource, modelName string, route map[string]any) (resolved gatewayModelContext, ok bool) {
-	defer func() {
-		if recover() != nil {
-			resolved, ok = gatewayModelContext{}, false
+func (r *GatewayRunner) resolveRouteContext(ctx context.Context, source *gateway.SessionSource, modelName string, route map[string]any) (gatewayModelContext, bool) {
+	resolved := quiet(func() (*gatewayModelContext, error) {
+		scoped := ctx
+		if r.multiplexProfiles() {
+			profileHome, err := r.ResolveProfileHomeForSource(ctx, source)
+			if err != nil {
+				return nil, err
+			}
+			scoped = gateway.ProfileRuntimeScope(ctx, profileHome, true)
 		}
-	}()
-	scoped := ctx
-	if r.multiplexProfiles() {
-		profileHome, err := r.ResolveProfileHomeForSource(ctx, source)
-		if err != nil {
-			return gatewayModelContext{}, false
-		}
-		scoped = gateway.ProfileRuntimeScope(ctx, profileHome, true)
+		found := resolveGatewayModelContext(scoped, modelName, route)
+		return &found, nil
+	}, nil)
+	if resolved == nil {
+		return gatewayModelContext{}, false
 	}
-	return resolveGatewayModelContext(scoped, modelName, route), true
+	return *resolved, true
 }
 
 // Per category context block with optional expanded listings, empty on any rendering failure

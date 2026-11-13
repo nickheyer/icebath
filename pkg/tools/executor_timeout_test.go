@@ -147,11 +147,11 @@ func TestSequentialToolTimeoutEmitsResultAndContinues(t *testing.T) {
 		return "second result"
 	}))
 	var flushes int
-	host.flush = func([]*state.Message) (bool, error) {
+	host.flush = func([]*state.Message) state.FlushOutcome {
 		mu.Lock()
 		flushes++
 		mu.Unlock()
-		return true, nil
+		return state.FlushPersisted
 	}
 	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "1.0")
 	var messages []*state.Message

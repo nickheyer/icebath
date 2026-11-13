@@ -493,10 +493,7 @@ func TestTaskEndsDoNotWaitOnTheProcessWideFlushBarrier(t *testing.T) {
 	fake.relay.Subscribers.Flush = func() error {
 		attempts.Add(1)
 		enterOnce.Do(func() { close(entered) })
-		select {
-		case <-release:
-		case <-time.After(3 * time.Second):
-		}
+		<-release
 		return nil
 	}
 	t.Cleanup(func() {
@@ -504,11 +501,7 @@ func TestTaskEndsDoNotWaitOnTheProcessWideFlushBarrier(t *testing.T) {
 		joinExportWorkers(t, ctx)
 	})
 	finishDesktopTask(ctx, "s1", "t1")
-	select {
-	case <-entered:
-	case <-time.After(3 * time.Second):
-		t.Fatal("flush never entered")
-	}
+	<-entered
 	root := metricsRoot(ctx)
 	if paths := outboxPackages(t, root); len(paths) != 0 {
 		t.Fatalf("exported %v", paths)

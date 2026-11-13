@@ -231,8 +231,8 @@ func bannerPlan(c *CLI) BannerPlan {
 	}
 	var ctxLen *int
 	configCtxLen := 0
-	if c.agent != nil {
-		reading := readAgentUsage(c, agentGateway(c.agent))
+	if a := c.agentRef(); a != nil {
+		reading := readAgentUsage(c, agentGateway(a))
 		n := reading.ContextLength
 		ctxLen = &n
 		configCtxLen = reading.ConfigContextLength
@@ -438,7 +438,7 @@ func (c *CLI) printProjectSkillsNotice() {
 // Reports whether the model in use supports the fast service tier
 func (c *CLI) fastCommandAvailable() bool {
 	model := c.model
-	if a := c.agent; a != nil && a.Model() != "" {
+	if a := c.agentRef(); a != nil && a.Model() != "" {
 		model = a.Model()
 	}
 	return provider.ModelSupportsFastMode(model)
@@ -841,9 +841,9 @@ func (c *CLI) toggleVerbose() {
 			SaveConfigValue(c.ctx, FocusConfigKey, false)
 		}()
 	}
-	if c.agent != nil {
-		c.agent.SetReasoningCallback(c.currentReasoningCallback())
-		c.agent.SetToolProgressMode(c.toolProgressMode)
+	if a := c.agentRef(); a != nil {
+		a.SetReasoningCallback(c.currentReasoningCallback())
+		a.SetToolProgressMode(c.toolProgressMode)
 	}
 	cprint(toolProgressLabel(c.ctx, c.toolProgressMode))
 }
@@ -872,13 +872,13 @@ func (c *CLI) agentOrSelf(name string) string {
 	switch name {
 	case "provider":
 		own = c.provider
-		if c.agent != nil {
-			fromAgent = c.agent.Provider()
+		if a := c.agentRef(); a != nil {
+			fromAgent = a.Provider()
 		}
 	case "base_url":
 		own = c.baseURL
-		if c.agent != nil {
-			fromAgent = c.agent.BaseURL()
+		if a := c.agentRef(); a != nil {
+			fromAgent = a.BaseURL()
 		}
 	case "api_key":
 		own = c.apiKey
@@ -975,11 +975,12 @@ func (c *CLI) showUsage() {
 			infoPrint(fallback)
 		}
 	}
-	if c.agent == nil {
+	a := c.agentRef()
+	if a == nil {
 		creditsOr(c.t("cli.shared.no_active_agent", nil))
 		return
 	}
-	r := readAgentUsage(c, agentGateway(c.agent))
+	r := readAgentUsage(c, agentGateway(a))
 	if r.Calls == 0 {
 		creditsOr(c.t("cli.usage.no_api_calls", nil))
 		return
@@ -1357,6 +1358,9 @@ func (c *CLI) reloadMCPLocal() error {
 	}
 	c.conversationHistory = append(c.conversationHistory, map[string]any{"role": "user",
 		"content": "[IMPORTANT: MCP servers have been reloaded. " + changeDetail + toolSummary + ". The tool list for this conversation has been updated accordingly.]"})
+	if g := agentGateway(c.agentRef()); g != nil {
+		g.persistSession()
+	}
 	infoPrint("  " + c.t("cli.reload_mcp.agent_updated", map[string]any{"count": "0"}))
 	return nil
 }

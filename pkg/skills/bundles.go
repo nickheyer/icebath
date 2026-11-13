@@ -335,7 +335,7 @@ func (s *Scope) SaveBundle(ctx context.Context, name string, skills []string, de
 	if err != nil {
 		return "", err
 	}
-	st, statErr := os.Stat(path)
+	_, statErr := os.Stat(path)
 	if statErr == nil && !overwrite {
 		return "", &BundleError{"FileExistsError", "Bundle already exists at " + path}
 	}
@@ -355,11 +355,7 @@ func (s *Scope) SaveBundle(ctx context.Context, name string, skills []string, de
 	if err != nil {
 		return "", err
 	}
-	if statErr == nil {
-		err = pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.Home), path, string(text), ".tmp_", st.Mode().Perm())
-	} else {
-		err = pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), path, string(text), ".tmp_")
-	}
+	err = pyfs.AtomicWriteTextWith(home.WithOverride(ctx, s.Home), path, string(text), pyfs.TextWrite{PreserveMode: true})
 	if err != nil {
 		return "", err
 	}

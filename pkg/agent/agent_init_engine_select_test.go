@@ -1,9 +1,7 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,33 +95,6 @@ class Demo(ContextEngine):
 def register(ctx):
     ctx.register_context_engine(Demo())
 `
-
-func TestUserInstalledEngineIsSelectedByNameThroughAgentInit(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := hostedEngineTestHome(t, map[string]string{"plugins/ctx_demo/__init__.py": ctxDemoEngineSrc, "plugins/notes/__init__.py": "def register(ctx): pass\n"})
-	if plugins.LoadContextEngine(ctx, "notes") != nil {
-		t.Fatal("an unrelated user plugin loaded as an engine")
-	}
-	infos, err := plugins.DiscoverContextEngines(ctx)
-	found := false
-	for _, info := range infos {
-		found = found || info.Name == "ctx_demo"
-	}
-	if err != nil || !found {
-		t.Fatalf("discovered %v %v", infos, err)
-	}
-	var logs bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	engine := selectContextEngine(ctx, map[string]any{"context": map[string]any{"engine": "ctx_demo"}})
-	if engine == nil || engine.Name() != "ctx_demo" {
-		t.Fatalf("engine %v", engine)
-	}
-	if strings.Contains(logs.String(), "not found") {
-		t.Fatalf("logs %s", logs.String())
-	}
-}
 
 type lcmEngine struct{ stubEngine }
 

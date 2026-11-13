@@ -23,31 +23,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds between run claim heartbeats of a long one shot script
 var runClaimHeartbeatSeconds = 60.0
-
-const posixScriptBootstrap = `import importlib.machinery, os, sys, types
-repo, script = sys.argv[1], sys.argv[2]
-sys.argv = [script] + sys.argv[3:]
-if sys.flags.safe_path:
-    sys.path.insert(0, repo)
-else:
-    sys.path[0:1] = [os.path.dirname(script), repo]
-main = types.ModuleType("__main__")
-main.__file__ = script
-main.__loader__ = importlib.machinery.SourceFileLoader("__main__", script)
-main.__cached__ = None
-main.__builtins__ = __builtins__
-sys.modules["__main__"] = main
-with open(script, "rb") as f:
-    code = compile(f.read(), script, "exec")
-exec(code, main.__dict__)
-`
 
 // Kill paths, spawn, interpreter and bash lookups, script run and claim refresh a test swaps
 var (
@@ -74,26 +55,6 @@ func (s *Store) getSessionDBTimeout(ctx context.Context) float64 {
 		return v
 	}
 	return 10.0
-}
-
-// Lowercased keys and stripped values of a venv pyvenv.cfg, empty when unreadable, an error for bytes that are not UTF-8
-func readWindowsPyvenvCfg(venvDir string) (map[string]string, error) {
-	out := map[string]string{}
-	data, err := os.ReadFile(filepath.Join(venvDir, "pyvenv.cfg"))
-	if err != nil {
-		return out, nil
-	}
-	text, err := pystr.DecodeUTF8SigFile(data)
-	if err != nil {
-		return nil, err
-	}
-	for _, raw := range pystr.Splitlines(text, false) {
-		key, value, found := strings.Cut(raw, "=")
-		if found {
-			out[pystr.Lower(pystr.Strip(key))] = pystr.Strip(value)
-		}
-	}
-	return out, nil
 }
 
 // Script path confined to the profile scripts folder, or the refusal the run reports
@@ -182,7 +143,7 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 	return resolved, "", nil
 }
 
-// First python3 or python on PATH, the interpreter a non managed install runs scripts on
+// First python3 or python on PATH, the interpreter Python scripts run on
 func cronHostPython() (string, error) {
 	for _, name := range []string{"python3", "python"} {
 		p, err := exec.LookPath(name)
@@ -197,122 +158,8 @@ func cronHostPython() (string, error) {
 	return "", errors.New("no Python interpreter found on PATH")
 }
 
-// Managed installs run a py script on the dependency venv with the checkout first on sys.path and lazy installs off
-func posixCronScriptArgv(ctx context.Context, script string) ([]string, map[string]string, error) {
-	repo := pm.RepoRoot()
-	resident, err := pm.FindResidentRuntime()
-	if err != nil {
-		return nil, nil, err
-	}
-	if resident == nil {
-		python, err := cronSysExecutable()
-		if err != nil {
-			return nil, nil, err
-		}
-		return []string{python, script}, map[string]string{}, nil
-	}
-	python, err := pm.ProjectPython(ctx, repo)
-	if err != nil {
-		return nil, nil, err
-	}
-	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
-		return nil, nil, fmt.Errorf("dependency environment interpreter is missing: %s", python)
-	}
-	return []string{python, "-c", posixScriptBootstrap, repo, script}, map[string]string{"ICEBATH_DISABLE_LAZY_INSTALLS": "1"}, nil
-}
-
-// Hidden output capturing Windows Python with venv paths overlaid instead of the uv launcher
-func windowsCronPythonInvocation(ctx context.Context, pythonExe string) (string, map[string]string, error) {
-	if runtime.GOOS != "windows" {
-		return pythonExe, map[string]string{}, nil
-	}
-	interpreter := pypath.PathStr(pythonExe)
-	venvDir := pypath.PathParent(pypath.PathParent(interpreter))
-	overlay := map[string]string{}
-	if pystr.Lower(pypath.PathName(interpreter)) == "pythonw.exe" {
-		sibling := pypath.PathJoin(pypath.PathParent(interpreter), "python.exe")
-		info, err := pypath.PathlibStat(sibling)
-		if err != nil {
-			return "", nil, err
-		}
-		if info != nil {
-			interpreter = sibling
-		}
-	}
-	repo := pm.RepoRoot()
-	resident, err := pm.FindResidentRuntime()
-	if err != nil {
-		return "", nil, err
-	}
-	if resident != nil {
-		environment, err := pm.CommittedVenv(ctx, repo)
-		if err != nil {
-			return "", nil, err
-		}
-		if environment != "" {
-			site, err := pm.SitePackages(environment)
-			if err != nil {
-				return "", nil, err
-			}
-			return resident.Python, map[string]string{"PYTHONPATH": strings.Join([]string{repo, site}, string(os.PathListSeparator))}, nil
-		}
-	}
-	cfg, err := readWindowsPyvenvCfg(venvDir)
-	if err != nil {
-		return "", nil, err
-	}
-	homeDir := cfg["home"]
-	sitePackages := pypath.PathJoin(venvDir, "Lib", "site-packages")
-	if _, isUV := cfg["uv"]; isUV && homeDir != "" {
-		basePython := pypath.PathJoin(homeDir, "python.exe")
-		baseInfo, err := pypath.PathlibStat(basePython)
-		if err != nil {
-			return "", nil, err
-		}
-		if baseInfo != nil {
-			siteInfo, err := pypath.PathlibStat(sitePackages)
-			if err != nil {
-				return "", nil, err
-			}
-			if siteInfo != nil {
-				interpreter = basePython
-				overlay["VIRTUAL_ENV"] = venvDir
-				entries := []string{repo, sitePackages}
-				if existing := os.Getenv("PYTHONPATH"); existing != "" {
-					entries = append(entries, existing)
-				}
-				overlay["PYTHONPATH"] = strings.Join(entries, string(os.PathListSeparator))
-			}
-		}
-	}
-	return interpreter, overlay, nil
-}
-
-// Base interpreter argv that runs a script after site.addsitedir so editable installs import
-func (s *Store) windowsCronBootstrapArgv(pythonExe string, overlay map[string]string, scriptPath string) []string {
-	sitePackages := pypath.PathJoin(overlay["VIRTUAL_ENV"], "Lib", "site-packages")
-	for _, item := range strings.Split(overlay["PYTHONPATH"], string(os.PathListSeparator)) {
-		if pypath.PathName(item) == "site-packages" {
-			sitePackages = pypath.PathStr(item)
-			break
-		}
-	}
-	if info, err := os.Stat(sitePackages); err != nil || !info.IsDir() {
-		s.log.Warn(fmt.Sprintf("Windows cron script: venv site-packages %s not found; running "+
-			"without .pth processing (editable installs may be unimportable)", sitePackages))
-		return []string{pythonExe, scriptPath}
-	}
-	bootstrap := "import os, runpy, site, sys;" +
-		"site.addsitedir(" + pyrepr.StrRepr(sitePackages) + ");" +
-		"script = sys.argv[1];" +
-		"sys.argv = [script] + sys.argv[2:];" +
-		"sys.path.insert(0, os.path.dirname(os.path.abspath(script)));" +
-		"runpy.run_path(script, run_name='__main__')"
-	return []string{pythonExe, "-c", bootstrap, scriptPath}
-}
-
-// Argv and env overlay by extension, bash for sh scripts, else the job interpreter or the install Python
-func (s *Store) scriptArgv(ctx context.Context, path string, interpreter *string) ([]string, map[string]string, string, error) {
+// Argv by extension, bash for sh scripts, else the job interpreter or the Python on PATH
+func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, error) {
 	suffix := pystr.Lower(pypath.PathSuffix(path))
 	if suffix == ".sh" || suffix == ".bash" {
 		bash, found := cronWhich("bash", nil)
@@ -322,38 +169,27 @@ func (s *Store) scriptArgv(ctx context.Context, path string, interpreter *string
 			}
 		}
 		if !found {
-			return nil, map[string]string{}, fmt.Sprintf("Cannot run .sh/.bash script %s: bash not found on PATH. "+
+			return nil, fmt.Sprintf("Cannot run .sh/.bash script %s: bash not found on PATH. "+
 				"On Windows, install Git for Windows (which ships Git Bash) "+
 				"or rewrite the script as Python (.py).", pyrepr.StrRepr(pypath.PathName(path))), nil
 		}
-		return []string{bash, path}, map[string]string{}, "", nil
+		return []string{bash, path}, "", nil
 	}
 	if interpreter != nil && pystr.Strip(*interpreter) != "" {
 		pythonExe, refusal, err := resolveCronInterpreter(*interpreter)
 		if err != nil {
-			return nil, nil, "", err
+			return nil, "", err
 		}
 		if pythonExe == "" {
-			return nil, map[string]string{}, refusal, nil
+			return nil, refusal, nil
 		}
-		return []string{pythonExe, path}, map[string]string{}, "", nil
-	}
-	if runtime.GOOS != "windows" {
-		argv, overlay, err := posixCronScriptArgv(ctx, path)
-		return argv, overlay, "", err
+		return []string{pythonExe, path}, "", nil
 	}
 	host, err := cronSysExecutable()
 	if err != nil {
-		return nil, nil, "", err
+		return nil, "", err
 	}
-	pythonExe, overlay, err := windowsCronPythonInvocation(ctx, host)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	if len(overlay) > 0 {
-		return s.windowsCronBootstrapArgv(pythonExe, overlay, path), overlay, "", nil
-	}
-	return []string{pythonExe, path}, overlay, "", nil
+	return []string{host, path}, "", nil
 }
 
 // Running script with its own pipe ends, closed once the process exits and both pipes reach EOF
@@ -553,7 +389,7 @@ func (s *Store) scriptToolEnv(ctx context.Context) *tools.Env {
 
 // Body of the script run whose errors become the execution failure text
 func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, cancel CancelSource, interpreter *string, scriptTimeout int) (bool, string, error) {
-	argv, overlay, refusal, err := s.scriptArgv(ctx, path, interpreter)
+	argv, refusal, err := s.scriptArgv(path, interpreter)
 	if err != nil {
 		return false, "", err
 	}
@@ -563,9 +399,6 @@ func (s *Store) runResolvedScript(ctx context.Context, path, workdir string, can
 	env, err := tools.BuildSubprocessEnv(ctx, s.scriptToolEnv(ctx), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if err != nil {
 		return false, "", err
-	}
-	for k, v := range overlay {
-		env[k] = v
 	}
 	dir := workdir
 	if dir == "" {

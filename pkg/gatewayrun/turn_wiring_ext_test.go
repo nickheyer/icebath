@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
+	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -55,7 +56,7 @@ func init() {
 	}
 	gatewayrun.SaveConfigValue = app.SaveConfigValue
 	gatewayrun.SanitizeTelegramName = commands.SanitizeTelegramName
-	gatewayrun.KanbanRunSlash = app.RunKanbanSlash
+	kanban.ParseSlash = app.ParseKanbanSlash
 	gatewayrun.RunCuratorSlash = app.RunCuratorSlash
 	gatewayrun.RandomTip = app.RandomTip
 	gatewayrun.GatewayDebugLocalReport = selfupdate.GatewayDebugLocalReport

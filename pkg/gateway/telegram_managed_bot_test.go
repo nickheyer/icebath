@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 const (
@@ -37,13 +36,14 @@ func TestQRCodePrintQrCodeWithUrl(t *testing.T) {
 	}
 }
 
-func TestQRCodePrintQrCodeTipTargetsActiveInterpreter(t *testing.T) {
+func TestQRCodePrintQrCodePrintsTheRenderedCodeAndLink(t *testing.T) {
 	out := telegramOutput(t)
-	swapSetup(t, &telegramRenderQR, func(string) (string, error) { return "", nil })
+	swapSetup(t, &telegramRenderQR, func(string) (string, error) { return "QR-BLOCK", nil })
 	if err := printQRCode("https://t.me/newbot/Bot/test_bot", true); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), pm.InstallHint("messaging")) || strings.Contains(out.String(), "pip install") {
+	if !strings.Contains(out.String(), "QR-BLOCK\n  Link: https://t.me/newbot/Bot/test_bot") || strings.Contains(out.String(), "pip install") ||
+		strings.Contains(out.String(), "pm install") {
 		t.Fatalf("output %q", out.String())
 	}
 }

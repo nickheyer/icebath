@@ -21,7 +21,7 @@ go run ./cmd/icebath-build web
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "-> Building icebath..." -ForegroundColor Cyan
 $env:CGO_ENABLED = "0"
-go build -tags webdist -trimpath -o icebath.exe ./cmd/icebath
+go build -tags webdist,goolm -trimpath -o icebath.exe ./cmd/icebath
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "OK Built $PSScriptRoot\icebath.exe" -ForegroundColor Green
 

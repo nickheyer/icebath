@@ -20,38 +20,71 @@ import (
 
 // Source tree the running code was built from, else the directory holding the running binary
 func GetProjectRoot() string {
-	_, file, _, ok := runtime.Caller(0)
-	if ok && filepath.IsAbs(file) {
-		root := filepath.Dir(filepath.Dir(filepath.Dir(file)))
-		if resolved, err := filepath.EvalSymlinks(root); err == nil {
-			return resolved
-		}
+	if root := RunningSourceTree(); root != "" {
+		return root
 	}
-	exe, exeErr := os.Executable()
-	if exeErr == nil {
-		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = resolved
-		}
-	}
-	wd, _ := os.Getwd()
-	if ok && !filepath.IsAbs(file) {
-		var starts []string
-		if exeErr == nil {
-			starts = append(starts, filepath.Dir(exe))
-		}
-		if wd != "" {
-			starts = append(starts, wd)
-		}
-		for _, start := range starts {
-			if root, found := trimmedSourceRoot(start, filepath.ToSlash(file)); found {
-				return root
-			}
-		}
-	}
-	if exeErr != nil {
+	exe, err := os.Executable()
+	if err != nil {
+		wd, _ := os.Getwd()
 		return wd
 	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
 	return filepath.Dir(exe)
+}
+
+// RunningSourceTree is the module tree holding this binary's own source, empty when no such tree exists here
+func RunningSourceTree() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	if filepath.IsAbs(file) {
+		root, err := filepath.EvalSymlinks(filepath.Dir(filepath.Dir(filepath.Dir(file))))
+		if err != nil {
+			return ""
+		}
+		return root
+	}
+	for _, start := range trimmedSourceStarts() {
+		if root, found := trimmedSourceRoot(start, filepath.ToSlash(file)); found {
+			return root
+		}
+	}
+	return ""
+}
+
+// Steward install root, the resolved binary directory, and the cwd of a go run or go test build
+func trimmedSourceStarts() []string {
+	var starts []string
+	if env := os.Getenv("ICEBATH_INSTALL_ROOT"); env != "" {
+		starts = append(starts, env)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return starts
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	starts = append(starts, filepath.Dir(exe))
+	if goWorkBinary(exe) {
+		if wd, err := os.Getwd(); err == nil {
+			starts = append(starts, wd)
+		}
+	}
+	return starts
+}
+
+// Reports whether a binary sits in a go command work directory, where go run and go test build inside the module
+func goWorkBinary(exe string) bool {
+	for dir := filepath.Dir(exe); filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+		if strings.HasPrefix(filepath.Base(dir), "go-build") {
+			return true
+		}
+	}
+	return false
 }
 
 // Nearest ancestor whose go.mod module joined with the trimmed path names an existing source file
@@ -146,7 +179,7 @@ func RequireParseableUserConfig(ctx context.Context, h string, ignoreUserConfig 
 	if ignoreUserConfig || os.Getenv("ICEBATH_IGNORE_USER_CONFIG") == "1" {
 		return nil
 	}
-	configPath := home.ConfigPath(h)
+	configPath := GetConfigPath(h)
 	data, parseErr := ReadConfigDoc(ctx, configPath)
 	if errors.Is(parseErr, fs.ErrNotExist) {
 		return nil
@@ -221,7 +254,7 @@ var runEditor = func(editor, path string) error {
 
 // Opens the config file in the user editor, seeding a missing file first
 func EditConfig(ctx context.Context, h string) error {
-	if ManagedSystem(ctx, h) != "" {
+	if IsManaged(ctx, h) {
 		ManagedError(ctx, h, "edit configuration")
 		return nil
 	}
@@ -233,7 +266,7 @@ func EditConfig(ctx context.Context, h string) error {
 		return exitInvalid("`icebath config edit` opens the local config file, and this config backend has none. " +
 			"Use `icebath config set <key> <value>` instead.")
 	}
-	configPath := home.ConfigPath(h)
+	configPath := GetConfigPath(h)
 	if _, err := os.Stat(configPath); err != nil {
 		if _, err := SeedConfigFile(ctx, h, configPath, ""); err != nil {
 			return err

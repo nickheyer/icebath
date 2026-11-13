@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -57,11 +58,19 @@ func (p updatePaths) anyPending() bool {
 	return updatePathExists(p.pending) || updatePathExists(p.claimed)
 }
 
-// Removes every marker file, missing ones ignored
-func (p updatePaths) unlinkAll() {
-	for _, path := range []string{p.pending, p.claimed, p.output, p.exitCode, p.prompt, p.response} {
-		_ = os.Remove(path)
+// Removes every marker file in order, a missing one skipped and the first other failure returned
+func (p updatePaths) unlinkAll() error {
+	return unlinkMissingOK(p.pending, p.claimed, p.output, p.exitCode, p.prompt, p.response)
+}
+
+// Unlinks each path in order, stopping at the first failure other than a missing file
+func unlinkMissingOK(paths ...string) error {
+	for _, path := range paths {
+		if err := pypath.Unlink(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 	}
+	return nil
 }
 
 // Resolved delivery target of update watcher messages
@@ -223,8 +232,14 @@ func updateSleep(ctx context.Context, d time.Duration) error {
 func (r *GatewayRunner) watchUpdateCompletionOnly(ctx context.Context, paths updatePaths, deadline time.Time, pollInterval time.Duration) error {
 	inboundLog().Warn("Update watcher: cannot resolve adapter/chat_id, falling back to completion-only")
 	for paths.anyPending() && time.Now().Before(deadline) {
-		if updatePathExists(paths.exitCode) && r.sendUpdateNotification(ctx) {
-			return nil
+		if updatePathExists(paths.exitCode) {
+			notified, err := r.sendUpdateNotification(ctx)
+			if err != nil {
+				return err
+			}
+			if notified {
+				return nil
+			}
 		}
 		if err := updateSleep(ctx, pollInterval); err != nil {
 			return err
@@ -234,7 +249,8 @@ func (r *GatewayRunner) watchUpdateCompletionOnly(ctx context.Context, paths upd
 		if err := os.WriteFile(paths.exitCode, []byte("124"), 0o644); err != nil {
 			return err
 		}
-		r.sendUpdateNotification(ctx)
+		_, err := r.sendUpdateNotification(ctx)
+		return err
 	}
 	return nil
 }
@@ -309,10 +325,13 @@ func (r *GatewayRunner) forwardUpdatePrompt(ctx context.Context, target *updateT
 	return nil
 }
 
-// Removes the markers and clears the session's pending prompt flag
-func (r *GatewayRunner) clearUpdateMarkers(paths updatePaths, sessionKey string) {
-	paths.unlinkAll()
+// Removes the markers, then clears the session's pending prompt flag, an unlink failure leaving the flag set
+func (r *GatewayRunner) clearUpdateMarkers(paths updatePaths, sessionKey string) error {
+	if err := paths.unlinkAll(); err != nil {
+		return err
+	}
 	r.withPeekedSessionState(sessionKey, func(s *SessionState) { s.persistent.updatePromptPending = false })
+	return nil
 }
 
 // Streams update output, forwards prompts and sends the final notice until the exit code or the timeout
@@ -349,8 +368,7 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 			if err := r.sendUpdateFinished(ctx, paths, target); err != nil {
 				logSuppressed(slog.LevelWarn, err, "Update final notification failed: %s")
 			}
-			r.clearUpdateMarkers(paths, sessionKey)
-			return nil
+			return r.clearUpdateMarkers(paths, sessionKey)
 		}
 		readNew()
 		if pystr.Strip(buffer) != "" && time.Since(lastStream) >= streamInterval {
@@ -376,7 +394,7 @@ func (r *GatewayRunner) watchUpdateProgress(ctx context.Context, pollInterval, s
 		}
 		flush()
 		_, _ = target.send(ctx, i18n.T(ctx, "gateway.update.timed_out", "", nil))
-		r.clearUpdateMarkers(paths, sessionKey)
+		return r.clearUpdateMarkers(paths, sessionKey)
 	}
 	return nil
 }
@@ -429,11 +447,11 @@ func (r *GatewayRunner) forwardPendingUpdatePrompt(ctx context.Context, paths up
 	return r.forwardUpdatePrompt(ctx, target, pyrepr.Str(promptText), pyrepr.Str(object.GetOr("default", "")))
 }
 
-// Sends the post update notice once the exit code exists, false while the update still runs
-func (r *GatewayRunner) sendUpdateNotification(ctx context.Context) bool {
+// Sends the post update notice once the exit code exists, false while the update still runs, a cleanup unlink failure returned
+func (r *GatewayRunner) sendUpdateNotification(ctx context.Context) (notified bool, err error) {
 	paths := r.updatePaths(ctx)
 	if !paths.anyPending() {
-		return false
+		return false, nil
 	}
 	cleanup := true
 	active := paths.claimed
@@ -445,17 +463,17 @@ func (r *GatewayRunner) sendUpdateNotification(ctx context.Context) bool {
 	}
 	defer func() {
 		if cleanup {
-			for _, p := range []string{active, paths.claimed, paths.output, paths.exitCode} {
-				_ = os.Remove(p)
+			if cerr := unlinkMissingOK(active, paths.claimed, paths.output, paths.exitCode); cerr != nil {
+				notified, err = false, cerr
 			}
 		}
 	}()
-	result, err := r.deliverUpdateNotification(ctx, paths, deferred)
-	if err != nil {
-		inboundLog().Warn(fmt.Sprintf("Post-update notification failed: %s", err))
-		return true
+	result, derr := r.deliverUpdateNotification(ctx, paths, deferred)
+	if derr != nil {
+		inboundLog().Warn(fmt.Sprintf("Post-update notification failed: %s", derr))
+		return true, nil
 	}
-	return result
+	return result, nil
 }
 
 // Claims the marker and sends the notice, the result and the error the caller logs
@@ -501,7 +519,9 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		if age, ok := markerAgeSeconds(pending); ok && age > updateNotifyMaxAdapterWaitSeconds {
 			inboundLog().Warn(fmt.Sprintf("Post-update notification for %s:%s dropped after %.1fh: %s adapter never connected",
 				pyrepr.Str(platformStr), pyrepr.Str(chatID), age/3600.0, pyrepr.Str(platformStr)))
-			r.clearUpdateMarkers(paths, truthyText(rowField(pending, "session_key")))
+			if err := r.clearUpdateMarkers(paths, truthyText(rowField(pending, "session_key"))); err != nil {
+				return true, err
+			}
 			return true, nil
 		}
 		return deferred(fmt.Sprintf("Update notification deferred: %s adapter not connected yet", pyrepr.Str(platformStr)))

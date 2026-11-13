@@ -98,7 +98,7 @@ func normalizeMaps(v any) any {
 // Raw user config of a home, no defaults merged and no references expanded
 func ReadUser(h string) (map[string]any, error) {
 	NoteRuntimeImport("hermes_cli.config")
-	return ReadDocument(home.ConfigPath(h))
+	return ReadDocument(GetConfigPath(h))
 }
 
 // Document with legacy root max_turns under agent and the model section canonical, the Python error for an agent that is no mapping
@@ -252,7 +252,7 @@ func SaveUser(ctx context.Context, h string, doc map[string]any) error {
 	if _, err := home.Mkdir(ctx, h); err != nil {
 		return err
 	}
-	return AtomicConfigReplace(ctx, h, home.ConfigPath(h), doc, "")
+	return AtomicConfigReplace(ctx, h, GetConfigPath(h), doc, "")
 }
 
 // Sets one dotted key in the user config of a home

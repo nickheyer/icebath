@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,9 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func captureStatusStdout(t *testing.T) *bytes.Buffer {
@@ -29,8 +26,8 @@ func captureStatusStdout(t *testing.T) *bytes.Buffer {
 func TestCopyInitParamsLandEveryConstructorKeyword(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	status := func(kind string, msg string) {}
-	o := AIAgentOptions{Model: "m", MaxIterations: 7, SaveTrajectories: true, QuietMode: true, ToolProgressMode: "new",
-		Platform: "telegram", PassSessionID: true, LogPrefixChars: 50, ProviderSort: "price", EnabledToolsets: []string{"web"},
+	o := AIAgentOptions{Model: "m", MaxIterations: new(7), SaveTrajectories: true, QuietMode: true, ToolProgressMode: new("new"),
+		Platform: "telegram", PassSessionID: true, LogPrefixChars: new(50), ProviderSort: "price", EnabledToolsets: []string{"web"},
 		MaxTokens: iptr(99), ServiceTier: "priority", SideAgent: true, UserID: "u", ChatType: "dm", GatewaySessionKey: "agent:main:telegram:dm:1",
 		StatusCallback: status, ReactionCallback: func(string) {}}
 	a := &AIAgent{}
@@ -330,79 +327,3 @@ class Hosted(ContextEngine):
 def register(ctx):
     ctx.register_context_engine(Hosted())
 `
-
-// Temp home whose plugin host child runs the system python with the given plugin files, managers reset at cleanup
-func hostedEngineTestHome(t *testing.T, files map[string]string) context.Context {
-	t.Helper()
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatalf("python3 is required to run the plugin host child: %v", err)
-	}
-	h := filepath.Join(t.TempDir(), ".icebath")
-	files["config.yaml"] = "plugins:\n  isolation: host\n  enabled: []\n"
-	for rel, body := range files {
-		path := filepath.Join(h, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("ICEBATH_HOME", h)
-	bundled, table, adapters, secrets := tools.BundledPlatformSecretEnvs, tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets
-	tools.ProfileSecrets = hostedEngineSecrets{}
-	tools.BundledPlatformSecretEnvs = func() []string { return nil }
-	tools.ConfigEnvTableKeys = func() []string { return nil }
-	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
-	t.Cleanup(func() {
-		tools.BundledPlatformSecretEnvs, tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets = bundled, table, adapters, secrets
-	})
-	t.Cleanup(plugins.SetHostInterpreterForTests(python))
-	plugins.ResetPluginManagersForTests()
-	t.Cleanup(plugins.ResetPluginManagersForTests)
-	return home.WithOverride(context.Background(), h)
-}
-
-func TestHostedContextEngineCallsThroughAndMirrorsItsBase(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := hostedEngineTestHome(t, map[string]string{"plugins/hosted_demo/__init__.py": hostedEngineSrc})
-	obj := plugins.LoadContextEngine(ctx, "hosted_demo")
-	if obj == nil {
-		t.Fatal("hosted engine did not load")
-	}
-	e, err := newHostedContextEngine(ctx, obj)
-	if err != nil || e.Name() != "hosted_demo" {
-		t.Fatalf("adapter %v %v", e, err)
-	}
-	e.UpdateModel("m", 100000, "", "", "", "")
-	if b := e.Base(); b.ContextLength != 100000 || b.ThresholdTokens != 75000 {
-		t.Fatalf("update_model mirrored %+v", *b)
-	}
-	e.UpdateFromResponse(map[string]any{"prompt_tokens": 80000})
-	if e.Base().LastPromptTokens != 80000 || !e.ShouldCompress(nil) {
-		t.Fatal("hosted usage drives should_compress")
-	}
-	e.Base().ThresholdTokens = 90000
-	if e.ShouldCompress(nil) || e.GetStatus()["threshold_tokens"] != int64(90000) {
-		t.Fatal("a host side base edit reaches the hosted engine")
-	}
-	out, err := e.Compress([]map[string]any{{"role": "user", "content": "a"}, {"role": "user", "content": "b"}}, nil, nil, true, "mem")
-	if err != nil || len(out) != 1 || out[0]["content"] != "b" || e.Base().CompressionCount != 1 {
-		t.Fatalf("compress %v %v", out, err)
-	}
-	if e.AcceptsCompressKeyword("force") || !e.AcceptsCompressKeyword("current_tokens") {
-		t.Fatal("compress keywords follow the hosted signature")
-	}
-	if got := e.GetAutomaticCompactionStatusMessage("preflight", "compacting", nil); got == nil || *got != "compacting" {
-		t.Fatal("base status hook answers the default")
-	}
-	clone := e.CloneForAgent()
-	clone.UpdateModel("m", 50000, "", "", "", "")
-	if clone.Base().ContextLength != 50000 || e.Base().ContextLength != 100000 {
-		t.Fatal("a clone is its own engine")
-	}
-	if v, ok := engineAttr(e, "threshold_percent"); !ok || v != 0.75 {
-		t.Fatalf("engine attr %v", v)
-	}
-}

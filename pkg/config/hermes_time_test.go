@@ -64,8 +64,10 @@ func TestInvalidTimezoneFallsBackToServerLocal(t *testing.T) {
 	if got := TimezoneName(ctx); got != "Mars/Olympus" {
 		t.Fatalf("TimezoneName = %q", got)
 	}
-	if TimeNow(ctx).Location() != time.Local {
-		t.Fatal("TimeNow is not server local")
+	now := TimeNow(ctx)
+	_, off := now.Zone()
+	if _, localOff := now.Local().Zone(); off != localOff || now.Location() == time.Local {
+		t.Fatal("TimeNow is not the fixed server local offset astimezone gives")
 	}
 }
 

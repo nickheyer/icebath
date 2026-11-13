@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
 	"io/fs"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -254,13 +256,17 @@ func containsString(items []string, s string) bool {
 	return false
 }
 
-// Parsed YAML of one catalog file, nil with a warning when unreadable or malformed
-func readCatalogYAML(raw []byte, label string) any {
+// Parsed YAML of one catalog file read as utf-8-sig, nil with a warning when unreadable or malformed
+func readCatalogYAML(raw []byte, readErr error, label string) any {
+	if readErr != nil {
+		logWarn("Plugin catalog: failed to read " + label + ": " + pypath.OSErrorText(readErr))
+		return nil
+	}
 	if err := strictUTF8(raw); err != nil {
 		logWarn("Plugin catalog: failed to read " + label + ": " + err.Error())
 		return nil
 	}
-	doc, err := config.FastSafeLoad(raw)
+	doc, err := config.FastSafeLoad(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
 	if err != nil {
 		logWarn("Plugin catalog: failed to read " + label + ": " + err.Error())
 		return nil
@@ -325,11 +331,7 @@ func loadCatalog(dir string) ([]*PluginCatalogEntry, error) {
 			continue
 		}
 		raw, err := read(path)
-		if err != nil {
-			logWarn("Plugin catalog: failed to read " + path + ": " + err.Error())
-			continue
-		}
-		data := readCatalogYAML(raw, path)
+		data := readCatalogYAML(raw, err, path)
 		if data == nil {
 			continue
 		}

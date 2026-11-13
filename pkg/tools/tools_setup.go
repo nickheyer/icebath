@@ -82,7 +82,6 @@ var ToolsConfigHooks struct {
 	TTSRegistry          *PickerRegistry
 
 	BrowserRegistry       *PickerRegistry
-	FindBrowserUseCLI     func(env *Env) []string
 	LightpandaBinary      func(env *Env) string
 	LightpandaInstallHint func() string
 	ChromiumExecutable    func(env *Env) string

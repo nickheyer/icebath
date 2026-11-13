@@ -4,11 +4,9 @@ package memory
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -17,9 +15,6 @@ import (
 
 // Python labels Windows OS errors with the WinError code
 const errnoLabel = "WinError"
-
-// Windows has no fchmod so modes apply only after the rename
-const canFchmod = false
 
 // Byte range lock on the lock sibling retried ten times a second apart like msvcrt LK_LOCK
 func fileLock(ctx context.Context, path string) (func(), error) {
@@ -54,26 +49,5 @@ func fileLock(ctx context.Context, path string) (func(), error) {
 	}, nil
 }
 
-// Windows synthesizes mode bits so a new file gets no explicit mode
-func defaultNewFileMode() (os.FileMode, bool) { return 0, false }
-
 // Text mode writes translate LF to CRLF on Windows
 func platformNewlines(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
-
-// Access denied, sharing and lock violations a held target reports on rename
-func isContendedReplaceError(err error) bool {
-	var errno syscall.Errno
-	if !errors.As(err, &errno) {
-		return false
-	}
-	return errno == 5 || errno == 32 || errno == 33
-}
-
-// Not same device and busy target renames fall back to a copy, as Python maps them to EXDEV and EBUSY
-func isCrossDeviceError(err error) bool {
-	var errno syscall.Errno
-	if errors.As(err, &errno) && (errno == 17 || errno == 170) {
-		return true
-	}
-	return errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EBUSY)
-}

@@ -329,6 +329,7 @@ func TestToolCallBadArgsError(t *testing.T) {
 // Quiet tool definition names of a toolset grant
 func bundleToolNames(t *testing.T, enabled, disabled []string) map[string]bool {
 	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	out := map[string]bool{}
 	for _, td := range Default.ToolDefinitions(context.Background(), &Env{Home: t.TempDir()}, DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true, ContextLength: 200000}) {
 		out[toolDefName(td)] = true
@@ -457,7 +458,7 @@ func rewrittenDescription(rendered []map[string]any, name string) (string, bool)
 
 func TestSilentWithoutWebTools(t *testing.T) {
 	cdp := toolDef("browser_cdp", "Send a raw Chrome DevTools Protocol command.", nil)
-	execDef := toolDef("browser_exec", "Run Python against the page."+ScreenshotsDetached, nil)
+	execDef := toolDef("browser_exec", "Drive the page."+ScreenshotsDetached, nil)
 	for _, td := range applyDynamicSchemas(nil, []map[string]any{execDef, cdp, toolDef("terminal", "terminal.", nil)}) {
 		if desc := toolDefDescription(td); strings.Contains(desc, "web_search") || strings.Contains(desc, "web_extract") {
 			t.Fatalf("%s names an absent web tool %q", toolDefName(td), desc)
@@ -470,16 +471,16 @@ func TestBrowserCdpNamesWebExtractOnlyWhenPresent(t *testing.T) {
 	if desc, _ := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(cdp, "terminal", "web_extract")), "browser_cdp"); !strings.HasSuffix(desc, " The web_extract tool is available for fetching CDP documentation URLs.") {
 		t.Fatalf("cdp description without the web_extract pointer %q", desc)
 	}
-	if _, kept := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(toolDef("browser_exec", "Run Python."+ScreenshotsDetached, nil), "web_search")), "browser_exec"); kept {
+	if _, kept := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(toolDef("browser_exec", "Drive the page."+ScreenshotsDetached, nil), "web_search")), "browser_exec"); kept {
 		t.Fatal("browser_exec kept in a session without terminal")
 	}
 }
 
 func TestBrowserExecPointsAtVisionAnalyzeOnlyWhenTheSessionHasIt(t *testing.T) {
 	for _, native := range []bool{false, true} {
-		header := "Run Python against the page." + ScreenshotsDetached
+		header := "Drive the page." + ScreenshotsDetached
 		if native {
-			header = "Run Python against the page. Screenshots arrive in the result."
+			header = "Drive the page. Screenshots arrive in the result."
 		}
 		for _, names := range [][]string{{"terminal"}, {"terminal", "vision_analyze"}} {
 			desc, _ := rewrittenDescription(applyDynamicSchemas(nil, rewriterDefs(toolDef("browser_exec", header, nil), names...)), "browser_exec")

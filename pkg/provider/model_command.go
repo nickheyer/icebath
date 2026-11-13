@@ -541,7 +541,7 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 	case "reasoning":
 		return promptMainReasoningEffortFn(r, currentModel, active)
 	}
-	savesBefore := ModelChoiceSaveCount()
+	savesBefore := modelChoiceSaveCount()
 	providerGone := false
 	err = observability.CLIProviderSetup(ctx, selected, func(ctx context.Context) error {
 		if flow := providerModelFlows[selected]; flow != nil {

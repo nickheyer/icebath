@@ -11,10 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/desktop/desktoplog"
 )
 
 const (
-	logRingSize                  = 400
 	descriptorLogLines           = 80
 	gatewayRestartClientTimeout  = 120 * time.Second
 	bootProgressStartingMessage  = "Waiting to start Icebath backend"
@@ -54,13 +55,56 @@ type Runtime interface {
 	WaitForPoolUpdate(profile string, cancelled func() bool) error
 	// Update hold the boot screen shows, nil when none
 	UpdateHold() any
+	// Latched bootstrap failure that refuses every start until a reset or repair, nil when none
+	BootstrapFailure() error
+	// Latches a bootstrap failure, the fake boot error included
+	SetBootstrapFailure(err error)
+	// Zeroes the bootstrap repair attempt count once a local gateway is ready
+	ResetBootstrapRepair()
+}
+
+// BootstrapFailureError is a bootstrap failure the renderer shows on the boot screen
+type BootstrapFailureError struct{ Message string }
+
+func (e *BootstrapFailureError) Error() string { return e.Message }
+
+// IsBootstrapFailure marks the error for the bootstrap failure screen
+func (e *BootstrapFailureError) IsBootstrapFailure() bool { return true }
+
+// RouteRequest is the REST call a profile route is resolved for
+type RouteRequest struct {
+	Method string
+	Path   string
+}
+
+// RemoteResolveOptions say which saved remote a profile resolves to
+type RemoteResolveOptions struct {
+	Primary              bool
+	ForceRegistryPrimary bool
+	PoolKey              string
+}
+
+// PoolBackend is one pooled backend a revalidation sweep probes
+type PoolBackend struct {
+	Key           string
+	RemoteBaseURL string
+	Connection    *Future[Connection]
+}
+
+// EnsureOptions shape a backend request, passive reads never spawning one
+type EnsureOptions struct {
+	InheritsPrimary bool
+	Passive         bool
+	Request         *RouteRequest
 }
 
 // PrimaryRemoteBoot is what a remote primary boot needs to restore a remembered profile the remote does not serve
 type PrimaryRemoteBoot struct {
-	RequestedProfile  string
-	InheritsPrimary   bool
-	OnProfileRestored func(profile string)
+	RequestedProfile     string
+	InheritsPrimary      bool
+	OnProfileRestored    func(profile string)
+	Context              context.Context
+	AssertCurrentAttempt func() error
 }
 
 // RevalidateResult is the reply of a primary revalidation
@@ -74,25 +118,25 @@ type Routes interface {
 	// Remembered profile of the primary, empty for none
 	ActiveProfile() string
 	// Connection and profile a renderer request resolves to and whether it follows the primary
-	ResolveRequest(requested *string, source *WindowConnectionRoute, primaryKey string) (connectionID, profile string, inheritsPrimary bool)
+	ResolveRequest(requested *string, source *WindowConnectionRoute, primaryKey string) (connectionID, profile string, inheritsPrimary bool, err error)
 	// Registry id a primary or pooled descriptor belongs to, empty when unregistered
-	ResolvedConnectionID(conn Connection) string
+	ResolvedConnectionID(conn Connection) (string, error)
 	// Backend of a registry scoped connection and profile
 	EnsureRegistryBackend(connectionID, profile string) (Connection, error)
-	// Which backend serves a profile key
-	ProfileRoute(key string) ProfileBackendRoute
+	// Which backend serves a profile key for a request, nil for a descriptor request
+	ProfileRoute(key string, request *RouteRequest) ProfileBackendRoute
 	// Refuses a profile whose deletion is in flight
 	AssertCanStart(profile string) error
-	// Saved remote of a profile, nil when it runs locally
-	ResolveRemote(profile string, primary, forceRegistryPrimary bool) (Connection, error)
+	// Saved remote of a profile, nil when it runs locally, a forced registry primary rereading the registry
+	ResolveRemote(profile string, opts RemoteResolveOptions) (Connection, error)
 	// Dials a saved remote for profile, boot set only for the primary and its profile restore
 	ConnectRemote(remote Connection, profile string, boot *PrimaryRemoteBoot) (Connection, error)
 	// Waits for the first run choice a bootstrap-needed backend gates on
 	WaitForFirstRunDecision(b ResolvedBackend) (string, error)
 	// Probes a remote primary and drops it when dead, reset clearing the cached descriptor
 	RevalidatePrimary(connection *Future[Connection], reset func()) (RevalidateResult, error)
-	// Probes pooled remote descriptors and retires the dead ones
-	RevalidatePool() error
+	// Probes pooled remote descriptors and retires the dead ones through stop
+	RevalidatePool(entries []PoolBackend, stop func(key string) error) error
 	// Socket URL of a remote descriptor, minting its ticket where it needs one
 	RemoteWsURL(conn Connection) (string, error)
 	// Whether err is a gateway authentication rejection the renderer answers with a login
@@ -103,19 +147,35 @@ type Routes interface {
 	SetActiveGatewayProfile(profile string)
 	// Records whether a profile is served by this machine for the WSL path bridge
 	SetBridgeProfileState(profile string, local bool)
+	// Moves a legacy active_profile file into the desktop profile config once
+	MigrateActiveProfileIfMissing() error
+	// Whether the primary boots remote, a managed restore in flight or a remote override or global remote
+	PrimaryIsRemote() bool
+	// Forgets the remote liveness failures counted against the primary
+	ClearRemoteLiveness()
 }
+
+// Merges the login shell PATH before a primary spawn, the shared process wide merge in production
+var ensureLoginShellPath = EnsureLoginShellPath
 
 type poolEntry struct {
-	future *Future[Connection]
+	future        *Future[Connection]
+	remoteBaseURL string
 }
 
-// ServiceOptions name where the backend lives and how it is resolved
+// ServiceOptions name where the backend lives, how it is resolved and where the desktop logs
 type ServiceOptions struct {
 	IcebathHome string
-	Cwd         string
+	Cwd         func() string
 	Env         func() map[string]string
 	Resolve     func(args []string) (ResolvedBackend, error)
 	FakeMode    bool
+	DesktopLog  *desktoplog.Log
+	Ownership   *Ownership
+	PackageRoot string
+	// Window route table and primary pin the shell also reads for the per window boot payload
+	WindowRoutes *WindowConnectionRoutes
+	PrimaryPin   *PrimaryProfilePin
 }
 
 // Service holds the primary connection, the profile pool and boot progress behind the backend preload functions
@@ -127,7 +187,7 @@ type Service struct {
 
 	state        ConnectionState[int, Connection]
 	claims       DialClaims
-	pin          PrimaryProfilePin
+	pin          *PrimaryProfilePin
 	windowRoutes *WindowConnectionRoutes
 	dials        *LocalGatewayDials
 	restartStale StaleGatewayRestart
@@ -139,9 +199,11 @@ type Service struct {
 	inflight atomic.Int64
 	shutdown *ShutdownCoordinator
 
+	reap          sync.Once
+	bootFakeError string
+
 	mu            sync.Mutex
 	pool          map[string]*poolEntry
-	logs          []string
 	boot          map[string]any
 	startFailure  error
 	reauthFailure error
@@ -152,22 +214,13 @@ type Service struct {
 
 // Backend service over the shell, the connections registry and the update runtime
 func NewService(host Host, routes Routes, runtime Runtime, opts ServiceOptions) *Service {
-	s := &Service{host: host, routes: routes, runtime: runtime, opts: opts,
-		windowRoutes: NewWindowConnectionRoutes(), dials: NewLocalGatewayDials(), pool: map[string]*poolEntry{}, routeOwners: map[string]bool{}}
+	if opts.WindowRoutes == nil || opts.PrimaryPin == nil {
+		panic("backend: ServiceOptions needs the WindowRoutes and PrimaryPin the shell shares")
+	}
+	s := &Service{host: host, routes: routes, runtime: runtime, opts: opts, bootFakeError: os.Getenv("ICEBATH_DESKTOP_BOOT_FAKE_ERROR"),
+		pin: opts.PrimaryPin, windowRoutes: opts.WindowRoutes, dials: NewLocalGatewayDials(), pool: map[string]*poolEntry{}, routeOwners: map[string]bool{}}
 	s.quit, s.abort = context.WithCancelCause(context.Background())
-	s.shutdown = NewShutdownCoordinator(func() error {
-		s.abort(errors.New("Icebath Desktop is quitting."))
-		finished := make(chan struct{})
-		go func() {
-			s.starts.Wait()
-			close(finished)
-		}()
-		select {
-		case <-finished:
-		case <-time.After(localTeardownTimeout):
-		}
-		return nil
-	})
+	s.shutdown = NewShutdownCoordinator(s.shutdownBackends)
 	s.boot = map[string]any{"error": nil, "fakeMode": opts.FakeMode, "isCloudBackendDown": false, "message": bootProgressStartingMessage,
 		"phase": "idle", "progress": 0, "retryable": false, "running": false, "statusCode": nil, "timestamp": time.Now().UnixMilli(), "updateHold": nil}
 	s.restartStale = CreateStaleGatewayRestarter(func(owner string) <-chan struct{} {
@@ -181,26 +234,90 @@ func NewService(host Host, routes Routes, runtime Runtime, opts ServiceOptions) 
 	return s
 }
 
-// Appends a line to the bounded desktop log ring descriptors carry
-func (s *Service) Log(line string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.logs = append(s.logs, line)
-	if len(s.logs) > logRingSize {
-		s.logs = s.logs[len(s.logs)-logRingSize:]
+// Quits the backends this app owns within the teardown budget, reaps package stragglers and verifies the Windows close
+func (s *Service) shutdownBackends() error {
+	primary, hasPrimary := s.state.Process()
+	s.abort(errors.New("Icebath Desktop is quitting."))
+	finished := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			s.starts.Wait()
+		}()
+		go func() {
+			defer wg.Done()
+			s.TeardownPrimary(true)
+		}()
+		go func() {
+			defer wg.Done()
+			s.StopAllPoolBackends()
+		}()
+		wg.Wait()
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(localTeardownTimeout):
 	}
+	var exclude []int
+	if hasPrimary && primary > 0 {
+		exclude = []int{primary}
+	}
+	s.reapInstallRootedStragglers(exclude)
+	var owned []int
+	if runtime.GOOS == "windows" && hasPrimary && primary > 0 && IsPidAlive(primary) {
+		owned = []int{primary}
+	}
+	if err := s.windowsCloseStopOwnedBackends(owned); err != nil {
+		s.Log("[close-stop] " + err.Error())
+		return err
+	}
+	return nil
+}
+
+// Remembers a line in desktop.log and the ring descriptors carry
+func (s *Service) Log(line string) {
+	s.opts.DesktopLog.Remember(line)
+}
+
+// RecentLogs is the tail of the backend log a connection descriptor carries
+func (s *Service) RecentLogs() []string { return s.recentLogs() }
+
+// MainWindowState is the main window state a connection descriptor carries
+func (s *Service) MainWindowState() map[string]any { return s.mainWindowState() }
+
+// ReleaseReauthLatch forgets the latched remote reauth failure once a sign-in is confirmed
+func (s *Service) ReleaseReauthLatch() {
+	s.mu.Lock()
+	s.reauthFailure = nil
+	s.mu.Unlock()
 }
 
 func (s *Service) recentLogs() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	from := max(0, len(s.logs)-descriptorLogLines)
-	return append([]string{}, s.logs[from:]...)
+	return s.opts.DesktopLog.Recent(descriptorLogLines)
+}
+
+// Reaps backends a crashed earlier desktop run left behind, once per process
+func (s *Service) reapOrphansOnce() {
+	s.reap.Do(func() {
+		if pids := s.opts.Ownership.ReapOrphans(); len(pids) > 0 {
+			parts := make([]string, len(pids))
+			for i, pid := range pids {
+				parts[i] = fmt.Sprint(pid)
+			}
+			s.Log("Reaped orphaned desktop backend PID(s): " + strings.Join(parts, ", "))
+		}
+	})
 }
 
 func (s *Service) primaryProfileKey() string {
 	return s.pin.Resolve(s.routes.ActiveProfile)
 }
+
+// PrimaryProfileKey is the profile the primary launched as, the remembered profile while none is live
+func (s *Service) PrimaryProfileKey() string { return s.primaryProfileKey() }
 
 func (s *Service) mainWindowState() map[string]any {
 	state, _ := s.host.WindowState(s.host.MainWindowID())
@@ -357,7 +474,10 @@ func (s *Service) GetConnection(windowID string, profile any) (Connection, error
 		named = &p
 	}
 	source := s.windowRoutes.Get(windowID)
-	connectionID, routeProfile, inherits := s.routes.ResolveRequest(named, source, s.primaryProfileKey())
+	connectionID, routeProfile, inherits, err := s.routes.ResolveRequest(named, source, s.primaryProfileKey())
+	if err != nil {
+		return nil, err
+	}
 	return s.connectRoute(windowID, connectionID, routeProfile, inherits)
 }
 
@@ -368,7 +488,7 @@ func (s *Service) connectRoute(windowID, connectionID, profile string, inherits 
 		if connectionID != "" {
 			return s.routes.EnsureRegistryBackend(connectionID, profile)
 		}
-		return s.ensureBackend(profile, inheritsPrimary)
+		return s.EnsureBackend(profile, EnsureOptions{InheritsPrimary: inheritsPrimary})
 	})
 	if err != nil {
 		return nil, err
@@ -381,7 +501,11 @@ func (s *Service) connectRoute(windowID, connectionID, profile string, inherits 
 		out["registryScoped"] = true
 		return OverlayWindowState(out, windowState), nil
 	}
-	if id := s.routes.ResolvedConnectionID(connection); id != "" {
+	id, err := s.routes.ResolvedConnectionID(connection)
+	if err != nil {
+		return nil, err
+	}
+	if id != "" {
 		out := connection.Clone()
 		out["connectionId"] = id
 		return OverlayWindowState(out, windowState), nil
@@ -389,18 +513,20 @@ func (s *Service) connectRoute(windowID, connectionID, profile string, inherits 
 	return OverlayWindowState(connection, windowState), nil
 }
 
-func (s *Service) ensureBackend(profile string, inheritsPrimary bool) (Connection, error) {
+// Backend of a profile, joining the primary boot or the profile pool, a passive read never spawning one
+func (s *Service) EnsureBackend(profile string, opts EnsureOptions) (Connection, error) {
 	var named *string
 	if profile != "" {
 		named = &profile
 	}
-	request := NewPrimaryBootRequest(named, s.primaryProfileKey(), inheritsPrimary)
+	request := NewPrimaryBootRequest(named, s.primaryProfileKey(), opts.InheritsPrimary)
 	if err := s.routes.AssertCanStart(request.Key); err != nil {
 		return nil, err
 	}
-	route := s.routes.ProfileRoute(request.Key)
+	route := s.routes.ProfileRoute(request.Key, opts.Request)
 	if route.Backend == "primary" {
-		joined, err := JoinPrimaryBoot(request, route, s.primaryProfileKey, s.routes.ProfileRoute, func(boot PrimaryBootRequest) (Connection, error) {
+		resolveRoute := func(next string) ProfileBackendRoute { return s.routes.ProfileRoute(next, opts.Request) }
+		joined, err := JoinPrimaryBoot(request, route, s.primaryProfileKey, resolveRoute, func(boot PrimaryBootRequest) (Connection, error) {
 			return s.startPrimary(boot.Key, boot.InheritsPrimary)
 		})
 		if err != nil {
@@ -412,10 +538,14 @@ func (s *Service) ensureBackend(profile string, inheritsPrimary bool) (Connectio
 	s.mu.Lock()
 	existing := s.pool[request.Key]
 	if existing == nil {
+		if err := AssertNotPassiveSpawn(opts.Passive, request.Key); err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
 		existing = &poolEntry{}
 		entry := existing
 		existing.future = NewFuture(func() (Connection, error) {
-			conn, err := s.dialPoolBackend(request.Key, entry)
+			conn, err := s.dialPoolBackend(request.Key, entry, poolDialOptions{})
 			if err != nil {
 				s.Log(fmt.Sprintf("Icebath backend for profile \"%s\" failed to start: %s", request.Key, err.Error()))
 				s.mu.Lock()
@@ -446,18 +576,27 @@ func (s *Service) poolEntryOwned(key string, entry *poolEntry) error {
 	return nil
 }
 
-func (s *Service) dialPoolBackend(profile string, entry *poolEntry) (Connection, error) {
+func (s *Service) dialPoolBackend(profile string, entry *poolEntry, o poolDialOptions) (Connection, error) {
+	// wd_conn_ssh: a registry local dial skips remote resolution and owns a composite pool key
+	poolKey := o.PoolKey
+	if poolKey == "" {
+		poolKey = profile
+	}
 	if err := s.assertCanStart(); err != nil {
 		return nil, err
 	}
 	s.beginStart()
 	defer s.endStart()
+	s.reapOrphansOnce()
 	if err := s.routes.AssertCanStart(profile); err != nil {
 		return nil, err
 	}
-	remote, err := s.routes.ResolveRemote(profile, false, false)
-	if err != nil {
-		return nil, err
+	var remote Connection
+	if !o.ForceLocal {
+		var err error
+		if remote, err = s.routes.ResolveRemote(profile, RemoteResolveOptions{PoolKey: poolKey}); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.routes.AssertCanStart(profile); err != nil {
 		return nil, err
@@ -467,6 +606,9 @@ func (s *Service) dialPoolBackend(profile string, entry *poolEntry) (Connection,
 		if err != nil {
 			return nil, err
 		}
+		s.mu.Lock()
+		entry.remoteBaseURL = remote.str("baseUrl")
+		s.mu.Unlock()
 		out := connected.Clone()
 		out["profile"] = profile
 		out["logs"] = s.recentLogs()
@@ -480,24 +622,30 @@ func (s *Service) dialPoolBackend(profile string, entry *poolEntry) (Connection,
 		if err != nil {
 			return EnsureResult{}, err
 		}
-		backend, err = s.runtime.EnsureRuntime(backend, func() error { return s.poolEntryOwned(profile, entry) })
+		backend, err = s.runtime.EnsureRuntime(backend, func() error { return s.poolEntryOwned(poolKey, entry) })
 		if err != nil {
 			return EnsureResult{}, err
 		}
 		if err := s.routes.AssertCanStart(profile); err != nil {
 			return EnsureResult{}, err
 		}
-		if err := s.poolEntryOwned(profile, entry); err != nil {
+		if err := s.poolEntryOwned(poolKey, entry); err != nil {
 			return EnsureResult{}, err
 		}
 		return s.runEnsure(backend, profile, EnsureRunOptions{})
 	}, func() error {
-		return s.runtime.WaitForPoolUpdate(profile, func() bool { return s.poolEntryOwned(profile, entry) != nil })
+		if err := s.runtime.WaitForPoolUpdate(profile, func() bool { return s.poolEntryOwned(poolKey, entry) != nil }); err != nil {
+			return err
+		}
+		if err := s.poolEntryOwned(poolKey, entry); err != nil {
+			return err
+		}
+		return s.assertLocalProfileCanStart(profile)
 	}, s.restartStale)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.poolEntryOwned(profile, entry); err != nil {
+	if err := s.poolEntryOwned(poolKey, entry); err != nil {
 		return nil, err
 	}
 	out := connection.Clone()
@@ -528,7 +676,7 @@ func (s *Service) runEnsure(backend ResolvedBackend, profile string, opts Ensure
 	command := backend.BackendCommand
 	command.Env = DesktopBackendSpawnEnv(command.Env)
 	parent := ProfileBackendParentEnv(s.opts.IcebathHome, profile, s.opts.Env(), electronPlatformName(), ReadTextOrEmpty)
-	return RunGatewayEnsure(command, s.opts.Cwd, s.opts.IcebathHome, parent, opts)
+	return RunGatewayEnsure(command, s.opts.Cwd(), s.opts.IcebathHome, parent, opts)
 }
 
 func (s *Service) restartLocalGatewayOwner(owner string) {
@@ -574,6 +722,16 @@ func (s *Service) assertCanStart() error {
 	return context.Cause(s.quit)
 }
 
+// Refuses a start once the desktop is quitting, with the quit cause
+func (s *Service) AssertCanStart() error {
+	return s.assertCanStart()
+}
+
+// Context cancelled with the quit cause when the desktop starts quitting
+func (s *Service) QuitContext() context.Context {
+	return s.quit
+}
+
 // Aborts every backend start, waiting for the pending ones up to the teardown timeout
 func (s *Service) Shutdown() error {
 	return s.shutdown.Run()
@@ -589,20 +747,24 @@ func (s *Service) startPrimary(requestedProfile string, inheritsPrimary bool) (C
 		s.Log("[boot] non-primary instance: skipping backend machinery")
 		return nil, errors.New(nonPrimaryInstanceBootFailed)
 	}
+	s.reapOrphansOnce()
 	if err := s.assertCanStart(); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	latched := s.startFailure
-	if latched == nil {
-		latched = s.reauthFailure
-	}
-	s.mu.Unlock()
-	if latched != nil {
+	if latched := s.latchedBootFailure(); latched != nil {
 		return nil, latched
+	}
+	if s.bootFakeError != "" {
+		s.AdvanceBootProgress("backend.resolve", "Resolving Icebath backend", 8)
+		err := &BootstrapFailureError{Message: s.bootFakeError}
+		s.runtime.SetBootstrapFailure(err)
+		return nil, err
 	}
 	if existing := s.state.Promise(); existing != nil {
 		return existing.Wait()
+	}
+	if err := s.routes.MigrateActiveProfileIfMissing(); err != nil {
+		return nil, err
 	}
 	attempt, err := s.state.StartAttempt()
 	if err != nil {
@@ -614,8 +776,9 @@ func (s *Service) startPrimary(requestedProfile string, inheritsPrimary bool) (C
 	}
 	primaryProfile := s.pin.Pin(launch.RoutingProfile)
 	s.routes.SetActiveGatewayProfile(primaryProfile)
-	attemptedRemote := false
+	attemptedRemote := s.routes.PrimaryIsRemote()
 	boot := PrimaryRemoteBoot{RequestedProfile: requestedProfile, InheritsPrimary: inheritsPrimary,
+		Context: s.quit, AssertCurrentAttempt: func() error { return s.state.AssertCurrentAttempt(attempt) },
 		OnProfileRestored: func(profile string) {
 			s.Log(fmt.Sprintf("[profile] remote primary does not serve \"%s\"; booting it as \"%s\"", primaryProfile, profile))
 			primaryProfile = s.pin.Pin(profile)
@@ -640,6 +803,11 @@ func (s *Service) startPrimary(requestedProfile string, inheritsPrimary bool) (C
 func (s *Service) bootPrimary(attempt *ConnectionAttempt[Connection], launch LaunchProfile, profile *string, attemptedRemote *bool, boot PrimaryRemoteBoot) (Connection, error) {
 	assert := func() error { return s.state.AssertCurrentAttempt(attempt) }
 	s.AdvanceBootProgress("backend.resolve", "Resolving Icebath backend", 8)
+	if loginPath := ensureLoginShellPath(); loginPath.Applied {
+		s.Log("[env] merged login-shell PATH into process.env for backend spawn")
+	} else if loginPath.Reason != "" && loginPath.Reason != "win32" && loginPath.Reason != "unchanged" {
+		s.Log(fmt.Sprintf("[env] login-shell PATH resolution unavailable (%s); keeping inherited PATH", loginPath.Reason))
+	}
 	args := []string{"gateway", "ensure", "--json"}
 	if launch.ArgvProfile != "" {
 		args = append([]string{"--profile", launch.ArgvProfile}, args...)
@@ -659,17 +827,16 @@ func (s *Service) bootPrimary(attempt *ConnectionAttempt[Connection], launch Lau
 			return s.resolveBackend(args)
 		},
 		ResolveRemote: func() (*Connection, error) {
-			*attemptedRemote = true
-			remote, err := s.routes.ResolveRemote(*profile, true, false)
+			*attemptedRemote = s.routes.PrimaryIsRemote()
+			remote, err := s.routes.ResolveRemote(*profile, RemoteResolveOptions{Primary: true})
 			if remote == nil {
-				*attemptedRemote = false
 				return nil, err
 			}
 			return &remote, err
 		},
 		SelectRegistryPrimary: func() (*Connection, error) {
 			*attemptedRemote = true
-			remote, err := s.routes.ResolveRemote(*profile, true, true)
+			remote, err := s.routes.ResolveRemote(*profile, RemoteResolveOptions{Primary: true, ForceRegistryPrimary: true})
 			if remote == nil {
 				return nil, err
 			}
@@ -706,6 +873,7 @@ func (s *Service) bootPrimary(attempt *ConnectionAttempt[Connection], launch Lau
 	s.mu.Unlock()
 	s.Log("[backend] Icebath gateway is ready")
 	s.UpdateBootProgress(map[string]any{"phase": "backend.ready", "message": "Icebath gateway is ready", "progress": 94, "running": true, "error": nil}, false)
+	s.runtime.ResetBootstrapRepair()
 	out := connection.Clone()
 	out["profile"] = *profile
 	out["logs"] = s.recentLogs()
@@ -763,7 +931,7 @@ func (s *Service) failPrimary(attempt *ConnectionAttempt[Connection], err error,
 func (s *Service) RevalidateConnection() (RevalidateResult, error) {
 	pending := s.state.Promise()
 	if pending == nil {
-		if err := s.routes.RevalidatePool(); err != nil {
+		if err := s.revalidatePool(); err != nil {
 			return RevalidateResult{}, err
 		}
 		return RevalidateResult{OK: true}, nil
@@ -782,7 +950,7 @@ func (s *Service) revalidatePrimary(pending *Future[Connection]) (RevalidateResu
 	}()
 	go func() {
 		defer wg.Done()
-		poolErr = s.routes.RevalidatePool()
+		poolErr = s.revalidatePool()
 	}()
 	wg.Wait()
 	if primaryErr != nil {
@@ -801,11 +969,25 @@ func (s *Service) revalidatePrimary(pending *Future[Connection]) (RevalidateResu
 	return result, nil
 }
 
+// Terminal boot failure latched in this process, cleared only by reset, repair, apply or sign in
+func (s *Service) latchedBootFailure() error {
+	if err := s.runtime.BootstrapFailure(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.startFailure != nil {
+		return s.startFailure
+	}
+	return s.reauthFailure
+}
+
 func (s *Service) resetConnectionState(soft bool) {
 	s.mu.Lock()
 	s.startFailure = nil
 	s.reauthFailure = nil
 	s.mu.Unlock()
+	s.routes.ClearRemoteLiveness()
 	s.pin.Clear()
 	s.state.Invalidate()
 	if !soft {
@@ -813,7 +995,8 @@ func (s *Service) resetConnectionState(soft bool) {
 	}
 }
 
-func (s *Service) teardownPrimary(soft bool) error {
+// Drops the primary connection and its latched failures, a soft teardown keeping boot progress and backend exit quiet
+func (s *Service) TeardownPrimary(soft bool) error {
 	if soft {
 		s.mu.Lock()
 		s.softRehome = true
@@ -833,7 +1016,7 @@ func (s *Service) forgetLocalGatewayDescriptor(profile string) error {
 	if key == "" {
 		key = s.primaryProfileKey()
 	}
-	if s.routes.ProfileRoute(key).Backend == "primary" {
+	if s.routes.ProfileRoute(key, nil).Backend == "primary" {
 		if attempt, err := s.state.StartAttempt(); err == nil {
 			s.state.SetPromise(attempt, s.state.Promise())
 			s.state.ClearPromiseForAttempt(attempt)
@@ -870,13 +1053,13 @@ func (s *Service) GetGatewayWsURL(windowID string, profile any) GatewayWsURLResu
 }
 
 func (s *Service) freshGatewayWsURL(windowID, profile string) (string, error) {
-	connection, err := s.ensureBackend(profile, profile == "")
+	connection, err := s.EnsureBackend(profile, EnsureOptions{})
 	if err != nil {
 		return "", err
 	}
 	if connection.Endpoint() != nil {
 		return LocalGatewayDial(LocalDial{
-			Ensure:     func() (Connection, error) { return s.ensureBackend(profile, profile == "") },
+			Ensure:     func() (Connection, error) { return s.EnsureBackend(profile, EnsureOptions{}) },
 			Forget:     func() error { return s.forgetLocalGatewayDescriptor(profile) },
 			LaunchHome: s.opts.IcebathHome,
 			Prepare: func(baseURL, ticket string) (string, error) {
@@ -915,19 +1098,60 @@ func (s *Service) RecycleBackend(profile any) (map[string]bool, error) {
 		PrimaryProfile:      s.primaryProfileKey(),
 		Profile:             name,
 		RestartLocalGateway: s.restartAttachedLocalGateway,
-		TeardownPool: func(p string) error {
-			s.mu.Lock()
-			delete(s.pool, p)
-			s.mu.Unlock()
-			return nil
-		},
-		TeardownPrimary: func() error { return s.teardownPrimary(true) },
-		TeardownSSH:     s.routes.TeardownSSH,
+		TeardownPool:        s.TeardownPoolBackend,
+		TeardownPrimary:     func() error { return s.TeardownPrimary(true) },
+		TeardownSSH:         s.routes.TeardownSSH,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return map[string]bool{"ok": true}, nil
+}
+
+// Drops the pool backends of a local profile and tears down their SSH state, logging teardown failures
+func (s *Service) TeardownPoolBackend(profile string) error {
+	keys := LocalProfilePoolKeys(profile)
+	var wg sync.WaitGroup
+	for _, key := range keys {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.stopPoolBackend(key)
+			if err := s.routes.TeardownSSH(key); err != nil {
+				s.Log(fmt.Sprintf("[ssh-teardown] %s: %s", key, err.Error()))
+			}
+		}()
+	}
+	wg.Wait()
+	return nil
+}
+
+func (s *Service) stopPoolBackend(key string) error {
+	s.mu.Lock()
+	delete(s.pool, key)
+	s.mu.Unlock()
+	return nil
+}
+
+// Forgets every pooled backend
+func (s *Service) StopAllPoolBackends() {
+	s.mu.Lock()
+	s.pool = map[string]*poolEntry{}
+	s.mu.Unlock()
+}
+
+func (s *Service) poolBackends() []PoolBackend {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]PoolBackend, 0, len(s.pool))
+	for key, entry := range s.pool {
+		out = append(out, PoolBackend{Key: key, RemoteBaseURL: entry.remoteBaseURL, Connection: entry.future})
+	}
+	return out
+}
+
+func (s *Service) revalidatePool() error {
+	return s.routes.RevalidatePool(s.poolBackends(), s.stopPoolBackend)
 }
 
 func (s *Service) restartAttachedLocalGateway(profile string) error {
@@ -936,8 +1160,11 @@ func (s *Service) restartAttachedLocalGateway(profile string) error {
 		pending = s.state.Promise()
 	} else {
 		s.mu.Lock()
-		if entry := s.pool[profile]; entry != nil {
-			pending = entry.future
+		for _, key := range LocalProfilePoolKeys(profile) {
+			if entry := s.pool[key]; entry != nil && entry.future != nil {
+				pending = entry.future
+				break
+			}
 		}
 		s.mu.Unlock()
 	}

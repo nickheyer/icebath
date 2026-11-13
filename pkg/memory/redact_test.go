@@ -78,3 +78,24 @@ func TestRedactForProviderLearnsMaskedTokens(t *testing.T) {
 		t.Fatalf("walk: %v", m)
 	}
 }
+
+func TestEgressRowsDropVetoedTypedTextAndKeepOtherMetadata(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	vetoed := map[string]any{"role": "user", "content": "[Message withheld: a pre_llm_call policy hook blocked it.]",
+		"display_metadata": map[string]any{"withheld_prompt": "my secret plan", "source": "cli"}}
+	plain := map[string]any{"role": "assistant", "content": "ok"}
+	out := redactMessagesForEgress([]map[string]any{vetoed, plain})
+	if len(out) != 2 {
+		t.Fatalf("rows %v", out)
+	}
+	meta, _ := out[0]["display_metadata"].(map[string]any)
+	if _, leaked := meta["withheld_prompt"]; leaked || meta["source"] != "cli" {
+		t.Fatalf("metadata %v", out[0]["display_metadata"])
+	}
+	if orig := vetoed["display_metadata"].(map[string]any); orig["withheld_prompt"] != "my secret plan" {
+		t.Fatalf("live row mutated %v", orig)
+	}
+	if out[1]["content"] != "ok" {
+		t.Fatalf("plain row %v", out[1])
+	}
+}

@@ -297,6 +297,26 @@ func TestConstructionValidatesInputs(t *testing.T) {
 	}
 }
 
+// A skip carries its reason as the message and is logged with the tag at the level it names
+func TestSkipRegistrationReasonAndLevel(t *testing.T) {
+	var skip *skipRegistration
+	if err := skipDebug("why"); !errors.As(err, &skip) || skip.reason != "why" || skip.level != "debug" || err.Error() != "why" {
+		t.Fatalf("debug skip %+v", skip)
+	}
+	for cfg, want := range map[string]slog.Level{"": slog.LevelDebug, "dashboard:\n  basic_auth:\n    username: admin\n": slog.LevelWarn} {
+		basicCase(t, cfg)
+		records := captureSlog(t)
+		registerBasic(t)
+		found := false
+		for _, r := range records() {
+			found = found || (r.Level == want && r.Message == "dashboard-auth-basic: "+BasicLastSkipReason())
+		}
+		if !found || BasicLastSkipReason() == "" {
+			t.Fatalf("%q no %v record of %q", cfg, want, BasicLastSkipReason())
+		}
+	}
+}
+
 // test_basic_provider.py TestRegister test_skips_when_no_username
 func TestSkipsWhenNoUsername(t *testing.T) {
 	basicCase(t, "")
@@ -305,6 +325,36 @@ func TestSkipsWhenNoUsername(t *testing.T) {
 	}
 	if !strings.Contains(BasicLastSkipReason(), "username") {
 		t.Fatal(BasicLastSkipReason())
+	}
+}
+
+// Register resolves every settings branch, password forms, ttl parsing and floor, and a too short secret
+func TestBasicSettingsBranchesThroughRegister(t *testing.T) {
+	basicCase(t, "dashboard:\n  basic_auth:\n    username: admin\n")
+	if registerBasic(t) != nil || !strings.HasPrefix(BasicLastSkipReason(), "dashboard.basic_auth.username is set but neither password_hash nor password") {
+		t.Fatalf("no password %q", BasicLastSkipReason())
+	}
+	secret := base64.StdEncoding.EncodeToString(randomBytes(32))
+	basicCase(t, "dashboard:\n  basic_auth:\n    username: admin\n    password: plain-pw\n    secret: "+secret+"\n    session_ttl_seconds: 30\n")
+	p := registerBasic(t)
+	if p == nil {
+		t.Fatalf("config plaintext %q", BasicLastSkipReason())
+	}
+	if s := mustLogin(t, p, "admin", "plain-pw"); s.ExpiresAt-time.Now().Unix() > 60 || p.ttl != 60 {
+		t.Fatalf("ttl floor %d", p.ttl)
+	}
+	basicCase(t, "dashboard:\n  basic_auth:\n    username: admin\n    password: plain-pw\n    password_hash: '"+HashPassword("hash-pw")+"'\n    secret: "+secret+"\n    session_ttl_seconds: soon\n")
+	p = registerBasic(t)
+	if p == nil || p.ttl != basicDefaultTTLSeconds {
+		t.Fatalf("config hash %v", p)
+	}
+	mustLogin(t, p, "admin", "hash-pw")
+	if _, err := p.CompletePasswordLogin(context.Background(), "admin", "plain-pw"); err == nil {
+		t.Fatal("config plaintext beat the config hash")
+	}
+	basicCase(t, "dashboard:\n  basic_auth:\n    username: admin\n    password: pw\n    secret: short\n")
+	if registerBasic(t) != nil || BasicLastSkipReason() != "BasicAuthProvider construction failed: secret must be at least 16 bytes" {
+		t.Fatalf("short secret %q", BasicLastSkipReason())
 	}
 }
 

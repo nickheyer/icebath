@@ -311,7 +311,7 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 	if prelude.Action == "return" {
 		return prelude.Result, nil
 	}
-	for prelude.Action != "break" && ((s.APICallCount < a.maxIterations && a.iterationBudget.Remaining() > 0) || a.budgetGraceCall) {
+	for prelude.Action != "break" && ((s.APICallCount < a.maxIterations && a.iterationBudget.Load().Remaining() > 0) || a.budgetGraceCall) {
 		action, result, err := runIteration(ctx, a, s)
 		if err != nil {
 			return nil, err
@@ -527,7 +527,7 @@ func CloseDurableFailedTurn(ctx context.Context, a *AIAgent, result map[string]a
 	}
 	appendLiveMessage(&messages, boundary)
 	result["messages"] = messages
-	if _, err := a.flushLiveMessages(messages, nil); err != nil {
-		conversationLoopLog().Debug("failed-turn boundary not written", "error", err)
-	}
+	guardedFlush(func() { a.flushLiveMessages(messages, nil) }, func(exc *OuterLoopError) {
+		conversationLoopLog().Debug("failed-turn boundary not written", "exc_info", exc.Stack, "error", exc)
+	})
 }

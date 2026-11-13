@@ -28,36 +28,38 @@ func DefaultHTTPXLimits() HTTPXLimits {
 	return HTTPXLimits{MaxConnections: &maxConns, MaxKeepaliveConnections: &keep, KeepaliveExpiry: &expiry}
 }
 
-// Env integer when set, parseable and positive, else the default
-func positiveEnvInt(name string, def int) int {
+// Cast of the env value when set, parseable and positive, else the default
+func positiveEnv[T int | float64](name string, def T, cast func(string) (T, bool)) T {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
 		return def
 	}
-	n, ok := pyint.Parse(raw)
-	if !ok || n.Sign() <= 0 || !n.IsInt64() || n.Int64() > math.MaxInt {
+	val, ok := cast(raw)
+	if !ok || !(val > 0) {
 		return def
 	}
-	return int(n.Int64())
+	return val
 }
 
-// Env float when set, parseable and positive, else the default
-func positiveEnvFloat(name string, def float64) float64 {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return def
+// Python int of an env text that fits the platform int
+func envInt(raw string) (int, bool) {
+	n, ok := pyint.Parse(raw)
+	if !ok || !n.IsInt64() || n.Int64() > math.MaxInt || n.Int64() < math.MinInt {
+		return 0, false
 	}
+	return int(n.Int64()), true
+}
+
+// Python float of an env text
+func envFloat(raw string) (float64, bool) {
 	v, err := pyint.ParseFloat(raw)
-	if err != nil || !(v > 0) {
-		return def
-	}
-	return v
+	return v, err == nil
 }
 
 // Tighter keepalive limits for persistent platform adapter clients with their env overrides
 func PlatformHTTPXLimits() HTTPXLimits {
-	keep := positiveEnvInt("ICEBATH_GATEWAY_HTTPX_MAX_KEEPALIVE", defaultPlatformMaxKeepalive)
-	expiry := positiveEnvFloat("ICEBATH_GATEWAY_HTTPX_KEEPALIVE_EXPIRY", defaultPlatformKeepaliveExpiry)
+	keep := positiveEnv("ICEBATH_GATEWAY_HTTPX_MAX_KEEPALIVE", defaultPlatformMaxKeepalive, envInt)
+	expiry := positiveEnv("ICEBATH_GATEWAY_HTTPX_KEEPALIVE_EXPIRY", defaultPlatformKeepaliveExpiry, envFloat)
 	return HTTPXLimits{MaxKeepaliveConnections: &keep, KeepaliveExpiry: &expiry}
 }
 

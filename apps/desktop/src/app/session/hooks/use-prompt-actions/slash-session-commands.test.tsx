@@ -16,7 +16,7 @@ import { actRender, Harness, type HarnessHandle, RUNTIME_SESSION_ID } from './in
 import { clearSingleFlightSessionResumeState } from './single-flight-resume'
 import { truncateRewoundMessages } from './slash-session-commands'
 
-// /undo, /retry, /steer and /queue run against the session owner's canonical verbs (the Ink TUI's
+// /undo, /retry, /steer and /queue run against the session owner's canonical verbs (the terminal UI's
 // behaviour on the same gateway), never as `slash.exec`, which the shared gateway refuses.
 
 vi.mock('@/hermes', () => ({

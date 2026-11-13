@@ -734,8 +734,8 @@ func TestInPlacePruneLeavesUnwrittenSuffixToTheFlush(t *testing.T) {
 	if slices.Contains(s.live(), "new turn") {
 		t.Fatal("prune wrote the unflushed suffix")
 	}
-	if ok, err := a.flushMessagesToSessionDB(pruned); !ok || err != nil {
-		t.Fatalf("flush failed: %v %v", ok, err)
+	if ok := a.flushMessagesToSessionDB(pruned); ok != state.FlushPersisted {
+		t.Fatalf("flush failed: %v", ok)
 	}
 	durable := s.live()
 	if !slices.Equal(durable, s.contents(pruned)) {

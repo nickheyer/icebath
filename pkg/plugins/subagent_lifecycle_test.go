@@ -4,14 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 type fakeChild struct {
@@ -335,50 +331,6 @@ def register(ctx):
         schema={"name": "host_lifecycle", "description": "d",
                 "parameters": {"type": "object", "properties": {}}}, handler=run)
 `
-
-// test_plugin_host.py test_host_plugin_can_launch_status_and_steer_subagent
-func TestHostPluginCanLaunchStatusAndSteerSubagent(t *testing.T) {
-	installLiveServices(t)
-	finish := make(chan struct{})
-	d := &fakeDelegation{children: map[string]*fakeChild{}, config: map[string]any{}, known: map[string]bool{},
-		run: func(*fakeChild) any {
-			<-finish
-			return map[string]any{"status": "completed", "summary": "host child done"}
-		}}
-	withDelegation := *installedServices()
-	withDelegation.SubagentLifecycle = d
-	InstallServices(&withDelegation)
-	h, m := liveHome(t, liveInterpreters(t)["system"], map[string]string{"hostlife": hostLifecyclePlugin})
-	if e := loadedError(m, "hostlife"); e != "" {
-		t.Fatalf("load error %q", e)
-	}
-	parent := &fakeParent{session: "parent-host-lifecycle"}
-	def := tools.Default.Lookup(homeCtx(h), h, "host_lifecycle")
-	if def == nil {
-		t.Fatal("tool not registered")
-	}
-	out := def.Handler(BindSubagentParent(homeCtx(h), parent), &tools.Call{Name: "host_lifecycle", Args: map[string]any{}})
-	close(finish)
-	decoded, err := pyjson.Loads(out)
-	if err != nil {
-		t.Fatalf("%v %s", err, out)
-	}
-	result, _ := pyjson.Plain(decoded).(map[string]any)
-	if pid, ok := result["pid"].(int64); !ok || pid == int64(os.Getpid()) {
-		t.Fatalf("lifecycle tool ran in process %v", result["pid"])
-	}
-	if result["state"] != "PENDING" && result["state"] != "RUNNING" || result["accepted"] != true || d.built[0].Goal != "review from host" || d.built[0].Parent != parent {
-		t.Fatalf("hosted %v", result)
-	}
-	if got := d.children["sa-0"].steering; len(got) != 1 || got[0] != "check correctness" {
-		t.Fatalf("steering %v", got)
-	}
-	service := NewSubagentLifecycleService(func(context.Context) any { return parent })
-	service.Wait(context.Background(), result["handle"], one(5))
-	if r := service.Result(context.Background(), result["handle"]); r.Summary == nil || *r.Summary != "host child done" {
-		t.Fatalf("result %+v", r)
-	}
-}
 
 func TestSubagentParentRefResolvesUntilCollected(t *testing.T) {
 	parent := &fakeParent{session: "weak"}

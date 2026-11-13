@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
 // Mutex the goroutine holding it may lock again, released after the matching number of unlocks
@@ -335,12 +336,13 @@ func (h *LazyHeaders) String() string {
 	return b.String()
 }
 
-// Catalog probe user agent so WAF fronted endpoints do not reject the default client
+// Catalog probe user agent carrying the release base version, the bare product when it cannot resolve
 func profileUserAgent() string {
-	if strings.TrimSpace(Version) == "" {
+	info, err := updaterecord.GetVersionInfo()
+	if err != nil {
 		return "icebath-cli"
 	}
-	return "icebath-cli/" + Version
+	return "icebath-cli/" + info.BaseVersion
 }
 
 // Fixed temperature of the profile, omit true for the server managed sentinel

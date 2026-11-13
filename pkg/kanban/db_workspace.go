@@ -69,7 +69,8 @@ func wsGit(repoRoot string, timeout time.Duration, args ...string) (*gitResult, 
 	if err != nil {
 		return nil, err
 	}
-	return &gitResult{r.Returncode, pystr.DecodeUTF8Replace(r.Stdout), pystr.DecodeUTF8Replace(r.Stderr)}, nil
+	return &gitResult{r.Returncode, pystr.TranslateNewlines(pystr.DecodeUTF8Replace(r.Stdout)),
+		pystr.TranslateNewlines(pystr.DecodeUTF8Replace(r.Stderr))}, nil
 }
 
 // Stripped stderr, or stdout when stderr is empty

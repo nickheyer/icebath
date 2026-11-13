@@ -68,7 +68,7 @@ func armExitWatchdog(ctx context.Context, timeoutS float64, fromSignal bool) {
 
 // Logs the memory shutdown at the session boundary, the gateway running the providers of a gateway session
 func shutdownAgentMemoryProvider(a cliAgent) {
-	if a == nil {
+	if a == nil || a.gateway() == nil {
 		return
 	}
 	sid := a.SessionID()
@@ -76,6 +76,7 @@ func shutdownAgentMemoryProvider(a cliAgent) {
 		sid = "<unknown>"
 	}
 	cliLogger.Info(fmt.Sprintf("CLI cleanup calling memory shutdown for session %s with %d message(s)", sid, len(a.SessionMessages())))
+	a.gateway().shutdownMemoryProvider()
 }
 
 // Stops the CLI's wake word listener when this process owns one
@@ -141,7 +142,7 @@ func notifySessionFinalizeMessages(ctx context.Context, sessionID, platform, rea
 
 // Returns the agent and session id of a one shot run, the agent's id winning over the CLI's
 func oneshotAgentAndSession(c *CLI) (cliAgent, string) {
-	a := c.agent
+	a := c.agentRef()
 	sid := ""
 	if a != nil {
 		sid = a.SessionID()
@@ -187,6 +188,9 @@ func flushOneShotSessionStore(c *CLI) {
 	if a == nil || sessionID == "" || sessionHandedOff(sessionID) {
 		return
 	}
+	if len(a.SessionMessages()) > 0 {
+		a.gateway().persistSession()
+	}
 	db := a.gateway().sessionDB
 	if db == nil {
 		db = c.sessionDB
@@ -216,8 +220,8 @@ func waitForOneshotBackgroundCompletions(c *CLI) {
 
 // Agent whose memory provider the single query shuts down, a true nil when neither the CLI nor the active ref holds one
 func singleQueryAgent(c *CLI) cliAgent {
-	if c.agent != nil {
-		return c.agent
+	if a := c.agentRef(); a != nil {
+		return a
 	}
 	if active := currentActiveAgent(); active != nil {
 		return active

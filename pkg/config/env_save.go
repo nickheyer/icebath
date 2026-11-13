@@ -33,7 +33,7 @@ func FormatManagedMessage(ctx context.Context, h, action string) string {
 
 // Refusal text when a managed install or an administrator pinned key forbids writing key, empty when allowed
 func EnvWriteRefusal(ctx context.Context, h, key, action string) string {
-	if ManagedSystem(ctx, h) != "" {
+	if IsManaged(ctx, h) {
 		return FormatManagedMessage(ctx, h, action+" "+key)
 	}
 	if IsEnvManaged(key) {
@@ -141,7 +141,7 @@ func SaveEnvValueContext(ctx context.Context, h, key, value string) error {
 	if err := EnsureIcebathHome(ctx, h); err != nil {
 		return err
 	}
-	path := home.EnvPath(h)
+	path := GetEnvPath(h)
 	err := withEnvWriteLock(path, func() error {
 		_, statErr := os.Stat(path)
 		exists := statErr == nil

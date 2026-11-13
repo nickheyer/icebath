@@ -5,7 +5,7 @@
  * nor Android Chrome (default `interactive-widget=resizes-visual`) shrinks
  * the *layout* viewport — the keyboard just overlays it. Our app shell is
  * `h-dvh`, so the terminal host's bounding box doesn't change, `fit()`
- * computes the same (cols, rows), and the PTY never re-lays-out. The Ink
+ * computes the same (cols, rows), and the PTY never re-lays-out. The terminal UI
  * input line — drawn at the bottom of the grid — ends up hidden underneath
  * the keyboard.
  *
@@ -18,7 +18,7 @@
  *
  * ChatPage applies this as bottom padding on the terminal wrapper, which
  * shrinks the xterm host → ResizeObserver refit → `term.onResize` sends
- * `RESIZE` to the PTY → Ink redraws the input line above the keyboard.
+ * `RESIZE` to the PTY → the terminal UI redraws the input line above the keyboard.
  *
  * We also set `interactive-widget=resizes-content` in the viewport meta so
  * Android Chrome 108+ resizes the layout viewport natively; there the inset

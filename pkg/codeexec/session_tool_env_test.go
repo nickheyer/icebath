@@ -48,7 +48,7 @@ func bindSessionClient(t *testing.T, client map[string]string, local bool) {
 
 func sessionChildEnv(t *testing.T, env *tools.Env, rt interpreter) map[string]string {
 	t.Helper()
-	child, err := buildChildEnv(t.Context(), env, childEnvSpec{RPCEndpoint: "sock", RPCToken: "t", TmpDir: t.TempDir(), ChildPython: rt.Python})
+	child, err := buildChildEnv(t.Context(), env, childEnvSpec{RPCEndpoint: "sock", RPCToken: "t", TmpDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}

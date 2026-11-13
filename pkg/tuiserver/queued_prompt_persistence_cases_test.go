@@ -74,11 +74,11 @@ func queuedPromptRunTurns(t *testing.T, db *state.SessionDB, key, reply string) 
 		userMsg, _ := a.StageTurnUserMessage(text, text)
 		messages := []map[string]any{userMsg}
 		a.SetPersistUserMessageIdx(0)
-		if _, err := a.FlushMessagesToSessionDB(messages); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(messages); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
-		if _, err := a.FlushMessagesToSessionDB(append(messages, map[string]any{"role": "assistant", "content": reply})); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(append(messages, map[string]any{"role": "assistant", "content": reply})); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		return false
 	}

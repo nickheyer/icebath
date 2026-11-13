@@ -50,9 +50,8 @@ func TestRealEarlyFlushAndOverrideLifecycle(t *testing.T) {
 		a, db := earlyFlushAgent(t, sid)
 		staged := map[string]any{"role": "user", "content": "hello"}
 		a.pendingCLIUserMessage = staged
-		flushed, err := a.flushMessagesToSessionDB([]map[string]any{staged})
-		if err != nil || !flushed {
-			t.Fatalf("flush %v %v", flushed, err)
+		if flushed := a.flushMessagesToSessionDB([]map[string]any{staged}); flushed != state.FlushPersisted {
+			t.Fatalf("flush %v", flushed)
 		}
 		rows := storedRows(t, db, sid)
 		last := rows[len(rows)-1]
@@ -85,8 +84,8 @@ func TestRealEarlyFlushAndOverrideLifecycle(t *testing.T) {
 		cleanText, apiText := "hello", "[voice] hello"
 		staged := map[string]any{"role": "user", "content": cleanText}
 		a.pendingCLIUserMessage = staged
-		if _, err := a.flushMessagesToSessionDB([]map[string]any{staged}); err != nil {
-			t.Fatal(err)
+		if outcome := a.flushMessagesToSessionDB([]map[string]any{staged}); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		if staged["_row_id"] == nil {
 			t.Fatalf("staged %v", staged)

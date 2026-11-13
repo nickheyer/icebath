@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -124,44 +122,6 @@ func staleRuntimeClient(t *testing.T) *testClient {
 	return c
 }
 
-func TestScopedTokenFreePlatformStatusMatchesTheGateway(t *testing.T) {
-	on := func(id string) string { return "platforms:\n  " + id + ":\n    enabled: true\n" }
-	cases := []struct {
-		id, platform, config, env string
-		enabled, configured       bool
-	}{
-		{"whatsapp-paired", "whatsapp", on("whatsapp"), "WHATSAPP_ENABLED=true\n", true, true},
-		{"whatsapp-env-flag-only", "whatsapp", "{}\n", "WHATSAPP_ENABLED=true\n", true, true},
-		{"whatsapp-unpaired", "whatsapp", on("whatsapp"), "", true, false},
-		{"whatsapp-flag-off", "whatsapp", "platforms:\n  whatsapp:\n    enabled: true\n    extra:\n      mode: bot\n", "WHATSAPP_ENABLED=false\n", false, false},
-		{"whatsapp-disabled-flag-on", "whatsapp", "platforms:\n  whatsapp:\n    enabled: false\n", "WHATSAPP_ENABLED=true\n", false, true},
-		{"webhook", "webhook", on("webhook"), "", true, true},
-		{"webhook-not-enabled", "webhook", "platforms:\n  webhook:\n    extra:\n      port: 8123\n", "", false, true},
-		{"api-server-absent", "api_server", "{}\n", "", false, false},
-		{"api-server-no-key", "api_server", on("api_server"), "", true, false},
-		{"api-server-key", "api_server", "platforms:\n  api_server:\n    enabled: true\n    extra:\n      key: " + strings.Repeat("k", 24) + "\n", "", true, true},
-		{"api-server-disabled-env-key", "api_server", "platforms:\n  api_server:\n    enabled: false\n", "API_SERVER_KEY=" + strings.Repeat("k", 32) + "\n", false, true},
-		{"whatsapp-toplevel-disabled-flag-on", "whatsapp", "whatsapp:\n  enabled: false\n", "WHATSAPP_ENABLED=true\n", false, true},
-		{"msgraph-no-client-state", "msgraph_webhook", on("msgraph_webhook"), "", true, false},
-		{"msgraph-client-state", "msgraph_webhook", "platforms:\n  msgraph_webhook:\n    enabled: true\n    extra:\n      client_state: state\n", "", true, true},
-		{"msgraph-disabled-env-on", "msgraph_webhook", "platforms:\n  msgraph_webhook:\n    enabled: false\n", "MSGRAPH_WEBHOOK_ENABLED=true\nMSGRAPH_WEBHOOK_CLIENT_STATE=state\n", false, true},
-		{"relay-no-url", "relay", on("relay"), "", true, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.id, func(t *testing.T) {
-			c, _, worker := isolatedMessagingProfiles(t)
-			noPlatformEnv(t)
-			writeTestFile(t, filepath.Join(worker, "config.yaml"), tc.config)
-			writeTestFile(t, filepath.Join(worker, ".env"), tc.env)
-			card := messagingCard(t, messagingPlatformsList(t, c, "?profile=worker_alpha"), tc.platform)
-			if card.GetOr("enabled", nil) != tc.enabled || card.GetOr("configured", nil) != tc.configured {
-				t.Fatalf("(enabled, configured) = (%v, %v) want (%v, %v)", card.GetOr("enabled", nil), card.GetOr("configured", nil),
-					tc.enabled, tc.configured)
-			}
-		})
-	}
-}
-
 func TestScopedStatusFollowsTheProfilesRelayBlock(t *testing.T) {
 	msgraph := "  msgraph_webhook:\n    enabled: true\n    extra:\n      client_state: state\n"
 	cases := []struct {
@@ -198,37 +158,6 @@ func (s *fakeOnePasswordSource) Fetch(cfg map[string]any, homePath string, envir
 	result := provider.NewSecretFetchResult()
 	result.Secrets = map[string]string{"TELEGRAM_BOT_TOKEN": s.token}
 	return result
-}
-
-func TestScopedOnepasswordCredentialCountsOnlyWhenTheSourceIsEnabled(t *testing.T) {
-	cases := []struct {
-		id            string
-		sourceEnabled bool
-		token         string
-		counts        bool
-	}{
-		{"enabled", true, strings.Repeat("1", 9) + ":" + strings.Repeat("a", 35), true},
-		{"disabled", false, strings.Repeat("1", 9) + ":" + strings.Repeat("a", 35), false},
-		{"enabled-empty-value", true, "", false},
-		{"enabled-blank-value", true, "  ", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.id, func(t *testing.T) {
-			c, _, worker := isolatedMessagingProfiles(t)
-			var fetched []string
-			provider.RegisterSecretSource(&fakeOnePasswordSource{token: tc.token, fetched: &fetched}, true, true, "")
-			t.Cleanup(func() { provider.RegisterSecretSource(&provider.OnePasswordSource{}, true, true, "") })
-			writeTestFile(t, filepath.Join(worker, "config.yaml"), fmt.Sprintf("secrets:\n  onepassword:\n    enabled: %v\n"+
-				"    env:\n      TELEGRAM_BOT_TOKEN: op://vault/item/credential\n", tc.sourceEnabled))
-			telegram := messagingCard(t, messagingPlatformsList(t, c, "?profile=worker_alpha"), "telegram")
-			if telegram.GetOr("configured", nil) != tc.counts || messagingEnvField(t, telegram, "TELEGRAM_BOT_TOKEN").GetOr("is_set", nil) != tc.counts {
-				t.Fatalf("telegram %v", telegram)
-			}
-			if (len(fetched) > 0) != tc.sourceEnabled {
-				t.Fatalf("fetched %v", fetched)
-			}
-		})
-	}
 }
 
 func TestProfileScopedMessagingReadsScopedReadDoesNotShowRootCredentials(t *testing.T) {
@@ -409,43 +338,6 @@ func TestNamedCurrentHomeMatchesUnscoped(t *testing.T) {
 	}
 	if scoped != "" || home.Dir(sctx) != defaultHome {
 		t.Fatalf("scoped %q home %s", scoped, home.Dir(sctx))
-	}
-}
-
-func TestScopedEnablementUsesOnlyOwnCredentials(t *testing.T) {
-	c, defaultHome, worker := isolatedMessagingProfiles(t)
-	t.Setenv("TELEGRAM_BOT_TOKEN", "root-token")
-	query := "?profile=worker_alpha"
-	if enabled := messagingCard(t, messagingPlatformsList(t, c, query), "telegram").GetOr("enabled", nil); enabled != false {
-		t.Fatalf("enabled %v", enabled)
-	}
-	writeTestFile(t, filepath.Join(worker, ".env"), "TELEGRAM_BOT_TOKEN=worker-token\n")
-	payload := messagingPlatformsList(t, c, query)
-	telegram := messagingCard(t, payload, "telegram")
-	if telegram.GetOr("enabled", nil) != true || telegram.GetOr("configured", nil) != true || telegram.GetOr("state", nil) == "disabled" {
-		t.Fatalf("telegram %v", telegram)
-	}
-	empty := map[string]bool{}
-	for _, entry := range messagingPlatformCatalog(context.Background()) {
-		if len(entry.GetOr("required_env", []any{}).([]any)) == 0 {
-			empty[entry.GetOr("id", "").(string)] = true
-		}
-	}
-	for _, raw := range payload.GetOr("platforms", []any{}).([]any) {
-		card := raw.(*pyjson.Object)
-		if empty[card.GetOr("id", "").(string)] && (card.GetOr("enabled", nil) != false || card.GetOr("configured", nil) != false) {
-			t.Fatalf("token free card %v", card)
-		}
-	}
-	for _, enabled := range []bool{false, true} {
-		writeTestFile(t, filepath.Join(worker, "config.yaml"), fmt.Sprintf("platforms:\n  telegram:\n    enabled: %v\n", enabled))
-		card := messagingCard(t, messagingPlatformsList(t, c, query), "telegram")
-		if card.GetOr("enabled", nil) != enabled || card.GetOr("configured", nil) != true {
-			t.Fatalf("enabled %v card %v", enabled, card)
-		}
-	}
-	if got, _ := os.ReadFile(filepath.Join(defaultHome, ".env")); !strings.Contains(string(got), "root-token") {
-		t.Fatalf("root env %q", got)
 	}
 }
 
@@ -732,65 +624,3 @@ def register(ctx):
         required_env=["WORKCHAT_TOKEN"],
         env_value_rules={"WORKCHAT_TOKEN": (lambda v: v.startswith("wc-"), "WORKCHAT_TOKEN starts with wc-")})
 `
-
-// Root home and a work profile holding a workchat platform plugin it enables, with the plugin host on python3
-func workchatHomes(t *testing.T) (*testClient, string, string) {
-	t.Helper()
-	c := newTestClient(t, dashboardTestApp(t))
-	root := os.Getenv("ICEBATH_HOME")
-	work := filepath.Join(root, "profiles", "work")
-	pluginDir := filepath.Join(work, "plugins", "workchat")
-	writeTestFile(t, filepath.Join(pluginDir, "plugin.yaml"), "kind: platform\nname: workchat\nversion: '1.0'\n")
-	writeTestFile(t, filepath.Join(pluginDir, "__init__.py"), workchatPlatformPlugin)
-	writeTestFile(t, filepath.Join(work, "config.yaml"), "plugins:\n  enabled:\n  - workchat\n")
-	writeTestFile(t, filepath.Join(root, "config.yaml"), "model:\n  default: gpt-5\n")
-	for _, h := range []string{root, work} {
-		writeTestFile(t, filepath.Join(h, ".env"), "")
-	}
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatalf("python3 is required to run the plugin host child: %v", err)
-	}
-	t.Cleanup(plugins.SetHostInterpreterForTests(python))
-	plugins.ResetPluginManagersForTests()
-	t.Cleanup(plugins.ResetPluginManagersForTests)
-	return c, root, work
-}
-
-func TestAGatewayBlockForAProfilePluginStaysInThatProfile(t *testing.T) {
-	c, _, work := workchatHomes(t)
-	writeTestFile(t, filepath.Join(work, "config.yaml"), "gateway:\n  workchat:\n    enabled: true\nplatforms:\n  webhook:\n    enabled: true\n"+
-		"plugins:\n  enabled:\n  - workchat\n")
-	leakedBefore := slices.Contains(gateway.PlatformMemberMap(), gateway.Platform("workchat"))
-	scoped := messagingPlatformsList(t, c, "?profile=work")
-	root := messagingPlatformsList(t, c, "")
-	if messagingCard(t, scoped, "webhook").GetOr("configured", nil) != true {
-		t.Fatalf("webhook %v", messagingCard(t, scoped, "webhook"))
-	}
-	if slices.Contains(gateway.PlatformMemberMap(), gateway.Platform("workchat")) != leakedBefore {
-		t.Fatal("the profile plugin registered process wide")
-	}
-	for _, raw := range root.GetOr("platforms", []any{}).([]any) {
-		if raw.(*pyjson.Object).GetOr("id", nil) == "workchat" {
-			t.Fatal("workchat listed for the root profile")
-		}
-	}
-}
-
-func TestAManagedGatewayBlockForAProfilePluginStaysInThatProfile(t *testing.T) {
-	c, _, work := workchatHomes(t)
-	managed := filepath.Join(t.TempDir(), "managed")
-	writeTestFile(t, filepath.Join(managed, "config.yaml"), "gateway:\n  workchat:\n    enabled: true\n")
-	t.Setenv(config.EnvManagedDir, managed)
-	config.InvalidateManagedCache()
-	t.Cleanup(config.InvalidateManagedCache)
-	writeTestFile(t, filepath.Join(work, "config.yaml"), "plugins:\n  enabled:\n  - workchat\nplatforms:\n  webhook:\n    enabled: true\n")
-	leakedBefore := slices.Contains(gateway.PlatformMemberMap(), gateway.Platform("workchat"))
-	scoped := messagingPlatformsList(t, c, "?profile=work")
-	if messagingCard(t, scoped, "webhook").GetOr("configured", nil) != true {
-		t.Fatalf("webhook %v", messagingCard(t, scoped, "webhook"))
-	}
-	if slices.Contains(gateway.PlatformMemberMap(), gateway.Platform("workchat")) != leakedBefore {
-		t.Fatal("the managed block registered the profile plugin process wide")
-	}
-}

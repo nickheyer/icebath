@@ -74,6 +74,7 @@ var shippedEnvDeclarations = map[string]struct {
 }
 
 func TestCoreHintAndDisplayTablesHoldNoBundledPluginPlatform(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	gateway.UseCompiledTreeForTest(t)
 	bundled, _ := gateway.ScanBundledPluginPlatformsForTest()
 	if len(bundled) == 0 {
@@ -92,6 +93,7 @@ func TestCoreHintAndDisplayTablesHoldNoBundledPluginPlatform(t *testing.T) {
 }
 
 func TestBundledDeclarationsServeEveryRegisteringPlatformWithoutOverride(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	gateway.UseCompiledTreeForTest(t)
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	for name, want := range shippedEnvDeclarations {
@@ -115,6 +117,7 @@ func TestBundledDeclarationsServeEveryRegisteringPlatformWithoutOverride(t *test
 }
 
 func TestBundledEnvFallbacksApplyWithoutOverride(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	gateway.UseCompiledTreeForTest(t)
 	ctx := home.WithOverride(context.Background(), t.TempDir())
 	env := map[string]string{"BLUEBUBBLES_SERVER_URL": "http://127.0.0.1:1", "BLUEBUBBLES_PASSWORD": "Zq81password77",

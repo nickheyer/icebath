@@ -45,6 +45,11 @@ type AmbiguousJobReferenceError struct {
 	Matches []*Job
 }
 
+// Error naming the ambiguous reference and the ids of every job it matched
+func newAmbiguousJobReferenceError(ref string, matches []*Job) *AmbiguousJobReferenceError {
+	return &AmbiguousJobReferenceError{Ref: ref, Matches: matches}
+}
+
 func (e *AmbiguousJobReferenceError) Error() string {
 	ids := make([]string, len(e.Matches))
 	for i, m := range e.Matches {
@@ -773,7 +778,7 @@ func (s *Store) resolveJobRef(ctx context.Context, ref string) (*Job, error) {
 	for i, m := range matches {
 		norm[i] = normalizeJobRecord(m)
 	}
-	return nil, &AmbiguousJobReferenceError{Ref: ref, Matches: norm}
+	return nil, newAmbiguousJobReferenceError(ref, norm)
 }
 
 // Read safe jobs with their latest and live executions, disabled ones only when asked

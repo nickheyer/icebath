@@ -306,7 +306,7 @@ func (r *Registry) coreToolsGatedBy(ctx context.Context, scope string, fn func(*
 		core[n] = true
 	}
 	var out []string
-	for _, d := range r.Snapshot(ctx, scope) {
+	for _, d := range r.mergedTools(ctx, scope) {
 		if d.Check != nil && core[d.Name] && fnPointer(d.Check) == ptr {
 			out = append(out, d.Name)
 		}

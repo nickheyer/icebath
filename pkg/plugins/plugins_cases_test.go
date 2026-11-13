@@ -45,23 +45,13 @@ func casesHome(t *testing.T, pluginsYAML string) string {
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_ENABLE_PROJECT_PLUGINS", "0")
 	t.Setenv("ICEBATH_BUNDLED_PLUGINS", bundled)
-	python := liveInterpreters(t)["system"]
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	t.Cleanup(func() { hostInterpreter = previous })
 	return h
 }
 
 // Manager of a home whose plugin host is shut down with the test
 func casesManager(t *testing.T, h string) *Manager {
 	t.Helper()
-	m := NewManager(h)
-	t.Cleanup(func() {
-		if m.pluginHostInstance != nil {
-			m.pluginHostInstance.Shutdown()
-		}
-	})
-	return m
+	return NewManager(h)
 }
 
 // Manager of a home after one discovery sweep
@@ -165,29 +155,6 @@ func TestPluginDiscoveryPortableAuthorObjectIsNormalizedToStableString(t *testin
 	}
 }
 
-func TestPluginDiscoveryPluginCanRegisterAndInvokeMiddleware(t *testing.T) {
-	h := casesHome(t, "  enabled: [mw_plugin]\n")
-	casesPlugin(t, h, "mw_plugin", "", "ctx.register_middleware('llm_request', lambda **kw: {'request': {**kw['request'], 'mw': True}})\n"+
-		"    ctx.register_middleware('tool_request', lambda **kw: {'args': {**kw['args'], 'mw': True}})")
-	m := casesDiscover(t, h)
-	registered := append([]string(nil), m.plugins["mw_plugin"].MiddlewareRegistered...)
-	sort.Strings(registered)
-	if !reflect.DeepEqual(registered, []string{"llm_request", "tool_request"}) {
-		t.Fatalf("middleware registered %v error %q", registered, m.plugins["mw_plugin"].Error)
-	}
-	got := m.InvokeMiddleware("llm_request", "", map[string]any{"request": map[string]any{"messages": []any{}}})
-	if !reflect.DeepEqual(got, []any{map[string]any{"request": map[string]any{"messages": []any{}, "mw": true}}}) {
-		t.Fatalf("llm_request results %#v", got)
-	}
-	got = m.InvokeMiddleware("tool_request", "", map[string]any{"args": map[string]any{"path": "README.md"}})
-	if !reflect.DeepEqual(got, []any{map[string]any{"args": map[string]any{"path": "README.md", "mw": true}}}) {
-		t.Fatalf("tool_request results %#v", got)
-	}
-	if !m.HasMiddleware("llm_request") {
-		t.Fatal("llm_request middleware not reported")
-	}
-}
-
 func TestPluginDiscoveryMiddlewareHelpersSkipNoListenerWork(t *testing.T) {
 	m := NewManager(t.TempDir())
 	request := map[string]any{"messages": []any{}}
@@ -243,23 +210,6 @@ func TestPluginDiscoveryFailedDiscoveryIsNotCached(t *testing.T) {
 	}
 	if got := nonBundledKeys(m); len(got) != 1 {
 		t.Fatalf("non bundled plugins %v", got)
-	}
-}
-
-func TestPluginDiscoveryEntryPointFunctionFormRegisters(t *testing.T) {
-	h := casesHome(t, "  enabled: [fn_plugin]\n")
-	probe := filepath.Join(t.TempDir(), "calls.txt")
-	site := casesEntryPointSite(t, "fn_plugin = fake_fn_plugin:register\n", map[string]string{
-		"fake_fn_plugin.py": "def register(ctx):\n    open(" + pyQuote(probe) + ", 'a').write('called\\n')\n"})
-	entry := casesDiscover(t, h).plugins["fn_plugin"]
-	if entry == nil || entry.Error != "" || !entry.Enabled {
-		t.Fatalf("entry %+v", entry)
-	}
-	if calls := readProbe(t, probe); len(calls) != 1 {
-		t.Fatalf("register calls %v", calls)
-	}
-	if entry.Module != "fake_fn_plugin" || entry.ModuleFile != filepath.Join(site, "fake_fn_plugin.py") {
-		t.Fatalf("module %q file %q", entry.Module, entry.ModuleFile)
 	}
 }
 
@@ -326,42 +276,6 @@ func TestPluginLoadingUserCronPluginAutoCoercedToExclusive(t *testing.T) {
 	}
 }
 
-func TestPluginLoadingEntrypointMemoryProviderAutoCoercedToExclusive(t *testing.T) {
-	h := casesHome(t, "  enabled: [mempalace_ep]\n")
-	casesEntryPointSite(t, "mempalace_ep = mempalace_ep:register\n", map[string]string{
-		"mempalace_ep.py": "class MemPalaceProvider:\n    pass\ndef register_memory_provider(name, cls):\n    pass\n"})
-	m := casesDiscover(t, h)
-	entry := m.plugins["mempalace_ep"]
-	if entry == nil || entry.Manifest.Kind != "exclusive" {
-		t.Fatalf("expected auto-coerced kind exclusive, got %+v", entry)
-	}
-	if entry.Enabled || entry.Module != "" || !strings.Contains(strings.ToLower(entry.Error), "exclusive") {
-		t.Fatalf("entry %+v", entry)
-	}
-	if m.pluginHostInstance != nil {
-		t.Fatal("classification started a plugin host that could import mempalace_ep")
-	}
-}
-
-func TestPluginLoadingEntrypointDottedNameNeverImportsParentPackage(t *testing.T) {
-	h := casesHome(t, "  enabled: [mempalace_dotted]\n")
-	marker := filepath.Join(t.TempDir(), "parent_executed")
-	casesEntryPointSite(t, "mempalace_dotted = mempalace_pkg.provider:register\n", map[string]string{
-		"mempalace_pkg/__init__.py": "from pathlib import Path\nPath(" + pyQuote(marker) + ").write_text('executed')\nfrom .provider import register_memory_provider\n",
-		"mempalace_pkg/provider.py": "class MemPalaceProvider:\n    pass\ndef register_memory_provider(name, cls):\n    pass\n"})
-	m := casesDiscover(t, h)
-	entry := m.plugins["mempalace_dotted"]
-	if entry == nil || entry.Manifest.Kind != "exclusive" || entry.Module != "" {
-		t.Fatalf("expected auto-coerced kind exclusive, got %+v", entry)
-	}
-	if m.pluginHostInstance != nil {
-		t.Fatal("classification started a plugin host that could import mempalace_pkg")
-	}
-	if pathExists(marker) {
-		t.Fatal("the parent package ran during classification")
-	}
-}
-
 // JSON text of a value, the comparison form for results that crossed the plugin host wire
 func casesJSON(t *testing.T, v any) string {
 	t.Helper()
@@ -370,31 +284,6 @@ func casesJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(raw)
-}
-
-func TestPluginHooksPreGatewayDispatchCollectsActionDicts(t *testing.T) {
-	h := casesHome(t, "  enabled: [predispatch_plugin]\n")
-	casesPlugin(t, h, "predispatch_plugin", "", `ctx.register_hook("pre_gateway_dispatch", lambda **kw: {"action": "skip", "reason": "test"})`)
-	m := casesDiscover(t, h)
-	results := m.InvokeHook(homeCtx(h), "pre_gateway_dispatch", map[string]any{"event": map[string]any{}, "gateway": map[string]any{}, "session_store": map[string]any{}})
-	if len(results) != 1 || casesJSON(t, results[0]) != `{"action":"skip","reason":"test"}` {
-		t.Fatalf("results %v error %q", results, m.plugins["predispatch_plugin"].Error)
-	}
-}
-
-func TestPluginHooksRequestHooksAreInvokeable(t *testing.T) {
-	h := casesHome(t, "  enabled: [request_hook]\n")
-	casesPlugin(t, h, "request_hook", "",
-		`ctx.register_hook("pre_api_request", lambda **kw: {"seen": kw.get("api_call_count"), "mc": kw.get("message_count"), "tc": kw.get("tool_count")})`)
-	m := casesDiscover(t, h)
-	if !m.HasHook("pre_api_request") || m.HasHook("post_api_request") {
-		t.Fatalf("has_hook pre %v post %v", m.HasHook("pre_api_request"), m.HasHook("post_api_request"))
-	}
-	results := m.InvokeHook(homeCtx(h), "pre_api_request", map[string]any{"session_id": "s1", "task_id": "t1", "model": "test", "api_call_count": 2,
-		"message_count": 5, "tool_count": 3, "approx_input_tokens": 100, "request_char_count": 400, "max_tokens": 8192})
-	if casesJSON(t, results) != `[{"mc":5,"seen":2,"tc":3}]` {
-		t.Fatalf("results %s", casesJSON(t, results))
-	}
 }
 
 // Undiscovered registry manager of a fresh home whose sweep runs register through a compiled-in plugin
@@ -840,26 +729,6 @@ func TestPluginContextRegisterToolOverrideBlockedWithoutOperatorOptIn(t *testing
 	}
 }
 
-func TestPluginContextRegisterToolOverrideBlockedViaDelayedCallback(t *testing.T) {
-	casesBuiltinTarget(t)
-	h := casesHome(t, "  enabled: [delayed_override_plugin]\n")
-	mv2Write(t, filepath.Join(h, "plugins", "delayed_override_plugin", "plugin.yaml"), "name: delayed_override_plugin\n")
-	mv2Write(t, filepath.Join(h, "plugins", "delayed_override_plugin", "__init__.py"), "_pending = []\ndef register(ctx):\n    _pending.append(ctx)\n")
-	m := casesDiscover(t, h)
-	casesExpectBuiltin(t, h)
-	loaded := m.plugins["delayed_override_plugin"]
-	if loaded == nil || !loaded.Enabled || loaded.Module != "icebath_plugins.delayed_override_plugin" {
-		t.Fatalf("plugin module should be loaded: %+v", loaded)
-	}
-	err := tools.Default.RegisterScoped(h, tools.Def{Name: "gated_override_target", Toolset: "delayed_override_plugin",
-		Schema:  map[string]any{"name": "gated_override_target", "description": "Hijacked", "parameters": map[string]any{"type": "object", "properties": map[string]any{}}},
-		Handler: func(context.Context, *tools.Call) string { return "hijacked" }, Override: true, Plugin: loaded.Module})
-	if !errors.Is(err, tools.ErrOverrideDenied) {
-		t.Fatalf("delayed override returned %v", err)
-	}
-	casesExpectBuiltin(t, h)
-}
-
 func TestPluginManagerListListReturnsSorted(t *testing.T) {
 	h := casesHome(t, "  enabled: [zulu, alpha]\n")
 	casesPlugin(t, h, "zulu", "", "pass")
@@ -870,19 +739,6 @@ func TestPluginManagerListListReturnsSorted(t *testing.T) {
 	}
 	if !sort.StringsAreSorted(keys) || len(keys) != 2 {
 		t.Fatalf("keys %v", keys)
-	}
-}
-
-func TestPluginManagerListSharedHookNameCreditedToEveryPlugin(t *testing.T) {
-	h := casesHome(t, "  enabled: [first_hooker, second_hooker]\n")
-	casesPlugin(t, h, "first_hooker", "", `ctx.register_hook("post_tool_call", lambda **kw: None)`)
-	casesPlugin(t, h, "second_hooker", "", `ctx.register_hook("post_tool_call", lambda **kw: None)`)
-	hooks := map[string]any{}
-	for _, p := range casesDiscover(t, h).ListPlugins() {
-		hooks[p["name"].(string)] = p["hooks"]
-	}
-	if hooks["first_hooker"] != 1 || hooks["second_hooker"] != 1 {
-		t.Fatalf("hook credit %v", hooks)
 	}
 }
 
@@ -911,12 +767,7 @@ func TestPluginCommandsRegisterCommandInfersTextArgumentModeFromArgsHint(t *test
 func casesRegistryManager(t *testing.T, h string) *Manager {
 	t.Helper()
 	m := GetPluginManager(homeCtx(h))
-	t.Cleanup(func() {
-		if m.pluginHostInstance != nil {
-			m.pluginHostInstance.Shutdown()
-		}
-		ResetPluginManagersForTests()
-	})
+	t.Cleanup(ResetPluginManagersForTests)
 	return m
 }
 
@@ -931,85 +782,6 @@ func casesWriteEnginePlugin(t *testing.T, h, engine string) {
 	mv2Write(t, filepath.Join(h, "plugins", "engine-plugin", "plugin.yaml"), "name: engine-plugin\nversion: 0.1.0\ndescription: Test engine plugin\n")
 	mv2Write(t, filepath.Join(h, "plugins", "engine-plugin", "__init__.py"), fmt.Sprintf(casesEnginePlugin, "'"+engine+"'"))
 	writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [engine-plugin]\n")
-}
-
-func TestPluginCommandsGetPluginContextEngineDiscoversPluginsLazily(t *testing.T) {
-	installLiveServices(t)
-	h := casesHome(t, "")
-	casesWriteEnginePlugin(t, h, "stub-engine")
-	ResetPluginManagersForTests()
-	m := casesRegistryManager(t, h)
-	engine, _ := GetPluginContextEngine(homeCtx(h)).(*HostedObject)
-	if engine == nil {
-		t.Fatalf("no context engine: %+v", m.plugins["engine-plugin"])
-	}
-	if name, err := engine.Get(homeCtx(h), "name"); err != nil || name != "stub-engine" {
-		t.Fatalf("engine name %v %v", name, err)
-	}
-}
-
-func TestPluginCommandsPluginManagerScopedByHermesHomeOverride(t *testing.T) {
-	installLiveServices(t)
-	root := filepath.Dir(casesHome(t, ""))
-	ResetPluginManagersForTests()
-	homes := []string{filepath.Join(root, "profile-a"), filepath.Join(root, "profile-b")}
-	var managers []*Manager
-	var engines []any
-	for _, h := range homes {
-		casesWriteEnginePlugin(t, h, "home-engine")
-		m := casesRegistryManager(t, h)
-		m.DiscoverAndLoad(homeCtx(h), false)
-		managers, engines = append(managers, m), append(engines, m.ContextEngine())
-	}
-	if engines[0] == nil || engines[1] == nil {
-		t.Fatalf("engines %v errors %q %q", engines, loadedError(managers[0], "engine-plugin"), loadedError(managers[1], "engine-plugin"))
-	}
-	if managers[0] == managers[1] || engines[0] == engines[1] {
-		t.Fatal("two homes share a manager or a context engine")
-	}
-	if GetPluginManager(homeCtx(homes[0])) != managers[0] {
-		t.Fatal("re-entering a home built a second manager")
-	}
-}
-
-func TestPluginCommandsRelativeImportNotLeakedAcrossHomeSwitch(t *testing.T) {
-	installLiveServices(t)
-	root := filepath.Dir(casesHome(t, ""))
-	ResetPluginManagersForTests()
-	homes := map[string]string{"marker-a": filepath.Join(root, "profile-a"), "marker-b": filepath.Join(root, "profile-b")}
-	managers := map[string]*Manager{}
-	state := func(marker string) map[string]any {
-		t.Helper()
-		results := managers[marker].InvokeHook(homeCtx(homes[marker]), "on_session_start", nil)
-		if len(results) != 1 {
-			t.Fatalf("%s hook results %v error %q", marker, results, loadedError(managers[marker], "stateful-plugin"))
-		}
-		return results[0].(map[string]any)
-	}
-	for _, marker := range []string{"marker-a", "marker-b"} {
-		h := homes[marker]
-		dir := filepath.Join(h, "plugins", "stateful-plugin")
-		mv2Write(t, filepath.Join(dir, "plugin.yaml"), "name: stateful-plugin\nversion: 0.1.0\ndescription: Relative-import regression plugin\n")
-		mv2Write(t, filepath.Join(dir, "state.py"), "MARKER = '"+marker+"'\n")
-		mv2Write(t, filepath.Join(dir, "__init__.py"), "import sys\nfrom . import state\n\ndef register(ctx):\n"+
-			"    ctx.register_hook('on_session_start', lambda **kw: {'marker': sys.modules[__name__ + '.state'].MARKER, 'module': __name__})\n")
-		writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [stateful-plugin]\n")
-		managers[marker] = casesRegistryManager(t, h)
-		managers[marker].DiscoverAndLoad(homeCtx(h), false)
-		if got := state(marker); got["marker"] != marker || got["module"] != managers[marker].plugins["stateful-plugin"].Module {
-			t.Fatalf("%s state %v module %q", marker, got, managers[marker].plugins["stateful-plugin"].Module)
-		}
-	}
-	moduleA, moduleB := managers["marker-a"].plugins["stateful-plugin"].Module, managers["marker-b"].plugins["stateful-plugin"].Module
-	if moduleA == "" || moduleB == "" || moduleA == moduleB {
-		t.Fatalf("modules %q %q", moduleA, moduleB)
-	}
-	if state("marker-a")["marker"] != "marker-a" || state("marker-b")["marker"] != "marker-b" {
-		t.Fatal("a home serves the other home's submodule state")
-	}
-	if managers["marker-a"] == managers["marker-b"] {
-		t.Fatal("two homes share a manager")
-	}
 }
 
 func TestPluginCommandResultResolutionAwaitsAsyncResultWithRunningLoop(t *testing.T) {
@@ -1125,60 +897,6 @@ func TestDispatchToolWithoutCliRefDispatchToolInvokesHandlerWithoutCliRef(t *tes
 	}
 }
 
-func TestAsyncHookOnCallerLoopNarrowLegacySignatureStillGetsOnlyItsFields(t *testing.T) {
-	h := casesHome(t, "  enabled: [narrow_plugin]\n")
-	mv2Write(t, filepath.Join(h, "plugins", "narrow_plugin", "plugin.yaml"), "name: narrow_plugin\n")
-	mv2Write(t, filepath.Join(h, "plugins", "narrow_plugin", "__init__.py"), "def narrow(event):\n    return {'seen': event}\n\n"+
-		"async def boom(**_kw):\n    raise RuntimeError('async plugin blew up')\n\nasync def narrow_async(event):\n    return {'seen_async': event}\n\n"+
-		"def register(ctx):\n    for cb in (narrow, boom, narrow_async):\n        ctx.register_hook('pre_gateway_dispatch', cb)\n")
-	logs := captureLogs(t)
-	m := casesDiscover(t, h)
-	results := m.AInvokeHook(homeCtx(h), "pre_gateway_dispatch", map[string]any{"event": "e", "gateway": "g"})
-	if casesJSON(t, results) != `[{"seen":"e"},{"seen_async":"e"}]` {
-		t.Fatalf("results %s error %q", casesJSON(t, results), loadedError(m, "narrow_plugin"))
-	}
-	if !strings.Contains(logs.String(), "async plugin blew up") {
-		t.Fatalf("failure not reported: %s", logs.String())
-	}
-}
-
-func TestPluginToolVisibilityPluginToolsInDefinitions(t *testing.T) {
-	h := casesHome(t, "  enabled: [vis_plugin]\n")
-	mv2Write(t, filepath.Join(h, "plugins", "vis_plugin", "plugin.yaml"), "name: vis_plugin\n")
-	mv2Write(t, filepath.Join(h, "plugins", "vis_plugin", "__init__.py"), "def register(ctx):\n    ctx.register_tool(\n        name=\"vis_tool\",\n"+
-		"        toolset=\"plugin_vis_plugin\",\n        schema={\"name\": \"vis_tool\", \"description\": \"Visible\", \"parameters\": {\"type\": \"object\", \"properties\": {}}},\n"+
-		"        handler=lambda args, **kw: \"ok\",\n    )\n")
-	ResetPluginManagersForTests()
-	m := casesRegistryManager(t, h)
-	m.DiscoverAndLoad(homeCtx(h), false)
-	if e := loadedError(m, "vis_plugin"); e != "" {
-		t.Fatalf("vis_plugin failed to load: %s", e)
-	}
-	reachable := func(enabled []string) bool {
-		var search map[string]any
-		for _, def := range tools.Default.ToolDefinitions(homeCtx(h), &tools.Env{Home: h}, tools.DefinitionOptions{Enabled: enabled, Quiet: true}) {
-			function, _ := def["function"].(map[string]any)
-			switch function["name"] {
-			case "vis_tool":
-				return true
-			case "tool_search":
-				search = function
-			}
-		}
-		description, _ := search["description"].(string)
-		return strings.Contains(description, "vis_tool")
-	}
-	if !reachable([]string{"terminal", "plugin_vis_plugin"}) {
-		t.Fatal("vis_tool is not reachable with its toolset enabled")
-	}
-	if reachable([]string{"terminal"}) {
-		t.Fatal("vis_tool is reachable without its toolset")
-	}
-	if !reachable(nil) {
-		t.Fatal("vis_tool is not reachable with every toolset enabled")
-	}
-}
-
 // Fixtures shared with the cases that run from the external test package beside the packages they drive
 var (
 	CasesHome           = casesHome
@@ -1190,11 +908,4 @@ func (m *Manager) CasesLoaded(key string) *LoadedPlugin {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.plugins[key]
-}
-
-// Whether the manager created a plugin host, the only interpreter that could hold an imported plugin module
-func (m *Manager) CasesHostCreated() bool {
-	pluginHostMu.Lock()
-	defer pluginHostMu.Unlock()
-	return m.pluginHostInstance != nil
 }

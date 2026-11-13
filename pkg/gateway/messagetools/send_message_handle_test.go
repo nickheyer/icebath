@@ -134,6 +134,7 @@ func TestSendMessageToolMissingMediaIsReportedToTheCallerAndHermesSendExitsNonze
 	calls := installSendSeams(t, cfg, nil)
 	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "0")
 	dir := t.TempDir()
+	t.Setenv("ICEBATH_MEDIA_ALLOW_DIRS", dir)
 	report := filepath.Join(dir, "report.pdf")
 	if err := os.WriteFile(report, []byte("%PDF report"), 0o644); err != nil {
 		t.Fatal(err)

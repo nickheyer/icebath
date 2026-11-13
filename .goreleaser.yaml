@@ -2,7 +2,8 @@ version: 2
 project_name: icebath
 
 # The dashboard bundle is compiled from web/ into cmd/icebath/web_dist and
-# embedded into every binary by the webdist build tag.
+# embedded into every binary by the webdist build tag, and the goolm tag
+# compiles in the pure Go olm that Matrix end to end encryption needs.
 before:
   hooks:
     - go mod download
@@ -14,7 +15,7 @@ builds:
     binary: icebath
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
-    tags: [webdist]
+    tags: [webdist, goolm]
     ldflags: ["-s -w -X main.version={{ .Tag }}"]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
@@ -237,7 +238,7 @@ aur_sources:
       export CGO_LDFLAGS="${LDFLAGS}"
       export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
       go run ./cmd/icebath-build web
-      go build -tags webdist -o icebath -ldflags="-linkmode=external -X main.version=v${pkgver}" ./cmd/icebath
+      go build -tags webdist,goolm -o icebath -ldflags="-linkmode=external -X main.version=v${pkgver}" ./cmd/icebath
     package: |-
       install -Dm755 ./icebath "${pkgdir}/usr/lib/icebath/icebath"
       printf 'pacman\n' | install -Dm644 /dev/stdin "${pkgdir}/usr/lib/icebath/.install_method"

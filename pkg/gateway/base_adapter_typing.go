@@ -109,7 +109,7 @@ type ReactionAdapter interface {
 
 // Optional runtime switch for the outcome reactions
 type ReactionsEnabler interface {
-	ReactionsEnabled() bool
+	ReactionsEnabled(ctx context.Context) bool
 }
 
 // Refreshes the typing indicator every interval until cancelled or stopped, skipping paused chats
@@ -297,7 +297,7 @@ func (b *BasePlatformAdapter) OnProcessingComplete(ctx context.Context, event *M
 	if !ok {
 		return nil
 	}
-	if enabler, ok := b.Self().(ReactionsEnabler); ok && !enabler.ReactionsEnabled() {
+	if enabler, ok := b.Self().(ReactionsEnabler); ok && !enabler.ReactionsEnabled(ctx) {
 		return nil
 	}
 	chatID := ""

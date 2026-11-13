@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ---- events ----
@@ -86,20 +87,12 @@ func codexStreamError(event map[string]any) *CodexStreamErrorEvent {
 	}
 	message := "stream emitted error event"
 	if raw := field("message"); raw != nil {
-		if s := strings.TrimSpace(strOrEmpty(raw)); s != "" {
+		if s := pystr.Strip(strOrEmpty(raw)); s != "" {
 			message = s
 		}
 	}
-	code := strOrEmpty(field("code"))
-	param := strOrEmpty(field("param"))
-	var codeVal, paramVal any
-	if field("code") != nil {
-		codeVal = code
-	}
-	if field("param") != nil {
-		paramVal = param
-	}
-	return &CodexStreamErrorEvent{Message: message, Code: code, Param: param,
+	codeVal, paramVal := field("code"), field("param")
+	return &CodexStreamErrorEvent{Message: message, Code: strOrEmpty(codeVal), Param: strOrEmpty(paramVal),
 		Body: map[string]any{"error": map[string]any{"message": message, "code": codeVal, "param": paramVal, "type": "error"}}}
 }
 

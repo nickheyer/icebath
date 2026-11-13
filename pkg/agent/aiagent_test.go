@@ -119,9 +119,11 @@ func TestTouchActivityStampsUnderTheLock(t *testing.T) {
 }
 
 func TestGetActivitySummaryCarriesBudgetAndTool(t *testing.T) {
-	a := &AIAgent{iterationBudget: NewIterationBudget(9), maxIterations: 9, apiCallCount: 3, currentTool: "terminal",
+	a := &AIAgent{maxIterations: 9, currentTool: "terminal",
 		lastActivityTS: 10, lastActivityDesc: "x", lastActivityProvenance: state.ActivityProvenanceUnknown}
-	a.iterationBudget.Consume()
+	a.apiCallCount.Store(3)
+	a.iterationBudget.Store(NewIterationBudget(9))
+	a.iterationBudget.Load().Consume()
 	got := a.GetActivitySummary()
 	for k, want := range map[string]any{"current_tool": "terminal", "api_call_count": 3, "max_iterations": 9, "budget_used": 1, "budget_max": 9} {
 		if fmt.Sprint(got[k]) != fmt.Sprint(want) {
@@ -278,7 +280,7 @@ func TestSetStreamDeltaAndToolProgressCallbacksInstallTheSlots(t *testing.T) {
 func TestSessionMessagesTaskIDAndPersistSessionAccessorsReadTheAgentSlots(t *testing.T) {
 	a := &AIAgent{}
 	a.currentTaskID = "task-1"
-	a.sessionMessages = []*state.Message{{Role: "user", Content: "hi"}}
+	a.setSessionMessages([]*state.Message{{Role: "user", Content: "hi"}})
 	if a.TaskID() != "task-1" || len(a.SessionMessages()) != 1 || a.SessionMessages()[0].Role != "user" {
 		t.Fatalf("accessors %q %v", a.TaskID(), a.SessionMessages())
 	}

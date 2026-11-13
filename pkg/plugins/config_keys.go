@@ -27,11 +27,6 @@ func ActiveConfigKeyManifests(h string) []config.PluginConfigKeys {
 	for _, m := range manifests {
 		directoryKeys[m.ID()] = true
 	}
-	for _, m := range discoverEntrypointManifests(context.Background()) {
-		if !directoryKeys[m.ID()] {
-			manifests = append(manifests, m)
-		}
-	}
 	winners := ResolveManifestWinners(manifests)
 	for _, key := range sortedKeys(winners) {
 		m := winners[key]

@@ -207,7 +207,7 @@ func pluginIsConfigured(ctx context.Context, entry *PlatformEntry, existingExtra
 }
 
 // Passive dependency probe, false when the check is missing or panics
-func entryDepsOK(entry *PlatformEntry) (ok bool) {
+func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Debug(fmt.Sprintf("check_fn for %s raised: %v", entry.Name, r))
@@ -218,7 +218,7 @@ func entryDepsOK(entry *PlatformEntry) (ok bool) {
 		slog.Debug(fmt.Sprintf("check_fn for %s raised: 'NoneType' object is not callable", entry.Name))
 		return false
 	}
-	return entry.CheckFn()
+	return entry.RunCheck(ctx)
 }
 
 // Enables a configured plugin platform whose deps are present or installable later
@@ -241,7 +241,7 @@ func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *Platfo
 	if !alreadyEnabled && entry.IsConnected != nil && !pluginIsConfigured(ctx, entry, existingExtra, seed) {
 		return
 	}
-	if !entryDepsOK(entry) && entry.EnsureDepsFn == nil {
+	if !entryDepsOK(ctx, entry) && entry.EnsureDepsFn == nil {
 		return
 	}
 	pc := platformSetDefault(cfg, platform)

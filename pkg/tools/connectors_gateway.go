@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,7 +18,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pydantic"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -53,8 +55,19 @@ const (
 	gatewayKindRateLimited = "rate_limited"
 )
 
-func gatewayErr(message, code string) *ToolGatewayError {
-	return &ToolGatewayError{Message: message, Code: code}
+// Gateway failure of the given kind with its code, status, request id and retryable flag, the code defaulting to GATEWAY_ERROR
+func newToolGatewayError(kind, message, code string, status int, requestID string, retryable bool) *ToolGatewayError {
+	if code == "" {
+		code = "GATEWAY_ERROR"
+	}
+	return &ToolGatewayError{Message: message, Code: code, Status: status, RequestID: requestID, Retryable: retryable, Kind: kind}
+}
+
+// Rate limited gateway failure carrying the retry hint in seconds the caller decides whether to wait for
+func newRateLimited(message string, retryAfter float64, code string, status int, requestID string) *ToolGatewayError {
+	e := newToolGatewayError(gatewayKindRateLimited, message, code, status, requestID, false)
+	e.RetryAfter = retryAfter
+	return e
 }
 
 // Reports whether an error is a gateway error of the given kind
@@ -66,8 +79,8 @@ func gatewayErrorKind(err error, kind string) (*ToolGatewayError, bool) {
 	return nil, false
 }
 
-// ParseGatewayError reads every gateway error envelope shape without failing on a malformed body
-func ParseGatewayError(status int, body any, headers http.Header) *ToolGatewayError {
+// ParseGatewayError reads every gateway error envelope shape, failing only on a 429 whose Retry-After is no number
+func ParseGatewayError(status int, body any, headers http.Header) (*ToolGatewayError, error) {
 	code := "HTTP_" + strconv.Itoa(status)
 	message := ""
 	requestID := ""
@@ -105,35 +118,31 @@ func ParseGatewayError(status int, body any, headers http.Header) *ToolGatewayEr
 	if message == "" {
 		message = fmt.Sprintf("tool gateway request failed with status %d", status)
 	}
-	e := &ToolGatewayError{Message: message, Code: code, Status: status, RequestID: requestID}
 	switch {
 	case status == 401 || status == 403:
-		e.Kind = gatewayKindAuth
+		return newToolGatewayError(gatewayKindAuth, message, code, status, requestID, false), nil
 	case status == 404:
-		e.Kind = gatewayKindUnavailable
+		return newToolGatewayError(gatewayKindUnavailable, message, code, status, requestID, false), nil
 	case status == 409:
-		e.Kind = gatewayKindIdempotency
+		return newToolGatewayError(gatewayKindIdempotency, message, code, status, requestID, false), nil
 	case status == 429:
-		e.Kind = gatewayKindRateLimited
 		header := ""
 		if headers != nil {
 			header = headers.Get("Retry-After")
 		}
+		retryAfter := 1.0
 		if header != "" {
-			if f, err := strconv.ParseFloat(header, 64); err == nil {
-				e.RetryAfter = f
-			} else {
-				e.RetryAfter = 1.0
+			seconds, err := pyint.ParseFloat(header)
+			if err != nil {
+				return nil, err
 			}
-		} else if hasRetryAfterMs {
-			e.RetryAfter = retryAfterMs / 1000.0
-		} else {
-			e.RetryAfter = 1.0
+			retryAfter = seconds
+		} else if hasRetryAfterMs && retryAfterMs != 0 {
+			retryAfter = retryAfterMs / 1000.0
 		}
-	default:
-		e.Retryable = status >= 500
+		return newRateLimited(message, retryAfter, code, status, requestID), nil
 	}
-	return e
+	return newToolGatewayError("", message, code, status, requestID, status >= 500), nil
 }
 
 const (
@@ -262,15 +271,6 @@ type wireError struct{ msg string }
 
 func (e *wireError) Error() string { return e.msg }
 
-func wireRequire(m map[string]any, loc string, keys ...string) error {
-	for _, k := range keys {
-		if _, ok := m[k]; !ok {
-			return &wireError{loc + "." + k + ": Field required"}
-		}
-	}
-	return nil
-}
-
 func wireStrList(v any) []string {
 	var out []string
 	for _, item := range asList(v) {
@@ -282,211 +282,8 @@ func wireStrList(v any) []string {
 	return out
 }
 
-func wireToolSchema(slug string, raw any) (map[string]any, error) {
-	m := asMap(raw)
-	if m == nil {
-		return nil, &wireError{"schemas." + slug + ": Input should be a valid dictionary"}
-	}
-	if err := wireRequire(m, "schemas."+slug, "connector", "tool"); err != nil {
-		return nil, err
-	}
-	input := asMap(m["inputSchema"])
-	if input == nil {
-		input = map[string]any{}
-	}
-	return map[string]any{"connector": asStr(m["connector"]), "tool": asStr(m["tool"]), "description": asStr(m["description"]), "input_schema": input}, nil
-}
-
-func wireSchemasMap(raw any) (map[string]any, error) {
-	out := map[string]any{}
-	for slug, v := range asMap(raw) {
-		s, err := wireToolSchema(slug, v)
-		if err != nil {
-			return nil, err
-		}
-		out[slug] = s
-	}
-	return out, nil
-}
-
-func wireSearchResponse(payload map[string]any) (map[string]any, error) {
-	schemas, err := wireSchemasMap(payload["schemas"])
-	if err != nil {
-		return nil, err
-	}
-	results := []any{}
-	for i, r := range asList(payload["results"]) {
-		m := asMap(r)
-		if m == nil {
-			return nil, &wireError{fmt.Sprintf("results.%d: Input should be a valid dictionary", i)}
-		}
-		if err := wireRequire(m, fmt.Sprintf("results.%d", i), "index"); err != nil {
-			return nil, err
-		}
-		row := map[string]any{"index": int(asFloat(m["index"])), "use_case": asStr(m["useCase"]), "tools": wireStrList(m["tools"]),
-			"related_tools": wireStrList(m["relatedTools"]), "connectors": wireStrList(m["connectors"]), "guidance": m["guidance"],
-			"plan_steps": m["planSteps"], "pitfalls": m["pitfalls"], "error": m["error"]}
-		results = append(results, row)
-	}
-	connections := []any{}
-	for i, c := range asList(payload["connections"]) {
-		m := asMap(c)
-		if m == nil {
-			return nil, &wireError{fmt.Sprintf("connections.%d: Input should be a valid dictionary", i)}
-		}
-		if err := wireRequire(m, fmt.Sprintf("connections.%d", i), "connector"); err != nil {
-			return nil, err
-		}
-		connections = append(connections, map[string]any{"connector": asStr(m["connector"]), "connected": truthy(m["connected"]), "description": asStr(m["description"])})
-	}
-	return map[string]any{"results": results, "schemas": schemas, "connections": connections, "next_steps": wireStrList(payload["nextSteps"])}, nil
-}
-
-func wireSchemasResponse(payload map[string]any) (map[string]any, error) {
-	schemas, err := wireSchemasMap(payload["schemas"])
-	if err != nil {
-		return nil, err
-	}
-	suggestions := map[string]any{}
-	for k, v := range asMap(payload["suggestions"]) {
-		suggestions[k] = wireStrList(v)
-	}
-	return map[string]any{"schemas": schemas, "not_found": wireStrList(payload["notFound"]), "suggestions": suggestions}, nil
-}
-
-func wireToolError(raw any, loc string) (map[string]any, error) {
-	m := asMap(raw)
-	if m == nil {
-		return nil, &wireError{loc + ": Input should be a valid dictionary"}
-	}
-	if err := wireRequire(m, loc, "code", "message"); err != nil {
-		return nil, err
-	}
-	return map[string]any{"code": asStr(m["code"]), "message": asStr(m["message"]), "connector": m["connector"], "connect_url": m["connectUrl"],
-		"connection_id": m["connectionId"], "hint": m["hint"], "family": m["family"], "request_id": m["requestId"]}, nil
-}
-
-func wireDataUse(raw any) []string {
-	m := asMap(raw)
-	if m == nil {
-		return nil
-	}
-	return wireStrList(m["requires"])
-}
-
-func wireExecuteSingleResponse(payload map[string]any) (map[string]any, error) {
-	if err := wireRequire(payload, "", "result"); err != nil {
-		return nil, &wireError{"result: Field required"}
-	}
-	r := asMap(payload["result"])
-	if r == nil {
-		return nil, &wireError{"result: Input should be a valid dictionary"}
-	}
-	return map[string]any{"connector": asStr(r["connector"]), "tool": asStr(r["tool"]), "data": r["data"], "account": r["account"], "data_use": wireDataUse(r["dataUse"])}, nil
-}
-
-func wireExecuteResponse(payload map[string]any) ([]map[string]any, error) {
-	var results []map[string]any
-	for i, raw := range asList(payload["results"]) {
-		m := asMap(raw)
-		if m == nil {
-			return nil, &wireError{fmt.Sprintf("results.%d: Input should be a valid dictionary", i)}
-		}
-		row := map[string]any{"index": int(asFloat(m["index"])), "connector": asStr(m["connector"]), "tool": asStr(m["tool"]), "data": m["data"], "account": m["account"], "data_use": wireDataUse(m["dataUse"])}
-		if m["error"] != nil {
-			e, err := wireToolError(m["error"], fmt.Sprintf("results.%d.error", i))
-			if err != nil {
-				return nil, err
-			}
-			row["error"] = e
-		}
-		results = append(results, row)
-	}
-	return results, nil
-}
-
-func wireConnectionsResponse(payload map[string]any) (map[string]any, error) {
-	results := []any{}
-	for i, raw := range asList(payload["results"]) {
-		m := asMap(raw)
-		if m == nil {
-			return nil, &wireError{fmt.Sprintf("results.%d: Input should be a valid dictionary", i)}
-		}
-		if err := wireRequire(m, fmt.Sprintf("results.%d", i), "connector", "status"); err != nil {
-			return nil, err
-		}
-		status := asStr(m["status"])
-		if status != "active" && status != "initiated" && status != "failed" {
-			return nil, &wireError{fmt.Sprintf("results.%d.status: Input should be 'active', 'initiated' or 'failed'", i)}
-		}
-		results = append(results, map[string]any{"connector": asStr(m["connector"]), "status": status, "connect_url": m["connectUrl"], "connection_id": m["connectionId"],
-			"alias": m["alias"], "instruction": m["instruction"], "status_reason": m["statusReason"], "reinitiated": truthy(m["reinitiated"])})
-	}
-	summary := asMap(payload["summary"])
-	return map[string]any{"results": results, "summary": map[string]any{"total": int(asFloat(summary["total"])), "active": int(asFloat(summary["active"])),
-		"initiated": int(asFloat(summary["initiated"])), "failed": int(asFloat(summary["failed"]))}}, nil
-}
-
 // Status values a gateway connection row may carry, the ConnectionStatus Literal
 var ConnectionStatuses = []string{"pending", "active", "failed", "expired", "revoked", "inactive"}
-
-func wireListResponse(payload map[string]any) ([]map[string]any, string, error) {
-	if err := wireRequire(payload, "", "items"); err != nil {
-		return nil, "", err
-	}
-	var items []map[string]any
-	for i, raw := range asList(payload["items"]) {
-		m := asMap(raw)
-		if m == nil {
-			return nil, "", &wireError{fmt.Sprintf("items.%d: Input should be a valid dictionary", i)}
-		}
-		if err := wireRequire(m, fmt.Sprintf("items.%d", i), "connector"); err != nil {
-			return nil, "", err
-		}
-		enabled := true
-		if v, ok := m["enabled"]; ok && v != nil {
-			enabled = truthy(v)
-		}
-		item := map[string]any{"connector": asStr(m["connector"]), "enabled": enabled, "connected": truthy(m["connected"]), "connectionStatus": m["connectionStatus"],
-			"statusReason": m["statusReason"], "disabledTools": wireStrList(m["disabledTools"])}
-		items = append(items, item)
-	}
-	return items, asStr(payload["nextCursor"]), nil
-}
-
-func wireAccount(payload map[string]any) (map[string]any, error) {
-	if err := wireRequire(payload, "", "connectionId", "connector", "status", "label", "active", "createdAt", "updatedAt"); err != nil {
-		return nil, err
-	}
-	if !slices.Contains(ConnectionStatuses, asStr(payload["status"])) {
-		return nil, &wireError{"status: Input should be a known connection status"}
-	}
-	if asStr(payload["label"]) == "" {
-		return nil, &wireError{"label: String should have at least 1 character"}
-	}
-	return map[string]any{"connectionId": asStr(payload["connectionId"]), "connector": asStr(payload["connector"]), "status": asStr(payload["status"]),
-		"statusReason": payload["statusReason"], "label": asStr(payload["label"]), "alias": payload["alias"], "active": truthy(payload["active"]),
-		"disabled": truthy(payload["disabled"]), "createdAt": asStr(payload["createdAt"]), "updatedAt": asStr(payload["updatedAt"])}, nil
-}
-
-func wireFileUploadResponse(payload map[string]any) (map[string]any, error) {
-	if err := wireRequire(payload, "", "uploadUrl", "descriptor", "expiresAt"); err != nil {
-		return nil, err
-	}
-	d := asMap(payload["descriptor"])
-	if d == nil {
-		return nil, &wireError{"descriptor: Input should be a valid dictionary"}
-	}
-	if err := wireRequire(d, "descriptor", "name", "mimetype", "s3key"); err != nil {
-		return nil, err
-	}
-	headers := map[string]string{}
-	for k, v := range asMap(payload["headers"]) {
-		headers[k] = asStr(v)
-	}
-	return map[string]any{"upload_url": asStr(payload["uploadUrl"]), "headers": headers,
-		"descriptor": map[string]any{"name": asStr(d["name"]), "mimetype": asStr(d["mimetype"]), "s3key": asStr(d["s3key"])}, "expires_at": asStr(payload["expiresAt"])}, nil
-}
 
 // ---- merge --------------------------------------------------------------------------------------
 
@@ -554,13 +351,17 @@ func wireStrings(items []string) []any {
 	return out
 }
 
-// One call of an execute request body in the field order of the hermes wire model
-func wireExecuteCall(plan PlannedCall) *pyjson.Object {
+// One validated call of an execute request, its arguments in the key order and number types of the typed tree
+func wireExecuteCall(plan PlannedCall) (*pydantic.Instance, error) {
 	var typed any
 	if plan.Typed != nil {
 		typed = plan.Typed
 	}
-	return pyjson.ObjectOf("connector", plan.Connector, "tool", plan.Tool, "arguments", wireTyped(plan.Arguments, typed))
+	call, verr := ConnectorExecuteCall.Validate(pyjson.ObjectOf("connector", plan.Connector, "tool", plan.Tool, "arguments", wireTyped(plan.Arguments, typed)))
+	if verr != nil {
+		return nil, verr
+	}
+	return call, nil
 }
 
 // Partition splits a batch into local calls, remote connector calls, and per entry errors
@@ -582,10 +383,21 @@ func connectorErrorEntry(position int, name, code, message string) map[string]an
 	return map[string]any{"index": position, "name": name, "error": map[string]any{"code": code, "message": message}}
 }
 
+// Items of a list or tuple, none for a string, bytes or any other value so it never splits into characters
+func asSequence(value any) []any {
+	switch v := value.(type) {
+	case []any:
+		return v
+	case pyrepr.Tuple:
+		return []any(v)
+	}
+	return nil
+}
+
 // PartitionCalls treats malformed entries as per entry errors so sibling calls still run
-func PartitionCalls(calls []any) Partition {
+func PartitionCalls(calls any) Partition {
 	var p Partition
-	for position, raw := range calls {
+	for position, raw := range asSequence(calls) {
 		call := asMap(raw)
 		name := ""
 		if call != nil {
@@ -617,18 +429,20 @@ func optStr(v any) string {
 	return s
 }
 
+// Entry carrying the account alias the call ran under when there is one
+func withAccount(entry map[string]any, account string) map[string]any {
+	if account != "" {
+		entry["account"] = account
+	}
+	return entry
+}
+
 // RenderRemoteEntry renders one gateway result into the batch entry the model reads
 func RenderRemoteEntry(ctx context.Context, planned PlannedCall, remote map[string]any) map[string]any {
 	account := optStr(remote["account"])
-	withAccount := func(entry map[string]any) map[string]any {
-		if account != "" {
-			entry["account"] = account
-		}
-		return entry
-	}
 	errMap := asMap(remote["error"])
 	if errMap == nil {
-		entry := withAccount(map[string]any{"index": planned.Position, "name": planned.Name, "response": remote["data"]})
+		entry := withAccount(map[string]any{"index": planned.Position, "name": planned.Name, "response": remote["data"]}, account)
 		if du := asList(remote["data_use"]); len(du) > 0 {
 			entry["data_use"] = wireStrList(du)
 		} else if dus, ok := remote["data_use"].([]string); ok && len(dus) > 0 {
@@ -666,7 +480,7 @@ func RenderRemoteEntry(ctx context.Context, planned PlannedCall, remote map[stri
 	if f := optStr(errMap["family"]); f != "" {
 		payload["family"] = f
 	}
-	return withAccount(map[string]any{"index": planned.Position, "name": planned.Name, "error": payload})
+	return withAccount(map[string]any{"index": planned.Position, "name": planned.Name, "error": payload}, account)
 }
 
 // SpliceRemoteResults correlates results by request slot, missing slots becoming errors
@@ -965,6 +779,8 @@ func coerceConnectorBool(v any, fallback bool) bool {
 		return fallback
 	case int:
 		return t != 0
+	case int64:
+		return t != 0
 	case float64:
 		return t != 0
 	case string:
@@ -973,9 +789,8 @@ func coerceConnectorBool(v any, fallback bool) bool {
 	return fallback
 }
 
-// LoadConnectorConfig reads tools.connectors, malformed values falling back to enabled
-func LoadConnectorConfig(env *Env) ConnectorConfig {
-	raw := cfgTree(env).Get("tools.connectors")
+// Config of a raw tools.connectors value, a bool or a mapping, anything malformed falling back to enabled
+func connectorConfigFromRaw(raw any) ConnectorConfig {
 	switch v := raw.(type) {
 	case bool:
 		return ConnectorConfig{Enabled: v}
@@ -983,6 +798,11 @@ func LoadConnectorConfig(env *Env) ConnectorConfig {
 		return ConnectorConfig{Enabled: coerceConnectorBool(v["enabled"], true)}
 	}
 	return ConnectorConfig{Enabled: true}
+}
+
+// LoadConnectorConfig reads tools.connectors, malformed values falling back to enabled
+func LoadConnectorConfig(env *Env) ConnectorConfig {
+	return connectorConfigFromRaw(cfgTree(env).Get("tools.connectors"))
 }
 
 // Reports whether a Nous identity exists and whether it is the guest tier
@@ -1099,46 +919,102 @@ var legacyExecuteOrigins = struct {
 	set map[string]bool
 }{set: map[string]bool{}}
 
+// A 2xx answer before its body is checked, the outcome line written once the body is read
 type connectorReply struct {
 	payload   any
-	typed     any
 	status    int
 	requestID string
 	route     string
+}
+
+// Plain HTTP to presigned storage URLs that never carries the gateway auth headers
+type StorageTransport interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
 // ConnectorClient talks to the managed gateway connector routes
 type ConnectorClient struct {
 	env       *Env
 	http      *http.Client
-	storage   *http.Client
+	storage   StorageTransport
 	call      *CallRef
 	initiator string
 	sleep     func(time.Duration)
-	origin    func() (string, error)
+	origin    func() string
 	headers   func(ctx context.Context, u string) (map[string]string, error)
 }
 
-// NewConnectorClient builds the real client for a user or model action
-func NewConnectorClient(env *Env, call *CallRef, initiator string) *ConnectorClient {
-	c := &ConnectorClient{env: env, http: webHTTPClient(0), storage: webHTTPClient(0), call: call, initiator: initiator, sleep: time.Sleep}
-	c.origin = func() (string, error) { return ConnectorGatewayOrigin() }
-	c.headers = func(ctx context.Context, u string) (map[string]string, error) {
-		return ManagedGatewayAuthHeaders(ctx, env, u)
+// Seams a connector client takes, each one left unset taking its production default
+type ConnectorClientOptions struct {
+	Transport        *http.Client
+	EndpointResolver func() string
+	HeaderProvider   func(ctx context.Context, u string) (map[string]string, error)
+	Call             *CallRef
+	Initiator        string
+	Sleep            func(time.Duration)
+	Storage          StorageTransport
+}
+
+// Connector deployment origin resolved directly, empty when the configured gateway scheme is invalid
+func defaultEndpointResolver() string {
+	origin, err := ConnectorGatewayOrigin()
+	if err != nil {
+		return ""
+	}
+	return origin
+}
+
+// Live managed gateway auth headers for a connector route URL
+func defaultHeaderProvider(ctx context.Context, env *Env, u string) (map[string]string, error) {
+	return ManagedGatewayAuthHeaders(ctx, env, u)
+}
+
+// Client over the given seams, the model call it serves and who asked for a connect both going on the wire
+func NewConnectorClientFrom(env *Env, o ConnectorClientOptions) *ConnectorClient {
+	c := &ConnectorClient{env: env, http: o.Transport, storage: o.Storage, origin: o.EndpointResolver, headers: o.HeaderProvider,
+		call: o.Call, initiator: o.Initiator, sleep: o.Sleep}
+	if c.http == nil {
+		c.http = webHTTPClient(0)
+	}
+	if c.storage == nil {
+		c.storage = webHTTPClient(0)
+	}
+	if c.origin == nil {
+		c.origin = defaultEndpointResolver
+	}
+	if c.headers == nil {
+		c.headers = func(ctx context.Context, u string) (map[string]string, error) {
+			return defaultHeaderProvider(ctx, env, u)
+		}
+	}
+	if c.sleep == nil {
+		c.sleep = time.Sleep
 	}
 	return c
 }
 
+// NewConnectorClient builds the real client for a user or model action
+func NewConnectorClient(env *Env, call *CallRef, initiator string) *ConnectorClient {
+	return NewConnectorClientFrom(env, ConnectorClientOptions{Call: call, Initiator: initiator})
+}
+
 // Client over the given HTTP client, origin and auth header provider, the transport and endpoint seams of the gateway client
 func NewConnectorClientWith(env *Env, call *CallRef, initiator string, client *http.Client, origin func() (string, error), headers func(string) map[string]string) *ConnectorClient {
-	return &ConnectorClient{env: env, http: client, storage: client, call: call, initiator: initiator, sleep: time.Sleep, origin: origin,
-		headers: func(_ context.Context, u string) (map[string]string, error) { return headers(u), nil }}
+	return NewConnectorClientFrom(env, ConnectorClientOptions{Transport: client, Storage: client, Call: call, Initiator: initiator,
+		EndpointResolver: func() string {
+			o, err := origin()
+			if err != nil {
+				return ""
+			}
+			return o
+		},
+		HeaderProvider: func(_ context.Context, u string) (map[string]string, error) { return headers(u), nil }})
 }
 
 func (c *ConnectorClient) url(path string) (string, error) {
-	origin, err := c.origin()
-	if err != nil || origin == "" {
-		return "", &ToolGatewayError{Message: "no tool gateway origin resolves", Code: "NO_ORIGIN", Kind: gatewayKindUnavailable}
+	origin := c.origin()
+	if origin == "" {
+		return "", newToolGatewayError(gatewayKindUnavailable, "no tool gateway origin resolves", "NO_ORIGIN", 0, "", false)
 	}
 	return strings.TrimRight(origin, "/") + "/" + path, nil
 }
@@ -1169,7 +1045,7 @@ func (c *ConnectorClient) attemptHeaders(ctx context.Context, u, idempotencyKey 
 		headers[k] = v
 	}
 	if len(headers) == 0 {
-		return nil, &ToolGatewayError{Message: "no portal access token available", Code: "NO_TOKEN", Status: 401, Kind: gatewayKindAuth}
+		return nil, newToolGatewayError(gatewayKindAuth, "no portal access token available", "NO_TOKEN", 401, "", false)
 	}
 	identity, err := connectorHeaders(ctx, c.env, c.call)
 	if err != nil {
@@ -1220,7 +1096,7 @@ func (c *ConnectorClient) send(ctx context.Context, method, u string, body any, 
 		if retryTransport {
 			return nil, nil
 		}
-		return nil, &ToolGatewayError{Message: "transport failure: " + err.Error(), Code: "TRANSPORT_ERROR", Retryable: true}
+		return nil, newToolGatewayError("", "transport failure: "+err.Error(), "TRANSPORT_ERROR", 0, "", true)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
@@ -1240,18 +1116,6 @@ func typedJSON(r *connectorHTTPResponse) any {
 	v, err := pyjson.LoadsBytes(r.body)
 	if err != nil {
 		return nil
-	}
-	return v
-}
-
-// Value under the keys of nested decoded objects, nil when a step is not an object or lacks the key
-func typedAt(v any, keys ...string) any {
-	for _, k := range keys {
-		o, ok := v.(*pyjson.Object)
-		if !ok {
-			return nil
-		}
-		v = o.Vals[k]
 	}
 	return v
 }
@@ -1307,9 +1171,12 @@ func (c *ConnectorClient) request(ctx context.Context, method, path string, body
 			continue
 		}
 		if resp.status >= 200 && resp.status < 300 {
-			return &connectorReply{payload: safeJSON(resp), typed: typedJSON(resp), status: resp.status, requestID: resp.requestID, route: route}, nil
+			return &connectorReply{payload: typedJSON(resp), status: resp.status, requestID: resp.requestID, route: route}, nil
 		}
-		gerr := ParseGatewayError(resp.status, safeJSON(resp), resp.header)
+		gerr, err := ParseGatewayError(resp.status, safeJSON(resp), resp.header)
+		if err != nil {
+			return nil, err
+		}
 		if gerr.RequestID == "" {
 			gerr.RequestID = resp.requestID
 		}
@@ -1320,7 +1187,7 @@ func (c *ConnectorClient) request(ctx context.Context, method, path string, body
 		}
 		return nil, gerr
 	}
-	return nil, &ToolGatewayError{Message: "connector request retries exhausted", Code: "TRANSPORT_ERROR", Retryable: true}
+	return nil, newToolGatewayError("", "connector request retries exhausted", "TRANSPORT_ERROR", 0, "", true)
 }
 
 func (c *ConnectorClient) post(ctx context.Context, path string, body any, timeout time.Duration, idempotencyKey string, retries int) (*connectorReply, error) {
@@ -1331,23 +1198,47 @@ func (c *ConnectorClient) log(reply *connectorReply, code string) {
 	logConnectorOutcome(c.env, reply.route, reply.status, true, code, reply.requestID, c.call)
 }
 
-// Parses a 2xx body with the given wire reader, logging the outcome once
-func (c *ConnectorClient) checked(reply *connectorReply, what string, parse func(map[string]any) (any, error)) (any, error) {
-	m := asMap(reply.payload)
-	if m == nil {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid " + what, Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
+// A 2xx body validated by the wire model, any other body or a validation failure an INVALID_RESPONSE error
+func parseWire(model *pydantic.Model, payload any, what string) (*pydantic.Instance, *ToolGatewayError) {
+	o, ok := payload.(*pyjson.Object)
+	if !ok {
+		return nil, newToolGatewayError("", "invalid "+what, "INVALID_RESPONSE", 0, "", false)
 	}
-	if _, has := m["error"]; has {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid " + what, Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
+	if _, has := o.Get("error"); has {
+		return nil, newToolGatewayError("", "invalid "+what, "INVALID_RESPONSE", 0, "", false)
 	}
-	parsed, err := parse(m)
-	if err != nil {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid " + what + ": " + err.Error(), Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
+	inst, verr := model.Validate(o)
+	if verr != nil {
+		first := verr.Errors()[0]
+		return nil, newToolGatewayError("", "invalid "+what+": "+first.LocText()+": "+first.Msg, "INVALID_RESPONSE", 0, "", false)
 	}
-	c.log(reply, "")
+	return inst, nil
+}
+
+// Parses a 2xx body and writes its outcome line, one failure line per failed call of an execute envelope
+func (c *ConnectorClient) checked(model *pydantic.Model, reply *connectorReply, what string) (*pydantic.Instance, error) {
+	parsed, gerr := parseWire(model, reply.payload, what)
+	if gerr != nil {
+		gerr.Status, gerr.RequestID = reply.status, reply.requestID
+		c.log(reply, gerr.Code)
+		return nil, gerr
+	}
+	if model != ConnectorExecuteResponse {
+		c.log(reply, "")
+		return parsed, nil
+	}
+	var failed []string
+	for _, result := range parsed.Get("results").([]any) {
+		if e, ok := result.(*pydantic.Instance).Get("error").(*pydantic.Instance); ok {
+			failed = append(failed, e.Get("code").(string))
+		}
+	}
+	if len(failed) == 0 {
+		failed = []string{""}
+	}
+	for _, code := range failed {
+		c.log(reply, code)
+	}
 	return parsed, nil
 }
 
@@ -1355,34 +1246,43 @@ func (c *ConnectorClient) checked(reply *connectorReply, what string, parse func
 func (c *ConnectorClient) Search(ctx context.Context, queries []map[string]any) (map[string]any, error) {
 	wireQueries := make([]any, 0, len(queries))
 	for _, q := range queries {
-		row := pyjson.ObjectOf("useCase", asStr(q["use_case"]))
-		if kf := asStr(q["known_fields"]); kf != "" {
-			row.Set("knownFields", kf)
+		query, verr := ConnectorSearchQuery.Validate(q)
+		if verr != nil {
+			return nil, verr
 		}
-		wireQueries = append(wireQueries, row)
+		wireQueries = append(wireQueries, query)
 	}
-	reply, err := c.post(ctx, connectorSearchPath, pyjson.ObjectOf("queries", wireQueries), connectorSearchTimeout, "", 0)
+	body, err := wireBody(ConnectorSearchRequest, pyjson.ObjectOf("queries", wireQueries))
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.checked(reply, "connector search", func(m map[string]any) (any, error) { return wireSearchResponse(m) })
+	reply, err := c.post(ctx, connectorSearchPath, body, connectorSearchTimeout, "", 0)
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(map[string]any), nil
+	parsed, err := c.checked(ConnectorSearchResponse, reply, "connector search")
+	if err != nil {
+		return nil, err
+	}
+	return wireDump(parsed, false), nil
 }
 
 // Schemas fetches the input schemas of vendor slugs
 func (c *ConnectorClient) Schemas(ctx context.Context, tools []string) (map[string]any, error) {
-	reply, err := c.post(ctx, connectorSchemasPath, pyjson.ObjectOf("tools", wireStrings(tools)), connectorSchemasTimeout, "", connectorMaxRetries)
+	inst, verr := ConnectorSchemasRequest.Validate(pyjson.ObjectOf("tools", wireStrings(tools)))
+	if verr != nil {
+		return nil, verr
+	}
+	body, _ := inst.Dump(pydantic.DumpOptions{ByAlias: true}).(*pyjson.Object)
+	reply, err := c.post(ctx, connectorSchemasPath, body, connectorSchemasTimeout, "", connectorMaxRetries)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.checked(reply, "connector schemas", func(m map[string]any) (any, error) { return wireSchemasResponse(m) })
+	parsed, err := c.checked(ConnectorSchemasResponse, reply, "connector schemas")
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(map[string]any), nil
+	return wireDump(parsed, false), nil
 }
 
 // ConnectionsRequest describes one authorization start
@@ -1397,31 +1297,21 @@ type ConnectionsRequest struct {
 
 // Connections starts authorizations, never retried because the gateway cannot deduplicate them
 func (c *ConnectorClient) Connections(ctx context.Context, req ConnectionsRequest) (map[string]any, error) {
-	body := pyjson.ObjectOf("connectors", wireStrings(req.Connectors), "reinitiate", req.Reinitiate)
-	if req.Alias != "" {
-		body.Set("alias", req.Alias)
-	}
-	if req.ConnectionID != "" {
-		body.Set("connectionId", req.ConnectionID)
-	}
-	if req.ReturnTo != "" {
-		body.Set("returnTo", req.ReturnTo)
-	}
-	if req.Op != "" {
-		body.Set("op", req.Op)
-	}
-	if c.initiator != "" {
-		body.Set("initiator", c.initiator)
+	body, err := wireBody(ConnectorConnectionsRequest, pyjson.ObjectOf("connectors", wireStrings(req.Connectors), "reinitiate", req.Reinitiate,
+		"alias", wireOptional(req.Alias), "connection_id", wireOptional(req.ConnectionID), "return_to", wireOptional(req.ReturnTo),
+		"op", wireOptional(req.Op), "initiator", wireOptional(c.initiator)))
+	if err != nil {
+		return nil, err
 	}
 	reply, err := c.post(ctx, connectorConnectionsPath, body, connectorDefaultTimeout, "", 0)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.checked(reply, "connector connections", func(m map[string]any) (any, error) { return wireConnectionsResponse(m) })
+	parsed, err := c.checked(ConnectorConnectionsResponse, reply, "connector connections")
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(map[string]any), nil
+	return wireDump(parsed, false), nil
 }
 
 // ListConnectors reads every page of the session's toolkit list
@@ -1440,22 +1330,19 @@ func (c *ConnectorClient) ListConnectors(ctx context.Context, timeout time.Durat
 		if err != nil {
 			return nil, err
 		}
-		var next string
-		parsed, err := c.checked(reply, "connector list page", func(m map[string]any) (any, error) {
-			page, nextCursor, err := wireListResponse(m)
-			next = nextCursor
-			return page, err
-		})
+		page, err := c.checked(ConnectorListResponse, reply, "connector list page")
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, parsed.([]map[string]any)...)
-		cursor = next
+		for _, item := range page.Get("items").([]any) {
+			items = append(items, wireDump(item.(*pydantic.Instance), true))
+		}
+		cursor, _ = page.Get("next_cursor").(string)
 		if cursor == "" {
 			return items, nil
 		}
 	}
-	return nil, &ToolGatewayError{Message: "connector list pagination incomplete", Code: "INVALID_RESPONSE"}
+	return nil, newToolGatewayError("", "connector list pagination incomplete", "INVALID_RESPONSE", 0, "", false)
 }
 
 // AccountStatus reads one account row, nil when the gateway no longer knows it
@@ -1470,25 +1357,29 @@ func (c *ConnectorClient) AccountStatus(ctx context.Context, connectionID string
 		}
 		return nil, err
 	}
-	parsed, err := c.checked(reply, "connector account", func(m map[string]any) (any, error) { return wireAccount(m) })
+	parsed, err := c.checked(ConnectorAccount, reply, "connector account")
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(map[string]any), nil
+	return wireDump(parsed, true), nil
 }
 
 // StageFile mints a presigned upload for one file input
 func (c *ConnectorClient) StageFile(ctx context.Context, toolkit, tool, filename, mimetype string, size int) (map[string]any, error) {
-	body := pyjson.ObjectOf("toolkit", toolkit, "tool", tool, "filename", filename, "mimetype", mimetype, "size", size)
+	inst, verr := ConnectorFileUploadRequest.Validate(pyjson.ObjectOf("toolkit", toolkit, "tool", tool, "filename", filename, "mimetype", mimetype, "size", size))
+	if verr != nil {
+		return nil, verr
+	}
+	body, _ := inst.Dump(pydantic.DumpOptions{ByAlias: true}).(*pyjson.Object)
 	reply, err := c.post(ctx, connectorFileUploadPath, body, connectorDefaultTimeout, "", 0)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.checked(reply, "connector file upload", func(m map[string]any) (any, error) { return wireFileUploadResponse(m) })
+	parsed, err := c.checked(ConnectorFileUploadResponse, reply, "connector file upload")
 	if err != nil {
 		return nil, err
 	}
-	return parsed.(map[string]any), nil
+	return wireDump(parsed, false), nil
 }
 
 // PutFile uploads bytes to a presigned storage URL with exactly the returned headers
@@ -1505,7 +1396,7 @@ func (c *ConnectorClient) PutFile(ctx context.Context, u string, headers map[str
 	resp, err := c.storage.Do(req)
 	if err != nil {
 		logConnectorOutcome(c.env, storagePutRoute, 0, false, "TRANSPORT_ERROR", "", c.call)
-		return &ToolGatewayError{Message: "storage upload failed: " + errorTypeName(err), Code: "TRANSPORT_ERROR"}
+		return newToolGatewayError("", "storage upload failed: "+errorTypeName(err), "TRANSPORT_ERROR", 0, "", false)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -1516,7 +1407,7 @@ func (c *ConnectorClient) PutFile(ctx context.Context, u string, headers map[str
 	}
 	logConnectorOutcome(c.env, storagePutRoute, resp.StatusCode, true, code, "", c.call)
 	if failed {
-		return &ToolGatewayError{Message: fmt.Sprintf("storage upload answered %d", resp.StatusCode), Code: code, Status: resp.StatusCode}
+		return newToolGatewayError("", fmt.Sprintf("storage upload answered %d", resp.StatusCode), code, resp.StatusCode, "", false)
 	}
 	return nil
 }
@@ -1543,13 +1434,13 @@ func (c *ConnectorClient) GetFile(ctx context.Context, u string, sink func([]byt
 	resp, err := c.storage.Do(req)
 	if err != nil {
 		logConnectorOutcome(c.env, storageGetRoute, 0, false, "TRANSPORT_ERROR", "", c.call)
-		return &ToolGatewayError{Message: "download failed: " + errorTypeName(err), Code: "TRANSPORT_ERROR"}
+		return newToolGatewayError("", "download failed: "+errorTypeName(err), "TRANSPORT_ERROR", 0, "", false)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		code := "HTTP_" + strconv.Itoa(resp.StatusCode)
 		logConnectorOutcome(c.env, storageGetRoute, resp.StatusCode, true, code, "", c.call)
-		return &ToolGatewayError{Message: fmt.Sprintf("download answered %d", resp.StatusCode), Code: code, Status: resp.StatusCode}
+		return newToolGatewayError("", fmt.Sprintf("download answered %d", resp.StatusCode), code, resp.StatusCode, "", false)
 	}
 	var received int64
 	buf := make([]byte, storageChunkBytes)
@@ -1559,7 +1450,7 @@ func (c *ConnectorClient) GetFile(ctx context.Context, u string, sink func([]byt
 			received += int64(n)
 			if received > maxBytes {
 				logConnectorOutcome(c.env, storageGetRoute, resp.StatusCode, true, "TOO_LARGE", "", c.call)
-				return &ToolGatewayError{Message: fmt.Sprintf("file is larger than %d MiB", maxBytes/(1024*1024)), Code: "TOO_LARGE", Status: resp.StatusCode}
+				return newToolGatewayError("", fmt.Sprintf("file is larger than %d MiB", maxBytes/(1024*1024)), "TOO_LARGE", resp.StatusCode, "", false)
 			}
 			if err := sink(buf[:n]); err != nil {
 				return err
@@ -1570,42 +1461,52 @@ func (c *ConnectorClient) GetFile(ctx context.Context, u string, sink func([]byt
 		}
 		if readErr != nil {
 			logConnectorOutcome(c.env, storageGetRoute, resp.StatusCode, true, "TRANSPORT_ERROR", "", c.call)
-			return &ToolGatewayError{Message: "download failed: " + errorTypeName(readErr), Code: "TRANSPORT_ERROR"}
+			return newToolGatewayError("", "download failed: "+errorTypeName(readErr), "TRANSPORT_ERROR", 0, "", false)
 		}
 	}
 	logConnectorOutcome(c.env, storageGetRoute, resp.StatusCode, true, "", "", c.call)
 	return nil
 }
 
-func resultDict(parsed map[string]any) map[string]any {
-	entry := map[string]any{"data": parsed["data"], "error": nil}
-	if e := asMap(parsed["error"]); e != nil {
-		entry["error"] = errorDict(e, 0, "")
+// Plain result entry of a validated execute result, the account and data use guarantees only when present
+func resultDict(result *pydantic.Instance) map[string]any {
+	entry := map[string]any{"data": result.Get("data"), "error": nil}
+	if result.PyTypeName() == ConnectorExecuteResult.Name {
+		if e, ok := result.Get("error").(*pydantic.Instance); ok {
+			entry["error"] = errorDict(e, 0, "")
+		}
 	}
-	if a := asStr(parsed["account"]); a != "" {
+	if a, _ := result.Get("account").(string); a != "" {
 		entry["account"] = a
 	}
-	if du, ok := parsed["data_use"].([]string); ok && len(du) > 0 {
-		entry["data_use"] = du
+	if du, ok := result.Get("data_use").(*pydantic.Instance); ok {
+		if requires := du.Get("requires").([]any); len(requires) > 0 {
+			entry["data_use"] = wireStrList(requires)
+		}
 	}
 	return entry
 }
 
-func errorDict(failure map[string]any, status int, requestID string) map[string]any {
-	e := map[string]any{"code": asStr(failure["code"]), "message": asStr(failure["message"])}
-	if family := executeErrorFamily(asStr(failure["code"]), asStr(failure["family"])); family != "" {
+// Plain error entry merge renders, the status and request id kept for logs and never shown to the model
+func errorDict(failure *pydantic.Instance, status int, requestID string) map[string]any {
+	code := failure.Get("code").(string)
+	e := map[string]any{"code": code, "message": failure.Get("message")}
+	family, _ := failure.Get("family").(string)
+	if family = executeErrorFamily(code, family); family != "" {
 		e["family"] = family
 	}
 	for _, key := range []string{"connector", "connect_url", "connection_id", "hint"} {
-		if v := asStr(failure[key]); v != "" {
+		if v, _ := failure.Get(key).(string); v != "" {
 			e[key] = v
 		}
 	}
 	if status != 0 {
 		e["status"] = status
 	}
-	if rid := asStr(failure["request_id"]); rid != "" {
-		requestID = rid
+	if failure.PyTypeName() == ConnectorExecuteFailure.Name {
+		if rid, _ := failure.Get("request_id").(string); rid != "" {
+			requestID = rid
+		}
 	}
 	if requestID != "" {
 		e["request_id"] = requestID
@@ -1614,29 +1515,30 @@ func errorDict(failure map[string]any, status int, requestID string) map[string]
 }
 
 // A single call failure body the gateway marks with a family or a code this client knows
-func callFailure(payload any) map[string]any {
-	m := asMap(payload)
-	if m == nil {
-		return nil
-	}
-	code, ok := m["code"].(string)
+func callFailure(payload any) *pydantic.Instance {
+	o, ok := payload.(*pyjson.Object)
 	if !ok {
 		return nil
 	}
-	if m["family"] == nil {
+	rawCode, _ := o.Get("code")
+	code, ok := rawCode.(string)
+	if !ok {
+		return nil
+	}
+	if family, _ := o.Get("family"); family == nil {
 		if _, known := executeErrorCodes[code]; !known {
 			return nil
 		}
 	}
-	withMessage := map[string]any{"message": "The connector gateway reported an error."}
-	for k, v := range m {
-		withMessage[k] = v
+	withMessage := pyjson.ObjectOf("message", "The connector gateway reported an error.")
+	for _, k := range o.Keys {
+		withMessage.Set(k, o.Vals[k])
 	}
-	e, err := wireToolError(withMessage, "")
-	if err != nil {
+	failure, verr := ConnectorExecuteFailure.Validate(withMessage)
+	if verr != nil {
 		return nil
 	}
-	return e
+	return failure
 }
 
 // Reports whether an older gateway rejected the single call form by naming tools in its 400
@@ -1687,12 +1589,13 @@ func retryWait(status int, headers http.Header) (float64, bool) {
 }
 
 func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, returnTo, op string) (map[string]any, bool, error) {
-	body := pyjson.ObjectOf("call", wireExecuteCall(plan))
-	if returnTo != "" {
-		body.Set("returnTo", returnTo)
+	call, err := wireExecuteCall(plan)
+	if err != nil {
+		return nil, false, err
 	}
-	if op != "" {
-		body.Set("op", op)
+	body, err := wireBody(ConnectorExecuteSingleRequest, pyjson.ObjectOf("call", call, "return_to", wireOptional(returnTo), "op", wireOptional(op)))
+	if err != nil {
+		return nil, false, err
 	}
 	u, err := c.url(connectorExecutePath)
 	if err != nil {
@@ -1709,25 +1612,29 @@ func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, retu
 		}
 		payload := safeJSON(resp)
 		if resp.status >= 200 && resp.status < 300 {
-			reply := &connectorReply{payload: payload, status: resp.status, requestID: resp.requestID, route: executeRoute}
-			parsed, err := c.checked(reply, "connector execute result", func(m map[string]any) (any, error) { return wireExecuteSingleResponse(m) })
+			reply := &connectorReply{payload: typedJSON(resp), status: resp.status, requestID: resp.requestID, route: executeRoute}
+			parsed, err := c.checked(ConnectorExecuteSingleResponse, reply, "connector execute result")
 			if err != nil {
 				return nil, false, err
 			}
-			result := resultDict(parsed.(map[string]any))
-			result["data"] = typedAt(typedJSON(resp), "result", "data")
-			return result, true, nil
+			return resultDict(parsed.Get("result").(*pydantic.Instance)), true, nil
 		}
-		failure := callFailure(payload)
+		failure := callFailure(typedJSON(resp))
 		code := ""
 		if failure != nil {
-			code = asStr(failure["code"])
+			code = failure.Get("code").(string)
 		} else {
-			code = ParseGatewayError(resp.status, payload, resp.header).Code
+			gerr, err := ParseGatewayError(resp.status, payload, resp.header)
+			if err != nil {
+				return nil, false, err
+			}
+			code = gerr.Code
 		}
 		rid := resp.requestID
-		if failure != nil && asStr(failure["request_id"]) != "" {
-			rid = asStr(failure["request_id"])
+		if failure != nil {
+			if frid, _ := failure.Get("request_id").(string); frid != "" {
+				rid = frid
+			}
 		}
 		logConnectorOutcome(c.env, executeRoute, resp.status, true, code, rid, c.call)
 		if resp.status == 400 && rejectsSingleCallForm(payload) {
@@ -1743,68 +1650,49 @@ func (c *ConnectorClient) executeOne(ctx context.Context, plan PlannedCall, retu
 			}
 		}
 		if failure == nil {
-			return nil, false, ParseGatewayError(resp.status, payload, resp.header)
+			gerr, err := ParseGatewayError(resp.status, payload, resp.header)
+			if err != nil {
+				return nil, false, err
+			}
+			return nil, false, gerr
 		}
 		return map[string]any{"data": nil, "error": errorDict(failure, resp.status, resp.requestID)}, true, nil
 	}
-	return nil, false, &ToolGatewayError{Message: "connector execute retries exhausted", Code: "TRANSPORT_ERROR", Retryable: true}
+	return nil, false, newToolGatewayError("", "connector execute retries exhausted", "TRANSPORT_ERROR", 0, "", true)
 }
 
 func (c *ConnectorClient) executeLegacy(ctx context.Context, planned []PlannedCall, returnTo, op string) ([]map[string]any, error) {
 	tools := make([]any, 0, len(planned))
 	for _, plan := range planned {
-		tools = append(tools, wireExecuteCall(plan))
+		call, err := wireExecuteCall(plan)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, call)
 	}
-	body := pyjson.ObjectOf("tools", tools)
-	if returnTo != "" {
-		body.Set("returnTo", returnTo)
-	}
-	if op != "" {
-		body.Set("op", op)
+	body, err := wireBody(ConnectorExecuteRequest, pyjson.ObjectOf("tools", tools, "return_to", wireOptional(returnTo), "op", wireOptional(op)))
+	if err != nil {
+		return nil, err
 	}
 	reply, err := c.post(ctx, connectorExecutePath, body, connectorExecuteTimeout, uuid.NewString(), connectorMaxRetries)
 	if err != nil {
 		return nil, err
 	}
-	m := asMap(reply.payload)
-	if m == nil {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid connector execute response", Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
-	}
-	if _, has := m["error"]; has {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid connector execute response", Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
-	}
-	results, err := wireExecuteResponse(m)
+	parsed, err := c.checked(ConnectorExecuteResponse, reply, "connector execute response")
 	if err != nil {
-		c.log(reply, "INVALID_RESPONSE")
-		return nil, &ToolGatewayError{Message: "invalid connector execute response: " + err.Error(), Code: "INVALID_RESPONSE", Status: reply.status, RequestID: reply.requestID}
+		return nil, err
 	}
-	logged := false
-	for _, r := range results {
-		if e := asMap(r["error"]); e != nil {
-			c.log(reply, asStr(e["code"]))
-			logged = true
-		}
-	}
-	if !logged {
-		c.log(reply, "")
-	}
-	typedResults, _ := typedAt(reply.typed, "results").([]any)
+	results := parsed.Get("results").([]any)
 	out := make([]map[string]any, 0, len(results))
-	for i, r := range results {
-		result := resultDict(r)
-		if i < len(typedResults) {
-			result["data"] = typedAt(typedResults[i], "data")
-		}
-		out = append(out, result)
+	for _, r := range results {
+		out = append(out, resultDict(r.(*pydantic.Instance)))
 	}
 	return out, nil
 }
 
 // Execute runs planned calls one request each, falling back to the array form on older gateways
 func (c *ConnectorClient) Execute(ctx context.Context, planned []PlannedCall, returnTo, op string) ([]map[string]any, error) {
-	origin, _ := c.origin()
+	origin := c.origin()
 	legacyExecuteOrigins.Lock()
 	legacy := origin != "" && legacyExecuteOrigins.set[origin]
 	legacyExecuteOrigins.Unlock()
@@ -1840,9 +1728,9 @@ func ReturnToArgs(env *Env, op string) (string, string) {
 	if sessionPlatformName(env) != "desktop" {
 		return "", ""
 	}
-	target := "icebath-desktop"
+	target := "hermes-desktop"
 	if os.Getenv("ICEBATH_DESKTOP_DEV_SERVER") != "" {
-		target = "icebath-desktop-dev"
+		target = "hermes-desktop-dev"
 	}
 	return target, op
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"iter"
+	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -95,13 +96,11 @@ func (r *GatewayRunner) handleLoginCommand(ctx context.Context, event *gateway.M
 		return provider.LoginNotAllowed, nil
 	}
 	key := [3]string{string(src.Platform), src.ChatID, sattr(src.UserID)}
+	lock, attempts := r.loginRegistry()
 	claim := func() bool {
-		r.loginLock.Lock()
-		defer r.loginLock.Unlock()
-		if r.loginAttempts == nil {
-			r.loginAttempts = map[string]*signInAttempt{}
-		}
-		live := r.loginAttempts[loginSingle]
+		lock.Lock()
+		defer lock.Unlock()
+		live := attempts[loginSingle]
 		if live != nil && (live.key != key || live.saving) {
 			return false
 		}
@@ -122,58 +121,69 @@ func (r *GatewayRunner) handleLoginCommand(ctx context.Context, event *gateway.M
 	if st, _ := value.(map[string]any); len(st) > 0 && !provider.IsGuestState(st) {
 		return provider.UpgradeAlreadySignedIn, nil
 	}
-	r.loginLock.Lock()
-	live := r.loginAttempts[loginSingle]
+	lock.Lock()
+	live := attempts[loginSingle]
 	if live != nil && (live.key != key || live.saving) {
-		r.loginLock.Unlock()
+		lock.Unlock()
 		return provider.LoginBusyElsewhere, nil
 	}
 	if live != nil {
 		live.cancelled = true
 	}
 	attempt := &signInAttempt{attemptID: shortHexID(), key: key, source: src}
-	r.loginAttempts[loginSingle] = attempt
-	r.loginLock.Unlock()
+	attempts[loginSingle] = attempt
+	lock.Unlock()
 	r.retainBackgroundTask(spawnGatewayTask(context.WithoutCancel(ctx), "login", func(taskCtx context.Context) (any, error) {
 		return nil, r.runLogin(taskCtx, attempt)
 	}))
 	return provider.UpgradeStart, nil
 }
 
+// Lock and table of the sign in attempts of this runner, the table created on first use
+func (r *GatewayRunner) loginRegistry() (*sync.Mutex, map[string]*signInAttempt) {
+	r.loginLock.Lock()
+	defer r.loginLock.Unlock()
+	if r.loginAttempts == nil {
+		r.loginAttempts = map[string]*signInAttempt{}
+	}
+	return &r.loginLock, r.loginAttempts
+}
+
 // Drains the sign in states onto the chat until a terminal state, a failure pushing the not completed notice
 func (r *GatewayRunner) runLogin(ctx context.Context, attempt *signInAttempt) (err error) {
+	lock, attempts := r.loginRegistry()
 	cancelled := func() bool {
-		r.loginLock.Lock()
-		defer r.loginLock.Unlock()
+		lock.Lock()
+		defer lock.Unlock()
 		return attempt.cancelled
 	}
 	persistGuard := func(body func(mayPersist bool) error) error {
-		r.loginLock.Lock()
+		lock.Lock()
 		if !attempt.cancelled {
 			attempt.saving = true
 		}
 		mayPersist := attempt.saving
-		r.loginLock.Unlock()
+		lock.Unlock()
 		return body(mayPersist)
 	}
 	var next func() (provider.SignInState, bool)
 	var stop func()
 	pushedTerminal := false
 	defer func() {
-		r.loginLock.Lock()
-		if r.loginAttempts[loginSingle] == attempt {
-			delete(r.loginAttempts, loginSingle)
+		lock.Lock()
+		if attempts[loginSingle] == attempt {
+			delete(attempts, loginSingle)
 		}
-		r.loginLock.Unlock()
+		lock.Unlock()
 		if stop != nil {
 			stop()
 		}
 	}()
 	defer func() {
 		if ctx.Err() != nil {
-			r.loginLock.Lock()
+			lock.Lock()
 			attempt.cancelled = true
-			r.loginLock.Unlock()
+			lock.Unlock()
 			return
 		}
 		if err != nil {

@@ -145,14 +145,9 @@ func (r *GatewayRunner) handleAgentsCommand(ctx context.Context, event *gateway.
 		rows = append(rows, row)
 	}
 	slices.SortStableFunc(rows, func(x, y agentRow) int { return y.elapsed - x.elapsed })
-	procs := func() (out []map[string]any) {
-		defer func() {
-			if recover() != nil {
-				out = nil
-			}
-		}()
+	procs := quietSync(func() []map[string]any {
 		return tools.DefaultProcessRegistry().ListSessions(ctx, slashToolsEnv(ctx), "", "", false)
-	}()
+	}, nil)
 	var runningProcs []map[string]any
 	for _, p := range procs {
 		if p["status"] == "running" {
@@ -168,14 +163,11 @@ func (r *GatewayRunner) handleAgentsCommand(ctx context.Context, event *gateway.
 	}
 	r.taskSetsMu.Unlock()
 	var delegations []map[string]any
-	func() {
-		defer func() { _ = recover() }()
-		for _, d := range tools.ListAsyncDelegations() {
-			if s := d["status"]; s == "running" || s == "stalling" || s == "finalizing" {
-				delegations = append(delegations, d)
-			}
+	for _, d := range quietSync(tools.ListAsyncDelegations, nil) {
+		if s := d["status"]; s == "running" || s == "stalling" || s == "finalizing" {
+			delegations = append(delegations, d)
 		}
-	}()
+	}
 	type indexedRow struct {
 		idx int
 		row agentRow

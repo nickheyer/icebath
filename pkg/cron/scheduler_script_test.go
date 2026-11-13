@@ -140,79 +140,6 @@ func runBootstrapArgv(t *testing.T, argv []string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func TestRunJobScriptBootstrapArgvMakesPthEditableInstallsImportable(t *testing.T) {
-	s := scriptStore(t)
-	tmp := t.TempDir()
-	venv := filepath.Join(tmp, "venv")
-	sitePackages := filepath.Join(venv, "Lib", "site-packages")
-	editable := filepath.Join(tmp, "editable_pkg")
-	for _, dir := range []string{sitePackages, editable} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(editable, "mypkg.py"), []byte("VALUE = 42\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sitePackages, "editable.pth"), []byte(editable+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	script := writeScript(t, s, "probe.py", "import mypkg; print(mypkg.VALUE)\n")
-	argv := s.windowsCronBootstrapArgv(hostPython(t), map[string]string{"VIRTUAL_ENV": venv}, script)
-	if got := runBootstrapArgv(t, argv); got != "42" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestRunJobScriptBootstrapKeepsScriptDirectoryOnSysPath(t *testing.T) {
-	s := scriptStore(t)
-	venv := filepath.Join(t.TempDir(), "venv")
-	if err := os.MkdirAll(filepath.Join(venv, "Lib", "site-packages"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeScript(t, s, "sibling_helper.py", "GREETING = 'sibling ok'\n")
-	script := writeScript(t, s, "probe.py", "import sibling_helper; print(sibling_helper.GREETING)\n")
-	argv := s.windowsCronBootstrapArgv(hostPython(t), map[string]string{"VIRTUAL_ENV": venv}, script)
-	if got := runBootstrapArgv(t, argv); got != "sibling ok" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestRunJobScriptBootstrapArgvFallsBackWithoutSitePackages(t *testing.T) {
-	s, logs := newTestStore(t)
-	script := writeScript(t, s, "probe.py", "print(\"ok\")\n")
-	python := hostPython(t)
-	missing := filepath.Join(t.TempDir(), "missing")
-	argv := s.windowsCronBootstrapArgv(python, map[string]string{"VIRTUAL_ENV": missing}, script)
-	if !reflect.DeepEqual(argv, []string{python, script}) {
-		t.Fatalf("got %v", argv)
-	}
-	want := "Windows cron script: venv site-packages " + filepath.Join(missing, "Lib", "site-packages") +
-		" not found; running without .pth processing (editable installs may be unimportable)"
-	if !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), want) {
-		t.Fatalf("warning missing from %s", logs.String())
-	}
-}
-
-func TestBootstrapArgvPrefersTheSitePackagesEntryOfPythonpath(t *testing.T) {
-	s, _ := newTestStore(t)
-	tmp := t.TempDir()
-	listed := filepath.Join(tmp, "listed", "site-packages")
-	if err := os.MkdirAll(listed, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	overlay := map[string]string{
-		"VIRTUAL_ENV": filepath.Join(tmp, "venv"),
-		"PYTHONPATH":  strings.Join([]string{filepath.Join(tmp, "repo"), listed + string(filepath.Separator) + "." + string(filepath.Separator)}, string(os.PathListSeparator)),
-	}
-	argv := s.windowsCronBootstrapArgv("py", overlay, "job.py")
-	want := "import os, runpy, site, sys;site.addsitedir(" + pyrepr.StrRepr(listed) + ");script = sys.argv[1];sys.argv = [script] + sys.argv[2:];" +
-		"sys.path.insert(0, os.path.dirname(os.path.abspath(script)));runpy.run_path(script, run_name='__main__')"
-	if !reflect.DeepEqual(argv, []string{"py", "-c", want, "job.py"}) {
-		t.Fatalf("got %q", argv)
-	}
-}
-
 func TestRunJobScriptEmojiStdoutRoundTripsThroughScriptCapture(t *testing.T) {
 	s := scriptStore(t)
 	writeScript(t, s, "emoji.py", "import sys\nsys.stdout.buffer.write(\"backup done \\N{PARTY POPPER} 日次\".encode(\"utf-8\"))\n")
@@ -509,37 +436,6 @@ func TestSessionDBTimeoutKeepsZero(t *testing.T) {
 	}
 }
 
-func TestWindowsPyvenvCfgDecodesStrictlyAndReadsMissingFilesAsEmpty(t *testing.T) {
-	dir := t.TempDir()
-	cfg, err := readWindowsPyvenvCfg(dir)
-	if err != nil || len(cfg) != 0 {
-		t.Fatalf("missing file %v %v", cfg, err)
-	}
-	write := func(data string) {
-		t.Helper()
-		if err := os.WriteFile(filepath.Join(dir, "pyvenv.cfg"), []byte(data), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("\xef\xbb\xbf Home = C:\\Py \r\nUV = true\nno separator\nk=v=w\x0bz=1")
-	cfg, err = readWindowsPyvenvCfg(dir)
-	want := map[string]string{"home": "C:\\Py", "uv": "true", "k": "v=w", "z": "1"}
-	if err != nil || !reflect.DeepEqual(cfg, want) {
-		t.Fatalf("got %v %v", cfg, err)
-	}
-	write("\xef\xbb")
-	if cfg, err = readWindowsPyvenvCfg(dir); err != nil || len(cfg) != 0 {
-		t.Fatalf("lone BOM start %v %v", cfg, err)
-	}
-	write("\xef\xbb\xbfhome = x\xff")
-	if _, err = readWindowsPyvenvCfg(dir); err == nil || err.Error() != "'utf-8' codec can't decode byte 0xff in position 8: invalid start byte" {
-		t.Fatalf("got %v", err)
-	}
-	if got := "Script execution failed: " + scriptErrorText(err); got != "Script execution failed: 'utf-8' codec can't decode byte 0xff in position 8: invalid start byte" {
-		t.Fatal(got)
-	}
-}
-
 func TestScriptRunReportsAKilledScriptThatIsNeverReaped(t *testing.T) {
 	s := scriptStore(t)
 	prevKill, prevFallback := cronKillProcessTree, cronTerminateScriptProcess
@@ -586,7 +482,7 @@ func TestCronSchedulerBashResolutionShScriptUsesBashFoundOnPath(t *testing.T) {
 	}
 	found := filepath.Join(tmp, "git", "bin", "bash.exe")
 	swapBashLookup(t, found)
-	argv, _, refusal, err := s.scriptArgv(context.Background(), script, nil)
+	argv, refusal, err := s.scriptArgv(script, nil)
 	if err != nil || refusal != "" || !reflect.DeepEqual(argv, []string{found, script}) {
 		t.Fatalf("got %q %q %v", argv, refusal, err)
 	}
@@ -599,7 +495,7 @@ func TestCronSchedulerBashResolutionMissingBashReturnsActionableError(t *testing
 		t.Fatal(err)
 	}
 	swapBashLookup(t, "")
-	argv, _, refusal, err := s.scriptArgv(context.Background(), script, nil)
+	argv, refusal, err := s.scriptArgv(script, nil)
 	if err != nil || argv != nil || !strings.Contains(refusal, "bash not found") || !strings.Contains(refusal, "job.sh") {
 		t.Fatalf("got %q %q %v", argv, refusal, err)
 	}
@@ -616,7 +512,7 @@ func TestScriptArgvPicksBashOnlyForShellSuffixes(t *testing.T) {
 	t.Cleanup(func() { cronSysExecutable = prev })
 	cronSysExecutable = func() (string, error) { return "/opt/python3", nil }
 	for name, bash := range map[string]bool{"job.sh": true, "JOB.BASH": true, "job.Sh": true, ".sh": false, "job.sh.py": false, "job": false} {
-		argv, _, refusal, err := s.scriptArgv(context.Background(), filepath.Join("/scripts", name), nil)
+		argv, refusal, err := s.scriptArgv(filepath.Join("/scripts", name), nil)
 		if err != nil || refusal != "" || len(argv) != 2 || (argv[0] == "/opt/bash") != bash {
 			t.Fatalf("%s got %q %q %v", name, argv, refusal, err)
 		}

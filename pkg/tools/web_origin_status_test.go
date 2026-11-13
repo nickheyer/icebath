@@ -240,9 +240,11 @@ func TestFirecrawlKeylessExtractCatchesAnInfiniteStatus(t *testing.T) {
 }
 
 func TestFirecrawlScrapeOneReportsAnInfiniteStatus(t *testing.T) {
+	stubPublicHosts(t)
 	var body sharedText
 	body.set(`{"success": true, "data": {"metadata": {"title": "T", "statusCode": Infinity}, "markdown": "content"}}`)
 	srv := fakeFirecrawlScrape(t, &body)
+	stubPublicHosts(t)
 	env := clearedWebEnv(t, nil)
 	t.Setenv("FIRECRAWL_API_KEY", "test-key")
 	t.Setenv("FIRECRAWL_API_URL", srv.URL)

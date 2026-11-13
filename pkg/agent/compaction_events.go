@@ -117,6 +117,12 @@ func compactionInt(value any) any {
 	return nil
 }
 
+// Closed failure classes of a compaction event, the shared metrics contract set joined with the compaction extras
+func compactionFailureClassSet() observability.ValueSet { return compactionFailureClasses }
+
+// Closed skip classes of a compaction event, the shared metrics contract set
+func compactionSkipClassSet() observability.ValueSet { return observability.CompressionSkipClasses }
+
 // CompactionFailureClass closes a failure class, exception and rollback keep only their prefix, a missing class is none
 func CompactionFailureClass(value any) string {
 	s, ok := value.(string)
@@ -129,7 +135,7 @@ func CompactionFailureClass(value any) string {
 			break
 		}
 	}
-	if compactionFailureClasses.Has(s) {
+	if compactionFailureClassSet().Has(s) {
 		return s
 	}
 	return "other"
@@ -206,7 +212,7 @@ func compactionAttemptOutcome(commitStatus any, failure string, historyRewritten
 		}
 		return "other"
 	}
-	if observability.CompressionSkipClasses.Has(failure) {
+	if compactionSkipClassSet().Has(failure) {
 		return "skipped"
 	}
 	if compactionAbortedClasses.Has(failure) {

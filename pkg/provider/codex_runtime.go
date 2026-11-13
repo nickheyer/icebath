@@ -79,7 +79,7 @@ type CodexRuntimeAgent interface {
 	SessionDBCreated() bool
 	EnsureDBSession() error
 	SessionSource() string
-	FlushMessagesToSessionDB(messages []map[string]any) (bool, error)
+	FlushMessagesToSessionDB(messages []map[string]any) state.FlushOutcome
 	AddSessionAPICalls(n int)
 	AddSessionUsage(key string, value int)
 	AddSessionEstimatedCostUSD(usd float64)

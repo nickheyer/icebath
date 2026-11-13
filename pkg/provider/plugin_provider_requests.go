@@ -146,10 +146,11 @@ func pluginOriginIn(origin PluginOrigin, origins []PluginOrigin) bool {
 
 // Every plugins directory an installed plugin can live under, each as given and resolved
 func pluginProviderRequestRoots() []string {
-	bases := []string{home.PluginsDir(envHome(pkceEnvFn())), home.PluginsDir(home.Process()), home.PluginsDir(home.Root())}
-	if bundled := strings.TrimSpace(os.Getenv("ICEBATH_BUNDLED_PLUGINS")); bundled != "" {
-		bases = append(bases, bundled)
+	bundled := os.Getenv("ICEBATH_BUNDLED_PLUGINS")
+	if bundled == "" {
+		bundled = filepath.Join(pm.RepoRoot(), "plugins")
 	}
+	bases := []string{home.PluginsDir(envHome(pkceEnvFn())), home.PluginsDir(home.Process()), home.PluginsDir(home.Root()), bundled}
 	seen := map[string]bool{}
 	var roots []string
 	for _, base := range bases {

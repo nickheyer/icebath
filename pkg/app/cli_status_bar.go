@@ -249,7 +249,7 @@ func formatIdleSince(lastFinishedAt *float64, turnLive bool) string {
 
 // Collects every value the status bar renders for one repaint
 func (c *CLI) getStatusBarSnapshot() map[string]any {
-	a := c.agent
+	a := c.agentRef()
 	modelName := c.model
 	if a != nil && a.Model() != "" {
 		modelName = a.Model()
@@ -608,7 +608,7 @@ func (c *CLI) spinnerTokenFlow() string {
 		return ""
 	}
 	running, _ := c.busyState()
-	a := c.agent
+	a := c.agentRef()
 	if !running || a == nil {
 		return ""
 	}
@@ -625,7 +625,7 @@ func (c *CLI) turnSummaryIsActive() bool {
 	if !c.turnSummaryEnabled || c.toolProgressMode == "off" {
 		return false
 	}
-	if a := c.agent; a != nil && a.QuietMode() && !c.modernLayout {
+	if a := c.agentRef(); a != nil && a.QuietMode() && !c.modernLayout {
 		return false
 	}
 	return c.interactiveTurn
@@ -644,7 +644,7 @@ func (c *CLI) turnSummaryBegin() {
 	c.turnSummaryCollector.Begin()
 	c.turnSummaryStart = monotonic()
 	c.turnTokenBaseline = 0
-	if a := c.agent; a != nil {
+	if a := c.agentRef(); a != nil {
 		c.turnTokenBaseline = statusBarUsage(c, a).Counters["session_output_tokens"]
 	}
 }
@@ -792,7 +792,7 @@ func (c *CLI) petReactTurnEnd() {
 		return
 	}
 	done := false
-	if a := c.agent; a != nil {
+	if a := c.agentRef(); a != nil {
 		func() {
 			defer func() {
 				if recover() != nil {

@@ -303,7 +303,7 @@ const DESKTOP_COMMAND_SPECS: readonly DesktopCommandSpec[] = [
     argumentMode: 'text'
   },
   // /undo /retry /steer /queue must be actions, not exec: the shared gateway refuses them as
-  // slash.exec. They run on the owner's canonical verbs like the Ink TUI (session.mutate rewind,
+  // slash.exec. They run on the owner's canonical verbs like the terminal UI (session.mutate rewind,
   // session.steer) and on the composer's next-turn queue (slash-session-commands.ts).
   { name: '/undo', description: 'Back up N user turns and re-prompt (default 1)', surface: action('undo') },
   { name: '/retry', description: 'Retry the last message (resend to agent)', surface: action('retry') },
@@ -403,8 +403,8 @@ const REGISTRY_DESKTOP_SURFACE: Readonly<Record<string, string | null>> = deskto
 
 /**
  * Commands the Python registry has never heard of, so they cannot ride the
- * dump above. `/density`, `/details`, `/logs`, `/mouse` are Ink-process-local
- * display toggles handled inside `ui-tui/src/app/slash/commands/core.ts`
+ * dump above. `/density`, `/details`, `/logs`, `/mouse` are display toggles
+ * local to the terminal UI process (`pkg/tui/slash_commands.go`)
  * (three are advertised through `tui_gateway/server.py::_TUI_EXTRA`); `/pets`
  * is the plural typo of the desktop's own `/pet` action and points at the
  * sidebar instead of falling through as an unknown skill.

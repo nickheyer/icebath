@@ -2,20 +2,19 @@ package gatewayrun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Discord voice channel a member sits in
-type voiceChannelRef interface{ Name() string }
+type voiceChannelRef = interface{ Name() string }
 
 // Discord adapter surface joining voice channels and binding them to the requesting text channel
 type voiceChannelJoiner interface {
@@ -97,11 +96,9 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	if err != nil {
 		runLog().Warn(fmt.Sprintf("Failed to join voice channel: %s", pyrepr.ExceptionMessage(err)))
 		joiner.SetVoiceInputCallback(nil)
-		lowered := pystr.Lower(pyrepr.ExceptionMessage(err))
-		for _, tok := range []string{"pynacl", "nacl", "davey"} {
-			if strings.Contains(lowered, tok) {
-				return i18n.T(ctx, "gateway.voice.channel_deps_missing", "", map[string]any{"hint": pm.InstallHint("discord")}), nil
-			}
+		var native interface{ VoiceDependencyHint() string }
+		if errors.As(err, &native) {
+			return i18n.T(ctx, "gateway.voice.channel_deps_missing", "", map[string]any{"hint": native.VoiceDependencyHint()}), nil
 		}
 		return i18n.T(ctx, "gateway.voice.channel_join_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}

@@ -168,13 +168,13 @@ func TestDelegateChildExecuteCodeEnvBridgesContextvarAndScrubsKanban(t *testing.
 
 func homeOverrideChildEnv(t *testing.T, override string) map[string]string {
 	t.Helper()
-	rt := hostRuntime(t)
+	hostRuntime(t)
 	ctx := t.Context()
 	if override != "" {
 		ctx = home.WithOverride(ctx, override)
 	}
 	child, err := buildChildEnv(ctx, testEnvKeepHome(t), childEnvSpec{RPCEndpoint: "sock", RPCToken: "tok",
-		TmpDir: "/tmp/icebath-test", ChildPython: rt.Python})
+		TmpDir: "/tmp/icebath-test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,6 +231,23 @@ func TestConfiguredTimezoneTravelsAsTZOffWindows(t *testing.T) {
 	}
 }
 
+func TestChildPythonPathHoldsTheScriptDirectoryThenTheUsersEntries(t *testing.T) {
+	env := testEnv(t)
+	t.Setenv("PYTHONPATH", "/user/libs")
+	child, err := buildChildEnv(t.Context(), env, childEnvSpec{RPCEndpoint: "sock", RPCToken: "tok", TmpDir: "/tmp/icebath-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/tmp/icebath-test" + string(os.PathListSeparator) + "/user/libs"; child["PYTHONPATH"] != want {
+		t.Fatalf("PYTHONPATH %q, want %q", child["PYTHONPATH"], want)
+	}
+	os.Unsetenv("PYTHONPATH")
+	child, err = buildChildEnv(t.Context(), env, childEnvSpec{RPCEndpoint: "sock", RPCToken: "tok", TmpDir: "/tmp/icebath-test"})
+	if err != nil || child["PYTHONPATH"] != "/tmp/icebath-test" {
+		t.Fatalf("PYTHONPATH %q err %v", child["PYTHONPATH"], err)
+	}
+}
+
 // A damaged runtime dependency record raises out of the child env build instead of keeping owned entries
 func TestDamagedRuntimeRecordRaisesFromChildEnvStrip(t *testing.T) {
 	hostRuntime(t)
@@ -244,7 +261,7 @@ func TestDamagedRuntimeRecordRaisesFromChildEnvStrip(t *testing.T) {
 	}
 	t.Setenv("PYTHONPATH", "/user/libs")
 	child, err := buildChildEnv(t.Context(), env, childEnvSpec{RPCEndpoint: "sock", RPCToken: "tok",
-		TmpDir: "/tmp/icebath-test", ChildPython: "/opt/project/bin/python"})
+		TmpDir: "/tmp/icebath-test"})
 	if want := "invalid dependency environment record: " + facts; err == nil || err.Error() != want {
 		t.Fatalf("child=%v err=%v, want %q", child, err, want)
 	}

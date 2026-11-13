@@ -17,16 +17,6 @@ type holderSys struct {
 
 var holdersSys = holderSys{listdir: listdirUnordered, readlink: os.Readlink, stat: statIdentity}
 
-// Directory entries in the order the kernel returns them, like os.listdir
-func listdirUnordered(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return f.Readdirnames(-1)
-}
-
 // Device and inode of the file path names after following symlinks, with the stat error
 func statIdentity(path string) (FileIdentity, error) {
 	var st syscall.Stat_t

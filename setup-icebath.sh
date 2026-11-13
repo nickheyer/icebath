@@ -32,7 +32,7 @@ command -v go >/dev/null 2>&1 || { echo -e "${RED}✗${NC} Go is required (see g
 echo -e "${CYAN}→${NC} Building the dashboard bundle..."
 go run ./cmd/icebath-build web
 echo -e "${CYAN}→${NC} Building icebath..."
-CGO_ENABLED=0 go build -tags webdist -trimpath -o icebath ./cmd/icebath
+CGO_ENABLED=0 go build -tags webdist,goolm -trimpath -o icebath ./cmd/icebath
 echo -e "${GREEN}✓${NC} Built $SCRIPT_DIR/icebath"
 
 if [ "$test_environment" != "" ]; then

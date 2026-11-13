@@ -182,9 +182,9 @@ func Main(ctx context.Context, w io.Writer, o MainOptions) {
 		fmt.Fprintln(w, "   - Failed conversations → failed_trajectories.jsonl")
 	}
 	a, err := NewAIAgent(ctx, AIAgentOptions{
-		BaseURL: o.BaseURL, Model: o.Model, APIKey: o.APIKey, MaxIterations: o.MaxTurns,
+		BaseURL: o.BaseURL, Model: o.Model, APIKey: o.APIKey, MaxIterations: new(o.MaxTurns),
 		EnabledToolsets: enabled, DisabledToolsets: disabled, SaveTrajectories: o.SaveTrajectories,
-		VerboseLogging: o.Verbose, LogPrefixChars: o.LogPrefixChars,
+		VerboseLogging: o.Verbose, LogPrefixChars: new(o.LogPrefixChars),
 	})
 	if err != nil {
 		fmt.Fprintf(w, "❌ Failed to initialize agent: %v\n", err)

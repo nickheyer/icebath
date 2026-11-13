@@ -290,6 +290,9 @@ var foreignSources = map[string]foreignSourceSpec{
 	"codex":  {[]string{".codex", "sessions"}, "CODEX_HOME", "sessions", "rollout-*.jsonl", true, parseCodexSession},
 }
 
+// Log parser of a known source
+func foreignParser(source string) func(string) foreignParsed { return foreignSources[source].parse }
+
 // Default session store of a source honoring the relocation variable of the tool, blank meaning unset
 func foreignDefaultRoot(source string) (string, error) {
 	spec := foreignSources[source]
@@ -365,7 +368,7 @@ func foreignListSessions(source, root string) ([]*ForeignSession, error) {
 	}
 	results := []*ForeignSession{}
 	for _, f := range files {
-		parsed := foreignSources[source].parse(f.path)
+		parsed := foreignParser(source)(f.path)
 		if len(parsed.turns) > 0 {
 			results = append(results, &ForeignSession{Source: source, Path: f.path, Mtime: f.mtime, Cwd: parsed.cwd,
 				TitleGuess: parsed.titleGuess, TurnCount: len(parsed.turns), SessionID: parsed.sessionID})
@@ -484,7 +487,7 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	if st, err := os.Stat(expanded); err != nil || !st.Mode().IsRegular() {
 		return "", &appValueError{"Session file not found: " + expanded}
 	}
-	parsed := foreignSources[source].parse(expanded)
+	parsed := foreignParser(source)(expanded)
 	if len(parsed.turns) == 0 {
 		return "", &appValueError{"No user/assistant conversation turns found in " + expanded}
 	}

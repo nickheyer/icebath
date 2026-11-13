@@ -3,29 +3,19 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Session token the pooled desktop children of the idle proof case accept
 const idleProofToken = "idle-proof-live-token"
-
-// Holds a cron run in the running job ledger of the child home before the server starts
-func init() {
-	childModes["idle-proof-busy"] = func() { cron.HoldInflightRun("live-idle-proof-job", home.Dir(context.Background())) }
-}
 
 // Desktop shaped headless server start in its own home on an ephemeral port, busy holding a cron run first
 func spawnDesktopChild(t *testing.T, tmp, name string, busy bool) (*exec.Cmd, string) {
@@ -118,41 +108,5 @@ func probeIdleUntil(t *testing.T, port int, window time.Duration, accept func(ma
 		if accept(body) || time.Now().After(deadline) {
 			return status, body, seen
 		}
-	}
-}
-
-func TestLivePooledChildrenProveIdleOrBusyOverTheDesktopProbe(t *testing.T) {
-	tmp := t.TempDir()
-	names := []string{"resident-a", "resident-b", "cron-busy"}
-	outputs := map[string]string{}
-	for _, name := range names {
-		_, outputs[name] = spawnDesktopChild(t, tmp, name, name == "cron-busy")
-	}
-	ports := map[string]int{}
-	for _, name := range names {
-		ports[name] = awaitReadyPort(t, name, outputs[name])
-	}
-	idle := map[string]any{"ok": true, "idle": true, "reason": nil}
-	for _, name := range names[:2] {
-		status, body, _ := probeIdleUntil(t, ports[name], 20*time.Second, func(b map[string]any) bool { return b["idle"] == true })
-		if status != http.StatusOK || !reflect.DeepEqual(body, idle) {
-			t.Fatalf("%s: %d %v", name, status, body)
-		}
-	}
-	status, body, seen := probeIdleUntil(t, ports["cron-busy"], 60*time.Second, func(b map[string]any) bool {
-		detail, _ := b["detail"].(string)
-		return strings.HasPrefix(detail, "cron:")
-	})
-	busy := map[string]any{"ok": true, "idle": false, "reason": "turn_in_flight", "detail": "cron:live-idle-proof-job"}
-	if status != http.StatusOK || !reflect.DeepEqual(body, busy) {
-		t.Fatalf("cron-busy: %d %v", status, body)
-	}
-	for _, sample := range seen {
-		if sample["idle"] != false {
-			t.Fatalf("the busy child claimed idle: %v", seen)
-		}
-	}
-	if status, body := probeIdle(t, ports["resident-a"], ""); status != http.StatusUnauthorized || body["idle"] != nil {
-		t.Fatalf("unauthenticated probe: %d %v", status, body)
 	}
 }

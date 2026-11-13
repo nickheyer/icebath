@@ -8,6 +8,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// One agent value the turn goroutine publishes for the render and signal goroutines to read
+type cliAgentSlot struct{ a cliAgent }
+
+// Agent this CLI holds, read from the slot the turn goroutine publishes into
+func (c *CLI) agentRef() cliAgent {
+	if s := c.agent.Load(); s != nil {
+		return s.a
+	}
+	return nil
+}
+
+// Publishes the agent this CLI holds to every goroutine that reads it
+func (c *CLI) setAgent(a cliAgent) { c.agent.Store(&cliAgentSlot{a}) }
+
 // Agent the CLI holds and drives, the gateway agent in production and any object with its surface in a case
 type cliAgent interface {
 	StreamJSONAgent

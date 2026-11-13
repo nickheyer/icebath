@@ -176,7 +176,7 @@ func TestClarifyBatchPanel(t *testing.T) {
 	})
 	t.Run("test_connection_callback_masks_secret_and_submits_env", func(t *testing.T) {
 		c, _ := clarifyBatchCLI(t, 60)
-		c.agent = &GatewayAgent{ctx: context.Background()}
+		c.setAgent(&GatewayAgent{ctx: context.Background()})
 		type sentAnswer struct {
 			opID   string
 			result map[string]any

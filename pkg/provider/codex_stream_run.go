@@ -70,10 +70,7 @@ func codexStreamSocket(raw any) (conn net.Conn) {
 			conn = nil
 		}
 	}()
-	if s, ok := raw.(interface{ auxAttemptConn() net.Conn }); ok {
-		return s.auxAttemptConn()
-	}
-	return nil
+	return socketFromResponse(raw)
 }
 
 // Callbacks of one Codex event stream consumption

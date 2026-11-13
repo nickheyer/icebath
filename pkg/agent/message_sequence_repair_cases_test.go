@@ -327,8 +327,8 @@ func TestFlushGuardClampsOvershootingCursor(t *testing.T) {
 	a.lastFlushedDBIdx = 5
 	a.sessionDBCreated = true
 	messages := []map[string]any{{"role": "user", "content": "q"}, {"role": "assistant", "content": "a"}}
-	if _, err := a.flushMessagesToSessionDBWithHistory(messages, []map[string]any{}); err != nil {
-		t.Fatal(err)
+	if outcome := a.flushMessagesToSessionDBWithHistory(messages, []map[string]any{}); outcome == state.FlushFailed {
+		t.Fatalf("flush outcome %v", outcome)
 	}
 	if a.lastFlushedDBIdx != 2 {
 		t.Fatalf("cursor %d", a.lastFlushedDBIdx)

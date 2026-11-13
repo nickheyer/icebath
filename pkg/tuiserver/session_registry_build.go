@@ -502,7 +502,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 		}
 	}
 	opts := agent.AIAgentOptions{
-		Model: model, MaxIterations: cfgMaxTurns(cfg, 500), Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
+		Model: model, MaxIterations: new(cfgMaxTurns(cfg, 500)), Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
 		BaseURL: rt.BaseURL, APIKey: rt.APIKey, APIMode: string(rt.APIMode), ACPCommand: rt.Command, ACPArgs: rt.Args,
 		CredentialPool: rt.CredentialPool, Runtime: rt, QuietMode: true, VerboseLogging: false, ReasoningConfig: reasoning,
 		ServiceTier: tier, EnabledToolsets: tools.OnboardingToolsets(ctx, loadEnabledToolsets(ctx, platform), db, sessionKey),

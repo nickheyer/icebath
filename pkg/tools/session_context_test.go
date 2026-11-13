@@ -9,6 +9,7 @@ import (
 )
 
 func TestSetCurrentSessionIDSyncsBoundVarsAndProcessEnv(t *testing.T) {
+	isolateSessionContext(t, false)
 	t.Setenv("ICEBATH_SESSION_ID", "before")
 	env := &Env{Values: &sync.Map{}}
 	BindSessionContext(env, map[string]string{"ICEBATH_SESSION_PLATFORM": "telegram"})
@@ -33,6 +34,13 @@ func TestSetCurrentSessionIDSyncsBoundVarsAndProcessEnv(t *testing.T) {
 	if _, engaged := sessionContextState(child); engaged {
 		t.Fatal("setting the session id engaged the session context")
 	}
+}
+
+// Puts the process session context latch back after a test that binds session variables
+func restoreSessionContextLatch(t *testing.T) {
+	t.Helper()
+	prev := sessionContextLatch.Load()
+	t.Cleanup(func() { sessionContextLatch.Store(prev) })
 }
 
 // Clean session context slate with the process latch restored after the test

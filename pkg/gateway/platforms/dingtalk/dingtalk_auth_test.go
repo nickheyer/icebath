@@ -5,14 +5,12 @@ import (
 	"context"
 	"errors"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -135,54 +133,11 @@ func TestWaitForSuccessInvokesWaitingCallback(t *testing.T) {
 	}
 }
 
-func TestRenderQRReturnsFalseWhenQrcodeMissing(t *testing.T) {
-	swap(t, &qrcodeAvailable, func() bool { return false })
-	if ok, err := renderQRToTerminal("https://example.com"); ok || err != nil {
-		t.Fatalf("rendered %v %v", ok, err)
-	}
-}
-
 func TestRenderQRPrintsWhenQrcodeAvailable(t *testing.T) {
 	var out bytes.Buffer
 	t.Cleanup(provider.WithSetupOutput(&out))
-	ok, err := renderQRToTerminal("https://example.com/test")
-	if !ok || err != nil || len(out.String()) <= 100 {
-		t.Fatalf("rendered %v %v output %d bytes", ok, err, len(out.String()))
-	}
-}
-
-func TestMissingQrcodeEnablesDingtalkWithoutSwitchingTheLiveProcess(t *testing.T) {
-	for _, succeeds := range []bool{true, false} {
-		t.Run(map[bool]string{true: "succeeds", false: "fails"}[succeeds], func(t *testing.T) {
-			swap(t, &qrcodeAvailable, func() bool { return false })
-			var calls [][]any
-			swap(t, &authSyncVenv, func(_ context.Context, o pm.SyncVenvOptions) error {
-				calls = append(calls, []any{append([]string(nil), o.Extras...), o.Explicit})
-				if !succeeds {
-					return pm.NewInstallError("venv", "offline", "")
-				}
-				return nil
-			})
-			installed, err := ensureQRCodeInstalled(context.Background())
-			if err != nil || installed {
-				t.Fatalf("installed %v %v", installed, err)
-			}
-			if !reflect.DeepEqual(calls, [][]any{{[]string{"dingtalk"}, true}}) {
-				t.Fatalf("calls %v", calls)
-			}
-			if ok, _ := renderQRToTerminal("https://example.com"); ok || qrcodeAvailable() {
-				t.Fatal("the live process switched to rendering QR codes")
-			}
-		})
-	}
-}
-
-func TestAvailableQrcodeDoesNotInstall(t *testing.T) {
-	swap(t, &authSyncVenv, func(context.Context, pm.SyncVenvOptions) error {
-		t.Fatal("installed dependency must not trigger a transaction")
-		return nil
-	})
-	if installed, err := ensureQRCodeInstalled(context.Background()); !installed || err != nil {
-		t.Fatalf("installed %v %v", installed, err)
+	err := renderQRToTerminal("https://example.com/test")
+	if err != nil || len(out.String()) <= 100 {
+		t.Fatalf("rendered %v output %d bytes", err, len(out.String()))
 	}
 }

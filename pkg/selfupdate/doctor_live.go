@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -93,7 +92,7 @@ func (e *doctorLiveEnv) toolsEnv() *tools.Env {
 
 // Sends one metadata GET after sanitizing the proxy environment and returns the response status
 func (e *doctorLiveEnv) doctorLiveHTTPGet(target string, headers [][2]string, timeout float64) (int, error) {
-	provider.NormalizeProxyEnvVars()
+	config.NormalizeProxyEnvVars()
 	req, err := http.NewRequestWithContext(e.ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return 0, err

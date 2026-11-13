@@ -1,22 +1,18 @@
 package media
 
 import (
-	"compress/bzip2"
 	"context"
 	"encoding/binary"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/nickheyer/icebath/pkg/fetch"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -44,21 +40,6 @@ type wakeEngineBase struct {
 func (b *wakeEngineBase) FrameLength() int { return b.frameLength }
 func (b *wakeEngineBase) Reset() error     { return nil }
 func (b *wakeEngineBase) Close()           {}
-
-// Ensures the engine extra, and the audio capture extra only when capture is local
-func wakeEnsureDep(ctx context.Context, feature string, cfg map[string]any) error {
-	if err := wakeEnsureImport(ctx, feature); err != nil {
-		return err
-	}
-	if ResolveCaptureMode(ctx, cfg, false, false) != "local" {
-		return nil
-	}
-	available, err := wakePMAvailable(ctx, "audio-io")
-	if err != nil || available {
-		return err
-	}
-	return wakeEnsureImport(ctx, "audio-io")
-}
 
 // Whether a model reference names a file rather than a built in keyword
 func looksLikePath(value string) bool {
@@ -116,7 +97,7 @@ type openWakeWordEngine struct {
 
 // Builds the openWakeWord engine on the bundled hey_hermes model unless a custom model is configured
 func newOpenWakeWordEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	if err := wakeEnsureDep(ctx, "wake-openwakeword", cfg); err != nil {
+	if err := wakeEnsureImport(ctx, "wake-openwakeword"); err != nil {
 		return nil, err
 	}
 	sub := wakeSub(cfg, "openwakeword")
@@ -201,77 +182,35 @@ func (e *openWakeWordEngine) Close() {
 	e.model.Close()
 }
 
-const (
-	sherpaKWSModelURL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/" +
-		"sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2"
-	sherpaKWSModelDir = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
-)
+const sherpaKWSModelDir = "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01"
+
+// Keyword spotting model archive of the speech engine project, pinned by size and sha256
+var sherpaKWSModel = fetch.Asset{Name: sherpaKWSModelDir + ".tar.bz2", Size: 17626723,
+	URL:    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/" + sherpaKWSModelDir + ".tar.bz2",
+	SHA256: "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a"}
 
 func sherpaModelRoot(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), "cache", "wakewords")
 }
 
-// Client the one time sherpa model download goes through
-var sherpaModelHTTP = &http.Client{Timeout: 10 * time.Minute}
-
-// Downloads and unpacks the sherpa KWS model once, returning its directory
+// Directory of the sherpa KWS model, one already under root else the pinned archive fetched once
 func ensureSherpaModel(ctx context.Context, root string) (string, error) {
 	if root == "" {
 		root = sherpaModelRoot(ctx)
 	}
-	target := filepath.Join(root, sherpaKWSModelDir)
-	if _, err := os.Stat(filepath.Join(target, "tokens.txt")); err == nil {
+	if target := filepath.Join(root, sherpaKWSModelDir); fileExists(filepath.Join(target, "tokens.txt")) {
 		return target, nil
 	}
-	if err := os.MkdirAll(root, 0o777); err != nil {
-		return "", err
-	}
-	archive := filepath.Join(root, sherpaKWSModelDir+".tar.bz2")
-	wakeLog().Info("wake word: downloading sherpa KWS model (one-time, ~13 MB)")
-	if err := urlRetrieve(ctx, sherpaKWSModelURL, archive); err != nil {
-		return "", err
-	}
-	f, err := os.Open(archive)
+	wakeLog().Info("wake word: preparing the sherpa KWS model (first use downloads about 17 MB)")
+	tree, err := fetch.Tree(ctx, sherpaKWSModel)
 	if err != nil {
 		return "", err
 	}
-	err = pyfs.ExtractTarDataReader(bzip2.NewReader(f), root)
-	f.Close()
-	if err != nil {
-		return "", err
-	}
-	if err := os.Remove(archive); err != nil && !os.IsNotExist(err) {
-		return "", err
-	}
-	if _, err := os.Stat(filepath.Join(target, "tokens.txt")); err != nil {
-		return "", &WakeWordError{Class: "RuntimeError", Msg: "sherpa KWS model unpack failed: " + target}
+	target := filepath.Join(tree, sherpaKWSModelDir)
+	if !fileExists(filepath.Join(target, "tokens.txt")) {
+		return "", &WakeWordError{Class: "RuntimeError", Msg: "sherpa KWS model archive lacks tokens.txt: " + target}
 	}
 	return target, nil
-}
-
-// Copies a URL to a file like urllib.request.urlretrieve, an HTTP error status failing the copy
-func urlRetrieve(ctx context.Context, url, path string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := sherpaModelHTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return &WakeWordError{Class: "HTTPError", Msg: fmt.Sprintf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))}
-	}
-	out, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		return err
-	}
-	return out.Close()
 }
 
 // Keyword spotter config sherpa_onnx.KeywordSpotter takes
@@ -314,9 +253,6 @@ type sherpaKwsEngine struct {
 
 // Builds the sherpa engine, tokenizing every phrase against the model vocabulary into a keywords file
 func newSherpaKwsEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	if err := wakeEnsureDep(ctx, "wake-sherpa", cfg); err != nil {
-		return nil, err
-	}
 	sub := wakeSub(cfg, "sherpa")
 	sherpa, err := wakeImportSherpaOnnx(ctx)
 	if err != nil {
@@ -512,7 +448,7 @@ type porcupineEngine struct {
 
 // Builds the Porcupine engine from PORCUPINE_ACCESS_KEY and a built in keyword or keyword file
 func newPorcupineEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	if err := wakeEnsureDep(ctx, "wake-porcupine", cfg); err != nil {
+	if err := wakeEnsureImport(ctx, "wake-porcupine"); err != nil {
 		return nil, err
 	}
 	sub := wakeSub(cfg, "porcupine")

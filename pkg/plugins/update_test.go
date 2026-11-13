@@ -44,7 +44,7 @@ func TestSubdirInstallStaysUpdatable(t *testing.T) {
 	c6Write(t, filepath.Join(repo, "README.md"), "# Monorepo docs\n")
 	c6Write(t, filepath.Join(repo, "tests", "test_x.py"), "def test_x():\n    pass\n")
 	c6Write(t, filepath.Join(repo, "my-plugin", "plugin.yaml"), "name: my-plugin\nmanifest_version: 1\ndescription: A subdir plugin\n")
-	c6Write(t, filepath.Join(repo, "my-plugin", "__init__.py"), "# plugin entry\n")
+	c6Write(t, filepath.Join(repo, "my-plugin", "helper.py"), "# plugin entry\n")
 	c6Git(t, repo, "init", "-q")
 	c6Commit(t, repo, "init")
 	target, _, _, err := installPluginCore(ctx, "file://"+repo+"#my-plugin", installCoreOptions{})
@@ -54,14 +54,14 @@ func TestSubdirInstallStaysUpdatable(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
 		t.Fatal("subdir install carries a .git")
 	}
-	c6Write(t, filepath.Join(repo, "my-plugin", "__init__.py"), "VERSION = 2\n")
+	c6Write(t, filepath.Join(repo, "my-plugin", "helper.py"), "VERSION = 2\n")
 	newSha := c6Commit(t, repo, "v2")
 	pinned, notGit := func(map[string]any) string { return "pinned" }, func() string { return "not git" }
 	output, err := pullPluginUpdate(ctx, h, target, pinned, notGit, nil, false, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := os.ReadFile(filepath.Join(target, "__init__.py"))
+	raw, _ := os.ReadFile(filepath.Join(target, "helper.py"))
 	metadata, _ := readInstallMetadata(h)
 	record, _ := metadata["my-plugin"].(map[string]any)
 	if !strings.Contains(string(raw), "VERSION = 2") || record["revision"] != newSha || strings.Contains(output, "Already up to date") {

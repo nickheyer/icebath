@@ -15,9 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Registration API base and source of the device flow, env overrides first
@@ -59,13 +57,11 @@ var (
 		req.Header.Set("Content-Type", "application/json")
 		return pyrequests.Send(ctx, http.DefaultTransport.(*http.Transport), pyrequests.Seconds(15), req)
 	}
-	authSleep       = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
-	authClockBase   = time.Now()
-	authMonotonic   = func() float64 { return time.Since(authClockBase).Seconds() }
-	qrcodeAvailable = func() bool { return true }
-	authSyncVenv    = pm.SyncVenv
-	apiPostFn       = apiPost
-	pollFn          = pollRegistration
+	authSleep     = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
+	authClockBase = time.Now()
+	authMonotonic = func() float64 { return time.Since(authClockBase).Seconds() }
+	apiPostFn     = apiPost
+	pollFn        = pollRegistration
 )
 
 // POSTs to the registration API, the RegistrationError of a network failure or a non zero errcode
@@ -242,25 +238,11 @@ func waitForRegistrationSuccess(ctx context.Context, deviceCode string, interval
 	return "", "", &RegistrationError{"authorization timed out, please retry"}
 }
 
-// Whether QR codes render in this process, enabling the dingtalk extra for the next launch when they cannot
-func ensureQRCodeInstalled(ctx context.Context) (bool, error) {
-	if qrcodeAvailable() {
-		return true, nil
-	}
-	if err := authSyncVenv(ctx, pm.SyncVenvOptions{Extras: []string{"dingtalk"}, Explicit: true}); err != nil && !tools.SetupSyncFailureHandled(err) {
-		return false, err
-	}
-	return false, nil
-}
-
-// Renders the URL as a compact half block QR code, false when QR codes cannot render
-func renderQRToTerminal(url string) (bool, error) {
-	if !qrcodeAvailable() {
-		return false, nil
-	}
+// Prints the URL as a compact half block QR code, two matrix rows per character
+func renderQRToTerminal(url string) error {
 	code, err := pyqrcode.Make(url, pyqrcode.ErrorCorrectL, 1)
 	if err != nil {
-		return false, err
+		return err
 	}
 	matrix := code.Matrix()
 	glyph := map[[2]bool]string{{true, true}: "█", {true, false}: "▀", {false, true}: "▄", {false, false}: " "}
@@ -278,7 +260,7 @@ func renderQRToTerminal(url string) (bool, error) {
 		lines = append(lines, b.String())
 	}
 	gateway.WizardPrintln(strings.Join(lines, "\n"))
-	return true, nil
+	return nil
 }
 
 // Runs the interactive QR device flow authorization, the client id and secret or false when it did not complete
@@ -297,22 +279,11 @@ func dingtalkQRAuth(ctx context.Context) (string, string, bool, error) {
 		return "", "", false, err
 	}
 	url := reg.VerificationURIComplete
-	installed, err := ensureQRCodeInstalled(ctx)
-	if err != nil {
-		return "", "", false, err
-	}
-	if !installed {
-		s.PrintWarning("  QR rendering is unavailable in this process; using the authorization link.")
-	}
 	gateway.WizardPrintln("")
 	s.PrintInfo("  Please scan the QR code below with DingTalk to authorize:")
 	gateway.WizardPrintln("")
-	rendered, err := renderQRToTerminal(url)
-	if err != nil {
+	if err := renderQRToTerminal(url); err != nil {
 		return "", "", false, err
-	}
-	if !rendered {
-		s.PrintWarning("  QR code render failed, please open the link below to authorize:")
 	}
 	gateway.WizardPrintln("")
 	s.PrintInfo("  Or open this link manually: " + url)

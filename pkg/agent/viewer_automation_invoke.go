@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -98,10 +99,10 @@ func automationOptionalInt(method, name string, value any) (*int64, error) {
 	return &n, err
 }
 
-// Manager return value as JSON, states and gates keeping their own serialisation
+// Manager return value as JSON, states and gates keeping their own serialisation and containers wired item by item
 func wireAutomationValue(value any) (any, error) {
 	switch v := value.(type) {
-	case nil, string, bool, int, int64, float64:
+	case nil, string, bool, int, int64, float64, *big.Int:
 		return v, nil
 	case *goals.GoalState:
 		if v == nil {
@@ -123,8 +124,38 @@ func wireAutomationValue(value any) (any, error) {
 		return pyjson.ObjectOf("__state__", text), err
 	case goals.GoalGate:
 		return pyjson.ObjectOf("__gate__", v.ToDict()), nil
+	case goals.GoalCommandResult:
+		var prompt, clearPending any
+		if v.Prompt != nil {
+			prompt = *v.Prompt
+		}
+		if v.ClearPending != "" {
+			clearPending = v.ClearPending
+		}
+		return pyjson.ObjectOf("output", v.Output, "prompt", prompt, "kickoff", v.Kickoff, "clear_pending", clearPending, "error", v.Error), nil
 	case *pyjson.Object:
-		return v, nil
+		if v == nil {
+			return nil, nil
+		}
+		out := pyjson.NewObject()
+		for _, key := range v.Keys {
+			wired, err := wireAutomationValue(v.GetOr(key, nil))
+			if err != nil {
+				return nil, err
+			}
+			out.Set(key, wired)
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			wired, err := wireAutomationValue(item)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = wired
+		}
+		return out, nil
 	}
 	return pyrepr.Str(value), nil
 }
@@ -148,44 +179,61 @@ func automationErrorClass(err error) string {
 	return ""
 }
 
-// Goal manager call with its arguments bound like the Python method
-func invokeGoal(ctx context.Context, mgr *goals.GoalManager, target, call string, args []any, kwargs *pyjson.Object) (any, error) {
-	bind := func(params ...automationParam) ([]any, error) { return bindAutomationCall(call, params, args, kwargs) }
-	req := func(name string) automationParam { return automationParam{name: name, required: true} }
-	switch call {
-	case "state":
-		return nil, nil
-	case "command":
+// Calls that are more than one manager method, the second result false for a plain method
+func specialAutomationCall(ctx context.Context, mgr any, kind, target, call string, args []any, kwargs *pyjson.Object) (any, bool, error) {
+	if kind == "goal" && call == "command" {
 		padded := append(append([]any{}, args...), "", nil)
 		arg := ""
 		if pyrepr.Truthy(padded[0]) {
 			arg = pyrepr.Str(padded[0])
 		}
-		result, err := goals.DispatchGoalCommand(mgr, arg, goals.GoalCommandOptions{AuthorizeGate: func() string { return "" }, LastUserMessage: padded[1]})
+		result, err := goals.DispatchGoalCommand(mgr.(*goals.GoalManager), arg, goals.GoalCommandOptions{AuthorizeGate: func() string { return "" }, LastUserMessage: padded[1]})
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		var prompt, clearPending any
-		if result.Prompt != nil {
-			prompt = *result.Prompt
-		}
-		if result.ClearPending != "" {
-			clearPending = result.ClearPending
-		}
-		return pyjson.ObjectOf("output", result.Output, "prompt", prompt, "kickoff", result.Kickoff,
-			"clear_pending", clearPending, "error", result.Error), nil
-	case "evaluate_after_turn":
+		return result, true, nil
+	}
+	if kind == "goal" && call == "evaluate_after_turn" {
 		last := ""
 		if len(args) > 0 && pyrepr.Truthy(args[0]) {
 			last = pyrepr.Str(args[0])
 		}
-		processes := goals.GatherBackgroundProcesses(ctx, "", target)
-		delegations := goals.CountActiveDelegations(target)
-		decision, err := mgr.EvaluateAfterTurn(last, processes, delegations)
+		processes, delegations := func() (running []map[string]any, live int) {
+			defer func() {
+				if recover() != nil {
+					running, live = nil, 0
+				}
+			}()
+			return goals.GatherBackgroundProcesses(ctx, "", target), goals.CountActiveDelegations(target)
+		}()
+		decision, err := mgr.(*goals.GoalManager).EvaluateAfterTurn(last, processes, delegations)
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
-		return decision.ToDict(), nil
+		return decision.ToDict(), true, nil
+	}
+	if kind == "goal" && call == "set" && kwargs != nil {
+		if raw, isDict := kwargs.GetOr("contract", nil).(*pyjson.Object); isDict {
+			bound := kwargs.Copy()
+			bound.Set("contract", goals.GoalContractFromDict(raw))
+			value, err := invokeGoal(mgr.(*goals.GoalManager), call, args, bound)
+			return value, true, err
+		}
+	}
+	if kind == "loop" && call == "goal_blocks_tick" {
+		return GoalBlocksLoopTick(ctx, target), true, nil
+	}
+	if call == "state" {
+		return nil, true, nil
+	}
+	return nil, false, nil
+}
+
+// Goal manager call with its arguments bound like the Python method
+func invokeGoal(mgr *goals.GoalManager, call string, args []any, kwargs *pyjson.Object) (any, error) {
+	bind := func(params ...automationParam) ([]any, error) { return bindAutomationCall(call, params, args, kwargs) }
+	req := func(name string) automationParam { return automationParam{name: name, required: true} }
+	switch call {
 	case "set":
 		v, err := bind(req("goal"), automationParam{name: "max_turns", kwOnly: true}, automationParam{name: "contract", kwOnly: true})
 		if err != nil {
@@ -204,8 +252,7 @@ func invokeGoal(ctx context.Context, mgr *goals.GoalManager, target, call string
 			turns = *maxTurns
 		}
 		var contract *goals.GoalContract
-		if raw, isDict := v[2].(*pyjson.Object); isDict {
-			parsed := goals.GoalContractFromDict(raw)
+		if parsed, isContract := v[2].(goals.GoalContract); isContract {
 			contract = &parsed
 		}
 		return mgr.Set(goal, turns, contract)
@@ -359,13 +406,9 @@ func invokeGoal(ctx context.Context, mgr *goals.GoalManager, target, call string
 }
 
 // Loop manager call with its arguments bound like the Python method
-func invokeLoop(ctx context.Context, mgr *LoopManager, target, call string, args []any, kwargs *pyjson.Object) (any, error) {
+func invokeLoop(ctx context.Context, mgr *LoopManager, call string, args []any, kwargs *pyjson.Object) (any, error) {
 	bind := func(params ...automationParam) ([]any, error) { return bindAutomationCall(call, params, args, kwargs) }
 	switch call {
-	case "state":
-		return nil, nil
-	case "goal_blocks_tick":
-		return GoalBlocksLoopTick(ctx, target), nil
 	case "set":
 		v, err := bind(automationParam{name: "prompt", required: true}, automationParam{name: "interval_seconds", kwOnly: true},
 			automationParam{name: "times", kwOnly: true, def: int64(0)}, automationParam{name: "until", kwOnly: true, def: ""},
@@ -446,8 +489,6 @@ func invokeLoop(ctx context.Context, mgr *LoopManager, target, call string, args
 func invokeHeartbeat(mgr *HeartbeatManager, call string, args []any, kwargs *pyjson.Object) (any, error) {
 	bind := func(params ...automationParam) ([]any, error) { return bindAutomationCall(call, params, args, kwargs) }
 	switch call {
-	case "state":
-		return nil, nil
 	case "set":
 		v, err := bind(automationParam{name: "prompt", required: true}, automationParam{name: "interval_seconds", required: true})
 		if err != nil {
@@ -457,11 +498,7 @@ func invokeHeartbeat(mgr *HeartbeatManager, call string, args []any, kwargs *pyj
 		if err != nil {
 			return nil, err
 		}
-		interval, err := automationInt(call, "interval_seconds", v[1])
-		if err != nil {
-			return nil, err
-		}
-		return mgr.Set(prompt, interval)
+		return mgr.Set(prompt, v[1])
 	case "pause", "resume", "clear", "abandon_fire":
 		if _, err := bind(); err != nil {
 			return nil, err
@@ -501,8 +538,8 @@ func invokeHeartbeat(mgr *HeartbeatManager, call string, args []any, kwargs *pyj
 
 // Runs one viewer automation call against the target's persisted state, the value or the error with the state after
 func InvokeViewerAutomation(ctx context.Context, runner any, kind, target, call string, args []any, kwargs *pyjson.Object) (*pyjson.Object, error) {
-	var value any
-	var err error
+	var mgr any
+	var plain func() (any, error)
 	var stateJSON func() (any, error)
 	switch kind {
 	case "goal":
@@ -510,17 +547,24 @@ func InvokeViewerAutomation(ctx context.Context, runner any, kind, target, call 
 		if configured, ok := runner.(interface{ GoalMaxTurnsFromConfig(context.Context) int64 }); ok {
 			maxTurns = configured.GoalMaxTurnsFromConfig(ctx)
 		}
-		mgr := goals.NewGoalManager(ctx, target, maxTurns)
-		value, err = invokeGoal(ctx, mgr, target, call, args, kwargs)
-		stateJSON = func() (any, error) { return automationStateJSON(mgr.State()) }
+		goal := goals.NewGoalManager(ctx, target, maxTurns)
+		mgr = goal
+		plain = func() (any, error) { return invokeGoal(goal, call, args, kwargs) }
+		stateJSON = func() (any, error) { return automationStateJSON(goal.State()) }
 	case "loop":
-		mgr := NewLoopManager(ctx, target)
-		value, err = invokeLoop(ctx, mgr, target, call, args, kwargs)
-		stateJSON = func() (any, error) { return automationStateJSON(mgr.State()) }
+		loop := NewLoopManager(ctx, target)
+		mgr = loop
+		plain = func() (any, error) { return invokeLoop(ctx, loop, call, args, kwargs) }
+		stateJSON = func() (any, error) { return automationStateJSON(loop.State()) }
 	default:
-		mgr := NewHeartbeatManager(ctx, target)
-		value, err = invokeHeartbeat(mgr, call, args, kwargs)
-		stateJSON = func() (any, error) { return automationStateJSON(mgr.State()) }
+		heartbeat := NewHeartbeatManager(ctx, target)
+		mgr = heartbeat
+		plain = func() (any, error) { return invokeHeartbeat(heartbeat, call, args, kwargs) }
+		stateJSON = func() (any, error) { return automationStateJSON(heartbeat.State()) }
+	}
+	value, special, err := specialAutomationCall(ctx, mgr, kind, target, call, args, kwargs)
+	if !special {
+		value, err = plain()
 	}
 	out := pyjson.NewObject()
 	if err != nil {

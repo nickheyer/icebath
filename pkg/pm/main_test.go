@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/pm/specprobe/specchild"
 )
 
 // Root whose own commands a child process republishes, printing the published and expected counts
@@ -19,7 +18,6 @@ const sleepChild = "ICEBATH_PM_SLEEP_CHILD"
 
 // Dispatches the child modes the launcher cases run the test binary in before the suite
 func TestMain(m *testing.M) {
-	specchild.DispatchEntry()
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	if root := os.Getenv(republishChild); root != "" {

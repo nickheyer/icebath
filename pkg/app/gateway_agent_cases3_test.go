@@ -419,7 +419,8 @@ func TestAVoiceStoppedCorrectionIsConsumedNotRequeued(t *testing.T) {
 			a.generation, a.turnAskIndex = 7, &ask
 			a.mu.Unlock()
 			shell := bareCLI()
-			shell.busyInputMode, shell.agent = mode, a
+			shell.busyInputMode = mode
+			shell.setAgent(a)
 			shell.pendingInput, shell.interruptQueue = &inputQueue{}, &inputQueue{}
 			shell.tuiEnterWhileBusy("stop", nil, "stop", "")
 			if !shell.pendingInput.Empty() || !shell.interruptQueue.Empty() {
@@ -520,7 +521,7 @@ func TestTodoUpdatesAfterASessionSwitchReachTheCliTodoStore(t *testing.T) {
 	todos := []any{map[string]any{"id": "1", "content": "ship it", "status": "completed"}}
 	a, _ := makeScriptedAgent(t, &scriptedClient{script: []any{scriptFrame("todo.updated", map[string]any{"todos": todos, "revision": 1}), completeFrame("x")}}, gatewayAgentOptions{})
 	host := bareCLI()
-	host.agent = a
+	host.setAgent(a)
 	host.syncAgentToSession(scriptSID)
 	runTurn(t, a, "plan")
 	if got := todoRows(a.TodoStore()); !sameJSON(got, todos) {
@@ -548,7 +549,7 @@ func TestResumeRestoresTheSessionsTodosIntoTheCliTodoStore(t *testing.T) {
 	resumeWithTodos(client, todos, 4)
 	a.sessionDB = gatewaycli.NewGatewaySessionStore(a.connection)
 	host := bareCLI()
-	host.agent = a
+	host.setAgent(a)
 	host.syncAgentToSession("local-other")
 	if got := a.TodoStore().Snapshot(); !sameJSON(got, map[string]any{"todos": todos, "revision": 4}) {
 		t.Fatalf("snapshot %v", got)

@@ -67,13 +67,13 @@ func pluginsAction(ctx context.Context, cmd *cobra.Command, verb string, args []
 	case "install":
 		ref, _ := flags.GetString("ref")
 		return plugins.CmdInstall(ctx, plugins.InstallCommandOptions{Identifier: arg(""), Force: flag("force"), Enable: triStateFlag(cmd, "enable", "no-enable"),
-			Ref: ref, AllowRemoved: flag("allow-removed"), NoDeps: flag("no-deps"), YesDeps: flag("yes-deps")}, out)
+			Ref: ref, AllowRemoved: flag("allow-removed")}, out)
 	case "search":
 		return plugins.CmdSearch(ctx, arg(""), flag("json"), out)
 	case "browse":
 		return plugins.CmdSearch(ctx, "", false, out)
 	case "validate":
-		return plugins.CmdValidate(ctx, arg(""), flag("json"), flag("install-deps"), out, errOut)
+		return plugins.CmdValidate(ctx, arg(""), flag("json"), out, errOut)
 	case "update":
 		if name := arg(""); name != "" {
 			if flag("yes") {

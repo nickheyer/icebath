@@ -34,11 +34,6 @@ const (
 	serveBackendTimeout  = 60 * time.Second
 )
 
-var restartLines = map[string]string{
-	"gateway": "  icebath gateway restart",
-	"backend": "  quit and reopen the Icebath desktop app (or restart icebath dashboard)",
-}
-
 // Sorted copy of a string list, duplicates kept
 func sortedStrings(items []string) []string {
 	out := append([]string(nil), items...)
@@ -135,11 +130,6 @@ func pluginActivationSummary(ctx context.Context, m *Manager, pluginKey string) 
 	}
 	m.mu.RUnlock()
 	summary := map[string]any{"name": name, "key": pluginKey, "activated_now": now, "deferred": deferred}
-	if manifest != nil {
-		if missing := missingPythonDependencies(ctx, manifest); len(missing) > 0 {
-			summary["missing_dependencies"] = anyList(missing)
-		}
-	}
 	return summary
 }
 
@@ -164,27 +154,6 @@ func ActivationSummaries(ctx context.Context, m *Manager) []map[string]any {
 			continue
 		}
 		out = append(out, pluginActivationSummary(ctx, m, key))
-	}
-	return out
-}
-
-// Plugins that failed to load while a declared Python dependency is not importable in this process
-func DependencyBlockedSummaries(ctx context.Context, m *Manager) []map[string]any {
-	out := []map[string]any{}
-	keys, loaded := m.loadedSnapshot()
-	for i, key := range keys {
-		manifest := loaded[i].Manifest
-		if loaded[i].Error == "" || manifest == nil {
-			continue
-		}
-		if missing := missingPythonDependencies(ctx, manifest); len(missing) > 0 {
-			name := key
-			if manifest.Name != "" {
-				name = manifest.Name
-			}
-			out = append(out, map[string]any{"name": name, "key": key, "activated_now": map[string]any{},
-				"deferred": map[string]any{}, "missing_dependencies": anyList(missing)})
-		}
 	}
 	return out
 }
@@ -328,53 +297,10 @@ func activatePluginNowFrom(ctx context.Context, name string, inProcess bool) (ma
 		}
 		gatewayActivation = found
 	}
-	gaps := [2][]string{}
-	for i, source := range []any{gatewayActivation, activation} {
-		dict, err := pyDictOr(source)
-		if err != nil {
-			return nil, err
-		}
-		deps, err := pyStrItems(dict["missing_dependencies"])
-		if err != nil {
-			return nil, err
-		}
-		gaps[i] = deps
-	}
 	if reloaded && activation == nil && gatewayActivation != nil {
 		activation = gatewayActivation
 	}
-	seen := map[string]bool{}
-	for _, deps := range gaps {
-		for _, d := range deps {
-			seen[d] = true
-		}
-	}
-	missing := sortedSet(seen)
-	if len(missing) > 0 {
-		base := map[string]any{"name": name, "key": name}
-		if pyrepr.Truthy(activation) {
-			dict, err := pyDictOr(activation)
-			if err != nil {
-				return nil, fmt.Errorf("TypeError: '%s' object is not a mapping", pyrepr.TypeName(activation))
-			}
-			base = dict
-		}
-		merged := make(map[string]any, len(base)+2)
-		for k, v := range base {
-			merged[k] = v
-		}
-		merged["missing_dependencies"] = anyList(missing)
-		missingIn := []any{}
-		for i, process := range []string{"gateway", "backend"} {
-			if len(gaps[i]) > 0 {
-				missingIn = append(missingIn, process)
-			}
-		}
-		merged["missing_in"] = missingIn
-		activation = merged
-	}
-	return map[string]any{"gateway_reloaded": reloaded, "activation": activation,
-		"restart_required": !reloaded || len(missing) > 0}, nil
+	return map[string]any{"gateway_reloaded": reloaded, "activation": activation, "restart_required": !reloaded}, nil
 }
 
 // Asks the gateway serving this profile, else the multiplexer serving it, to rediscover plugins now
@@ -453,11 +379,6 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		var err error
 		if activation, err = findActivation(summaryItems(ActivationSummaries(lctx, m)), name); err != nil {
 			return nil, err
-		}
-		if activation == nil {
-			if blocked, err = findActivation(summaryItems(DependencyBlockedSummaries(lctx, m)), name); err != nil {
-				return nil, err
-			}
 		}
 		portable = m.GetPortableMCPServers()
 		if activation != nil {
@@ -596,26 +517,6 @@ func gatewayPresent(ctx context.Context) (bool, error) {
 	return installed, err
 }
 
-// Restart or repair advice for each process that reported it cannot import the plugin dependencies
-func dependencyRestartHint(ctx context.Context, missing, processes []string) (string, error) {
-	deps := strings.Join(missing, ", ")
-	lines := make([]string, 0, len(processes))
-	for _, p := range processes {
-		line, ok := restartLines[p]
-		if !ok {
-			return "", fmt.Errorf("KeyError: %s", pyrepr.Repr(p))
-		}
-		lines = append(lines, line)
-	}
-	restart := strings.Join(lines, "\n")
-	if installedInSelectedEnvironment(ctx, missing) {
-		return "Its Python dependencies (" + deps + ") were installed after the running gateway or dashboard " +
-			"started, and a running process never switches dependency environments. Restart them to " +
-			"load the plugin:\n" + restart, nil
-	}
-	return "Its Python dependencies (" + deps + ") are not installed. Run icebath pm repair, then restart:\n" + restart, nil
-}
-
 // After a CLI install or enable, takes the plugin live where it can and prints the resulting hint
 func reportActivation(ctx context.Context, console *Console, name string) error {
 	result, err := activatePluginNowFrom(ctx, name, false)
@@ -684,21 +585,6 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 			reason = pyrepr.Str(e)
 		}
 		lines = append(lines, "MCP server "+pyrepr.Str(serverName)+" not connected: "+reason)
-	}
-	if pyrepr.Truthy(act["missing_dependencies"]) {
-		missing, err := pyStrItems(act["missing_dependencies"])
-		if err != nil {
-			return "", err
-		}
-		processes, err := pyStrItems(act["missing_in"])
-		if err != nil {
-			return "", err
-		}
-		hint, err := dependencyRestartHint(ctx, missing, processes)
-		if err != nil {
-			return "", err
-		}
-		return strings.Join(append(lines, hint), "\n"), nil
 	}
 	if !pyrepr.Truthy(result["gateway_reloaded"]) {
 		if len(lines) > 0 {

@@ -1,6 +1,5 @@
-// pty group bridge, its Go service TerminalService lands with the pty lane
+// pty group bridge over TerminalService
 import * as TerminalService from '../bindings/github.com/nickheyer/icebath/apps/desktop/terminalservice.js'
-import { fire } from '../runtime'
 
 export const openSessionInTerminal = (sessionId, opts) => TerminalService.OpenSessionInTerminal(sessionId, opts)
 export const terminalAttach = (id) => TerminalService.TerminalAttach(id)

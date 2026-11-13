@@ -39,9 +39,11 @@ func (a *AIAgent) finalizeRouting(ctx context.Context, apiMode string) {
 	finalizeRoutingPanics(func() {
 		if !modelNormalizeAggregators[a.provider] {
 			a.model = provider.NormalizeModelForProvider(a.model, a.provider)
+			a.modelNone = false
 		}
 	})
 	a.model = provider.PinModelForRoute(a.provider, a.baseURL, a.model)
+	a.modelNone = a.modelNone && a.model == ""
 	baseLower := strings.ToLower(a.baseURL)
 	if apiMode == "" && a.apiMode == "chat_completions" &&
 		!provider.IsActualRoute(a.provider, a.baseURL) &&

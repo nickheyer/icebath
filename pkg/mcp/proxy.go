@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -99,15 +100,6 @@ func proxyBypass(host string) bool {
 	return systemProxyBypass(host)
 }
 
-// normalizeProxyURL rewrites the socks scheme shells export to socks5 and blanks whitespace only values
-func normalizeProxyURL(p string) string {
-	p = strings.TrimSpace(p)
-	if strings.HasPrefix(strings.ToLower(p), "socks://") {
-		return "socks5://" + p[len("socks://"):]
-	}
-	return p
-}
-
 // mcpProxyMounts maps http and https to the proxy the server URL dials through, nil for a direct connect
 func mcpProxyMounts(rawURL string) (map[string]*url.URL, error) {
 	host := ""
@@ -124,7 +116,7 @@ func mcpProxyMounts(rawURL string) (map[string]*url.URL, error) {
 		if value == "" {
 			value = proxies["all"]
 		}
-		proxyURL := normalizeProxyURL(value)
+		proxyURL := config.NormalizeProxyURL(value)
 		if proxyURL == "" {
 			continue
 		}

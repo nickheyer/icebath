@@ -13,7 +13,7 @@ import (
 func defaultNewFileMode() (os.FileMode, bool) { return 0, false }
 
 // Text mode writes translate LF to CRLF on Windows
-func platformNewlines(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
+func PlatformNewlines(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
 
 // Access denied, sharing and lock violations a held target reports on rename
 func IsContendedReplaceError(err error) bool {

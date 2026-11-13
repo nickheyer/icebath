@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,7 +67,13 @@ func MirrorToSession(ctx context.Context, platform, chatID, messageText string, 
 	}
 	sessionID := opts.SessionID
 	if sessionID == "" {
-		sessionID = findMirrorSessionID(ctx, platform, chatID, opts.ThreadID, opts.UserID)
+		found, err := findMirrorSessionID(ctx, platform, chatID, opts.ThreadID, opts.UserID)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("Mirror failed for %s:%s thread=%s user=%s session=None: %v", platform, chatID,
+				optText(opts.ThreadID), optText(opts.UserID), err))
+			return false
+		}
+		sessionID = found
 	}
 	if sessionID == "" {
 		slog.Warn(fmt.Sprintf("Mirror: no session found for %s:%s thread=%s user=%s (explicit_id=none, origin-scan bailed)",
@@ -81,61 +89,56 @@ func MirrorToSession(ctx context.Context, platform, chatID, messageText string, 
 	return true
 }
 
-// Active session of a platform chat from state.db, then the pre migration sessions.json scan
-func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID, userID *string) string {
+// Active session of a platform chat from state.db, then the pre migration sessions.json scan, the scan's Python errors returned
+func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID, userID *string) (string, error) {
 	if id, err := func() (string, error) {
-		db, err := state.Acquire(ctx, filepath.Join(home.Dir(ctx), "state.db"))
+		db, err := mirrorAcquireDB(ctx, filepath.Join(home.Dir(ctx), "state.db"))
 		if err != nil {
 			return "", err
 		}
-		defer state.ReleaseOrClose(db)
+		defer mirrorReleaseDB(db)
 		return state.FindSessionByOrigin(ctx, db, platform, chatID, threadID, userID)
 	}(); err != nil {
 		slog.Debug(fmt.Sprintf("Mirror state.db session lookup failed: %v", err))
 	} else if id != "" {
-		return id
+		return id, nil
 	}
-	raw, err := os.ReadFile(resolveSessionsIndex(ctx))
+	index := resolveSessionsIndex(ctx)
+	if _, err := os.Stat(index); err != nil {
+		return "", nil
+	}
+	raw, err := os.ReadFile(index)
 	if err != nil {
-		return ""
+		return "", nil
 	}
-	parsed, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
+	text, err := pystr.DecodeUTF8Sig(raw)
+	if err != nil {
+		return "", nil
+	}
+	parsed, err := pyjson.Loads(text)
+	if err != nil {
+		return "", nil
+	}
 	data, isObj := parsed.(*pyjson.Object)
-	if err != nil || !isObj {
-		return ""
-	}
-	matches := func(entry *pyjson.Object) bool {
-		origin, _ := entry.Vals["origin"].(*pyjson.Object)
-		if origin == nil {
-			origin = pyjson.NewObject()
-		}
-		plat := origin.Vals["platform"]
-		if !pyrepr.Truthy(plat) {
-			plat = entry.Vals["platform"]
-			if _, ok := entry.Get("platform"); !ok {
-				plat = ""
-			}
-		}
-		chat, ok := origin.Get("chat_id")
-		if !ok {
-			chat = ""
-		}
-		thread := origin.Vals["thread_id"]
-		if !pyrepr.Truthy(thread) {
-			thread = ""
-		}
-		platText, isStr := plat.(string)
-		return isStr && pystr.Lower(platText) == pystr.Lower(platform) && pyrepr.Str(chat) == chatID &&
-			(threadID == nil || pyrepr.Str(thread) == *threadID)
+	if !isObj {
+		return "", mirrorAttributeError(parsed, "items")
 	}
 	var candidates []*pyjson.Object
 	for _, k := range data.Keys {
-		if entry, ok := data.Vals[k].(*pyjson.Object); ok && !strings.HasPrefix(k, "_") && matches(entry) {
+		entry, ok := data.Vals[k].(*pyjson.Object)
+		if strings.HasPrefix(k, "_") || !ok {
+			continue
+		}
+		matched, err := mirrorEntryMatches(entry, platform, chatID, threadID)
+		if err != nil {
+			return "", err
+		}
+		if matched {
 			candidates = append(candidates, entry)
 		}
 	}
 	if len(candidates) == 0 {
-		return ""
+		return "", nil
 	}
 	if userID != nil && *userID != "" {
 		var exact []*pyjson.Object
@@ -147,7 +150,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 		if len(exact) > 0 {
 			candidates = exact
 		} else if len(candidates) > 1 {
-			return ""
+			return "", nil
 		}
 	} else if len(candidates) > 1 {
 		users := map[string]bool{}
@@ -157,17 +160,67 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 			}
 		}
 		if len(users) > 1 {
-			return ""
+			return "", nil
 		}
 	}
-	best := candidates[0]
+	best, bestKey := candidates[0], updatedAt(candidates[0])
 	for _, e := range candidates[1:] {
-		if pyrepr.Str(updatedAt(e)) > pyrepr.Str(updatedAt(best)) {
-			best = e
+		key := updatedAt(e)
+		greater, err := mirrorPyGreater(key, bestKey)
+		if err != nil {
+			return "", err
+		}
+		if greater {
+			best, bestKey = e, key
 		}
 	}
-	id, _ := best.Vals["session_id"].(string)
-	return id
+	return mirrorSessionIDText(best.Vals["session_id"])
+}
+
+// AttributeError Python raises reading a missing attribute of a decoded JSON value
+func mirrorAttributeError(v any, attr string) error {
+	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)
+}
+
+// Whether an index entry's origin names the platform, chat and thread, with the AttributeError a non mapping origin raises
+func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID *string) (bool, error) {
+	originValue := entry.Vals["origin"]
+	if !pyrepr.Truthy(originValue) {
+		originValue = pyjson.NewObject()
+	}
+	origin, isObj := originValue.(*pyjson.Object)
+	if !isObj {
+		return false, mirrorAttributeError(originValue, "get")
+	}
+	plat := origin.Vals["platform"]
+	if !pyrepr.Truthy(plat) {
+		plat = ""
+		if v, ok := entry.Get("platform"); ok {
+			plat = v
+		}
+	}
+	platText, isStr := plat.(string)
+	if !isStr {
+		return false, mirrorAttributeError(plat, "lower")
+	}
+	if pystr.Lower(platText) != pystr.Lower(platform) {
+		return false, nil
+	}
+	chat, ok := origin.Get("chat_id")
+	if !ok {
+		chat = ""
+	}
+	if pyrepr.Str(chat) != chatID {
+		return false, nil
+	}
+	if threadID == nil {
+		return true, nil
+	}
+	thread := origin.Vals["thread_id"]
+	if !pyrepr.Truthy(thread) {
+		thread = ""
+	}
+	return pyrepr.Str(thread) == *threadID, nil
 }
 
 // updated_at of an index entry, empty when missing
@@ -176,6 +229,70 @@ func updatedAt(e *pyjson.Object) any {
 		return v
 	}
 	return ""
+}
+
+// Python a > b over decoded JSON values, numbers and strings and lists ordered, the TypeError for any other pairing
+func mirrorPyGreater(a, b any) (bool, error) {
+	if sa, ok := a.(string); ok {
+		if sb, ok := b.(string); ok {
+			return sa > sb, nil
+		}
+	}
+	if na, ok := mirrorPyNumber(a); ok {
+		if nb, ok := mirrorPyNumber(b); ok {
+			return na != nil && nb != nil && na.Cmp(nb) > 0, nil
+		}
+	}
+	if la, ok := a.([]any); ok {
+		if lb, ok := b.([]any); ok {
+			for i := 0; i < len(la) && i < len(lb); i++ {
+				if !pyjson.Equal(la[i], lb[i]) {
+					return mirrorPyGreater(la[i], lb[i])
+				}
+			}
+			return len(la) > len(lb), nil
+		}
+	}
+	return false, fmt.Errorf("'>' not supported between instances of '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))
+}
+
+// Numeric value of a Python bool, int or float, nil standing for NaN which orders against nothing
+func mirrorPyNumber(v any) (*big.Float, bool) {
+	switch n := v.(type) {
+	case bool:
+		if n {
+			return big.NewFloat(1), true
+		}
+		return big.NewFloat(0), true
+	case int:
+		return new(big.Float).SetInt64(int64(n)), true
+	case int64:
+		return new(big.Float).SetInt64(n), true
+	case *big.Int:
+		return new(big.Float).SetPrec(uint(n.BitLen()) + 64).SetInt(n), true
+	case float64:
+		if math.IsNaN(n) {
+			return nil, true
+		}
+		return new(big.Float).SetPrec(64).SetFloat64(n), true
+	}
+	return nil, false
+}
+
+// Session id an index entry holds as bound text, empty when falsy, the binding error for a list or mapping
+func mirrorSessionIDText(v any) (string, error) {
+	if !pyrepr.Truthy(v) {
+		return "", nil
+	}
+	switch n := v.(type) {
+	case string:
+		return n, nil
+	case bool:
+		return "1", nil
+	case []any, *pyjson.Object, map[string]any:
+		return "", fmt.Errorf("Error binding parameter 1: type '%s' is not supported", pyrepr.TypeName(n))
+	}
+	return pyrepr.Str(v), nil
 }
 
 // Shared session db registry acquire and release, swapped by tests

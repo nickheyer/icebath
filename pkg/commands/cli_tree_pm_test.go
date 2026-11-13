@@ -28,14 +28,14 @@ func TestHintNamesACommandTheCLIAccepts(t *testing.T) {
 			return nil
 		},
 	}))
-	hint := strings.Fields(pm.InstallHint("anthropic"))
+	hint := strings.Fields(pm.InstallHint("silk"))
 	if len(hint) < 2 || hint[0] != "icebath" || hint[1] != "pm" {
 		t.Fatalf("hint %q does not name the icebath pm command", hint)
 	}
 	if err := NewCLI().Execute(hint[1:]); err != nil {
 		t.Fatalf("%q refused: %v", hint, err)
 	}
-	if !reflect.DeepEqual(synced, []pm.SyncVenvOptions{{Extras: []string{"anthropic"}, Explicit: true}}) {
+	if !reflect.DeepEqual(synced, []pm.SyncVenvOptions{{Extras: []string{"silk"}, Explicit: true}}) {
 		t.Fatalf("synced %+v", synced)
 	}
 }

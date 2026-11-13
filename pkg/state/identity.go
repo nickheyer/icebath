@@ -67,25 +67,6 @@ func asPyObject(v any) (pyObject, bool) {
 	return nil, false
 }
 
-// Unique non empty string uids of a list in order, empty for anything else
-func UIDList(value any) []string {
-	items, _ := value.([]any)
-	if strs, ok := value.([]string); ok {
-		for _, s := range strs {
-			items = append(items, s)
-		}
-	}
-	seen := map[string]bool{}
-	out := []string{}
-	for _, item := range items {
-		if s, ok := item.(string); ok && s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // Effective call id of a tool call dict or struct, call_id before id with any bridge suffix cut, empty when none
 func CoalesceToolCallID(tc any) string {
 	for _, key := range []string{"call_id", "id"} {

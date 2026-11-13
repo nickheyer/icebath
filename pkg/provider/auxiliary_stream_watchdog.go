@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/sleepclock"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Awake clock seam, seconds that stop while the computer sleeps
-var auxAwakeSeconds = func() float64 { return sleepclock.AwakeSeconds() }
+var auxAwakeSeconds = func() float64 { return tools.AwakeSeconds() }
 
 // AuxTimeoutError is the Python TimeoutError an auxiliary stream raises when its progress window lapses
 type AuxTimeoutError struct {

@@ -55,7 +55,7 @@ func (a *AIAgent) StatusBarUsage(ctx context.Context) StatusBarUsage {
 	usage.ContextEstimated = contextDisplaySource(engine) != "provider_usage"
 	func() {
 		defer func() { _ = recover() }()
-		messages, anchor := a.sessionMessages, a.turnBaseUsageAnchor
+		messages, anchor := a.liveSessionMessages(), a.turnBaseUsageAnchor.Load()
 		anchored, ok := provider.AnchoredContextTokens(ctx, messages, anchor, false)
 		if !ok || anchored <= 0 {
 			return

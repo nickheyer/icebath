@@ -132,6 +132,18 @@ func displayToggles() map[string]displayToggle {
 	}
 }
 
+// Display field and accepted words of one word setting
+type displayWord struct {
+	field   string
+	allowed []string
+}
+
+// Word settings of the display section keyed by setting
+func displayWords() map[string]displayWord {
+	return map[string]displayWord{"theme": {"tui_theme", []string{"auto", "light", "dark"}},
+		"indicator": {"tui_status_indicator", home.IndicatorStyles}}
+}
+
 // Display section of a raw config, created when absent or not a dict
 func displaySection(cfg map[string]any) map[string]any {
 	display, ok := cfg["display"].(map[string]any)
@@ -168,11 +180,7 @@ func setDisplay(cfg map[string]any, key string, value any) (map[string]any, erro
 		display[toggle.field] = next
 		return map[string]any{"value": toggle.report(next)}, nil
 	}
-	words := map[string]struct {
-		field   string
-		allowed []string
-	}{"theme": {"tui_theme", []string{"auto", "light", "dark"}}, "indicator": {"tui_status_indicator", home.IndicatorStyles}}
-	if entry, ok := words[key]; ok {
+	if entry, ok := displayWords()[key]; ok {
 		if !slices.Contains(entry.allowed, raw) {
 			return nil, runtimeRefusal("invalid_params")
 		}

@@ -2,7 +2,10 @@ package observability
 
 import (
 	"context"
+	"reflect"
+	"sort"
 	"testing"
+	"testing/fstest"
 )
 
 func TestClientResourceBoundsEveryField(t *testing.T) {
@@ -115,5 +118,34 @@ func TestTaskStartFieldsNameTheSurface(t *testing.T) {
 	got = TaskStartFields(context.Background(), map[string]any{"platform": "telegram"})
 	if got["execution_surface"] != "gateway" || got["entrypoint"] != "gateway_message" || got["platform"] != "telegram" {
 		t.Fatalf("gateway fields %v", got)
+	}
+}
+
+func TestSoleYieldsOnlyASingleDistinctElement(t *testing.T) {
+	a, b := &taskRun{taskID: "a"}, &taskRun{taskID: "b"}
+	if got, ok := sole([]*taskRun{a, a}); !ok || got != a {
+		t.Fatalf("repeated element %v %v", got, ok)
+	}
+	if got, ok := sole([]*taskRun{a, b}); ok || got != nil {
+		t.Fatalf("two elements %v %v", got, ok)
+	}
+	if got, ok := sole([]*taskRun(nil)); ok || got != nil {
+		t.Fatalf("no element %v %v", got, ok)
+	}
+}
+
+func TestYamlStemsLowerTheTopLevelYamlNames(t *testing.T) {
+	tree := fstest.MapFS{"En.yaml": {}, "pt-BR.yaml": {}, "notes.txt": {}, "nested/de.yaml": {}, ".yaml": {}, "a.b.yaml": {}}
+	got := YamlStems(tree)
+	sort.Strings(got)
+	if want := []string{".yaml", "a.b", "en", "pt-br"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stems %v", got)
+	}
+	if got := rowResource([]string{"1.2.3", "linux", "x86_64", "source"}); !reflect.DeepEqual(got, map[string]string{
+		"icebath_version": "1.2.3", "os_family": "linux", "architecture": "x86_64", "install_method": "source"}) {
+		t.Fatalf("resource %v", got)
+	}
+	if !AdapterPlatforms.Has("api_server") || !FileEditStrategies.Has("none") || len(fuzzyMatchStrategies()) == 0 {
+		t.Fatalf("vocabularies %v %v", AdapterPlatforms.Values(), FileEditStrategies)
 	}
 }

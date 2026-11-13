@@ -16,7 +16,7 @@ func registerObservabilityProviderCatalogs() {
 	observability.SetCatalogSource("user_named_model_providers", userNamedModelProviders)
 	observability.SetCatalogSource("custom_provider_aliases", customProviderAliasNames)
 	observability.SetCatalogSource("public_model_ids", publicModelIDs)
-	observability.SetCatalogSource("aux_task_names", func() ([]string, error) { return builtinAuxTaskKeys(), nil })
+	observability.SetCatalogSource("aux_task_names", auxTaskNames)
 	observability.ModelsDevProviderHook = func(name string) bool {
 		_, ok := ModelsDevProviderInfo(context.Background(), name, false)
 		return ok
@@ -32,6 +32,9 @@ func registerObservabilityProviderCatalogs() {
 		return "", false
 	}
 }
+
+// Keys of the built in auxiliary tasks, the tasks an aux task metric may name
+func auxTaskNames() ([]string, error) { return builtinAuxTaskKeys(), nil }
 
 // The three alias tables the catalogs fold, providers, auth and models catalog spellings
 func providerAliasTables() []map[string]string {

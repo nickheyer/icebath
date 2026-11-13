@@ -28,6 +28,15 @@ func newTestRotating(t *testing.T, path string, maxBytes float64, backups int) *
 	return h
 }
 
+func newTestRouter(t *testing.T, existing *managedRotatingFileHandler, profileHomes ...string) *profileRoutingFileHandler {
+	t.Helper()
+	r, err := newProfileRoutingFileHandler(existing, profileHomes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func TestAddRotatingHandlerNoDuplicateForSamePath(t *testing.T) {
 	testHome(t)
 	path := filepath.Join(t.TempDir(), "test.log")
@@ -323,7 +332,7 @@ func TestProfileRouterNeverHoldsItsLockWhileTakingTheLoggingModuleLock(t *testin
 	_ = os.MkdirAll(filepath.Join(profile, "logs"), 0o755)
 	_ = os.MkdirAll(filepath.Join(h, "logs"), 0o755)
 	existing := newTestRotating(t, filepath.Join(h, "logs", "agent.log"), 0, 0)
-	router := newProfileRoutingFileHandler(existing, []string{profile})
+	router := newTestRouter(t, existing, profile)
 	_ = existing.Close()
 	defer func() { _ = router.Close() }()
 	building := &pythread.Event{}
@@ -371,7 +380,7 @@ func TestProfileRouterCloseIsNeverUndoneByARecordInFlight(t *testing.T) {
 			_ = os.MkdirAll(filepath.Join(profile, "logs"), 0o755)
 			_ = os.MkdirAll(filepath.Join(h, "logs"), 0o755)
 			existing := newTestRotating(t, filepath.Join(h, "logs", "agent.log"), 0, 0)
-			router := newProfileRoutingFileHandler(existing, []string{profile})
+			router := newTestRouter(t, existing, profile)
 			_ = existing.Close()
 			profileLog := filepath.Join(profile, "logs", "agent.log")
 			var built []*managedRotatingFileHandler
@@ -425,7 +434,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 	_ = os.MkdirAll(filepath.Join(profile, "logs"), 0o755)
 	_ = os.MkdirAll(filepath.Join(h, "logs"), 0o755)
 	existing := newTestRotating(t, filepath.Join(h, "logs", "agent.log"), 0, 0)
-	router := newProfileRoutingFileHandler(existing, []string{profile})
+	router := newTestRouter(t, existing, profile)
 	_ = existing.Close()
 	building, proceed := &pythread.Event{}, &pythread.Event{}
 	prev := newFileHandlerFn

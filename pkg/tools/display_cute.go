@@ -487,12 +487,7 @@ func cuteBrowserExec(ctx context.Context, _ *Env, a map[string]any, _ any) CuteR
 	if label, ok := browserExecStepLabel(a, 80); ok {
 		return cuteRow(ctx, "🌐", "browser", label)
 	}
-	code := getOr(a, "code", "")
-	text := ""
-	if pyrepr.Truthy(code) {
-		text = pyrepr.Str(code)
-	}
-	return cuteRow(ctx, "🌐", "browser", cuteTrunc(oneline(text)))
+	return cuteRow(ctx, "🌐", "browser", cuteTrunc(oneline(pyStrOrEmpty(a["code"]))))
 }
 
 func cuteDelegate(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {

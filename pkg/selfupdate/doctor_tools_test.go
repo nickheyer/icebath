@@ -412,7 +412,7 @@ func TestRootAuditRowIsNotMislabeledAsAgentBrowser(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeFindingsAreNotDismissedAsBuildTooling(t *testing.T) {
-	for _, tc := range []struct{ workspace, runtimePackage string }{{"web", "react-router"}, {"ui-tui", "undici"}} {
+	for _, tc := range []struct{ workspace, runtimePackage string }{{"web", "react-router"}} {
 		t.Run(tc.workspace, func(t *testing.T) {
 			auditArgs := []string{"npm", "audit", "--json", "--workspace", tc.workspace}
 			raw, _ := json.Marshal(map[string]any{

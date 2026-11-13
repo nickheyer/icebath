@@ -221,32 +221,6 @@ func toolsClient(t *testing.T) sessionClient {
 	return c
 }
 
-// Launch home and a work profile whose plugin directory alone holds the named plugin, no bundled plugins anywhere
-func pluginProfileHomes(t *testing.T, plugin, source, rootConfig string) (sessionClient, string, string) {
-	t.Helper()
-	c, root := memoryProviderClient(t)
-	work := filepath.Join(root, "profiles", "work")
-	dir := filepath.Join(work, "plugins", plugin)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for path, text := range map[string]string{
-		filepath.Join(dir, "plugin.yaml"):  "name: " + plugin + "\nversion: '1.0'\n",
-		filepath.Join(dir, "__init__.py"):  source,
-		filepath.Join(work, "config.yaml"): "plugins:\n  enabled:\n  - " + plugin + "\n",
-		filepath.Join(root, "config.yaml"): rootConfig,
-	} {
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("ICEBATH_BUNDLED_PLUGINS", t.TempDir())
-	installProviderRegistries(t)
-	plugins.ResetPluginManagersForTests()
-	t.Cleanup(plugins.ResetPluginManagersForTests)
-	return c, root, work
-}
-
 func readText(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -254,68 +228,6 @@ func readText(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(raw)
-}
-
-func TestAToolsetInstalledOnlyInTheTargetProfileCanBeEnabledThere(t *testing.T) {
-	c, root, work := pluginProfileHomes(t, "worktools", toolsetPluginSource, "model:\n  default: gpt-5\n")
-	r := c.get("/api/tools/toolsets?profile=work")
-	listed, _ := r.JSON(t).([]any)
-	found := false
-	for _, row := range listed {
-		found = found || row.(*pyjson.Object).GetOr("name", nil) == "worktools"
-	}
-	if !found {
-		t.Fatalf("status %d, worktools absent from %d toolset rows", r.Status, len(listed))
-	}
-	r = c.send("PUT", "/api/tools/toolsets/worktools?profile=work", map[string]any{"enabled": true})
-	if r.Status != 200 {
-		t.Fatalf("status %d %s", r.Status, r.Body)
-	}
-	doc, err := config.ReadUser(work)
-	if err != nil {
-		t.Fatal(err)
-	}
-	platformToolsets, _ := doc["platform_toolsets"].(map[string]any)
-	cli, _ := platformToolsets["cli"].([]any)
-	if !slices.Contains(cli, any("worktools")) {
-		t.Fatalf("cli toolsets %v", cli)
-	}
-	before := readText(t, filepath.Join(root, "config.yaml"))
-	r = c.send("PUT", "/api/tools/toolsets/worktools", map[string]any{"enabled": true})
-	if r.Status != 400 || !strings.Contains(string(r.Body), "Unknown toolset") || readText(t, filepath.Join(root, "config.yaml")) != before {
-		t.Fatalf("status %d %s", r.Status, r.Body)
-	}
-}
-
-func TestEveryToolsetRouteResolvesTheNameInTheTargetProfile(t *testing.T) {
-	for _, tc := range []struct {
-		method, path string
-		body         map[string]any
-		scopedAnswer string
-	}{
-		{"GET", "/api/tools/toolsets/worktools/config", nil, ""},
-		{"PUT", "/api/tools/toolsets/worktools/env", map[string]any{"env": map[string]any{}}, ""},
-		{"PUT", "/api/tools/toolsets/worktools/provider", map[string]any{"provider": "x"}, "no configurable category"},
-		{"POST", "/api/tools/toolsets/worktools/post-setup", map[string]any{"key": "nope"}, "Unknown post-setup key"},
-	} {
-		t.Run(tc.path, func(t *testing.T) {
-			c, _, _ := pluginProfileHomes(t, "worktools", toolsetPluginSource, "model:\n  default: gpt-5\n")
-			r := c.send(tc.method, tc.path+"?profile=work", tc.body)
-			if strings.Contains(string(r.Body), "Unknown toolset") {
-				t.Fatalf("status %d %s", r.Status, r.Body)
-			}
-			if tc.scopedAnswer == "" && r.Status != 200 {
-				t.Fatalf("status %d %s", r.Status, r.Body)
-			}
-			if tc.scopedAnswer != "" && (r.Status != 400 || !strings.Contains(string(r.Body), tc.scopedAnswer)) {
-				t.Fatalf("status %d %s", r.Status, r.Body)
-			}
-			r = c.send(tc.method, tc.path, tc.body)
-			if r.Status != 400 || !strings.Contains(string(r.Body), "Unknown toolset") {
-				t.Fatalf("status %d %s", r.Status, r.Body)
-			}
-		})
-	}
 }
 
 func terminalBackendOf(t *testing.T, h string) any {
@@ -326,27 +238,6 @@ func terminalBackendOf(t *testing.T, h string) any {
 	}
 	terminal, _ := doc["terminal"].(map[string]any)
 	return terminal["backend"]
-}
-
-func TestABackendInstalledOnlyInTheTargetProfileIsSelectableThere(t *testing.T) {
-	c, root, work := pluginProfileHomes(t, "workbox", backendPluginSource, "terminal:\n  backend: local\n")
-	r := c.get("/api/tools/terminal/backends?profile=work")
-	backends, _ := jsonObject(t, r)["backends"].([]any)
-	found := false
-	for _, row := range backends {
-		found = found || row.(map[string]any)["name"] == "workbox"
-	}
-	if !found {
-		t.Fatalf("status %d, workbox absent from %d backend rows", r.Status, len(backends))
-	}
-	r = c.send("PUT", "/api/tools/terminal/backend?profile=work", map[string]any{"backend": "workbox"})
-	if r.Status != 200 || terminalBackendOf(t, work) != "workbox" {
-		t.Fatalf("status %d %s backend %v", r.Status, r.Body, terminalBackendOf(t, work))
-	}
-	r = c.send("PUT", "/api/tools/terminal/backend", map[string]any{"backend": "workbox"})
-	if r.Status != 400 || !strings.Contains(string(r.Body), "Unknown terminal backend") || terminalBackendOf(t, root) != "local" {
-		t.Fatalf("status %d %s", r.Status, r.Body)
-	}
 }
 
 // Toolset listing rows of the dashboard by name
@@ -492,7 +383,7 @@ func TestNewEndpointsGetToolsetConfigReportsTruthfulProviderStatus(t *testing.T)
 		status[prov["name"].(string)] = prov["status"]
 	}
 	want := map[string]string{"Microsoft Edge TTS": "ready", "Nous Subscription": "needs_auth", "xAI TTS": "needs_auth",
-		"KittenTTS": "needs_setup", "Piper": "needs_setup", "ElevenLabs": "needs_keys"}
+		"KittenTTS": "needs_setup", "Piper": "ready", "ElevenLabs": "needs_keys"}
 	for name, wantStatus := range want {
 		if status[name] != wantStatus {
 			t.Errorf("%s status %v, want %s", name, status[name], wantStatus)

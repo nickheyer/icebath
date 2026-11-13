@@ -13,12 +13,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/browser/harnesshost"
 	"github.com/nickheyer/icebath/pkg/containerinit/stage"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/botdesktop"
+	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
 	"github.com/nickheyer/icebath/pkg/builtin/googlemeet"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -27,9 +27,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/logging"
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/pm/specprobe/specchild"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
@@ -55,11 +53,12 @@ func startProcess(ctx context.Context) {
 func dispatchChildEntries(ctx context.Context) {
 	selfupdate.DispatchCustodyLauncher()
 	selfupdate.DispatchDesktopUpdateVerifyEntry(ctx, exit)
+	selfupdate.DispatchWindowsAppInstallerUpdateEntry(exit)
 	home.DispatchScratchPruneEntry(ctx)
-	pluginhost.DispatchPluginHostEntry(ctx)
 	relayhost.DispatchRelayHostEntry(ctx)
 	googlemeet.DispatchMeetBotEntry(ctx)
 	botdesktop.DispatchIdleWatchEntry()
+	dmdelivery.DispatchEntry(ctx, exit)
 	gateway.DispatchStderrTimestampEntry()
 	gateway.DispatchGatewayRestartWatcherEntry(ctx)
 	gateway.DispatchDetachedRestartWatcherEntry(ctx)
@@ -75,14 +74,13 @@ func dispatchChildEntries(ctx context.Context) {
 	cron.DispatchExternalWorkerEntry(exit)
 	agent.DispatchManagedWorkerEntry(exit)
 	app.DispatchUninstallModuleEntry(ctx)
+	app.DispatchWindowsStoreUpdateEntry()
 	app.DispatchSlashWorkerEntry(ctx, exit)
 	app.DispatchCLIModuleEntry(ctx, exit)
 	tuiserver.DispatchComputeHostEntry(ctx, exit)
 	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	acp.DispatchModuleEntry(ctx, exit)
-	specchild.DispatchEntry()
-	harnesshost.DispatchEntry()
 }
 
 // Shows icebath instead of the binary path in ps and top, never fatal

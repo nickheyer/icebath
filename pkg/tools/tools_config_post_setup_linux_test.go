@@ -50,9 +50,8 @@ func TestBrowserSetupRespectsProviderAndNativeOwner(t *testing.T) {
 			if c.dockerImage {
 				found[1] = ""
 			}
-			installCalls, chromiumCalls := 0, 0
+			chromiumCalls := 0
 			var ensures []ensureCall
-			swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { installCalls++; return []string{"harness"} })
 			swapHook(t, &ToolsConfigHooks.BakedChromiumFile, func() string { return baked })
 			swapHook(t, &ToolsConfigHooks.ChromiumExecutable, func(*Env) string { v := found[chromiumCalls]; chromiumCalls++; return v })
 			swapHook(t, &ToolsConfigHooks.ChromiumMissingHint, func(*Env) string {
@@ -77,9 +76,6 @@ func TestBrowserSetupRespectsProviderAndNativeOwner(t *testing.T) {
 			}
 			if !slices.Equal(os.Environ(), before) {
 				t.Fatal("post setup changed the process environment")
-			}
-			if installCalls != 1 {
-				t.Fatalf("harness lookup ran %d times", installCalls)
 			}
 			if childUsage(t) != children {
 				t.Fatal("post setup ran a subprocess")

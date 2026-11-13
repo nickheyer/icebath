@@ -26,7 +26,7 @@ func parityAgent(t *testing.T, providerName, apiMode, baseURL, model string) *AI
 	if model == "" && providerName == "nous" {
 		model = "gpt-5"
 	}
-	a := newFixtureAgent(t, AIAgentOptions{Provider: providerName, APIMode: apiMode, BaseURL: baseURL, Model: model, MaxIterations: 4})
+	a := newFixtureAgent(t, AIAgentOptions{Provider: providerName, APIMode: apiMode, BaseURL: baseURL, Model: model, MaxIterations: new(4)})
 	a.tools = parityToolDefs("web_search", "terminal")
 	return a
 }

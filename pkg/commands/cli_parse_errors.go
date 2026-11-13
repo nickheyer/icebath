@@ -51,6 +51,8 @@ func argparseFlagError(cmd *cobra.Command, err error) error {
 	var missing *pflag.NotExistError
 	var syntax *pflag.InvalidSyntaxError
 	switch {
+	case errors.As(err, &invalid) && errors.Is(invalid, errHelpRemoved):
+		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + removedHelpToken(cmd, invalid.GetValue())}
 	case errors.As(err, &invalid):
 		return &ArgparseError{Cmd: cmd, Msg: "argument " + actionName(invalid.GetFlag()) + ": " + invalidValueText(invalid)}
 	case errors.As(err, &required):
@@ -65,6 +67,24 @@ func argparseFlagError(cmd *cobra.Command, err error) error {
 		return &ArgparseError{Cmd: cmd, Msg: "unrecognized arguments: " + syntax.GetSpecifiedFlag()}
 	}
 	return err
+}
+
+// Command line token that reached a removed help option, the first -h cluster or --help the parse met
+func removedHelpToken(cmd *cobra.Command, value string) string {
+	if c, ok := cliRegistry.Load(cmd.Root()); ok {
+		for _, tok := range c.(*CLI).argv {
+			if tok == "--" {
+				break
+			}
+			if tok == "--help" || strings.HasPrefix(tok, "--help=") || strings.HasPrefix(tok, "-h") {
+				return tok
+			}
+		}
+	}
+	if value == removedHelpBare {
+		return "--help"
+	}
+	return "--help=" + value
 }
 
 // Type conversion message argparse prints for a rejected option value

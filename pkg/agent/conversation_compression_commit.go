@@ -248,8 +248,8 @@ func publishRotatedCompaction(ctx context.Context, a *AIAgent, messages, compres
 		return err
 	})
 	swallowCompression("pre rotation flush failed", false, func() error {
-		_, err := a.flushMessagesToSessionDBWithHistory(messages, persistedHistory)
-		return err
+		a.flushMessagesToSessionDBWithHistory(messages, persistedHistory)
+		return nil
 	})
 	var profileForChild *string
 	swallowCompression("active profile lookup failed", false, func() error {
@@ -292,8 +292,8 @@ func publishRotatedCompaction(ctx context.Context, a *AIAgent, messages, compres
 		for i := len(messages) - 1; i >= 0; i-- {
 			if source := messages[i]; isRealUserMessage(source) {
 				source[dbPersistedMarker] = true
-				if a.sessionMessages != nil {
-					stampScopedTwinMessages(a.sessionMessages, source, true)
+				if live := a.liveSessionMessages(); live != nil {
+					stampScopedTwinMessages(live, source, true)
 				}
 				break
 			}

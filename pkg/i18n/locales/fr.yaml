@@ -729,7 +729,7 @@ gateway:
     channel_guild_only: "Cette commande ne fonctionne que dans un serveur Discord."
     channel_not_in_voice: "Vous devez d'abord rejoindre un canal vocal."
     channel_join_failed: "Échec de la connexion au canal vocal : {error}"
-    channel_deps_missing: "Les dépendances vocales sont manquantes (PyNaCl / davey). Lancez : `{hint}`"
+    channel_deps_missing: "Les dépendances vocales sont manquantes (libdave). Lancez : `{hint}`"
     channel_join_permissions: "Échec de la connexion au canal vocal. Vérifiez les permissions du bot (Connect + Speak)."
     channel_joined: |-
       Canal vocal **{name}** rejoint.
@@ -2813,7 +2813,7 @@ cli:
     mic_silent_macos_hint: "Sur macOS : Réglages Système > Confidentialité et sécurité > Microphone — autorisez votre terminal/Icebath, puis /wake off + /wake on."
     wake_enable_hint: "Activez avec /wake on"
     enable_first_hint: "Activez d'abord le mode vocal : /voice on"
-    tts_no_provider: "Avertissement : aucun fournisseur TTS disponible. Installez edge-tts ou définissez des clés API."
+    tts_no_provider: "Avertissement : le fournisseur TTS configuré n'est pas prêt. Définissez sa clé API ou choisissez-en un autre avec `icebath setup tts`."
     tts_status: "TTS vocal {status}."
     status_title: "État du mode vocal"
     label_mode: "  Mode :          {value}"
@@ -4636,7 +4636,7 @@ tips:
   t324: "ICEBATH_ACCEPT_HOOKS approuve automatiquement les hooks shell inédits déclarés dans config.yaml, sans invite dans le terminal."
   t325: "auxiliary.goal_judge.model envoie le juge de /goal vers un modèle rapide et peu coûteux pour garder le coût des boucles proche de zéro."
   t326: "Les points de contrôle ignorent les répertoires de plus de 50 000 fichiers pour éviter des opérations git lentes sur les monorepos géants."
-  t327: "tts.provider: piper exécute une TTS locale en 44 langues sur CPU — les voix se téléchargent automatiquement dans ~/.icebath/cache/piper-voices/."
+  t327: "tts.provider: piper exécute une TTS locale en 44 langues sur CPU — les voix se téléchargent automatiquement dans ~/.icebath/cache/fetch/."
   t328: "tts.providers.<name>.type: command branche n'importe quel moteur TTS en ligne de commande grâce aux placeholders {input_path} et {output_path}."
   t329: "API_SERVER_ENABLED=true lance un point de terminaison compatible OpenAI à côté du gateway, pour Open WebUI et LibreChat."
   t330: "GATEWAY_PROXY_URL met en place une configuration scindée : les E/S des plateformes en local, le travail de l'agent délégué à un serveur API distant."

@@ -169,6 +169,20 @@ func typeName(v any) string {
 	return t.String()
 }
 
+// JSON mode dump of an SDK model through whichever model_dump signature it offers, false for a value without one
+func modelDump(value any) (any, bool, error) {
+	switch m := value.(type) {
+	case ModelDumper:
+		return m.ModelDump(false), true, nil
+	case interface{ ModelDump() (any, error) }:
+		dumped, err := m.ModelDump()
+		return dumped, true, err
+	case interface{ ModelDump() any }:
+		return m.ModelDump(), true, nil
+	}
+	return nil, false, nil
+}
+
 // HookJSONable coerces any value into JSON safe data with redacted secret keys and bounded size
 func HookJSONable(value any, caps HookJSONCaps) any {
 	return hookJSONable(value, 0, caps.filled())
@@ -228,6 +242,19 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 		return hookJSONableMap(rv, recurse, caps)
 	case reflect.Slice, reflect.Array:
 		return hookJSONableSeq(rv, recurse, caps)
+	}
+	if dumped, dumpedOK := func() (dumped any, ok bool) {
+		defer func() {
+			if recover() != nil {
+				dumped, ok = nil, false
+			}
+		}()
+		dumped, has, err := modelDump(value)
+		return dumped, has && err == nil
+	}(); dumpedOK {
+		return recurse(dumped)
+	}
+	switch rv.Kind() {
 	case reflect.Struct:
 		raw, err := json.Marshal(rv.Interface())
 		if err == nil {

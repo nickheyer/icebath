@@ -46,7 +46,7 @@ func modelAgent(t *testing.T, model string) *agent.AIAgent {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, err := agent.NewAIAgent(context.Background(), agent.AIAgentOptions{
 		Model: model, APIKey: "key", BaseURL: "http://127.0.0.1:9/v1", Provider: "custom",
-		MaxIterations: 5, QuietMode: true, SkipContextFiles: true, SkipMemory: true,
+		MaxIterations: new(5), QuietMode: true, SkipContextFiles: true, SkipMemory: true,
 	})
 	if err != nil {
 		t.Fatal(err)

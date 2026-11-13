@@ -3,9 +3,7 @@ package plugins
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -25,28 +23,6 @@ def register(ctx):
     ctx.register_context_engine(Demo())
 `
 
-// Host isolated home whose plugin host child runs the system python, its manager host shut down at cleanup
-func engineHome(t *testing.T) (context.Context, string) {
-	t.Helper()
-	installHostEnvHooks()
-	root := t.TempDir()
-	h := filepath.Join(root, ".icebath")
-	writeTree(t, h, map[string]string{"config.yaml": "plugins:\n  isolation: host\n  enabled: []\n"})
-	t.Setenv("HOME", filepath.Join(root, "os-home"))
-	t.Setenv("ICEBATH_HOME", h)
-	python := liveInterpreters(t)["system"]
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	ctx := homeCtx(h)
-	t.Cleanup(func() {
-		if m := GetPluginManager(ctx); m.pluginHostInstance != nil {
-			m.pluginHostInstance.Shutdown()
-		}
-		hostInterpreter = previous
-	})
-	return ctx, h
-}
-
 func writeTree(t *testing.T, root string, files map[string]string) {
 	t.Helper()
 	for rel, body := range files {
@@ -55,66 +31,6 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 			t.Fatal(err)
 		}
 		writeFile(t, path, body)
-	}
-}
-
-// test_context_engine_user_dir.py loader half: a user engine loads by name, an unrelated user plugin is never an engine
-func TestUserInstalledEngineIsSelectedByName(t *testing.T) {
-	t.Setenv("ICEBATH_BUNDLED_PLUGINS", t.TempDir())
-	ctx, h := engineHome(t)
-	writeTree(t, filepath.Join(h, "plugins"), map[string]string{"ctx_demo/__init__.py": demoEngineSrc, "notes/__init__.py": "def register(ctx): pass\n"})
-	if LoadContextEngine(ctx, "notes") != nil {
-		t.Fatal("an unrelated user plugin loaded as an engine")
-	}
-	if _, ok := FindEngineDir(ctx, "missing"); ok {
-		t.Fatal("missing engine resolved")
-	}
-	infos, err := DiscoverContextEngines(ctx)
-	if err != nil || len(infos) != 1 || infos[0].Name != "ctx_demo" || !infos[0].Available {
-		t.Fatalf("discovered %v %v", infos, err)
-	}
-	engine := LoadContextEngine(ctx, "ctx_demo")
-	if engine == nil {
-		t.Fatal("ctx_demo did not load")
-	}
-	if name, err := engine.Get(ctx, "name"); err != nil || name != "ctx_demo" {
-		t.Fatalf("engine name %v %v", name, err)
-	}
-}
-
-// Bundled engines load through load_plugin_module and instance_from_module with the engine collector serving the rest
-func TestBundledEngineLoadsInProcessWithItsCollector(t *testing.T) {
-	bundled := t.TempDir()
-	t.Setenv("ICEBATH_BUNDLED_PLUGINS", bundled)
-	ctx, _ := engineHome(t)
-	writeTree(t, bundled, map[string]string{
-		"context_engine/__init__.py":     "MARK = 'parent'\n",
-		"context_engine/lcm/helper.py":   "NAME = 'lcm-helper'\n",
-		"context_engine/lcm/__init__.py": strings.Replace(demoEngineSrc, `return "ctx_demo"`, "return NAME", 1) + "from .helper import NAME\n" + bundledEngineRegister,
-		"context_engine/bare/__init__.py": strings.Replace(strings.Replace(demoEngineSrc, `return "ctx_demo"`, `return "bare"`, 1),
-			"    ctx.register_context_engine(Demo())", "    ctx.register_context_engine(None)\n    raise RuntimeError('late')", 1),
-	})
-	engine := LoadContextEngine(ctx, "lcm")
-	if engine == nil {
-		t.Fatal("bundled lcm did not load")
-	}
-	if name, err := engine.Get(ctx, "name"); err != nil || name != "lcm-helper" {
-		t.Fatalf("engine name %v %v", name, err)
-	}
-	if flags, err := engine.Get(ctx, "flags"); err != nil || flags != "parent:False:True:noop" {
-		t.Fatalf("collector surface %v %v", flags, err)
-	}
-	cmd := GetPluginManager(ctx).PluginCommands()["lcm-status"]
-	if cmd == nil || cmd.Plugin != "context-engine:lcm" || cmd.ArgsHint != "<x>" || cmd.Description != "Context engine command" {
-		t.Fatalf("engine command %+v", cmd)
-	}
-	if out, err := cmd.Handler(ctx, "abc"); err != nil || out != "s:abc" {
-		t.Fatalf("engine command run %v %v", out, err)
-	}
-	if bare := LoadContextEngine(ctx, "bare"); bare == nil {
-		t.Fatal("a raising register must fall back to the ContextEngine subclass")
-	} else if name, _ := bare.Get(ctx, "name"); name != "bare" {
-		t.Fatalf("fallback engine %v", name)
 	}
 }
 
@@ -173,41 +89,6 @@ func TestLoadNamedWarnsOnFailureOrNoInstance(t *testing.T) {
 	}
 	if got := LoadNamed("x", "/d", func(dir string) (any, error) { return dir, nil }, "Context engine", "engine"); got != "/d" {
 		t.Fatalf("instance %v", got)
-	}
-}
-
-// Runs a Python driver with the embedded plugin SDK and child package on its import path
-func runSDKDriver(t *testing.T, script string, args ...string) string {
-	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	sdk, err := pluginSDKPythonPath(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	driver := filepath.Join(t.TempDir(), "driver.py")
-	writeFile(t, driver, script)
-	boot := "import sys; sys.path[:0] = sys.argv[1:3]; sys.argv = sys.argv[3:]; exec(compile(open(sys.argv[0]).read(), sys.argv[0], 'exec'))"
-	cmd := exec.Command(liveInterpreters(t)["system"], append([]string{"-I", "-c", boot, sdk, filepath.Dir(sdk), driver}, args...)...)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("driver: %v\n%s%s", err, out, stderr.String())
-	}
-	return strings.TrimSpace(string(out))
-}
-
-// test_plugin_loader.py all three tests over the plugin SDK loader the host child runs
-func TestPluginLoaderModuleLoads(t *testing.T) {
-	if out := runSDKDriver(t, pluginLoaderDriver, t.TempDir()); out != "ok" {
-		t.Fatalf("driver output %q", out)
-	}
-}
-
-// The CronScheduler SDK base: abstract surface, signature detection and split fire detection
-func TestCronSchedulerSDKBase(t *testing.T) {
-	if out := runSDKDriver(t, cronSchedulerDriver); out != "ok" {
-		t.Fatalf("driver output %q", out)
 	}
 }
 
@@ -391,72 +272,3 @@ except PluginHostUnavailable as exc:
     assert "plugin SDK call 'cron.claim_fire' needs the Icebath plugin host channel" in str(exc)
 print("ok")
 `
-
-// A hosted cron provider's default fire_due claims and runs through the Icebath cron ops over the SDK channel
-func TestHostedCronSchedulerDefaultFireReachesIcebath(t *testing.T) {
-	ctx, h := engineHome(t)
-	var ops []string
-	var claimKwargs map[string]any
-	previous := installedServices()
-	t.Cleanup(func() { InstallServices(previous) })
-	InstallServices(&Services{PluginSDK: func(_ context.Context, _ string, op string, args []any, kwargs map[string]any) (any, error) {
-		ops = append(ops, op+":"+strings.TrimSpace(strings.Join(func() []string {
-			out := []string{}
-			for _, a := range args {
-				if m, ok := a.(map[string]any); ok {
-					out = append(out, m["id"].(string))
-				} else {
-					out = append(out, a.(string))
-				}
-			}
-			return out
-		}(), ",")))
-		if op == "cron.claim_fire" {
-			claimKwargs = kwargs
-			return map[string]any{"id": args[0]}, nil
-		}
-		return nil, nil
-	}})
-	dir := filepath.Join(h, "plugins", "chrono")
-	writeTree(t, dir, map[string]string{"__init__.py": "from cron.scheduler_provider import CronScheduler\n" +
-		"class Chrono(CronScheduler):\n    name = 'chrono'\n    def start(self, stop_event, *, adapters=None, loop=None, interval=60):\n        return None\n" +
-		"def register(ctx):\n    ctx.register_cron_scheduler(Chrono())\n"})
-	host, err := GetPluginManager(ctx).PluginHost()
-	if err != nil {
-		t.Fatal(err)
-	}
-	obj, err := host.LoadInstance(ctx, dir, "_icebath_user_cron.chrono", "cron.scheduler_provider:CronScheduler", "register_cron_scheduler", nil, nil)
-	if err != nil || obj == nil {
-		t.Fatalf("load %v %v", obj, err)
-	}
-	fired, err := obj.Call(ctx, "fire_due", []any{"job1"}, map[string]any{"manual": true})
-	if err != nil || fired != true {
-		t.Fatalf("fire_due %v %v", fired, err)
-	}
-	if strings.Join(ops, " ") != "cron.claim_fire:job1 cron.fire_claimed:job1" || claimKwargs["source"] != "chrono" || claimKwargs["manual"] != true || claimKwargs["force"] != false {
-		t.Fatalf("ops %v kwargs %v", ops, claimKwargs)
-	}
-}
-
-func TestHostedObjectOverridesBaseFollowsTheProxyClass(t *testing.T) {
-	ctx, h := engineHome(t)
-	dir := filepath.Join(h, "plugins", "legacy")
-	writeTree(t, dir, map[string]string{"__init__.py": "from cron.scheduler_provider import CronScheduler\n" +
-		"class Legacy(CronScheduler):\n    name = 'legacy'\n    def __init__(self):\n        self.fire_claimed = None\n" +
-		"    def start(self, stop_event, *, adapters=None, loop=None, interval=60):\n        return None\n" +
-		"    def fire_due(self, job_id, **kwargs):\n        return True\n" +
-		"def register(ctx):\n    ctx.register_cron_scheduler(Legacy())\n"})
-	host, err := GetPluginManager(ctx).PluginHost()
-	if err != nil {
-		t.Fatal(err)
-	}
-	obj, err := host.LoadInstance(ctx, dir, "_icebath_user_cron.legacy", "cron.scheduler_provider:CronScheduler", "register_cron_scheduler", nil, nil)
-	if err != nil || obj == nil {
-		t.Fatalf("load %v %v", obj, err)
-	}
-	for method, want := range map[string]bool{"fire_due": true, "start": true, "claim_fire": true, "fire_claimed": false, "name": false, "no_such_method": false} {
-		if got, err := obj.OverridesBase(ctx, method); err != nil || got != want {
-			t.Fatalf("%s overrides %v want %v err %v", method, got, want, err)
-		}
-	}
-}

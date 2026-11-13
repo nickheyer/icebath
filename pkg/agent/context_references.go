@@ -323,11 +323,6 @@ type referenceExpansion struct {
 	block   string
 }
 
-// FormatReferenceValue quotes a value so ReferencePattern reads it back whole
-func FormatReferenceValue(value string) string {
-	return state.FormatReferenceValue(value)
-}
-
 // ParseContextReferences reads the built in references and, with plugins, the registered plugin prefixes
 func ParseContextReferences(message string, usePlugins bool) []ContextReference {
 	var refs []ContextReference
@@ -739,7 +734,7 @@ func (e *quietTimeoutError) Error() string {
 	return fmt.Sprintf("Command '%v' timed out", e.cmd)
 }
 
-// Runs a command with both pipes drained up to the cap, the child killed and the result failed past it
+// Runs a command with both pipes drained to their end before the exit is collected, the child killed past the cap
 func runQuiet(cmd []string, cwd string, timeout time.Duration, env []string) (*quietResult, error) {
 	c := exec.Command(cmd[0], cmd[1:]...)
 	c.Dir = cwd
@@ -788,18 +783,32 @@ func runQuiet(cmd []string, cwd string, timeout time.Duration, env []string) (*q
 			}
 		}(i, stream)
 	}
+	drained := make(chan struct{})
+	go func() { wg.Wait(); close(drained) }()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	timedOut := false
+	select {
+	case <-drained:
+	case <-deadline.C:
+		timedOut = true
+		c.Process.Kill()
+		<-drained
+	}
 	done := make(chan error, 1)
 	go func() { done <- c.Wait() }()
 	var waitErr error
-	select {
-	case waitErr = <-done:
-	case <-time.After(timeout):
-		c.Process.Kill()
+	if timedOut {
 		<-done
-		wg.Wait()
 		return nil, &quietTimeoutError{cmd: cmd}
 	}
-	wg.Wait()
+	select {
+	case waitErr = <-done:
+	case <-deadline.C:
+		c.Process.Kill()
+		<-done
+		return nil, &quietTimeoutError{cmd: cmd}
+	}
 	returncode := 0
 	if waitErr != nil {
 		var exit *exec.ExitError

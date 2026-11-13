@@ -272,17 +272,17 @@ func TestForeignProcessCannotStartOrFinishExecution(t *testing.T) {
 
 func TestExecutionLedgerFollowsTheCurrentProfileHome(t *testing.T) {
 	root := t.TempDir()
-	ctx := context.Background()
 	current := filepath.Join(root, "default")
-	ledger := func() *Ledger { return openExecutionsLedger(cronStoreFrom(home.WithOverride(ctx, current))) }
-	defaultRow := mustLedger(t)(ledger().Create(ctx, "default-job", "builtin", nil))
+	profileCtx := func() context.Context { return home.WithOverride(context.Background(), current) }
+	ledger := func() *Ledger { return openExecutionsLedger(cronStoreFrom(profileCtx())) }
+	defaultRow := mustLedger(t)(ledger().Create(profileCtx(), "default-job", "builtin", nil))
 	current = filepath.Join(root, "worker")
-	workerRow := mustLedger(t)(ledger().Create(ctx, "worker-job", "builtin", nil))
-	if rows, err := ledger().List(ctx, nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], workerRow) {
+	workerRow := mustLedger(t)(ledger().Create(profileCtx(), "worker-job", "builtin", nil))
+	if rows, err := ledger().List(profileCtx(), nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], workerRow) {
 		t.Fatalf("worker rows %v %v", rows, err)
 	}
 	current = filepath.Join(root, "default")
-	if rows, err := ledger().List(ctx, nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], defaultRow) {
+	if rows, err := ledger().List(profileCtx(), nil, 50, nil); err != nil || len(rows) != 1 || !reflect.DeepEqual(rows[0], defaultRow) {
 		t.Fatalf("default rows %v %v", rows, err)
 	}
 	for _, name := range []string{"default", "worker"} {

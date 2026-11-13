@@ -78,7 +78,7 @@ func (r *GatewayRunner) startPrefilterPlatforms(ctx context.Context) (aborted bo
 }
 
 // Applies the connect outcomes to shared state one by one and returns the connected adapter count
-func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []connectResult, retryable, nonretryable *[]string) int {
+func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []connectResult, retryable, nonretryable *[]string) (int, error) {
 	connected := 0
 	for _, item := range raw {
 		if item.raised != nil {
@@ -95,7 +95,9 @@ func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []
 			r.startupQueueTransientFailure(ctx, platform, adapter, item.config, fmt.Sprint(item.exc), retryable)
 			continue
 		case "ok":
-			r.publishPrimaryAdapter(ctx, platform, adapter)
+			if err := r.publishPrimaryAdapter(ctx, platform, adapter); err != nil {
+				return connected, err
+			}
 			connected++
 			degraded := adapter.SendPathDegraded()
 			status := platformStatus{state: optStr("connected")}
@@ -140,7 +142,7 @@ func (r *GatewayRunner) startAggregateConnectResults(ctx context.Context, raw []
 			*nonretryable = append(*nonretryable, fmt.Sprintf("%s: %s", platform, message))
 		}
 	}
-	return connected
+	return connected, nil
 }
 
 // Brings up the multiplexed secondary profile adapters, aborted true on an invalid multiplexer config
@@ -240,7 +242,10 @@ func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected 
 		}
 		runLog().Info(fmt.Sprintf("Channel directory built: %d target(s)", count))
 	}()
-	notified := r.sendUpdateNotification(ctx)
+	notified, err := r.sendUpdateNotification(ctx)
+	if err != nil {
+		return err
+	}
 	if !notified {
 		for _, name := range []string{".update_pending.json", ".update_pending.claimed.json"} {
 			if _, err := os.Stat(filepath.Join(home.Process(), name)); err == nil {
@@ -405,7 +410,10 @@ func (r *GatewayRunner) startImpl(ctx context.Context) (bool, error) {
 	if err != nil || raw == nil {
 		return true, err
 	}
-	connected := r.startAggregateConnectResults(ctx, raw, &retryable, &nonretryable)
+	connected, err := r.startAggregateConnectResults(ctx, raw, &retryable, &nonretryable)
+	if err != nil {
+		return false, err
+	}
 	if stop, err := r.abortStartupIfShutdownRequested(ctx, nil, nil); err != nil || stop {
 		return true, err
 	}
@@ -500,7 +508,7 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 				runLog().Debug("security advisory check failed at gateway startup", "exc_info", rec)
 			}
 		}()
-		if msg := plugins.AdvisoryGatewayLogMessage(ctx, plugins.DetectCompromised(plugins.Advisories)); msg != "" {
+		if msg := plugins.AdvisoryGatewayLogMessage(ctx, plugins.DetectCompromised(ctx, plugins.Advisories)); msg != "" {
 			runLog().Warn(msg)
 			runLog().Warn("Run `icebath doctor` on the gateway host for full remediation steps.")
 		}

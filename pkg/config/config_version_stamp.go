@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/home"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,7 +53,7 @@ func latestConfigVersion() int {
 // Raw stamp of config.yaml, nil when it parsed without a version key, plus the latest version
 func ReadConfigVersionStamp(ctx context.Context, h string, raiseOnParseError bool) (*int, int, error) {
 	latest := latestConfigVersion()
-	path := home.ConfigPath(h)
+	path := GetConfigPath(h)
 	if _, err := os.Stat(path); err != nil {
 		return &latest, latest, nil
 	}
@@ -159,8 +158,8 @@ func noteFirstStamp(h string, onDisk, toWrite map[string]any, hooks StampHooks) 
 
 // Writes a first stamped config.yaml for an unmanaged home without one whose env needs adopting
 func StampMissingConfig(ctx context.Context, h string, hooks StampHooks) (bool, error) {
-	path := home.ConfigPath(h)
-	if _, err := os.Stat(path); err == nil || ManagedSystem(ctx, h) != "" {
+	path := GetConfigPath(h)
+	if _, err := os.Stat(path); err == nil || IsManaged(ctx, h) {
 		return false, nil
 	}
 	cfg := map[string]any{"_config_version": latestConfigVersion()}

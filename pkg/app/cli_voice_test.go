@@ -79,7 +79,7 @@ func writeVoiceConfig(t *testing.T, body string) {
 
 // Voice requirements with audio and STT both available
 func readyVoiceRequirements(context.Context) (media.VoiceRequirements, error) {
-	return media.VoiceRequirements{Available: true, AudioAvailable: true, STTAvailable: true, Details: "OK", MissingPackages: []string{}}, nil
+	return media.VoiceRequirements{Available: true, AudioAvailable: true, STTAvailable: true, Details: "OK"}, nil
 }
 
 // Installs a recorder double and requirement, beep and level fakes for a recording start
@@ -501,13 +501,13 @@ func TestVoiceFullDuplexListenerGenerationTripInterruptsAgentAndSubmits(t *testi
 		return wav
 	}, "")
 	c.agentRunning = true
-	c.agent = offlineAgent(t, c)
+	c.setAgent(offlineAgent(t, c))
 	pipeStop := newSyncEvent()
 	c.voiceTTSStop = pipeStop
 	transcribeAs(t, map[string]any{"success": true, "transcript": "actually wait"})
 	c.voiceFullDuplexListener()
-	if !c.agent.InterruptRequested() || !pipeStop.IsSet() {
-		t.Fatalf("interrupted %v pipe stop %v", c.agent.InterruptRequested(), pipeStop.IsSet())
+	if !c.agentRef().InterruptRequested() || !pipeStop.IsSet() {
+		t.Fatalf("interrupted %v pipe stop %v", c.agentRef().InterruptRequested(), pipeStop.IsSet())
 	}
 	queued, _ := c.pendingInput.GetNoWait()
 	if msg, ok := queued.(*voiceInputMessage); !ok || msg.Text != "actually wait" {
@@ -544,10 +544,10 @@ func TestVoiceFullDuplexListenerStopPhraseMidGenerationInterruptsAndEndsChat(t *
 		return wav
 	}, "voice:\n  barge_in: true\n  stop_phrases: [stop]\n")
 	c.agentRunning = true
-	c.agent = offlineAgent(t, c)
+	c.setAgent(offlineAgent(t, c))
 	transcribeAs(t, map[string]any{"success": true, "transcript": "stop"})
 	c.voiceFullDuplexListener()
-	if !c.agent.InterruptRequested() {
+	if !c.agentRef().InterruptRequested() {
 		t.Fatal("turn not interrupted at trip")
 	}
 	if c.voiceMode || c.voiceContinuous {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -164,7 +163,7 @@ func TestQrRegisterQrRegisterReturnsNoneOnPollFailure(t *testing.T) {
 	}
 }
 
-func TestQrRegisterQrFallbackTipTargetsActiveInterpreter(t *testing.T) {
+func TestQrRegisterQrFallbackPrintsTheURLWithoutInstallTip(t *testing.T) {
 	out := captureOutput(t)
 	stubQRSteps(t, nil, false)
 	res, err := qrRegisterInner(context.Background(), "feishu", 60)
@@ -172,7 +171,7 @@ func TestQrRegisterQrFallbackTipTargetsActiveInterpreter(t *testing.T) {
 		t.Fatalf("result %+v %v", res, err)
 	}
 	text := out.String()
-	if !strings.Contains(text, "https://example.com/qr") || !strings.Contains(text, pm.InstallHint("messaging")) || strings.Contains(text, "pip install") {
+	if !strings.Contains(text, "https://example.com/qr") || strings.Contains(text, "pm install") || strings.Contains(text, "pip install") {
 		t.Fatalf("output %q", text)
 	}
 }

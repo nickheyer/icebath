@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -192,8 +191,8 @@ func TestSigkilledVerifyOwnerTakesItsAppTreeAndSparesALiveOwners(t *testing.T) {
 	t.Cleanup(func() {
 		for _, tree := range ids {
 			for _, id := range tree {
-				if alive(id) {
-					_ = syscall.Kill(id.Pid, syscall.SIGKILL)
+				if p, err := os.FindProcess(id.Pid); err == nil && alive(id) {
+					_ = p.Kill()
 				}
 			}
 		}

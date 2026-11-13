@@ -97,6 +97,7 @@ func TestWritableStateDBKeepsLocksAcrossSecondOpen(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("POSIX fcntl locks")
 	}
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	path := filepath.Join(t.TempDir(), "state.db")
 	first := mustSessionDB(t, path, false)
 	defer first.Close()

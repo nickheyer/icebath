@@ -630,7 +630,7 @@ func TestTurnExitLogCarriesForkOriginTag(t *testing.T) {
 	fork.turnOrigin = "background_review"
 	for _, a := range []*AIAgent{live, fork} {
 		a.maxIterations = 10
-		a.iterationBudget = nil
+		a.iterationBudget.Store(nil)
 	}
 	messages := []*state.Message{{Role: "user"}, {Role: "assistant"}}
 	logTurnExit(live, messages, "a", 1, "text_response", false)

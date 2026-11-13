@@ -1,0 +1,27 @@
+usage: icebath cron [-h] [--accept-hooks]
+                    {list,create,add,edit,pause,resume,run,cancel,remove,rm,delete,status,runs,history,incidents,notepad,doctor,tick} ...
+
+Manage scheduled tasks
+
+positional arguments:
+  {list,create,add,edit,pause,resume,run,cancel,remove,rm,delete,status,runs,history,incidents,notepad,doctor,tick}
+    list                List scheduled jobs
+    create (add)        Create a scheduled job
+    edit                Edit an existing scheduled job
+    pause               Pause a scheduled job
+    resume              Resume a paused job
+    run                 Run a job on the next scheduler tick
+    cancel              Stop a job's live run (its schedule is untouched)
+    remove (rm, delete)
+                        Remove a scheduled job
+    status              Check if cron scheduler is running
+    runs (history)      Show durable execution attempts
+    incidents           List or acknowledge durable cron failure incidents
+    notepad             Read/write a job's durable notepad (persistent KV across runs)
+    doctor              Check scheduled jobs for common health issues
+    tick                Run due jobs once and exit
+
+options:
+  -h, --help            show this help message and exit
+  --accept-hooks        Auto-approve unseen shell hooks without a TTY prompt (equivalent to
+                        ICEBATH_ACCEPT_HOOKS=1 / hooks_auto_accept: true).

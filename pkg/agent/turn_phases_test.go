@@ -28,14 +28,16 @@ func budgetAgent(used int) *AIAgent {
 	for range used {
 		b.Consume()
 	}
-	return &AIAgent{iterationBudget: b}
+	a := &AIAgent{}
+	a.iterationBudget.Store(b)
+	return a
 }
 
 func TestSingleRebuiltRestartStillReissuesTheIteration(t *testing.T) {
 	a := budgetAgent(10)
 	v, s := applyRebuiltRestart(t, a, true, 0, nil)
-	if v.Action != "continue" || a.iterationBudget.Used() != 9 || s.APICallCount != 0 || s.PreflightCompressionBlocked {
-		t.Fatalf("verdict %q used %d count %d blocked %v", v.Action, a.iterationBudget.Used(), s.APICallCount, s.PreflightCompressionBlocked)
+	if v.Action != "continue" || a.iterationBudget.Load().Used() != 9 || s.APICallCount != 0 || s.PreflightCompressionBlocked {
+		t.Fatalf("verdict %q used %d count %d blocked %v", v.Action, a.iterationBudget.Load().Used(), s.APICallCount, s.PreflightCompressionBlocked)
 	}
 }
 
@@ -52,7 +54,7 @@ func TestBackToBackRebuiltRestartRefundsAreBounded(t *testing.T) {
 	if strings.Join(actions, ",") != strings.Join(want, ",") {
 		t.Fatalf("actions %v", actions)
 	}
-	if refunds := 20 - a.iterationBudget.Used(); refunds != phaseTestMaxRetries {
+	if refunds := 20 - a.iterationBudget.Load().Used(); refunds != phaseTestMaxRetries {
 		t.Fatalf("refunds %d", refunds)
 	}
 	if reason, _ := last.TurnExitReason.(string); !strings.HasSuffix(reason, "restart_limit_exceeded") {
@@ -113,7 +115,7 @@ func TestNeutraliseReplayEchoGhostsCopiesHazardRows(t *testing.T) {
 
 func TestIterationBudgetWarningAppendsToNewestToolResult(t *testing.T) {
 	a := budgetAgent(8)
-	a.iterationBudget.MaxTotal = 10
+	a.iterationBudget.Load().MaxTotal = 10
 	a.budgetWarningRatio = 0.8
 	msgs := []*state.Message{{Role: "tool", Content: "result"}}
 	if !maybeInjectIterationBudgetWarning(a, msgs) || !a.iterationBudgetWarningInjected {
@@ -126,7 +128,7 @@ func TestIterationBudgetWarningAppendsToNewestToolResult(t *testing.T) {
 		t.Fatal("warning is one shot")
 	}
 	b := budgetAgent(8)
-	b.iterationBudget.MaxTotal, b.budgetWarningRatio = 10, 0.8
+	b.iterationBudget.Load().MaxTotal, b.budgetWarningRatio = 10, 0.8
 	persisted := []*state.Message{state.MessageFromDict(map[string]any{"role": "tool", "content": "r", dbPersistedMarker: true})}
 	if maybeInjectIterationBudgetWarning(b, persisted) {
 		t.Fatal("a persisted tool row is never mutated")

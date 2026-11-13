@@ -346,7 +346,7 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 func (c *CLI) initRuntimeState(resume string) {
 	provider.ServeNoticesOnStderr()
 	c.activeAgentRouteSignature = ""
-	c.agent = nil
+	c.setAgent(nil)
 	c.toolCallbacksInstalled = false
 	c.app = nil
 	c.conversationHistory = []map[string]any{}

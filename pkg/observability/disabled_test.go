@@ -2,6 +2,7 @@ package observability
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -235,6 +236,57 @@ func TestRealConfigWritesReportTheMoveAwayFromDefault(t *testing.T) {
 	want := []Transition{{"memory", "memory.memory_enabled", "disabled"}, {"curator", "curator.enabled", "disabled"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows %v", got)
+	}
+}
+
+func TestRawConfigWritesSnapshotOnlyWithASurfaceAndCollection(t *testing.T) {
+	m := captureDisabled(t)
+	ctx := context.Background()
+	if err := os.MkdirAll(m.home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	set := func(ctx context.Context, value string) {
+		t.Helper()
+		if err := config.SetConfigValue(ctx, m.home, "curator.enabled", value, false, disabledCommandSources()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	collect := func(on bool) {
+		m.mu.Lock()
+		m.on = on
+		m.mu.Unlock()
+	}
+	setSurface("")
+	set(ctx, "false")
+	if rows := m.settled(); len(rows) != 0 {
+		t.Fatalf("no surface recorded %v", rows)
+	}
+	set(ctx, "true")
+	setSurface("cli_config")
+	collect(false)
+	set(ctx, "false")
+	if rows := m.settled(); len(rows) != 0 {
+		t.Fatalf("collection off recorded %v", rows)
+	}
+	set(ctx, "true")
+	collect(true)
+	set(config.AppliedWrite(ctx), "false")
+	if rows := m.settled(); len(rows) != 0 {
+		t.Fatalf("applied raw write recorded %v", rows)
+	}
+	set(ctx, "true")
+	want := []Mark{{FeatureDisabledMark, map[string]string{"event": "re_enabled", "kind": "curator", "name": "curator.enabled", "surface": "cli_config"}}}
+	if rows := m.settled(); !reflect.DeepEqual(rows, want) {
+		t.Fatalf("rows %v", rows)
+	}
+	refused := errors.New("disk refused the write")
+	err := RecordingRawConfigWrite(ctx, m.home, home.ConfigPath(m.home), map[string]any{"curator": map[string]any{"enabled": false}},
+		func(string, map[string]any) error { return refused })
+	if !errors.Is(err, refused) {
+		t.Fatalf("write error surfaced as %v", err)
+	}
+	if rows := m.settled(); !reflect.DeepEqual(rows, want) {
+		t.Fatalf("refused write recorded %v", rows)
 	}
 }
 

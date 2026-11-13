@@ -8,6 +8,7 @@ import (
 	"unsafe"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -17,6 +18,7 @@ type mapMeta struct {
 	owner  weak.Pointer[byte]
 	keys   []string
 	failed error
+	pyKeys map[string]any
 }
 
 var (
@@ -151,12 +153,46 @@ func copyMeta(dst, src map[string]any) {
 	}
 	mapMetaMu.Lock()
 	keys, failed := append([]string(nil), meta.keys...), meta.failed
+	pyKeys := make(map[string]any, len(meta.pyKeys))
+	for k, v := range meta.pyKeys {
+		pyKeys[k] = v
+	}
 	mapMetaMu.Unlock()
 	SetMappingKeys(dst, keys)
 	if failed != nil {
 		markFailedRead(dst, failed)
 	}
+	for k, v := range pyKeys {
+		SetMappingPyKey(dst, k, v)
+	}
 }
+
+// Records that a string key of a mapping stands for a non str Python key such as True, 1 or None
+func SetMappingPyKey(m map[string]any, key string, pyKey any) {
+	if meta := attachMeta(m); meta != nil {
+		mapMetaMu.Lock()
+		if meta.pyKeys == nil {
+			meta.pyKeys = map[string]any{}
+		}
+		meta.pyKeys[key] = pyKey
+		mapMetaMu.Unlock()
+	}
+}
+
+// Non str Python key a string key of a mapping stands for, false for an ordinary str key
+func MappingPyKey(m map[string]any, key string) (any, bool) {
+	meta := lookupMeta(m)
+	if meta == nil {
+		return nil, false
+	}
+	mapMetaMu.Lock()
+	defer mapMetaMu.Unlock()
+	v, ok := meta.pyKeys[key]
+	return v, ok
+}
+
+// Map key under which a non str Python key is stored, never equal to a key a YAML str produces
+func PyKeyString(pyKey any) string { return "\x00" + pyrepr.Repr(pyKey) }
 
 // Records the file order of every mapping in a decoded document from the node it was decoded from
 func recordNodeOrder(node *yaml.Node, value any) {

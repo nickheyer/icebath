@@ -139,13 +139,9 @@ func cronArgs(cli *commands.CLI, cmd *cobra.Command, sub string, args []string) 
 			a.Schedule, a.Prompt = str("schedule"), str("prompt")
 			a.AddSkills, a.RemoveSkills = list("add-skill"), list("remove-skill")
 			a.ClearSkills = boolean("clear-skills")
-			switch {
-			case boolean("no-agent"):
-				t := true
-				a.NoAgent = &t
-			case boolean("agent"):
-				fl := false
-				a.NoAgent = &fl
+			if last := cli.LastGiven(cmd, "no-agent", "agent"); last != "" {
+				on := last == "no-agent"
+				a.NoAgent = &on
 			}
 			switch {
 			case boolean("pin"):
@@ -153,11 +149,8 @@ func cronArgs(cli *commands.CLI, cmd *cobra.Command, sub string, args []string) 
 			case boolean("unpin"):
 				a.Pinned = false
 			}
-			switch {
-			case boolean("continuity"):
-				a.Continuity = true
-			case boolean("no-continuity"):
-				a.Continuity = false
+			if last := cli.LastGiven(cmd, "continuity", "no-continuity"); last != "" {
+				a.Continuity = last == "continuity"
 			}
 		}
 		a.Skills = list("skill")

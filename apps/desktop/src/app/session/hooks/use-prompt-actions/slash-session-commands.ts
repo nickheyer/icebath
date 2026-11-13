@@ -20,8 +20,7 @@ import {
 } from './utils'
 
 // Typed /undo, /retry, /steer and /queue: one behaviour per command on every surface, mirroring the
-// Ink TUI on the same shared gateway (ui-tui/src/app/slash/commands/core.ts +
-// canonicalSessionCommands.ts). The owner refuses them as `slash.exec`, so a canonical session runs
+// terminal UI on the same shared gateway (pkg/tui/slash_commands.go). The owner refuses them as `slash.exec`, so a canonical session runs
 // /undo and /retry as the revision-fenced `session.mutate rewind` (Desktop's `session.rewind`),
 // /steer as `session.steer`, and /queue on the composer queue the busy composer already uses.
 
@@ -73,7 +72,7 @@ const copy = () => runtimeTranslations().promptNotices.sessionCommands
 // lost reply replays THAT request, so an unbound view cuts by its count, not the repeat's own.
 const pendingRewindCuts = new Map<string, number>()
 
-/** Clip a queued/steered prompt for the confirmation line (Ink's previewOf). */
+/** Clip a queued/steered prompt for the confirmation line (the terminal UI's previewOf). */
 const previewOf = (text: string) => `${text.slice(0, PREVIEW_CHARS)}${text.length > PREVIEW_CHARS ? '…' : ''}`
 
 const errorText = (err: unknown) => `error: ${err instanceof Error ? err.message : String(err)}`
@@ -220,7 +219,7 @@ export function sessionCommandHandlers<C extends { arg: string }>(env: SessionCo
     const { render, sessionId } = out
     const nothing = intent === 'retry' ? copy().retryNothing : copy().undoNothing
     // The resume snapshot carries every row's durable id and primes the CAS revision/generation the
-    // rewind mutation presents, as Ink's mutateCanonical does.
+    // rewind mutation presents, as the terminal UI's mutateCanonical does.
     const snapshot = await requestGateway<{ messages?: SnapshotRow[] }>('session.resume', { session_id: sessionId })
     const target = userTurnFromEnd(Array.isArray(snapshot?.messages) ? snapshot.messages : [], turnsBack)
 
@@ -346,7 +345,7 @@ export function sessionCommandHandlers<C extends { arg: string }>(env: SessionCo
         return out.render(copy().steerUsage)
       }
 
-      // No running turn: queue the words as the next turn so they are not lost (Ink, gateway).
+      // No running turn: queue the words as the next turn so they are not lost (the terminal UI, gateway).
       if (!isTargetSessionBusy($sessionStates.get(), out.sessionId, busyRef.current)) {
         return out.render((await enqueue(out, text)) ? copy().steerNoActiveTurn(previewOf(text)) : copy().queueFailed)
       }

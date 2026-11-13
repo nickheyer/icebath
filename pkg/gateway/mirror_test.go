@@ -46,8 +46,8 @@ func TestMirrorSessionsIndexLookup(t *testing.T) {
 		{"discord", "42", nil, nil, ""},
 	}
 	for _, c := range cases {
-		if got := findMirrorSessionID(ctx, c.platform, c.chat, c.thread, c.user); got != c.want {
-			t.Errorf("%s:%s = %q want %q", c.platform, c.chat, got, c.want)
+		if got, err := findMirrorSessionID(ctx, c.platform, c.chat, c.thread, c.user); err != nil || got != c.want {
+			t.Errorf("%s:%s = %q, %v want %q", c.platform, c.chat, got, err, c.want)
 		}
 	}
 	if MirrorToSession(ctx, "discord", "42", "hi", MirrorOptions{}) {
@@ -57,8 +57,8 @@ func TestMirrorSessionsIndexLookup(t *testing.T) {
 	writeSessionsIndex(t, other, `{"x": {"session_id": "pinned", "origin": {"platform": "telegram", "chat_id": "42"}}}`)
 	mirrorSessionsIndex = filepath.Join(other, "sessions", "sessions.json")
 	defer func() { mirrorSessionsIndex = "" }()
-	if got := findMirrorSessionID(ctx, "telegram", "42", nil, nil); got != "pinned" {
-		t.Fatalf("pinned index %q", got)
+	if got, err := findMirrorSessionID(ctx, "telegram", "42", nil, nil); err != nil || got != "pinned" {
+		t.Fatalf("pinned index %q, %v", got, err)
 	}
 }
 

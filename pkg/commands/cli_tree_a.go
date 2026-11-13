@@ -1,11 +1,19 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
+
+// Machine readable refusal of a malformed gateway ensure call on stdout, then exit status 2 with its stderr line
+func gatewayEnsureInvalid(cmd *cobra.Command) error {
+	fmt.Fprintln(cmd.OutOrStdout(), `{"endpoint":null,"reason_code":"invalid_invocation","state":"inaccessible"}`)
+	return &ExitError{Code: 2, Msg: "gateway ensure: invalid invocation"}
+}
 
 func bf(cmd *cobra.Command, name, short, help string) { cmd.Flags().BoolP(name, short, false, help) }
 func sf(cmd *cobra.Command, name, short, def, help string) {
@@ -21,7 +29,6 @@ func af(cmd *cobra.Command, name, short, help string) {
 	cmd.Flags().StringArrayP(name, short, nil, help)
 }
 func cf(cmd *cobra.Command, name, short, help string) { cmd.Flags().CountP(name, short, help) }
-func sliceF(cmd *cobra.Command, name, help string)    { cmd.Flags().StringSlice(name, nil, help) }
 
 func acceptHooks(cmd *cobra.Command) {
 	bf(cmd, "accept-hooks", "", "Auto-approve unseen shell hooks without a TTY prompt (equivalent to ICEBATH_ACCEPT_HOOKS=1 / hooks_auto_accept: true).")
@@ -325,10 +332,13 @@ func (c *CLI) addGateway(root *cobra.Command) {
 	c.epilog(ensure, "Exit codes: 0 ready; 2 invalid invocation; 3 incompatible; 4 authorization/profile mismatch; 5 deadline; 6 draining/update-paused; 7 inaccessible/conflicting supervisor. Pending startup is not readiness.")
 	bf(ensure, "json", "", "Emit one credential-free JSON result (default)")
 	sf(ensure, "timeout", "", "60", "Total startup deadline in seconds (default: 60)")
-	ensure.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		cmd.Println(`{"endpoint":null,"reason_code":"invalid_invocation","state":"inaccessible"}`)
-		return &ExitError{Code: 2, Msg: "gateway ensure: invalid invocation"}
-	})
+	ensure.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error { return gatewayEnsureInvalid(cmd) })
+	ensure.Args = func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return gatewayEnsureInvalid(cmd)
+		}
+		return nil
+	}
 	systemFlag := func(cmd *cobra.Command) { bf(cmd, "system", "", "Target the Linux system-level gateway service") }
 	compatPlatform := func(cmd *cobra.Command) {
 		sf(cmd, "platform", "", "", "")
@@ -439,7 +449,7 @@ func (c *CLI) addCron(root *cobra.Command) {
 	acceptHooks(cron)
 	catchUp := func(cmd *cobra.Command) {
 		sf(cmd, "catch-up", "", "", "Runs missed while the machine was off: 'on' runs once on return, 'off' skips them (each is booked as a 'missed' row in `icebath cron runs`). Default: cron.catch_up_missed for recurring jobs; one-shots skip.")
-		c.choice(cmd, "catch-up", "on", "off")
+		c.typedChoice(cmd, "catch-up", "use 'on' (run missed runs once) or 'off' (skip them)", "on", "off")
 	}
 	list := c.newCmd(cron, "list", "List scheduled jobs", "")
 	bf(list, "all", "", "Include disabled and completed jobs")
@@ -484,6 +494,7 @@ func (c *CLI) addCron(root *cobra.Command) {
 	bf(edit, "agent", "", "Disable no-agent mode on this job (reverts to LLM-driven execution).")
 	bf(edit, "continuity", "", "Turn on run-to-run continuity: each run sees the job's own previous output (dedupe, continue where it left off).")
 	bf(edit, "no-continuity", "", "Turn off run-to-run continuity (other context_from job refs are preserved).")
+	trackOrder(edit, "no-agent", "agent", "continuity", "no-continuity")
 	sf(edit, "monitor-script", "", "", "Set/replace the monitor source script (see `icebath cron create --monitor-script`). Pass empty string to clear.")
 	sf(edit, "monitor-url", "", "", "Set/replace the monitor source URL. Pass empty string to clear.")
 	sf(edit, "workdir", "", "", "Absolute path for the job to run from (injects AGENTS.md etc. and sets terminal cwd). Pass empty string to clear.")

@@ -29,6 +29,11 @@ type ScheduledHandle struct {
 	runnerGID uint64
 }
 
+// Uncancelled handle of fn every interval in ctx, no worker running it yet
+func newScheduledHandle(scheduler *PeriodicScheduler, fn func(ctx context.Context) bool, ctx context.Context, interval time.Duration) *ScheduledHandle {
+	return &ScheduledHandle{scheduler: scheduler, fn: fn, ctx: ctx, interval: interval}
+}
+
 // Reports whether the handle was cancelled or stopped itself
 func (h *ScheduledHandle) Cancelled() bool {
 	h.scheduler.mu.Lock()
@@ -88,7 +93,7 @@ func NewPeriodicScheduler() *PeriodicScheduler {
 
 // Runs fn in ctx every interval after the previous run returned until fn returns false or the handle is cancelled
 func (p *PeriodicScheduler) Schedule(ctx context.Context, fn func(ctx context.Context) bool, interval time.Duration) *ScheduledHandle {
-	h := &ScheduledHandle{scheduler: p, fn: fn, ctx: ctx, interval: interval}
+	h := newScheduledHandle(p, fn, ctx, interval)
 	p.mu.Lock()
 	p.requeue(h)
 	if !p.started {

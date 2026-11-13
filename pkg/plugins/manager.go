@@ -78,6 +78,8 @@ type Manager struct {
 	predeclaredTools              map[string][]string
 	pluginSecretSourcesReconciled bool
 	pluginHostInstance            *PluginHost
+	guestHosts                    map[string]*PluginHost
+	widgets                       map[string]*Widget
 }
 
 // Manager scoped to one home with empty registries
@@ -107,6 +109,7 @@ func NewManager(h string) *Manager {
 		pluginCommandSeq:           map[string]uint64{},
 		pluginSkills:               map[string]*PluginSkill{},
 		automationBlueprints:       map[string]*blueprintEntry{},
+		widgets:                    map[string]*Widget{},
 		portableMCPServers:         map[string]map[string]any{},
 		portableMCPServerPlugins:   map[string]string{},
 		auxTasks:                   map[string]*auxTask{},

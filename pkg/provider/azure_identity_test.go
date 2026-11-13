@@ -232,9 +232,6 @@ func TestEntraProviderReusesTokenUntilRefreshWindow(t *testing.T) {
 
 func TestEntraChainNeedsNoInstall(t *testing.T) {
 	entraIsolate(t)
-	if !HasAzureIdentityInstalled() {
-		t.Fatal("the Entra chain is compiled in")
-	}
 	info := DescribeActiveEntraCredential(context.Background(), nil, "", time.Second)
 	if info["ok"] != true || info["hint"] != nil || info["scope"] != ScopeAIAzureDefault {
 		t.Fatalf("info = %v", info)
@@ -393,7 +390,7 @@ func TestEntraDefaultChainReportsEveryUnavailableCredential(t *testing.T) {
 	for _, want := range []string{"DefaultAzureCredential failed to retrieve a token from the included credentials.\nAttempted credentials:\n\tEnvironmentCredential: " + entraEnvUnavailable,
 		"\tManagedIdentityCredential: " + entraIMDSUnavailable, "SharedTokenCacheCredential authentication unavailable. No accounts were found in the cache.",
 		"\tAzureCliCredential: Azure CLI not found on path", "\tAzurePowerShellCredential: PowerShell is not installed",
-		"\tAzureDeveloperCliCredential: " + entraAzdNotFound, "\tBrokerCredential: " + entraBrokerPackageRequired, entraDACTroubleshoot} {
+		"\tAzureDeveloperCliCredential: " + entraAzdNotFound, "\tBrokerCredential: " + entraBrokerPlatformOnly, entraDACTroubleshoot} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("message lacks %q:\n%s", want, msg)
 		}

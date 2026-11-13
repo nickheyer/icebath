@@ -5,26 +5,49 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Writer onto the current os.Stderr that replaces text UTF-8 cannot encode instead of failing
-type safeStderrWriter struct{}
+// Encoding the interpreter would give the process stderr stream
+var stderrEncoding = platformStderrEncoding
 
-func (safeStderrWriter) Write(p []byte) (int, error) {
+// Writer onto the current os.Stderr in UTF-8, lone surrogates backslash escaped or replaced by question marks
+type safeStderrWriter struct{ replace bool }
+
+func (w safeStderrWriter) Write(p []byte) (int, error) {
 	if os.Stderr == nil {
 		return len(p), nil
 	}
-	if _, err := os.Stderr.Write(pystr.EncodeUTF8Replace(string(p))); err != nil {
+	var data []byte
+	if w.replace {
+		data = pystr.EncodeUTF8Replace(string(p))
+	} else {
+		data = []byte(pystr.EncodeUTF8BackslashReplace(string(p)))
+	}
+	if _, err := os.Stderr.Write(data); err != nil {
 		return 0, err
 	}
 	return len(p), nil
 }
 
-// Stderr stream that tolerates any text, un-encodable characters becoming question marks
-func safeStderr() io.Writer { return safeStderrWriter{} }
+// Stderr as is on a UTF-8 stream, otherwise rewrapped in UTF-8 with un-encodable text replaced
+func safeStderr() io.Writer {
+	encoding := ""
+	if os.Stderr != nil {
+		encoding = stderrEncoding()
+	}
+	if encoding == "" {
+		encoding = "utf-8"
+	}
+	switch strings.ReplaceAll(strings.ToLower(encoding), "-", "") {
+	case "utf8", "utf8surrogateescape":
+		return safeStderrWriter{}
+	}
+	return safeStderrWriter{replace: true}
+}
 
 // One standard stream routed through redaction, the pipe its writers see and the pump draining it
 type redactedStdio struct {

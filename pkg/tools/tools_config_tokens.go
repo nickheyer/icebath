@@ -6,7 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pytiktoken"
+	"github.com/nickheyer/icebath/pkg/tokenizers/tiktoken"
 )
 
 type toolTokenKey struct {
@@ -17,8 +17,8 @@ type toolTokenKey struct {
 var (
 	toolTokenCacheMu sync.Mutex
 	toolTokenCache   = map[toolTokenKey]map[string]int{}
-	// Seam over the cl100k_base encoding load, the tiktoken.get_encoding call
-	toolTokenEncoding = pytiktoken.CL100kBase
+	// Seam over the cl100k_base encoding load
+	toolTokenEncoding = tiktoken.CL100kBase
 )
 
 // cl100k_base tokens of each registered tool's function schema, cached per home and registry generation, empty without the encoding
@@ -48,11 +48,7 @@ func estimateToolTokens(ctx context.Context) (map[string]int, error) {
 		if err != nil {
 			return nil, err
 		}
-		tokens, err := enc.Encode(text)
-		if err != nil {
-			return nil, err
-		}
-		counts[name] = len(tokens)
+		counts[name] = len(enc.EncodeOrdinary(text))
 	}
 	toolTokenCache[key] = counts
 	return counts, nil

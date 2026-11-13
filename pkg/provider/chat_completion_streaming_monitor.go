@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Display, heartbeat and stale kill bookkeeping the poll loop owns
@@ -106,9 +107,9 @@ func (c *streamingCall) pollUntilDone() {
 	c.mon = streamingMonitor{lastHeartbeat: time.Now()}
 	baseURL := c.agent.BaseURL()
 	isLocalBase := baseURL != "" && IsLocalEndpoint(baseURL)
-	var sleep *sleepWatch
+	var sleep *tools.SleepWatch
 	if u, err := url.Parse(baseURL); baseURL != "" && err == nil && IsLoopbackHost(u.Hostname()) {
-		sleep = &sleepWatch{interval: streamMonitorPoll, wall: time.Now()}
+		sleep = tools.NewSleepWatch(streamMonitorPoll.Seconds())
 	}
 	stale := c.currentStaleTimeout()
 	lifeCap := resolveStreamMaxLifetime(loadWireSettings(c.ctx).streamMaxLifetime, stale)
@@ -120,7 +121,7 @@ func (c *streamingCall) pollUntilDone() {
 		case <-time.After(streamMonitorPoll):
 		}
 		if sleep != nil {
-			c.skipSleep(sleep.slept(time.Now()).Seconds())
+			c.skipSleep(sleep.Slept())
 		}
 		hbNow := time.Now()
 		if isLocalBase && c.pollLocalLoadNotice(hbNow) {

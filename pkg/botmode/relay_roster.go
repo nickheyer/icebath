@@ -168,6 +168,9 @@ func targetAliases(row RemoteRosterRow) map[string]bool {
 	return out
 }
 
+// Every lower cased bare form a sender may address a relay roster row by
+func TargetAliases(row RemoteRosterRow) map[string]bool { return targetAliases(row) }
+
 // Slug form of the Bot Mode title, empty when the title is empty, reserved or not a valid handle
 func titleSlug(row RemoteRosterRow) string {
 	slug := strings.Trim(aliasNonSlugRe.ReplaceAllString(pystr.Lower(pystr.Strip(row.Title)), "-"), "-")

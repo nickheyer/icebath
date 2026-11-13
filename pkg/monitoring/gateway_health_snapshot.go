@@ -188,6 +188,11 @@ type GatewayDiagnosticLogHandler struct {
 	Version string
 }
 
+// Warning level handler stamping each event with the given profile and version
+func NewGatewayDiagnosticLogHandler(profile, version string) *GatewayDiagnosticLogHandler {
+	return &GatewayDiagnosticLogHandler{Profile: profile, Version: version}
+}
+
 func (h *GatewayDiagnosticLogHandler) Level() int   { return logging.LevelWarning }
 func (h *GatewayDiagnosticLogHandler) Close() error { return nil }
 
@@ -202,7 +207,11 @@ func (h *GatewayDiagnosticLogHandler) Handle(_ context.Context, rec *logging.Rec
 		return true
 	}
 	subsystem := SubsystemForLogger(rec.Name)
-	errorClass := ClassifyGatewayError(rec.Msg)
+	msg := rec.Msg
+	if rec.ExcInfo != nil {
+		msg = strings.TrimSuffix(msg, "\n"+rec.ExcInfo.Error())
+	}
+	errorClass := ClassifyGatewayError(msg)
 	severity := strings.ToLower(rec.Levelname)
 	ev := NewGatewayDiagnosticEvent("gateway.log."+severity, subsystem)
 	ev.SourceLogger, ev.Platform = SourceLoggerForExport(rec.Name), PlatformForSubsystem(subsystem)

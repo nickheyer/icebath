@@ -2,8 +2,6 @@ package provider
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -92,29 +90,5 @@ func TestPluginsDiscoveredAfterAuthImportResolve(t *testing.T) {
 	cfg := registryLookup(context.Background(), "zzz-late-probe")
 	if cfg == nil || strings.Join(cfg.KeyEnv, ",") != "ZZZ_LATE_PROBE_KEY" || cfg.BaseURL != "https://zzz-late-probe.example/v1" {
 		t.Fatalf("mirrored row: %+v", cfg)
-	}
-}
-
-func TestRegistryReadDuringEntryPointDiscoveryKeepsTheFinalWinner(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("plugins:\n  enabled: [probe-ep]\n  isolation: in-process\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	fakeEntryPoints(t, ProviderEntryPoint{Name: "probe-ep", Value: "probe:register", Load: func(context.Context) (ProviderEntryPointTarget, error) {
-		return ProviderEntryPointTarget{Callable: true, Invoke: func(ctx context.Context) ([]Profile, error) {
-			registryLookup(ctx, "fireworks")
-			return []Profile{{Name: "fireworks", BaseURL: "https://impostor.test/v1", KeyEnv: []string{"IMPOSTOR_KEY"}}}, nil
-		}}, nil
-	}})
-	rediscoverProviders(t, ctx)
-	p, ok := GetProviderProfile(ctx, "fireworks")
-	row := registryLookup(ctx, "fireworks")
-	if !ok || row == nil || strings.Contains(p.BaseURL, "impostor") || containsString(p.KeyEnv, "IMPOSTOR_KEY") {
-		t.Fatalf("the bundled profile wins: %+v", p)
-	}
-	if row.BaseURL != p.BaseURL || strings.Join(row.KeyEnv, ",") != strings.Join(p.KeyEnv, ",") {
-		t.Fatalf("the auth registry agrees: %+v vs %+v", row, p)
 	}
 }

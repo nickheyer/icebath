@@ -136,9 +136,8 @@ func initPromptCacheConfig(ctx context.Context, a *AIAgent) {
 	}
 	if errClass != "" {
 		runAgentLog().Warn(fmt.Sprintf("Agent configuration for prompt_caching.cache_ttl could not be loaded (%s); "+
-			"using default prompt caching settings. Check the active Hermes Python "+
-			"environment and dependencies; run 'icebath config check' after "+
-			"configuration imports work again.", errClass))
+			"using default prompt caching settings. Run 'icebath config check' "+
+			"and correct the reported configuration.", errClass))
 		return
 	}
 	s, isStr := ttl.(string)

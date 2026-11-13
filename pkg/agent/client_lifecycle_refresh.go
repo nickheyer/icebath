@@ -220,14 +220,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 	}
 	if a.apiMode != "anthropic_messages" && a.apiMode != "bedrock_converse" {
 		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-		if extra := provider.CustomProviderExtraHeaders(baseURL, provider.CompatibleCustomProviders(cfg), cfg); len(extra) > 0 {
-			merged := stringHeaders(a.clientKwargs["default_headers"])
-			if merged == nil {
-				merged = map[string]string{}
-			}
-			maps.Copy(merged, extra)
-			a.clientKwargs["default_headers"] = merged
-		}
+		provider.ApplyCustomProviderExtraHeadersToClientKwargs(a.clientKwargs, baseURL, nil, cfg)
 	}
 	return nil
 }

@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	gigaspeechTokens = "../pysentencepiece/testdata/gigaspeech_tokens.txt"
-	gigaspeechBPE    = "../pysentencepiece/testdata/gigaspeech_bpe.model"
+	gigaspeechTokens = "../../tokenizers/sentencepiece/testdata/gigaspeech_tokens.txt"
+	gigaspeechBPE    = "../../tokenizers/sentencepiece/testdata/gigaspeech_bpe.model"
 )
 
 func textModule(t *testing.T) (*Module, *bytes.Buffer) {
@@ -157,7 +157,14 @@ func TestText2TokenErrors(t *testing.T) {
 	}
 	missing := errors.New("No module named 'pypinyin'")
 	m.env.ImportPypinyin = func() (*pypinyin.Module, error) { return nil, missing }
-	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{}); err != missing || out.String() != "Please run\n  icebath pm install --extra wake-sherpa\nbefore you continue\n" {
-		t.Fatalf("pypinyin import failure gave %v, printed %q", err, out.String())
+	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{TokensType: "ppinyin"}); err != missing || out.Len() != 0 {
+		t.Fatalf("pinyin dictionary failure gave %v, printed %q", err, out.String())
+	}
+	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{}); err != nil {
+		t.Fatalf("a token type without pinyin asked for the dictionaries: %v", err)
+	}
+	m.env.ImportPypinyin = nil
+	if _, err = m.Text2Token(nil, gigaspeechTokens, Text2TokenOptions{TokensType: "fpinyin"}); err == nil || !strings.Contains(err.Error(), "needs pinyin dictionaries") {
+		t.Fatalf("pinyin tokens without a dictionary source gave %v", err)
 	}
 }

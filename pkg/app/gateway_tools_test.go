@@ -213,7 +213,8 @@ func TestStopTypedMidTurnInterruptsTheTurnThenStopsProcesses(t *testing.T) {
 	requestHardInterrupt = func(a cliAgent) { stops = append(stops, a) }
 	t.Cleanup(func() { requestHardInterrupt = prev })
 	c := bareCLI()
-	c.agentRunning, c.agent = true, a
+	c.agentRunning = true
+	c.setAgent(a)
 	_, event := handlerRig()
 	if !c.tuiEnterInlineCommand(event, "/stop", false) {
 		t.Fatal("/stop was not dispatched inline")

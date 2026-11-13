@@ -93,8 +93,8 @@ func SessionContextMarks(value any) any {
 		marks.hasCompressor = true
 		marks.contextLength, marks.lastPromptTokens, marks.compressionCount = base.ContextLength, base.LastPromptTokens, base.CompressionCount
 	}
-	if a.turnBaseUsageAnchor != nil {
-		marks.turnBase, marks.hasTurnBase = *a.turnBaseUsageAnchor, true
+	if turnBase := a.turnBaseUsageAnchor.Load(); turnBase != nil {
+		marks.turnBase, marks.hasTurnBase = *turnBase, true
 	}
 	if a.usageAnchor != nil {
 		marks.usage, marks.hasUsage = *a.usageAnchor, true

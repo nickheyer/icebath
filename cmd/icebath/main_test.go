@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 )
 
@@ -28,7 +27,6 @@ var siteHooks = map[string]func(){}
 
 // Runs the binary's own first step so a re-executed test binary dispatches child entries like the real one
 func TestMain(m *testing.M) {
-	pluginhost.DispatchPluginHostEntry(context.Background())
 	relayhost.DispatchRelayHostEntry(context.Background())
 	for _, name := range strings.FieldsFunc(os.Getenv(testSiteEnv), func(r rune) bool { return r == ',' }) {
 		hook, known := siteHooks[name]

@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Bounds of the per job catch up override in minutes, zero meaning never catch up
@@ -28,7 +31,7 @@ func newKnobWarner(log *slog.Logger) *knobWarner {
 }
 
 func (w *knobWarner) warnOnce(kind string, value any, detail string) {
-	key := fmt.Sprintf("%s:%v", kind, value)
+	key := kind + ":" + pyrepr.Repr(value)
 	w.mu.Lock()
 	seen := w.warned[key]
 	w.warned[key] = true
@@ -36,8 +39,8 @@ func (w *knobWarner) warnOnce(kind string, value any, detail string) {
 	if seen || w.log == nil {
 		return
 	}
-	w.log.Warn("job knob is invalid, falling back to the profile setting, fix or clear it with icebath cron edit",
-		"knob", kind, "value", fmt.Sprintf("%v", value), "detail", detail)
+	w.log.Warn(fmt.Sprintf("Job %s %s is invalid (%s); falling back to the profile setting. Fix or clear it with "+
+		"`icebath cron edit`.", kind, pyrepr.Repr(value), detail))
 }
 
 // Forgets every warned value
@@ -123,7 +126,7 @@ func (w *knobWarner) zoneForJob(timezone *string) *time.Location {
 	if name == "" {
 		return nil
 	}
-	loc, err := time.LoadLocation(name)
+	loc, err := pydatetime.ZoneInfo(name)
 	if err != nil {
 		w.warnOnce("timezone", *timezone, err.Error())
 		return nil

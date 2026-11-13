@@ -142,8 +142,8 @@ var (
 		"exception", "interrupted", "invalid_arguments", "none", "not_allowed", "timeout", "tool_error", "unknown")
 	SizeBuckets = Set("0", "1", "2", "3_to_5", "6_to_10", "11_to_25", "26_to_100", "101_to_250", "gte_251")
 
-	MemoryProviders = &CatalogValues{loaders: []string{"plugin_catalog_names"},
-		extraFn: func() ValueSet { return bundledMemoryProviders().Union(Set("builtin", "plugin")) }}
+	MemoryProviders = newCatalogValues(nil, "plugin_catalog_names").
+			withLazyExtra(func() ValueSet { return bundledMemoryProviders().Union(Set("builtin", "plugin")) })
 
 	SessionDurationBuckets = Set("lt_1m", "1m_to_5m", "5m_to_30m", "30m_to_2h", "2h_to_8h", "gte_8h")
 	InstallAgeBuckets      = Set("lt_1h", "1h_to_1d", "1d_to_7d", "7d_to_30d", "30d_to_90d", "gte_90d", "unknown")
@@ -170,11 +170,11 @@ var (
 	ExtensionOutcomes  = Set("failed", "success")
 	TerminalBackends   = Set("daytona", "docker", "local", "managed_modal", "modal", "other", "singularity", "ssh",
 		"vercel_sandbox")
-	AuxTasks             = &CatalogValues{loaders: []string{"aux_task_names"}, extra: Set("none", "other")}
-	SlashCommands        = &CatalogValues{loaders: []string{"slash_command_names"}, extra: Set("plugin", "skill", "unknown")}
-	SkillNames           = &CatalogValues{loaders: []string{"bundled_skill_names"}, extra: Set("custom")}
-	ExtensionNames       = &CatalogValues{loaders: []string{"bundled_skill_names", "mcp_catalog_names", "plugin_catalog_names"}, extra: Set("custom")}
-	DisplayLanguages     = &CatalogValues{loaders: []string{"display_languages"}, extra: Set("other")}
+	AuxTasks             = newCatalogValues(Set("none", "other"), "aux_task_names")
+	SlashCommands        = newCatalogValues(Set("plugin", "skill", "unknown"), "slash_command_names")
+	SkillNames           = newCatalogValues(Set("custom"), "bundled_skill_names")
+	ExtensionNames       = newCatalogValues(Set("custom"), "bundled_skill_names", "mcp_catalog_names", "plugin_catalog_names")
+	DisplayLanguages     = newCatalogValues(Set("other"), "display_languages")
 	ToolCallIssues       = Set("empty_arguments", "invalid_json", "none", "repaired", "schema_mismatch", "unknown_tool")
 	FrictionSignals      = Set("interrupt", "quick_abandon", "retry", "switch_away", "undo")
 	ContextWindowBuckets = Set("lt_32k", "32k_to_128k", "128k_to_256k", "256k_to_1m", "gte_1m", "unknown")
@@ -213,10 +213,9 @@ const (
 
 var (
 	platformCatalogs = []string{"bundled_platform_names", "catalog_platform_names"}
-	GatewayPlatforms = &CatalogValues{loaders: platformCatalogs, extra: coreGatewayPlatforms}
+	GatewayPlatforms = newCatalogValues(coreGatewayPlatforms, platformCatalogs...)
 	// Adapter platforms add the gateway's own Platform enum members to the catalog platforms
-	AdapterPlatforms = &CatalogValues{loaders: platformCatalogs, extra: coreGatewayPlatforms.Union(Set("api_server")),
-		adapters: true}
+	AdapterPlatforms       = newAdapterPlatforms(coreGatewayPlatforms.Union(Set("api_server")), platformCatalogs...)
 	PlatformHealthEvents   = Set("connect_ok", "connect_failed", "reconnect", "disconnect")
 	PlatformErrorClasses   = Set("none", "auth", "network", "rate_limited", "config", "other")
 	DeliveryOutcomes       = Set("sent", "failed")
@@ -404,7 +403,7 @@ var (
 	FileEditModes    = Set("replace", "v4a", "whole_file")
 	FileEditOutcomes = Set("already_applied", "ambiguous", "applied", "failed", "no_match")
 	// Every fuzzy matcher strategy name plus none
-	FileEditStrategies = Set(tools.FuzzyStrategyNames()...).Union(Set("none"))
+	FileEditStrategies = fuzzyMatchStrategies().Union(Set("none"))
 	LoopGuardSignals   = Set("iteration_cap", "loop_detected", "repeated_tool_call")
 	LoopGuardDetectors = Set("exact_failure", "idempotent_no_progress", "identical_call_streak", "identical_cycle",
 		"iteration_budget", "same_tool_failure", "subagent_cap", "web_search_cap")
@@ -515,3 +514,6 @@ func DesktopActiveMinutesBucket(activeMS any) string {
 	}
 	return bucket(value, desktopActiveThresholds, "gte_6h")
 }
+
+// Names of the patch tool's own strategy chain, so a new strategy is a new bucket
+func fuzzyMatchStrategies() ValueSet { return Set(tools.FuzzyStrategyNames()...) }

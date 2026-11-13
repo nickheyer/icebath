@@ -16,13 +16,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -363,91 +363,6 @@ func resolveOAuthVerify(env PoolEnv, insecure *bool, caBundle string, authState 
 	return defaultOAuthVerify()
 }
 
-var proxyEnvKeysAll = []string{"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy"}
-
-var noProxyEnvKeys = []string{"NO_PROXY", "no_proxy"}
-
-var (
-	bracketedIPv6Re = regexp.MustCompile(`^\[([0-9A-Fa-f:.]+)\](?:[/:].*)?$`)
-	cidrIPv6Re      = regexp.MustCompile(`^([0-9A-Fa-f:.]+)/\d+$`)
-)
-
-// The socks5 form of a socks proxy URL, other values trimmed and otherwise untouched
-func normalizeProxyURL(proxyURL string) string {
-	candidate := strings.TrimSpace(proxyURL)
-	if strings.HasPrefix(strings.ToLower(candidate), "socks://") {
-		return "socks5://" + candidate[len("socks://"):]
-	}
-	return candidate
-}
-
-// The bare IPv6 literal a bracketed or CIDR IPv6 NO_PROXY entry should become, empty otherwise
-func bareIPv6Literal(entry string) string {
-	candidate := strings.TrimSpace(entry)
-	m := bracketedIPv6Re.FindStringSubmatch(candidate)
-	if m == nil {
-		m = cidrIPv6Re.FindStringSubmatch(candidate)
-	}
-	if m == nil {
-		return ""
-	}
-	ip := net.ParseIP(m[1])
-	if ip == nil || ip.To4() != nil {
-		return ""
-	}
-	return m[1]
-}
-
-// NO_PROXY with bracketed and CIDR IPv6 entries rewritten to bare literals, byte stable otherwise
-func sanitizeNoProxyEntries(noProxyValue string) string {
-	entries := noProxySplitRe.Split(strings.TrimSpace(noProxyValue), -1)
-	cleaned := entries[:0]
-	for _, part := range entries {
-		if part != "" {
-			cleaned = append(cleaned, part)
-		}
-	}
-	if len(cleaned) == 0 || containsString(cleaned, "*") {
-		return noProxyValue
-	}
-	rewritten := make([]string, 0, len(cleaned))
-	changed := false
-	for _, entry := range cleaned {
-		bare := bareIPv6Literal(entry)
-		if bare == "" {
-			rewritten = append(rewritten, entry)
-			continue
-		}
-		changed = true
-		if !containsString(rewritten, bare) {
-			rewritten = append(rewritten, bare)
-		}
-	}
-	if !changed {
-		return noProxyValue
-	}
-	return strings.Join(rewritten, ",")
-}
-
-// Rewrites the proxy env vars to canonical forms in place before a client reads them
-func oauthNormalizeProxyEnvVars() {
-	for _, key := range proxyEnvKeysAll {
-		value := os.Getenv(key)
-		if normalized := normalizeProxyURL(value); normalized != "" && normalized != value {
-			_ = os.Setenv(key, normalized)
-		}
-	}
-	for _, key := range noProxyEnvKeys {
-		value := os.Getenv(key)
-		if value == "" {
-			continue
-		}
-		if sanitized := sanitizeNoProxyEntries(value); sanitized != value {
-			_ = os.Setenv(key, sanitized)
-		}
-	}
-}
-
 // Transport adding default headers to every request it carries
 type headerTransport struct {
 	base    http.RoundTripper
@@ -466,7 +381,7 @@ func (t headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // Transport with the resolved verification, proxy settings read from the normalized environment
 func oauthTransport(verify oauthVerify) *http.Transport {
-	oauthNormalizeProxyEnvVars()
+	config.NormalizeProxyEnvVars()
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = http.ProxyFromEnvironment
 	transport.TLSClientConfig = verify.TLS

@@ -23,11 +23,6 @@ const stackDumpDaemonMode = "stack-dump-daemon"
 // Ordinary daemon whose scheduling skips a session holding a SAFE_QUEUE admission, the api_recovery_daemon fixture
 const apiRecoveryDaemonMode = "api-recovery-daemon"
 
-func init() {
-	childModes[stackDumpDaemonMode] = armStackDump
-	childModes[apiRecoveryDaemonMode] = holdSafeQueueScheduling
-}
-
 // Starts the delayed repeating diagnostics dump and returns to the ordinary entry
 func armStackDump() {
 	h := os.Getenv(home.EnvHome)

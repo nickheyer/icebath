@@ -1,13 +1,15 @@
 .PHONY: test build dev release setup
 
+GOTAGS ?= goolm
+
 test:
-	go test ./...
+	go test -tags $(GOTAGS) ./...
 
 build:
-	go build -o dist/icebath ./cmd/icebath
+	go build -tags $(GOTAGS) -o dist/icebath ./cmd/icebath
 
 dev:
-	go run ./cmd/icebath
+	go run -tags $(GOTAGS) ./cmd/icebath
 
 release:
 	bash scripts/release/pushReleaseTag.sh $(RELEASE_FLAGS)

@@ -90,7 +90,8 @@ func TestIdleCliPaintsHeaderAndStreamsTheGatewayAdmittedTurn(t *testing.T) {
 	}
 	var deltas []any
 	a := scriptedAgentOn(t, conn, gatewayAgentOptions{StreamDeltaCallback: func(text any) { deltas = append(deltas, text) }})
-	c.agent, c.conversationHistory = a, nil
+	c.setAgent(a)
+	c.conversationHistory = nil
 	var chatted []any
 	var result map[string]any
 	patchTurn(t, func(ctx context.Context, running cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
@@ -189,7 +190,8 @@ func TestIdleCliShowsAGatewayReviewSubagentsCompletion(t *testing.T) {
 	}
 	var deltas []any
 	a := scriptedAgentOn(t, conn, gatewayAgentOptions{StreamDeltaCallback: func(text any) { deltas = append(deltas, text) }})
-	c.agent, c.conversationHistory = a, nil
+	c.setAgent(a)
+	c.conversationHistory = nil
 	var result map[string]any
 	patchTurn(t, func(ctx context.Context, running cliAgent, message any, o agent.RunConversationOptions) (map[string]any, error) {
 		ran, err := running.RunConversation(ctx, message, o)

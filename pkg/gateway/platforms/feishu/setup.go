@@ -1,7 +1,6 @@
 package feishu
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -359,57 +357,42 @@ func numberIs(v any, n int64) bool {
 	return false
 }
 
-// Probes the bot behind the credentials through the tenant access token and bot info APIs, nil on an expected failure
+// Bot name and open id behind the credentials from the bot info API through the lark SDK, nil on failure
 func probeBot(ctx context.Context, appID, appSecret any, domain string) (map[string]any, error) {
-	base := onboardOpenBaseURL(domain)
-	getJSON := func(path string, data []byte, extra map[string]string) (*pyjson.Object, error) {
-		method := http.MethodGet
-		var body io.Reader
-		if data != nil {
-			method, body = http.MethodPost, bytes.NewReader(data)
-		}
-		req, err := http.NewRequest(method, base+path, body)
-		if err != nil {
-			return nil, err
-		}
-		for k, v := range extra {
-			req.Header.Set(k, v)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		raw, err := urlopenFn(ctx, req, onboardRequestTimeout)
-		if err != nil {
-			return nil, err
-		}
-		decoded, err := decodeJSONBody(raw)
-		if err != nil {
-			return nil, err
-		}
-		return asObject(decoded)
+	return probeBotSDK(ctx, pyrepr.Str(appID), pyrepr.Str(appSecret), domain), nil
+}
+
+// Lark client for onboarding credentials and a feishu or lark domain name
+func buildOnboardClient(appID, appSecret, domain string) larkAPI {
+	return buildLarkClient(appID, appSecret, sdkDomain(domain))
+}
+
+// Bot info probe over the SDK tenant token request, nil when the request or its payload fails
+func probeBotSDK(ctx context.Context, appID, appSecret, domain string) map[string]any {
+	fail := func(err error) map[string]any {
+		slog.Debug("[Feishu onboard] SDK probe failed: " + err.Error())
+		return nil
 	}
-	result, err := func() (map[string]any, error) {
-		payload, err := pyjson.EncodeWTF8PythonASCII(pyjson.ObjectOf("app_id", appID, "app_secret", appSecret))
-		if err != nil {
-			return nil, err
-		}
-		tokenRes, err := getJSON("/open-apis/auth/v3/tenant_access_token/internal", payload, nil)
-		if err != nil {
-			return nil, err
-		}
-		token := tokenRes.Vals["tenant_access_token"]
-		if !pyrepr.Truthy(token) {
-			return nil, nil
-		}
-		botRes, err := getJSON("/open-apis/bot/v3/info", nil, map[string]string{"Authorization": "Bearer " + pyrepr.Str(token)})
-		if err != nil {
-			return nil, err
-		}
-		return parseBotResponse(botRes)
-	}()
-	if err != nil && expectedOnboardError(err) {
-		slog.Debug("[Feishu onboard] HTTP probe failed: " + err.Error())
-		return nil, nil
+	resp, err := buildOnboardClient(appID, appSecret, domain).Do(ctx, tenantGetRequest("/open-apis/bot/v3/info", nil))
+	if err != nil {
+		return fail(err)
 	}
-	return result, err
+	if resp == nil || resp.RawBody == nil {
+		return nil
+	}
+	decoded, err := pyjson.Loads(string(resp.RawBody))
+	if err != nil {
+		return fail(err)
+	}
+	payload, err := asObject(decoded)
+	if err != nil {
+		return fail(err)
+	}
+	parsed, err := parseBotResponse(payload)
+	if err != nil {
+		return fail(err)
+	}
+	return parsed
 }
 
 // Step seams of the scan to create flow, the module functions its tests replace
@@ -451,7 +434,6 @@ func qrRegisterInner(ctx context.Context, initialDomain string, timeoutSeconds i
 		fmt.Fprintf(out, "\n  Scan the QR code above, or open this URL directly:\n  %s\n", begin.QRURL)
 	} else {
 		fmt.Fprintf(out, "  Open this URL in Feishu / Lark on your phone:\n\n  %s\n\n", begin.QRURL)
-		fmt.Fprintf(out, "  Tip: from the Icebath environment, run: %s to display a scannable QR code here next time\n", pm.InstallHint("messaging"))
 	}
 	fmt.Fprintln(out)
 	interval, err := seconds(begin.Interval)

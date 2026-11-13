@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -97,7 +98,7 @@ func (c *Context) PlatformActions() (any, error) {
 	c.facadeMu.Lock()
 	defer c.facadeMu.Unlock()
 	if c.platformActions == nil {
-		c.platformActions = &PlatformActions{pluginID: c.PluginID()}
+		c.platformActions = NewPlatformActions(c.PluginID())
 	}
 	return c.platformActions, nil
 }
@@ -107,7 +108,7 @@ func (c *Context) LLM() *PluginLlm {
 	c.facadeMu.Lock()
 	defer c.facadeMu.Unlock()
 	if c.llm == nil {
-		c.llm = newPluginLlm(c.PluginID())
+		c.llm = newPluginLlm(c.PluginID(), nil, nil, nil)
 	}
 	return c.llm
 }
@@ -894,7 +895,7 @@ func (c *Context) registerPlatform(spec PlatformSpec) (*Registration, error) {
 	if err != nil {
 		return nil, err
 	}
-	trusted, _ := spec.Extra["trusted_inbound"].(bool)
+	trusted := config.PyTruthy(spec.Extra["trusted_inbound"])
 	if trusted && c.manifest.Source != "bundled" && registry.CoreShipsPlatform(spec.Name) {
 		return nil, c.refuse(fmt.Sprintf("core platform '%s' with trusted_inbound (it would waive allowlists and pairing)", spec.Name))
 	}
@@ -949,6 +950,11 @@ type SlackActionHandler struct {
 
 // Registers a Slack Block Kit action handler wired into the Slack app at connect
 func (c *Context) RegisterSlackActionHandler(actionID any, callback any) (*Registration, error) {
+	return c.registerSlackActionHandler(actionID, callback, slackActionRepr(actionID))
+}
+
+// Registration body keyed and logged by the Python repr of the action id
+func (c *Context) registerSlackActionHandler(actionID, callback any, text string) (*Registration, error) {
 	if c.ignoredAfterAbandonedLoad("register_slack_action_handler") {
 		return nil, nil
 	}
@@ -963,13 +969,17 @@ func (c *Context) RegisterSlackActionHandler(actionID any, callback any) (*Regis
 	m.mu.Lock()
 	m.slackActionHandlers = append(m.slackActionHandlers, entry)
 	m.mu.Unlock()
-	handle := c.track("slack_action_handler", config.PyRepr(actionID), func() error {
+	handle := c.track("slack_action_handler", text, func() error {
 		m.mu.Lock()
 		m.slackActionHandlers, _ = removeIdentity(m.slackActionHandlers, entry)
 		m.mu.Unlock()
 		return nil
 	}, false)
-	logDebug(fmt.Sprintf("Plugin %s registered Slack action handler: %s", c.manifest.Name, config.PyStr(actionID)))
+	shown := text
+	if s, ok := actionID.(string); ok {
+		shown = s
+	}
+	logDebug(fmt.Sprintf("Plugin %s registered Slack action handler: %s", c.manifest.Name, shown))
 	return handle, nil
 }
 
@@ -1305,31 +1315,25 @@ func pluginSkillOwners(m *Manager, qualified string) map[string]bool {
 	return owners
 }
 
-// Fields of one plugin automation blueprint registration
+// Fields of one plugin automation blueprint registration as the plugin passed them, checked by the builder
 type BlueprintSpec struct {
-	Title            string
-	Description      string
-	ScheduleTemplate string
-	PromptTemplate   string
-	Category         string
-	Slots            []any
-	DeliverDefault   string
-	Skills           []string
-	Tags             []string
+	Title            any
+	Description      any
+	ScheduleTemplate any
+	PromptTemplate   any
+	Category         any
+	Slots            any
+	DeliverDefault   any
+	Skills           any
+	Tags             any
 }
 
 // Adds an automation blueprint to this profile catalog, malformed or duplicate input warned and skipped
-func (c *Context) RegisterAutomationBlueprint(key string, spec BlueprintSpec) (*Registration, error) {
+func (c *Context) RegisterAutomationBlueprint(key any, spec BlueprintSpec) (*Registration, error) {
 	if c.ignoredAfterAbandonedLoad("register_automation_blueprint") {
 		return nil, nil
 	}
-	if spec.Category == "" {
-		spec.Category = "general"
-	}
-	if spec.DeliverDefault == "" {
-		spec.DeliverDefault = "origin"
-	}
-	build, err := needService("BuildPluginBlueprint", func(s *Services) func(string, string, BlueprintSpec) (string, any, error) {
+	build, err := needService("BuildPluginBlueprint", func(s *Services) func(string, any, BlueprintSpec) (string, any, error) {
 		return s.BuildPluginBlueprint
 	})
 	if err != nil {
@@ -1354,3 +1358,23 @@ func (c *Context) RegisterAutomationBlueprint(key string, spec BlueprintSpec) (*
 
 // Identity wrapper of one registered automation blueprint
 type blueprintEntry struct{ value any }
+
+// Python repr of a Go action id, compiled patterns as re.compile of their source
+func slackActionRepr(v any) string {
+	switch x := v.(type) {
+	case *regexp.Regexp:
+		return "re.compile(" + config.PyRepr(x.String()) + ")"
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = config.PyRepr(k) + ": " + slackActionRepr(x[k])
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	}
+	return config.PyRepr(v)
+}

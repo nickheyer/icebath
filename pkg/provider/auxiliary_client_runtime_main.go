@@ -88,11 +88,13 @@ func auxNormalizeMainRuntime(ctx context.Context, mainRuntime map[string]any) ma
 	}
 	for _, field := range auxMainRuntimeContextFields {
 		value := mainRuntime[field]
-		switch v := value.(type) {
-		case func() (string, error), func() string:
+		if _, callable := auxCallableIdentity(value); callable {
 			if field == "api_key" {
-				normalized[field] = v
+				normalized[field] = value
 			}
+			continue
+		}
+		switch v := value.(type) {
 		case string:
 			if s := pyStripSpace(v); s != "" {
 				normalized[field] = s

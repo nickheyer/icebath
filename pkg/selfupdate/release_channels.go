@@ -521,7 +521,7 @@ func NewChannelReader(baseURL string, repository *string, opener ChannelOpener) 
 	if r.opener == nil {
 		client := &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: &http.Transport{Proxy: pyurl.UrlopenProxy},
+			Transport: &http.Transport{Proxy: sourceUrlopenProxy},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return channelErr("Channel archive redirects are not permitted")
 			},

@@ -210,6 +210,7 @@ var mcpMergeCfg = config.Tree{"mcp_servers": map[string]any{
 }}
 
 func TestPerJobToolsetMcpMerge(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	got := mergeMCPIntoPerJobToolsets(ctx, []string{"web", "terminal"}, mcpMergeCfg)
 	if strings.Join(got, ",") != "web,terminal,finnhub,playwright,string_enabled" {

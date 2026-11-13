@@ -150,7 +150,7 @@ func PlatformStatus(ctx context.Context, p SetupPlatform) (string, error) {
 				connected, err := entry.IsConnected(ctx, cfg)
 				return err == nil && connected
 			}
-			return entry.CheckFn != nil && entry.CheckFn()
+			return entry.CheckFn != nil && entry.RunCheck(ctx)
 		}()
 		if configured {
 			return "configured", nil

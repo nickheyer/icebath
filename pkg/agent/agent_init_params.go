@@ -2,9 +2,9 @@ package agent
 
 // Copies the constructor params stored verbatim under the same name
 func copyPassthroughParams(a *AIAgent, o AIAgentOptions) {
-	a.model, a.maxIterations, a.saveTrajectories, a.verboseLogging = o.Model, o.MaxIterations, o.SaveTrajectories, o.VerboseLogging
-	a.quietMode, a.toolProgressMode, a.ephemeralSystemPrompt, a.platform = o.QuietMode, o.ToolProgressMode, o.EphemeralSystemPrompt, o.Platform
-	a.skipContextFiles, a.loadSoulIdentity, a.passSessionID, a.logPrefixChars = o.SkipContextFiles, o.LoadSoulIdentity, o.PassSessionID, o.LogPrefixChars
+	a.model, a.modelNone, a.maxIterations, a.saveTrajectories, a.verboseLogging = o.Model, o.ModelNone, *o.MaxIterations, o.SaveTrajectories, o.VerboseLogging
+	a.quietMode, a.toolProgressMode, a.ephemeralSystemPrompt, a.platform = o.QuietMode, *o.ToolProgressMode, o.EphemeralSystemPrompt, o.Platform
+	a.skipContextFiles, a.loadSoulIdentity, a.passSessionID, a.logPrefixChars = o.SkipContextFiles, o.LoadSoulIdentity, o.PassSessionID, *o.LogPrefixChars
 	a.providersAllowed, a.providersIgnored, a.providersOrder, a.providerSort = o.ProvidersAllowed, o.ProvidersIgnored, o.ProvidersOrder, o.ProviderSort
 	a.providerRequireParameters, a.providerDataCollection, a.openrouterMinCodingScore = o.ProviderRequireParameters, o.ProviderDataCollection, o.OpenRouterMinCodingScore
 	a.enabledToolsets, a.disabledToolsets = o.EnabledToolsets, o.DisabledToolsets

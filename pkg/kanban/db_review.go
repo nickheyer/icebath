@@ -266,9 +266,9 @@ func BlockTaskWithKind(ctx context.Context, conn state.SQLiteConn, taskID string
 	return true, nil
 }
 
-// Zero for a nil cell, the cell otherwise
+// Zero for a falsy cell like the or 0 idiom, the cell otherwise
 func orZero(v any) any {
-	if v == nil {
+	if !truthy(v) {
 		return int64(0)
 	}
 	return v

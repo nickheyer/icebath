@@ -26,7 +26,7 @@ export interface NoticeTranslations {
     compactedTurnUnavailable: string
     /** The same refusal for any other stale target: undone in another window, not a user turn, or gone. */
     staleTurnUnavailable: string
-    /** Typed /undo /retry /steer /queue lines (the Ink TUI's wording on the same gateway). */
+    /** Typed /undo /retry /steer /queue lines (the terminal UI's wording on the same gateway). */
     sessionCommands: SessionCommandNotices
     /** Desktop-side /rollback /agents /config /history /save /export /import /timestamps lines. */
     desktopCommands: DesktopCommandNotices

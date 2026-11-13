@@ -40,7 +40,10 @@ var (
 )
 
 // Records the saved config transitions through the config package's save hook
-func init() { config.RegisterConfigSavedObserver(RecordConfigSaved) }
+func init() {
+	config.RegisterConfigSavedObserver(RecordConfigSaved)
+	config.RegisterRawConfigWriteRecorder(RecordingRawConfigWrite)
+}
 
 // SetProcessSurface sets the running entry point from the icebath subcommand, nil for chat, unknown clearing it
 func SetProcessSurface(command any) {
@@ -408,6 +411,37 @@ func RecordConfigSaved(h string, oldRaw, newConfig map[string]any) {
 		defer featureDisabledWG.Done()
 		recordTransitions(old, new, surface, h)
 	}()
+}
+
+// Runs a raw config file write and records what it flipped in the file it replaced
+func RecordingRawConfigWrite(ctx context.Context, h, configPath string, userConfig map[string]any, write func(configPath string, userConfig map[string]any) error) error {
+	var before map[string]any
+	snapshot := false
+	if rawSurface() != "" {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Debug("Config snapshot for feature-disabled skipped", "error", r)
+				}
+			}()
+			if !relayEnabled(home.WithOverride(ctx, h)) {
+				return
+			}
+			raw, err := config.ReadUserConfigRaw(ctx, configPath)
+			if err != nil {
+				slog.Debug("Config snapshot for feature-disabled skipped", "error", err)
+				return
+			}
+			before, snapshot = raw, true
+		}()
+	}
+	if err := write(configPath, userConfig); err != nil {
+		return err
+	}
+	if snapshot && !config.IsAppliedWrite(ctx) {
+		RecordConfigSaved(h, before, userConfig)
+	}
+	return nil
 }
 
 // RecordSkillRemoved counts a catalog skill being uninstalled, hub skills never shipped and never counted

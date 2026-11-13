@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Installs the wiring doubles the package tests reach before any test runs
+// Installs the wiring doubles and a private home the package tests reach before any test runs
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
@@ -19,7 +19,14 @@ func TestMain(m *testing.M) {
 	}
 	installAutomationCodecDoubles()
 	installRouteBuilderDoubles()
-	os.Exit(m.Run())
+	home, err := os.MkdirTemp("", "icebath-state-home")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("ICEBATH_HOME", home)
+	code := m.Run()
+	os.RemoveAll(home)
+	os.Exit(code)
 }
 
 // Refusal the worker facade raises before or after a receipt

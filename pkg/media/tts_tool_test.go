@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/media/edgetts"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -288,12 +289,15 @@ func TestTextToSpeechToolWithCommandProvider(t *testing.T) {
 	})
 	t.Run("test_missing_command_falls_through_to_builtin", func(t *testing.T) {
 		fixedTTSConfig(t, map[string]any{"provider": "broken", "providers": map[string]any{"broken": map[string]any{"type": "command", "command": "   "}}})
-		swap(t, &ttsModuleImportable, func(context.Context, string) bool { return false })
-		swap(t, &ttsEnsureImport, func(context.Context, string) error { return nil })
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+		var spoken edgetts.Options
+		swap(t, &edgeSynthesize, func(_ context.Context, _ string, opts edgetts.Options, outputPath string) error {
+			spoken = opts
+			return os.WriteFile(outputPath, []byte("mp3"), 0o644)
+		})
 		data := runTTS(t, ttsCallArgs{Text: "hi", OutputPath: filepath.Join(t.TempDir(), "x.mp3")})
-		errText, _ := data["error"].(string)
-		if strings.Contains(strings.ToLower(errText), "tts.providers.broken.command is not configured") {
-			t.Fatalf("data = %v", data)
+		if data["success"] != true || spoken.Voice != defaultEdgeVoice || spoken.Rate != "" {
+			t.Fatalf("data = %v, spoken = %+v", data, spoken)
 		}
 	})
 }
@@ -335,50 +339,28 @@ func TestHitRefreshesRecencySoEvictionIsLruNotFifo(t *testing.T) {
 	}
 }
 
-// Edge default with no SDK, no NeuTTS fallback and installs recorded as failures
-func edgeWithoutSDK(t *testing.T) *[]string {
-	t.Helper()
+func TestEdgeDefaultIsAlwaysReadyAndKeyedProvidersNeedTheirCredential(t *testing.T) {
 	fixedTTSConfig(t, map[string]any{"provider": "edge"})
-	swap(t, &ttsPMExtraAvailable, func(context.Context, string) bool { return false })
-	swap(t, &ttsCheckNeuTTS, func(context.Context) bool { return false })
-	return recordInstalls(t)
-}
-
-// Records any install a requirement check attempts
-func recordInstalls(t *testing.T) *[]string {
-	t.Helper()
-	calls := &[]string{}
-	swap(t, &ttsEnsureImport, func(_ context.Context, extra string) error {
-		*calls = append(*calls, extra)
-		return errors.New("a TTS requirement check installed " + extra)
-	})
-	return calls
-}
-
-func TestInstallableSdkReadsReadyWithoutInstalling(t *testing.T) {
-	installs := edgeWithoutSDK(t)
-	swap(t, &ttsLazyInstallsAllowed, func(context.Context) bool { return true })
-	if !checkTTSRequirements(context.Background(), nil) || len(*installs) != 0 {
-		t.Fatalf("installs = %v", *installs)
+	if !checkTTSRequirements(context.Background(), nil) {
+		t.Fatal("the compiled in Edge provider reads as unavailable")
 	}
-}
-
-func TestMissingSdkReportsUnavailableWhenInstallCannotHelp(t *testing.T) {
-	installs := edgeWithoutSDK(t)
-	swap(t, &ttsLazyInstallsAllowed, func(context.Context) bool { return false })
-	if checkTTSRequirements(context.Background(), nil) || len(*installs) != 0 {
-		t.Fatalf("installs = %v", *installs)
-	}
-}
-
-func TestSecondProviderNeedsItsOwnCredentialBeforeFirstUseCounts(t *testing.T) {
-	installs := recordInstalls(t)
 	fixedTTSConfig(t, map[string]any{"provider": "elevenlabs"})
-	swap(t, &ttsPMExtraAvailable, func(context.Context, string) bool { return false })
 	swap(t, &ttsResolveProviderKey, func(*tools.Env, string, string) string { return "" })
-	swap(t, &ttsLazyInstallsAllowed, func(context.Context) bool { return true })
-	if checkTTSRequirements(context.Background(), nil) || len(*installs) != 0 {
-		t.Fatalf("installs = %v", *installs)
+	if checkTTSRequirements(context.Background(), nil) {
+		t.Fatal("ElevenLabs without a key reads as ready")
+	}
+}
+
+func TestEdgeSpeedBecomesASignedRateAndFailuresSurface(t *testing.T) {
+	var spoken edgetts.Options
+	swap(t, &edgeSynthesize, func(_ context.Context, _ string, opts edgetts.Options, _ string) error {
+		spoken = opts
+		return edgetts.ErrNoAudio
+	})
+	out := filepath.Join(t.TempDir(), "x.mp3")
+	_, err := generateEdgeTTS(context.Background(), nil, "hi", out, map[string]any{"speed": 1.5, "edge": map[string]any{"voice": "en-GB-SoniaNeural"}})
+	if err == nil || !errors.Is(err, edgetts.ErrNoAudio) || spoken.Voice != "en-GB-SoniaNeural" || spoken.Rate != "+50%" {
+		t.Fatalf("err = %v, spoken = %+v", err, spoken)
 	}
 }
 

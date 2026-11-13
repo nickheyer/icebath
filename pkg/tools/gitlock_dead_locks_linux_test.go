@@ -187,7 +187,7 @@ func TestAKilledGitsIndexLockGoesAtOnceAndALiveOnesStays(t *testing.T) {
 	if got := updaterecord.ReadLatestReceipt(ctx)["outcome"]; got != "running" {
 		t.Fatalf("latest outcome %v", got)
 	}
-	released, err = ReleaseDeadIndexLock(ctx, repo)
+	released, err = glReleaseDeadIndexLock(ctx, repo)
 	if err != nil || !released {
 		t.Fatalf("released %v %v", released, err)
 	}
@@ -245,7 +245,7 @@ func TestAKilledUpdatesLockStaysWhileAnyGitWorksInTheCheckout(t *testing.T) {
 				t.Fatalf("%s: the reclaim deleted a lock a live git may own (released %v err %v)", form, released, err)
 			}
 			if !dashed {
-				released, err := ReleaseDeadIndexLock(ctx, repo)
+				released, err := glReleaseDeadIndexLock(ctx, repo)
 				if err != nil || !released {
 					t.Fatalf("once the checkout's git is gone the killed update's lock goes: lock_exists %v killed_update_owns %v held_open %+v err %v",
 						pathExists(lock), killedUpdateOwns(ctx, lock), pm.HeldOpen(lock, repo, true), err)
@@ -355,7 +355,7 @@ func TestAKilledFetchsRefLockGoesAndTheNextFetchLands(t *testing.T) {
 	if rc == 0 || !strings.Contains(stderr, "origin/main") {
 		t.Fatalf("premise: %s", stderr)
 	}
-	released, err = ReleaseDeadFetchLocks(ctx, clone)
+	released, err = glReleaseDeadFetchLocks(ctx, clone, lock)
 	if err != nil || !slices.Equal(released, []string{lock}) {
 		t.Fatalf("released %v %v", released, err)
 	}
@@ -418,7 +418,7 @@ func TestAKilledShallowFetchsShallowLockGoesAndTheNextFetchLands(t *testing.T) {
 	if rc == 0 || !strings.Contains(stderr, "shallow.lock") {
 		t.Fatalf("premise: %s", stderr)
 	}
-	released, err = ReleaseDeadFetchLocks(ctx, clone)
+	released, err = glReleaseDeadFetchLocks(ctx, clone, lock)
 	if err != nil || !slices.Equal(released, []string{lock}) {
 		t.Fatalf("released %v %v", released, err)
 	}

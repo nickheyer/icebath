@@ -1,0 +1,8 @@
+usage: icebath status [-h] [--full] [--deep]
+
+Display status of Icebath Agent components
+
+options:
+  -h, --help     show this help message and exit
+  --full, --all  Show every section (keys redacted) instead of the one-screen summary
+  --deep         Run deep checks (implies --full; may take longer)

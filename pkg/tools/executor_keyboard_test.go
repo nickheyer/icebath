@@ -22,7 +22,7 @@ func keyboardExecutor(t *testing.T, run func(ctx context.Context, name string) (
 	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0")
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
 	d := NewDispatcher(NewRegistry())
-	d.Relay = func(ctx context.Context, _ *Env, name string, args map[string]any, _ ToolHookIDs, _ func(map[string]any) (string, error)) (string, map[string]any, error) {
+	d.Relay = func(ctx context.Context, _ *Env, name string, args map[string]any, _ ToolHookIDs, _ func(context.Context, map[string]any) (string, error)) (string, map[string]any, error) {
 		result, err := run(ctx, name)
 		return result, args, err
 	}

@@ -303,8 +303,8 @@ func redirectAgent(used int) *AIAgent {
 func TestSingleRedirectedRestartStillReissuesTheIteration(t *testing.T) {
 	a := redirectAgent(10)
 	v, s := applyRedirectedRestart(t, a, true, 0, nil)
-	if v.Action != "continue" || a.iterationBudget.Used() != 9 || s.APICallCount != 0 {
-		t.Fatalf("verdict %q used %d count %d", v.Action, a.iterationBudget.Used(), s.APICallCount)
+	if v.Action != "continue" || a.iterationBudget.Load().Used() != 9 || s.APICallCount != 0 {
+		t.Fatalf("verdict %q used %d count %d", v.Action, a.iterationBudget.Load().Used(), s.APICallCount)
 	}
 }
 
@@ -316,8 +316,8 @@ func TestBackToBackRedirectedRestartRefundsAreBounded(t *testing.T) {
 		v, s := applyRedirectedRestart(t, a, true, restartCount, nil)
 		actions, restartCount = append(actions, v.Action), s.RestartCount
 	}
-	if strings.Join(actions, ",") != "continue,continue,continue,break" || 20-a.iterationBudget.Used() != phaseTestMaxRetries {
-		t.Fatalf("actions %v used %d", actions, a.iterationBudget.Used())
+	if strings.Join(actions, ",") != "continue,continue,continue,break" || 20-a.iterationBudget.Load().Used() != phaseTestMaxRetries {
+		t.Fatalf("actions %v used %d", actions, a.iterationBudget.Load().Used())
 	}
 	if a.pendingSteer != "last correction" {
 		t.Fatalf("steered %q", a.pendingSteer)

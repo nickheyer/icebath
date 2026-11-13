@@ -1,14 +1,10 @@
 package plugins
 
 import (
-	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const asyncPlugin = `
@@ -51,50 +47,5 @@ func TestIsolationHostKeepsEveryUserImportPathOutOfProcess(t *testing.T) {
 	blocked, err := auditPluginDir(filepath.Join(h, "plugins", "platformprobe"), nil)
 	if err != nil || blocked.Verdict != VerdictInProcess || len(blocked.Reasons) == 0 || !strings.Contains(blocked.Reasons[0], "register_platform") {
 		t.Fatalf("platformprobe audit %+v %v", blocked, err)
-	}
-}
-
-// A hosted async tool calling back into the parent runs in the session of whoever dispatched it
-func TestAsyncPluginCodeCallsBackInTheCallersSession(t *testing.T) {
-	for label, python := range liveInterpreters(t) {
-		t.Run(label, func(t *testing.T) {
-			installLiveServices(t)
-			tools.Default.Register(tools.Def{Name: "session_probe", Toolset: "asyncprobe", Schema: ledgerSchema("session_probe"),
-				Handler: func(ctx context.Context, _ *tools.Call) string {
-					session, ok := ctx.Value(liveSessionKey{}).(string)
-					if !ok {
-						session = "<unset>"
-					}
-					out, _ := json.Marshal(map[string]any{"session": session})
-					return string(out)
-				}})
-			t.Cleanup(func() { _ = tools.Default.Deregister("session_probe", "", "") })
-			creator := func(ctx context.Context) context.Context {
-				return context.WithValue(ctx, liveSessionKey{}, "host-creator")
-			}
-			h, m := liveHomeLoadedIn(t, python, map[string]string{"asyncprobe": asyncPlugin}, IsolationHost, creator)
-			if e := loadedError(m, "asyncprobe"); e != "" {
-				t.Fatalf("asyncprobe failed to load: %s", e)
-			}
-			callAs := func(name string) map[string]any {
-				def := tools.Default.Lookup(homeCtx(h), h, "async_whoami")
-				if def == nil {
-					t.Fatal("async_whoami is not registered")
-				}
-				raw := def.Handler(context.WithValue(homeCtx(h), liveSessionKey{}, name), &tools.Call{Name: "async_whoami", Args: map[string]any{}})
-				var got map[string]any
-				if err := json.Unmarshal([]byte(raw), &got); err != nil {
-					t.Fatalf("async_whoami = %s", raw)
-				}
-				return got
-			}
-			b := callAs("session-B")
-			if inner, _ := b["inner"].(map[string]any); len(b) != 2 || len(inner) != 1 || inner["session"] != "session-B" || b["acomplete_awaitable"] != true {
-				t.Fatalf("session-B call = %v", b)
-			}
-			if inner, _ := callAs("session-C")["inner"].(map[string]any); len(inner) != 1 || inner["session"] != "session-C" {
-				t.Fatalf("session-C inner = %v", inner)
-			}
-		})
 	}
 }

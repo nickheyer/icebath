@@ -140,21 +140,23 @@ var (
 
 // Terminates the process tree, escalating to SIGKILL after a five second grace, falling back to a plain kill and never panicking
 var killProcessGroup = func(pid int, kill func() error, exited <-chan struct{}, escalate bool) {
-	treeSignal := func(sig syscall.Signal) {
-		defer func() {
-			if r := recover(); r != nil {
-				logger(nil).Debug(fmt.Sprintf("Could not terminate process tree: %v", r))
-				if err := kill(); err != nil {
-					logger(nil).Debug("Could not kill process: " + err.Error())
-				}
-			}
-		}()
-		killProcessTree(pid, sig)
-	}
-	treeSignal(syscall.SIGTERM)
+	signalTree(pid, kill, syscall.SIGTERM)
 	if escalate && !waitExited(exited, 5*time.Second) {
-		treeSignal(syscall.SIGKILL)
+		signalTree(pid, kill, syscall.SIGKILL)
 	}
+}
+
+// Signals the process tree, falling back to a plain kill of the leader when the tree walk panics
+func signalTree(pid int, kill func() error, sig syscall.Signal) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger(nil).Debug(fmt.Sprintf("Could not terminate process tree: %v", r))
+			if err := kill(); err != nil {
+				logger(nil).Debug("Could not kill process: " + err.Error())
+			}
+		}
+	}()
+	killProcessTree(pid, sig)
 }
 
 // Effective code_execution section of the active config, empty when it cannot load

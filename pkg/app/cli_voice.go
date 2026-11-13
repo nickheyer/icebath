@@ -525,9 +525,9 @@ func (c *CLI) voiceFullDuplexListener() {
 						cliLogger.Debug(fmt.Sprintf("voice interjection interrupt failed: %s", errorText(r)))
 					}
 				}()
-				if c.agent != nil && c.agentRunning {
+				if a := c.agentRef(); a != nil && c.agentRunning {
 					cprint("\n" + voiceDim(c.t("cli.voice.interjection", nil)))
-					c.agent.Interrupt()
+					a.Interrupt()
 				}
 			}()
 		}
@@ -621,7 +621,7 @@ func (c *CLI) enableVoiceMode() {
 		for _, line := range strings.Split(reqs.Details, "\n") {
 			cprint("  " + voiceDim(line))
 		}
-		if len(reqs.MissingPackages) > 0 && hostinfo.IsTermux() {
+		if !reqs.AudioAvailable && hostinfo.IsTermux() {
 			cprint("\n  " + boldANSI + c.t("cli.voice.termux_install_cmd", nil) + resetANSI)
 			cprint("  " + voiceDim(c.t("cli.voice.termux_install_hint", nil)))
 		}

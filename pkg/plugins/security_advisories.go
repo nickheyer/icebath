@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // One package of an advisory with its compromised versions, an empty set flagging any installed version
@@ -49,15 +50,15 @@ var Advisories = []Advisory{
 			"environment variables and credential files (~/.npmrc, ~/.pypirc, " +
 			"~/.aws/credentials, GitHub PATs, cloud SDK tokens) and exfils " +
 			"them to a hardcoded webhook. If you ran any Python process that " +
-			"imported mistralai 2.4.6 — including icebath when configured " +
-			"with provider=mistral for TTS or STT — assume those credentials " +
+			"imported mistralai 2.4.6 — including a Python plugin or tool " +
+			"runtime icebath ran from its managed environment — assume those credentials " +
 			"are exposed. PyPI has since removed 2.4.6 and the project ships " +
 			"clean releases again (2.4.7, 2.4.8); this advisory only fires if " +
-			"the compromised 2.4.6 is still installed.",
+			"the compromised 2.4.6 is still installed in that environment.",
 		URL:         "https://socket.dev/blog/mini-shai-hulud-worm-pypi",
 		Compromised: []AdvisoryPackage{{Name: "mistralai", Versions: map[string]bool{"2.4.6": true}}},
 		Remediation: []string{
-			"Run: pip uninstall -y mistralai  (or: uv pip uninstall mistralai)",
+			"Run: icebath pm update --uv  (re-resolves the managed Python environment past mistralai 2.4.6)",
 			"Rotate API keys in {icebath_home}/.env (OpenRouter, Anthropic, OpenAI, " +
 				"Nous, GitHub, AWS, Google, Mistral, etc.).",
 			"Audit ~/.npmrc, ~/.pypirc, ~/.aws/credentials, ~/.config/gh/hosts.yml, " +
@@ -79,21 +80,26 @@ type AdvisoryHit struct {
 	InstalledVersion string
 }
 
-// Installed version of a distribution on the process import path, false when absent or without a version header
-func advisoryInstalledVersion(pkgName string) (string, bool) {
-	version, found := findDistributionVersion(pkgName, processImportPath())
-	if !found || version == "" {
-		return "", false
+// Installed version of a distribution in the managed Python environment, false when absent or unreadable
+var advisoryInstalledVersion = func(ctx context.Context, pkgName string) (string, bool) {
+	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
+	if err == nil {
+		var site string
+		if site, err = pm.SitePackages(venv); err == nil {
+			version, found := findDistributionVersion(pkgName, []string{site})
+			return version, found && version != ""
+		}
 	}
-	return version, true
+	slog.Debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
+	return "", false
 }
 
 // Every advisory package that is installed at a compromised version, or at any version for an empty set
-func DetectCompromised(advisories []Advisory) []AdvisoryHit {
+func DetectCompromised(ctx context.Context, advisories []Advisory) []AdvisoryHit {
 	hits := []AdvisoryHit{}
 	for _, advisory := range advisories {
 		for _, pkg := range advisory.Compromised {
-			installed, ok := advisoryInstalledVersion(pkg.Name)
+			installed, ok := advisoryInstalledVersion(ctx, pkg.Name)
 			if ok && (len(pkg.Versions) == 0 || pkg.Versions[installed]) {
 				hits = append(hits, AdvisoryHit{Advisory: advisory, Package: pkg.Name, InstalledVersion: installed})
 			}

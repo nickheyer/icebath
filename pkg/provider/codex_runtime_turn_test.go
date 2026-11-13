@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -106,6 +109,7 @@ func (c *countingCodexClient) Close(timeout time.Duration) {
 }
 
 func TestCodexRuntimeRetiresThreadWhenAnInPlaceSwitchChangesTheCodexProvider(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	f := &fakeCodexClient{}
 	closes := 0
 	prev := codexAppServerClientFactory
@@ -131,6 +135,7 @@ func TestCodexRuntimeRetiresThreadWhenAnInPlaceSwitchChangesTheCodexProvider(t *
 }
 
 func TestCodexEachTurnSendsTheAgentsCurrentWireModel(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	f := &fakeCodexClient{}
 	f.handler = func(method string, params any) (any, error) {
 		switch method {
@@ -218,7 +223,7 @@ func TestCodexSuccessFlushesAndReportsPersisted(t *testing.T) {
 	a.sessionID, a.db, a.dbCreated = "s1", db, true
 	a.session = newFakeSession(f, CodexAppServerSessionOptions{})
 	a.requestOverrides = map[string]any{}
-	a.flush = func(m []map[string]any) (bool, error) { return true, nil }
+	a.flush = func(m []map[string]any) state.FlushOutcome { return state.FlushPersisted }
 	result, err := RunCodexAppServerTurn(a, "hi", "hi", []map[string]any{{"role": "user", "content": "hi"}}, "t", false, nil)
 	if err != nil || result["agent_persisted"] != true || result["completed"] != true || result["codex_thread_id"] != "thread-fake-001" || result["codex_turn_id"] != "turn-fake-001" {
 		t.Fatalf("result %v err %v", result, err)
@@ -233,9 +238,36 @@ func TestCodexSuccessFlushesAndReportsPersisted(t *testing.T) {
 	b.sessionID, b.db, b.dbCreated = "s2", db2, true
 	b.session = newFakeSession(f2, CodexAppServerSessionOptions{})
 	b.requestOverrides = map[string]any{}
-	b.flush = func(m []map[string]any) (bool, error) { return false, nil }
+	b.flush = func(m []map[string]any) state.FlushOutcome { return state.FlushFailed }
 	if _, err := RunCodexAppServerTurn(b, "hi", "hi", nil, "t", false, nil); err != nil || len(db2.patches) != 0 {
 		t.Fatalf("an undurable transcript published its binding %v %v", db2.patches, err)
+	}
+}
+
+func TestCodexDisabledStoreSkipsTheBindingWithoutTheLossWarning(t *testing.T) {
+	var logged bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	for _, c := range []struct {
+		outcome state.FlushOutcome
+		warned  bool
+	}{{state.FlushDisabled, false}, {state.FlushFailed, true}} {
+		logged.Reset()
+		f := &fakeCodexClient{}
+		agentDone(f, "thread-fake-001", "turn-fake-001", "done")
+		db := &fakeCodexDB{values: map[string]any{}}
+		a := newFakeCodexAgent()
+		a.sessionID, a.db, a.dbCreated = "s1", db, true
+		a.session = newFakeSession(f, CodexAppServerSessionOptions{})
+		a.requestOverrides = map[string]any{}
+		a.flush = func(m []map[string]any) state.FlushOutcome { return c.outcome }
+		if _, err := RunCodexAppServerTurn(a, "hi", "hi", nil, "t", false, nil); err != nil || len(db.patches) != 0 {
+			t.Fatalf("%v published a thread binding over an undurable transcript %v %v", c.outcome, db.patches, err)
+		}
+		if warned := strings.Contains(logged.String(), "could NOT be persisted"); warned != c.warned {
+			t.Fatalf("%v loss warning %v in %s", c.outcome, warned, logged.String())
+		}
 	}
 }
 
@@ -250,6 +282,7 @@ func TestCodexCheckpointRequiredBlocksTheTurn(t *testing.T) {
 }
 
 func TestCodexTurnEffortAndServiceTier(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := newFakeCodexAgent()
 	a.provider = "openai-codex"
 	if codexTurnEffort(a, "gpt-5.5") != nil {

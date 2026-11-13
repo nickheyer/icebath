@@ -24,7 +24,6 @@ var productSteps = struct {
 	frontends       func(projectRoot string) []string
 	buildEnv        func(ctx context.Context, baseEnv map[string]string, explicit, verify bool) (map[string]string, error)
 	prepareDeps     func(ctx context.Context, projectRoot string, workspaces []string, env map[string]string, explicit bool) error
-	buildTUI        func(ctx context.Context, projectRoot string, env map[string]string) error
 	buildWeb        func(ctx context.Context, projectRoot string, env map[string]string, icons string) error
 	buildDesktop    func(ctx context.Context, desktopDir string, sourceMode bool, npm string, env map[string]string, icons string) (string, error)
 	refreshApps     func(ctx context.Context, desktopDir string)
@@ -38,7 +37,6 @@ var productSteps = struct {
 	frontends:       sourceFrontends,
 	buildEnv:        SourceBuildEnv,
 	prepareDeps:     PrepareSourceDependencies,
-	buildTUI:        BuildSourceTUI,
 	buildWeb:        BuildSourceWeb,
 	refreshApps:     refreshInstalledDesktopApps,
 	desktopLock: func(ctx context.Context, projectRoot string, wait bool) (*DesktopBuildLock, error) {
@@ -105,14 +103,6 @@ func BuildUpdateProducts(ctx context.Context, projectRoot string, desktop bool) 
 				"and future updates stop building it.")
 		}
 		if prepared {
-			if slices.Contains(frontends, "ui-tui") {
-				if sourceProductCurrent(ctx, projectRoot, "tui", filepath.Join(projectRoot, "ui-tui", "dist")) {
-					fmt.Fprintln(out, "  ✓ TUI is up to date")
-				} else {
-					productSteps.publishStage("Building the TUI")
-					attempt("TUI build", func() error { return productSteps.buildTUI(ctx, projectRoot, env) })
-				}
-			}
 			if slices.Contains(frontends, "web") {
 				if sourceProductCurrent(ctx, projectRoot, "web", WebDistDir(projectRoot)) {
 					fmt.Fprintln(out, "  ✓ Web UI is up to date")

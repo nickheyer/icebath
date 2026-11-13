@@ -741,8 +741,8 @@ func (c *GatewayConfig) isPlatformConnected(ctx context.Context, platform Platfo
 	switch {
 	case entry.IsConnected != nil:
 		ok, err = entry.IsConnected(ctx, cfg)
-	case entry.ValidateConfig != nil:
-		ok, err = entry.ValidateConfig(cfg)
+	case entry.HasValidateConfig():
+		ok, err = entry.RunValidateConfig(ctx, cfg)
 	default:
 		return true
 	}

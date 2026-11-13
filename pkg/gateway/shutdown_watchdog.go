@@ -124,6 +124,12 @@ type LoopFloorTimerHandle struct {
 	timer     LoopTimer
 }
 
+// Floor timer owner for a loop with its first timer already scheduled
+func newLoopFloorTimerHandle(loop EventLoop, interval time.Duration) (*LoopFloorTimerHandle, error) {
+	h := &LoopFloorTimerHandle{loop: loop, interval: interval}
+	return h, h.tick()
+}
+
 func (h *LoopFloorTimerHandle) tick() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -160,14 +166,18 @@ func ArmLoopFloorTimer(loop EventLoop, interval any) (*LoopFloorTimerHandle, err
 	if !(iv > 0) {
 		iv = DefaultLoopFloorTimerIntervalS
 	}
-	h := &LoopFloorTimerHandle{loop: loop, interval: secondsDuration(iv)}
-	return h, h.tick()
+	return newLoopFloorTimerHandle(loop, secondsDuration(iv))
 }
 
 // Stop, join and liveness of a running loop liveness watchdog
 type LoopLivenessWatchdogHandle struct {
 	stopEvent *pythread.Event
 	finished  chan struct{}
+}
+
+// Handle over a watchdog's stop event and the channel its goroutine closes when it ends
+func newLoopLivenessWatchdogHandle(stopEvent *pythread.Event, finished chan struct{}) *LoopLivenessWatchdogHandle {
+	return &LoopLivenessWatchdogHandle{stopEvent: stopEvent, finished: finished}
 }
 
 func (h *LoopLivenessWatchdogHandle) Stop() { h.stopEvent.Set() }
@@ -195,7 +205,7 @@ func (h *LoopLivenessWatchdogHandle) IsAlive() bool {
 
 // Out of loop watchdog that dumps stacks and hard exits after maxStrikes consecutive missed loop probes
 func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterval, probeTimeout float64, maxStrikes, exitCode int) *LoopLivenessWatchdogHandle {
-	h := &LoopLivenessWatchdogHandle{stopEvent: &pythread.Event{}, finished: make(chan struct{})}
+	h := newLoopLivenessWatchdogHandle(&pythread.Event{}, make(chan struct{}))
 	go pprof.Do(context.Background(), pprof.Labels("name", "gateway-loop-liveness-watchdog"), func(context.Context) {
 		defer close(h.finished)
 		if err := loopLivenessWatch(ctx, loop, h.stopEvent, probeInterval, probeTimeout, maxStrikes, exitCode); err != nil {

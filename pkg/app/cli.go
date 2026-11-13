@@ -342,7 +342,7 @@ type CLI struct {
 	fallbackModel            []map[string]any
 
 	activeAgentRouteSignature  string
-	agent                      cliAgent
+	agent                      atomic.Pointer[cliAgentSlot]
 	toolCallbacksInstalled     bool
 	app                        tuiApplication
 	conversationHistory        []map[string]any

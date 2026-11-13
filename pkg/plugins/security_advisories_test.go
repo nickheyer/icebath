@@ -46,21 +46,15 @@ func advisoryIsolatedHome(t *testing.T) string {
 	return h
 }
 
-// Installs the given distributions as dist-info directories on a fresh import path
+// Answers the managed environment version lookup from a table of installed distributions
 func advisoryInstalled(t *testing.T, table map[string]string) {
 	t.Helper()
-	site := t.TempDir()
-	for name, version := range table {
-		info := filepath.Join(site, distNormalized(name)+"-"+version+".dist-info")
-		if err := os.MkdirAll(info, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		meta := "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n"
-		if err := os.WriteFile(filepath.Join(info, "METADATA"), []byte(meta), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	prev := advisoryInstalledVersion
+	advisoryInstalledVersion = func(_ context.Context, pkgName string) (string, bool) {
+		version, ok := table[pkgName]
+		return version, ok
 	}
-	t.Setenv("PYTHONPATH", site)
+	t.Cleanup(func() { advisoryInstalledVersion = prev })
 }
 
 func advisoryFakeHit() AdvisoryHit {
@@ -69,14 +63,14 @@ func advisoryFakeHit() AdvisoryHit {
 
 func TestDetectCompromisedNoMatchReturnsEmptyList(t *testing.T) {
 	advisoryInstalled(t, map[string]string{})
-	if hits := DetectCompromised([]Advisory{advisoryFake()}); len(hits) != 0 {
+	if hits := DetectCompromised(context.Background(), []Advisory{advisoryFake()}); len(hits) != 0 {
 		t.Fatalf("hits = %#v", hits)
 	}
 }
 
 func TestDetectCompromisedExactVersionMatch(t *testing.T) {
 	advisoryInstalled(t, map[string]string{"fake-malicious-pkg": "6.6.6"})
-	hits := DetectCompromised([]Advisory{advisoryFake()})
+	hits := DetectCompromised(context.Background(), []Advisory{advisoryFake()})
 	if len(hits) != 1 {
 		t.Fatalf("hits = %#v", hits)
 	}
@@ -92,7 +86,7 @@ func TestDetectCompromisedEmptyCompromisedSetMatchesAnyVersion(t *testing.T) {
 		Remediation: []string{"uninstall it"},
 	}
 	advisoryInstalled(t, map[string]string{"evil-namespace": "0.0.1"})
-	hits := DetectCompromised([]Advisory{wildcard})
+	hits := DetectCompromised(context.Background(), []Advisory{wildcard})
 	if len(hits) != 1 || hits[0].InstalledVersion != "0.0.1" {
 		t.Fatalf("hits = %#v", hits)
 	}

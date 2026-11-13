@@ -126,7 +126,7 @@ type budgetFallback struct {
 // Resolves the iteration budget fallback reply and records the kanban timeout for an owned worker
 func resolveBudgetFallback(ctx context.Context, a *AIAgent, s *LoopState, final any, interrupted, failed bool, exitReason any) (budgetFallback, error) {
 	apiCalls := s.APICallCount
-	exhausted := apiCalls >= a.maxIterations || a.iterationBudget.Remaining() <= 0
+	exhausted := apiCalls >= a.maxIterations || a.iterationBudget.Load().Remaining() <= 0
 	out := budgetFallback{finalResponse: final, exitReason: exitReason, interrupted: interrupted}
 	if reason := pyrepr.Str(exitReason); final == nil && exhausted && !interrupted && !failed && (reason == "unknown" || reason == "budget_exhausted") {
 		out.exitReason = fmt.Sprintf("max_iterations_reached(%d/%d)", apiCalls, a.maxIterations)
@@ -338,8 +338,8 @@ func logTurnExit(a *AIAgent, messages []*state.Message, final any, apiCallCount 
 		}
 	}
 	used, maxTotal := 0, 0
-	if a.iterationBudget != nil {
-		used, maxTotal = a.iterationBudget.Used(), a.iterationBudget.MaxTotal
+	if budget := a.iterationBudget.Load(); budget != nil {
+		used, maxTotal = budget.Used(), budget.MaxTotal
 	}
 	session := a.sessionID
 	if session == "" {
@@ -574,7 +574,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 		}
 		return a.persistSession(&s.Messages, s.ConversationHistory)
 	}, &cleanupErrors)
-	a.sessionMessages = s.Messages
+	a.setSessionMessages(s.Messages)
 
 	logTurnExit(a, s.Messages, final, apiCalls, exitReason, interrupted)
 	if pyTruthy(final) && !interrupted {

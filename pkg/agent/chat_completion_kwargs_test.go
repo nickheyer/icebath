@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -165,8 +166,8 @@ func TestBuildAssistantMessageExtractsInlineThinkAndPadsToolCallReasoning(t *tes
 	if row["content"] != "answer" || row["reasoning"] != "plan it" || row["reasoning_content"] != "plan it" || row["finish_reason"] != "tool_calls" {
 		t.Fatalf("row %v", row)
 	}
-	tc := row["tool_calls"].([]any)[0].(map[string]any)
-	if tc["id"] != "call_abc" || tc["call_id"] != "call_abc" || tc["response_item_id"] != "fc_123" {
+	tc := row["tool_calls"].([]any)[0].(*pyjson.Object)
+	if tc.GetOr("id", nil) != "call_abc" || tc.GetOr("call_id", nil) != "call_abc" || tc.GetOr("response_item_id", nil) != "fc_123" {
 		t.Fatalf("tool call %v", tc)
 	}
 }

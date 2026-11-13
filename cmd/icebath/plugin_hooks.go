@@ -13,8 +13,8 @@ import (
 func pluginManagerHooks() provider.PluginManagerHooks {
 	return provider.PluginManagerHooks{
 		CatalogEntry: memory.CatalogSource,
-		Install: func(ctx context.Context, name string, consent bool) (map[string]any, error) {
-			return plugins.DashboardInstallPlugin(ctx, plugins.DashboardInstallOptions{Enable: true, CatalogName: name, AssumeDepsConsent: &consent})
+		Install: func(ctx context.Context, name string, _ bool) (map[string]any, error) {
+			return plugins.DashboardInstallPlugin(ctx, plugins.DashboardInstallOptions{Enable: true, CatalogName: name})
 		},
 		LoadError:       func(plugin string) string { return provider.PluginLoadError(context.Background(), plugin) },
 		DependencyHomes: func() ([]string, error) { return pm.DependencyHomes(context.Background()) },

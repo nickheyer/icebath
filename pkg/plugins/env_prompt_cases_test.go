@@ -62,17 +62,3 @@ func TestSecretUsesMaskedPrompt(t *testing.T) {
 		t.Fatalf("masked prompt called %d times", calls)
 	}
 }
-
-func TestADeclinedDependencyConsentCarriesItsClassNotItsCopy(t *testing.T) {
-	console := NewConsole(&bytes.Buffer{})
-	t.Cleanup(SwapTerminalIO(func() bool { return false }, inputLine))
-	consented, reason := consentPythonDeps(context.Background(), "p", []string{"dep"}, console, false)
-	if consented || reason == nil || reason.Text != "dependency install skipped (non-interactive)" || reason.FailureClass != "non_interactive" {
-		t.Fatalf("non-interactive %v %+v", consented, reason)
-	}
-	restore := SwapTerminalIO(func() bool { return true }, func(string) (string, error) { return "n", nil })
-	defer restore()
-	if _, reason := consentPythonDeps(context.Background(), "p", []string{"dep"}, console, false); reason == nil || reason.FailureClass != "deps_declined" {
-		t.Fatalf("declined %+v", reason)
-	}
-}

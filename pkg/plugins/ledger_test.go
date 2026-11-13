@@ -96,7 +96,7 @@ func TestPersistentRegistrationsSurviveUnloadAllAndEvictWhenNotReRegistered(t *t
 }
 
 func TestReplacementLeasesRestoreNearestLivePredecessor(t *testing.T) {
-	coord := &ReplacementCoordinator{active: map[any][]*ReplacementLease{}}
+	coord := newReplacementCoordinator()
 	slot := map[string]any{"k": "base"}
 	set := func(cur any) func(any) error {
 		return func(replacement any) error {

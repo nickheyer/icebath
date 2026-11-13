@@ -207,6 +207,9 @@ func (c *CLI) resolveResumeTarget(target string) (string, map[string]any, bool) 
 
 // Ends the current gateway session with reason, the switch going ahead when the end fails
 func (c *CLI) endCurrentSession(reason string) {
+	if g := agentGateway(c.agentRef()); g != nil {
+		g.flushMessagesToSessionDB()
+	}
 	if err := c.sessionDB.EndSession(c.ctx, c.sessionID, reason); err != nil {
 		cliLogger.Debug(fmt.Sprintf("end_session %s failed: %v", c.sessionID, err))
 	}
@@ -214,12 +217,12 @@ func (c *CLI) endCurrentSession(reason string) {
 
 // Points a built agent at the switched session with fresh per session figures and todo mirror
 func (c *CLI) syncAgentToSession(sessionID string) {
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		return
 	}
-	c.agent.SetSessionID(sessionID)
-	c.agent.ResetSessionState()
-	c.agent.setTodoStore(tools.NewTodoStore())
+	c.agentRef().SetSessionID(sessionID)
+	c.agentRef().ResetSessionState()
+	c.agentRef().setTodoStore(tools.NewTodoStore())
 }
 
 // Switches to a previous session by number, title or id mid conversation

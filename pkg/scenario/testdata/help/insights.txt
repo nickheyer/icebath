@@ -1,0 +1,8 @@
+usage: icebath insights [-h] [--days DAYS] [--source SOURCE]
+
+Analyze session history to show token usage, costs, tool patterns, and activity trends
+
+options:
+  -h, --help       show this help message and exit
+  --days DAYS      Number of days to analyze (default: 30)
+  --source SOURCE  Filter by platform (cli, telegram, discord, etc.)

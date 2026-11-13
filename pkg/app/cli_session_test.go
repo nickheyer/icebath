@@ -28,8 +28,8 @@ func oneShotCalls(t *testing.T, query string) []map[string]any {
 		return map[string]any{"final_response": "done", "completed": true}, nil
 	})
 	initTurnAgent = func(c *CLI, _ string, _ *cliRuntime, _ map[string]any) bool {
-		if c.agent == nil {
-			c.agent = offlineAgent(t, c)
+		if c.agentRef() == nil {
+			c.setAgent(offlineAgent(t, c))
 		}
 		return true
 	}

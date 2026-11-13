@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -232,13 +233,38 @@ func a2aCompletion(ctx context.Context, client *GatewayClient, admissionID any) 
 		if failure, isErr := event.(error); isErr {
 			return failure
 		}
-		frame, _ := pyjson.Plain(event).(map[string]any)
-		params, _ := frame["params"].(map[string]any)
-		payload, _ := params["payload"].(map[string]any)
-		if params["type"] == "message.complete" && payload != nil && pyjson.Equal(payload["admission_id"], admissionID) {
+		params, err := a2aMapping(pyjson.Plain(event), "params")
+		if err != nil {
+			return err
+		}
+		if params["type"] != "message.complete" {
+			continue
+		}
+		payload, err := a2aMapping(params, "payload")
+		if err != nil {
+			return err
+		}
+		if pyjson.Equal(payload["admission_id"], admissionID) {
 			return nil
 		}
 	}
+}
+
+// Mapping under key of a decoded frame, empty when falsy, the AttributeError a non mapping frame or value raises
+func a2aMapping(frame any, key string) (map[string]any, error) {
+	m, ok := frame.(map[string]any)
+	if !ok {
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(frame))}
+	}
+	value := m[key]
+	if !pyrepr.Truthy(value) {
+		return map[string]any{}, nil
+	}
+	inner, ok := value.(map[string]any)
+	if !ok {
+		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(value))}
+	}
+	return inner, nil
 }
 
 // Context key of the authenticated peer identity the forwarding handler mints a policy under

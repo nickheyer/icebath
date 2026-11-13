@@ -44,7 +44,7 @@ export function ptyReconnectDelayMs(attempt: number): number {
 }
 
 // How long after a resumed socket opens we keep suppressing ANSI erase codes
-// (`ESC[K` / `ESC[X`) from the PTY stream. Ink's two-pass virtual scroll emits
+// (`ESC[K` / `ESC[X`) from the PTY stream. the terminal UI's two-pass virtual scroll emits
 // them while replaying a long session; past that replay they are legitimate
 // in-place redraws (spinners, progress bars, status lines) and must reach
 // xterm or stale glyphs are left on screen. The replay of a 200+ message

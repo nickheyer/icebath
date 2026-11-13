@@ -245,8 +245,10 @@ type startedAttachmentStore struct {
 }
 
 var (
-	attachmentStoresStarted   []startedAttachmentStore
-	attachmentStoresStartedMu sync.Mutex
+	attachmentStoresStarted []startedAttachmentStore
+	// Set once a store whose database could not be stat finished startup, the None key of the set
+	attachmentStoreStartedUnkeyed bool
+	attachmentStoresStartedMu     sync.Mutex
 )
 
 // SQLite owned metadata and private content deduplicated blob bytes
@@ -304,6 +306,8 @@ func NewHostedRoomAttachmentStore(ctx context.Context, dbPath string, o Attachme
 				return s, nil
 			}
 		}
+	} else if attachmentStoreStartedUnkeyed {
+		return s, nil
 	}
 	conn, err := s.connect()
 	if err != nil {
@@ -320,6 +324,8 @@ func NewHostedRoomAttachmentStore(ctx context.Context, dbPath string, o Attachme
 	}
 	if key, keyed := s.startupKey(); keyed {
 		attachmentStoresStarted = append(attachmentStoresStarted, key)
+	} else {
+		attachmentStoreStartedUnkeyed = true
 	}
 	return s, nil
 }
@@ -1389,8 +1395,11 @@ func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel 
 	if sel.event != nil && hostedStrOrEmpty(row.Vals["event_id"]) != *sel.event {
 		return nil, attachmentNotFound("attachment is not owned by this room event")
 	}
-	viewerAccess := pyrepr.Truthy(row.Vals["viewer_access"])
-	if viewerAccess {
+	viewerAccess, err := hostedIntOrZero(row.Vals["viewer_access"])
+	if err != nil {
+		return nil, err
+	}
+	if viewerAccess != 0 {
 		exists, err := hostedTableExists(ctx, conn, "hosted_room_events")
 		if err != nil {
 			return nil, err
@@ -1430,23 +1439,38 @@ func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel 
 		return nil, err
 	}
 	if sel.viewer {
-		if hostedIntOr(row.Vals["viewer_access"]) != 1 {
+		if viewerAccess != 1 {
 			return nil, attachmentNotFound("attachment is unavailable to Group Chat viewers")
 		}
 		return row, nil
 	}
-	list, _ := recipients.([]any)
-	for _, member := range list {
-		if member == sel.recipientMemberID {
-			return row, nil
-		}
+	listed, err := attachmentRecipientListed(recipients, sel.recipientMemberID)
+	if err != nil {
+		return nil, err
 	}
-	return nil, attachmentNotFound("attachment is unavailable to this recipient")
+	if !listed {
+		return nil, attachmentNotFound("attachment is unavailable to this recipient")
+	}
+	return row, nil
 }
 
-func hostedIntOr(value any) int64 {
-	n, _ := hostedIntOrZero(value)
-	return n
+// Python membership of a member id in the decoded recipients value, a list, mapping or string
+func attachmentRecipientListed(recipients any, memberID string) (bool, error) {
+	switch typed := recipients.(type) {
+	case []any:
+		for _, member := range typed {
+			if pyjson.Equal(member, memberID) {
+				return true, nil
+			}
+		}
+		return false, nil
+	case map[string]any:
+		_, has := typed[memberID]
+		return has, nil
+	case string:
+		return strings.Contains(typed, memberID), nil
+	}
+	return false, fmt.Errorf("argument of type '%s' is not iterable", pyrepr.TypeName(recipients))
 }
 
 // Owner event row of an attachment commitment, nil without a canonical room log

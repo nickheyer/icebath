@@ -31,7 +31,7 @@ type chatArgs struct {
 	Quiet, Worktree, Checkpoints        bool
 	PassSessionID, IgnoreUserConfig     bool
 	IgnoreRules, SafeMode, Yolo         bool
-	AcceptHooks, TUI, TUINative, TUIDev bool
+	AcceptHooks, TUI, TUINative         bool
 	CLI, NoRestoreCWD, CreateIfMissing  bool
 	Compact                             bool
 	noninteractiveConfigValidated       bool
@@ -113,7 +113,6 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 		boolean("accept-hooks", &a.AcceptHooks)
 		boolean("tui", &a.TUI)
 		boolean("native", &a.TUINative)
-		boolean("dev", &a.TUIDev)
 		boolean("cli", &a.CLI)
 		boolean("no-restore-cwd", &a.NoRestoreCWD)
 		boolean("create-if-missing", &a.CreateIfMissing)
@@ -304,7 +303,7 @@ func promoteTopLevelResume(a *chatArgs) {
 // The light chat parser, root flags and chat only, parsed without the subcommand tree
 func lightChatArgs(argv []string) (*chatArgs, bool) {
 	cli := commands.NewCLI()
-	argv = commands.CoalesceSessionNameArgs(argv)
+	argv = cli.ParseReadyArgs(argv)
 	cmd, rest, err := cli.Root.Find(argv)
 	if err != nil || cmd == nil {
 		return nil, false

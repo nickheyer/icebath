@@ -22,8 +22,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -51,18 +54,39 @@ type hfHubHTTPError struct {
 func (e *hfHubHTTPError) Error() string      { return e.msg }
 func (e *hfHubHTTPError) PyTypeName() string { return e.class }
 
-// Hub endpoint from HF_ENDPOINT, the public Hub by default
+const (
+	hfDefaultEndpoint        = "https://huggingface.co"
+	hfDefaultStagingEndpoint = "https://hub-ci.huggingface.co"
+)
+
+// Whether HUGGINGFACE_CO_STAGING holds one of the true values huggingface_hub accepts
+func hfStagingMode() bool {
+	v, ok := os.LookupEnv("HUGGINGFACE_CO_STAGING")
+	if !ok {
+		return false
+	}
+	switch strings.ToUpper(v) {
+	case "1", "ON", "YES", "TRUE":
+		return true
+	}
+	return false
+}
+
+// Hub endpoint from HF_ENDPOINT with trailing slashes dropped, the staging Hub in staging mode
 func hfEndpoint() string {
-	endpoint := os.Getenv("HF_ENDPOINT")
-	if endpoint == "" {
-		endpoint = "https://huggingface.co"
+	if hfStagingMode() {
+		return hfDefaultStagingEndpoint
+	}
+	endpoint, ok := os.LookupEnv("HF_ENDPOINT")
+	if !ok {
+		endpoint = hfDefaultEndpoint
 	}
 	return strings.TrimRight(endpoint, "/")
 }
 
 // Authorization and user agent headers of every Hub call
 func hfHeaders(token string) map[string]string {
-	return map[string]string{"authorization": "Bearer " + token, "user-agent": "unknown/None; hf_hub/2.4.0; python/3.14"}
+	return map[string]string{"authorization": "Bearer " + token, "user-agent": "unknown/None; hf_hub/2.4.0; go/" + hostinfo.GoVersion()}
 }
 
 // One Hub request body and headers
@@ -371,26 +395,85 @@ func hfWhoami(ctx context.Context, token string) (any, error) {
 	}
 	if err := hfRaiseForStatus(resp, r, ""); err != nil {
 		var hubErr *hfHubHTTPError
-		if errors.As(err, &hubErr) && hubErr.status == 401 {
+		if !errors.As(err, &hubErr) {
+			return nil, err
+		}
+		switch hubErr.status {
+		case 401:
 			msg := "Invalid user token."
-			if token == hfTokenFromEnvironment() {
+			if env, ok := hfTokenFromEnvironment(); ok && token == env {
 				msg += " The token from HF_TOKEN environment variable is invalid. Note that HF_TOKEN takes precedence over `hf auth login`."
+			} else {
+				stored, ok, ferr := hfTokenFromFile()
+				if ferr != nil {
+					return nil, ferr
+				}
+				if ok && token == stored {
+					msg += " The token stored is invalid. Please run `hf auth login --force` to set a new token."
+				}
 			}
-			return nil, &hfHubHTTPError{class: hubErr.class, msg: msg, status: 401}
+			return nil, &hfHubHTTPError{class: "HfHubHTTPError", msg: msg, status: 401}
+		case 429:
+			return nil, &hfHubHTTPError{class: "HfHubHTTPError", status: 429,
+				msg: "You've hit the rate limit for the /whoami-v2 endpoint, which is intentionally strict for security reasons." +
+					" If you're calling it often, consider caching the response with `whoami(..., cache=True)`."}
 		}
 		return nil, err
 	}
 	return resp.JSON()
 }
 
-// Token huggingface_hub reads from the environment
-func hfTokenFromEnvironment() string {
-	for _, name := range []string{"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"} {
-		if v := pystr.Strip(os.Getenv(name)); v != "" {
-			return v
-		}
+// Token with carriage returns and newlines removed and whitespace stripped, false when nothing remains
+func hfCleanToken(token string) (string, bool) {
+	token = pystr.Strip(strings.ReplaceAll(strings.ReplaceAll(token, "\r", ""), "\n", ""))
+	return token, token != ""
+}
+
+// Token huggingface_hub reads from HF_TOKEN, else HUGGING_FACE_HUB_TOKEN, false when unset or blank
+func hfTokenFromEnvironment() (string, bool) {
+	raw := os.Getenv("HF_TOKEN")
+	if raw == "" {
+		raw = os.Getenv("HUGGING_FACE_HUB_TOKEN")
 	}
-	return ""
+	return hfCleanToken(raw)
+}
+
+// Token file path from HF_TOKEN_PATH, else the token file under HF_HOME or the XDG cache, staging kept apart
+func hfTokenPath() string {
+	if hfStagingMode() {
+		return pypath.Join(pypath.Expanduser("~"), ".cache", "huggingface_staging", "token")
+	}
+	cache, ok := os.LookupEnv("XDG_CACHE_HOME")
+	if !ok {
+		cache = pypath.Join(pypath.Expanduser("~"), ".cache")
+	}
+	hfHome, ok := os.LookupEnv("HF_HOME")
+	if !ok {
+		hfHome = pypath.Join(cache, "huggingface")
+	}
+	hfHome = pypath.Expandvars(pypath.Expanduser(hfHome))
+	path, ok := os.LookupEnv("HF_TOKEN_PATH")
+	if !ok {
+		path = pypath.Join(hfHome, "token")
+	}
+	return pypath.Expandvars(pypath.Expanduser(path))
+}
+
+// Stored login token read in the locale encoding, false when the file is missing or blank
+func hfTokenFromFile() (string, bool, error) {
+	data, err := os.ReadFile(hfTokenPath())
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", false, nil
+		}
+		return "", false, errors.New(pypath.OSErrorText(err))
+	}
+	text, err := pycodecs.Decode(data, pycodecs.LocaleEncoding())
+	if err != nil {
+		return "", false, err
+	}
+	token, ok := hfCleanToken(text)
+	return token, ok, nil
 }
 
 // Metadata of a dataset repo, the repo_info call
@@ -646,8 +729,9 @@ func hfValidateBatchError(obj *pyjson.Object) error {
 // Endpoint of a Hub URL rewritten onto the configured endpoint
 func hfFixEndpointInURL(u string) string {
 	endpoint := hfEndpoint()
-	if endpoint != "https://huggingface.co" && strings.HasPrefix(u, "https://huggingface.co") {
-		return endpoint + strings.TrimPrefix(u, "https://huggingface.co")
+	if endpoint != hfDefaultEndpoint && endpoint != hfDefaultStagingEndpoint {
+		u = strings.ReplaceAll(u, hfDefaultEndpoint, endpoint)
+		u = strings.ReplaceAll(u, hfDefaultStagingEndpoint, endpoint)
 	}
 	return u
 }

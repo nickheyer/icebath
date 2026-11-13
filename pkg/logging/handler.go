@@ -53,6 +53,9 @@ func newRedactingFormatter(format, datefmt string) (*Formatter, error) {
 	return f, nil
 }
 
+// Redacting formatter the agent, errors, gateway and gui log files write their lines through
+func LogFileFormatter() (*Formatter, error) { return newRedactingFormatter(logFormat, "") }
+
 // Timestamp text, strftime of datefmt or the default date with comma separated milliseconds
 func formatTime(t time.Time, datefmt string) string {
 	t = t.Local()

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -151,7 +153,8 @@ func anthResolveMessagesMaxTokens(requested any, model string) (int, error) {
 	if resolved > 0 {
 		return resolved, nil
 	}
-	return 0, fmt.Errorf("Anthropic Messages adapter requires a positive max_tokens value for model %q; got %v and no model default resolved.", model, requested)
+	return 0, fmt.Errorf("Anthropic Messages adapter requires a positive max_tokens value for model %s; got %s and no model default resolved.",
+		pyrepr.StrRepr(model), pyrepr.Repr(requested))
 }
 
 // Adaptive thinking models, unknown Claude defaults adaptive, Kimi family included, other vendors manual
@@ -713,7 +716,11 @@ func anthSanitizeKwargs(kwargs map[string]any, logPrefix string) []string {
 	}
 	if len(leaked) > 0 {
 		sort.Strings(leaked)
-		catalogLog.Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %v from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, leaked))
+		names := make([]any, len(leaked))
+		for i, key := range leaked {
+			names[i] = key
+		}
+		catalogLog.Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %s from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, pyrepr.Repr(names)))
 	}
 	return leaked
 }
@@ -799,16 +806,69 @@ type anthTransport interface {
 
 // Direct Anthropic API and compatible endpoints
 type anthDirectTransport struct {
-	baseURL string
-	azure   bool
+	baseURL      string
+	defaultQuery map[string]string
+}
+
+// Shared settings of a direct client, its read and connect timeouts, base URL and default query
+type anthClientKwargs struct {
+	timeout      time.Duration
+	connect      time.Duration
+	baseURL      string
+	defaultQuery map[string]string
+}
+
+// Read timeout the caller asked for or 900 seconds, with the 10 second connect timeout
+func anthClientTimeout(timeout time.Duration) (time.Duration, time.Duration) {
+	if timeout <= 0 {
+		timeout = 900 * time.Second
+	}
+	return timeout, 10 * time.Second
+}
+
+// Normalized base URL and the shared client settings, a trailing v1 stripped and the Azure api version as a default query
+func anthBaseClientKwargs(baseURL string, timeout time.Duration) (string, anthClientKwargs) {
+	read, connect := anthClientTimeout(timeout)
+	kwargs := anthClientKwargs{timeout: read, connect: connect}
+	normalized := anthNormalizedBaseURL(baseURL)
+	if normalized != "" {
+		kwargs.baseURL = normalized
+		if isAzureAnthropicEndpoint(normalized) && !strings.Contains(normalized, "api-version") {
+			kwargs.defaultQuery = map[string]string{"api-version": "2025-04-15"}
+		}
+	}
+	return normalized, kwargs
 }
 
 func newAnthDirectTransport(route Route) *anthDirectTransport {
-	base := anthNormalizedBaseURL(route.BaseURL)
+	_, kwargs := anthBaseClientKwargs(route.BaseURL, route.Timeout)
+	base := kwargs.baseURL
 	if base == "" {
 		base = "https://api.anthropic.com"
 	}
-	return &anthDirectTransport{baseURL: base, azure: isAzureAnthropicEndpoint(base)}
+	return &anthDirectTransport{baseURL: base, defaultQuery: kwargs.defaultQuery}
+}
+
+// Direct client whose bearer the route token source mints per request, a Console key on the native host sent as x-api-key
+func newAnthropicClientWithBearerHook(route Route) (*anthropicClient, error) {
+	config.NormalizeProxyEnvVars()
+	c := &anthropicClient{route: route, variant: "direct", transports: map[time.Duration]*http.Transport{}, transport: newAnthDirectTransport(route)}
+	var sendsAsAPIKey func(string) bool
+	if isNativeAnthropicHost(route.BaseURL) {
+		sendsAsAPIKey = func(token string) bool { return !isOAuthToken(token) }
+	}
+	hook, err := NewEntraBearerTransport(route.TokenSource, sendsAsAPIKey, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.bearerHook = hook
+	c.hookStyle = func(ctx context.Context) string {
+		if isNativeAnthropicHost(route.BaseURL) && c.mintedTokenIsOAuth(ctx) {
+			return "oauth"
+		}
+		return "bearer"
+	}
+	return c, nil
 }
 
 // Request posts the body at /v1/messages or /v1/messages/count_tokens under the normalized base
@@ -825,10 +885,12 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 		path += "/count_tokens"
 	}
 	target.Path = strings.TrimRight(target.Path, "/") + path
-	if t.azure && !strings.Contains(t.baseURL, "api-version") {
+	if len(t.defaultQuery) > 0 {
 		q := target.Query()
-		if q.Get("api-version") == "" {
-			q.Set("api-version", "2025-04-15")
+		for name, value := range t.defaultQuery {
+			if q.Get(name) == "" {
+				q.Set(name, value)
+			}
 		}
 		target.RawQuery = q.Encode()
 	}
@@ -910,6 +972,8 @@ type anthropicClient struct {
 	transports       map[time.Duration]*http.Transport
 	mintedMu         sync.Mutex
 	mintedOAuth      *bool
+	bearerHook       *EntraBearerTransport
+	hookStyle        func(context.Context) string
 }
 
 func newAnthropicClient(route Route) (Client, error) {
@@ -927,6 +991,8 @@ func newAnthropicClient(route Route) (Client, error) {
 			return nil, err
 		}
 		c.transport, c.variant = t, "vertex"
+	case route.TokenSource != nil:
+		return newAnthropicClientWithBearerHook(route)
 	default:
 		c.transport = newAnthDirectTransport(route)
 	}
@@ -957,12 +1023,10 @@ func (c *anthropicClient) httpClient(connect time.Duration) *http.Client {
 		c.transportsMu.Unlock()
 		base = tr
 	}
-	if c.variant == "direct" && c.route.TokenSource != nil {
-		var sendsAsAPIKey func(string) bool
-		if isNativeAnthropicHost(c.route.BaseURL) {
-			sendsAsAPIKey = func(token string) bool { return !isOAuthToken(token) }
-		}
-		base = &EntraBearerTransport{Base: base, TokenProvider: c.route.TokenSource, SendsAsAPIKey: sendsAsAPIKey}
+	if c.bearerHook != nil {
+		hooked := *c.bearerHook
+		hooked.Base = base
+		base = &hooked
 	}
 	return &http.Client{Transport: base}
 }
@@ -1070,11 +1134,8 @@ func (c *anthropicClient) authHeaders(ctx context.Context, normalized string) (m
 	if c.variant != "direct" {
 		return headers, "platform", nil
 	}
-	if c.route.TokenSource != nil {
-		if isNativeAnthropicHost(c.route.BaseURL) && c.mintedTokenIsOAuth(ctx) {
-			return headers, "oauth", nil
-		}
-		return headers, "bearer", nil
+	if c.hookStyle != nil {
+		return headers, c.hookStyle(ctx), nil
 	}
 	key := strings.TrimSpace(c.route.APIKey)
 	style := anthAuthStyle(key, c.route.BaseURL, normalized)
@@ -1330,7 +1391,8 @@ func (c *anthropicClient) requestTimeout(req *Request, settings wireSettings) (t
 	if d, ok := configuredProviderTimeout(settings.providers, c.providerLower(), model, "timeout_seconds", "request_timeout_seconds"); ok {
 		return d, true
 	}
-	return 900 * time.Second, false
+	read, _ := anthClientTimeout(0)
+	return read, false
 }
 
 // Stale stream patience in seconds for the request
@@ -1363,7 +1425,8 @@ func (c *anthropicClient) staleTimeout(req *Request, settings wireSettings, estT
 func (c *anthropicClient) streamTimeouts(req *Request, settings wireSettings, estTokens int) ccTimeouts {
 	base, _ := c.requestTimeout(req, settings)
 	stale := c.staleTimeout(req, settings, estTokens)
-	return ccTimeouts{base: base, read: base, connect: 10 * time.Second, stale: secondsDuration(stale),
+	_, connect := anthClientTimeout(base)
+	return ccTimeouts{base: base, read: base, connect: connect, stale: secondsDuration(stale),
 		lifetime: secondsDuration(resolveStreamMaxLifetime(settings.streamMaxLifetime, stale))}
 }
 
@@ -1419,7 +1482,8 @@ func (c *anthropicClient) completeOnce(ctx context.Context, req *Request, p *ant
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.httpClient(10 * time.Second).Do(httpReq)
+	_, connect := anthClientTimeout(0)
+	resp, err := c.httpClient(connect).Do(httpReq)
 	if err != nil {
 		if ctx.Err() == nil && errors.Is(rctx.Err(), context.DeadlineExceeded) {
 			err = &TimeoutPhaseError{Phase: TimeoutPhaseRead, Err: fmt.Errorf("Request timed out after %.0fs.", base.Seconds())}
@@ -1613,7 +1677,8 @@ func (c *anthropicClient) CountTokens(ctx context.Context, req *Request) (int, e
 	if err != nil {
 		return 0, err
 	}
-	resp, err := c.httpClient(10 * time.Second).Do(httpReq)
+	_, connect := anthClientTimeout(0)
+	resp, err := c.httpClient(connect).Do(httpReq)
 	if err != nil {
 		return 0, c.transportError(ctx, err, TimeoutPhaseConnect)
 	}
@@ -1687,6 +1752,10 @@ func ResponseStopDetails(resp *Response) any {
 
 // Response of one Messages payload with text, reasoning, ordered thinking carriers and tool calls
 func (c *anthropicClient) normalizeResponse(message map[string]any, status int, headers http.Header, latency time.Duration) (*Response, error) {
+	if details := message["stop_details"]; details != nil {
+		message = maps.Clone(message)
+		message["stop_details"] = toPlainData(details, 0, nil)
+	}
 	raw, _ := json.Marshal(message)
 	requestID := asStr(message["id"])
 	if requestID == "" {
@@ -1707,7 +1776,7 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 	var reasoningDetails, ordered []any
 	var toolCalls []state.ToolCall
 	for _, b := range content {
-		block, ok := asMap(b)
+		block, ok := asMap(toPlainData(b, 0, nil))
 		if !ok {
 			continue
 		}

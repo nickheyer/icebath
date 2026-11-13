@@ -237,22 +237,32 @@ func matcherTarget(matcher string) *OutboundWebhookTarget {
 	return NewOutboundWebhookTarget("https://example.com", []string{"post_tool_call"}, "", "", matcher, OutboundWebhookDefaultTimeoutSeconds)
 }
 
+// Matcher verdict of a target, failing the test on a matcher error
+func matchesTool(t *testing.T, tg *OutboundWebhookTarget, name any) bool {
+	t.Helper()
+	ok, err := tg.MatchesTool(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ok
+}
+
 func TestMatcherNoMatcherMatchesEverything(t *testing.T) {
-	if !matcherTarget("").MatchesTool("terminal") || !matcherTarget("").MatchesTool(nil) {
+	if !matchesTool(t, matcherTarget(""), "terminal") || !matchesTool(t, matcherTarget(""), nil) {
 		t.Fatal("no matcher matches everything")
 	}
 }
 
 func TestMatcherRegexFullmatch(t *testing.T) {
 	tg := matcherTarget("terminal|delegate_task")
-	if !tg.MatchesTool("terminal") || !tg.MatchesTool("delegate_task") || tg.MatchesTool("terminal_extra") || tg.MatchesTool(nil) {
+	if !matchesTool(t, tg, "terminal") || !matchesTool(t, tg, "delegate_task") || matchesTool(t, tg, "terminal_extra") || matchesTool(t, tg, nil) {
 		t.Fatal("regex must fullmatch")
 	}
 }
 
 func TestMatcherInvalidRegexFallsBackToEquality(t *testing.T) {
 	tg := matcherTarget("terminal(")
-	if !tg.MatchesTool("terminal(") || tg.MatchesTool("terminal") {
+	if !matchesTool(t, tg, "terminal(") || matchesTool(t, tg, "terminal") {
 		t.Fatal("an invalid regex is literal equality")
 	}
 }

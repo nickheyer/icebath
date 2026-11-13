@@ -413,16 +413,9 @@ func readTextUniversal(path string) (string, error) {
 	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), nil
 }
 
-// Atomic write keeping an existing file's mode and owner, the create mode for a new file
-func writePreservingMode(ctx context.Context, target, content string, createMode os.FileMode) error {
-	mode := createMode
-	if st, err := os.Stat(target); err == nil {
-		mode = st.Mode().Perm()
-	}
-	if mode == 0 {
-		return pyfs.AtomicWriteText(ctx, target, content, ".tmp_")
-	}
-	return pyfs.AtomicWriteTextMode(ctx, target, content, ".tmp_", mode)
+// Atomic write keeping an existing file's mode and owner, the create mode for a new file when given
+func writePreservingMode(ctx context.Context, target, content string, createMode *os.FileMode) error {
+	return pyfs.AtomicWriteTextWith(ctx, target, content, pyfs.TextWrite{PreserveMode: true, CreateMode: createMode})
 }
 
 // Read guard, description budget, atomic write and security scan, restoring the original when blocked
@@ -446,7 +439,8 @@ func (s *Scope) guardedWrite(ctx context.Context, name, skillDir, target, action
 	if _, err := home.Mkdir(home.WithOverride(ctx, s.Home), filepath.Dir(target)); err != nil {
 		return nil, err
 	}
-	if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, content, 0o644); err != nil {
+	createMode := os.FileMode(0o644)
+	if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, content, &createMode); err != nil {
 		return nil, err
 	}
 	scanErr := manageSteps.securityScan(s, skillDir)
@@ -454,7 +448,7 @@ func (s *Scope) guardedWrite(ctx context.Context, name, skillDir, target, action
 		return nil, nil
 	}
 	if original != nil {
-		if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, *original, 0); err != nil {
+		if err := writePreservingMode(home.WithOverride(ctx, s.Home), target, *original, nil); err != nil {
 			return nil, err
 		}
 	} else if err := os.Remove(target); err != nil && !errors.Is(err, fs.ErrNotExist) {

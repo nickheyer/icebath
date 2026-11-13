@@ -2,16 +2,10 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 func TestRuntimeRebindOfIcebathCoreFailsAdmission(t *testing.T) {
@@ -92,7 +86,7 @@ func piPlugin(t *testing.T, root string, files map[string]string) string {
 
 func piValidate(t *testing.T, dir string) *ValidationReport {
 	t.Helper()
-	report, err := validatePluginDir(context.Background(), dir, vtProbe(t))
+	report, err := validatePluginDir(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,28 +111,6 @@ func piSites(t *testing.T, warnings []string) []string {
 	_, after, _ := strings.Cut(warnings[0], "release): ")
 	before, _, _ := strings.Cut(after, ". Use ctx.*")
 	return strings.Split(before, "; ")
-}
-
-func TestPrivateCoreImportWarnsWithFileAndLineButValidatePasses(t *testing.T) {
-	plugin := piPlugin(t, filepath.Join(t.TempDir(), "router"), map[string]string{"lib/agent_runner.py": "import json\n" +
-		"def run():\n" +
-		"    from tools.tirith_security import ensure_installed\n" +
-		"    from hermes_cli.config import _private_helper\n" +
-		"    return ensure_installed, _private_helper\n"})
-	report := piValidate(t, plugin)
-	if !report.OK() {
-		t.Fatal(report.Failures())
-	}
-	warnings := piWarnings(report, "private core imports")
-	if len(warnings) != 1 {
-		t.Fatalf("%q", report.Warnings)
-	}
-	for _, want := range []string{"lib/agent_runner.py:3 tools.tirith_security.ensure_installed",
-		"lib/agent_runner.py:4 hermes_cli.config._private_helper", "catalog rule 9"} {
-		if !strings.Contains(warnings[0], want) {
-			t.Fatalf("%q lacks %q", warnings[0], want)
-		}
-	}
 }
 
 func TestDocumentedPublicStdlibAndOwnPackageImportsAreNotFlagged(t *testing.T) {
@@ -174,99 +146,6 @@ func TestDocumentedPublicStdlibAndOwnPackageImportsAreNotFlagged(t *testing.T) {
 	}
 }
 
-// Whether a hermes reference module binds the name at module level, as hasattr on the imported module sees it
-func referenceDefines(t *testing.T, module, name string) bool {
-	t.Helper()
-	base := filepath.Join(append([]string{hermesReferenceTree}, strings.Split(module, ".")...)...)
-	data, err := os.ReadFile(base + ".py")
-	if err != nil {
-		if data, err = os.ReadFile(filepath.Join(base, "__init__.py")); err != nil {
-			t.Fatalf("%s is not in the reference tree", module)
-		}
-		if _, err := os.Stat(filepath.Join(base, name+".py")); err == nil {
-			return true
-		}
-	}
-	tree, err := pyast.Parse(string(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var binds func(stmts []*pyast.Node) bool
-	binds = func(stmts []*pyast.Node) bool {
-		for _, s := range stmts {
-			if n, _ := s.Str("name"); s.Is("FunctionDef", "AsyncFunctionDef", "ClassDef") && n == name {
-				return true
-			}
-			for _, tgt := range append(s.Children("targets"), s.Child("target")) {
-				if id, _ := tgt.Str("id"); tgt.Is("Name") && id == name {
-					return true
-				}
-			}
-			for _, a := range s.Children("names") {
-				n, _ := a.Str("name")
-				if as, ok := a.Str("asname"); ok {
-					n = as
-				}
-				if s.Is("ImportFrom") && n == name {
-					return true
-				}
-			}
-			for _, field := range []string{"body", "orelse", "finalbody"} {
-				if !s.Is("FunctionDef", "AsyncFunctionDef", "ClassDef") && binds(s.Children(field)) {
-					return true
-				}
-			}
-			for _, h := range s.Children("handlers") {
-				if binds(h.Children("body")) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	return binds(tree.Children("body"))
-}
-
-func TestPlatformPluginSeamsArePublicAndExist(t *testing.T) {
-	seams := [][2]string{{"gateway.platforms.access_policy_mixin", "OwnAccessPolicyMixin"}, {"tools.approval", "resolve_gateway_approval"},
-		{"tools.clarify_gateway", "get_pending"}, {"tools.clarify_gateway", "resolve_gateway_clarify"},
-		{"tools.clarify_gateway", "mark_awaiting_text"}, {"gateway.platforms.helpers", "platform_http_client"},
-		{"gateway.platforms.base", "ssrf_redirect_guard"}, {"tools.url_safety", "create_ssrf_safe_async_client"},
-		{"tools.url_safety", "is_safe_url"}, {"gateway.platforms._http_client_limits", "platform_httpx_limits"},
-		{"icebath_cli.gateway_setup_wizard", "print_setup_header"}, {"hermes_cli.gateway_setup_wizard", "confirm_reconfigure"},
-		{"hermes_cli.gateway_setup_wizard", "offer_home_channel"}, {"hermes_cli.gateway_setup_wizard", "save_env_values"},
-		{"hermes_cli.gateway_setup_wizard", "prompt_csv"}}
-	var imports strings.Builder
-	for _, s := range seams {
-		module := strings.Replace(s[0], "icebath_cli.", "hermes_cli.", 1)
-		if !referenceDefines(t, module, s[1]) {
-			t.Fatalf("%s.%s", module, s[1])
-		}
-		imports.WriteString("from " + s[0] + " import " + s[1] + "\n")
-	}
-	plugin := piPlugin(t, filepath.Join(t.TempDir(), "chatplat"), map[string]string{"adapter.py": imports.String()})
-	if w := piWarnings(piValidate(t, plugin), "private core imports"); len(w) != 0 {
-		t.Fatalf("%q", w)
-	}
-}
-
-func TestSkillCatalogSeamsArePublic(t *testing.T) {
-	seams := [][2]string{{"tools.skills_tool", "find_all_skills"}, {"tools.skills_tool", "sort_skills"},
-		{"tools.skills_tool", "skill_search_dirs"}, {"tools.skills_tool", "locate_skill"},
-		{"tools.skills_tool", "skill_lookup_path_error"}, {"tools.skills_sync", "dir_hash"}, {"tools.skill_usage", "read_skill_name"}}
-	var imports strings.Builder
-	for _, s := range seams {
-		if !referenceDefines(t, s[0], s[1]) {
-			t.Fatalf("%s.%s", s[0], s[1])
-		}
-		imports.WriteString("from " + s[0] + " import " + s[1] + "\n")
-	}
-	plugin := piPlugin(t, filepath.Join(t.TempDir(), "catalog"), map[string]string{"view.py": imports.String()})
-	if w := piWarnings(piValidate(t, plugin), "private core imports"); len(w) != 0 {
-		t.Fatalf("%q", w)
-	}
-}
-
 func TestDocumentedSessionHelperAndOwnInstallPathFallbackAreNotFlagged(t *testing.T) {
 	plugin := piPlugin(t, filepath.Join(t.TempDir(), "openltm"), map[string]string{
 		"__init__.py": "def register(ctx):\n" +
@@ -282,24 +161,6 @@ func TestDocumentedSessionHelperAndOwnInstallPathFallbackAreNotFlagged(t *testin
 	})
 	sites := piSites(t, piWarnings(piValidate(t, plugin), "private core imports"))
 	if !reflect.DeepEqual(sites, []string{"__init__.py:8 hermes_cli.gateway_client._session_ticket"}) {
-		t.Fatalf("%q", sites)
-	}
-}
-
-func TestPrivateMethodCallsOnCoreHandlesWarnButOwnHelpersDoNot(t *testing.T) {
-	plugin := piPlugin(t, filepath.Join(t.TempDir(), "sync"), map[string]string{"engine.py": "class Store:\n" +
-		"    def _execute_write(self, fn):\n" +
-		"        return self._execute_write(fn)\n" +
-		"def apply(db, runner, store, route):\n" +
-		"    rows = db._row_to_message_dict(None)\n" +
-		"    runner._evict_cached_agent(route)\n" +
-		"    return store._execute_write(rows)\n"})
-	report := piValidate(t, plugin)
-	if !report.OK() {
-		t.Fatal(report.Failures())
-	}
-	sites := piSites(t, piWarnings(report, "private core attribute access"))
-	if !reflect.DeepEqual(sites, []string{"engine.py:5 db._row_to_message_dict", "engine.py:6 runner._evict_cached_agent"}) {
 		t.Fatalf("%q", sites)
 	}
 }
@@ -362,50 +223,4 @@ func TestPluginValidateTreatsTheModelSetupHelpersAsPublic(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(hits, []string{"__init__.py:3 hermes_cli.model_setup_flows_common._persist_model"}) {
 		t.Fatalf("%q %v", hits, err)
 	}
-}
-
-func TestInstallDepsProbeImportsFromTheSyncedEnvironment(t *testing.T) {
-	tmp := t.TempDir()
-	deps := filepath.Join(tmp, "synced-site-packages")
-	vtWrite(t, filepath.Join(deps, "probe_only_dep.py"), "VALUE = 1\n")
-	plugin := vtPlugin(t, tmp, map[string]any{"name": "needs-dep", "version": "1.0.0", "description": "d"},
-		"import probe_only_dep\n\ndef register(ctx):\n    pass\n")
-	python := vtProbe(t).Command[0]
-	synced := append(os.Environ(), "PYTHONPATH="+deps)
-	origSync, origPython, origSelected, origCommand, origEnv := pmSyncVenv, pmProjectPython, pmSelectedVenv, pmVenvCommand, pmActivationEnvironment
-	t.Cleanup(func() {
-		pmSyncVenv, pmProjectPython, pmSelectedVenv, pmVenvCommand, pmActivationEnvironment = origSync, origPython, origSelected, origCommand, origEnv
-	})
-	pmSyncVenv = func(context.Context, pm.SyncVenvOptions) error { return nil }
-	pmProjectPython = func(context.Context, string) (string, error) { return python, nil }
-	pmSelectedVenv = func(context.Context, string) (string, error) { return filepath.Join(tmp, "synced-venv"), nil }
-	pmVenvCommand = func(_ context.Context, _, _ string, options []string) ([]string, error) {
-		return append([]string{python}, options...), nil
-	}
-	pmActivationEnvironment = func(context.Context, string) ([]string, error) { return synced, nil }
-	var out, errOut strings.Builder
-	err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut)
-	var exit *CommandExit
-	if err != nil && !errors.As(err, &exit) {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Checks []struct {
-			Name   string `json:"name"`
-			OK     bool   `json:"ok"`
-			Detail string `json:"detail"`
-		} `json:"checks"`
-	}
-	if err := json.Unmarshal([]byte(out.String()), &doc); err != nil {
-		t.Fatalf("%v %s %s", err, out.String(), errOut.String())
-	}
-	for _, c := range doc.Checks {
-		if c.Name == "capability probe" {
-			if !c.OK {
-				t.Fatal(c.Detail)
-			}
-			return
-		}
-	}
-	t.Fatalf("no capability probe check in %s", out.String())
 }

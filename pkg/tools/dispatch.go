@@ -127,8 +127,8 @@ type ToolRequestMiddleware func(ctx context.Context, env *Env, name string, args
 // ToolExecutionMiddleware wraps the one downstream execution and must call next at most once
 type ToolExecutionMiddleware func(ctx context.Context, env *Env, name string, args, originalArgs map[string]any, ids ToolHookIDs, next func(map[string]any) (string, error)) (string, error)
 
-// RelayFunc lets a relay rewrite a call around the icebath pipeline
-type RelayFunc func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, pipeline func(map[string]any) (string, error)) (string, map[string]any, error)
+// RelayFunc lets a relay rewrite a call around the icebath pipeline, which runs under the context the relay hands it
+type RelayFunc func(ctx context.Context, env *Env, name string, args map[string]any, ids ToolHookIDs, pipeline func(context.Context, map[string]any) (string, error)) (string, map[string]any, error)
 
 // EditApprovalFunc blocks a file mutation until an editor client approves it
 type EditApprovalFunc func(ctx context.Context, env *Env, name string, args map[string]any) (string, error)
@@ -153,7 +153,7 @@ func NewDispatcher(r *Registry) *Dispatcher {
 	if r == nil {
 		r = Default
 	}
-	return &Dispatcher{Registry: r, EditApproval: MaybeRequireEditApproval}
+	return &Dispatcher{Registry: r, EditApproval: MaybeRequireEditApproval, Relay: relayToolPipeline}
 }
 
 func (d *Dispatcher) safeWorker() bool {
@@ -237,8 +237,11 @@ func HandleFunctionCall(ctx context.Context, call *Call) string {
 	return DispatcherOf(ctx).DispatchWith(ctx, call, DispatchOptions{})
 }
 
-// Bare Python style class name of an error for observer hooks
+// Bare Python style class name of an error, the Python class an error names for itself first
 func exceptionTypeName(err error) string {
+	if named, ok := err.(pyrepr.PyTypeNamed); ok && named.PyTypeName() != "" {
+		return named.PyTypeName()
+	}
 	t := reflect.TypeOf(err)
 	for t != nil && t.Kind() == reflect.Pointer {
 		t = t.Elem()

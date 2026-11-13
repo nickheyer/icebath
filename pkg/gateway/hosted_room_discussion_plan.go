@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -65,7 +64,8 @@ func discussionRotate(members []DiscussionMember, round int64) []DiscussionMembe
 	if len(members) == 0 {
 		return nil
 	}
-	shift := int(round % int64(len(members)))
+	count := int64(len(members))
+	shift := int((round%count + count) % count)
 	return append(append([]DiscussionMember{}, members[shift:]...), members[:shift]...)
 }
 
@@ -88,10 +88,7 @@ func discussionTruncateUTF8(value any, maxBytes int, suffix string) string {
 	if len(text) <= maxBytes {
 		return text
 	}
-	prefix := text[:max(0, maxBytes-len(suffix))]
-	for len(prefix) > 0 && !utf8.ValidString(prefix) {
-		prefix = prefix[:len(prefix)-1]
-	}
+	prefix := strings.ToValidUTF8(text[:max(0, maxBytes-len(suffix))], "")
 	if prefix != "" {
 		return prefix + suffix
 	}

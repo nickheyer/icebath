@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -36,46 +35,45 @@ func scriptProbes(t *testing.T, outcomes ...probeOutcome) *int {
 func TestProbeRetriesTransientFailureAndCachesSuccess(t *testing.T) {
 	env := testEnv(t)
 	transient := probeOutcome{}
-	recovered := probeOutcome{probeResult{0, "recovered-prefix\n"}, true}
+	recovered := probeOutcome{probeResult{0, ""}, true}
 	usablePythonCache.clear()
-	pythonPrefixCache.clear()
-	t.Cleanup(func() { usablePythonCache.clear(); pythonPrefixCache.clear() })
+	t.Cleanup(usablePythonCache.clear)
 	calls := scriptProbes(t, transient, recovered)
 	if isUsablePython(env, "probe-python") || !isUsablePython(env, "probe-python") || !isUsablePython(env, "probe-python") || *calls != 2 {
 		t.Fatalf("usable probe calls %d", *calls)
 	}
-	want, err := pypath.Realpath("recovered-prefix", pypath.Lax)
-	if err != nil {
+}
+
+func TestInterpreterComesFromTheSessionPathAndOldOnesAreSkipped(t *testing.T) {
+	if isWindows {
+		t.Skip("the fixture interpreters are shell scripts")
+	}
+	env := testEnv(t)
+	usablePythonCache.clear()
+	t.Cleanup(usablePythonCache.clear)
+	old, current, empty := t.TempDir(), t.TempDir(), t.TempDir()
+	for dir, status := range map[string]string{old: "1", current: "0"} {
+		if err := os.WriteFile(filepath.Join(dir, "python3"), []byte("#!/bin/sh\nexit "+status+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(empty, "python"), []byte("not executable"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	calls = scriptProbes(t, transient, recovered)
-	first, second, third := pythonEnvironmentPrefix(env, "probe-python"), pythonEnvironmentPrefix(env, "probe-python"), pythonEnvironmentPrefix(env, "probe-python")
-	if first != "" || second != want || third != want || *calls != 2 {
-		t.Fatalf("prefix probes %q %q %q calls %d", first, second, third, *calls)
-	}
-}
-
-func TestUnknownPrefixIsNotCached(t *testing.T) {
-	env := testEnv(t)
-	for _, outcome := range []probeOutcome{{}, {probeResult{1, ""}, true}, {probeResult{0, " \n"}, true}} {
-		pythonPrefixCache.clear()
-		calls := scriptProbes(t, outcome, outcome)
-		if pythonEnvironmentPrefix(env, "bad-python") != "" || pythonEnvironmentPrefix(env, "bad-python") != "" || *calls != 2 {
-			t.Fatalf("outcome %+v calls %d", outcome, *calls)
-		}
-		if _, cached := pythonPrefixCache.get("bad-python"); cached {
-			t.Fatalf("outcome %+v was cached", outcome)
+	t.Setenv("PATH", strings.Join([]string{empty, old, current}, string(os.PathListSeparator)))
+	for _, mode := range []string{"strict", "project"} {
+		unsetEnv(t, "VIRTUAL_ENV")
+		unsetEnv(t, "CONDA_PREFIX")
+		if got, err := resolveChildPython(t.Context(), env, mode); err != nil || got != filepath.Join(current, "python3") {
+			t.Fatalf("%s mode ran %q err %v", mode, got, err)
 		}
 	}
-	pythonPrefixCache.clear()
-}
-
-func TestCurrentInterpreterNeedsNoProbe(t *testing.T) {
-	env := testEnv(t)
-	rt := hostRuntime(t)
-	scriptProbes(t)
-	if uses, err := usesIcebathPythonEnvironment(t.Context(), env, rt.Python); err != nil || !uses {
-		t.Fatalf("uses %v err %v", uses, err)
+	if got, err := RuntimePython(t.Context()); err != nil || got != filepath.Join(current, "python3") {
+		t.Fatalf("doctor sees %q err %v", got, err)
+	}
+	t.Setenv("PATH", empty)
+	if _, err := resolveChildPython(t.Context(), env, "strict"); err == nil || !strings.Contains(err.Error(), "no Python 3.8 or newer interpreter on PATH") {
+		t.Fatalf("a PATH without an interpreter resolved: %v", err)
 	}
 }
 

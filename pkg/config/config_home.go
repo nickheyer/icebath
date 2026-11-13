@@ -123,7 +123,7 @@ func ensureDirectory(ctx context.Context, path string, create, secure bool, h st
 
 // Creates the home skeleton, private unless managed, and seeds the default soul
 func InitializeHome(ctx context.Context, h string, subdirs []string, ensured map[string]bool) error {
-	managed := ManagedSystem(ctx, h) != ""
+	managed := IsManaged(ctx, h)
 	restore := setManagedUmask(managed)
 	err := func() error {
 		defer restore()
@@ -190,7 +190,7 @@ func SecureDir(ctx context.Context, h, path string) { home.ApplySecureDirPolicy(
 
 // Owner only config file unless managed or in a container
 func SecureFile(ctx context.Context, h, path string) {
-	if ManagedSystem(ctx, h) != "" || home.ContainerOrChmodSkipped() {
+	if IsManaged(ctx, h) || home.ContainerOrChmodSkipped() {
 		return
 	}
 	if _, err := os.Stat(path); err == nil {

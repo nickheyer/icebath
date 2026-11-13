@@ -60,6 +60,29 @@ func (b *BasePlatformAdapter) ClearTextBatches() {
 // Code point length of the last chunk merged into the batch
 func (e *MessageEvent) LastChunkLen() int { return e.lastChunkLen }
 
+// Records the code point length of the last chunk merged into the batch
+func (e *MessageEvent) SetLastChunkLen(n int) { e.lastChunkLen = n }
+
+// Stores event as the pending text batch of key
+func (b *BasePlatformAdapter) SetPendingTextBatch(key string, event *MessageEvent) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	lazyAttr(&b.pendingTextBatches)[key] = event
+}
+
+// Cancels the unfinished flush task of key and starts a fresh delayed flush in its slot
+func (b *BasePlatformAdapter) RescheduleTextBatchFlush(ctx context.Context, key string) {
+	self := b.Self()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	tasks := lazyAttr(&b.pendingTextBatchTasks)
+	if prior := tasks[key]; prior != nil && !prior.finished() {
+		prior.cancel()
+	}
+	taskCtx := context.WithValue(ctx, loopTurnKey{}, nil)
+	tasks[key] = spawnAdapterTask(taskCtx, func(tctx context.Context) error { return self.FlushTextBatch(tctx, key) })
+}
+
 // Applies the runner topic recovery hook to the event source
 func (b *BasePlatformAdapter) ApplyTopicRecovery(event *MessageEvent) { b.applyTopicRecovery(event) }
 

@@ -208,24 +208,19 @@ func persistProjectedMessages(agent CodexRuntimeAgent, turn *CodexTurnResult, me
 	if agent.CodexSessionDB() == nil {
 		return false
 	}
-	flushOK := false
+	flushOK := state.FlushFailed
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Warn("codex app-server projected-message flush failed", "panic", r)
+				slog.Warn("codex app-server projected-message flush failed", "exc_info", r)
 			}
 		}()
-		ok, err := agent.FlushMessagesToSessionDB(*messages)
-		if err != nil {
-			slog.Warn("codex app-server projected-message flush failed", "error", err)
-			return
-		}
-		flushOK = ok
+		flushOK = agent.FlushMessagesToSessionDB(*messages)
 	}()
-	if !flushOK {
+	if flushOK == state.FlushFailed {
 		slog.Warn(fmt.Sprintf("codex app-server turn was delivered but could NOT be persisted to the session DB (session=%s) — this turn will be missing after restart/resume", agent.SessionID()))
 	}
-	return flushOK
+	return flushOK == state.FlushPersisted
 }
 
 // Rewrites a codex reply through the output transform before its rows persist, hiding a held turn's commentary

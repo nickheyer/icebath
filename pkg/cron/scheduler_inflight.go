@@ -563,12 +563,14 @@ func shutdownParallelPools() {
 	for _, p := range parallelPools.pools {
 		pools = append(pools, p)
 	}
-	parallelPools.pools = map[string]*parallelPool{}
-	parallelPools.max = map[string]*int{}
 	parallelPools.Unlock()
 	for _, p := range pools {
 		p.Shutdown(true)
 	}
+	parallelPools.Lock()
+	parallelPools.pools = map[string]*parallelPool{}
+	parallelPools.max = map[string]*int{}
+	parallelPools.Unlock()
 }
 
 // ShutdownParallelPools is the atexit teardown of every parallel pool for the binary's exit path

@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -290,6 +289,9 @@ func slackMentionDetectionText(event map[string]any) string {
 	return pystr.Strip(pystr.Strip(flat) + "\n" + strings.Join(extra, " "))
 }
 
+// Whether a name is a gateway command of the registry, installed by the process wiring from pkg/commands
+var IsGatewayKnownCommand func(ctx context.Context, name string) bool
+
 // Leading known bang command rewritten to the gateway slash form
 func rewriteKnownBangCommand(ctx context.Context, text string) string {
 	if !strings.HasPrefix(text, "!") {
@@ -300,7 +302,7 @@ func rewriteKnownBangCommand(ctx context.Context, text string) string {
 		return text
 	}
 	cmdName := pystr.Lower(strings.SplitN(fields[0], "@", 2)[0])
-	if cmdName != "" && !strings.Contains(cmdName, "/") && commands.IsGatewayKnownCommand(ctx, commands.Default, cmdName) {
+	if cmdName != "" && !strings.Contains(cmdName, "/") && IsGatewayKnownCommand(ctx, cmdName) {
 		return "/" + text[1:]
 	}
 	return text

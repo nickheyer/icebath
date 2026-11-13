@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,19 +44,18 @@ import (
 )
 
 const (
-	entraAzureCLIClientID      = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
-	entraDefaultAuthorityHost  = "login.microsoftonline.com"
-	entraDefaultRefreshOffset  = 300
-	entraMinRefreshInterval    = 30
-	entraClientAssertionType   = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-	entraIMDSDefaultEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
-	entraDACTroubleshoot       = "\nTo mitigate this issue, please refer to the troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot."
-	entraEnvUnavailable        = "EnvironmentCredential authentication unavailable. Environment variables are not fully configured.\nVisit https://aka.ms/azsdk/python/identity/environmentcredential/troubleshoot to troubleshoot this issue."
-	entraIMDSUnavailable       = "ManagedIdentityCredential authentication unavailable, no response from the IMDS endpoint."
-	entraInvalidTenant         = "Invalid tenant ID provided. You can locate your tenant ID by following the instructions listed here: https://learn.microsoft.com/partner-center/find-ids-and-domain-names"
-	entraAmbientChainRefusal   = "Entra ID auth is refused for this profile: it sets no AZURE_* credential of its own, and under multiplexed profiles the ambient DefaultAzureCredential chain (process env, az CLI caches, host managed identity) mints the LAUNCH profile's identity, which would be sent to this profile's base_url. Set AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET or AZURE_FEDERATED_TOKEN_FILE in this profile's own config; AZURE_CLIENT_ID alone selects the host's user-assigned managed identity."
-	entraProbeTimeoutHint      = "DefaultAzureCredential can be slow when the token service is unreachable or when az login state is stale. Try `az login` or set AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET."
-	entraBrokerPackageRequired = "InteractiveBrowserBrokerCredential unavailable. The 'azure-identity-broker' package is required to use brokered authentication."
+	entraAzureCLIClientID     = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+	entraDefaultAuthorityHost = "login.microsoftonline.com"
+	entraDefaultRefreshOffset = 300
+	entraMinRefreshInterval   = 30
+	entraClientAssertionType  = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+	entraIMDSDefaultEndpoint  = "http://169.254.169.254/metadata/identity/oauth2/token"
+	entraDACTroubleshoot      = "\nTo mitigate this issue, please refer to the troubleshooting guidelines here at https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot."
+	entraEnvUnavailable       = "EnvironmentCredential authentication unavailable. Environment variables are not fully configured.\nVisit https://aka.ms/azsdk/python/identity/environmentcredential/troubleshoot to troubleshoot this issue."
+	entraIMDSUnavailable      = "ManagedIdentityCredential authentication unavailable, no response from the IMDS endpoint."
+	entraInvalidTenant        = "Invalid tenant ID provided. You can locate your tenant ID by following the instructions here: https://learn.microsoft.com/partner-center/find-ids-and-domain-names"
+	entraAmbientChainRefusal  = "Entra ID auth is refused for this profile: it sets no AZURE_* credential of its own, and under multiplexed profiles the ambient DefaultAzureCredential chain (process env, az CLI caches, host managed identity) mints the LAUNCH profile's identity, which would be sent to this profile's base_url. Set AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET or AZURE_FEDERATED_TOKEN_FILE in this profile's own config; AZURE_CLIENT_ID alone selects the host's user-assigned managed identity."
+	entraProbeTimeoutHint     = "DefaultAzureCredential can be slow when the token service is unreachable or when az login state is stale. Try `az login` or set AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET."
 )
 
 var (
@@ -1074,28 +1074,6 @@ func (c *entraSharedTokenCacheCredential) GetToken(ctx context.Context, scopes .
 	})
 }
 
-// VS Code Azure Resources sign in, served only through the azure-identity-broker package
-type entraVSCodeCredential struct{}
-
-func (entraVSCodeCredential) Name() string { return "VisualStudioCodeCredential" }
-
-func (entraVSCodeCredential) GetToken(context.Context, ...string) (EntraAccessToken, error) {
-	h, _ := os.UserHomeDir()
-	if _, err := os.Stat(filepath.Join(h, ".azure", "ms-azuretools.vscode-azureresourcegroups", "authRecord.json")); err != nil {
-		return EntraAccessToken{}, &entraUnavailableError{Msg: "Visual Studio Code Authentication is not available. Ensure you have have Azure Resources Extension installed in VS Code and have signed into Azure via VS Code."}
-	}
-	return EntraAccessToken{}, &entraUnavailableError{Msg: "VisualStudioCodeCredential requires the 'azure-identity-broker' package to be installed. You must also ensure you have the Azure Resources extension installed and have signed in to Azure via Visual Studio Code."}
-}
-
-// Platform broker sign in, served only through the azure-identity-broker package
-type entraBrokerCredential struct{}
-
-func (entraBrokerCredential) Name() string { return "BrokerCredential" }
-
-func (entraBrokerCredential) GetToken(context.Context, ...string) (EntraAccessToken, error) {
-	return EntraAccessToken{}, &entraUnavailableError{Msg: entraBrokerPackageRequired}
-}
-
 // Browser sign in with the authorization code and PKCE flow on a loopback redirect
 type entraInteractiveBrowserCredential struct {
 	tenant string
@@ -1146,33 +1124,65 @@ type entraDefaultAzureCredential struct {
 	successful entraCredential
 }
 
-var entraTokenCredentialNames = []string{"environmentcredential", "workloadidentitycredential", "managedidentitycredential",
-	"sharedtokencachecredential", "visualstudiocodecredential", "azureclicredential", "azurepowershellcredential",
-	"azuredeveloperclicredential", "interactivebrowsercredential"}
+// Chain members with the AZURE_TOKEN_CREDENTIALS name that selects each, empty for members no name selects
+var entraChainMembers = []struct{ key, envName string }{
+	{"environmentcredential", "environmentcredential"}, {"workloadidentitycredential", "workloadidentitycredential"},
+	{"managedidentitycredential", "managedidentitycredential"}, {"sharedtokencachecredential", ""},
+	{"visualstudiocodecredential", "visualstudiocodecredential"}, {"azureclicredential", "azureclicredential"},
+	{"azuredeveloperclicredential", "azuredeveloperclicredential"}, {"azurepowershellcredential", "azurepowershellcredential"},
+	{"interactivebrowsercredential", "interactivebrowsercredential"}, {"brokercredential", ""},
+}
 
-func newEntraDefaultAzureCredential(excludeInteractiveBrowser bool) (*entraDefaultAzureCredential, error) {
+// Members the chain builds after AZURE_TOKEN_CREDENTIALS and the browser opt in, as process_credential_exclusions decides
+func entraChainInclusion(excludeInteractiveBrowser bool) (map[string]bool, error) {
 	include := map[string]bool{}
-	for _, n := range entraTokenCredentialNames {
-		include[n] = true
+	for _, m := range entraChainMembers {
+		include[m.key] = m.key != "interactivebrowsercredential"
 	}
-	include["interactivebrowsercredential"] = !excludeInteractiveBrowser
-	include["brokercredential"] = true
-	switch sel := strings.ToLower(strings.TrimSpace(os.Getenv("AZURE_TOKEN_CREDENTIALS"))); {
-	case sel == "":
-	case sel == "dev":
-		include["environmentcredential"], include["workloadidentitycredential"], include["managedidentitycredential"] = false, false, false
-	case sel == "prod":
-		for _, n := range []string{"sharedtokencachecredential", "visualstudiocodecredential", "azureclicredential", "azurepowershellcredential",
-			"azuredeveloperclicredential", "interactivebrowsercredential", "brokercredential"} {
-			include[n] = false
+	dev := map[string]bool{"visualstudiocodecredential": true, "azureclicredential": true, "azuredeveloperclicredential": true,
+		"azurepowershellcredential": true, "sharedtokencachecredential": true, "brokercredential": true}
+	prod := map[string]bool{"environmentcredential": true, "workloadidentitycredential": true, "managedidentitycredential": true}
+	switch sel := strings.ToLower(strings.TrimSpace(os.Getenv("AZURE_TOKEN_CREDENTIALS"))); sel {
+	case "":
+	case "dev", "prod":
+		keep := dev
+		if sel == "prod" {
+			keep = prod
 		}
-	case include[sel] || sel == "interactivebrowsercredential":
-		for n := range include {
-			include[n] = n == sel
+		for k := range include {
+			include[k] = keep[k]
 		}
 	default:
-		return nil, fmt.Errorf("Invalid value for AZURE_TOKEN_CREDENTIALS: %s. Valid values are 'dev', 'prod', or one of %v.", sel, entraTokenCredentialNames)
+		var valid []string
+		selected := ""
+		for _, m := range entraChainMembers {
+			if m.envName != "" {
+				valid = append(valid, m.envName)
+			}
+			if m.envName == sel {
+				selected = m.key
+			}
+		}
+		if selected == "" {
+			sort.Strings(valid)
+			return nil, fmt.Errorf("Invalid value for AZURE_TOKEN_CREDENTIALS: %s. Valid values are: %s.", sel, strings.Join(append([]string{"dev", "prod"}, valid...), ", "))
+		}
+		for k := range include {
+			include[k] = k == selected
+		}
 	}
+	if !excludeInteractiveBrowser {
+		include["interactivebrowsercredential"] = true
+	}
+	return include, nil
+}
+
+func newEntraDefaultAzureCredential(excludeInteractiveBrowser bool) (*entraDefaultAzureCredential, error) {
+	include, err := entraChainInclusion(excludeInteractiveBrowser)
+	if err != nil {
+		return nil, err
+	}
+	ctx := context.Background()
 	env := os.Getenv
 	var creds []entraCredential
 	if include["environmentcredential"] {
@@ -1196,7 +1206,11 @@ func newEntraDefaultAzureCredential(excludeInteractiveBrowser bool) (*entraDefau
 		creds = append(creds, &entraSharedTokenCacheCredential{username: env("AZURE_USERNAME"), tenant: env("AZURE_TENANT_ID")})
 	}
 	if include["visualstudiocodecredential"] {
-		creds = append(creds, entraVSCodeCredential{})
+		vscode, err := newEntraVSCodeCredential(ctx)
+		if err != nil {
+			return nil, err
+		}
+		creds = append(creds, vscode)
 	}
 	if include["azureclicredential"] {
 		creds = append(creds, &entraAzureCLICredential{timeout: 10 * time.Second, inChain: true})
@@ -1215,7 +1229,7 @@ func newEntraDefaultAzureCredential(excludeInteractiveBrowser bool) (*entraDefau
 		creds = append(creds, &entraInteractiveBrowserCredential{tenant: tenant})
 	}
 	if include["brokercredential"] {
-		creds = append(creds, entraBrokerCredential{})
+		creds = append(creds, newEntraBrokerCredential(ctx, env("AZURE_TENANT_ID")))
 	}
 	return &entraDefaultAzureCredential{creds: creds}, nil
 }
@@ -1231,8 +1245,9 @@ func (c *entraDefaultAzureCredential) GetToken(ctx context.Context, scopes ...st
 		return winner.GetToken(ctx, scopes...)
 	}
 	var attempts strings.Builder
+	chain := context.WithValue(ctx, entraWithinChainKey{}, true)
 	for _, cred := range c.creds {
-		tok, err := cred.GetToken(ctx, scopes...)
+		tok, err := cred.GetToken(chain, scopes...)
 		if err == nil {
 			slog.Default().Info(fmt.Sprintf("DefaultAzureCredential acquired a token from %s", cred.Name()))
 			c.mu.Lock()
@@ -1370,9 +1385,6 @@ func BuildEntraTokenProvider(cfg *EntraIdentityConfig, scope string, excludeInte
 func entraTokenProvider(scope string) (func(context.Context) (string, error), error) {
 	return BuildEntraTokenProvider(nil, scope, true), nil
 }
-
-// HasAzureIdentityInstalled reports the Entra chain is available, it is compiled into the binary
-func HasAzureIdentityInstalled() bool { return true }
 
 // Token or error from one chain walk under a deadline, nil when the deadline passes first
 func entraProbeToken(ctx context.Context, cfg EntraIdentityConfig, timeout time.Duration) map[string]any {

@@ -17,27 +17,36 @@ type PluginLiveNotes struct {
 
 var liveNotesMu sync.Mutex
 
+// Queued notices of the agent in plugin order, empty when it holds none
+func queuedNotes(agent *PluginLiveNotes) ([]string, map[string]string) {
+	if agent.notes == nil {
+		return nil, map[string]string{}
+	}
+	return agent.keys, agent.notes
+}
+
 // Queues a note for the next tool result or user turn, replacing this plugin's older one
 func QueuePluginNotice(agent *PluginLiveNotes, pluginKey, note string) {
 	liveNotesMu.Lock()
 	defer liveNotesMu.Unlock()
-	keys := make([]string, 0, len(agent.keys)+1)
-	for _, k := range agent.keys {
+	queuedKeys, queued := queuedNotes(agent)
+	keys := make([]string, 0, len(queuedKeys)+1)
+	notes := make(map[string]string, len(queuedKeys)+1)
+	for _, k := range queuedKeys {
 		if k != pluginKey {
 			keys = append(keys, k)
+			notes[k] = queued[k]
 		}
 	}
-	if agent.notes == nil {
-		agent.notes = map[string]string{}
-	}
 	agent.keys = append(keys, pluginKey)
-	agent.notes[pluginKey] = note
+	notes[pluginKey] = note
+	agent.notes = notes
 }
 
 // Every queued notice oldest plugin first joined by blank lines, clearing the queue
 func PopPluginNotices(agent *PluginLiveNotes) string {
 	liveNotesMu.Lock()
-	keys, notes := agent.keys, agent.notes
+	keys, notes := queuedNotes(agent)
 	if len(keys) > 0 {
 		agent.keys, agent.notes = nil, map[string]string{}
 	}

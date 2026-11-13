@@ -74,6 +74,11 @@ type gatewayDashboardMount struct {
 	undoOwnSignIn        func()
 }
 
+// Unloaded mount over the listener boundary state of runner, the Webapp it serves when webapp is set
+func newGatewayDashboardMount(runner gateway.GatewayAPIRunner, state *gateway.ListenerState, webapp *gateway.WebappMount) *gatewayDashboardMount {
+	return &gatewayDashboardMount{runner: runner, state: state, webapp: webapp}
+}
+
 func (m *gatewayDashboardMount) loaded() *mountedDashboardWeb {
 	m.mu.Lock()
 	defer m.mu.Unlock()

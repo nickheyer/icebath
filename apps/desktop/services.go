@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/desktop/lifecycle"
+	"github.com/nickheyer/icebath/pkg/desktop/storage"
 	"github.com/nickheyer/icebath/pkg/desktop/windows"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -86,14 +87,21 @@ type BootPayload struct {
 	Translucency         windows.TranslucencySupport `json:"translucency"`
 	FeatureFlags         windows.FeatureFlags        `json:"featureFlags"`
 	WindowControlsCustom bool                        `json:"windowControlsCustom"`
+	// Storage group pre paint values
+	UiPreferencesSnapshot *storage.UIPreferencesSnapshot `json:"uiPreferencesSnapshot"`
+	// Display skin of the profile the requesting window routes to, else the primary profile
+	LocalSkin *storage.Object `json:"localSkin"`
 }
 
-func (s *Shell) bootPayload() BootPayload {
+// Pre paint state of the named window
+func (s *Shell) bootPayload(window string) BootPayload {
 	return BootPayload{
-		Platform:             s.platform.OS,
-		Translucency:         s.Windows.Support(),
-		FeatureFlags:         windows.ResolveFeatureFlags(runtime.GOOS, runtime.GOARCH, s.argv, s.packaged),
-		WindowControlsCustom: s.platform.CustomControls,
+		Platform:              s.platform.OS,
+		Translucency:          s.Windows.Support(),
+		FeatureFlags:          windows.ResolveFeatureFlags(runtime.GOOS, runtime.GOARCH, s.argv, s.packaged),
+		WindowControlsCustom:  s.platform.CustomControls,
+		UiPreferencesSnapshot: s.Storage.UiPreferencesSnapshot(),
+		LocalSkin:             s.Storage.LocalSkin(s.WindowRoutes.Profile(window), s.PrimaryPin.Resolve(s.Connections.svc.ActiveProfile)),
 	}
 }
 
@@ -104,7 +112,7 @@ func (s *Shell) bootMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		body, err := json.Marshal(s.bootPayload())
+		body, err := json.Marshal(s.bootPayload(r.Header.Get("x-wails-window-name")))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

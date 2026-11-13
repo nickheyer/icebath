@@ -180,16 +180,13 @@ type threadMetadataRunner interface {
 
 // Replies in the sender chat and thread as an interim send, logging only safe fields of a failure
 func sendParkedRefusal(ctx context.Context, adapter PlatformAdapter, source *SessionSource, replyTo string) {
-	name := "?"
-	if n := adapter.Name(); n != "" {
-		name = n
-	}
+	name := adapter.Name()
 	fail := func(err error) {
 		slog.Warn(fmt.Sprintf("[%s] Could not send the parked-profile refusal to %s", name, source.ChatID), "exc_info", err)
 	}
 	runner, ok := adapter.Base().GatewayRunner.(threadMetadataRunner)
 	if !ok {
-		fail(fmt.Errorf("AttributeError: '%T' object has no attribute '_thread_metadata_for_source'", adapter.Base().GatewayRunner))
+		fail(fmt.Errorf("AttributeError: '%s' object has no attribute '_thread_metadata_for_source'", pyrepr.TypeName(adapter.Base().GatewayRunner)))
 		return
 	}
 	threadMetadata := runner.ThreadMetadataForSource(source, nil)

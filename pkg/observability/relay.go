@@ -129,16 +129,18 @@ func compatibleToolCallKeys(session *metricsSession, taskID string, identity Too
 	return out
 }
 
-// Single distinct session of a sequence, else nil
-func soleSession(items []*metricsSession) *metricsSession {
-	var found *metricsSession
-	for _, s := range items {
-		if found != nil && s != found {
-			return nil
+// Single distinct element of a sequence, false when it holds none or several
+func sole[T comparable](items []T) (T, bool) {
+	var found T
+	seen := false
+	for _, item := range items {
+		if seen && item != found {
+			var none T
+			return none, false
 		}
-		found = s
+		found, seen = item, true
 	}
-	return found
+	return found, seen
 }
 
 // Event merged with overlays, later keys winning

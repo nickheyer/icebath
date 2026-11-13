@@ -1029,12 +1029,11 @@ func checkPluginSTTProvider(ctx context.Context, name string) bool {
 
 // VoiceRequirements is the check_voice_requirements verdict
 type VoiceRequirements struct {
-	Available       bool             `json:"available"`
-	AudioAvailable  bool             `json:"audio_available"`
-	STTAvailable    bool             `json:"stt_available"`
-	MissingPackages []string         `json:"missing_packages"`
-	Details         string           `json:"details"`
-	Environment     AudioEnvironment `json:"environment"`
+	Available      bool             `json:"available"`
+	AudioAvailable bool             `json:"audio_available"`
+	STTAvailable   bool             `json:"stt_available"`
+	Details        string           `json:"details"`
+	Environment    AudioEnvironment `json:"environment"`
 }
 
 // CheckVoiceRequirements reports whether capture, an STT provider and the host environment allow voice mode
@@ -1088,12 +1087,8 @@ func CheckVoiceRequirements(ctx context.Context) (VoiceRequirements, error) {
 	for _, n := range envCheck.Notices {
 		details = append(details, "Environment: "+n)
 	}
-	missing := []string{}
-	if !hasAudio {
-		missing = []string{"sounddevice", "numpy"}
-	}
 	return VoiceRequirements{Available: hasAudio && sttAvailable && envCheck.Available, AudioAvailable: hasAudio,
-		STTAvailable: sttAvailable, MissingPackages: missing, Details: strings.Join(details, "\n"), Environment: envCheck}, nil
+		STTAvailable: sttAvailable, Details: strings.Join(details, "\n"), Environment: envCheck}, nil
 }
 
 // CleanupTempRecordings deletes voice recordings older than maxAgeSeconds and returns how many went

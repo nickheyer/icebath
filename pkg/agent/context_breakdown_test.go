@@ -58,7 +58,7 @@ func TestBreakdownIncludesMajorCategories(t *testing.T) {
 func TestContextUsedNeverExceedsModelWindow(t *testing.T) {
 	history := []map[string]any{{"role": "user", "content": "start"}, {"role": "assistant", "content": "ok"}}
 	a := breakdownAgent(t, defaultParts(), nil, 262_144, 0)
-	a.turnBaseUsageAnchor = provider.CaptureUsageAnchor(250_000, 1_000, rowsToMessages(history))
+	a.turnBaseUsageAnchor.Store(provider.CaptureUsageAnchor(250_000, 1_000, rowsToMessages(history)))
 	history = append(history, map[string]any{"role": "user", "content": strings.Repeat("x", 800_000)})
 	data, err := ComputeSessionContextBreakdown(context.Background(), a, history)
 	if err != nil {

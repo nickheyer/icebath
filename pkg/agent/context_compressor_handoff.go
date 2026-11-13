@@ -182,6 +182,11 @@ func getToolCallID(tc any) string {
 	return pystr.Strip(pyStrOf(v))
 }
 
+// Every id variant a result might reference the call by, the sanitizer's own expansion
+func (c *ContextCompressor) toolCallIDVariants(tc any) map[string]bool {
+	return state.ToolCallIDVariants(tc)
+}
+
 // Removes orphaned tool results and strips orphaned tool calls after compression
 func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[string]any {
 	_, resultCallIDs, orphanedResults, missingToolCalls := classifyToolCallOrphans(messages)
@@ -223,7 +228,7 @@ func (c *ContextCompressor) sanitizeToolPairs(messages []map[string]any) []map[s
 		}
 		var kept []any
 		for _, tc := range tcs {
-			for v := range state.ToolCallIDVariants(tc) {
+			for v := range c.toolCallIDVariants(tc) {
 				if resultCallIDs[v] {
 					kept = append(kept, tc)
 					break

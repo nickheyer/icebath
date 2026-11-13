@@ -107,7 +107,7 @@ func dfirst(d *pyjson.Object, def any, keys ...string) any {
 
 // First truthy argument as a stripped string, else def
 func argText(args *pyjson.Object, def string, keys ...string) string {
-	if s := strings.TrimSpace(pyStr(dfirst(args, def, keys...))); s != "" {
+	if s := strip(pyStr(dfirst(args, def, keys...))); s != "" {
 		return s
 	}
 	return def

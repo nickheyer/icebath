@@ -11,9 +11,13 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/desktop/backend"
+	"github.com/nickheyer/icebath/pkg/desktop/desktoplog"
 	"github.com/nickheyer/icebath/pkg/desktop/lifecycle"
+	"github.com/nickheyer/icebath/pkg/desktop/storage"
+	"github.com/nickheyer/icebath/pkg/desktop/system"
 	"github.com/nickheyer/icebath/pkg/desktop/tray"
 	"github.com/nickheyer/icebath/pkg/desktop/windows"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -46,6 +50,16 @@ type Shell struct {
 
 	Windows   *windows.Service
 	DeepLinks *lifecycle.DeepLinks
+	Storage   *storage.Service
+	System    *system.Service
+	Chrome    *ChromeService
+	// Connections service, backend window routes and primary pin the per window boot payload reads
+	Connections  *ConnectionsService
+	WindowRoutes *backend.WindowConnectionRoutes
+	PrimaryPin   *backend.PrimaryProfilePin
+	// Root ICEBATH_HOME and its desktop.log, shared by every group
+	HermesHome string
+	DesktopLog *desktoplog.Log
 }
 
 // userDataDir is Electron userData, the per user config directory of the app name with the data suffix or the override
@@ -112,6 +126,13 @@ func main() {
 		os.Exit(1)
 	}
 	s.platform = hostPlatform()
+	s.HermesHome = machineHermesHome()
+	s.DesktopLog = desktoplog.New(filepath.Join(s.HermesHome, "logs", "desktop.log"), time.Now)
+	s.Storage = storage.NewService(storage.Options{HermesHome: s.HermesHome, UserData: userData, Log: s.DesktopLog, Host: &storageHost{shell: s}, Workspace: storageWorkspace(s)})
+	s.System = newSystemService(s)
+	s.WindowRoutes, s.PrimaryPin = backend.NewWindowConnectionRoutes(), &backend.PrimaryProfilePin{}
+	s.Connections = newConnectionsService(s)
+	s.Chrome = newChromeService(s)
 	s.DeepLinks = lifecycle.NewDeepLinks(s.devServer != "", func() lifecycle.MainWindow {
 		if w := s.mainWindow(); w != nil {
 			return w
@@ -125,6 +146,13 @@ func main() {
 		Services: []application.Service{
 			application.NewService(&WindowService{shell: s}),
 			application.NewService(&LifecycleService{shell: s}),
+			application.NewService(newFilesService(s)),
+			application.NewService(&StorageService{shell: s}),
+			application.NewService(s.Connections),
+			application.NewService(newGitService()),
+			application.NewService(&SystemService{shell: s}),
+			application.NewService(newTerminalService(s)),
+			application.NewService(s.Chrome),
 		},
 		Assets: application.AssetOptions{
 			Handler:    s.assetHandler(),
@@ -140,12 +168,14 @@ func main() {
 		},
 	})
 	s.app = app
+	s.registerSystemNatives()
 	s.Windows = windows.NewService(&wailsHost{shell: s}, s.platform, userData, s.log, windows.RealClock)
 	s.startTray()
 	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		nativeThemeStarted()
 		s.applyFrameThemes()
 		s.tray.Start()
+		s.System.Start()
 	})
 
 	app.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(e *application.ApplicationEvent) {
@@ -157,6 +187,9 @@ func main() {
 	app.OnShutdown(func() {
 		s.tray.WillQuit()
 		s.Windows.FlushPersistence()
+		s.Storage.Close()
+		s.System.Close()
+		s.DesktopLog.Drain()
 	})
 
 	windows.InstallApplicationMenuAfterFirstWindow(windows.MenuStartup[*application.Menu]{
@@ -320,6 +353,9 @@ func (s *Shell) newChatWindow(name string, opts windows.Options) *shellWindow {
 	windows.BindWindowChromeEvents(sw, func(fs *bool, target *shellWindow) { s.Windows.PublishWindowState(fs, target) })
 	windows.InstallZoomReassertOnWindowEvents(sw, func() { sw.reassertZoom() }, s.platform.OS, windows.RealClock)
 	windows.InstallZoomReassertOnNavigation(sw, func() { sw.reassertZoom() })
+	s.installFileDrop(sw)
+	s.installSystemWindow(sw)
+	s.installChromeWindow(sw)
 	sw.onRuntimeReady(func() {
 		s.Windows.RestoreZoomLevel(sw)
 		s.Windows.PublishWindowState(nil, sw)

@@ -53,6 +53,7 @@ func probeGhCLIToken() (string, bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), ghCLITimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "gh", "auth", "token")
+	hideConsoleWindow(cmd)
 	out, err := cmd.Output()
 	var exitErr *exec.ExitError
 	if err != nil && !errors.As(err, &exitErr) {

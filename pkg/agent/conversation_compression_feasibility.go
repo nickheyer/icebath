@@ -159,7 +159,7 @@ func probeCompressionModelFeasibility(ctx context.Context, a *AIAgent) error {
 		return feasibilityTaskProvider(ctx, "compression")
 	}()
 	runtime := map[string]any{}
-	for k, v := range a.currentMainRuntime() {
+	for k, v := range a.currentMainRuntime(ctx) {
 		runtime[k] = v
 	}
 	client, auxModel, err := feasibilityAuxClient(ctx, "compression", runtime)

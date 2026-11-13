@@ -200,7 +200,7 @@ func (a *AIAgent) Close() error { return a.CloseContext(context.Background()) }
 
 // Releases every resource the agent holds under the caller's profile scope, each step isolated
 func (a *AIAgent) CloseContext(ctx context.Context) error {
-	sessionMessages := a.sessionMessages
+	sessionMessages := a.liveSessionMessages()
 	var dicts []map[string]any
 	if sessionMessages != nil {
 		dicts = make([]map[string]any, 0, len(sessionMessages))
@@ -218,7 +218,7 @@ func (a *AIAgent) CloseContext(ctx context.Context) error {
 	})
 	a.closeRequestClients("agent_close")
 	quietly(func() error { a.closeCodexSession(); return nil })
-	a.sessionMessages = []*state.Message{}
+	a.setSessionMessages([]*state.Message{})
 	a.dbFlushScanPrefix = nil
 	a.streamedAssistantTextParts = []string{}
 	if sessionMessages != nil {

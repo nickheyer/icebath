@@ -197,7 +197,7 @@ const SCOPED_CONFIG_KEYS = new Set(['reasoning', 'yolo'])
 // The one guard between a Desktop producer and the owner's closed contracts: translate a legacy
 // shape the owner has a canonical form for, refuse by name what it does not serve.
 function canonicalProducerFrame(method: string, params: Record<string, unknown>): Record<string, unknown> {
-  // Any other key, or a scope on a key without one: refuse before the wire, like Ink, instead of a
+  // Any other key, or a scope on a key without one: refuse before the wire, like the terminal UI, instead of a
   // bare invalid_params.
   if (method === 'config.set' && (!CANONICAL_CONFIG_KEYS.has(String(params.key)) || ('scope' in params && !SCOPED_CONFIG_KEYS.has(String(params.key))))) {
     throw new Error(`Changing ${params.key}${'scope' in params ? ` (${params.scope})` : ''} is not available on the shared gateway yet`)
@@ -323,7 +323,7 @@ export class CanonicalDesktopProtocol {
   }
 
   // `derived`: the payload was derived from a snapshot (a typed /undo or /retry names the Nth newest user
-  // turn). Keyed by operation alone, as Ink's mutateCanonical and the classic PreparedMutations do: a
+  // turn). Keyed by operation alone, as the terminal UI's mutateCanonical and the classic PreparedMutations do: a
   // retry after a lost reply re-presents the original target, never one re-derived from a transcript the
   // first attempt already rewound.
   private retainedMutation(sessionId: unknown, profile: unknown, operation: string, payload: Record<string, unknown>, withGeneration: boolean, derived = false): Record<string, unknown> {

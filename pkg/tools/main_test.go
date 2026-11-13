@@ -32,6 +32,7 @@ func TestMain(m *testing.M) {
 	DispatchCommitGraphRefreshEntry(context.Background())
 	ptyTestHelperEntry()
 	scratchSpawnerEntry()
+	selfRepoProbeEntry()
 	state.SecretEnvSubstrings = testSecretEnvSubstrings
 	state.SecretEnvName = testSecretEnvName
 	installContextLengthDoubles()
@@ -39,7 +40,23 @@ func TestMain(m *testing.M) {
 	installGitlockDoubles()
 	installWorktreeDoubles()
 	installProfileStoreDoubles()
-	os.Exit(m.Run())
+	os.Exit(runUnderPrivateHome(m))
+}
+
+// Runs the package cases under a private product home unless the caller named one, removing it afterwards
+func runUnderPrivateHome(m *testing.M) int {
+	if os.Getenv(home.EnvHome) != "" {
+		return m.Run()
+	}
+	dir, err := os.MkdirTemp("", "icebath-tools-home-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Setenv(home.EnvHome, dir); err != nil {
+		panic(err)
+	}
+	return m.Run()
 }
 
 // The secret env doubles hold the codeexec fragment list and its case folded substring rule

@@ -76,7 +76,7 @@ func injectIterationBudgetWarning(ctx context.Context, a *AIAgent, messages []*s
 	if !haveRatio && kanbanWorker {
 		ratio, haveRatio = 0.9, true
 	}
-	budget := a.iterationBudget
+	budget := a.iterationBudget.Load()
 	if !haveRatio || budget == nil || budget.MaxTotal <= 1 || budget.MaxTotal >= math.MaxInt || a.iterationBudgetWarningInjected ||
 		float64(budget.Used()) < math.Min(ratio*float64(budget.MaxTotal), float64(budget.MaxTotal-1)) {
 		return false
@@ -319,14 +319,14 @@ func beginIteration(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict
 		return PhaseVerdict{Action: "break"}, nil
 	}
 	s.APICallCount++
-	a.apiCallCount = s.APICallCount
+	a.apiCallCount.Store(int64(s.APICallCount))
 	a.touchActivity(fmt.Sprintf("starting API call #%d", s.APICallCount), "", false)
 	if a.budgetGraceCall {
 		a.budgetGraceCall = false
-	} else if !a.iterationBudget.Consume() {
+	} else if !a.iterationBudget.Load().Consume() {
 		s.TurnExitReason = "budget_exhausted"
 		if !a.quietMode {
-			a.safePrint(fmt.Sprintf("\n⚠️  Iteration budget exhausted (%d/%d iterations used)", a.iterationBudget.Used(), a.iterationBudget.MaxTotal), true)
+			a.safePrint(fmt.Sprintf("\n⚠️  Iteration budget exhausted (%d/%d iterations used)", a.iterationBudget.Load().Used(), a.iterationBudget.Load().MaxTotal), true)
 		}
 		return PhaseVerdict{Action: "break"}, nil
 	}
@@ -351,7 +351,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 			return PhaseVerdict{Action: "break"}, nil
 		}
 		s.APICallCount--
-		a.iterationBudget.Refund()
+		a.iterationBudget.Load().Refund()
 		r.RestartWithRedirectedMessages = false
 		return PhaseVerdict{Action: "continue"}, nil
 	}
@@ -361,7 +361,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	}
 	if r.RestartWithCompressedMessages {
 		s.APICallCount--
-		a.iterationBudget.Refund()
+		a.iterationBudget.Load().Refund()
 		s.RetryCount++
 		r.RestartWithCompressedMessages = false
 		if shouldSkipModelCallForReferenceHandoff(&s.Messages, s.UserMessage) {
@@ -383,7 +383,7 @@ func applyRetryRestarts(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 			return PhaseVerdict{Action: "break"}, nil
 		}
 		s.APICallCount--
-		a.iterationBudget.Refund()
+		a.iterationBudget.Load().Refund()
 		r.RestartWithRebuiltMessages = false
 		s.PreflightCompressionBlocked = false
 		return PhaseVerdict{Action: "continue"}, nil

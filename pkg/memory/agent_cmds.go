@@ -114,14 +114,45 @@ func CmdInsights(ctx context.Context, out io.Writer, days int, source string) {
 	fmt.Fprintln(out, text)
 }
 
+// Store handle the insights command hands to the engine and always closes
+type insightsSessionDB interface {
+	InsightsStore
+	Close() error
+}
+
+// Engine the insights command drives to generate and render the terminal report
+type insightsTerminalEngine interface {
+	Generate(ctx context.Context, days int, source string) (*InsightsReport, error)
+	FormatTerminal(r *InsightsReport) string
+	Close() error
+}
+
+// Session store constructor of the insights command, the SessionDB a Python case patches
+var openInsightsSessionDB = func(path string, opts state.Options) (insightsSessionDB, error) {
+	db, err := state.Open(path, opts)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// Report engine constructor of the insights command, the InsightsEngine a Python case patches
+var newInsightsTerminalEngine = func(db insightsSessionDB) (insightsTerminalEngine, error) {
+	engine, err := OpenInsightsEngine(db)
+	if err != nil {
+		return nil, err
+	}
+	return engine, nil
+}
+
 // Opens the session store read only, renders the report and always closes the store
 func insightsTerminalReport(ctx context.Context, path string, days int, source string) (string, error) {
-	db, err := state.Open(path, state.Options{ReadOnly: true})
+	db, err := openInsightsSessionDB(path, state.Options{ReadOnly: true})
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = db.Close() }()
-	engine, err := OpenInsightsEngine(db)
+	engine, err := newInsightsTerminalEngine(db)
 	if err != nil {
 		return "", err
 	}

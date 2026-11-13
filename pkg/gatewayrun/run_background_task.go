@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -77,9 +77,11 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 		return err
 	}
 	r.reasoningConfig = reasoningConfig
-	if r.serviceTier, err = r.resolveSessionServiceTier(ctx, source, ""); err != nil {
+	serviceTier, err := r.resolveSessionServiceTier(ctx, source, "")
+	if err != nil {
 		return err
 	}
+	r.serviceTier = serviceTier
 	route := r.resolveTurnAgentConfig(model, runtimeKwargs, tierFromRunner)
 	enrichedPrompt := prompt
 	var imagePaths []string
@@ -119,20 +121,7 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 		return err
 	}
 	result, _ := raw.(map[string]any)
-	response := ""
-	if result != nil {
-		response = pyrepr.Str(result["final_response"])
-		if result["final_response"] == nil {
-			response = ""
-		}
-		if response == "" && pyrepr.Truthy(result["error"]) {
-			response = i18n.T(ctx, "gateway.shared.error_prefix", "", map[string]any{"error": result["error"]})
-		}
-	}
-	if response != "" {
-		messages, _ := result["messages"].([]any)
-		response = gateway.RepairExplicitComputerUseMediaPaths(response, messages)
-	}
+	response := backgroundResponse(ctx, result)
 	header := i18n.T(ctx, "gateway.background.complete_header", "", map[string]any{"preview": preview(prompt, 60)})
 	var images []gateway.ImageRef
 	var mediaFiles []gateway.MediaRef
@@ -159,7 +148,8 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 		_, _ = adapter.SendImage(ctx, source.ChatID, image.URL, image.Alt, "", threadMetadata)
 	}
 	for _, m := range mediaFiles {
-		ext := pystr.Lower(filepath.Ext(m.Path))
+		_, ext := pypath.Splitext(m.Path)
+		ext = pystr.Lower(ext)
 		switch {
 		case gateway.ShouldSendMediaAsAudio(source.Platform, ext, m.IsVoice):
 			_, _ = adapter.SendVoice(ctx, source.ChatID, m.Path, "", "", threadMetadata, map[string]any{"is_voice": m.IsVoice})
@@ -172,6 +162,29 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 		}
 	}
 	return nil
+}
+
+// Final text of a background run, its error when it gave none, media paths repaired from the run's messages
+func backgroundResponse(ctx context.Context, result map[string]any) string {
+	if result == nil {
+		return ""
+	}
+	response := ""
+	if result["final_response"] != nil {
+		response = pyrepr.Str(result["final_response"])
+	}
+	if response == "" && pyrepr.Truthy(result["error"]) {
+		response = i18n.T(ctx, "gateway.shared.error_prefix", "", map[string]any{"error": result["error"]})
+	}
+	if response == "" {
+		return ""
+	}
+	rows := resultMessages(result)
+	messages := make([]any, len(rows))
+	for i, m := range rows {
+		messages[i] = m
+	}
+	return gateway.RepairExplicitComputerUseMediaPaths(response, messages)
 }
 
 // Fresh quiet agent of a background task with the turn route, toolsets, provider routing and source identity

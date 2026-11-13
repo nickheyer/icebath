@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -23,6 +24,16 @@ func pyErrorClass(err error) string {
 		return pe.Kind
 	}
 	return pyrepr.ExceptionName(err)
+}
+
+// Truth of the probe, false when it fails
+func quietBool(fn func() bool) (out bool) {
+	defer func() {
+		if recover() != nil {
+			out = false
+		}
+	}()
+	return fn()
 }
 
 // Manager error reply prefixed for the command when the error class is one the command answers, else the error itself
@@ -130,7 +141,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 	}
 	switch lower {
 	case "", "status":
-		return mgr.StatusLine(), nil
+		return mgr.StatusLine()
 	case "pause":
 		if st := mgr.Pause(); st != nil {
 			return i18n.T(ctx, "gateway.heartbeat.paused", "", map[string]any{"prompt": st.Prompt}), nil
@@ -154,23 +165,28 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 		return i18n.T(ctx, "gateway.heartbeat.none_set", "", nil), nil
 	}
 	tokens := pystr.SplitWhitespace(args, 2)
-	var interval int64
-	parsed, prompt := false, ""
+	var interval *big.Int
+	var err error
+	prompt := ""
 	if pystr.Lower(tokens[0]) == "every" && len(tokens) >= 2 {
-		interval, parsed = agent.ParseHeartbeatInterval("every " + tokens[1])
+		if interval, err = agent.ParseHeartbeatInterval("every " + tokens[1]); err != nil {
+			return "", err
+		}
 		if len(tokens) > 2 {
 			prompt = tokens[2]
 		}
 	} else {
-		interval, parsed = agent.ParseHeartbeatInterval(tokens[0])
-		if parsed && interval > 0 {
+		if interval, err = agent.ParseHeartbeatInterval(tokens[0]); err != nil {
+			return "", err
+		}
+		if interval != nil && interval.Sign() > 0 {
 			prompt = pystr.Strip(args[len(tokens[0]):])
 		}
 	}
-	if !parsed {
+	if interval == nil {
 		return i18n.T(ctx, "gateway.heartbeat.usage", "", nil), nil
 	}
-	if interval < 0 {
+	if interval.Sign() < 0 {
 		return i18n.T(ctx, "gateway.heartbeat.interval_too_small", "", map[string]any{"min_seconds": agent.MinHeartbeatIntervalSeconds}), nil
 	}
 	if pystr.Strip(prompt) == "" {
@@ -267,7 +283,7 @@ func (r *GatewayRunner) handleLoopCommand(ctx context.Context, event *gateway.Me
 		return "", err
 	}
 	output := result.Output
-	if result.Created && agent.GoalBlocksLoopTick(ctx, sid) {
+	if result.Created && quietBool(func() bool { return agent.GoalBlocksLoopTick(ctx, sid) }) {
 		output += i18n.T(ctx, "gateway.loop.goal_defers_note", "", nil)
 	}
 	return output, nil

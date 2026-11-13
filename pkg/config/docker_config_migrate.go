@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Version reader and migration pass the Docker boot step runs, swapped by tests simulating failures
@@ -100,7 +98,7 @@ func DockerConfigMigrate(ctx context.Context, h string) error {
 		fmt.Fprintf(FacadeNoticeOut, "[config-migrate] WARNING: %s\n", SupportFloorMessage(h))
 		return nil
 	}
-	backups, err := dockerBackupExisting(ctx, home.ConfigPath(h), home.EnvPath(h))
+	backups, err := dockerBackupExisting(ctx, GetConfigPath(h), GetEnvPath(h))
 	if err != nil {
 		return err
 	}

@@ -20,9 +20,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhost"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -54,7 +54,6 @@ const doctorPythonProbe = "import json, sys\nprint(json.dumps({'version': list(s
 var (
 	doctorDetectInstallMethod  = config.DetectInstallMethod
 	doctorInstallTrustStore    = provider.InstallTrustStore
-	doctorModuleImportable     = pm.AnchorImportable
 	doctorSystemdLingerStatus  = func(ctx context.Context) (*bool, string) { return gateway.GetSystemdLingerStatus(ctx, "") }
 	doctorDetectServiceManager = gatewaycli.DetectServiceManager
 	doctorIsLinux              = gateway.IsLinux
@@ -71,23 +70,11 @@ var (
 		{"Opus (Discord voice playback)", func(context.Context) bool { return discord.LoadOpusLibrary() == nil }},
 		{"FFmpeg (audio conversion)", func(context.Context) bool { return media.FindFFmpegBinary() != "" }},
 		{"Porcupine (wake word)", func(ctx context.Context) bool { return media.LoadPorcupineLibrary(ctx) == nil }},
-		{"sherpa-onnx (wake word)", func(ctx context.Context) bool { return media.LoadSherpaOnnxLibrary(ctx) == nil }},
+		{"sherpa-onnx (wake word)", func(context.Context) bool { return media.SherpaOnnxAvailable() }},
 		{"openWakeWord (wake word)", func(ctx context.Context) bool { return media.LoadOpenWakeWordLibrary(ctx) == nil }},
-		{"Python tool runtime (execute_code)", func(ctx context.Context) bool { _, err := codeexec.RuntimePython(ctx); return err == nil }},
-		{"Python shared library (plugins, browser harness)", doctorPythonSharedLibraryPresent},
-		{"browser-harness (browser_exec)", func(ctx context.Context) bool { return doctorModuleImportable(ctx, "browser_harness") }},
+		{"Python on PATH (execute_code)", func(ctx context.Context) bool { _, err := codeexec.RuntimePython(ctx); return err == nil }},
 	}
 )
-
-// Whether the runtime interpreter the plugin host and browser harness embed has a loadable shared library
-func doctorPythonSharedLibraryPresent(ctx context.Context) bool {
-	python, err := codeexec.RuntimePython(ctx)
-	if err != nil {
-		return false
-	}
-	_, err = pyhost.Discover(python)
-	return err == nil
-}
 
 // Default client TLS context, the error its construction raises when a trust bundle cannot be loaded
 var doctorDefaultTLSContext = func() error {
@@ -622,7 +609,7 @@ func doctorCheckMacosTCCAnchor(ctx context.Context, d *Doctor, shouldFix bool) e
 // Reports compromised package advisories as manual issues with their remediation text
 func checkSecurityAdvisories(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheckGuarded(d.W, "Security advisory check failed: {e}", "", func(f *Finding) error {
-		allHits := plugins.DetectCompromised(plugins.Advisories)
+		allHits := plugins.DetectCompromised(ctx, plugins.Advisories)
 		freshHits := plugins.FilterUnackedAdvisories(ctx, allHits)
 		if len(freshHits) == 0 {
 			doctorCheckOK(d.W, "No active security advisories", "")
@@ -761,7 +748,7 @@ func checkCertificates(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 	})
 }
 
-// Reports each library, program and runtime package an optional capability needs as present or not installed
+// Reports each optional capability's library, program or runtime package and whether Matrix encryption is compiled in
 func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		for _, p := range doctorPackages {
@@ -770,6 +757,11 @@ func checkRequiredPackages(ctx context.Context, d *Doctor, shouldFix bool) (*Fin
 			} else {
 				doctorCheckWarn(d.W, p.Name, "(optional, not installed)")
 			}
+		}
+		if matrix.E2EEBuiltIn {
+			doctorCheckOK(d.W, "Matrix E2EE (goolm)", "(optional)")
+		} else {
+			doctorCheckWarn(d.W, "Matrix E2EE (goolm)", "(optional, not built in: "+matrix.E2EEBuildCommand+")")
 		}
 		return nil
 	})

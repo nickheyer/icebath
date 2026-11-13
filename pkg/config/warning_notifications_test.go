@@ -190,11 +190,11 @@ func TestResolveDisplaySettingOverridesAndLegacy(t *testing.T) {
 
 func TestToolProgressWinningSourceControlsModeAndIntent(t *testing.T) {
 	saved := PlatformDisplayLookup
-	PlatformDisplayLookup = func(_ context.Context, key string) (string, map[string]any, bool) {
+	PlatformDisplayLookup = func(_ context.Context, key string) (string, map[string]any) {
 		if key != "slack" {
-			return "", nil, false
+			return "", nil
 		}
-		return "medium", map[string]any{"tool_progress": "off", "long_running_notifications": false, "busy_ack_detail": false}, true
+		return "medium", map[string]any{"tool_progress": "off", "long_running_notifications": false, "busy_ack_detail": false}
 	}
 	t.Cleanup(func() { PlatformDisplayLookup = saved })
 	cases := []struct {

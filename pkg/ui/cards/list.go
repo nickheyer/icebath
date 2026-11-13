@@ -74,3 +74,6 @@ func (l *List) Index() int { return l.index() }
 
 // Opens the detail pane of the selected row when closed and closes it when open
 func (l *List) ToggleDetail() tea.Cmd { return toggleDetail(l.lister, l.index()) }
+
+// Asks a yes or no question along the bottom of the list, yes running the action
+func (l *List) Confirm(text string, yes func() tea.Cmd) { l.confirm(text, yes) }

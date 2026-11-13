@@ -2,18 +2,10 @@ package manage
 
 import (
 	"context"
-	"errors"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const holographicProviderInit = `from agent.memory_provider import MemoryProvider
@@ -71,59 +63,6 @@ func (releaseSecretSource) CurrentSecretScope(ctx context.Context) map[string]st
 	return provider.CurrentSecretScope(ctx)
 }
 
-// Running plugin host of the default home with the holographic store installed and one store open per database
-func holographicHost(t *testing.T, dbs ...string) {
-	t.Helper()
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatalf("python3 is required to run the plugin host child: %v", err)
-	}
-	t.Cleanup(plugins.SetHostInterpreterForTests(python))
-	savedKeys, savedAdapters, savedSecrets := tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets
-	t.Cleanup(func() {
-		tools.ConfigEnvTableKeys, tools.RegisteredAdapterSecretEnv, tools.ProfileSecrets = savedKeys, savedAdapters, savedSecrets
-	})
-	tools.ConfigEnvTableKeys = func() []string { return nil }
-	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return nil }
-	tools.ProfileSecrets = releaseSecretSource{}
-	t.Setenv("PYTHONPATH", "")
-	t.Setenv("ICEBATH_ENABLE_PROJECT_PLUGINS", "")
-	ctx := context.Background()
-	root := filepath.Join(os.Getenv(home.EnvHome), "plugins", "holographic")
-	writeFile(t, filepath.Join(root, "__init__.py"), holographicProviderInit)
-	writeFile(t, filepath.Join(root, "store.py"), holographicStoreModule)
-	t.Cleanup(func() {
-		if host, err := plugins.GetPluginManager(ctx).PluginHost(); err == nil {
-			host.Shutdown()
-		}
-	})
-	mod, err := memory.ImportProviderModule(ctx, "holographic", "store")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, db := range dbs {
-		if _, err := mod.Call(ctx, "MemoryStore", []any{db}, nil); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func TestMemoryStoreReleaseClosesOnlyTheStoresUnderTheProfile(t *testing.T) {
-	tmp := manageEnv(t)
-	worker := namedProfile(t, tmp, "worker")
-	other := namedProfile(t, tmp, "other")
-	holographicHost(t, filepath.Join(worker, "memory_store.db"), filepath.Join(worker, "nested", "..", "second.db"), filepath.Join(other, "memory_store.db"))
-	if n, err := memoryStoreReleaseAllUnder(worker); err != nil || n != 2 {
-		t.Fatalf("released %d %v", n, err)
-	}
-	if n, err := memoryStoreReleaseAllUnder(worker); err != nil || n != 0 {
-		t.Fatalf("released again %d %v", n, err)
-	}
-	if n, err := memoryStoreReleaseAllUnder(other); err != nil || n != 1 {
-		t.Fatalf("other released %d %v", n, err)
-	}
-}
-
 func TestMemoryStoreReleaseWithoutARunningHostIsZero(t *testing.T) {
 	manageEnv(t)
 	if hosts := plugins.RunningPluginHosts(); len(hosts) != 0 {
@@ -131,29 +70,5 @@ func TestMemoryStoreReleaseWithoutARunningHostIsZero(t *testing.T) {
 	}
 	if n, err := memoryStoreReleaseAllUnder(t.TempDir()); err != nil || n != 0 {
 		t.Fatalf("released %d %v", n, err)
-	}
-}
-
-func TestMemoryStoreReleaseReportsTheImportErrorWhenTheStoreIsNotInstalled(t *testing.T) {
-	tmp := manageEnv(t)
-	holographicHost(t)
-	if err := os.RemoveAll(filepath.Join(tmp, ".icebath", "plugins", "holographic")); err != nil {
-		t.Fatal(err)
-	}
-	var ie *memory.ProviderImportError
-	n, err := memoryStoreReleaseAllUnder(tmp)
-	if n != 0 || !errors.As(err, &ie) || ie.Msg != "memory provider 'holographic' is not installed" {
-		t.Fatalf("released %d %v", n, err)
-	}
-}
-
-func TestDeleteReleasesThisProcessMemoryStoreConnections(t *testing.T) {
-	manageEnv(t)
-	out := captureOut(t)
-	dir := createWorker(t)
-	holographicHost(t, filepath.Join(dir, "memory_store.db"))
-	deleteQuietly(t, "worker")
-	if !strings.Contains(out.String(), "✓ Released 1 memory-store connection(s) held by this process\n") {
-		t.Fatalf("output %q", out.String())
 	}
 }

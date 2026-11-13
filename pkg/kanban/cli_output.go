@@ -13,10 +13,11 @@ import (
 
 // Status glyph of every default column plus the archived dash
 var statusIcons = func() map[string]string {
-	icons := map[string]string{Archived: "—"}
-	for _, c := range DefaultWorkflow.Columns {
+	icons := map[string]string{}
+	for c := range DefaultWorkflow.All() {
 		icons[c.Key] = c.Icon
 	}
+	icons[Archived] = "—"
 	return icons
 }()
 

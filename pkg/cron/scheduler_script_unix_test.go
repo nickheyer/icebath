@@ -4,7 +4,6 @@ package cron
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -21,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -171,50 +169,6 @@ func TestScriptPathFollowsLinksBeforeDotDot(t *testing.T) {
 	}
 }
 
-type managedStoreFixture struct {
-	repo, generation, python, version, basePrefix string
-}
-
-func newManagedStoreFixture(t *testing.T) managedStoreFixture {
-	t.Helper()
-	python := hostPython(t)
-	raw, err := exec.Command(python, "-c", "import sys; print(sys.base_prefix); print('%d.%d' % sys.version_info[:2])").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	facts := strings.Split(strings.TrimSpace(string(raw)), "\n")
-	root := t.TempDir()
-	repo := filepath.Join(root, "repo")
-	runtimeDir := filepath.Join(root, "pm-runtime")
-	for _, dir := range []string{repo, filepath.Join(runtimeDir, "bin"), filepath.Join(runtimeDir, "site")} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Cleanup(pm.PatchRepoRoot(repo))
-	t.Setenv(pm.EnvInstallRoot, "")
-	if err := os.Symlink(python, filepath.Join(runtimeDir, "bin", "python")); err != nil {
-		t.Fatal(err)
-	}
-	writeFixtureFile(t, filepath.Join(runtimeDir, "pm-runtime.json"), `{"python": "bin/python", "sitePackages": "site"}`)
-	writeFixtureFile(t, filepath.Join(repo, "install-stamp.json"), `{"distribution": "docker", "pmRuntime": `+jsonText(t, runtimeDir)+`}`)
-	resident, err := pm.FindResidentRuntime()
-	if err != nil || resident == nil {
-		t.Fatalf("fixture has no resident runtime %v %v", resident, err)
-	}
-	generation := filepath.Join(pm.InstallStateDir(context.Background(), repo), "environments", "gen1")
-	return managedStoreFixture{repo: repo, generation: generation, python: python, version: facts[1], basePrefix: facts[0]}
-}
-
-func jsonText(t *testing.T, s string) string {
-	t.Helper()
-	raw, err := json.Marshal(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
-}
-
 func writeFixtureFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -222,83 +176,6 @@ func writeFixtureFile(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func (f managedStoreFixture) selectEnvironment(t *testing.T, environment string) {
-	t.Helper()
-	writeFixtureFile(t, pm.EnvironmentRuntimeFactsPath(context.Background(), f.repo), `{"packages": {"venv": {"environment": `+jsonText(t, environment)+`}}}`)
-}
-
-func TestRunJobScriptPosixManagedStoreScriptRunsOnVenvWithLiveCheckout(t *testing.T) {
-	s := scriptStore(t)
-	f := newManagedStoreFixture(t)
-	venv := f.generation
-	if err := os.MkdirAll(filepath.Join(venv, "bin"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(f.python, filepath.Join(venv, "bin", "python")); err != nil {
-		t.Fatal(err)
-	}
-	writeFixtureFile(t, filepath.Join(venv, "pyvenv.cfg"), "home = "+filepath.Join(f.basePrefix, "bin")+"\ninclude-system-site-packages = false\n")
-	deps := filepath.Join(venv, "lib", "python"+f.version, "site-packages")
-	writeFixtureFile(t, filepath.Join(deps, "probe_pkg.py"), "VALUE = 42\n")
-	snapshot := filepath.Join(filepath.Dir(f.repo), "workspace-snapshot")
-	writeFixtureFile(t, filepath.Join(snapshot, "hermes_constants.py"), "STALE = True\n")
-	writeFixtureFile(t, filepath.Join(deps, "snapshot.pth"), snapshot+"\n")
-	writeFixtureFile(t, filepath.Join(f.repo, "hermes_constants.py"), "LIVE = True\n")
-	f.selectEnvironment(t, venv)
-	t.Setenv("PYTHONPATH", "")
-	os.Unsetenv("PYTHONPATH")
-	script := writeScript(t, s, "probe.py", "import atexit, os, pickle, sys, probe_pkg, hermes_constants\n"+
-		"class Probe: pass\n"+
-		"atexit.register(lambda: print('pickled', bool(pickle.dumps(Probe()))))\n"+
-		"print(probe_pkg.VALUE)\n"+
-		"print(hermes_constants.__file__)\n"+
-		"print(sys.path[0])\n"+
-		"print('PYTHONPATH=' + (os.environ.get('PYTHONPATH') or ''))\n")
-	ok, out := runScript(t, s, "probe.py", nil)
-	if !ok {
-		t.Fatal(out)
-	}
-	lines := strings.Split(out, "\n")
-	if len(lines) != 5 {
-		t.Fatalf("got %q", out)
-	}
-	resolve := func(p string) string {
-		t.Helper()
-		resolved, err := pypath.Resolve(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return resolved
-	}
-	if lines[0] != "42" || resolve(lines[1]) != resolve(filepath.Join(f.repo, "hermes_constants.py")) || resolve(lines[2]) != resolve(filepath.Dir(script)) ||
-		lines[3] != "PYTHONPATH=" || lines[4] != "pickled True" {
-		t.Fatalf("got %q", lines)
-	}
-}
-
-func TestRunJobScriptPosixUnusableStoreSelectionFailsTheRunNotTheTick(t *testing.T) {
-	for _, broken := range []string{"selection_raises", "interpreter_missing"} {
-		t.Run(broken, func(t *testing.T) {
-			s := scriptStore(t)
-			f := newManagedStoreFixture(t)
-			want := "Script execution failed: dependency environment interpreter is missing: " + filepath.Join(f.generation, "bin", "python")
-			if broken == "selection_raises" {
-				outsideInstall := filepath.Join(filepath.Dir(f.repo), "gone-venv")
-				f.selectEnvironment(t, outsideInstall)
-				want = "Script execution failed: dependency environment is missing or outside this install: " + outsideInstall
-			} else {
-				writeFixtureFile(t, filepath.Join(f.generation, "pyvenv.cfg"), "home = /usr/bin\n")
-				f.selectEnvironment(t, f.generation)
-			}
-			writeScript(t, s, "probe.py", "print(\"ok\")\n")
-			ok, out := runScript(t, s, "probe.py", nil)
-			if ok || !strings.Contains(out, "dependency environment") || out != want {
-				t.Fatalf("got %v %q want %q", ok, out, want)
-			}
-		})
 	}
 }
 
@@ -555,5 +432,23 @@ func TestARoutedProfileScriptKeepsAdministratorManagedValuesOverItsOwn(t *testin
 	}
 	if got := os.Getenv("ORG_POLICY_FLAG"); got != "managed-value" {
 		t.Fatalf("the parent value moved to %q", got)
+	}
+}
+
+func TestPythonScriptsRunOnThePythonFoundOnPath(t *testing.T) {
+	dir := t.TempDir()
+	writeFixtureFile(t, filepath.Join(dir, "python3"), "#!/bin/sh\n")
+	if err := os.Chmod(filepath.Join(dir, "python3"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	s, _ := newTestStore(t)
+	argv, refusal, err := s.scriptArgv("/scripts/job.py", nil)
+	if err != nil || refusal != "" || !slices.Equal(argv, []string{filepath.Join(dir, "python3"), "/scripts/job.py"}) {
+		t.Fatalf("argv %v refusal %q err %v", argv, refusal, err)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if _, _, err := s.scriptArgv("/scripts/job.py", nil); err == nil || !strings.Contains(err.Error(), "no Python interpreter found on PATH") {
+		t.Fatalf("an empty PATH resolved: %v", err)
 	}
 }

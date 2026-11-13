@@ -89,6 +89,18 @@ func nativeNow(now *int64) int64 {
 	return *now
 }
 
+// Pending entry of a broker state, removed when consume is set, PendingNotFound when unknown
+func nativePopPendingLocked(brokerState string, consume bool) (*NativePending, error) {
+	entry, ok := nativePending[brokerState]
+	if !ok {
+		return nil, pendingNotFound("unknown or expired native authorization")
+	}
+	if consume {
+		delete(nativePending, brokerState)
+	}
+	return entry, nil
+}
+
 // Stashes a pending native authorization and returns its opaque broker state, refused at capacity or per address cap
 func RegisterNativePending(codeChallenge, redirectURI, clientState, clientIP string, now *int64) (string, error) {
 	t := nativeNow(now)
@@ -118,11 +130,7 @@ func GetNativePending(brokerState string, now *int64) (*NativePending, error) {
 	nativeMu.Lock()
 	defer nativeMu.Unlock()
 	nativeGCLocked(nativeNow(now))
-	entry, ok := nativePending[brokerState]
-	if !ok {
-		return nil, pendingNotFound("unknown or expired native authorization")
-	}
-	return entry, nil
+	return nativePopPendingLocked(brokerState, false)
 }
 
 // Consumes a pending authorization and mints a one time code bound to the desktop challenge and session
@@ -131,11 +139,10 @@ func CompleteNativePending(brokerState string, session *gateway.DashboardSession
 	nativeMu.Lock()
 	defer nativeMu.Unlock()
 	nativeGCLocked(t)
-	pending, ok := nativePending[brokerState]
-	if !ok {
-		return "", pendingNotFound("unknown or expired native authorization")
+	pending, err := nativePopPendingLocked(brokerState, true)
+	if err != nil {
+		return "", err
 	}
-	delete(nativePending, brokerState)
 	if !nativeCapacityOKLocked() {
 		return "", &NativeFlowError{Msg: "native-flow code store at capacity"}
 	}

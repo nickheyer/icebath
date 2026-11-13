@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 var leaseLog = logging.GetLogger("hermes_cli.active_sessions")
@@ -43,14 +44,26 @@ const NoLockTimeout time.Duration = -1
 // Grace during which a fresh lease of this process is never read as an orphan
 const selfOrphanGraceSeconds = 30.0
 
-// Poll interval of a registry lock wait with a deadline
-const lockPollInterval = 50 * time.Millisecond
-
 // Refusal of an acquisition, the message for people and the reason as the contract
 type Refusal struct {
 	Message      string
 	Reason       string
 	LedgerStatus string
+}
+
+// Refusal carrying a message for people and a machine readable reason
+func NewRefusal(message, reason string) *Refusal {
+	return &Refusal{Message: message, Reason: reason}
+}
+
+// Refusal rebuilt from its message and reason with its ledger status, as a payload copy needs
+func (r *Refusal) PyDeepcopy() any {
+	if r == nil {
+		return r
+	}
+	copied := NewRefusal(r.Message, r.Reason)
+	copied.LedgerStatus = r.LedgerStatus
+	return copied
 }
 
 // Message of the refusal
@@ -185,43 +198,70 @@ func (e *LockUnavailableError) Unwrap() error { return e.Err }
 // Registry lock entry every lease operation takes, the exclusive lock with no deadline
 var enterFileLock = func(path string) (func(), error) { return FileLock(path, NoLockTimeout) }
 
-// Takes the exclusive lock on path, polling up to timeout when it is not NoLockTimeout
+// Holds the exclusive lock on path as a with block does and returns its release
 func FileLock(path string, timeout time.Duration) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	lock := newFileLock(path, timeout)
+	if err := lock.enter(); err != nil {
 		return nil, err
 	}
-	fh, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
-	if err != nil {
-		return nil, err
-	}
-	if err := flockWithTimeout(fh, timeout); err != nil {
-		_ = fh.Close()
-		return nil, &LockUnavailableError{Path: path, Err: err}
-	}
-	return func() {
-		_ = pyfs.UnlockFile(fh)
-		_ = fh.Close()
-	}, nil
+	return lock.exit, nil
 }
 
-// Blocks on the whole file lock, or retries only while another holder has it until the timeout
-func flockWithTimeout(fh *os.File, timeout time.Duration) error {
-	if timeout < 0 {
-		return pyfs.LockFile(fh)
-	}
-	deadline := time.Now().Add(timeout)
-	for {
-		held, err := pyfs.TryLockFile(fh)
+// Locks or unlocks the whole file, a lock with a timeout retried only while another holder has it
+func flock(fh *os.File, lock bool, timeout time.Duration) error {
+	if lock && timeout != NoLockTimeout {
+		held, err := pm.LockFD(fh, true, timeout)
 		if err != nil {
 			return err
 		}
-		if held {
-			return nil
-		}
-		if !time.Now().Before(deadline) {
+		if !held {
 			return fmt.Errorf("file lock still held after %ss", pyrepr.Repr(timeout.Seconds()))
 		}
-		time.Sleep(lockPollInterval)
+		return nil
+	}
+	if lock {
+		return pyfs.LockFile(fh)
+	}
+	return pyfs.UnlockFile(fh)
+}
+
+// Exclusive lock on a path whose file stays open from enter to exit
+type fileLock struct {
+	path    string
+	timeout time.Duration
+	fh      *os.File
+}
+
+// Lock of path not taken yet, NoLockTimeout waiting on it without a deadline
+func newFileLock(path string, timeout time.Duration) *fileLock {
+	return &fileLock{path: path, timeout: timeout}
+}
+
+// Opens the file under a created parent and locks it, a failed lock closing the file
+func (l *fileLock) enter() error {
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o777); err != nil {
+		return err
+	}
+	fh, err := os.OpenFile(l.path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
+	if err != nil {
+		return err
+	}
+	l.fh = fh
+	if err := flock(l.fh, true, l.timeout); err != nil {
+		_ = l.fh.Close()
+		l.fh = nil
+		return &LockUnavailableError{Path: l.path, Err: err}
+	}
+	return nil
+}
+
+// Unlocks ignoring failures and closes the file, a second call doing nothing
+func (l *fileLock) exit() {
+	fh := l.fh
+	l.fh = nil
+	if fh != nil {
+		_ = flock(fh, false, NoLockTimeout)
+		_ = fh.Close()
 	}
 }
 
@@ -451,10 +491,10 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 		return nil, nil, err
 	}
 	if !loaded {
-		return nil, &Refusal{
-			Message: fmt.Sprintf("Icebath could not read the active-session registry at %s, so it cannot prove this session has no other live owner. Fix or remove that file and try again.", statePath),
-			Reason:  SessionCoordinationUnavailable,
-		}, nil
+		return nil, NewRefusal(
+			fmt.Sprintf("Icebath could not read the active-session registry at %s, so it cannot prove this session has no other live owner. Fix or remove that file and try again.", statePath),
+			SessionCoordinationUnavailable,
+		), nil
 	}
 	if pruned := len(raw) - len(entries); pruned != 0 {
 		leaseLog.Info(fmt.Sprintf("Pruned %d stale active session lease(s)", pruned))
@@ -464,7 +504,7 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 			return nil, nil, err
 		}
 		leaseLog.Info(log)
-		return nil, &Refusal{Message: message, Reason: reason}, nil
+		return nil, NewRefusal(message, reason), nil
 	}
 	if key != "" {
 		for index, existing := range entries {
@@ -589,11 +629,11 @@ func dropSelfOrphans(entries []*pyjson.Object, ownLiveLeaseIDs map[string]bool) 
 
 // Count of orphaned leases of this process dropped from the registry of one home
 func releaseOrphanedLeasesInHome(registryHome string, liveLeaseIDs map[string]bool) (int, error) {
-	statePath, lockPath := leasePaths(context.Background(), registryHome)
+	statePath := registryStatePath(context.Background(), registryHome)
 	if info, err := pypath.PathlibStat(statePath); err != nil || info == nil {
 		return 0, err
 	}
-	unlock, err := enterFileLock(lockPath)
+	unlock, err := enterFileLock(registryLockPath(context.Background(), registryHome))
 	if err != nil {
 		return 0, err
 	}

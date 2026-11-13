@@ -81,16 +81,16 @@ func TestSubmitRowSessionTarget(t *testing.T) {
 		userMsg, _ := a.StageTurnUserMessage("Lets make things right", "Lets make things right")
 		messages := []map[string]any{userMsg}
 		a.SetPersistUserMessageIdx(0)
-		if _, err := a.FlushMessagesToSessionDB(messages); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(messages); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		turnEnd := append(messages,
 			map[string]any{"role": "assistant", "content": "calling a tool", "tool_calls": []any{
 				map[string]any{"id": "t1", "type": "function", "function": map[string]any{"name": "memory", "arguments": "{}"}}}},
 			map[string]any{"role": "tool", "tool_call_id": "t1", "name": "memory", "content": "failed write"},
 			map[string]any{"role": "assistant", "content": "done"})
-		if _, err := a.FlushMessagesToSessionDB(turnEnd); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(turnEnd); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		for _, r := range submitRowRows(t, db, key) {
 			if r == [2]string{"user", "Lets make things right"} {

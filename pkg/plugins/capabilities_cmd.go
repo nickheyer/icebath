@@ -37,14 +37,6 @@ func declaredCapabilitiesForKey(ctx context.Context, key string) ([]string, erro
 	if err != nil || entry == nil {
 		return nil, err
 	}
-	if entry.Source == "entrypoint" {
-		for _, m := range discoverEntrypointManifests(ctx) {
-			if key == m.Key || key == m.Name {
-				return append([]string{}, m.Capabilities...), nil
-			}
-		}
-		return nil, nil
-	}
 	if entry.Dir == "" {
 		return nil, nil
 	}

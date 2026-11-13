@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -170,8 +171,8 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 		}
 	}
 	c.resolveCLIReasoning()
-	if c.agent != nil {
-		if _, err := c.agent.SwitchModel(c.model, c.provider, false, false, ""); err != nil {
+	if c.agentRef() != nil {
+		if _, err := c.agentRef().SwitchModel(c.model, c.provider, false, false, ""); err != nil {
 			cliLogger.Debug("In-place agent model swap on resume failed")
 		}
 	}
@@ -205,7 +206,7 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 			c.setRuntimeField(key, value)
 		}
 	}
-	a := c.agent
+	a := c.agentRef()
 	if a == nil {
 		return
 	}
@@ -215,6 +216,9 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 	}
 	if value, ok := snapshot["reasoning_config"]; ok {
 		restoreReasoning(value)
+	}
+	if g := a.gateway(); g != nil && pyrepr.Truthy(snapshot["agent_primary_runtime"]) && g.restorePrimaryRuntime() {
+		return
 	}
 	restored, err := a.SwitchModel(snapshotText(snapshot, "model"), snapshotText(snapshot, "provider"), true, true, "")
 	if err != nil {
@@ -361,7 +365,7 @@ func (c *CLI) confirmExpensiveModelSwitch(result *provider.ModelSwitchResult) bo
 	}
 	selection := c.oneTurnSelectionContext
 	if selection == nil {
-		selection = selectionContextForAgent(agentGateway(c.agent))
+		selection = selectionContextForAgent(agentGateway(c.agentRef()))
 	}
 	baseURL, apiKey := result.BaseURL, result.APIKey
 	if baseURL == "" {
@@ -394,7 +398,7 @@ func combinedSelectionWarning(c *CLI, req provider.SelectionRequest) (warning *p
 
 // Folds the preflight compression warning into a switch result
 func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customProviders []any) {
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		return
 	}
 	defer func() {
@@ -408,12 +412,12 @@ func (c *CLI) mergePreflightWarning(result *provider.ModelSwitchResult, customPr
 			providers = append(providers, m)
 		}
 	}
-	mergeGatewayPreflightWarning(c.ctx, agentGateway(c.agent), result, append([]map[string]any{}, c.conversationHistory...), providers, c.agent.ConfigContextLength())
+	mergeGatewayPreflightWarning(c.ctx, agentGateway(c.agentRef()), result, append([]map[string]any{}, c.conversationHistory...), providers, c.agentRef().ConfigContextLength())
 }
 
 // Stages a switch onto the CLI fields then swaps the live agent, rolling the CLI back when the swap fails
 func (c *CLI) stageAndSwapModel(result *provider.ModelSwitchResult, oldModel string) bool {
-	if c.agent == nil && c.gatewaySessionOpen && !c.initAgent("", nil, nil) {
+	if c.agentRef() == nil && c.gatewaySessionOpen && !c.initAgent("", nil, nil) {
 		c.confirmedSwitchWarning = ""
 		return false
 	}
@@ -430,11 +434,11 @@ func (c *CLI) stageAndSwapModel(result *provider.ModelSwitchResult, oldModel str
 		c.apiMode = result.APIMode
 	}
 	c.resolveCLIReasoning()
-	if c.agent == nil {
+	if c.agentRef() == nil {
 		return true
 	}
 	defer func() { c.confirmedSwitchWarning = "" }()
-	switched, err := c.agent.SwitchModel(result.NewModel, result.TargetProvider, c.modelSwitchOneTurn, false, result.ResolvedViaAlias)
+	switched, err := c.agentRef().SwitchModel(result.NewModel, result.TargetProvider, c.modelSwitchOneTurn, false, result.ResolvedViaAlias)
 	if err == nil && switched {
 		return true
 	}
@@ -480,8 +484,8 @@ func (c *CLI) printSwitchSummary(result *provider.ModelSwitchResult, oldModel st
 	}
 	var configContext *int
 	var customProviders []map[string]any
-	if c.agent != nil {
-		configContext = c.agent.ConfigContextLength()
+	if c.agentRef() != nil {
+		configContext = c.agentRef().ConfigContextLength()
 	}
 	baseURL, apiKey := result.BaseURL, result.APIKey
 	if baseURL == "" {
@@ -544,15 +548,15 @@ func (c *CLI) applyReasoningAfterSwitch(effort string, persistGlobal, oneTurn bo
 		if c.pendingOneTurnModelRestore != nil {
 			c.pendingOneTurnModelRestore["one_turn_reasoning"] = effort
 		}
-		if c.agent != nil {
-			c.agent.StageTurnReasoning(parsed)
+		if c.agentRef() != nil {
+			c.agentRef().StageTurnReasoning(parsed)
 		}
 		cprint("    " + c.t("cli.model.reasoning_effort", map[string]any{"effort": effort}))
 		return
 	}
 	c.reasoningUserSet = true
-	if c.agent != nil {
-		c.agent.PinReasoning(parsed)
+	if c.agentRef() != nil {
+		c.agentRef().PinReasoning(parsed)
 	}
 	saved := persistGlobal && saveConfigValue(c.ctx, "agent.reasoning_effort", effort)
 	if saved {
@@ -651,8 +655,8 @@ func (c *CLI) commitModelSwitch(result *provider.ModelSwitchResult, persistGloba
 		return nil
 	}
 	var sessionID any = c.sessionID
-	if c.agent != nil && c.agent.SessionID() != "" {
-		sessionID = c.agent.SessionID()
+	if c.agentRef() != nil && c.agentRef().SessionID() != "" {
+		sessionID = c.agentRef().SessionID()
 	} else if c.sessionID == "" {
 		sessionID = nil
 	}
@@ -893,10 +897,10 @@ func (c *CLI) configuredDefaultRoute() (string, string) {
 
 // Context the large context guard would see for a once switch, the live measurement else the persisted anchor
 func (c *CLI) oneTurnSelectionContextFor() *provider.SelectionContext {
-	if c.agent != nil {
-		c.agent.refreshStats(nil)
+	if c.agentRef() != nil {
+		c.agentRef().refreshStats(nil)
 	}
-	if live := selectionContextForAgent(agentGateway(c.agent)); live != nil {
+	if live := selectionContextForAgent(agentGateway(c.agentRef())); live != nil {
 		return live
 	}
 	if c.sessionDB == nil || c.sessionID == "" {

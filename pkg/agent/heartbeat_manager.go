@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
-	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -23,7 +25,10 @@ const heartbeatPromptTemplate = "[Heartbeat — recurring instruction, fires eve
 	"If there is nothing meaningful to do or report for this instruction " +
 	"right now, reply briefly that nothing has changed and stop — do not invent work."
 
-var heartbeatIntervalRE = regexp.MustCompile(`(?i)^\s*(?:every\s+)?(\p{Nd}+(?:\.\p{Nd}+)?)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?)\s*$`)
+const heartbeatSpaceClass = `[\s\v\x1c-\x1f\x{85}\pZ]`
+
+var heartbeatIntervalRE = regexp.MustCompile(`(?i)^` + heartbeatSpaceClass + `*(?:every` + heartbeatSpaceClass + `+)?(\p{Nd}+(?:\.\p{Nd}+)?)` +
+	heartbeatSpaceClass + "*(s|sec|secs|seconds?|m|m[i\u0130\u0131]n|m[i\u0130\u0131]ns|m[i\u0130\u0131]nutes?|h|hr|hrs|hours?|d|days?)" + heartbeatSpaceClass + `*$`)
 
 var heartbeatUnitSeconds = map[string]float64{
 	"s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
@@ -34,67 +39,78 @@ var heartbeatUnitSeconds = map[string]float64{
 
 var heartbeatClaimLock sync.Mutex
 
-// Seconds of an interval like 10m or every 2h, false when not one and minus one below the floor
-func ParseHeartbeatInterval(text string) (int64, bool) {
+// Seconds of an interval like 10m or every 2h, nil when not one and minus one below the floor
+func ParseHeartbeatInterval(text string) (*big.Int, error) {
 	if text == "" {
-		return 0, false
+		return nil, nil
 	}
 	m := heartbeatIntervalRE.FindStringSubmatch(text)
 	if m == nil {
-		return 0, false
+		return nil, nil
 	}
 	value, err := pyint.ParseFloat(m[1])
 	if err != nil {
-		return 0, false
+		return nil, err
 	}
-	seconds := int64(math.Trunc(value * heartbeatUnitSeconds[strings.ToLower(m[2])]))
-	if seconds < MinHeartbeatIntervalSeconds {
-		return -1, true
+	unit := pystr.Lower(m[2])
+	factor, known := heartbeatUnitSeconds[unit]
+	if !known {
+		return nil, &pyint.Error{Kind: "KeyError", Msg: pyrepr.StrRepr(unit)}
 	}
-	return seconds, true
+	seconds, err := pyint.Of(value * factor)
+	if err != nil {
+		return nil, err
+	}
+	if seconds.Cmp(big.NewInt(MinHeartbeatIntervalSeconds)) < 0 {
+		return big.NewInt(-1), nil
+	}
+	return seconds, nil
 }
 
 // Human readable interval, the largest whole unit of days, hours or minutes, else seconds
-func FormatHeartbeatInterval(seconds int64) string {
+func FormatHeartbeatInterval(seconds *big.Int) string {
 	for _, u := range []struct {
 		size   int64
 		suffix string
 	}{{86400, "d"}, {3600, "h"}, {60, "m"}} {
-		if pyMod(seconds, u.size) == 0 {
-			return fmt.Sprintf("%d%s", pyFloorDiv(seconds, u.size), u.suffix)
+		quotient, remainder := new(big.Int).DivMod(seconds, big.NewInt(u.size), new(big.Int))
+		if remainder.Sign() == 0 {
+			return quotient.String() + u.suffix
 		}
 	}
-	return fmt.Sprintf("%ds", seconds)
+	return seconds.String() + "s"
 }
 
-// Python modulo of int64 values, the sign following the divisor
-func pyMod(a, b int64) int64 {
-	r := a % b
-	if r != 0 && (r < 0) != (b < 0) {
-		r += b
+// Reports a float at or above an integer of any size, compared exactly
+func floatAtLeastInt(f float64, n *big.Int) bool {
+	if math.IsNaN(f) {
+		return false
 	}
-	return r
+	if math.IsInf(f, 0) {
+		return f > 0
+	}
+	return new(big.Float).SetFloat64(f).Cmp(new(big.Float).SetInt(n)) >= 0
 }
 
-// Python floor division of int64 values
-func pyFloorDiv(a, b int64) int64 {
-	q := a / b
-	if (a%b != 0) && ((a < 0) != (b < 0)) {
-		q--
+// Float of an integer of any size, the OverflowError float raises beyond its range
+func intAsFloat(n *big.Int) (float64, error) {
+	f, _ := new(big.Float).SetInt(n).Float64()
+	if math.IsInf(f, 0) {
+		return 0, &pyint.Error{Kind: "OverflowError", Msg: "int too large to convert to float"}
 	}
-	return q
+	return f, nil
 }
 
 // Reports an active heartbeat whose interval elapsed since the last fire or creation
 func (s *HeartbeatState) IsDue(now float64) bool {
-	if s.Status != "active" || s.Prompt == "" || s.IntervalSeconds <= 0 {
+	if s.Status != "active" || s.Prompt == "" || s.IntervalSeconds.Sign() <= 0 {
 		return false
 	}
 	anchor := s.LastFiredAt
 	if anchor == 0 {
 		anchor = s.CreatedAt
 	}
-	return now-anchor >= float64(s.IntervalSeconds)
+	return floatAtLeastInt(now-anchor, s.IntervalSeconds)
 }
 
 // User turn text a due heartbeat injects
@@ -146,10 +162,10 @@ func (m *HeartbeatManager) HasHeartbeat() bool {
 func (m *HeartbeatManager) IsActive() bool { return m.state != nil && m.state.Status == "active" }
 
 // One line status of the heartbeat with its interval, next fire and prompt
-func (m *HeartbeatManager) StatusLine() string {
+func (m *HeartbeatManager) StatusLine() (string, error) {
 	s := m.state
 	if s == nil {
-		return "No heartbeat. Set one with /heartbeat every <interval> <prompt>."
+		return "No heartbeat. Set one with /heartbeat every <interval> <prompt>.", nil
 	}
 	every := FormatHeartbeatInterval(s.IntervalSeconds)
 	fired := ""
@@ -161,14 +177,24 @@ func (m *HeartbeatManager) StatusLine() string {
 		if anchor == 0 {
 			anchor = s.CreatedAt
 		}
-		nextIn := max(0, int64(math.Trunc(anchor+float64(s.IntervalSeconds)-nowSeconds())))
-		return fmt.Sprintf("♥ Heartbeat (every %s, next in ~%ds%s): %s", every, nextIn, fired, s.Prompt)
+		interval, err := intAsFloat(s.IntervalSeconds)
+		if err != nil {
+			return "", err
+		}
+		nextIn, err := pyint.Of(anchor + interval - nowSeconds())
+		if err != nil {
+			return "", err
+		}
+		if nextIn.Sign() < 0 {
+			nextIn = new(big.Int)
+		}
+		return fmt.Sprintf("♥ Heartbeat (every %s, next in ~%ss%s): %s", every, nextIn, fired, s.Prompt), nil
 	}
 	icon := ""
 	if s.Status == "paused" {
 		icon = "⏸ "
 	}
-	return fmt.Sprintf("%sHeartbeat (%s, every %s%s): %s", icon, s.Status, every, fired, s.Prompt)
+	return fmt.Sprintf("%sHeartbeat (%s, every %s%s): %s", icon, s.Status, every, fired, s.Prompt), nil
 }
 
 // HeartbeatValueError is the ValueError a refused heartbeat set raises
@@ -178,15 +204,19 @@ func (e *HeartbeatValueError) Error() string      { return e.Msg }
 func (e *HeartbeatValueError) PyTypeName() string { return "ValueError" }
 
 // Stores a fresh active heartbeat, refusing an empty prompt or an interval under the floor
-func (m *HeartbeatManager) Set(prompt string, intervalSeconds int64) (*HeartbeatState, error) {
-	prompt = strings.TrimSpace(prompt)
+func (m *HeartbeatManager) Set(prompt string, intervalSeconds any) (*HeartbeatState, error) {
+	prompt = pystr.Strip(prompt)
 	if prompt == "" {
 		return nil, &HeartbeatValueError{"heartbeat prompt is empty"}
 	}
-	if intervalSeconds < MinHeartbeatIntervalSeconds {
+	interval, err := pyint.Of(intervalSeconds)
+	if err != nil {
+		return nil, err
+	}
+	if interval.Cmp(big.NewInt(MinHeartbeatIntervalSeconds)) < 0 {
 		return nil, &HeartbeatValueError{fmt.Sprintf("interval must be at least %ds", MinHeartbeatIntervalSeconds)}
 	}
-	m.state = &HeartbeatState{Prompt: prompt, IntervalSeconds: intervalSeconds, Status: "active", CreatedAt: nowSeconds()}
+	m.state = &HeartbeatState{Prompt: prompt, IntervalSeconds: interval, Status: "active", CreatedAt: nowSeconds()}
 	SaveHeartbeat(m.ctx, m.SessionID, m.state)
 	return m.state, nil
 }

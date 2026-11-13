@@ -96,7 +96,7 @@ func timezoneCacheIdentity(ctx context.Context) [2]string {
 	if tz := envTimezone(ctx); tz != "" {
 		return [2]string{"environment", tz}
 	}
-	return [2]string{"config", home.ConfigPath(home.Dir(ctx))}
+	return [2]string{"config", GetConfigPath(home.Dir(ctx))}
 }
 
 // Configured IANA name from the env or the effective config, the bare document when that load fails
@@ -104,7 +104,7 @@ func resolveTimezoneName(ctx context.Context) string {
 	if tz := envTimezone(ctx); tz != "" {
 		return tz
 	}
-	path := home.ConfigPath(home.Dir(ctx))
+	path := GetConfigPath(home.Dir(ctx))
 	var doc any
 	if cfg, err := loadUserEffective(ctx, path, envRefLookup, false); err == nil {
 		doc = cfg
@@ -173,10 +173,10 @@ func ResetTimezoneCache() {
 	clear(tzCache)
 }
 
-// Current time in the configured zone, else in server local time
+// Current time in the configured zone, else in the fixed server local offset astimezone gives
 func TimeNow(ctx context.Context) time.Time {
 	if loc, ok := TimeZone(ctx); ok {
 		return time.Now().In(loc)
 	}
-	return time.Now().Local()
+	return pydatetime.Astimezone(time.Now())
 }

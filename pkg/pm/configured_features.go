@@ -11,7 +11,7 @@ type ConfiguredFeatureGap struct {
 	Feature, Hint, Extra string
 }
 
-// Configured platforms and MCP servers the selected environment lacks an SDK for, assigned by the gateway aware update code
+// Configured platforms whose adapter check fails, assigned by the gateway aware update code
 var ConfiguredFeaturesMissingDeps func(ctx context.Context) []ConfiguredFeatureGap
 
 // Adds the extras configured features need to the dependency environment, then lists the features still missing theirs

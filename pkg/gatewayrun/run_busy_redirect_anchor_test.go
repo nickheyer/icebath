@@ -137,7 +137,7 @@ func offRequestAgent(t *testing.T) *agent.AIAgent {
 	t.Helper()
 	a, err := agent.NewAIAgent(context.Background(), agent.AIAgentOptions{
 		Model: "anthropic/claude-sonnet-4", APIKey: "test", BaseURL: "http://127.0.0.1:9/v1", Provider: "openrouter",
-		MaxIterations: 5, QuietMode: true, SkipContextFiles: true, SkipMemory: true,
+		MaxIterations: new(5), QuietMode: true, SkipContextFiles: true, SkipMemory: true,
 	})
 	if err != nil {
 		t.Fatal(err)

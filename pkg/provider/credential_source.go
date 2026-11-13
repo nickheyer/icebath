@@ -189,7 +189,7 @@ func FindRemovalStep(provider, source string) (RemovalStep, bool) {
 
 // A profile seeding one token under several sources suppresses every variant
 func profileRemovalStep(provider, source string) (RemovalStep, bool) {
-	hooks := providerProfileHooks(provider)
+	hooks := providerProfileHooks(context.Background(), provider)
 	if hooks == nil || hooks.RemoveCredentialSource == nil {
 		return RemovalStep{}, false
 	}
@@ -223,7 +223,7 @@ func removeEnvSource(env PoolEnv, provider string, removed PooledCredential) Rem
 			}
 		}
 	}
-	if removedFromFile, _ := RemoveEnvSetting(env.Ctx, env.Store.Home(), envVar); removedFromFile {
+	if removedFromFile, _ := RemoveEnvSetting(env.ctx(), env.Store.Home(), envVar); removedFromFile {
 		result.Cleaned = append(result.Cleaned, fmt.Sprintf("Cleared %s from .env", envVar))
 	}
 	if inProcess && !inDotenv {

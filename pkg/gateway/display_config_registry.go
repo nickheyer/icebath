@@ -8,11 +8,11 @@ import (
 
 // Feeds each registered platform display tier and overrides to the shared display setting resolver
 func init() {
-	config.PlatformDisplayLookup = func(ctx context.Context, platformKey string) (string, map[string]any, bool) {
+	config.PlatformDisplayLookup = func(ctx context.Context, platformKey string) (string, map[string]any) {
 		entry := Registry.Get(ctx, platformKey)
 		if entry == nil {
-			return "", nil, false
+			return "", nil
 		}
-		return entry.DisplayTier, entry.DisplayOverrides, true
+		return entry.DisplayTier, entry.DisplayOverrides
 	}
 }

@@ -25,6 +25,11 @@ func dashboardAuthRoutesLog() *slog.Logger {
 	return slog.Default().With("logger", "hermes_cli.dashboard_auth.routes")
 }
 
+// HTTP error with the status code and detail an auth route raises
+func authHTTP(statusCode int, detail string) *HTTPException {
+	return NewHTTPException(statusCode, detail)
+}
+
 // Normalised X-Forwarded-Prefix for cookie paths and redirect URLs
 func authPrefix(conn *HTTPConnection) string { return PrefixFromRequest(conn) }
 
@@ -109,7 +114,7 @@ func finishNativeLogin(ctx context.Context, conn *HTTPConnection, brokerState st
 		var nf *NativeFlowError
 		if errors.As(err, &nf) {
 			authAudit(ctx, conn, AuditNativeTokenFailure, "provider", provider, "reason", "pending_not_found")
-			return "", NewHTTPException(400, nativeExpiredDetail)
+			return "", authHTTP(400, nativeExpiredDetail)
 		}
 		return "", err
 	}
@@ -169,7 +174,7 @@ func startUpstreamLogin(ctx context.Context, conn *HTTPConnection, p gateway.Das
 			if auditFailure {
 				loginFailure(ctx, conn, p.Name(), "provider_unreachable")
 			}
-			return nil, NewHTTPException(503, "Provider unreachable: "+pe.Error())
+			return nil, authHTTP(503, "Provider unreachable: "+pe.Error())
 		}
 		return nil, err
 	}
@@ -188,9 +193,9 @@ func startUpstreamLogin(ctx context.Context, conn *HTTPConnection, p gateway.Das
 // Canonical RFC 8252 loopback redirect URI, a 400 for any other spelling
 func validateLoopbackRedirectURI(raw string) (string, error) {
 	if raw == "" {
-		return "", NewHTTPException(400, "redirect_uri required")
+		return "", authHTTP(400, "redirect_uri required")
 	}
-	canonicalErr := NewHTTPException(400, "native redirect_uri must use a canonical loopback URL")
+	canonicalErr := authHTTP(400, "native redirect_uri must use a canonical loopback URL")
 	for _, ch := range raw {
 		if ch > unicode.MaxASCII || ch <= 0x20 || ch == 0x7F || ch == '\\' {
 			return "", canonicalErr
@@ -206,24 +211,24 @@ func validateLoopbackRedirectURI(raw string) (string, error) {
 		return "", canonicalErr
 	}
 	if parsed.Scheme != "http" {
-		return "", NewHTTPException(400, "native redirect_uri must be http:// on the loopback interface")
+		return "", authHTTP(400, "native redirect_uri must be http:// on the loopback interface")
 	}
 	if strings.Contains(raw, "#") {
-		return "", NewHTTPException(400, "native redirect_uri must not contain a fragment")
+		return "", authHTTP(400, "native redirect_uri must not contain a fragment")
 	}
 	if strings.Contains(parsed.Netloc, "@") {
-		return "", NewHTTPException(400, "native redirect_uri must not contain userinfo")
+		return "", authHTTP(400, "native redirect_uri must not contain userinfo")
 	}
 	canonicalHost, ok := map[string]string{"127.0.0.1": "127.0.0.1", "::1": "[::1]"}[hostname]
 	if !ok {
-		return "", NewHTTPException(400, "native redirect_uri host must be a loopback IP literal (127.0.0.1 / ::1)")
+		return "", authHTTP(400, "native redirect_uri host must be a loopback IP literal (127.0.0.1 / ::1)")
 	}
 	canonicalNetloc := canonicalHost
 	if hasPort {
 		canonicalNetloc += ":" + strconv.Itoa(port)
 	}
 	if parsed.Netloc != canonicalNetloc {
-		return "", NewHTTPException(400, "native redirect_uri must use a canonical loopback authority")
+		return "", authHTTP(400, "native redirect_uri must use a canonical loopback authority")
 	}
 	if parsed.Path == "" {
 		parsed.Path = "/"
@@ -363,13 +368,13 @@ func authLogin(ctx context.Context, req *Request, provider, next string) (any, e
 	conn := &req.HTTPConnection
 	p := gateway.GetDashboardAuthProvider(ctx, provider, "")
 	if p == nil {
-		return nil, NewHTTPException(404, "Unknown provider: "+pyrepr.Repr(provider))
+		return nil, authHTTP(404, "Unknown provider: "+pyrepr.Repr(provider))
 	}
 	if !gateway.DashboardAuthSupportsSession(p) {
-		return nil, NewHTTPException(404, "Provider does not support interactive login: "+pyrepr.Repr(provider))
+		return nil, authHTTP(404, "Provider does not support interactive login: "+pyrepr.Repr(provider))
 	}
 	if !gateway.DashboardAuthInteractiveLogin(p) {
-		return nil, NewHTTPException(404, "Provider has no interactive login: "+pyrepr.Repr(provider))
+		return nil, authHTTP(404, "Provider has no interactive login: "+pyrepr.Repr(provider))
 	}
 	safeNext := validatePostLoginTarget(next)
 	if gateway.DashboardAuthSupportsPassword(p) {
@@ -395,10 +400,10 @@ func authLogin(ctx context.Context, req *Request, provider, next string) (any, e
 func authNativeAuthorize(ctx context.Context, req *Request, provider, codeChallenge, codeChallengeMethod, redirectURI, state string) (any, error) {
 	conn := &req.HTTPConnection
 	if strings.ToUpper(codeChallengeMethod) != "S256" {
-		return nil, NewHTTPException(400, "code_challenge_method must be S256")
+		return nil, authHTTP(400, "code_challenge_method must be S256")
 	}
 	if codeChallenge == "" {
-		return nil, NewHTTPException(400, "code_challenge required")
+		return nil, authHTTP(400, "code_challenge required")
 	}
 	redirectURI, err := validateLoopbackRedirectURI(redirectURI)
 	if err != nil {
@@ -416,16 +421,16 @@ func authNativeAuthorize(ctx context.Context, req *Request, provider, codeChalle
 		}
 	}
 	if p == nil {
-		return nil, NewHTTPException(404, "Unknown provider: "+pyrepr.Repr(provider))
+		return nil, authHTTP(404, "Unknown provider: "+pyrepr.Repr(provider))
 	}
 	if !gateway.DashboardAuthSupportsSession(p) || !gateway.DashboardAuthInteractiveLogin(p) {
-		return nil, NewHTTPException(400, "Provider does not support native login: "+pyrepr.Repr(p.Name()))
+		return nil, authHTTP(400, "Provider does not support native login: "+pyrepr.Repr(p.Name()))
 	}
 	brokerState, err := RegisterNativePending(codeChallenge, redirectURI, state, clientIP(conn), nil)
 	if err != nil {
 		var nf *NativeFlowError
 		if errors.As(err, &nf) {
-			return nil, NewHTTPException(503, nf.Error())
+			return nil, authHTTP(503, nf.Error())
 		}
 		return nil, err
 	}
@@ -449,21 +454,21 @@ func authCallback(ctx context.Context, req *Request, code, state, oauthErr, erro
 	pkceRaw, _ := readPKCECookie(conn, webappCookieGateway(conn))
 	if pkceRaw == "" {
 		authAudit(ctx, conn, AuditLoginFailure, "reason", "missing_pkce_cookie")
-		return nil, NewHTTPException(400, "Missing PKCE state cookie")
+		return nil, authHTTP(400, "Missing PKCE state cookie")
 	}
 	parts := parsePKCEPayload(pkceRaw)
 	providerName := parts["provider"]
 	p := gateway.GetDashboardAuthProvider(ctx, providerName, "")
 	if p == nil {
-		return nil, NewHTTPException(400, "Unknown provider in cookie: "+pyrepr.Repr(providerName))
+		return nil, authHTTP(400, "Unknown provider in cookie: "+pyrepr.Repr(providerName))
 	}
 	if oauthErr != "" {
 		loginFailure(ctx, conn, providerName, "idp_error", "error", oauthErr)
-		return nil, NewHTTPException(400, "OAuth error from provider: "+oauthErr+" ("+errorDescription+")")
+		return nil, authHTTP(400, "OAuth error from provider: "+oauthErr+" ("+errorDescription+")")
 	}
 	if state == "" || state != parts["state"] {
 		loginFailure(ctx, conn, providerName, "state_mismatch")
-		return nil, NewHTTPException(400, "OAuth state mismatch (CSRF check failed)")
+		return nil, authHTTP(400, "OAuth state mismatch (CSRF check failed)")
 	}
 	redirectURI, err := authRedirectURI(ctx, conn)
 	if err != nil {
@@ -476,10 +481,10 @@ func authCallback(ctx context.Context, req *Request, code, state, oauthErr, erro
 		switch {
 		case errors.As(err, &ic):
 			loginFailure(ctx, conn, providerName, "invalid_code")
-			return nil, NewHTTPException(400, "Invalid code: "+ic.Error())
+			return nil, authHTTP(400, "Invalid code: "+ic.Error())
 		case errors.As(err, &pe):
 			loginFailure(ctx, conn, providerName, "provider_unreachable")
-			return nil, NewHTTPException(503, "Provider unreachable: "+pe.Error())
+			return nil, authHTTP(503, "Provider unreachable: "+pe.Error())
 		}
 		return nil, err
 	}
@@ -502,12 +507,12 @@ func authPasswordLogin(ctx context.Context, req *Request, body *pyjson.Object) (
 	provider := pyrepr.Str(body.Vals["provider"])
 	if passwordRateLimited(clientIP(conn)) {
 		loginFailure(ctx, conn, provider, "rate_limited")
-		return nil, NewHTTPException(429, "Too many login attempts. Try again shortly.")
+		return nil, authHTTP(429, "Too many login attempts. Try again shortly.")
 	}
 	p := gateway.GetDashboardAuthProvider(ctx, provider, "")
 	if p == nil || !gateway.DashboardAuthSupportsPassword(p) {
 		loginFailure(ctx, conn, provider, "unknown_password_provider")
-		return nil, NewHTTPException(404, "Unknown provider")
+		return nil, authHTTP(404, "Unknown provider")
 	}
 	pkceRaw, _ := readPKCECookie(conn, webappCookieGateway(conn))
 	pkceParts := map[string]string{}
@@ -517,7 +522,7 @@ func authPasswordLogin(ctx context.Context, req *Request, body *pyjson.Object) (
 	brokerState := pkceParts["broker"]
 	if brokerState != "" && pkceParts["provider"] != provider {
 		authAudit(ctx, conn, AuditNativeTokenFailure, "provider", provider, "reason", "provider_mismatch")
-		return nil, NewHTTPException(400, "This native sign-in was started for a different provider; "+
+		return nil, authHTTP(400, "This native sign-in was started for a different provider; "+
 			"use that provider's form or restart sign-in.")
 	}
 	session, err := gateway.DashboardAuthCompletePasswordLogin(ctx, p, pyrepr.Str(body.Vals["username"]), pyrepr.Str(body.Vals["password"]))
@@ -528,12 +533,12 @@ func authPasswordLogin(ctx context.Context, req *Request, body *pyjson.Object) (
 		switch {
 		case errors.As(err, &ic):
 			loginFailure(ctx, conn, provider, "invalid_credentials")
-			return nil, NewHTTPException(401, "Invalid credentials")
+			return nil, authHTTP(401, "Invalid credentials")
 		case errors.As(err, &ni):
-			return nil, NewHTTPException(500, "Provider misconfigured")
+			return nil, authHTTP(500, "Provider misconfigured")
 		case errors.As(err, &pe):
 			loginFailure(ctx, conn, provider, "provider_unreachable")
-			return nil, NewHTTPException(503, "Provider unreachable: "+pe.Error())
+			return nil, authHTTP(503, "Provider unreachable: "+pe.Error())
 		}
 		return nil, err
 	}
@@ -578,7 +583,7 @@ func requireAuthSession(conn *HTTPConnection) (*gateway.DashboardSession, error)
 	if sess := requestSession(conn); sess != nil {
 		return sess, nil
 	}
-	return nil, NewHTTPException(401, "Unauthorized")
+	return nil, authHTTP(401, "Unauthorized")
 }
 
 // Verified session as JSON, the loopback identity when the session token already authenticated a loopback bind
@@ -586,10 +591,10 @@ func apiAuthMe(req *Request) (any, error) {
 	sess := requestSession(&req.HTTPConnection)
 	if sess == nil {
 		if req.App().State.Bool("auth_required") {
-			return nil, NewHTTPException(401, "Unauthorized")
+			return nil, authHTTP(401, "Unauthorized")
 		}
 		if !hasValidSessionToken(req) {
-			return nil, NewHTTPException(401, "Unauthorized")
+			return nil, authHTTP(401, "Unauthorized")
 		}
 		return pyjson.ObjectOf("user_id", "local", "email", "", "display_name", "Local", "org_id", "",
 			"provider", "loopback", "expires_at", int64(0)), nil
@@ -622,7 +627,7 @@ func authNativeToken(ctx context.Context, req *Request, body *pyjson.Object) (an
 		var nf *NativeFlowError
 		if errors.As(err, &nf) && nf.Kind == "CodeInvalid" {
 			authAudit(ctx, conn, AuditNativeTokenFailure, "reason", "invalid_code_or_pkce")
-			return nil, NewHTTPException(400, "Invalid or expired authorization code.")
+			return nil, authHTTP(400, "Invalid or expired authorization code.")
 		}
 		return nil, err
 	}
@@ -637,7 +642,7 @@ func authNativeRefresh(ctx context.Context, req *Request, body *pyjson.Object) (
 	refreshToken := pyrepr.Str(body.Vals["refresh_token"])
 	expired := pyjson.ObjectOf("error", "session_expired", "detail", "Refresh token expired or invalid; start a new sign-in.")
 	if refreshToken == "" {
-		return nil, NewHTTPException(400, "refresh_token required")
+		return nil, authHTTP(400, "refresh_token required")
 	}
 	if !webappTokenWorksAlone(conn, refreshToken) {
 		authAudit(ctx, conn, AuditRefreshFailure, "reason", "not_a_native_sign_in")
@@ -648,7 +653,7 @@ func authNativeRefresh(ctx context.Context, req *Request, body *pyjson.Object) (
 	if err != nil {
 		var pe *gateway.ProviderError
 		if errors.As(err, &pe) {
-			return nil, NewHTTPException(503, "Auth provider "+pyrepr.Repr(pe.Error())+" unreachable")
+			return nil, authHTTP(503, "Auth provider "+pyrepr.Repr(pe.Error())+" unreachable")
 		}
 		return nil, err
 	}

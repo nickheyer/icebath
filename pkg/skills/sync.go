@@ -378,11 +378,7 @@ func (s *Scope) writeManifest(ctx context.Context, entries map[string]string) {
 	for _, n := range names {
 		b.WriteString(n + ":" + entries[n] + "\n")
 	}
-	mode := os.FileMode(0o644)
-	if st, err := os.Stat(mf); err == nil {
-		mode = st.Mode().Perm()
-	}
-	if err := pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.Home), mf, b.String(), ".bundled_manifest_", mode); err != nil {
+	if err := pyfs.AtomicWriteTextWith(home.WithOverride(ctx, s.Home), mf, b.String(), pyfs.TextWrite{Prefix: ".bundled_manifest_", PreserveMode: true}); err != nil {
 		slog.Default().Debug("Failed to write skills manifest", "path", mf, "err", err)
 	}
 }

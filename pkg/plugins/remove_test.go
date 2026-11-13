@@ -3,7 +3,6 @@ package plugins
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -115,37 +114,5 @@ func TestRemoveOfASymlinkInsideThePluginsDirUnlinksOnlyTheLink(t *testing.T) {
 	}
 	if got := rmConfig(t, h)["plugins"].(map[string]any)["enabled"]; !reflect.DeepEqual(got, []any{"victim"}) {
 		t.Fatalf("enabled = %v", got)
-	}
-}
-
-func TestRemoveClearsTheToolsetOfAPluginWithoutProvidesTools(t *testing.T) {
-	h, _ := rmHome(t)
-	installHostEnvHooks()
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		t.Fatalf("python3 is required to run the plugin host child: %v", err)
-	}
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	t.Cleanup(func() { hostInterpreter = previous })
-	ctx := homeCtx(h)
-	t.Cleanup(func() {
-		if m := GetPluginManager(ctx); m.pluginHostInstance != nil {
-			m.pluginHostInstance.Shutdown()
-		}
-	})
-	d := rmPlugin(t, filepath.Join(h, "plugins"), "zznodecl", "zznodecl", "")
-	vtWrite(t, filepath.Join(d, "__init__.py"), "def register(ctx):\n"+
-		"    ctx.register_tool(name='zznodecl_tool', toolset='zznodecl_ts', handler=lambda args, **kw: '{}',\n"+
-		"                      schema={'name': 'zznodecl_tool', 'description': 'probe',\n"+
-		"                              'parameters': {'type': 'object', 'properties': {}}})\n")
-	vtWrite(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled: [zznodecl]\nplatform_toolsets:\n  cli: [icebath-cli, zznodecl_ts]\n  telegram: [icebath-telegram]\n")
-	result, err := DashboardRemoveUserPlugin(ctx, "zznodecl")
-	if err != nil || result["ok"] != true {
-		t.Fatalf("%v %v", result, err)
-	}
-	want := map[string]any{"cli": []any{"icebath-cli"}, "telegram": []any{"icebath-telegram"}}
-	if got := rmConfig(t, h)["platform_toolsets"]; !reflect.DeepEqual(got, want) {
-		t.Fatalf("platform_toolsets %v", got)
 	}
 }

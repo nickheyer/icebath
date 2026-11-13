@@ -16,6 +16,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Pins the browser heuristics to a scripted environment and PATH for one test
@@ -99,11 +101,11 @@ func TestSanitizeNoProxyEntries(t *testing.T) {
 		"":                              "",
 	}
 	for in, want := range cases {
-		if got := sanitizeNoProxyEntries(in); got != want {
+		if got := config.SanitizeNoProxyEntries(in); got != want {
 			t.Fatalf("%q: got %q want %q", in, got, want)
 		}
 	}
-	if got := normalizeProxyURL("socks://127.0.0.1:7890"); got != "socks5://127.0.0.1:7890" {
+	if got := config.NormalizeProxyURL("socks://127.0.0.1:7890"); got != "socks5://127.0.0.1:7890" {
 		t.Fatalf("socks normalization %q", got)
 	}
 }

@@ -5,46 +5,23 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Discovery requests the in process methods answer, read from the first argument, results printed as one JSON line
 const discoveryMethodsMode = "discovery-methods"
-
-// Site whose plugin host children run on the system python3, the interpreter every hermes process runs plugins in
-const systemPythonSite = "system-python"
-
-func init() {
-	childModes[discoveryMethodsMode] = runDiscoveryMethods
-	siteHooks[systemPythonSite] = useSystemPythonPlugins
-}
-
-// Points every plugin host child of this process at the system python3, exit 2 when none is installed
-func useSystemPythonPlugins() {
-	python, err := exec.LookPath("python3")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	plugins.SwapHostInterpreter(func(context.Context) (string, error) { return python, nil })
-}
 
 // One method and its params of the compared discovery requests
 type discoveryRequest struct {
@@ -233,135 +210,4 @@ func skillsDelta(got, baseline map[string]any) map[string][2]any {
 		}
 	}
 	return delta
-}
-
-func TestOrdinaryDaemonDiscoveryMatchesLegacyExtensions(t *testing.T) {
-	tmp, h, user := gatewayCaseHomes(t, map[string]any{
-		"gateway":   map[string]any{"multiplex_profiles": false},
-		"model":     map[string]any{"provider": "custom", "default": "discovery-fixture", "base_url": "http://127.0.0.1:1/v1"},
-		"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false}},
-		"quick_commands": map[string]any{"probe-quick": map[string]any{"type": "alias", "target": "/help",
-			"description": "Disposable quick discovery"}},
-		"plugins": map[string]any{"enabled": []any{"probe_plugin"}},
-	})
-	skill := filepath.Join(h, "skills", "probe-skill")
-	plugin := filepath.Join(h, "plugins", "probe_plugin")
-	for path, text := range map[string]string{
-		filepath.Join(skill, "SKILL.md"):     "---\nname: probe-skill\ndescription: Disposable skill discovery\n---\n# Probe\nOnly a discovery fixture.\n",
-		filepath.Join(plugin, "plugin.yaml"): "name: probe_plugin\nversion: 0.1.0\ndescription: Discovery fixture\n",
-		filepath.Join(plugin, "__init__.py"): "def register(ctx):\n    ctx.register_command('probe-plugin', lambda args: args, description='Disposable plugin discovery')\n",
-	} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	env := gatewayChildEnv(h, user, testSiteEnv+"="+systemPythonSite)
-	requests := []discoveryRequest{{"commands.catalog", map[string]any{}}}
-	for _, text := range []string{"/", "/probe", "/probe-quick", "/help", "/details c", "plain"} {
-		requests = append(requests, discoveryRequest{"complete.slash", map[string]any{"text": text}})
-	}
-	daemon := startGatewayChild(t, filepath.Join(tmp, "gateway.log"), env, gateway.GatewayRunModuleEntry)
-	descriptor := daemon.waitReady(t, h, 40*time.Second)
-	encoded, err := json.Marshal(requests)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	legacy := exec.CommandContext(ctx, os.Args[0], string(encoded))
-	legacy.Env = append(append([]string{}, env...), childModeEnv+"="+discoveryMethodsMode)
-	var stdout, stderr strings.Builder
-	legacy.Stdout, legacy.Stderr = &stdout, &stderr
-	if err := legacy.Run(); err != nil {
-		t.Fatalf("legacy methods: %v\n%s", err, stderr.String())
-	}
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	var expected []any
-	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &expected); err != nil || len(expected) != len(requests) {
-		t.Fatalf("legacy methods printed %s: %v", stdout.String(), err)
-	}
-	catalog, _ := expected[0].(map[string]any)
-	pairs := map[string]bool{}
-	rawPairs, _ := catalog["pairs"].([]any)
-	for _, raw := range rawPairs {
-		if pair, isList := raw.([]any); isList && len(pair) > 0 {
-			name, _ := pair[0].(string)
-			pairs[name] = true
-		}
-	}
-	for _, name := range []string{"/probe-skill", "/probe-quick", "/probe-plugin"} {
-		if !pairs[name] {
-			t.Fatalf("%s missing from the catalog, warning %v", name, catalog["warning"])
-		}
-	}
-	completed := map[string]bool{}
-	probeCompletion, _ := expected[2].(map[string]any)
-	items, _ := probeCompletion["items"].([]any)
-	for _, raw := range items {
-		if row, isDict := raw.(map[string]any); isDict {
-			text, _ := row["text"].(string)
-			completed[strings.TrimLeft(strings.TrimSpace(text), "/")] = true
-		}
-	}
-	if !completed["probe-skill"] || !completed["probe-plugin"] {
-		t.Fatalf("/probe completions = %v", items)
-	}
-	wsBaseline, legacyReceipt := legacyWSSnapshot(t, h, env, requests)
-	if !reflect.DeepEqual(wsBaseline, expected) {
-		got, _ := json.Marshal(wsBaseline)
-		want, _ := json.Marshal(expected)
-		t.Fatalf("serve socket results differ from the in process methods\n%s\n%s", got, want)
-	}
-	origin, _ := descriptor["api_origin"].(string)
-	url := strings.Replace(origin, "http:", "ws:", 1) + "/api/ws"
-	if ws, response, err := websocket.DefaultDialer.Dial(url, nil); err == nil {
-		ws.Close()
-		t.Fatal("an unauthenticated session socket was accepted")
-	} else if !errors.Is(err, websocket.ErrBadHandshake) || response == nil {
-		t.Fatalf("unauthenticated dial = %v", err)
-	}
-	resolved, err := filepath.EvalSymlinks(h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ws, _ := dialSession(t, h, url, map[string]any{"profile_id": resolved, "instance_id": descriptor["instance_id"], "purpose": "interactive"})
-	for i, request := range requests {
-		reply := sessionRPC(t, ws, request.method, request.params)
-		got := reply["result"]
-		if !reflect.DeepEqual(got, expected[i]) {
-			gotDict, isDict := got.(map[string]any)
-			if _, hasSkills := gotDict["skills"]; isDict && hasSkills {
-				baseline, _ := expected[i].(map[string]any)
-				t.Fatalf("skills delta daemon vs legacy: %v", skillsDelta(gotDict, baseline))
-			}
-			t.Fatalf("%s %v = %v, want %v", request.method, request.params, reply, expected[i])
-		}
-	}
-	for _, method := range []string{"commands.catalog", "complete.slash"} {
-		params := map[string]any{"profile": "foreign-profile"}
-		if method == "complete.slash" {
-			params["text"] = "/probe"
-		}
-		sessionRefusal(t, ws, method, "profile_mismatch", params)
-	}
-	if err := daemon.process.Process.Signal(syscall.SIGINT); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case err := <-daemon.exited:
-		daemon.stopped = true
-		if err != nil {
-			t.Fatalf("daemon exit = %v\n%s", err, daemon.output())
-		}
-	case <-time.After(20 * time.Second):
-		t.Fatalf("the daemon did not stop on SIGINT\n%s", daemon.output())
-	}
-	receipt, _ := json.Marshal(map[string]any{"legacy": legacyReceipt, "catalog_pairs": len(pairs),
-		"skill_count": catalog["skill_count"], "compared_requests": len(requests), "unauthenticated_ws": "rejected",
-		"foreign_profile": "rejected", "pid": daemon.process.Process.Pid, "instance_id": descriptor["instance_id"],
-		"api_origin": origin})
-	t.Log(string(receipt))
 }

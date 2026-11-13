@@ -12,7 +12,7 @@ import (
 )
 
 // OffDesktopNote tells the model the connector card exists only in the desktop app
-const OffDesktopNote = "The connector card shows only in the Hermes desktop app. Tell the user to connect apps from the " +
+const OffDesktopNote = "The connector card shows only in the icebath desktop app. Tell the user to connect apps from the " +
 	"desktop app or the portal."
 
 // DisplayState marks a display card operation with its suggested slugs and the words the user typed

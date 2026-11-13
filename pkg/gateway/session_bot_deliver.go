@@ -183,7 +183,7 @@ func botHome(a *SessionAuthority, actor Principal, profile any) (string, error) 
 
 // Admits queued legacy tickets of this home in FIFO order, a claimed one settling as ambiguous
 func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home string) error {
-	root, records, barrier, err := botScanOwnerReceipts(ctx, a, home)
+	_, records, barrier, err := botScanOwnerReceipts(ctx, a, home)
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 		if !has {
 			category = "result"
 		}
-		if _, err := botAdmit(ctx, a, actor, home, root, key, message, ref, live, entry,
+		if _, err := botAdmit(ctx, a, actor, home, key, message, ref, live, entry,
 			provider.ParseTurnAuthor(record["author"]), record, category); err != nil {
 			return err
 		}
@@ -493,14 +493,14 @@ func botDeliverLocked(ctx context.Context, a *SessionAuthority, actor Principal,
 	}
 	var answer map[string]any
 	err = mailboxLock(ctx, a, func(ctx context.Context) error {
-		root, record, err := readReceipt(ctx, req.home, req.key)
+		_, record, err := readReceipt(ctx, req.home, req.key)
 		if err != nil {
 			return err
 		}
 		if answer, err = receiptAnswer(ctx, a, actor, req.home, record, req, true); err != nil || answer != nil {
 			return err
 		}
-		err = botDeliverFresh(ctx, a, actor, params, req, root, &answer)
+		err = botDeliverFresh(ctx, a, actor, params, req, &answer)
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
 			held, heldErr := heldByAnotherWriter(ctx, req.home, req.key, refusal)
@@ -517,7 +517,7 @@ func botDeliverLocked(ctx context.Context, a *SessionAuthority, actor Principal,
 }
 
 // Migrates legacy tickets, then admits a fresh delivery onto the Bot Chat the producer pinned
-func botDeliverFresh(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any, req botDeliveryRequest, root string, answer *map[string]any) error {
+func botDeliverFresh(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any, req botDeliveryRequest, answer *map[string]any) error {
 	if err := botMigrate(ctx, a, actor, req.home); err != nil {
 		return err
 	}
@@ -552,7 +552,7 @@ func botDeliverFresh(ctx context.Context, a *SessionAuthority, actor Principal, 
 			return runtimeRefusal("admission_conflict")
 		}
 	}
-	*answer, err = botAdmit(ctx, a, actor, req.home, root, req.key, req.message, ref, live, entry, req.author, nil, req.category)
+	*answer, err = botAdmit(ctx, a, actor, req.home, req.key, req.message, ref, live, entry, req.author, nil, req.category)
 	return err
 }
 
@@ -697,7 +697,7 @@ func heldByAnotherWriter(ctx context.Context, home, key string, refusal *state.R
 }
 
 // Pins the physical target, admits the delivery and publishes its projection
-func botAdmit(ctx context.Context, a *SessionAuthority, actor Principal, home, root, key, message string, ref SessionRef,
+func botAdmit(ctx context.Context, a *SessionAuthority, actor Principal, home, key, message string, ref SessionRef,
 	live *LiveSession, entry *SessionEntry, author any, legacy map[string]any, category any) (map[string]any, error) {
 	notification, err := automationNotificationMetadata(func(name string) (any, bool) {
 		if name == "notification_category" {

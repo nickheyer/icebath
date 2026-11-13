@@ -98,8 +98,8 @@ func TestRotationChildFlushDedup(t *testing.T) {
 		if _, ok := messages[2][dbPersistedMarker]; ok {
 			t.Fatalf("synthetic snapshot row stamped %v", messages[2])
 		}
-		if _, err := a.flushMessagesToSessionDBWithHistory(messages, loaded); err != nil {
-			t.Fatal(err)
+		if outcome := a.flushMessagesToSessionDBWithHistory(messages, loaded); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		childRows, err := db.GetMessagesAsConversation(ctx, a.sessionID, state.ConversationOptions{IncludeInactive: true})
 		if err != nil {

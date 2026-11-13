@@ -58,7 +58,7 @@ func getProfilesSessions(ctx context.Context, c *Call) (any, error) {
 	for _, t := range targets {
 		name, profileHome := t.Name, t.Home
 		readProfileDB(ctx, name, profileHome, &errs, func(db *state.DB) (struct{}, error) {
-			includeSubagents, exclude := subagentListingScope(ctx, profileHome, source, sources, excludeSources)
+			includeSubagents, exclude := state.SubagentListingScope(ctx, profileHome, source, sources, excludeSources)
 			rows, err := db.ListSessionsRich(ctx, state.ListSessionsRichOptions{Source: source, Sources: sources,
 				ExcludeSources: exclude, MinMessageCount: minMessages, IncludeArchived: archived == "include",
 				ArchivedOnly: archived == "only", IncludeSubagents: includeSubagents, Limit: &perProfile, Offset: 0,
@@ -196,7 +196,7 @@ func getProfilesSessionsSidebar(ctx context.Context, args ...any) (*pyjson.Objec
 		if len(recentsExcludeList) > 0 {
 			scopeExclude = recentsExcludeList
 		}
-		includeSubagents, recentsExcl := subagentListingScope(ctx, profileHome, "", nil, scopeExclude)
+		includeSubagents, recentsExcl := state.SubagentListingScope(ctx, profileHome, "", nil, scopeExclude)
 		cacheKey := sidebarProfileKey{dbPath: dbPath, fingerprint: sidebarDBFingerprint(dbPath),
 			rest: freezeArgs([]any{caps["recents"], recentsExcludeList, caps["cron"], caps["messaging"], messagingExcludeList, includeSubagents})}
 		slices := sidebarProfileCacheGet(cacheKey)

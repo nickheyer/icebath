@@ -157,7 +157,7 @@ func SaveConsent(ctx context.Context, enabled, send bool, cfg map[string]any) er
 		return err
 	}
 	SetAnswer(userConfig, enabled, send)
-	if err := writeUserConfig(ctx, h, configPath, userConfig); err != nil {
+	if err := config.WriteUserConfig(ctx, h, configPath, userConfig); err != nil {
 		return err
 	}
 	if cfg != nil {
@@ -166,21 +166,6 @@ func SaveConsent(ctx context.Context, enabled, send bool, cfg map[string]any) er
 	recordSendConsentChange(ctx, send)
 	if !enabled {
 		PurgePendingReceipts(ctx, h)
-	}
-	return nil
-}
-
-// Writes only the raw user config and records the move away from defaults as a recorded raw write
-func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[string]any) error {
-	if err := config.EnsureIcebathHome(ctx, h); err != nil {
-		return err
-	}
-	before, readErr := config.ReadUserConfigRaw(ctx, configPath)
-	if err := config.AtomicConfigReplace(ctx, h, configPath, userConfig, ""); err != nil {
-		return err
-	}
-	if readErr == nil {
-		RecordConfigSaved(h, before, userConfig)
 	}
 	return nil
 }

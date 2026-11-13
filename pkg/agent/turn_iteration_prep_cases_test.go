@@ -34,8 +34,8 @@ func TestTurnIterationPrep(t *testing.T) {
 		for _, tc := range restartFlagCases() {
 			a := tc.agent()
 			v, s := tc.apply(t, a, true, 0, nil)
-			if v.Action != "continue" || 50-a.iterationBudget.Used() != 1 || s.APICallCount != 0 {
-				t.Fatalf("%s: verdict %q refunds %d count %d", tc.name, v.Action, 50-a.iterationBudget.Used(), s.APICallCount)
+			if v.Action != "continue" || 50-a.iterationBudget.Load().Used() != 1 || s.APICallCount != 0 {
+				t.Fatalf("%s: verdict %q refunds %d count %d", tc.name, v.Action, 50-a.iterationBudget.Load().Used(), s.APICallCount)
 			}
 			if tc.name == "restart_with_rebuilt_messages" && s.PreflightCompressionBlocked {
 				t.Fatal("the rebuilt restart is the single consumer of the preflight block")
@@ -52,8 +52,8 @@ func TestTurnIterationPrep(t *testing.T) {
 				v, s := tc.apply(t, a, true, restartCount, nil)
 				actions, restartCount, last = append(actions, v.Action), s.RestartCount, s
 			}
-			if strings.Join(actions, ",") != "continue,continue,continue,break" || 50-a.iterationBudget.Used() != phaseTestMaxRetries {
-				t.Fatalf("%s: actions %v refunds %d", tc.name, actions, 50-a.iterationBudget.Used())
+			if strings.Join(actions, ",") != "continue,continue,continue,break" || 50-a.iterationBudget.Load().Used() != phaseTestMaxRetries {
+				t.Fatalf("%s: actions %v refunds %d", tc.name, actions, 50-a.iterationBudget.Load().Used())
 			}
 			if reason, _ := last.TurnExitReason.(string); !strings.HasSuffix(reason, "restart_limit_exceeded") || a.pendingSteer != tc.wantHeld {
 				t.Fatalf("%s: exit %v steered %q", tc.name, last.TurnExitReason, a.pendingSteer)
@@ -99,7 +99,7 @@ func budgetCheckpointAgent(t *testing.T, ctx context.Context, env *tools.Env, ra
 	tools.InvalidateCheckCache()
 	tools.ClearToolDefinitionsCache()
 	a, err := NewAIAgent(tools.WithToolEnv(ctx, env), AIAgentOptions{SessionDB: db, Model: "test-model", Provider: "openai-compat", APIKey: "test",
-		BaseURL: "http://127.0.0.1:1/v1", MaxIterations: 4, QuietMode: true, SkipContextFiles: true, SkipMemory: true, Env: env})
+		BaseURL: "http://127.0.0.1:1/v1", MaxIterations: new(4), QuietMode: true, SkipContextFiles: true, SkipMemory: true, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestCheckpointRequiresOptInOrDispatcherCompletionScope(t *testing.T) {
 				delete(a.validToolNames, "kanban_complete")
 			}
 			for range 3 {
-				a.iterationBudget.Consume()
+				a.iterationBudget.Load().Consume()
 			}
 			rows := []map[string]any{{"role": "user", "content": "work"},
 				{"role": "assistant", "tool_calls": []any{map[string]any{"id": "t", "type": "function", "function": map[string]any{"name": "read_file", "arguments": "{}"}}}},
@@ -158,8 +158,8 @@ func TestCheckpointRequiresOptInOrDispatcherCompletionScope(t *testing.T) {
 			if err := prepareIteration(tools.WithToolEnv(ctx, env), a, s); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(messagesToRows(s.Messages), got) || a.iterationBudget.Remaining() != 1 {
-				t.Fatalf("second pass rows %v remaining %d", messagesToRows(s.Messages), a.iterationBudget.Remaining())
+			if !reflect.DeepEqual(messagesToRows(s.Messages), got) || a.iterationBudget.Load().Remaining() != 1 {
+				t.Fatalf("second pass rows %v remaining %d", messagesToRows(s.Messages), a.iterationBudget.Load().Remaining())
 			}
 		})
 	}

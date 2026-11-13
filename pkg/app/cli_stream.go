@@ -63,15 +63,17 @@ func (c *CLI) thinkingPrefix() string { return "  " + c.t("cli.stream.thinking_l
 
 // Whether the running agent mutes this notification reply
 func (c *CLI) agentMutesNotificationReply() bool {
-	return c.agent != nil && c.agent.MuteNotificationReply()
+	a := c.agentRef()
+	return a != nil && a.MuteNotificationReply()
 }
 
 // Notification config of the running agent, nil without an agent
 func (c *CLI) agentNotificationConfig() map[string]any {
-	if c.agent == nil {
+	a := c.agentRef()
+	if a == nil {
 		return nil
 	}
-	return c.agent.NotificationConfig()
+	return a.NotificationConfig()
 }
 
 // Repaints through the throttle and logs a failure at debug level

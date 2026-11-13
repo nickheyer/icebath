@@ -2,14 +2,9 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -140,109 +135,6 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 	return result
 }
 
-// Entry point of the icebath plugin group with the distribution that ships it
-type PipEntryPoint struct {
-	Name, Value string
-	// Distribution name given directly, read from Dist metadata when empty
-	DistName string
-	// Dist-info directory owning the entry point
-	Dist string
-}
-
-// Name header of the owning distribution metadata, empty when there is none
-func owningDistribution(ep PipEntryPoint) string {
-	if ep.Dist == "" {
-		return ""
-	}
-	return distributionHeader(ep.Dist, "Name")
-}
-
-// Entry points of the icebath plugin group across the distributions on path, the first of each name winning
-func pipEntryPoints(path []string) []PipEntryPoint { return entryPointGroup(path, pipEntryPointGroup) }
-
-// Entry points of one group across the distributions on path, the first distribution of each name winning
-func entryPointGroup(path []string, wanted string) []PipEntryPoint {
-	var out []PipEntryPoint
-	seen := map[string]bool{}
-	for _, entry := range path {
-		if entry == "" {
-			entry = "."
-		}
-		children, err := os.ReadDir(entry)
-		if err != nil {
-			continue
-		}
-		for _, child := range children {
-			low := strings.ToLower(child.Name())
-			ext := filepath.Ext(low)
-			if ext != ".dist-info" && ext != ".egg-info" {
-				continue
-			}
-			dist := filepath.Join(entry, child.Name())
-			base, _, _ := strings.Cut(strings.TrimSuffix(low, ext), "-")
-			if key := distNormalized(base); seen[key] {
-				continue
-			} else {
-				seen[key] = true
-			}
-			raw, err := os.ReadFile(filepath.Join(dist, "entry_points.txt"))
-			if err != nil {
-				continue
-			}
-			group := ""
-			for _, line := range strings.Split(pystr.TranslateNewlines(string(raw)), "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
-					continue
-				}
-				if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-					group = strings.TrimSpace(line[1 : len(line)-1])
-					continue
-				}
-				if name, value, ok := strings.Cut(line, "="); ok && group == wanted {
-					out = append(out, PipEntryPoint{Name: strings.TrimSpace(name), Value: strings.TrimSpace(value), Dist: dist})
-				}
-			}
-		}
-	}
-	return out
-}
-
-// Update checks of pip installed plugins against PyPI, unknown whenever the distribution or its latest is unknown
-func checkPipPlugins(ctx context.Context, installedVersion func(string) (string, bool), pypiLatest func(context.Context, string) (string, bool), entryPoints []PipEntryPoint) []*CheckResult {
-	if entryPoints == nil {
-		entryPoints = pipEntryPoints(processImportPath())
-	}
-	results := []*CheckResult{}
-	for _, ep := range entryPoints {
-		distName := ep.DistName
-		if distName == "" {
-			distName = owningDistribution(ep)
-		}
-		if distName == "" {
-			results = append(results, &CheckResult{Name: ep.Name, Class: "pip", Reason: "entry point has no owning distribution metadata; cannot determine what to check"})
-			continue
-		}
-		current, found := installedVersion(distName)
-		if !found {
-			results = append(results, &CheckResult{Name: ep.Name, Class: "pip", Reason: fmt.Sprintf("distribution %s not importable", pyrepr.StrRepr(distName))})
-			continue
-		}
-		latest, known := pypiLatest(ctx, distName)
-		if !known {
-			results = append(results, &CheckResult{Name: ep.Name, Class: "pip", Current: current, Reason: "unknown (not on PyPI)"})
-			continue
-		}
-		available := versionIsNewer(latest, current)
-		reason := ""
-		if available == nil {
-			reason = fmt.Sprintf("cannot compare PyPI version %s with installed %s", pyrepr.StrRepr(latest), pyrepr.StrRepr(current))
-		}
-		results = append(results, &CheckResult{Name: ep.Name, Class: "pip", Current: current, Latest: latest, UpdateAvailable: available, Reason: reason})
-	}
-	return results
-}
-
 // Remote HEAD sha of a git source through the resolved git, empty for an empty repository
 func defaultLsRemote(ctx context.Context, source string) (string, error) {
 	gitExe := resolveGitExecutable()
@@ -280,45 +172,9 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 	return head, nil
 }
 
-// Latest release PyPI reports for a distribution, known false on any failure
-var defaultPypiLatest = func(ctx context.Context, dist string) (string, bool) {
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, "https://pypi.org/pypi/"+dist+"/json", nil)
-	if err != nil {
-		return "", false
-	}
-	req.Header.Set("User-Agent", "icebath-agent")
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
-	if err != nil {
-		return "", false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return "", false
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes))
-	if err != nil {
-		return "", false
-	}
-	var data map[string]any
-	if json.Unmarshal(raw, &data) != nil {
-		return "", false
-	}
-	info, _ := data["info"].(map[string]any)
-	if info["version"] == nil {
-		return "", false
-	}
-	return strOrEmpty(info["version"]), true
-}
-
 // Options of one update check run, nil functions taking the real network and git probes
 type RunChecksOptions struct {
-	Fetch, LsRemote     func(context.Context, string) (string, error)
-	SkipPip             bool
-	PipInstalledVersion func(dist string) (string, bool)
-	PipPypiLatest       func(context.Context, string) (string, bool)
-	PipEntryPoints      []PipEntryPoint
+	Fetch, LsRemote func(context.Context, string) (string, error)
 }
 
 // Every update check for one plugins dir, never mutating anything on disk
@@ -332,15 +188,6 @@ func RunChecks(ctx context.Context, pluginsDir string, opts RunChecksOptions) []
 	var results []*CheckResult
 	for _, p := range PluginsProvenance(ctx, pluginsDir) {
 		results = append(results, checkProvenanced(ctx, p, opts.Fetch, opts.LsRemote))
-	}
-	if !opts.SkipPip {
-		if opts.PipInstalledVersion == nil {
-			opts.PipInstalledVersion = func(dist string) (string, bool) { return findDistributionVersion(dist, processImportPath()) }
-		}
-		if opts.PipPypiLatest == nil {
-			opts.PipPypiLatest = defaultPypiLatest
-		}
-		results = append(results, checkPipPlugins(ctx, opts.PipInstalledVersion, opts.PipPypiLatest, opts.PipEntryPoints)...)
 	}
 	return results
 }

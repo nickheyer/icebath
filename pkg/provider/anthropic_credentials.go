@@ -120,10 +120,10 @@ var atomicWritePrivate = config.AtomicWrite
 // Atomic private write whose failure becomes CredentialPersistError
 func commitPrivateJSON(env PoolEnv, path string, payload any, what string) error {
 	raw, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return &CredentialPersistError{Path: path, Cause: err}
+	if err == nil {
+		err = atomicWritePrivate(path, raw, 0o600)
 	}
-	if err := atomicWritePrivate(path, raw, 0o600); err != nil {
+	if err != nil {
 		env.log().Error(fmt.Sprintf("Failed to write refreshed %s to %s: %v", what, path, err))
 		return &CredentialPersistError{Path: path, Cause: err}
 	}
@@ -506,9 +506,7 @@ func postAnthropicOAuthToken(env PoolEnv, data []byte, contentType string, timeo
 		resp.Body.Close()
 		cancel()
 		if resp.StatusCode >= 400 {
-			var payload map[string]any
-			_ = json.Unmarshal(body, &payload)
-			oe := &AnthropicOAuthError{Status: resp.StatusCode, Code: anyString(payload["error"]), Description: anyString(payload["error_description"]), What: what}
+			oe := anthropicOAuthHTTPError(resp.StatusCode, body, what)
 			lastErr = oe
 			env.log().Debug(fmt.Sprintf("Anthropic token %s failed at %s: %v", what, endpoint, oe))
 			if oe.ReloginRequired() {
@@ -519,6 +517,7 @@ func postAnthropicOAuthToken(env PoolEnv, data []byte, contentType string, timeo
 		var result map[string]any
 		if err := json.Unmarshal(body, &result); err != nil {
 			lastErr = err
+			env.log().Debug(fmt.Sprintf("Anthropic token %s failed at %s: %v", what, endpoint, err))
 			continue
 		}
 		return result, nil
@@ -527,6 +526,13 @@ func postAnthropicOAuthToken(env PoolEnv, data []byte, contentType string, timeo
 		lastErr = fmt.Errorf("Anthropic token %s failed", what)
 	}
 	return nil, lastErr
+}
+
+// Structured rejection of a token endpoint error response, carrying the OAuth error code of its body when readable
+func anthropicOAuthHTTPError(status int, body []byte, what string) *AnthropicOAuthError {
+	var payload map[string]any
+	_ = json.Unmarshal(body, &payload)
+	return &AnthropicOAuthError{Status: status, Code: anyString(payload["error"]), Description: anyString(payload["error_description"]), What: what}
 }
 
 // Token endpoint JSON to the access refresh and expires_at_ms state with a 3600s default

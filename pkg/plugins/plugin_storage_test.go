@@ -2,7 +2,6 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -116,36 +115,6 @@ def register(ctx):
     ctx.register_tool(name="storage_probe", toolset="storageprobe", schema={"name": "storage_probe",
         "description": "d", "parameters": S}, handler=probe)
 `
-
-// A hosted plugin imports the storage, utils and lazy_deps SDK twins and gets the shared journal verdict
-func TestLiveHostedPluginStorageTwins(t *testing.T) {
-	installLiveServices(t)
-	h, m := liveHome(t, liveInterpreters(t)["system"], map[string]string{"storageprobe": storageProbePlugin})
-	if e := loadedError(m, "storageprobe"); e != "" {
-		t.Fatalf("load error %q", e)
-	}
-	var got map[string]any
-	if err := json.Unmarshal([]byte(dispatchLive(t, h, "storage_probe", map[string]any{})), &got); err != nil {
-		t.Fatal(err)
-	}
-	want := "wal"
-	if state.WALResetVulnerable(nil) {
-		want = "delete"
-	}
-	errs, _ := got["errors"].([]any)
-	if got["root"] != filepath.Join(h, "plugin-data", "probe-data") || got["mode"] != want || got["fk"] != float64(1) || got["built"] != float64(1) || len(errs) != 4 {
-		t.Fatalf("probe %v", got)
-	}
-	wantErrs := []string{`["ValueError","invalid plugin db filename: '../outside.db'"]`, `["ValueError","invalid plugin name for storage: '../escape'"]`,
-		`["ImportError","Dependencies are unknown to this old updater. Please relaunch Icebath."]`,
-		`["ImportError","tools.lazy_deps.install_specs is retired; runtime dependency installation is unavailable."]`}
-	for i, e := range errs {
-		raw, _ := json.Marshal(e)
-		if string(raw) != wantErrs[i] {
-			t.Fatalf("error %d %s", i, raw)
-		}
-	}
-}
 
 // Ensure and InstallSpecs refuse with the retired installer ImportErrors outside an updater call stack
 func TestLazyDepsRetiredInstaller(t *testing.T) {

@@ -1,6 +1,6 @@
 import type { SessionCommandNotices } from './types_notices'
 
-// Typed /undo /retry /steer /queue lines: the Ink TUI's wording on the same gateway.
+// Typed /undo /retry /steer /queue lines: the terminal UI's wording on the same gateway.
 export const enSessionCommands: SessionCommandNotices = {
   undoUsage: 'usage: /undo [N]',
   undoNothing: 'nothing to undo',

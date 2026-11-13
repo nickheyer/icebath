@@ -407,15 +407,21 @@ func ProbeHostOwner(r *HostRecord, timeout time.Duration) *pyjson.Object {
 		return nil
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", "HTTP Error "+strconv.Itoa(resp.StatusCode))
+		return nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
+		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", err)
 		return nil
 	}
-	decoded, err := pyjson.Loads(strings.ToValidUTF8(string(body), "\ufffd"))
+	decoded, err := pyjson.Loads(pystr.DecodeUTF8Replace(body))
 	if err != nil {
+		hostLog().Debug(fmt.Sprintf("host %s identity probe failed at %s:%d", r.Role, h, *r.Port), "error", err)
 		return nil
 	}
 	payload, ok := decoded.(*pyjson.Object)

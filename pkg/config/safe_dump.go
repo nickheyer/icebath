@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -25,10 +28,7 @@ var (
 )
 
 const (
-	safeSequenceIndent = 4
-	safeMapIndent      = 2
-	safeDashOffset     = 2
-	safeMaxSimpleKey   = 128
+	safeMaxSimpleKey = 128
 )
 
 var yamlEscapes = map[rune]string{
@@ -42,7 +42,20 @@ type SafeDumpOptions struct {
 	SortKeys         bool
 	AllowUnicode     bool
 	Width            int
+	Indent           *SafeDumpIndent
+	Version          string
 }
+
+// Block indentation of mappings and sequences and the dash offset inside a sequence indent
+type SafeDumpIndent struct {
+	Mapping, Sequence, Offset int
+}
+
+// Indentation of the shared YAML writer, mapping 2, sequence 4 and dash offset 2
+var hermesDumpIndent = SafeDumpIndent{Mapping: 2, Sequence: 4, Offset: 2}
+
+// Indentation of a ruamel YAML instance left at its defaults, sequences indentless under a mapping key
+var RuamelDefaultIndent = SafeDumpIndent{Mapping: 2, Sequence: 2, Offset: 0}
 
 // Options safe_dump writes with when the caller passes none
 func DefaultSafeDumpOptions() SafeDumpOptions {
@@ -89,12 +102,23 @@ func SwapSafeDump(f func(any) ([]byte, error)) func() {
 
 // Writes data as YAML plus extra through a synced temp file, keeping the existing mode and owner
 func AtomicYAMLWrite(ctx context.Context, path string, data any, extra string) error {
+	return atomicYAMLWrite(ctx, path, data, extra, 0, false)
+}
+
+// Writes like AtomicYAMLWrite with a new file created at the given mode
+func AtomicYAMLWriteCreateMode(ctx context.Context, path string, data any, extra string, createMode os.FileMode) error {
+	return atomicYAMLWrite(ctx, path, data, extra, pyfs.PosixModeBits(createMode), true)
+}
+
+// Safe dumped YAML plus extra written with the existing bits kept or the create mode for a new file
+func atomicYAMLWrite(ctx context.Context, path string, data any, extra string, createMode uint32, createSet bool) error {
 	text, err := safeDumpImpl(data)
 	if err != nil {
 		return err
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	return atomicPreservingWrite(ctx, path, append(text, extra...), "."+stem+"_")
+	mode, ok := pyfs.ModeForWrite(path, createMode, createSet, true)
+	return atomicWriteDoc(ctx, path, append(text, extra...), pyfs.WriteOptions{Prefix: "." + stem + "_", Mode: mode, ModeSet: ok, PreserveOwner: true})
 }
 
 // Represented node of the safe representer, a scalar, sequence or mapping with alternating keys and values
@@ -125,18 +149,25 @@ func (r *safeRepresenter) represent(v any) (*dumpNode, error) {
 	case Tree:
 		return r.represent(map[string]any(x))
 	case map[string]any:
-		return r.mapping(reflect.ValueOf(x), func() []any {
-			keys := MappingKeys(x)
-			out := make([]any, len(keys))
-			for i, k := range keys {
-				out[i] = k
+		keys := MappingKeys(x)
+		pyKeys := make([]any, len(keys))
+		for i, k := range keys {
+			pyKeys[i] = k
+			if pk, ok := MappingPyKey(x, k); ok {
+				pyKeys[i] = pk
 			}
-			return out
-		})
+		}
+		return r.mapping(reflect.ValueOf(x), pyKeys, func(i int) any { return x[keys[i]] })
 	case []any:
 		return r.sequence(reflect.ValueOf(x))
 	case time.Time:
 		return &dumpNode{kind: 's', value: representTime(x)}, nil
+	case pydatetime.Date:
+		return &dumpNode{kind: 's', value: x.PyStr()}, nil
+	case pydatetime.DateTime:
+		return &dumpNode{kind: 's', value: x.PyStr()}, nil
+	case *pydatetime.Date, *pydatetime.DateTime, *time.Time:
+		return r.sharedScalar(reflect.ValueOf(x))
 	case []byte:
 		return representBinaryAsLiteralBlock(x)
 	}
@@ -149,7 +180,10 @@ func (r *safeRepresenter) represent(v any) (*dumpNode, error) {
 		switch rv.Type().Key().Kind() {
 		case reflect.String, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			return r.mapping(rv, func() []any { return sortedReflectKeys(rv) })
+			keys := sortedReflectKeys(rv)
+			return r.mapping(rv, keys, func(i int) any {
+				return rv.MapIndex(reflect.ValueOf(keys[i]).Convert(rv.Type().Key())).Interface()
+			})
 		}
 	case reflect.Slice:
 		if rv.Type().Elem().Kind() != reflect.Uint8 {
@@ -209,16 +243,38 @@ func identityOf(rv reflect.Value) (aliasKey, bool) {
 		}
 		return aliasKey{ptr: uintptr(rv.UnsafePointer())}, true
 	case reflect.Slice:
-		if rv.Len() == 0 {
+		if rv.Cap() == 0 {
 			return aliasKey{}, false
 		}
 		return aliasKey{ptr: uintptr(rv.UnsafePointer()), n: rv.Len()}, true
+	case reflect.Pointer:
+		if rv.IsNil() {
+			return aliasKey{}, false
+		}
+		return aliasKey{ptr: uintptr(rv.UnsafePointer())}, true
 	}
 	return aliasKey{}, false
 }
 
-// Mapping node with keys in insertion order or sorted when sort_keys asks, values represented in that order
-func (r *safeRepresenter) mapping(rv reflect.Value, order func() []any) (*dumpNode, error) {
+// One scalar node per date or datetime object, so a second reference to the same object becomes an alias
+func (r *safeRepresenter) sharedScalar(rv reflect.Value) (*dumpNode, error) {
+	id, aliased := identityOf(rv)
+	if !aliased {
+		return r.represent(nil)
+	}
+	if n, ok := r.objects[id]; ok {
+		return n, nil
+	}
+	n, err := r.represent(rv.Elem().Interface())
+	if err != nil {
+		return nil, err
+	}
+	r.objects[id] = n
+	return n, nil
+}
+
+// Mapping node with keys in insertion order or Python sorted order when sort_keys asks, values in that order
+func (r *safeRepresenter) mapping(rv reflect.Value, keys []any, value func(i int) any) (*dumpNode, error) {
 	id, aliased := identityOf(rv)
 	if aliased {
 		if n, ok := r.objects[id]; ok {
@@ -229,16 +285,19 @@ func (r *safeRepresenter) mapping(rv reflect.Value, order func() []any) (*dumpNo
 	if aliased {
 		r.objects[id] = node
 	}
-	keys := order()
-	if r.opts.SortKeys {
-		sortPyKeys(keys)
+	order := make([]int, len(keys))
+	for i := range order {
+		order[i] = i
 	}
-	for _, k := range keys {
-		kn, err := r.represent(k)
+	if r.opts.SortKeys {
+		order = pySortedOrder(keys)
+	}
+	for _, i := range order {
+		kn, err := r.represent(keys[i])
 		if err != nil {
 			return nil, err
 		}
-		vn, err := r.represent(rv.MapIndex(reflect.ValueOf(k).Convert(rv.Type().Key())).Interface())
+		vn, err := r.represent(value(i))
 		if err != nil {
 			return nil, err
 		}
@@ -342,6 +401,8 @@ type scalarAnalysis struct {
 // Port of the ruamel emitter states for the events a safe representer produces
 type safeEmitter struct {
 	out                   strings.Builder
+	ind                   SafeDumpIndent
+	version               string
 	allowUnicode          bool
 	bestWidth             int
 	column, indent        int
@@ -360,7 +421,11 @@ type safeEmitter struct {
 
 func newSafeEmitter(opts SafeDumpOptions, root *dumpNode) *safeEmitter {
 	e := &safeEmitter{allowUnicode: opts.AllowUnicode, bestWidth: 80, whitespace: true, indention: true, indentNone: true,
+		ind: hermesDumpIndent, version: opts.Version,
 		anchors: map[*dumpNode]string{}, serialized: map[*dumpNode]bool{}, anchorsSeen: map[*dumpNode]bool{}}
+	if opts.Indent != nil {
+		e.ind = *opts.Indent
+	}
 	if opts.Width > 2*2 {
 		e.bestWidth = opts.Width
 	}
@@ -385,6 +450,11 @@ func (e *safeEmitter) anchorNode(n *dumpNode) {
 
 // Emits the implicit document and stream end, closing an open ended root scalar with the document end marker
 func (e *safeEmitter) document(root *dumpNode) {
+	if e.version != "" {
+		e.out.WriteString("%YAML " + e.version)
+		e.writeLineBreak("")
+		e.writeIndicator("---", true, false, false)
+	}
 	e.expectNode(root, true, false, false, false)
 	e.writeIndent()
 	if e.openEnded {
@@ -413,7 +483,7 @@ func (e *safeEmitter) seqFlowAlign() int {
 	if !top.none {
 		base = top.n
 	}
-	return base + safeSequenceIndent - e.column - 1
+	return base + e.ind.Sequence - e.column - 1
 }
 
 func (e *safeEmitter) increaseIndent(flow, seq, indentless bool) {
@@ -426,9 +496,9 @@ func (e *safeEmitter) increaseIndent(flow, seq, indentless bool) {
 	}
 	if !indentless {
 		if e.lastSeq() {
-			e.indent += safeSequenceIndent
+			e.indent += e.ind.Sequence
 		} else {
-			e.indent += safeMapIndent
+			e.indent += e.ind.Mapping
 		}
 	}
 }
@@ -621,8 +691,8 @@ func (e *safeEmitter) expectBlockSequence(n *dumpNode) {
 			nonl = e.noNewline
 		}
 		e.writeIndent()
-		e.writeIndicator(strings.Repeat(" ", safeDashOffset)+"-", true, false, true)
-		if nonl || safeDashOffset+2 > safeSequenceIndent {
+		e.writeIndicator(strings.Repeat(" ", e.ind.Offset)+"-", true, false, true)
+		if nonl || e.ind.Offset+2 > e.ind.Sequence {
 			e.noNewline = true
 		}
 		e.expectNode(item, false, true, false, false)
@@ -1046,7 +1116,10 @@ func (e *safeEmitter) writeDouble(s []rune, split bool) {
 					needBackslash = false
 				}
 			}
-			data := string(s[start:end])
+			data := ""
+			if start < end {
+				data = string(s[start:end])
+			}
 			if needBackslash {
 				data += "\\"
 			}

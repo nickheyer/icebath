@@ -26,7 +26,7 @@ func RestoreFileMode(path string, mode uint32, ok bool) {
 }
 
 // Octal permission bits of a FileMode with the setuid, setgid and sticky flags folded into their positions
-func posixModeBits(m os.FileMode) uint32 {
+func PosixModeBits(m os.FileMode) uint32 {
 	bits := uint32(m) & 0o7777
 	if m&os.ModeSetuid != 0 {
 		bits |= 0o4000

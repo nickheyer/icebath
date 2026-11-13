@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -94,9 +95,21 @@ func PrintFastVersionInfo(ctx context.Context, w io.Writer, checkUpdates bool) {
 		fmt.Fprintln(w, "Install method: "+method)
 	}
 	fmt.Fprintln(w, "Go: "+hostinfo.GoVersion())
+	fmt.Fprintln(w, matrixE2EEVersionLine())
 	if checkUpdates {
 		printUpdateStatus(ctx, w, root)
 	}
+}
+
+// Matrix encryption build line, the linked mautrix version with goolm or the build command that includes it
+func matrixE2EEVersionLine() string {
+	if !matrix.E2EEBuiltIn {
+		return "Matrix E2EE: Not built in (" + matrix.E2EEBuildCommand + ")"
+	}
+	if v := hostinfo.ModuleVersion("maunium.net/go/mautrix"); v != "" {
+		return "Matrix E2EE: goolm (mautrix " + v + ")"
+	}
+	return "Matrix E2EE: goolm"
 }
 
 // Passive update check line printed when the status names one

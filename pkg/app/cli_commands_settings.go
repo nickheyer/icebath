@@ -531,10 +531,10 @@ func (c *CLI) handleFocusCommand(cmdOriginal string) {
 func (c *CLI) setToolProgressMode(mode string) {
 	normalized := normalizeToolProgressMode(mode, "all")
 	c.toolProgressMode = normalized
-	if c.agent != nil {
+	if c.agentRef() != nil {
 		func() {
 			defer func() { _ = recover() }()
-			c.agent.SetToolProgressMode(normalized)
+			c.agentRef().SetToolProgressMode(normalized)
 		}()
 	}
 }

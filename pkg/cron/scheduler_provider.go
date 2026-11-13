@@ -198,8 +198,8 @@ func schedulerIsAvailable(p CronScheduler) bool {
 	return true
 }
 
-// Eager teardown when the provider offers one
-func schedulerStop(p CronScheduler) {
+// Eager teardown when the provider offers one, the base class no op otherwise
+func SchedulerStop(p CronScheduler) {
 	if h, ok := p.(stopHook); ok {
 		h.Stop()
 	}

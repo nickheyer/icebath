@@ -39,7 +39,7 @@ func usageContext(ctx context.Context, a *AIAgent) *pyjson.Object {
 	tokens := last
 	func() {
 		defer func() { _ = recover() }()
-		anchored, ok := provider.AnchoredContextTokens(ctx, a.sessionMessages, a.turnBaseUsageAnchor, false)
+		anchored, ok := provider.AnchoredContextTokens(ctx, a.liveSessionMessages(), a.turnBaseUsageAnchor.Load(), false)
 		if ok && anchored > 0 {
 			tokens = anchored
 		}

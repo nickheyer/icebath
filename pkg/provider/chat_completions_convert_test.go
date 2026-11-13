@@ -1,9 +1,13 @@
 package provider
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
+)
 
 func TestModelForcesMaxCompletionTokensExportMatchesTheModelFamilies(t *testing.T) {
-	if !ModelForcesMaxCompletionTokens("openai/gpt-5.4") || !ModelForcesMaxCompletionTokens("o3-mini") || ModelForcesMaxCompletionTokens("claude-sonnet-4") {
+	if !config.ModelForcesMaxCompletionTokens("openai/gpt-5.4") || !config.ModelForcesMaxCompletionTokens("o3-mini") || config.ModelForcesMaxCompletionTokens("claude-sonnet-4") {
 		t.Fatal("max completion tokens")
 	}
 }

@@ -430,9 +430,9 @@ func init() {
 			kwReq("schedule_template"), kwReq("prompt_template"), kwo("category", "general"), kwo("slots", []any{}), kwo("deliver_default", "origin"),
 			kwo("skills", []any{}), kwo("tags", []any{})},
 			func(_ context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
-				return c.RegisterAutomationBlueprint(argStr(a["key"]), BlueprintSpec{Title: argStr(a["title"]), Description: argStr(a["description"]),
-					ScheduleTemplate: argStr(a["schedule_template"]), PromptTemplate: argStr(a["prompt_template"]), Category: argStr(a["category"]),
-					Slots: argList(a["slots"]), DeliverDefault: argStr(a["deliver_default"]), Skills: argStrings(a["skills"]), Tags: argStrings(a["tags"])})
+				return c.RegisterAutomationBlueprint(a["key"], BlueprintSpec{Title: a["title"], Description: a["description"],
+					ScheduleTemplate: a["schedule_template"], PromptTemplate: a["prompt_template"], Category: a["category"],
+					Slots: a["slots"], DeliverDefault: a["deliver_default"], Skills: a["skills"], Tags: a["tags"]})
 			}),
 		"has_capability": hostMethod("has_capability", []pyParam{req("capability")}, func(ctx context.Context, _ *PluginHost, c *Context, a, _ map[string]any) (any, error) {
 			return c.HasCapability(ctx, argStr(a["capability"])), nil

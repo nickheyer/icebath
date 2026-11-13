@@ -12,7 +12,7 @@ func (a *AIAgent) SetUnflushedSessionMessagesForTests(history []map[string]any) 
 		messages[i] = state.MessageFromDict(m)
 	}
 	a.shareSessionMessageOrigins(messages, history, false)
-	a.sessionMessages = messages
+	a.setSessionMessages(messages)
 	a.lastFlushedDBIdx = 0
 	a.dbFlushScanPrefix = nil
 }

@@ -330,9 +330,10 @@ func rollback(ctx context.Context, c *AuthorityConnection, ref SessionRef, param
 
 // One rollback verb against a checkpoint manager built from the session's frozen checkpoints policy
 func runRollback(ctx context.Context, kind string, kwargs map[string]any, terminal tools.TerminalPolicy, cwd, taskID string, params *pyjson.Object, filePath string) (*pyjson.Object, error) {
-	options := tools.CheckpointManagerOptions{Enabled: pyrepr.Truthy(kwargs["checkpoints_enabled"]),
-		MaxSnapshots: int(anyInt64(kwargs["checkpoint_max_snapshots"])), MaxTotalSizeMB: int(anyInt64(kwargs["checkpoint_max_total_size_mb"])),
-		MaxFileSizeMB: int(anyInt64(kwargs["checkpoint_max_file_size_mb"]))}
+	options, err := tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
+	if err != nil {
+		return nil, err
+	}
 	env := &tools.Env{Home: home.Dir(ctx)}
 	mgr := tools.NewCheckpointManager(env, options)
 	if !mgr.Enabled && (kind == "list" || kind == "session_diff") {

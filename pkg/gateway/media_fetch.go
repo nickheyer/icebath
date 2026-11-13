@@ -47,8 +47,11 @@ func FilterMediaDeliveryPaths(ctx context.Context, media []MediaRef) ([]MediaRef
 	return FilterMediaDeliveryPathsFor(ctx, media, "", nil)
 }
 
+// FilterMediaDeliveryPathsFor is the adapter media filter every delivery path calls, the real filter in production
+var FilterMediaDeliveryPathsFor = filterMediaDeliveryPathsFor
+
 // Safe MEDIA paths for a session, each rejected path appended to dropped with its reason when dropped is set
-func FilterMediaDeliveryPathsFor(ctx context.Context, media []MediaRef, sessionKey string, dropped *[]map[string]any) ([]MediaRef, error) {
+func filterMediaDeliveryPathsFor(ctx context.Context, media []MediaRef, sessionKey string, dropped *[]map[string]any) ([]MediaRef, error) {
 	out := []MediaRef{}
 	for _, m := range media {
 		safe, err := validatedDeliveryPath(ctx, m.Path, sessionKey, "MEDIA directive path", dropped)

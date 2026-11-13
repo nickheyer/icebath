@@ -3,8 +3,6 @@ package plugins
 import (
 	"context"
 	"io/fs"
-	"path"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/observability"
 )
@@ -21,15 +19,11 @@ func init() {
 
 // Lower case file stems of the in-tree plugin catalog
 func pluginCatalogStems() ([]string, error) {
-	files, err := fs.Glob(inTreeCatalog, "catalog/*.yaml")
+	root, err := fs.Sub(inTreeCatalog, "catalog")
 	if err != nil {
 		return nil, err
 	}
-	stems := make([]string, 0, len(files))
-	for _, f := range files {
-		stems = append(stems, strings.ToLower(strings.TrimSuffix(path.Base(f), ".yaml")))
-	}
-	return stems, nil
+	return observability.YamlStems(root), nil
 }
 
 // In-tree catalog entries of a known tier whose category is platform, never a network fetch

@@ -2,6 +2,7 @@ package sherpaonnx
 
 import (
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
@@ -98,8 +99,14 @@ func libraryName(goos string) string {
 // The imported sherpa_onnx package, its directory and the bound native library
 type Module struct {
 	Dir string
+	GPU bool
 	api *capi
 	env Environment
+	lib *pyctypes.CDLL
+
+	speechOnce sync.Once
+	speech     *speechAPI
+	speechErr  error
 }
 
 // Imports the package installed at dir, an ImportError when its native library cannot be loaded or lacks a function
@@ -129,7 +136,7 @@ func Import(dir string, env Environment) (*Module, error) {
 		}
 		pyctypes.RegisterFunc(entry.fptr, addr)
 	}
-	return &Module{Dir: dir, api: api, env: env}, nil
+	return &Module{Dir: dir, api: api, env: env, lib: cdll}, nil
 }
 
 // Copies of the fields of a keyword result the Python result object exposes

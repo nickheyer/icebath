@@ -272,7 +272,7 @@ func (r *GatewayRunner) buildManualCompressionAgent(ctx context.Context, session
 			checkpointRequired = provider.IsTruthyValue(comp["checkpoint_required"])
 		}
 	}
-	opts := agent.AIAgentOptions{Model: model, MaxIterations: 4, QuietMode: true, SkipMemory: !checkpointRequired,
+	opts := agent.AIAgentOptions{Model: model, MaxIterations: new(4), QuietMode: true, SkipMemory: !checkpointRequired,
 		EnabledToolsets: []string{"memory"}, SessionID: sessionID, Platform: platformKey, GatewaySessionKey: sessionKey,
 		ReasoningConfig: reasoning}
 	if asyncDB != nil {

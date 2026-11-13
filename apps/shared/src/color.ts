@@ -1,6 +1,6 @@
 /**
  * THE sRGB color primitive for every TypeScript surface (desktop themes, the
- * Ink TUI). Parse, mix, measure and fix colors here so tone ladders, contrast
+ * terminal UI). Parse, mix, measure and fix colors here so tone ladders, contrast
  * floors and one-off UI needs share one set of semantics — and so the two
  * surfaces can never drift apart on what "readable" means again.
  *

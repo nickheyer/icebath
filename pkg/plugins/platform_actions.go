@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 const (
@@ -21,8 +22,11 @@ type PlatformActionRunner interface {
 	ParsePlatform(ctx context.Context, value string) (string, error)
 }
 
-// Profile aware fail closed adapter of a runner with _authorization_adapter, callable false without one, installed by pkg/gateway
-var RunnerAuthorizationAdapter func(ctx context.Context, runner any, value, profile string) (adapter any, callable bool)
+// Profile aware fail closed adapter resolver of a runner with _authorization_adapter, callable false without one, installed by pkg/gateway
+var RunnerAuthorizationAdapter func(runner any) (resolve func(ctx context.Context, value, profile string) any, callable bool)
+
+// Profile the platform actions act for, inferred from the current home and panicking when no user home is known
+var activeProfileName = profiles.GetActiveProfileName
 
 // Live adapter a gateway runner's default profile registry holds for a platform value, installed by pkg/gateway
 var RunnerAdapterByValue func(runner any, value string) (adapter any, hasRegistry bool)
@@ -63,8 +67,23 @@ type DiscordActionMessage interface {
 	AddReaction(ctx context.Context, emoji string) error
 }
 
-// Success result with the verb fields
-func actionOK(action string) map[string]any { return map[string]any{"ok": true, "action": action} }
+// Failure result with the error code and the detail when one is given
+func actionErr(code, detail string) map[string]any {
+	result := map[string]any{"ok": false, "error": code}
+	if detail != "" {
+		result["detail"] = detail
+	}
+	return result
+}
+
+// Success result carrying the given fields
+func actionOK(fields map[string]any) map[string]any {
+	result := map[string]any{"ok": true}
+	for k, v := range fields {
+		result[k] = v
+	}
+	return result
+}
 
 // AttributeError text a verb raises when the adapter lacks the method it calls
 func missingAdapterMethod(adapter any, method string) error {
@@ -81,9 +100,9 @@ func telegramAddReaction(ctx context.Context, adapter any, args []string) (map[s
 		return nil, err
 	}
 	if done {
-		return actionOK("add_reaction"), nil
+		return actionOK(map[string]any{"action": "add_reaction"}), nil
 	}
-	return messageErr("action_failed", "telegram set_message_reaction failed"), nil
+	return actionErr("action_failed", "telegram set_message_reaction failed"), nil
 }
 
 func discordAddReaction(ctx context.Context, adapter any, args []string) (map[string]any, error) {
@@ -92,12 +111,12 @@ func discordAddReaction(ctx context.Context, adapter any, args []string) (map[st
 		client = a.DiscordClient()
 	}
 	if client == nil {
-		return messageErr("adapter_disconnected", "discord client unavailable"), nil
+		return actionErr("adapter_disconnected", "discord client unavailable"), nil
 	}
 	channelID, okChannel := pyint.Parse(args[0])
 	messageID, okMessage := pyint.Parse(args[1])
 	if !okChannel || !okMessage {
-		return messageErr("invalid_argument", "discord ids must be numeric"), nil
+		return actionErr("invalid_argument", "discord ids must be numeric"), nil
 	}
 	channel := client.GetChannel(channelID)
 	if channel == nil {
@@ -113,7 +132,7 @@ func discordAddReaction(ctx context.Context, adapter any, args []string) (map[st
 	if err := message.AddReaction(ctx, args[2]); err != nil {
 		return nil, err
 	}
-	return actionOK("add_reaction"), nil
+	return actionOK(map[string]any{"action": "add_reaction"}), nil
 }
 
 func telegramSetThreadTitle(ctx context.Context, adapter any, args []string) (map[string]any, error) {
@@ -128,7 +147,7 @@ func telegramSetThreadTitle(ctx context.Context, adapter any, args []string) (ma
 	if err := a.RenameDMTopic(ctx, args[0], threadID, args[2]); err != nil {
 		return nil, err
 	}
-	return actionOK("set_thread_title"), nil
+	return actionOK(map[string]any{"action": "set_thread_title"}), nil
 }
 
 func discordSetThreadTitle(ctx context.Context, adapter any, args []string) (map[string]any, error) {
@@ -141,9 +160,9 @@ func discordSetThreadTitle(ctx context.Context, adapter any, args []string) (map
 		return nil, err
 	}
 	if done {
-		return actionOK("set_thread_title"), nil
+		return actionOK(map[string]any{"action": "set_thread_title"}), nil
 	}
-	return messageErr("action_failed", "discord thread rename failed"), nil
+	return actionErr("action_failed", "discord thread rename failed"), nil
 }
 
 var platformVerbs = map[string]map[string]func(context.Context, any, []string) (map[string]any, error){
@@ -153,6 +172,11 @@ var platformVerbs = map[string]map[string]func(context.Context, any, []string) (
 
 // Per plugin facade over the live gateway adapters, resolved at call time and gated by the capability
 type PlatformActions struct{ pluginID string }
+
+// Facade holding only the owning plugin id
+func NewPlatformActions(pluginID string) *PlatformActions {
+	return &PlatformActions{pluginID: pluginID}
+}
 
 // Whether the plugin holds the platform action capability, unreadable consent state denying
 func (p *PlatformActions) capabilityGranted(ctx context.Context) bool {
@@ -171,22 +195,33 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 		runner = s.GatewayRunnerRef()
 	}
 	if runner == nil {
-		return nil, messageErr("gateway_unavailable", "no gateway runner is active in this process")
+		return nil, actionErr("gateway_unavailable", "no gateway runner is active in this process")
 	}
 	value, err := runner.ParsePlatform(ctx, pystr.Lower(pystr.Strip(pyrepr.Str(platform))))
 	if err != nil {
-		return nil, messageErr("unknown_platform", fmt.Sprintf("unknown platform %s", pyrepr.Repr(platform)))
+		return nil, actionErr("unknown_platform", fmt.Sprintf("unknown platform %s", pyrepr.Repr(platform)))
 	}
 	var adapter any
+	var resolve func(context.Context, string, string) any
 	callable := false
 	if RunnerAuthorizationAdapter != nil {
-		adapter, callable = RunnerAuthorizationAdapter(ctx, runner, value, profileName(home.Dir(ctx)))
+		resolve, callable = RunnerAuthorizationAdapter(runner)
 	}
-	if !callable && RunnerAdapterByValue != nil {
+	if callable {
+		var profile string
+		if err := callGuarded(func() error {
+			profile = activeProfileName(ctx)
+			return nil
+		}); err != nil {
+			logDebug(fmt.Sprintf("platform_actions: profile resolution failed for %s", p.pluginID), "error", err)
+			return nil, actionErr("adapter_not_registered", fmt.Sprintf("no %s adapter is registered (active profile could not be resolved)", value))
+		}
+		adapter = resolve(ctx, value, profile)
+	} else if RunnerAdapterByValue != nil {
 		adapter, _ = RunnerAdapterByValue(runner, value)
 	}
 	if adapter == nil {
-		return nil, messageErr("adapter_not_registered", fmt.Sprintf("no %s adapter is registered", value))
+		return nil, actionErr("adapter_not_registered", fmt.Sprintf("no %s adapter is registered", value))
 	}
 	connected := false
 	if live, ok := adapter.(PlatformActionAdapter); ok {
@@ -196,7 +231,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 		})
 	}
 	if !connected {
-		return nil, messageErr("adapter_disconnected", fmt.Sprintf("the %s adapter is not connected", value))
+		return nil, actionErr("adapter_disconnected", fmt.Sprintf("the %s adapter is not connected", value))
 	}
 	return adapter, nil
 }
@@ -204,12 +239,12 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 // Capability, argument and adapter gate chain shared by every verb
 func (p *PlatformActions) gate(ctx context.Context, platform any, names []string, values []any) (any, map[string]any) {
 	if !p.capabilityGranted(ctx) {
-		return nil, messageErr("capability_not_granted", fmt.Sprintf("plugin %s lacks the %s capability (grant via consent flow or plugins.entries.%s.allow_platform_actions)",
+		return nil, actionErr("capability_not_granted", fmt.Sprintf("plugin %s lacks the %s capability (grant via consent flow or plugins.entries.%s.allow_platform_actions)",
 			pyrepr.Repr(p.pluginID), pyrepr.Repr(PlatformActionCapability), p.pluginID))
 	}
 	for i, name := range names {
 		if s, ok := values[i].(string); !ok || pystr.Strip(s) == "" {
-			return nil, messageErr("invalid_argument", name+" must be a non-empty string")
+			return nil, actionErr("invalid_argument", name+" must be a non-empty string")
 		}
 	}
 	return p.resolveAdapter(ctx, platform)
@@ -226,7 +261,7 @@ func (p *PlatformActions) run(ctx context.Context, verb string, platform any, na
 		}
 		impl := platformVerbs[verb][value]
 		if impl == nil {
-			result = messageErr("unsupported_platform_action", fmt.Sprintf("%s is not implemented for %s", verb, pyrepr.Str(platform)))
+			result = actionErr("unsupported_platform_action", fmt.Sprintf("%s is not implemented for %s", verb, pyrepr.Str(platform)))
 		} else {
 			args := make([]string, len(values))
 			for i, v := range values {
@@ -234,7 +269,7 @@ func (p *PlatformActions) run(ctx context.Context, verb string, platform any, na
 			}
 			v, err := guardedValue(func() (any, error) { return impl(ctx, adapter, args) })
 			if err != nil {
-				result = messageErr("action_failed", pystr.Slice(err.Error(), 0, 512))
+				result = actionErr("action_failed", pystr.Slice(err.Error(), 0, 512))
 			} else {
 				result = v.(map[string]any)
 			}
@@ -242,7 +277,7 @@ func (p *PlatformActions) run(ctx context.Context, verb string, platform any, na
 	} else {
 		result = refusal
 		if len(result) == 0 {
-			result = messageErr("gateway_unavailable", "")
+			result = actionErr("gateway_unavailable", "")
 		}
 	}
 	p.audit(verb, platform, result)

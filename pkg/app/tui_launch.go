@@ -8,10 +8,6 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,14 +19,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tui"
 )
 
 // Exit status a launch step ends the process with, the sys.exit of the launcher
@@ -243,104 +237,6 @@ func printTUIExitSummary(ctx context.Context, w io.Writer, sessionID, activeSess
 		total, tokens["input"], tokens["output"], tokens["cache_read"]+tokens["cache_write"], tokens["reasoning"])
 }
 
-// Directory the TUI and web bundles of a packaged install ship in
-func tuiPackageDir() string { return filepath.Join(config.GetProjectRoot(), "cmd", "icebath") }
-
-// Prebuilt TUI entry.js bundled beside the CLI package, empty when absent
-func findBundledTUI(packageDir string) string {
-	if packageDir == "" {
-		packageDir = tuiPackageDir()
-	}
-	bundled := filepath.Join(packageDir, "tui_dist", "entry.js")
-	if info, err := os.Stat(bundled); err == nil && info.Mode().IsRegular() {
-		return bundled
-	}
-	return ""
-}
-
-// Restores a deleted ui-tui checkout with git restore, true when the directory exists afterwards
-func restoreTUIWorkspace(tuiDir string) bool {
-	git, ok := pyshutil.Which("git", nil)
-	if !ok {
-		return false
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(tuiDir), ".git")); err != nil {
-		return false
-	}
-	cmd := exec.Command(git, "restore", "--", filepath.Base(tuiDir))
-	cmd.Dir = filepath.Dir(tuiDir)
-	if _, err := cmd.CombinedOutput(); err != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(err, &exitErr) {
-			return false
-		}
-	}
-	info, err := os.Stat(tuiDir)
-	return err == nil && info.IsDir()
-}
-
-// Ensures ui-tui exists before it becomes a subprocess cwd, restoring it or exiting with recovery steps
-func ensureTUIWorkspace(tuiDir string, stdout, stderr io.Writer) error {
-	if info, err := os.Stat(tuiDir); err == nil && info.IsDir() {
-		return nil
-	}
-	if restoreTUIWorkspace(tuiDir) {
-		if os.Getenv("ICEBATH_QUIET") == "" {
-			fmt.Fprintf(stdout, "Restored missing TUI workspace: %s\n", tuiDir)
-		}
-		return nil
-	}
-	fmt.Fprintf(stderr, "Error: the TUI workspace is missing from this Icebath checkout.\n"+
-		"Expected directory: %s\n"+
-		"This usually means `icebath update` left tracked ui-tui files deleted.\n"+
-		"Recovery:\n"+
-		"  1. From the Icebath checkout, run `git restore -- ui-tui`\n"+
-		"  2. Run `npm install --silent --no-fund --no-audit --progress=false`\n"+
-		"  3. Retry `icebath --tui`\n"+
-		"If the checkout is still inconsistent, run `icebath update --force`.\n", tuiDir)
-	return &tuiExitError{1}
-}
-
-// PATH of the package manager runner for a tool, the composed environment of pm ensure
-var tuiPMEnsurePath = func(ctx context.Context, name string) (string, error) {
-	runner, err := pm.Ensure(ctx, name, pm.EnsureOptions{})
-	if err != nil {
-		return "", err
-	}
-	path, ok := runner.Env["PATH"]
-	if !ok {
-		return "", fmt.Errorf("KeyError: 'PATH'")
-	}
-	return path, nil
-}
-
-// TUI runtime binary through the package manager, an executable ICEBATH_NODE winning for node
-func tuiNodeBin(ctx context.Context, bin string, stdout io.Writer) (string, error) {
-	if bin == "node" {
-		if envNode := os.Getenv("ICEBATH_NODE"); envNode != "" && isExecutableFile(envNode) {
-			return envNode, nil
-		}
-	}
-	search, err := tuiPMEnsurePath(ctx, bin)
-	if err != nil {
-		return "", err
-	}
-	path, ok := pyshutil.Which(bin, &search)
-	if !ok {
-		fmt.Fprintf(stdout, "Node.js is required for the TUI but `%s` was not found. Install it from "+
-			"https://nodejs.org (run `icebath doctor` for the install hint for your OS), then "+
-			"retry `icebath --tui`. To keep working now, run `icebath --cli`.\n", bin)
-		return "", &tuiExitError{1}
-	}
-	return path, nil
-}
-
-// True for a regular file the process may execute
-func isExecutableFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular() && accessExecutable(path)
-}
-
 // Stripped non empty parts of comma separated items
 func splitCommaItems(items []string) []string {
 	var out []string
@@ -362,59 +258,6 @@ func normalizeTUIToolsets(toolsets string) []string {
 	return splitCommaItems([]string{toolsets})
 }
 
-// Cgroup v2 and v1 memory limit files in probe order
-var tuiCgroupLimitFiles = []string{"/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"}
-
-// Container memory limit in bytes, false when unconstrained or unreadable
-func readCgroupMemoryLimit(read func(string) ([]byte, error)) (int64, bool) {
-	for _, path := range tuiCgroupLimitFiles {
-		data, err := read(path)
-		if err != nil {
-			continue
-		}
-		text, err := pystr.DecodeUTF8(data)
-		if err != nil {
-			continue
-		}
-		raw := pystr.Strip(strings.TrimPrefix(text, "\ufeff"))
-		if raw == "max" {
-			return 0, false
-		}
-		if raw == "" {
-			continue
-		}
-		limit, ok := new(big.Int).SetString(strings.ReplaceAll(raw, "_", ""), 10)
-		if !ok || strings.HasPrefix(raw, "_") || strings.HasSuffix(raw, "_") || strings.Contains(raw, "__") {
-			continue
-		}
-		if limit.Sign() <= 0 {
-			continue
-		}
-		if limit.Cmp(new(big.Int).Lsh(big.NewInt(1), 50)) >= 0 {
-			return 0, false
-		}
-		return limit.Int64(), true
-	}
-	return 0, false
-}
-
-// V8 old space size in MB, the default when unconstrained else three quarters of the cgroup limit
-func resolveTUIHeapMB(read func(string) ([]byte, error), defaultMB int64) int64 {
-	limit, ok := readCgroupMemoryLimit(read)
-	if !ok || limit == 0 {
-		return defaultMB
-	}
-	limitMB := limit / (1024 * 1024)
-	sized := int64(float64(limitMB) * 0.75)
-	if sized >= defaultMB {
-		return defaultMB
-	}
-	if limitMB > 2048 {
-		return max(1536, sized)
-	}
-	return sized
-}
-
 // Working directory for the TUI child, the PWD hint or the project root when the cwd was deleted
 func safeTUICwd(env map[string]string) (string, error) {
 	cwd, err := pypath.Getcwd()
@@ -433,47 +276,6 @@ func safeTUICwd(env map[string]string) (string, error) {
 		return candidate, nil
 	}
 	return config.GetProjectRoot(), nil
-}
-
-// Seeds the source root, cwd and interpreter variables the TUI gateway bootstrap reads
-func applyTUIPythonEnv(env map[string]string) error {
-	isDir := func(p string) bool {
-		info, err := os.Stat(p)
-		return err == nil && info.IsDir()
-	}
-	if srcRoot := pystr.Strip(env["ICEBATH_PYTHON_SRC_ROOT"]); srcRoot == "" || !isDir(srcRoot) {
-		env["ICEBATH_PYTHON_SRC_ROOT"] = config.GetProjectRoot()
-	}
-	if cwd := pystr.Strip(env["ICEBATH_CWD"]); cwd == "" || !isDir(cwd) {
-		safe, err := safeTUICwd(env)
-		if err != nil {
-			return err
-		}
-		env["ICEBATH_CWD"] = safe
-	}
-	python := pystr.Strip(env["ICEBATH_PYTHON"])
-	executable := false
-	if pypath.Dirname(python) != "" {
-		pythonPath := python
-		if !filepath.IsAbs(pythonPath) {
-			pythonPath = filepath.Join(env["ICEBATH_CWD"], pythonPath)
-		}
-		executable = isExecutableFile(pythonPath)
-	} else {
-		var search *string
-		if p, ok := env["PATH"]; ok {
-			search = &p
-		}
-		_, executable = pyshutil.Which(python, search)
-	}
-	if !executable {
-		self, err := os.Executable()
-		if err != nil {
-			self = ""
-		}
-		env["ICEBATH_PYTHON"] = self
-	}
-	return nil
 }
 
 // Creates the worktree checkout of a TUI launch after pruning stale trees, exit status 1 on failure
@@ -555,60 +357,10 @@ func requireBypassModel(env map[string]string, model, resumeSessionID string, st
 	return nil
 }
 
-// Runs the TUI child with the terminal, a Ctrl C in the launcher killing it and answering 130
-func tuiSubprocessCall(argv []string, cwd string, env map[string]string) (int, error) {
-	cmd := exec.Command(argv[0], argv[1:]...)
-	if runtime.GOOS != "windows" && !strings.Contains(argv[0], "/") {
-		search, ok := env["PATH"]
-		if !ok {
-			search = "/bin:/usr/bin"
-		}
-		if found, ok := pyshutil.Which(argv[0], &search); ok {
-			cmd.Path, cmd.Err = found, nil
-		} else {
-			cmd.Err = &exec.Error{Name: argv[0], Err: exec.ErrNotFound}
-		}
-	}
-	cmd.Dir = cwd
-	cmd.Env = make([]string, 0, len(env))
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	interrupts := make(chan os.Signal, 1)
-	signal.Notify(interrupts, os.Interrupt)
-	defer signal.Stop(interrupts)
-	if err := cmd.Start(); err != nil {
-		return 0, err
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return pysubprocess.Returncode(exitErr), nil
-		}
-		if err != nil {
-			return 0, err
-		}
-		return 0, nil
-	case <-interrupts:
-		select {
-		case <-done:
-		case <-time.After(250 * time.Millisecond):
-			_ = cmd.Process.Kill()
-			<-done
-		}
-		return 130, nil
-	}
-}
-
-// Seams of a TUI launch, the real argv builder, worktree setup, child runner, epilogue and relaunch
+// Seams of a TUI launch, the worktree setup, the terminal UI run, epilogue and relaunch
 type tuiLaunchDeps struct {
-	makeArgv      func(ctx context.Context, tuiDir string, dev bool) ([]string, string, error)
 	setupWorktree func(ctx context.Context) (map[string]any, error)
-	call          func(argv []string, cwd string, env map[string]string) (int, error)
+	run           func(ctx context.Context, env map[string]string) (int, error)
 	printSummary  func(ctx context.Context, sessionID, activeSessionFile string)
 	relaunch      func(args []string, preserveInherited bool)
 	stdout        io.Writer
@@ -625,9 +377,8 @@ func tuiLaunchExitCode(err error, stderr io.Writer) int {
 	return 1
 }
 
-// Runs the TUI with the launch flags exported to its environment, returning the process exit status
+// Runs the terminal UI with the launch flags in its environment, returning the process exit status
 func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
-	tuiDir := filepath.Join(config.GetProjectRoot(), "ui-tui")
 	env, err := tools.BuildSubprocessEnv(ctx, nil, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: false})
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
@@ -658,12 +409,6 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	activeSessionFile := activeFile.Name()
 	_ = activeFile.Close()
 	env["ICEBATH_TUI_ACTIVE_SESSION_FILE"] = activeSessionFile
-	if _, ok := env["NODE_ENV"]; !ok {
-		env["NODE_ENV"] = "production"
-		if l.Dev {
-			env["NODE_ENV"] = "development"
-		}
-	}
 	nativeMode := l.Native
 	if !nativeMode {
 		if cfg, cerr := config.Load(home.Dir(ctx), nil); cerr == nil {
@@ -694,9 +439,6 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		env["ICEBATH_TUI_CWD"] = env["ICEBATH_CWD"]
 	} else {
 		delete(env, "ICEBATH_TUI_CWD")
-	}
-	if err := applyTUIPythonEnv(env); err != nil {
-		return tuiLaunchExitCode(err, deps.stderr)
 	}
 	clientEnv, err := gatewaycli.ShellClientEnv(ctx)
 	if err != nil {
@@ -740,26 +482,11 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 			env[pair[0]] = pair[1]
 		}
 	}
-	tokens := pystr.SplitWhitespace(env["NODE_OPTIONS"], -1)
-	hasHeap := false
-	for _, t := range tokens {
-		if strings.HasPrefix(t, "--max-old-space-size=") {
-			hasHeap = true
-		}
-	}
-	if !hasHeap {
-		tokens = append(tokens, fmt.Sprintf("--max-old-space-size=%d", resolveTUIHeapMB(os.ReadFile, 8192)))
-	}
-	env["NODE_OPTIONS"] = strings.Join(tokens, " ")
 	delete(env, "ICEBATH_TUI_RESUME")
 	if l.Resume != "" {
 		env["ICEBATH_TUI_RESUME"] = l.Resume
 	}
-	argv, argvCwd, err := deps.makeArgv(ctx, tuiDir, l.Dev)
-	if err != nil {
-		return tuiLaunchExitCode(err, deps.stderr)
-	}
-	code, callErr := deps.call(argv, argvCwd, env)
+	code, callErr := deps.run(ctx, env)
 	exited := callErr == nil && (code == 0 || code == 130)
 	if exited {
 		deps.printSummary(ctx, l.Resume, activeSessionFile)
@@ -794,4 +521,23 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		deps.relaunch([]string{"update"}, false)
 	}
 	return code
+}
+
+// Runs the Go terminal UI in this process with the launch environment as the process environment
+func runTerminalUI(ctx context.Context, env map[string]string) (int, error) {
+	for _, kv := range os.Environ() {
+		if name, _, ok := strings.Cut(kv, "="); ok {
+			if _, kept := env[name]; !kept {
+				if err := os.Unsetenv(name); err != nil {
+					return 0, err
+				}
+			}
+		}
+	}
+	for name, value := range env {
+		if err := os.Setenv(name, value); err != nil {
+			return 0, err
+		}
+	}
+	return tui.Run(ctx), nil
 }

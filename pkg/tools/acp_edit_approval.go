@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One proposed file edit an ACP client can be shown, with every file it actually touches
@@ -54,21 +56,24 @@ var (
 	v4aMoveRe                 = regexp.MustCompile(`(?m)^\*\*\*\s+Move\s+File:\s*(.+?)\s*->\s*(.+)$`)
 )
 
-// Text of a file decoded as utf-8-sig with replacement, nil when absent and an error for a non file path
+// Text mode read as utf-8-sig with replacement and universal newlines, nil when absent, an error for a non file
 func readEditTextIfExists(path string) (*string, error) {
-	path = expandUser(path)
-	info, err := os.Stat(path)
+	expanded, err := pypath.PathExpanduser(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(expanded)
 	if err != nil {
 		return nil, nil
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("Cannot edit non-file path: %s", path)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(expanded)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(pypath.OSErrorText(err))
 	}
-	text := strings.ToValidUTF8(strings.TrimPrefix(string(data), "\xef\xbb\xbf"), "\uFFFD")
+	text := pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(data))
 	return &text, nil
 }
 

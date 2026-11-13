@@ -255,6 +255,27 @@ func TestDrainRegisterConfigScopeApplied(t *testing.T) {
 	}
 }
 
+// Construction keeps the default length bar under a lowered config minimum and defaults an empty scope
+func TestDrainConstructionBarAndScopeDefault(t *testing.T) {
+	drainCase(t, "dashboard:\n  drain_auth:\n    min_secret_chars: 20\n")
+	t.Setenv("ICEBATH_DASHBOARD_DRAIN_SECRET", "abcdefghijklmnopqrstuvwxyzABCD")
+	if err := (DrainPlugin{}).Register(launchPluginContext()); err != nil {
+		t.Fatal(err)
+	}
+	if registeredDrain(t) != nil || !strings.HasPrefix(DrainLastSkipReason(), "DrainSecretProvider construction failed: drain secret rejected: secret too short: 30 chars (need >= 43") {
+		t.Fatalf("skip reason %q", DrainLastSkipReason())
+	}
+	s := strongSecret()
+	p, err := NewDrainSecretProvider(s, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal, err := p.VerifyToken(context.Background(), s)
+	if err != nil || principal == nil || !slices.Equal(principal.Scopes, []string{"drain"}) || principal.Principal != "drain-control" {
+		t.Fatalf("principal %+v err %v", principal, err)
+	}
+}
+
 // test_drain_provider.py TestRegister test_config_min_secret_chars_can_reject_otherwise_ok_secret
 func TestDrainRegisterConfigMinSecretCharsCanRejectOtherwiseOkSecret(t *testing.T) {
 	drainCase(t, "dashboard:\n  drain_auth:\n    min_secret_chars: 999\n")

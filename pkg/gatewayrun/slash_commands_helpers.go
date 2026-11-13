@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -81,25 +80,12 @@ func (r *GatewayRunner) checkpointManager(ctx context.Context, source *gateway.S
 	if !pyrepr.Truthy(cp["checkpoints_enabled"]) {
 		return nil, nil
 	}
-	field := func(key string) (int, error) {
-		n, err := pyint.Int64(cp[key])
-		return int(n), err
-	}
-	snapshots, err := field("checkpoint_max_snapshots")
-	if err != nil {
-		return nil, err
-	}
-	totalMB, err := field("checkpoint_max_total_size_mb")
-	if err != nil {
-		return nil, err
-	}
-	fileMB, err := field("checkpoint_max_file_size_mb")
+	options, err := tools.CheckpointManagerOptionsFromKwargs(true, cp)
 	if err != nil {
 		return nil, err
 	}
 	env := &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)}
-	return tools.NewCheckpointManager(env, tools.CheckpointManagerOptions{Enabled: true, MaxSnapshots: snapshots,
-		MaxTotalSizeMB: totalMB, MaxFileSizeMB: fileMB}), nil
+	return tools.NewCheckpointManager(env, options), nil
 }
 
 // Setter persisting the section write_approval flag raw and dropping the session's cached agent

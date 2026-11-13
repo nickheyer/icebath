@@ -259,13 +259,23 @@ func notifyRunner(t *testing.T, adapters map[gateway.Platform]gateway.PlatformAd
 	return r, hermesHome
 }
 
+// Sends the update notification and fails the test on a cleanup error
+func sendUpdateNotificationOK(t *testing.T, r *GatewayRunner) bool {
+	t.Helper()
+	notified, err := r.sendUpdateNotification(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return notified
+}
+
 func TestSendUpdateNotificationDefersNotificationWhileUpdateStillRunning(t *testing.T) {
 	adapter := newUpdateTestAdapter()
 	r, hermesHome := notifyRunner(t, map[gateway.Platform]gateway.PlatformAdapter{gateway.PlatformTelegram: adapter})
 	pending := filepath.Join(hermesHome, ".update_pending.json")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
 	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("still running"))
-	if r.sendUpdateNotification(context.Background()) {
+	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
 	if len(adapter.sends()) != 0 || !homeFileExists(pending) {
@@ -280,7 +290,7 @@ func TestSendUpdateNotificationRecoversFromClaimedPendingFile(t *testing.T) {
 	writeJSONFile(t, claimed, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345"})
 	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("done"))
 	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if !r.sendUpdateNotification(context.Background()) {
+	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected delivery")
 	}
 	if len(adapter.sends()) != 1 || homeFileExists(claimed) {
@@ -294,7 +304,7 @@ func TestSendUpdateNotificationSendsNotificationWithOutput(t *testing.T) {
 	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": "2026-03-04T21:00:00"})
 	writeHomeFile(t, hermesHome, ".update_output.txt", []byte("→ Found 3 new commit(s)\n✓ Code updated!\n✓ Update complete!"))
 	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	r.sendUpdateNotification(context.Background())
+	sendUpdateNotificationOK(t, r)
 	sent := adapter.sends()
 	if len(sent) != 1 || adapter.chats[0] != "67890" {
 		t.Fatalf("sends %q chats %q", sent, adapter.chats)
@@ -315,7 +325,7 @@ func TestSendUpdateNotificationDropsStaleMarkerWhenThePlatformNeverConnects(t *t
 	stamp := time.Now().Add(-2 * time.Hour).Format("2006-01-02T15:04:05.000000")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": stamp})
 	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if !r.sendUpdateNotification(context.Background()) {
+	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected a definitive drop")
 	}
 	for _, name := range []string{".update_pending.json", ".update_pending.claimed.json", ".update_output.txt", ".update_exit_code"} {
@@ -336,7 +346,7 @@ func TestSendUpdateNotificationKeepsWaitingForARecentMarker(t *testing.T) {
 	stamp := time.Now().Add(-5 * time.Minute).Format("2006-01-02T15:04:05.000000")
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "67890", "user_id": "12345", "timestamp": stamp})
 	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if r.sendUpdateNotification(context.Background()) {
+	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
 	if !homeFileExists(pending) {
@@ -352,7 +362,7 @@ func TestSendUpdateNotificationCleansUpOnError(t *testing.T) {
 	writeJSONFile(t, pending, map[string]any{"platform": "telegram", "chat_id": "111", "user_id": "222"})
 	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("✓ Done"))
 	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	r.sendUpdateNotification(context.Background())
+	sendUpdateNotificationOK(t, r)
 	if homeFileExists(pending) || homeFileExists(output) || homeFileExists(exitCode) {
 		t.Fatal("markers kept after a failed send")
 	}
@@ -365,7 +375,7 @@ func TestSendUpdateNotificationNoAdapterForPlatformPreservesMarkers(t *testing.T
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
 	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("Done"))
 	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if r.sendUpdateNotification(context.Background()) {
+	if sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected deferral")
 	}
 	if len(adapter.sends()) != 0 || !homeFileExists(pending) || !homeFileExists(output) || !homeFileExists(exitCode) {
@@ -382,12 +392,12 @@ func TestSendUpdateNotificationDeferredNotificationDeliversAfterReconnect(t *tes
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
 	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("✓ Update complete!"))
 	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if r.sendUpdateNotification(context.Background()) || !homeFileExists(pending) {
+	if sendUpdateNotificationOK(t, r) || !homeFileExists(pending) {
 		t.Fatal("first pass did not defer")
 	}
 	adapter := newUpdateTestAdapterFor(gateway.PlatformDiscord)
 	r.adapters = adapterDict(gateway.PlatformDiscord, adapter)
-	if !r.sendUpdateNotification(context.Background()) {
+	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("second pass did not deliver")
 	}
 	if sent := adapter.sends(); len(sent) != 1 || !strings.Contains(sent[0], "Update complete") {
@@ -407,7 +417,7 @@ func TestSendUpdateNotificationCompletionNotificationToleratesInvalidUtf8Output(
 	writeJSONFile(t, pending, map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
 	output := writeHomeFile(t, hermesHome, ".update_output.txt", []byte("ok before\ninvalid byte: \x96\ncontinued after\n"))
 	exitCode := writeHomeFile(t, hermesHome, ".update_exit_code", []byte("0"))
-	if !r.sendUpdateNotification(context.Background()) {
+	if !sendUpdateNotificationOK(t, r) {
 		t.Fatal("expected delivery")
 	}
 	sent := adapter.sends()
@@ -430,7 +440,7 @@ func TestSendUpdateNotificationFailedUpdateNoticeSaysStillRunningAndTrimsLog(t *
 	writeJSONFile(t, filepath.Join(hermesHome, ".update_pending.json"), map[string]any{"platform": "discord", "chat_id": "111", "user_id": "222"})
 	writeHomeFile(t, hermesHome, ".update_output.txt", []byte(strings.Repeat("x", 3000)+"\nERROR: pip failed\n"))
 	writeHomeFile(t, hermesHome, ".update_exit_code", []byte("1"))
-	r.sendUpdateNotification(context.Background())
+	sendUpdateNotificationOK(t, r)
 	sent := adapter.sends()
 	if len(sent) != 1 || !strings.Contains(sent[0], "ERROR: pip failed") || len([]rune(sent[0])) >= 1200 {
 		t.Fatalf("sends %q", sent)

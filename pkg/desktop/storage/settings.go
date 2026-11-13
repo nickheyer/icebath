@@ -61,6 +61,20 @@ func (s *Service) writeDefaultProjectDir(dir string) {
 	}
 }
 
+// Answers settings.getDefaultProjectDir with the saved folder or null, the home folder label and the session cwd
+func (s *Service) SettingsGetDefaultProjectDir() *Object {
+	out := NewObject()
+	if dir, ok := s.readDefaultProjectDir(); ok {
+		out.Set("dir", dir)
+	} else {
+		out.Set("dir", nil)
+	}
+	home, _ := os.UserHomeDir()
+	out.Set("defaultLabel", home)
+	out.Set("resolvedCwd", s.workspace.ResolveHermesCwd())
+	return out
+}
+
 // Answers settings.setDefaultProjectDir, creating the directory and storing it, a blank value clearing it
 func (s *Service) SettingsSetDefaultProjectDir(dir json.RawMessage) (*Object, error) {
 	v, _ := jsParse(string(dir))

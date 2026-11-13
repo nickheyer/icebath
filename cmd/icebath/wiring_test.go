@@ -100,8 +100,8 @@ func TestInstallProcessWiringInstallsEveryHook(t *testing.T) {
 		"tools.RegisteredAdapterSecretEnv": tools.RegisteredAdapterSecretEnv != nil, "tools.CleanupBrowser": tools.CleanupBrowser != nil,
 		"tools.IsHeadedMode": tools.IsHeadedMode != nil, "tools.ReleaseComputerUseSession": tools.ReleaseComputerUseSession != nil,
 		"observability.SkillSourceIDAliasesHook": observability.SkillSourceIDAliasesHook != nil,
-		"provider.BrowserHarnessCLI":             provider.BrowserHarnessCLI != nil, "provider.ChromiumExecutable": provider.ChromiumExecutable != nil,
-		"provider.FasterWhisperImportable": provider.FasterWhisperImportable != nil, "provider.ManagedImageRoute": provider.ManagedImageRoute != nil,
+		"provider.ChromiumExecutable":            provider.ChromiumExecutable != nil,
+		"provider.FasterWhisperImportable":       provider.FasterWhisperImportable != nil, "provider.ManagedImageRoute": provider.ManagedImageRoute != nil,
 	}
 	for name, ok := range hooks {
 		if !ok {

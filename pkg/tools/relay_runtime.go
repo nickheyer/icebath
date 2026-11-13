@@ -1115,10 +1115,11 @@ func (r *RelayRuntime) RunInSession(ctx context.Context, session *RelaySession, 
 }
 
 func (r *RelayRuntime) runInSession(ctx context.Context, session *RelaySession, callback func(ctx context.Context) (any, error), allowClosing bool, timeout *float64, held bool) (any, error) {
-	if err := r.beginOperation(); err != nil {
+	end, err := r.operation()
+	if err != nil {
 		return nil, err
 	}
-	defer r.endOperation()
+	defer end()
 	return r.runInSessionUntracked(ctx, session, callback, allowClosing, timeout, held)
 }
 
@@ -1156,10 +1157,11 @@ func (r *RelayRuntime) runInSessionUntracked(ctx context.Context, session *Relay
 
 // Runs and awaits an operation inside the session's saved context
 func (r *RelayRuntime) RunInSessionAsync(ctx context.Context, session *RelaySession, callback func(ctx context.Context) (any, error), allowClosing bool) (any, error) {
-	if err := r.beginOperation(); err != nil {
+	end, err := r.operation()
+	if err != nil {
 		return nil, err
 	}
-	defer r.endOperation()
+	defer end()
 	scopeCtx, err := r.sessionContext(ctx, session, allowClosing, false)
 	if err != nil {
 		return nil, err
@@ -1200,6 +1202,14 @@ func (r *RelayRuntime) endOperation() {
 	if r.activeOperations == 0 {
 		r.operationsIdle.Set()
 	}
+}
+
+// Tracks one Relay call as an active operation and returns its end, refused once the runtime shuts down
+func (r *RelayRuntime) operation() (func(), error) {
+	if err := r.beginOperation(); err != nil {
+		return nil, err
+	}
+	return r.endOperation, nil
 }
 
 // Retains plugin lifetime for work that outlives one Relay call

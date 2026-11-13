@@ -4,6 +4,7 @@ package backend
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"syscall"
@@ -34,10 +35,13 @@ func IsPidAlive(pid int) bool {
 	return code == 259
 }
 
-// ProcessStartMarker returns win: and the creation time in .NET ticks, the value Get-Process StartTime reports
+// ProcessStartMarker is the winms marker of this process, else win and the creation time in .NET ticks
 func ProcessStartMarker(pid int) (string, error) {
 	if !IsPidAlive(pid) {
 		return "", &NoProcessError{Pid: pid}
+	}
+	if marker := ElectronProcessStartMarker(pid, os.Getpid(), ownCreationTimeMs()); marker != "" {
+		return marker, nil
 	}
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
@@ -57,7 +61,15 @@ func KillGroup(int, string) error { panic("process group signals run only on POS
 
 // ForceKillProcessTree ends pid and its descendants with taskkill
 func ForceKillProcessTree(pid int) {
+	_ = TaskkillTree(pid)
+}
+
+// Ends pid and its descendants with taskkill, failing when taskkill exits nonzero
+func TaskkillTree(pid int) error {
+	if pid <= 0 {
+		return nil
+	}
 	cmd := exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F")
 	hideWindow(cmd)
-	cmd.Run()
+	return cmd.Run()
 }

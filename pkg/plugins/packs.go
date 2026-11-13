@@ -108,6 +108,9 @@ func mappingID(m map[string]any) uintptr { return reflect.ValueOf(m).Pointer() }
 
 // Typed key of a mapping entry and whether it was a YAML string
 func (k packKeys) typed(m map[string]any, key string) (any, bool) {
+	if v, ok := config.MappingPyKey(m, key); ok {
+		return v, false
+	}
 	if v, ok := k[mappingID(m)][key]; ok {
 		return v, false
 	}

@@ -14,7 +14,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
+
+// Value under key of a decoded JSON object in either map form, nil for anything else
+func snapshotField(v any, key string) any {
+	switch m := v.(type) {
+	case map[string]any:
+		return m[key]
+	case *pyjson.Object:
+		return m.GetOr(key, nil)
+	}
+	return nil
+}
 
 // Transcript whose user content and assistant tool calls are nested containers the fork sanitizes on its wire
 func refineNestedHistory() []map[string]any {
@@ -65,7 +77,7 @@ func TestGatewayRefineSnapshotDoesNotAliasLiveHistory(t *testing.T) {
 	t.Cleanup(server.Stop)
 	a, err := agent.NewAIAgent(ctx, agent.AIAgentOptions{
 		Model: "anthropic/claude-sonnet-4", APIKey: "test", BaseURL: server.BaseURL(), Provider: "openrouter",
-		MaxIterations: 5, QuietMode: true, SkipContextFiles: true, SkipMemory: true,
+		MaxIterations: new(5), QuietMode: true, SkipContextFiles: true, SkipMemory: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -115,8 +127,8 @@ func TestGatewayRefineSnapshotDoesNotAliasLiveHistory(t *testing.T) {
 	gotParts, _ := got[0]["content"].([]any)
 	gotCalls, _ := got[1]["tool_calls"].([]any)
 	if len(gotParts) == 0 || len(gotCalls) == 0 ||
-		gotParts[0].(map[string]any)["text"] != "ask" ||
-		gotCalls[0].(map[string]any)["function"].(map[string]any)["arguments"] != `{"path":"x"}` {
+		snapshotField(gotParts[0], "text") != "ask" ||
+		snapshotField(snapshotField(gotCalls[0], "function"), "arguments") != `{"path":"x"}` {
 		t.Fatalf("the fork rewrote the agent's session messages %v", got)
 	}
 }

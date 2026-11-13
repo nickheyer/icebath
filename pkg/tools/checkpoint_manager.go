@@ -3,6 +3,8 @@ package tools
 import (
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Reads the import time checkpoint git timeout from ICEBATH_CHECKPOINT_TIMEOUT, clamped to ten through sixty seconds
@@ -38,6 +41,43 @@ type CheckpointManagerOptions struct {
 // Disabled with twenty snapshots, a 500 MB store and a 10 MB file cap
 func DefaultCheckpointManagerOptions() CheckpointManagerOptions {
 	return CheckpointManagerOptions{MaxSnapshots: 20, MaxTotalSizeMB: 500, MaxFileSizeMB: 10}
+}
+
+// Python int of a checkpoint limit the way the manager converts it, clamped to the Go int range
+func CheckpointLimit(value any) (int, error) {
+	n, err := pyint.Of(value)
+	if err != nil {
+		return 0, err
+	}
+	switch {
+	case n.Cmp(big.NewInt(math.MaxInt)) > 0:
+		return math.MaxInt, nil
+	case n.Cmp(big.NewInt(math.MinInt)) < 0:
+		return math.MinInt, nil
+	}
+	return int(n.Int64()), nil
+}
+
+// Manager options of the checkpoint_ prefixed agent keywords, a missing limit keeping the manager default
+func CheckpointManagerOptionsFromKwargs(enabled bool, kwargs map[string]any) (CheckpointManagerOptions, error) {
+	o := DefaultCheckpointManagerOptions()
+	o.Enabled = enabled
+	for _, field := range []struct {
+		key   string
+		limit *int
+	}{{"checkpoint_max_snapshots", &o.MaxSnapshots}, {"checkpoint_max_total_size_mb", &o.MaxTotalSizeMB},
+		{"checkpoint_max_file_size_mb", &o.MaxFileSizeMB}} {
+		value, ok := kwargs[field.key]
+		if !ok {
+			continue
+		}
+		n, err := CheckpointLimit(value)
+		if err != nil {
+			return CheckpointManagerOptions{}, err
+		}
+		*field.limit = n
+	}
+	return o, nil
 }
 
 // Reads the checkpoints section of a config document, accepting the legacy boolean form

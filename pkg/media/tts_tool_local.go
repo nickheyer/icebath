@@ -5,13 +5,16 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -113,10 +117,13 @@ func removeKey(keys []string, key string) []string {
 	return out
 }
 
-// Releases an evicted worker once its in flight request finishes
+// Releases an evicted engine once its in flight request finishes
 func releaseEvicted(v any) {
-	if w, ok := v.(*localTTSWorker); ok {
-		go w.Close()
+	switch engine := v.(type) {
+	case *localTTSWorker:
+		go engine.Close()
+	case localVoice:
+		go engine.Close()
 	}
 }
 
@@ -229,52 +236,31 @@ func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string
 	return finalizeWAVOutput(wavPath, outputPath)
 }
 
-// Piper voice download directory under the home cache, created on demand
-func getPiperVoicesDir(ctx context.Context, env *tools.Env) (string, error) {
-	root := home.HermesDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
-	if err := os.MkdirAll(root, 0o777); err != nil {
-		return "", err
-	}
-	return root, nil
+// A voice loaded into the native speech engine
+type localVoice interface {
+	Speak(text string, speaker int, speed float32) ([]float32, int, error)
+	Close()
 }
 
-// Concrete onnx file of a voice path or name, downloading named voices on first use
-func resolvePiperVoicePath(ctx context.Context, voice, downloadDir string) (string, error) {
-	if voice == "" {
-		voice = defaultPiperVoice
+// Voice files of a path or name, a file the user has first, then the voices directory, then the pinned catalog
+var resolvePiperVoice = func(ctx context.Context, voice, voicesDir string) (speech.PiperVoice, error) {
+	if candidate := pypath.Expanduser(voice); strings.EqualFold(filepath.Ext(candidate), ".onnx") && fileExists(candidate) {
+		return speech.AdoptPiper(ctx, candidate)
 	}
-	candidate := pypath.Expanduser(voice)
-	if pystr.Lower(pypath.Suffix(candidate)) == ".onnx" && fileExists(candidate) {
-		return candidate, nil
+	if local := filepath.Join(voicesDir, voice+".onnx"); fileExists(local) {
+		return speech.AdoptPiper(ctx, local)
 	}
-	cached := filepath.Join(downloadDir, voice+".onnx")
-	if fileExists(cached) && fileExists(filepath.Join(downloadDir, voice+".onnx.json")) {
-		return cached, nil
-	}
-	ttsLog().Info(fmt.Sprintf("[Piper] Downloading voice '%s' to %s (first use)", voice, downloadDir))
-	python, err := managedPythonCommand(ctx)
+	ttsLog().Info(fmt.Sprintf("[Piper] Preparing voice '%s' (first use downloads it)", voice))
+	return speech.FetchPiper(ctx, voice)
+}
+
+// Loads a Piper voice into the speech engine, the seam tests replace
+var loadPiperVoice = func(ctx context.Context, files speech.PiperVoice, gpu bool) (localVoice, error) {
+	engine, err := speech.Engine(ctx, gpu)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	result, err := runTTSHelper(append(append([]string(nil), python...), "-m", "piper.download_voices", voice, "--download-dir", downloadDir), 300)
-	var timeout *helperTimeoutError
-	if errors.As(err, &timeout) {
-		return "", &ttsRuntimeError{msg: fmt.Sprintf("Piper voice download timed out after 300s for '%s'", voice), cause: err}
-	}
-	if err != nil {
-		return "", err
-	}
-	if result.ReturnCode != 0 {
-		stderr := pystr.Strip(result.Stderr)
-		if stderr == "" {
-			stderr = "no stderr output"
-		}
-		return "", &ttsRuntimeError{msg: fmt.Sprintf("Piper voice download failed for '%s': %s", voice, clipRunes(stderr, 400))}
-	}
-	if !fileExists(cached) {
-		return "", &ttsRuntimeError{msg: fmt.Sprintf("Piper voice download completed but %s is missing — check voice name (see: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md)", cached)}
-	}
-	return cached, nil
+	return engine.NewVoice(files.Options(min(runtime.NumCPU(), 4)))
 }
 
 // Whether a path exists like pathlib exists
@@ -284,53 +270,75 @@ func fileExists(p string) bool {
 }
 
 // Loaded or cached Piper voice of the config with its section
-func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[string]any) (*localTTSWorker, map[string]any, error) {
-	if err := ttsImportPiper(ctx); err != nil {
-		return nil, nil, err
-	}
+func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, ttsConfig map[string]any) (localVoice, map[string]any, error) {
 	piperConfig := ttsSection(ttsConfig, "piper")
 	voiceName := defaultPiperVoice
 	if pyTruthy(piperConfig["voice"]) {
 		voiceName = pyrepr.Str(piperConfig["voice"])
 	}
-	downloadDir := ""
+	voicesDir := home.HermesDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
 	if pyTruthy(piperConfig["voices_dir"]) {
-		downloadDir = pyrepr.Str(piperConfig["voices_dir"])
-	} else {
-		d, err := getPiperVoicesDir(ctx, env)
-		if err != nil {
-			return nil, nil, err
-		}
-		downloadDir = d
-	}
-	downloadDir = pypath.Expanduser(downloadDir)
-	if err := os.MkdirAll(downloadDir, 0o777); err != nil {
-		return nil, nil, err
+		voicesDir = pypath.Expanduser(pyrepr.Str(piperConfig["voices_dir"]))
 	}
 	useCUDA := pyTruthy(dictGetDefault(piperConfig, "use_cuda", false))
-	modelPath, err := resolvePiperVoicePath(ctx, voiceName, downloadDir)
+	files, err := resolvePiperVoice(ctx, voiceName, voicesDir)
 	if err != nil {
 		return nil, nil, err
 	}
-	cacheKey := fmt.Sprintf("%s::cuda=%s", modelPath, pyrepr.Repr(useCUDA))
+	for key, scale := range map[string]*float64{"length_scale": &files.LengthScale, "noise_scale": &files.NoiseScale, "noise_w_scale": &files.NoiseW} {
+		if configured, ok := piperConfig[key]; ok {
+			if *scale, err = ttsFloat(configured); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	cacheKey := fmt.Sprintf("%s::cuda=%t::scales=%g,%g,%g", files.Model, useCUDA, files.LengthScale, files.NoiseScale, files.NoiseW)
 	v, err := ttsCacheGetOrLoad(piperVoiceCache, cacheKey, func() (any, error) {
-		ttsLog().Info(fmt.Sprintf("[Piper] Loading voice: %s", modelPath))
-		w, err := startLocalTTSWorker(ctx, map[string]any{"engine": "piper", "model_path": modelPath, "use_cuda": useCUDA})
+		ttsLog().Info(fmt.Sprintf("[Piper] Loading voice: %s", files.Model))
+		voice, err := loadPiperVoice(ctx, files, useCUDA)
 		if err != nil {
 			return nil, err
 		}
 		ttsLog().Info("[Piper] Voice loaded")
-		return w, nil
+		return voice, nil
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	return v.(*localTTSWorker), piperConfig, nil
+	return v.(localVoice), piperConfig, nil
 }
 
-var piperAdvancedKnobs = []string{"length_scale", "noise_scale", "noise_w_scale", "volume", "normalize_audio", "speaker_id"}
+// Samples scaled to full range when asked, multiplied by the volume and clipped
+func shapePiperAudio(samples []float32, normalize bool, volume float64) []float32 {
+	scale := float32(volume)
+	if normalize {
+		var peak float32
+		for _, s := range samples {
+			peak = max(peak, float32(math.Abs(float64(s))))
+		}
+		if peak < 1e-8 {
+			scale = 0
+		} else {
+			scale /= peak
+		}
+	}
+	out := make([]float32, len(samples))
+	for i, s := range samples {
+		out[i] = min(max(s*scale, -1), 1)
+	}
+	return out
+}
 
-// Piper synthesis to WAV with advanced knobs only when configured, then the requested container
+// Signed 16 bit little endian PCM of float samples
+func pcm16(samples []float32) []byte {
+	out := make([]byte, 2*len(samples))
+	for i, s := range samples {
+		binary.LittleEndian.PutUint16(out[2*i:], uint16(int16(math.Round(float64(min(max(s, -1), 1))*32767))))
+	}
+	return out
+}
+
+// Piper synthesis in the native speech engine to WAV, then the requested container
 func generatePiperTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
 	voice, piperConfig, err := loadPiperVoiceForConfig(ctx, env, ttsConfig)
 	if err != nil {
@@ -340,31 +348,18 @@ func generatePiperTTS(ctx context.Context, env *tools.Env, text, outputPath stri
 	if n, ok := dictGetDefault(piperConfig, "speaker_id", 0).(int); ok {
 		speakerID = n
 	}
-	var synConfig map[string]any
-	for _, k := range piperAdvancedKnobs {
-		if _, ok := piperConfig[k]; ok {
-			synConfig = map[string]any{}
-			break
-		}
-	}
-	if synConfig != nil {
-		for key, def := range map[string]float64{"length_scale": 1.0, "noise_scale": 0.667, "noise_w_scale": 0.8, "volume": 1.0} {
-			f, err := ttsFloat(dictGetDefault(piperConfig, key, def))
-			if err != nil {
-				return "", err
-			}
-			synConfig[key] = f
-		}
-		synConfig["normalize_audio"] = pyTruthy(dictGetDefault(piperConfig, "normalize_audio", true))
-		synConfig["speaker_id"] = speakerID
-	}
-	wavPath := wavSidecarPath(outputPath)
-	reply, err := voice.Request(map[string]any{"text": text, "wav_path": wavPath, "syn_config": synConfig})
+	volume, err := ttsFloat(dictGetDefault(piperConfig, "volume", 1.0))
 	if err != nil {
 		return "", err
 	}
-	if missing, _ := reply["syn_config_missing"].(bool); missing {
-		ttsLog().Warn("[Piper] SynthesisConfig not available in this piper-tts version — advanced knobs ignored")
+	samples, sampleRate, err := voice.Speak(text, speakerID, 1)
+	if err != nil {
+		return "", err
+	}
+	samples = shapePiperAudio(samples, pyTruthy(dictGetDefault(piperConfig, "normalize_audio", true)), volume)
+	wavPath := wavSidecarPath(outputPath)
+	if err := os.WriteFile(wavPath, wrapPCMAsWAV(pcm16(samples), sampleRate, 1, 2), 0o666); err != nil {
+		return "", err
 	}
 	return finalizeWAVOutput(wavPath, outputPath)
 }
@@ -378,7 +373,7 @@ func loadKittenTTSModelForConfig(ctx context.Context, ttsConfig map[string]any) 
 	modelName := pyrepr.Str(dictGetDefault(ktConfig, "model", defaultKittenTTSModel))
 	v, err := ttsCacheGetOrLoad(kittenTTSModelCache, modelName, func() (any, error) {
 		ttsLog().Info(fmt.Sprintf("[KittenTTS] Loading model: %s", modelName))
-		w, err := startLocalTTSWorker(ctx, map[string]any{"engine": "kittentts", "model_name": modelName})
+		w, err := startLocalTTSWorker(ctx, map[string]any{"model_name": modelName})
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +487,7 @@ func (w *localTTSWorker) Close() error {
 	return w.cmd.Wait()
 }
 
-const localTTSWorkerScript = `import json, os, sys, wave
+const localTTSWorkerScript = `import json, os, sys
 proto = os.fdopen(os.dup(1), "w", encoding="utf-8")
 os.dup2(2, 1)
 sys.stdout = sys.stderr
@@ -501,12 +496,8 @@ def reply(obj):
     proto.flush()
 spec = json.loads(sys.stdin.readline())
 try:
-    if spec["engine"] == "piper":
-        from piper import PiperVoice
-        model = PiperVoice.load(spec["model_path"], use_cuda=spec["use_cuda"])
-    else:
-        from kittentts import KittenTTS
-        model = KittenTTS(spec["model_name"])
+    from kittentts import KittenTTS
+    model = KittenTTS(spec["model_name"])
 except BaseException as exc:
     reply({"error": str(exc), "type": type(exc).__name__})
     sys.exit(0)
@@ -514,25 +505,10 @@ reply({"ok": True})
 for line in sys.stdin:
     req = json.loads(line)
     try:
-        if spec["engine"] == "piper":
-            syn_config, missing = None, False
-            if req.get("syn_config") is not None:
-                try:
-                    from piper import SynthesisConfig
-                    syn_config = SynthesisConfig(**req["syn_config"])
-                except ImportError:
-                    missing = True
-            with wave.open(req["wav_path"], "wb") as wav_file:
-                if syn_config is not None:
-                    model.synthesize_wav(req["text"], wav_file, syn_config=syn_config)
-                else:
-                    model.synthesize_wav(req["text"], wav_file)
-            reply({"ok": True, "syn_config_missing": missing})
-        else:
-            audio = model.generate(req["text"], voice=req["voice"], speed=req["speed"], clean_text=req["clean_text"])
-            import soundfile as sf
-            sf.write(req["wav_path"], audio, 24000)
-            reply({"ok": True})
+        audio = model.generate(req["text"], voice=req["voice"], speed=req["speed"], clean_text=req["clean_text"])
+        import soundfile as sf
+        sf.write(req["wav_path"], audio, 24000)
+        reply({"ok": True})
     except BaseException as exc:
         reply({"error": str(exc), "type": type(exc).__name__})
 `

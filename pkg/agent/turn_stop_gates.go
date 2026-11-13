@@ -106,16 +106,16 @@ func appendInterimAnswer(a *AIAgent, finalMsg map[string]any, s *LoopState, flus
 	if finalMsg["display_kind"] == "hidden" {
 		return
 	}
-	if _, err := a.flushLiveMessages(s.Messages, s.ConversationHistory); err != nil {
-		conversationLoopLog().Debug(flushFailMsg, "error", err)
-	}
+	guardedFlush(func() { a.flushLiveMessages(s.Messages, s.ConversationHistory) }, func(exc *OuterLoopError) {
+		conversationLoopLog().Debug(flushFailMsg, "exc_info", exc.Stack, "error", exc)
+	})
 }
 
 // Runs late LSP verdicts, verify on stop, the pre_verify hook and the kanban stop guard in order
 func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, finalResponse string, s *LoopState) stopGateVerdict {
 	cont := func(nudge, flag string) stopGateVerdict {
 		appendLiveMessage(&s.Messages, map[string]any{"role": "user", "content": nudge, flag: true})
-		a.sessionMessages = s.Messages
+		a.setSessionMessages(s.Messages)
 		return stopGateVerdict{
 			continueTurn: true, finalResponse: nil, pendingVerificationResponse: finalResponse,
 			pendingVerificationResponsePreviewed: a.interimContentWasStreamed(finalResponse),
@@ -127,7 +127,7 @@ func applyStopGates(ctx context.Context, a *AIAgent, finalMsg map[string]any, fi
 		finalMsg["finish_reason"] = "verification_required"
 		appendInterimAnswer(a, finalMsg, s, "late-LSP interim flush failed")
 		appendLiveMessage(&s.Messages, map[string]any{"role": "user", "content": lspNote})
-		a.sessionMessages = s.Messages
+		a.setSessionMessages(s.Messages)
 		conversationLoopLog().Debug(fmt.Sprintf("late LSP verdicts delivered before the final answer (%d)", a.lspTurnEndNotes))
 		return stopGateVerdict{
 			continueTurn: true, finalResponse: nil, pendingVerificationResponse: finalResponse,

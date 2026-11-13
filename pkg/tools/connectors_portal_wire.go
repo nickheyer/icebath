@@ -174,6 +174,27 @@ func wireObj(v any, loc string) (*pyjson.Object, error) {
 	return o, nil
 }
 
+// Facet value with any string outside the four known facets read as unclassified, other values left to fail
+func unknownFacetIsUnclassified(value any) any {
+	s, ok := value.(string)
+	if !ok {
+		return value
+	}
+	if slices.Contains(PortalFacets, s) {
+		return s
+	}
+	return "unclassified"
+}
+
+// Categories lowercased so filters match regardless of how the Portal cased them
+func normalizeCategories(value []string) []string {
+	out := make([]string, len(value))
+	for i, category := range value {
+		out[i] = pystr.Lower(category)
+	}
+	return out
+}
+
 func wireConnectorTool(o *pyjson.Object) (ConnectorTool, error) {
 	var t ConnectorTool
 	var err error
@@ -190,23 +211,18 @@ func wireConnectorTool(o *pyjson.Object) (ConnectorTool, error) {
 	if !ok {
 		return t, &wireError{"facet: Field required"}
 	}
-	s, isStr := facet.(string)
+	s, isStr := unknownFacetIsUnclassified(facet).(string)
 	if !isStr {
 		return t, &wireError{"facet: Input should be 'read', 'write', 'destructive' or 'unclassified'"}
 	}
-	t.Facet = "unclassified"
-	if slices.Contains(PortalFacets, s) {
-		t.Facet = s
-	}
+	t.Facet = s
 	if t.Hints, err = wireReqStrList(o, "hints", "hints"); err != nil {
 		return t, err
 	}
 	if t.Categories, err = wireReqStrList(o, "categories", "categories"); err != nil {
 		return t, err
 	}
-	for i, c := range t.Categories {
-		t.Categories[i] = pystr.Lower(c)
-	}
+	t.Categories = normalizeCategories(t.Categories)
 	if t.NoAuth, err = wireBool(o, "noAuth", "no_auth"); err != nil {
 		return t, err
 	}
@@ -314,29 +330,53 @@ func wireToolRules(o *pyjson.Object) ([]string, map[string]PolicyToolRule, error
 
 // Policy body discriminated by mode, an unknown mode failing validation
 func wirePolicyBody(o *pyjson.Object) (PolicyBody, error) {
-	var b PolicyBody
 	mode, ok := o.Get("mode")
 	if !ok {
-		return b, &wireError{"Unable to extract tag using discriminator 'mode'"}
+		return PolicyBody{}, &wireError{"Unable to extract tag using discriminator 'mode'"}
 	}
 	s, _ := mode.(string)
 	switch s {
-	case "unrestricted", "deny-all":
-		b.Mode = s
-		return b, nil
-	case "allow", "deny":
-		b.Mode = s
-	default:
-		return b, &wireError{fmt.Sprintf("Input tag %v found using 'mode' does not match any of the expected tags", mode)}
+	case "unrestricted":
+		return wireUnrestrictedPolicyBody(), nil
+	case "deny-all":
+		return wireDenyAllPolicyBody(), nil
+	case "allow":
+		return wireAllowPolicyBody(o)
+	case "deny":
+		return wireDenyPolicyBody(o)
 	}
+	return PolicyBody{}, &wireError{fmt.Sprintf("Input tag %v found using 'mode' does not match any of the expected tags", mode)}
+}
+
+// Body leaving every connector and tool enabled, only its mode carried
+func wireUnrestrictedPolicyBody() PolicyBody { return PolicyBody{Mode: "unrestricted"} }
+
+// Body disabling every connector, only its mode carried
+func wireDenyAllPolicyBody() PolicyBody { return PolicyBody{Mode: "deny-all"} }
+
+// Body enabling only the listed connectors with their per connector tool rules and optional tags
+func wireAllowPolicyBody(o *pyjson.Object) (PolicyBody, error) {
+	b := PolicyBody{Mode: "allow"}
 	var err error
-	if s == "allow" {
-		if b.Connectors, err = wireReqStrList(o, "connectors", "connectors"); err != nil {
-			return b, err
-		}
-	} else if b.DisabledConnectors, err = wireReqStrList(o, "disabledConnectors", "disabled_connectors"); err != nil {
+	if b.Connectors, err = wireReqStrList(o, "connectors", "connectors"); err != nil {
 		return b, err
 	}
+	return wirePolicyRules(o, b)
+}
+
+// Body disabling the listed connectors with their per connector tool rules and optional tags
+func wireDenyPolicyBody(o *pyjson.Object) (PolicyBody, error) {
+	b := PolicyBody{Mode: "deny"}
+	var err error
+	if b.DisabledConnectors, err = wireReqStrList(o, "disabledConnectors", "disabled_connectors"); err != nil {
+		return b, err
+	}
+	return wirePolicyRules(o, b)
+}
+
+// Tool rules and tags an allow or deny body carries, the tool rules empty and the tags none when absent
+func wirePolicyRules(o *pyjson.Object, b PolicyBody) (PolicyBody, error) {
+	var err error
 	if b.ToolKeys, b.Tools, err = wireToolRules(o); err != nil {
 		return b, err
 	}

@@ -14,6 +14,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Context scoped to the owning profile home, the given context when no home is named
+func owningHome(ctx context.Context, profileHome string) context.Context {
+	if profileHome == "" {
+		return ctx
+	}
+	return home.WithOverride(ctx, profileHome)
+}
+
 // Display metadata flag on a held turn's published reply whose commentary no projection shows
 const CommentaryWithheld = "commentary_withheld"
 
@@ -237,9 +245,7 @@ func ProjectHistoryCommentary(ctx context.Context, messages []any, profileHome s
 	}) {
 		return messages, nil
 	}
-	if profileHome != "" {
-		ctx = home.WithOverride(ctx, profileHome)
-	}
+	ctx = owningHome(ctx, profileHome)
 	enabled := commentaryEnabled(ctx)
 	out := make([]any, len(messages))
 	for i, m := range messages {

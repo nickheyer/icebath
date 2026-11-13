@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,61 +322,6 @@ func migrationProfileHomes(t *testing.T, names ...string) []string {
 	withMigrationSteps(t, catalogAll)
 	leftCoreMemoryProviders = map[string]bool{"twin": true}
 	return homes
-}
-
-func TestUpdateAsksOnceAndNamesEachProfile(t *testing.T) {
-	homes := migrationProfileHomes(t, "work-a", "work-b")
-	withPluginManagerHooks(t, provider.PluginManagerHooks{DependencyHomes: func() ([]string, error) { return homes, nil }})
-	migrationSteps.interactive = func() bool { return true }
-	migrationSteps.installInto = func(ctx context.Context, h string, _ *bool) MemoryInstallFunc {
-		return func(name string) (map[string]any, error) {
-			consented, reason := plugins.ConsentPythonDeps(ctx, name, []string{"twin-client"}, plugins.NewConsole(io.Discard), false)
-			if !consented {
-				return map[string]any{"ok": false, "error": reason}, nil
-			}
-			if err := os.MkdirAll(filepath.Join(h, "plugins", name), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			return map[string]any{"ok": true}, nil
-		}
-	}
-	for _, tc := range []struct {
-		answer string
-		want   []string
-	}{{"n", nil}, {"y", []string{"twin", "twin", "twin"}}} {
-		var prompts, said []string
-		restore := plugins.SwapTerminalIO(func() bool { return true }, func(prompt string) (string, error) {
-			prompts = append(prompts, prompt)
-			return tc.answer, nil
-		})
-		got, err := MigrateAllMemoryHomes(context.Background(), func(s string) { said = append(said, s) })
-		if err != nil {
-			t.Fatal(err)
-		}
-		restore()
-		if strings.Join(got, ",") != strings.Join(tc.want, ",") || len(prompts) != 1 {
-			t.Fatalf("%s got %v prompts %v said %q", tc.answer, got, prompts, said)
-		}
-		if tc.answer == "n" {
-			if len(said) < 3 || !strings.Contains(said[1], "[profile 'default']") || !strings.Contains(said[1], "dependency install declined") ||
-				!strings.Contains(said[2], "icebath -p work-a plugins install twin") || !strings.Contains(said[2], "icebath -p work-b plugins install twin") {
-				t.Fatalf("said %q", said)
-			}
-			for _, h := range homes {
-				if _, err := os.Stat(filepath.Join(h, "plugins")); err == nil {
-					t.Fatalf("declined install created %s/plugins", h)
-				}
-			}
-			continue
-		}
-		var labels []string
-		for _, line := range said[1:] {
-			labels = append(labels, strings.SplitN(line, "]", 2)[0])
-		}
-		if strings.Join(labels, "|") != "  [profile 'default'|  [profile 'work-a'|  [profile 'work-b'" {
-			t.Fatalf("said %q", said)
-		}
-	}
 }
 
 func TestUnattendedUpdateRefusalInOneProfileDoesNotSkipTheOthers(t *testing.T) {

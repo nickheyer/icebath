@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	frontendDeveloperOutputs = []string{"ui-tui/dist", "cmd/icebath/web_dist", "apps/desktop/dist", "apps/desktop/dist-webapp",
+	frontendDeveloperOutputs = []string{"cmd/icebath/web_dist", "apps/desktop/dist", "apps/desktop/dist-webapp",
 		"apps/desktop/build/native-deps"}
 	frontendNativeTargetOutput = regexp.MustCompile(`^apps[\\/]desktop[\\/]build[\\/]native-deps-(darwin|linux|win32)-(x64|arm64)$`)
 	frontendHeldRetryDelays    = []time.Duration{100, 200, 400, 800, 1600}

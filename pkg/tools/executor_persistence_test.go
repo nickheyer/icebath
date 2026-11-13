@@ -22,9 +22,12 @@ func persistenceExecutor(t *testing.T, persisted bool) (*Executor, *fakeExecutor
 		record("dispatch " + call.ToolCallID)
 		return "result-" + call.ToolCallID
 	}))
-	host.flush = func(msgs []*state.Message) (bool, error) {
+	host.flush = func(msgs []*state.Message) state.FlushOutcome {
 		record("flush " + msgs[len(msgs)-1].ToolCallID)
-		return persisted, nil
+		if !persisted {
+			return state.FlushFailed
+		}
+		return state.FlushPersisted
 	}
 	host.completeCb = func(callID, _ string, _ map[string]any, _ string) { record("complete " + callID) }
 	return e, host, func() []string {

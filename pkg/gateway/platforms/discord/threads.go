@@ -157,3 +157,69 @@ func (a *DiscordAdapter) autoCreateThread(ctx context.Context, m *inboundMessage
 	slog.Warn(fmt.Sprintf("[%s] Auto-thread creation failed after retry. Direct error: %v. Fallback error: %v", a.Name(), lastDirect, lastFallback))
 	return nil
 }
+
+// Channel kinds discord.py gives create_thread, the text, news, forum and media channels
+var handoffCreateThreadTypes = map[discordgo.ChannelType]bool{discordgo.ChannelTypeGuildText: true, discordgo.ChannelTypeGuildNews: true,
+	discordgo.ChannelTypeGuildForum: true, discordgo.ChannelTypeGuildMedia: true}
+
+// Channel kinds discord.py can send a seed message to
+var handoffSendTypes = map[discordgo.ChannelType]bool{discordgo.ChannelTypeGuildText: true, discordgo.ChannelTypeGuildNews: true,
+	discordgo.ChannelTypeGuildVoice: true, discordgo.ChannelTypeGuildStageVoice: true, discordgo.ChannelTypeGuildNewsThread: true,
+	discordgo.ChannelTypeGuildPublicThread: true, discordgo.ChannelTypeGuildPrivateThread: true, discordgo.ChannelTypeDM: true, discordgo.ChannelTypeGroupDM: true}
+
+// Handoff thread under a text channel, a seed message thread when the direct create fails, none for DMs
+func (a *DiscordAdapter) CreateHandoffThread(ctx context.Context, parentChatID, name string) (string, bool, error) {
+	client := a.liveClient()
+	if client == nil {
+		return "", false, nil
+	}
+	parentID, err := snowflakeInt(parentChatID)
+	if err != nil {
+		return "", false, nil
+	}
+	parent := a.stateChannel(parentID)
+	if parent == nil {
+		if parent, err = client.Channel(parentID, discordgo.WithContext(ctx)); err != nil {
+			slog.Warn(fmt.Sprintf("[%s] Handoff thread: cannot resolve parent %s: %s", a.Name(), parentChatID, dpyError(err)))
+			return "", false, nil
+		}
+	}
+	if parent.Type == discordgo.ChannelTypeDM {
+		slog.Info(fmt.Sprintf("[%s] Handoff thread: parent %s is a DM; threads not supported here", a.Name(), parentChatID))
+		return "", false, nil
+	}
+	threadName := pystr.Strip(name)
+	if name == "" {
+		threadName = "handoff"
+	}
+	if threadName = cut(threadName, 80); threadName == "" {
+		threadName = "handoff"
+	}
+	const reason = "Icebath session handoff"
+	if handoffCreateThreadTypes[parent.Type] {
+		body := map[string]any{"name": threadName, "auto_archive_duration": 1440, "type": int(discordgo.ChannelTypeGuildPrivateThread), "invitable": true}
+		if parent.Type == discordgo.ChannelTypeGuildForum || parent.Type == discordgo.ChannelTypeGuildMedia {
+			body = map[string]any{"name": threadName, "auto_archive_duration": 1440, "message": map[string]any{}}
+		}
+		th, err := a.startThread(ctx, parent.ID, "", body, reason)
+		if err == nil {
+			return th.ID, true, nil
+		}
+		slog.Debug(fmt.Sprintf("[%s] Handoff thread: direct create failed (%s); trying seed-message fallback", a.Name(), err))
+	}
+	if !handoffSendTypes[parent.Type] {
+		return "", false, nil
+	}
+	seed, err := client.ChannelMessageSendComplex(parent.ID, &discordgo.MessageSend{AllowedMentions: a.allowedMentions,
+		Content: i18n.T(ctx, "platform.discord.thread.handoff_seed", "", map[string]any{"name": threadName})}, discordgo.WithContext(ctx))
+	if err == nil {
+		var th *discordgo.Channel
+		if th, err = a.startThread(ctx, parent.ID, seed.ID, map[string]any{"name": threadName, "auto_archive_duration": 1440}, reason); err == nil {
+			return th.ID, true, nil
+		}
+	} else {
+		err = dpyError(err)
+	}
+	slog.Warn(fmt.Sprintf("[%s] Handoff thread: both create paths failed for parent %s: %s", a.Name(), parentChatID, err))
+	return "", false, nil
+}

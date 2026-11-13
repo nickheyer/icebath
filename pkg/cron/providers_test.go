@@ -1,12 +1,10 @@
 package cron
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 const demoCronProviderSrc = `import threading
@@ -145,102 +143,6 @@ func TestProviderDirsListBundledFirstAndBundledWinsACollision(t *testing.T) {
 	}
 }
 
-func TestHostedCronProviderRunsEveryHookInThePluginHost(t *testing.T) {
-	s, _ := newTestStore(t)
-	pluginLogs := writeBlueprintPlugin(t, s.home, "demo", demoCronProviderSrc)
-	writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{"empty/__init__.py": "# CronScheduler lives elsewhere\n"})
-	infos, err := DiscoverCronSchedulers(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(infos) != 3 || infos[0].Name != "chronos" || infos[0].Description != chronosDescription || infos[0].Available ||
-		infos[1].Name != "demo" || !infos[1].Available || infos[2].Name != "empty" || infos[2].Available {
-		t.Fatalf("discovered %+v", infos)
-	}
-	if p, err := realLoadCronScheduler(s, "empty"); p != nil || err != nil {
-		t.Fatalf("empty loaded %v %v", p, err)
-	}
-	if !strings.Contains(pluginLogs.String(), "Cron provider 'empty' loaded but no provider instance found") {
-		t.Fatalf("plugin log = %s", pluginLogs.String())
-	}
-	p, err := realLoadCronScheduler(s, "demo")
-	if err != nil || p == nil {
-		t.Fatalf("demo loaded %v %v", p, err)
-	}
-	hosted := p.(*hostedCronScheduler)
-	ctx := providerContext(s)
-	if p.Name() != "demo" || !schedulerIsAvailable(p) {
-		t.Fatalf("name %q available %v", p.Name(), schedulerIsAvailable(p))
-	}
-	stop := make(chan struct{})
-	p.Start(ctx, stop, StartOptions{Adapters: map[string]any{}, Loop: "loop"})
-	fired, err := schedulerFireDue(ctx, p, "go", FireOptions{Force: true})
-	if err != nil || !fired {
-		t.Fatalf("fire_due %v %v", fired, err)
-	}
-	if !providerSupportsForceFire(p) || providerFireDueAccepts(p, "cancel_event") {
-		t.Fatal("fire_due keywords read wrong from the hosted signature")
-	}
-	if job, err := schedulerClaimFire(ctx, p, "nope", true, false); job != nil || err != nil {
-		t.Fatalf("claim %v %v", job, err)
-	}
-	if err := schedulerRegisterJob(p, &Job{ID: "j1", Name: "one"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := schedulerOnJobsChanged(p); err != nil {
-		t.Fatal(err)
-	}
-	if err := schedulerReconcile(p); err != nil {
-		t.Fatal(err)
-	}
-	if n, err := schedulerRecoverInterrupted(ctx, p); n != 3 || err != nil {
-		t.Fatalf("recovered %d %v", n, err)
-	}
-	close(stop)
-	want := []any{"start", "fire_due:go:True:False", "claim:nope:True", "register:j1", "changed", "reconcile", "stopped"}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		events, err := hosted.obj.Get(context.Background(), "events")
-		list, _ := events.([]any)
-		if err == nil && len(list) == len(want) {
-			for i := range want {
-				if list[i] != want[i] {
-					t.Fatalf("events = %v", list)
-				}
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("events = %v %v", events, err)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if started, _ := hostedStarts.Load(s.home); started.([2]any)[1] != "loop" {
-		t.Fatalf("start transport %v", started)
-	}
-}
-
-func TestResolveFallsBackWhenAHostedProviderRaisesOrIsUnavailable(t *testing.T) {
-	useRealTickSeams(t)
-	s, buf := newTestStore(t)
-	writeBlueprintPlugin(t, s.home, "flaky", flakyCronProviderSrc)
-	writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{"offline/__init__.py": strings.Replace(flakyCronProviderSrc, "class Flaky(", "class _Flaky(", 1)})
-	for name, warning := range map[string]string{
-		"flaky":   "Failed to load cron.provider 'flaky' (",
-		"flaky ":  "probe down",
-		"offline": "cron.provider 'offline' not available; using built-in ticker",
-	} {
-		writeProviderTree(t, s.home, map[string]string{"config.yaml": `{"model": "test-model", "cron": {"provider": "` + name + `"}}`})
-		buf.Reset()
-		if p := resolveCronScheduler(s); p.Name() != "builtin" {
-			t.Fatalf("%s resolved %s", name, p.Name())
-		}
-		if !strings.Contains(buf.String(), warning) {
-			t.Fatalf("%s log = %s", name, buf.String())
-		}
-	}
-}
-
 const splitFireCronProviderSrc = `from cron.scheduler_provider import CronScheduler
 
 
@@ -274,36 +176,3 @@ class Plain(CronScheduler):
         pass
 
 `
-
-// A provider that replaces only fire_due keeps its single phase fire, under host isolation the proxy class declares every method
-func TestHostedProviderSupportsSplitFireFollowsTheProxyClass(t *testing.T) {
-	for _, mode := range []struct {
-		isolation string
-		legacy    bool
-	}{{"in_process", false}, {"host", true}} {
-		t.Run(mode.isolation, func(t *testing.T) {
-			s, _ := newTestStore(t)
-			register := func(class string) string {
-				return splitFireCronProviderSrc + "\n\ndef register(ctx):\n    ctx.register_cron_scheduler(" + class + "())\n"
-			}
-			writeProviderTree(t, filepath.Join(s.home, "plugins"), map[string]string{"legacy/__init__.py": register("Legacy"), "split/__init__.py": register("Split")})
-			writeBlueprintPlugin(t, s.home, "plain", register("Plain"))
-			cfg := `{"model": "test-model", "plugins": {"enabled": ["plain"], "isolation": "` + mode.isolation + `"}}`
-			if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte(cfg), 0o644); err != nil {
-				t.Fatal(err)
-			}
-			for name, want := range map[string]bool{"legacy": mode.legacy, "split": true, "plain": true} {
-				p, err := realLoadCronScheduler(s, name)
-				if err != nil || p == nil {
-					t.Fatalf("%s loaded %v %v", name, p, err)
-				}
-				if p.Name() != name {
-					t.Fatalf("loaded %q for %s", p.Name(), name)
-				}
-				if got := providerSupportsSplitFire(p); got != want {
-					t.Errorf("%s split fire %v, want %v", name, got, want)
-				}
-			}
-		})
-	}
-}

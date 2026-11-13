@@ -103,7 +103,7 @@ func parseForeignCandidate(c foreignCandidate) (foreignParsed, error) {
 	if c.size > foreignMaxLogBytes {
 		return foreignParsed{}, &appValueError{"This log exceeds the 32 MB preview and import limit"}
 	}
-	parsed := foreignSources[c.source].parse(c.path)
+	parsed := foreignParser(c.source)(c.path)
 	if len(parsed.turns) == 0 {
 		return foreignParsed{}, &appValueError{"This session has no readable conversation messages"}
 	}

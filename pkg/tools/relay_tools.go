@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -18,6 +19,23 @@ const relayToolLoopError = "Synchronous Icebath Relay tool execution cannot run 
 
 // nemo_relay.ToolExecutionResult value carrying the JSON result of one tool dispatch
 type RelayToolExecutionResult struct{ Result any }
+
+// Runs the icebath tool pipeline through the Relay runtime of the call's session with the hook ids as its metadata
+func relayToolPipeline(ctx context.Context, _ *Env, name string, args map[string]any, ids ToolHookIDs, pipeline func(context.Context, map[string]any) (string, error)) (string, map[string]any, error) {
+	value, final, err := RelayExecuteTool(ctx, name, args, func(c context.Context, relayArgs map[string]any) (any, error) {
+		return pipeline(c, relayArgs)
+	}, ids.SessionID, ids.ToolCallID, map[string]any{
+		"task_id": ids.TaskID, "turn_id": ids.TurnID, "api_request_id": ids.APIRequestID, "tool_call_id": ids.ToolCallID,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	text, isText := value.(string)
+	if !isText {
+		return "", nil, fmt.Errorf("relay tool execution answered %s where the tool result text was due", pyrepr.TypeName(value))
+	}
+	return text, final, nil
+}
 
 // Runs one tool call through Relay returning its result and the final arguments the tool saw
 func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any, callback func(ctx context.Context, args map[string]any) (any, error), sessionID, toolCallID string, metadata map[string]any) (any, map[string]any, error) {
@@ -59,11 +77,8 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 		}
 		return rt.Relay.ToolExecutionResult(encoded)
 	}
-	var managed any
-	if RelayHasRunningEventLoop(ctx) {
-		err = errors.New(relayToolLoopError)
-	} else {
-		managed, err = rt.RunInSessionAsync(RelayWithRunningLoop(ctx), session, func(c context.Context) (any, error) {
+	managed, err := relayToolRunAwaitable(ctx, RelayAwaitable(func(running context.Context) (any, error) {
+		return rt.RunInSessionAsync(running, session, func(c context.Context) (any, error) {
 			if rt.Relay.Tools == nil {
 				return nil, RelayAttributeError("NemoRelay", "tools")
 			}
@@ -82,7 +97,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 				"handle": parent, "metadata": relayToolJSONable(meta), "tool_call_id": callID,
 			})
 		}, false)
-	}
+	}))
 	mu.Lock()
 	cbErr, hv, value, encoded, final := callbackErr, hasValue, rawValue, rawJSON, observed
 	mu.Unlock()
@@ -111,6 +126,11 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 		return nil, nil, err
 	}
 	return out, final, nil
+}
+
+// Result of a Relay awaitable on the synchronous tool path, refused on a goroutine that already runs the event loop
+func relayToolRunAwaitable(ctx context.Context, value any) (any, error) {
+	return RelayRunAwaitable(ctx, value, relayToolLoopError)
 }
 
 // JSON shaped copy of a tool value where objects contribute every attribute, private ones included

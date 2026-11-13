@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -28,6 +29,9 @@ func (e *TranscriptReadError) Error() string {
 
 // Read failure the error was raised from
 func (e *TranscriptReadError) Unwrap() error { return e.Cause }
+
+// Lock serializing the drain boundaries of the pending transcript queue
+func (s *SessionStore) transcriptDrainLock() *sync.Mutex { return &s.transcriptDrainMu }
 
 // Latest compression continuation of the session, the id itself without a store or on a failed lookup
 func (s *SessionStore) compressionTipForSessionID(ctx context.Context, sessionID string) string {
@@ -275,8 +279,9 @@ func (s *SessionStore) AppendToTranscript(ctx context.Context, sessionID string,
 	if skipDB {
 		return nil
 	}
-	s.transcriptDrainMu.Lock()
-	defer s.transcriptDrainMu.Unlock()
+	drain := s.transcriptDrainLock()
+	drain.Lock()
+	defer drain.Unlock()
 	return s.appendToTranscriptSerialized(ctx, s.followReroutes(sessionID), message)
 }
 
@@ -701,8 +706,9 @@ func (s *SessionStore) RewriteTranscript(ctx context.Context, sessionID string, 
 	if db == nil {
 		return true
 	}
-	s.transcriptDrainMu.Lock()
-	defer s.transcriptDrainMu.Unlock()
+	drain := s.transcriptDrainLock()
+	drain.Lock()
+	defer drain.Unlock()
 	rewriter, ok := db.(transcriptRewriteDB)
 	var err error
 	if !ok {
@@ -858,8 +864,9 @@ func (s *SessionStore) RewindSession(ctx context.Context, sessionID string, n in
 	if db == nil {
 		return nil, nil
 	}
-	s.transcriptDrainMu.Lock()
-	defer s.transcriptDrainMu.Unlock()
+	drain := s.transcriptDrainLock()
+	drain.Lock()
+	defer drain.Unlock()
 	outcome, err := rewindUserTurn(ctx, db, sessionID, -max(n, 1), requireRetryableComposite, requireRetryableComposite)
 	switch {
 	case err != nil && isRewindTargetUnavailable(err):

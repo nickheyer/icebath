@@ -21,7 +21,7 @@ func makeRepoWithSubdirPlugin(t *testing.T, root string) {
 	c6Write(t, filepath.Join(root, "README.md"), "# Monorepo docs\n")
 	c6Write(t, filepath.Join(root, "tests", "test_x.py"), "def test_x():\n    pass\n")
 	c6Write(t, filepath.Join(root, "my-plugin", "plugin.yaml"), "name: my-plugin\nmanifest_version: 1\ndescription: A subdir plugin\n")
-	c6Write(t, filepath.Join(root, "my-plugin", "__init__.py"), "# plugin entry\n")
+	c6Write(t, filepath.Join(root, "my-plugin", "helper.py"), "# plugin entry\n")
 	c6Git(t, root, "init", "-q")
 	c6Commit(t, root, "init")
 }
@@ -46,7 +46,7 @@ func TestInstallsOnlyTheSubdirPlugin(t *testing.T) {
 	if name != "my-plugin" || manifest["name"] != "my-plugin" || target != filepath.Join(want, "my-plugin") {
 		t.Fatalf("install %s %v %s", name, manifest, target)
 	}
-	if !pathExists(filepath.Join(target, "plugin.yaml")) || !pathExists(filepath.Join(target, "__init__.py")) ||
+	if !pathExists(filepath.Join(target, "plugin.yaml")) || !pathExists(filepath.Join(target, "helper.py")) ||
 		pathExists(filepath.Join(target, "README.md")) || pathExists(filepath.Join(target, "tests")) {
 		t.Fatal("installed tree is not the subdirectory alone")
 	}

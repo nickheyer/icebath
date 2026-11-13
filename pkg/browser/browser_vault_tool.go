@@ -37,7 +37,6 @@ var (
 	vaultElicitConsent     = tools.RequestElicitationConsent
 	loginBackendForHandle  = LoginBackendForHandle
 	vaultFillFn            = browserVaultFill
-	vaultCDPOverrideRaw    = func(env *tools.Env) string { return cfgOf(env).cdpOverrideRaw() }
 	vaultSessionForTask    = sessionForTask
 	vaultStartSupervisor   = func(env *tools.Env, taskID, cdpURL, policy string, timeoutS float64) (vaultSupervisor, error) {
 		sup, err := supervisors.getOrStart(env, taskID, cdpURL, policy, timeoutS, supervisorStartTimeoutS)
@@ -53,12 +52,6 @@ var (
 		return nil
 	}
 )
-
-// The vault rides with the browser, present wherever a harness, a CDP override or a page backend exists
-func checkVaultAvailable(env *tools.Env) bool {
-	return browserExecAvailable(env) || vaultCDPOverrideRaw(env) != "" ||
-		len(BrowserPageBackendRegistry.ListProviders(context.Background(), "")) > 0
-}
 
 const pageFillFailedKey = "icebath_vault_eval_failed"
 
@@ -988,9 +981,6 @@ func handleBrowserVault(ctx context.Context, call *tools.Call) string {
 	return fencedVaultPageOp(env, tid, op)
 }
 
-var vaultAvailableCheck = tools.NoCacheCheck(checkVaultAvailable)
-
 func registerBrowserVaultTool() {
-	tools.Register(tools.Def{Name: "browser_vault", Toolset: "browser", Schema: BrowserVaultSchema(), Handler: handleBrowserVault,
-		Check: vaultAvailableCheck, Emoji: "\U0001F510"})
+	tools.Register(tools.Def{Name: "browser_vault", Toolset: "browser", Schema: BrowserVaultSchema(), Handler: handleBrowserVault, Emoji: "\U0001F510"})
 }

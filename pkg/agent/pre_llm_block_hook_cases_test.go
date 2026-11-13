@@ -88,7 +88,7 @@ func blockAgent(t *testing.T, h string, p *blockProvider, db *state.SessionDB) (
 	t.Helper()
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
-	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "test-key", BaseURL: p.url(), Provider: "openai-compat", Model: "test-model", MaxIterations: 4,
+	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "test-key", BaseURL: p.url(), Provider: "openai-compat", Model: "test-model", MaxIterations: new(4),
 		EnabledToolsets: []string{}, QuietMode: true, SkipContextFiles: true, SkipMemory: true, Platform: "cli", SessionDB: db, SessionID: "s-block",
 		Cwd: h, Env: env})
 	if err != nil {

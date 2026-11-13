@@ -34,9 +34,32 @@ func (c *CatalogValues) Values() ValueSet {
 		out = out.Union(catalogSafe(name))
 	}
 	if c.adapters {
-		out = out.Union(gatewayAdapterPlatforms())
+		out = adapterPlatformValues(out)
 	}
 	return out
+}
+
+// Catalog platform names joined with the gateway's own adapter vocabulary
+func adapterPlatformValues(catalog ValueSet) ValueSet {
+	return catalog.Union(gatewayAdapterPlatforms())
+}
+
+// Closed enum over the named catalogs with the extras it always holds
+func newCatalogValues(extra ValueSet, loaders ...string) *CatalogValues {
+	return &CatalogValues{loaders: loaders, extra: extra}
+}
+
+// Catalog enum whose values also hold every gateway adapter platform
+func newAdapterPlatforms(extra ValueSet, loaders ...string) *CatalogValues {
+	c := newCatalogValues(extra, loaders...)
+	c.adapters = true
+	return c
+}
+
+// Replaces the fixed extras with ones computed on each use, for extras a later hook supplies
+func (c *CatalogValues) withLazyExtra(extra func() ValueSet) *CatalogValues {
+	c.extraFn = extra
+	return c
 }
 
 // Extra values the enum always holds

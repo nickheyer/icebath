@@ -189,3 +189,17 @@ func TestAnthropicOAuthClassifierAlias(t *testing.T) {
 		t.Fatalf("api key path must never alias: %v", tools[0])
 	}
 }
+
+func TestTokenEndpointRejectionCarriesTheBodysOAuthCode(t *testing.T) {
+	dead := anthropicOAuthHTTPError(400, []byte(`{"error": "invalid_grant", "error_description": "refresh token revoked"}`), "refresh")
+	if dead.Error() != "Anthropic token refresh failed: HTTP 400 invalid_grant (refresh token revoked)" || !dead.ReloginRequired() {
+		t.Fatalf("dead grant %q relogin %v", dead.Error(), dead.ReloginRequired())
+	}
+	opaque := anthropicOAuthHTTPError(502, []byte("<html>bad gateway</html>"), "exchange")
+	if opaque.Error() != "Anthropic token exchange failed: HTTP 502 error" || opaque.ReloginRequired() || IsTerminalAnthropicRefreshError(opaque) {
+		t.Fatalf("opaque body %q relogin %v", opaque.Error(), opaque.ReloginRequired())
+	}
+	if !IsTerminalAnthropicRefreshError(dead) {
+		t.Fatal("a dead grant read as retryable")
+	}
+}

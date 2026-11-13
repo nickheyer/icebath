@@ -13,7 +13,7 @@
  *          ▼                                                              .
  *     FastAPI pty_ws  (hermes_cli/web_server.py)                          .
  *          ▼                                                              .
- *     POSIX PTY → `node ui-tui/dist/entry.js` → tui_gateway + AIAgent     .
+ *     POSIX PTY → `icebath --tui` (pkg/tui) → gateway + agent             .
  */
 
 import { FitAddon } from "@xterm/addon-fit";
@@ -548,7 +548,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     //
     // Four independent paths all route to the system clipboard:
     //
-    //   1. **Selection → Ctrl+C (or Cmd+C on macOS).**  Ink's own handler
+    //   1. **Selection → Ctrl+C (or Cmd+C on macOS).**  the terminal UI's own handler
     //      in useInputHandlers.ts turns Ctrl+C into a copy when the
     //      terminal has a selection, then emits an OSC 52 escape.  Our
     //      OSC 52 handler below decodes that escape and writes to the
@@ -558,7 +558,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     //   2. **Ctrl/Cmd+Shift+C.**  Belt-and-suspenders shortcut that
     //      operates directly on xterm's selection, useful if the TUI
     //      ever stops listening (e.g. overlays / pickers) or if the user
-    //      has selected with the mouse outside of Ink's selection model.
+    //      has selected with the mouse outside of the terminal UI's selection model.
     //
     //   3. **Ctrl/Cmd+Shift+V.**  Prefers clipboard.read() for images
     //      (upload → `/image`), else readText() into term.paste().
@@ -972,7 +972,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // under the default `resizes-visual` — we ask for `resizes-content`
     // in the viewport meta, but can't rely on it). The host's bounding
     // box therefore doesn't change when the keyboard opens, fit() computes
-    // identical (cols, rows), and Ink keeps drawing the input line under
+    // identical (cols, rows), and the terminal UI keeps drawing the input line under
     // the keyboard. Measure the obscured region via visualViewport and
     // apply it as bottom padding on the terminal wrapper — that *does*
     // shrink the host, so the ResizeObserver refit path kicks in and the
@@ -1042,7 +1042,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // committed at least once since mount; fit.fit() then reads the
     // stable container size.  We always send a RESIZE escape afterwards
     // (even if fit's cols/rows didn't change, so the PTY has the same
-    // dims registered as our JS state — prevents a drift where Ink
+    // dims registered as our JS state — prevents a drift where the terminal UI
     // thinks the terminal is one col bigger than what's on screen).
     let settleRaf1 = 0;
     let settleRaf2 = 0;
@@ -1263,9 +1263,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
-      // Send the initial RESIZE immediately so Ink has *a* size to lay
+      // Send the initial RESIZE immediately so the terminal UI has *a* size to lay
       // out against on its first paint.  The double-rAF block above will
-      // follow up with the authoritative measurement — at worst Ink
+      // follow up with the authoritative measurement — at worst the terminal UI
       // reflows once after the PTY boots, which is imperceptible.
       const sendTerminalResize = () => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -1292,7 +1292,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         next.delete("learn");
         setSearchParams(next, { replace: true });
         const cmd = `/learn ${learnSeed}`.trim();
-        // Delay so Ink's composer has mounted and grabbed focus before input.
+        // Delay so the terminal UI's composer has mounted and grabbed focus before input.
         setTimeout(() => {
           try {
             wsRef.current?.send(cmd + "\r");
@@ -1303,7 +1303,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }
     };
 
-    // Session resume: Ink's two-pass virtual scroll floods the PTY with
+    // Session resume: the terminal UI's two-pass virtual scroll floods the PTY with
     // erase codes and blank-line bursts while replaying a long session.
     // Suppress them for a bounded window after connect, then let ordinary
     // in-place redraws through untouched. See pty-resume-sanitizer.ts.
@@ -1759,7 +1759,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   //   terminal wrapper — rounded, dark, padded — the "terminal window"
   //   floating copy button — bottom-right corner, transparent with a
   //     subtle border; stays out of the way until hovered.  Sends
-  //     `/copy\n` to Ink, which emits OSC 52 → our clipboard handler.
+  //     `/copy\n` to the terminal UI, which emits OSC 52 → our clipboard handler.
   //   sidebar — ChatSidebar opens its own JSON-RPC sidecar; renders
   //     model badge, tool-call list, model picker. Best-effort: if the
   //     sidecar fails to connect the terminal pane keeps working.

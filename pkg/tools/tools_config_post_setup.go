@@ -104,27 +104,15 @@ func (s *ToolsSetup) infoLines(lines ...string) {
 	}
 }
 
-// Browser harness command of browser_exec, nil when it is missing
-func (s *ToolsSetup) findBrowserUseCLI() []string {
-	fn := ToolsConfigHooks.FindBrowserUseCLI
-	requireToolsConfigHook("FindBrowserUseCLI", fn != nil)
-	return fn(s.toolEnv())
-}
-
-// Seam over the harness check every browser row hook runs, the _ensure_browser_use_cli patch target
+// Seam over the readiness line every browser row hook prints
 var postSetupEnsureBrowserUseCLI = (*ToolsSetup).ensureBrowserUseCLI
 
-// Confirms the browser harness browser_exec runs is present, a miss meaning the environment needs a re-sync
+// Reports browser_exec ready, its browser driver is part of the binary
 func (s *ToolsSetup) ensureBrowserUseCLI() {
-	if s.findBrowserUseCLI() != nil {
-		s.Con.PrintSuccess("    browser_exec ready (browser-harness, bundled with Icebath)")
-		return
-	}
-	s.Con.PrintWarning("    browser-harness is missing from Icebath's Python environment")
-	s.Con.PrintInfo("    Re-sync it with: icebath update")
+	s.Con.PrintSuccess("    browser_exec ready (built in)")
 }
 
-// Lightpanda row check, the harness then the lightpanda binary with its install hint when missing
+// Lightpanda row check, the driver line then the lightpanda binary with its install hint when missing
 func (s *ToolsSetup) postSetupLightpanda() error {
 	postSetupEnsureBrowserUseCLI(s)
 	find, hint := ToolsConfigHooks.LightpandaBinary, ToolsConfigHooks.LightpandaInstallHint
@@ -199,7 +187,7 @@ func pythonHook(module, extra, label, installing string, onInstall func() []stri
 
 func staticLines(lines ...string) func() []string { return func() []string { return lines } }
 
-var pythonPostSetupHookKeys = []string{"faster_whisper", "kittentts", "piper"}
+var pythonPostSetupHookKeys = []string{"faster_whisper", "kittentts"}
 
 var pythonPostSetupHooks = map[string]pythonPostSetupHook{
 	"faster_whisper": pythonHook("faster_whisper", "stt-whisper", "faster-whisper",
@@ -209,10 +197,6 @@ var pythonPostSetupHooks = map[string]pythonPostSetupHook{
 	"kittentts": pythonHook("kittentts", "kittentts", "kittentts", "Installing kittentts (~25-80MB model, CPU-only)...",
 		staticLines("Voices: Jasper, Bella, Luna, Bruno, Rosie, Hugo, Kiki, Leo",
 			"Models: KittenML/kitten-tts-nano-0.8-int8 (25MB), micro (41MB), mini (80MB)")),
-	"piper": pythonHook("piper", "piper", "piper-tts", "Installing piper-tts (~14MB wheel, voices downloaded on first use)...", nil,
-		"Default voice: en_US-lessac-medium (downloaded on first TTS call)",
-		"Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md",
-		"Switch voices by setting tts.piper.voice in config.yaml"),
 }
 
 // Enables one Python provider through the application dependency transaction
@@ -507,20 +491,15 @@ func (s *ToolsSetup) moduleInstalled(moduleName string) (found bool) {
 	return postSetupModuleImportable(s.ctx(), moduleName)
 }
 
-// Everything the chromium hook provides is present, the harness and a Chromium
+// Everything the chromium hook provides is present, a Chromium
 func (s *ToolsSetup) chromiumInstalled() (bool, error) {
 	chromium := ToolsConfigHooks.ChromiumExecutable
 	requireToolsConfigHook("ChromiumExecutable", chromium != nil)
-	if ok, _ := s.browserHarnessInstalled(); !ok {
-		return false, nil
-	}
 	return chromium(s.toolEnv()) != "", nil
 }
 
-// Installed check of the browserbase hook, the browser harness being the whole local contract of cloud rows
-func (s *ToolsSetup) browserHarnessInstalled() (bool, error) {
-	return s.findBrowserUseCLI() != nil, nil
-}
+// Installed check of the cloud browser rows, whose local contract is the built in browser driver
+func (s *ToolsSetup) builtInBrowserReady() (bool, error) { return true, nil }
 
 // Whether a lightpanda binary is on PATH or in a known install dir
 func (s *ToolsSetup) lightpandaInstalled() (found bool, err error) {
@@ -542,7 +521,7 @@ var postSetupReady = buildPostSetupReady()
 func buildPostSetupReady() map[string]func(*ToolsSetup) (bool, error) {
 	ready := map[string]func(*ToolsSetup) (bool, error){
 		"chromium":    (*ToolsSetup).chromiumInstalled,
-		"browserbase": (*ToolsSetup).browserHarnessInstalled,
+		"browserbase": (*ToolsSetup).builtInBrowserReady,
 		"lightpanda":  (*ToolsSetup).lightpandaInstalled,
 		"cua_driver":  (*ToolsSetup).cuaDriverInstallReady,
 	}

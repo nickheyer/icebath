@@ -12,7 +12,6 @@ import (
 // Writes the profile config and clears every voice credential variable
 func voiceClientHome(t *testing.T, configYAML string) {
 	withVoiceHome(t, configYAML)
-	swapVoice(t, &hasOpenAI, func() bool { return true })
 	for _, k := range []string{"GROQ_API_KEY", "OPENAI_API_KEY", "VOICE_TOOLS_OPENAI_KEY", "MISTRAL_API_KEY", "XAI_API_KEY",
 		"ELEVENLABS_API_KEY", "DEEPINFRA_API_KEY", "ICEBATH_LOCAL_STT_LANGUAGE"} {
 		t.Setenv(k, "")

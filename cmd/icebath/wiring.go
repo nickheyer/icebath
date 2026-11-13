@@ -22,6 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/dashboard"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/hosted"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/slack"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
@@ -44,6 +47,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
@@ -95,7 +99,7 @@ func installProcessWiring() {
 	}
 	gatewayrun.SaveConfigValue = app.SaveConfigValue
 	gatewayrun.SanitizeTelegramName = commands.SanitizeTelegramName
-	gatewayrun.KanbanRunSlash = app.RunKanbanSlash
+	kanban.ParseSlash = app.ParseKanbanSlash
 	gatewayrun.RunCuratorSlash = app.RunCuratorSlash
 	gatewayrun.RandomTip = app.RandomTip
 	gatewayrun.ActivePersonalityName = commands.ActivePersonalityName
@@ -167,8 +171,9 @@ func installProcessWiring() {
 	dashboard.GatewayCLI.SudoNoninteractiveOk = selfupdate.SudoNoninteractiveOk
 	dashboard.GatewayCLI.RefusalLines = gatewaycli.RefusalLines
 	dashboard.GatewayCLI.InstalledServices = gatewayrun.InstalledServiceCount
-	dashboard.TUILaunch.MakeArgv = app.MakeTUIArgv
-	dashboard.TUILaunch.ApplyPythonEnv = app.ApplyTUIPythonEnv
+	dashboard.TUIArgv = app.TUIArgv
+	tui.ClipboardImage = app.SaveClipboardImage
+	tui.PluginWidgets = pluginWidgets
 	dashboard.UpdateCLI.IsCommitBuild = selfupdate.IsCommitBuild
 	dashboard.UpdateCLI.CommitBuildMessage = selfupdate.CommitBuildUpdateMessage
 	dashboard.UpdateCLI.UpdateAdmissionRefusal = selfupdate.UpdateAdmissionRefusal
@@ -234,6 +239,7 @@ func installProcessWiring() {
 	gateway.CommandCatalog, gateway.SlashCompletions = tuiserver.CommandCatalog, tuiserver.SlashCompletions
 	gateway.ResolveRegistryCommand = resolveRegistryCommand
 	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
+	gateway.HostedEntryKeywords = hosted.EntryKeywords
 	gateway.SessionReadLines.Cron = cron.CronCommandLines
 	gateway.TUIReadRender.Status, gateway.TUIReadRender.Context = app.TUIStatusRead, app.TUIContextRead
 	gateway.ViewerAutomationInvoke = agent.InvokeViewerAutomation
@@ -348,6 +354,14 @@ func installProcessWiring() {
 		return commands.SlackSubcommandMap(ctx, commands.Default, rawConfigTree(ctx))
 	}
 	gateway.RelaySlackSubcommandMap = slack.SubcommandMap
+	slack.IsGatewayKnownCommand = func(ctx context.Context, name string) bool {
+		return commands.IsGatewayKnownCommand(ctx, commands.Default, name)
+	}
+	matrix.IsGatewayKnownCommand = slack.IsGatewayKnownCommand
+	slack.AppManifest = func(ctx context.Context, cfg config.Tree) map[string]any {
+		return commands.SlackAppManifest(ctx, commands.Default, cfg, "")
+	}
+	feishu.CommentAgentRunner = gatewayrun.RunFeishuCommentAgent
 	slack.NativeSlashNames = func(ctx context.Context) []string {
 		var names []string
 		for _, s := range commands.SlackNativeSlashes(ctx, commands.Default, rawConfigTree(ctx)) {
@@ -399,7 +413,7 @@ func installProcessWiring() {
 	tools.ProjectBoardWorkdirBinder = bindProjectBoardWorkdir
 	observability.SkillSourceIDAliasesHook = skills.SourceIDAliases
 	app.SecurityAdvisoriesStartupBanner = func(ctx context.Context) string {
-		return plugins.AdvisoryStartupBanner(ctx, plugins.DetectCompromised(plugins.Advisories))
+		return plugins.AdvisoryStartupBanner(ctx, plugins.DetectCompromised(ctx, plugins.Advisories))
 	}
 	app.TryAcquireActiveSession = app.AcquireActiveSessionLease
 	app.FormatRefusalStderr = activesessions.FormatRefusalStderr

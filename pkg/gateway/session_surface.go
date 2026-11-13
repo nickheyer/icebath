@@ -11,6 +11,20 @@ var turnSurfaces = map[string]bool{"hud": true, "voice-live": true}
 // Most characters of a spoken transcript a live voice delegation commits
 const voiceContextLimit = 6000
 
+// Per turn surface fields a prompt.submit request may carry
+var surfaceSubmitOrder = []string{"surface", "voice_context", "interrupted", "voice_turn"}
+
+// Raw per turn surface fields present on a prompt.submit request, forwarded to admission
+func submitSurfaceFields(params map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, key := range surfaceSubmitOrder {
+		if value, ok := params[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 // True for a wire flag that is absent, None or a real boolean
 func optionalBool(value any) (bool, bool) {
 	if value == nil {

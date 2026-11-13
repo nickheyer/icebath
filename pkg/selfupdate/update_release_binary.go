@@ -165,7 +165,7 @@ func buildCheckoutBinary(ctx context.Context, w io.Writer, root string) error {
 	binary := filepath.Join(root, filepath.Base(install.InstallBinaryPath(root)))
 	staged := binary + ".build"
 	fmt.Fprintln(w, "→ Building the icebath binary...")
-	if err := run([]string{"CGO_ENABLED=0"}, "build", "-tags", "webdist", "-trimpath", "-o", staged, "./cmd/icebath"); err != nil {
+	if err := run([]string{"CGO_ENABLED=0"}, "build", "-tags", "webdist,goolm", "-trimpath", "-o", staged, "./cmd/icebath"); err != nil {
 		os.Remove(staged)
 		return err
 	}

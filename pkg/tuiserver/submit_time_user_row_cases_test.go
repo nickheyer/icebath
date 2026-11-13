@@ -68,11 +68,11 @@ func TestSubmitTimeUserRow(t *testing.T) {
 		}
 		messages := []map[string]any{userMsg}
 		a.SetPersistUserMessageIdx(0)
-		if _, err := a.FlushMessagesToSessionDB(messages); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(messages); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
-		if _, err := a.FlushMessagesToSessionDB(append(messages, map[string]any{"role": "assistant", "content": "done"})); err != nil {
-			t.Fatal(err)
+		if outcome := a.FlushMessagesToSessionDB(append(messages, map[string]any{"role": "assistant", "content": "done"})); outcome == state.FlushFailed {
+			t.Fatalf("flush outcome %v", outcome)
 		}
 		rows, err := db.GetMessagesAsConversation(ctx, key, state.ConversationOptions{IncludeInactive: true})
 		if err != nil {

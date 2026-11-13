@@ -289,9 +289,6 @@ func transcribeGroq(ctx context.Context, filePath, modelName string, h sttHints)
 	if apiKey == "" {
 		return sttError("GROQ_API_KEY not set"), nil
 	}
-	if !hasOpenAI() {
-		return sttError("openai package not installed"), nil
-	}
 	if sttOpenAIModels[modelName] || sttRetiredGroqModels[modelName] {
 		sttLog().Info(fmt.Sprintf("Model %s not available on Groq, using %s", modelName, sttDefaultGroqModel))
 		modelName = sttDefaultGroqModel
@@ -359,9 +356,6 @@ func transcribeOpenAI(ctx context.Context, filePath, modelName string, e openAIE
 	language := e.Language
 	if language == "" {
 		language = resolveSTTLanguage(ctx, label, nil)
-	}
-	if !hasOpenAI() {
-		return sttError("openai package not installed"), nil
 	}
 	if label == "openai" && (sttGroqModels[modelName] || sttRetiredGroqModels[modelName]) {
 		sttLog().Info(fmt.Sprintf("Model %s not available on OpenAI, using %s", modelName, sttDefaultOpenAIModel))
@@ -479,11 +473,6 @@ func transcribeMistral(ctx context.Context, filePath, modelName string, h sttHin
 	apiKey := resolveSTTProviderKey(ctx, "MISTRAL_API_KEY", "mistral")
 	if apiKey == "" {
 		return sttError("MISTRAL_API_KEY not set"), nil
-	}
-	lazyEnsureQuietly(ctx, "mistral")
-	if !safeFindSpec("mistralai") {
-		err := &sttPythonError{msg: "No module named 'mistralai'"}
-		return sttCloudFailure(err, filePath, "Mistral transcription", "ModuleNotFoundError"), nil
 	}
 	language := h.Language
 	if language == "" {

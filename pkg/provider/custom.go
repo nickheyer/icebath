@@ -1332,6 +1332,7 @@ func (r *resolver) resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, 
 	rt := r.customRuntime(baseURL, apiKey, "", "direct-alias")
 	rt.RequestedProvider = requestedProvider
 	if apiKey == "" && entrySrc != nil {
+		rt.APIKey = ""
 		rt.TokenSource = TagCredentialSource(entrySrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = entrySrc.Command
 	}
@@ -1429,6 +1430,7 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 	rt := r.customRuntime(baseURL, apiKey, entryMode, "custom_provider:"+sourceName)
 	rt.RequestedProvider = requestedProvider
 	if apiKey == "" && tokenSrc != nil {
+		rt.APIKey = ""
 		rt.TokenSource = TagCredentialSource(tokenSrc.Token, CredentialSourceKeyCmd).Func()
 		rt.KeyCmd = tokenSrc.Command
 	}

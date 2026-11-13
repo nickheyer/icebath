@@ -88,8 +88,10 @@ type skipRegistration struct {
 
 func (s *skipRegistration) Error() string { return s.reason }
 
-func skipDebug(reason string) error { return &skipRegistration{reason: reason, level: "debug"} }
+// Skip reported at the default debug level
+func skipDebug(reason string) error { return skipAt("debug", reason) }
 
+// Skip carrying the reason as its message and the level the registration log uses
 func skipAt(level, reason string) error { return &skipRegistration{reason: reason, level: level} }
 
 func logAt(logger *slog.Logger, level, msg string) {

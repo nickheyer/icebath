@@ -143,7 +143,7 @@ func (m *subagentMonitor) subagents() subagentBackend {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.local == nil {
-		m.local = &localSubagents{cli: m.cli, paths: map[string]any{}}
+		m.local = newLocalSubagents(m.cli)
 	}
 	return m.local
 }
@@ -558,10 +558,15 @@ type localSubagents struct {
 	paths map[string]any
 }
 
+// Registry surface of the CLI's in process agent with no transcript paths read yet
+func newLocalSubagents(c *CLI) *localSubagents {
+	return &localSubagents{cli: c, paths: map[string]any{}}
+}
+
 // Live child rows of the CLI agent's spawn tree with start time and latest tool
 func (l *localSubagents) subagentRows(bool) []map[string]any {
 	var entries []map[string]any
-	if parent := l.cli.agent; parent != nil {
+	if parent := l.cli.agentRef(); parent != nil {
 		entries = agent.SubagentListRowsForSession(parent.SessionID())
 	}
 	live := map[string]map[string]any{}
@@ -593,7 +598,7 @@ func (l *localSubagents) subagentTail(subagentID string, _ bool) *string {
 
 // Runs a steer or stop control action against the CLI agent's spawn tree
 func (l *localSubagents) subagentControl(action, subagentID string, message any) (map[string]any, error) {
-	if parent := l.cli.agent; parent != nil {
+	if parent := l.cli.agentRef(); parent != nil {
 		return agent.SubagentControlForSession(action, subagentID, message, parent.SessionID())
 	}
 	return agent.SubagentControl(action, subagentID, message, nil)

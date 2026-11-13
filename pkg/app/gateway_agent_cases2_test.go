@@ -67,7 +67,7 @@ func TestAnExplicitLevelTheSessionAlreadyInheritsIsStillCommitted(t *testing.T) 
 	high := map[string]any{"enabled": true, "effort": "high"}
 	scriptedAgentOn(t, a.connection, gatewayAgentOptions{ReasoningConfig: high, PushReasoning: true})
 	host := bareCLI()
-	host.agent = a
+	host.setAgent(a)
 	host.applyReasoningAfterSwitch("high", false, false)
 	a.SetReasoningConfig(map[string]any{"enabled": true, "effort": "high"})
 	want := []any{map[string]any{"effort": "high"}, map[string]any{"effort": "high"}}

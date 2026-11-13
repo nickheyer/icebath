@@ -25,7 +25,8 @@ func TestDraftIsClearedBeforeARunningTurnIsInterrupted(t *testing.T) {
 		var interrupts []cliAgent
 		prev := requestHardInterrupt
 		requestHardInterrupt = func(a cliAgent) { interrupts = append(interrupts, a) }
-		c := &CLI{ctx: context.Background(), agentRunning: true, agent: &GatewayAgent{ctx: context.Background()}}
+		c := &CLI{ctx: context.Background(), agentRunning: true}
+		c.setAgent(&GatewayAgent{ctx: context.Background()})
 		app, event := handlerRig()
 		_ = app.buffer.setText("half typed follow-up")
 		handler(c)(event)
@@ -33,7 +34,7 @@ func TestDraftIsClearedBeforeARunningTurnIsInterrupted(t *testing.T) {
 			t.Fatalf("%s first press: text %q interrupts %d exit %v", name, app.buffer.text(), len(interrupts), c.shouldExit)
 		}
 		handler(c)(event)
-		if len(interrupts) != 1 || interrupts[0] != c.agent || c.shouldExit {
+		if len(interrupts) != 1 || interrupts[0] != c.agentRef() || c.shouldExit {
 			t.Fatalf("%s second press: interrupts %v exit %v", name, interrupts, c.shouldExit)
 		}
 		requestHardInterrupt = prev

@@ -9,11 +9,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"sync/atomic"
-	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -71,9 +70,6 @@ func (c *anthropicSDKClient) Close() error {
 	return nil
 }
 
-// Trailing v1 segment the SDK appends itself
-var anthSDKV1Suffix = regexp.MustCompile(`/v1/?$`)
-
 // Bearer token source of a callable key, false for a static key
 func anthSDKTokenSource(apiKey any) (func(context.Context) (string, error), bool) {
 	switch k := apiKey.(type) {
@@ -93,25 +89,24 @@ func anthSDKTokenSource(apiKey any) (func(context.Context) (string, error), bool
 
 // Anthropic client for a static key or bearer callable, 10s connect and the read timeout or 900s
 func buildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeout float64, dropContext1MBeta bool) (*anthropicSDKClient, error) {
-	read := 900 * time.Second
-	if timeout > 0 {
-		read = time.Duration(timeout * float64(time.Second))
-	}
 	route := Route{Provider: "anthropic", Mode: ModeAnthropicMessages, BaseURL: baseURL}
 	if src, ok := anthSDKTokenSource(apiKey); ok {
 		route.TokenSource = src
 	} else {
-		oauthNormalizeProxyEnvVars()
+		config.NormalizeProxyEnvVars()
 		key, _ := apiKey.(string)
 		route.APIKey = key
 	}
-	tr := auxDeadlineTransport(10*time.Second, read, read)
+	normalized, kwargs := anthBaseClientKwargs(baseURL, secondsDuration(timeout))
+	if kwargs.defaultQuery != nil {
+		normalized = strings.TrimRight(normalized, "/")
+	}
+	tr := auxDeadlineTransport(kwargs.connect, kwargs.timeout, kwargs.timeout)
 	route.Transport = tr
 	built, err := newAnthropicClient(route)
 	if err != nil {
 		return nil, err
 	}
-	normalized := anthSDKV1Suffix.ReplaceAllString(strings.TrimRight(anthNormalizedBaseURL(baseURL), "/"), "")
 	keyAttr, tokenAttr := anthSDKKeyAttributes(apiKey, baseURL)
 	return &anthropicSDKClient{inner: built.(*anthropicClient), baseURL: normalized, transport: tr,
 		betas: anthCommonBetasForBaseURL(normalized, dropContext1MBeta), apiKey: keyAttr, authToken: tokenAttr}, nil
@@ -225,7 +220,8 @@ func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.inner.httpClient(10 * time.Second).Do(httpReq)
+	_, connect := anthClientTimeout(0)
+	resp, err := c.inner.httpClient(connect).Do(httpReq)
 	if err != nil {
 		return nil, c.inner.transportError(ctx, err, TimeoutPhaseConnect)
 	}
@@ -322,13 +318,10 @@ func buildAnthropicBedrockClient(ctx context.Context, region string, timeout flo
 	if bearerSet && (scoped.AccessKeyID != "" || scoped.SecretAccessKey != "" || scoped.SessionToken != "" || scoped.Profile != "") {
 		return nil, &ValueError{Message: "Cannot specify both `api_key` and AWS credentials (`aws_access_key`, `aws_secret_key`, `aws_session_token`, `aws_profile`)"}
 	}
-	read := 900 * time.Second
-	if timeout > 0 {
-		read = time.Duration(timeout * float64(time.Second))
-	}
+	read, connect := anthClientTimeout(secondsDuration(timeout))
 	betas := append(cloneStrings(anthropicCommonBetas), anthropicContext1MBeta)
 	headers := bedrockGuardrailHeaders(bedrockProcessConfig(ctx))
-	tr := auxDeadlineTransport(10*time.Second, read, read)
+	tr := auxDeadlineTransport(connect, read, read)
 	route := Route{Provider: "bedrock", Mode: ModeAnthropicMessages, Auth: AuthAWSSigV4, Region: region, Headers: headers, Transport: tr,
 		AccessKeyID: scoped.AccessKeyID, SecretAccessKey: scoped.SecretAccessKey, SessionToken: scoped.SessionToken}
 	built, err := newAnthropicClient(route)

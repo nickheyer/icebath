@@ -71,6 +71,9 @@ func profileName(h string) string {
 	return "default"
 }
 
+// Folder id of the profile a home belongs to, default for the install root
+func ProfileName(h string) string { return profileName(h) }
+
 // Handle is the at handle a local profile answers to among the roster folder ids
 func Handle(name string, names []string) string {
 	if name == "default" && !containsString(names, defaultHandle) {
@@ -97,25 +100,42 @@ func containsString(names []string, name string) bool {
 	return false
 }
 
+// Value of fn, def when it fails or panics, so the probe never crashes a prompt build
+func swallow[T any](fn func() (T, error), def T) (out T) {
+	defer func() {
+		if recover() != nil {
+			out = def
+		}
+	}()
+	v, err := fn()
+	if err != nil {
+		return def
+	}
+	return v
+}
+
 // Roster lists the default profile and every live named profile, sorted by folder id
 func Roster(root string) []config.BotProfile {
-	out := []config.BotProfile{{Name: "default", Dir: root}}
-	profiles := pypath.PathJoin(root, "profiles")
-	if st, err := os.Stat(profiles); err != nil || !st.IsDir() {
-		return out
-	}
-	entries, err := os.ReadDir(profiles)
-	if err != nil {
-		return out
-	}
-	for _, e := range entries {
-		name := e.Name()
-		dir := pypath.PathJoin(profiles, name)
-		if name != "default" && home.ProfileIDRe.MatchString(strings.TrimSuffix(name, "\n")) && home.ProfileLive(dir) {
-			out = append(out, config.BotProfile{Name: name, Dir: dir})
+	named := swallow(func() ([]config.BotProfile, error) {
+		profiles := pypath.PathJoin(root, "profiles")
+		if st, err := os.Stat(profiles); err != nil || !st.IsDir() {
+			return nil, nil
 		}
-	}
-	return out
+		entries, err := os.ReadDir(profiles)
+		if err != nil {
+			return nil, err
+		}
+		var found []config.BotProfile
+		for _, e := range entries {
+			name := e.Name()
+			dir := pypath.PathJoin(profiles, name)
+			if name != "default" && home.ProfileIDRe.MatchString(strings.TrimSuffix(name, "\n")) && home.ProfileLive(dir) {
+				found = append(found, config.BotProfile{Name: name, Dir: dir})
+			}
+		}
+		return found, nil
+	}, nil)
+	return append([]config.BotProfile{{Name: "default", Dir: root}}, named...)
 }
 
 // ConfigRoster is the roster of the install that holds a home, the shape config migrations take
@@ -125,27 +145,26 @@ func ConfigRoster(h string) []config.BotProfile {
 
 // YAML mapping at a path, nil when missing, unreadable, not a mapping, or lacking the needle
 func readYAMLDict(path, needle string) map[string]any {
-	st, err := os.Stat(path)
-	if err != nil || !st.Mode().IsRegular() {
-		return nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
-	if needle != "" && !strings.Contains(text, needle) {
-		return nil
-	}
-	data, err := config.FastSafeLoad([]byte(text))
-	if err != nil {
-		return nil
-	}
-	m, ok := asDict(data)
-	if !ok {
-		return nil
-	}
-	return m
+	return swallow(func() (map[string]any, error) {
+		st, err := os.Stat(path)
+		if err != nil || !st.Mode().IsRegular() {
+			return nil, nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+		if needle != "" && !strings.Contains(text, needle) {
+			return nil, nil
+		}
+		data, err := config.FastSafeLoad([]byte(text))
+		if err != nil {
+			return nil, err
+		}
+		m, _ := asDict(data)
+		return m, nil
+	}, nil)
 }
 
 // Mapping view of a parsed YAML value, false for anything that is not a mapping
@@ -191,8 +210,7 @@ func anyManaged(root string) (bool, error) {
 
 // IsBotModeManaged is true when any profile on the install of a home is Bot Mode managed, never failing
 func IsBotModeManaged(h string) bool {
-	managed, err := anyManaged(InstallRoot(resolveHome(h)))
-	return err == nil && managed
+	return swallow(func() (bool, error) { return anyManaged(InstallRoot(resolveHome(h))) }, false)
 }
 
 // Non empty parts joined by an em dash
@@ -219,14 +237,16 @@ func friendlyFields(data map[string]any) (string, string) {
 
 // One line teammate role of a profile, display name, title and description, at most 160 characters
 func profileRole(profileDir string) string {
-	data := readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), "")
-	title, display := friendlyFields(data)
-	lowered := pystr.Lower(display)
-	if lowered == pystr.Lower(pypath.PathName(profileDir)) || lowered == pystr.Lower(title) {
-		display = ""
-	}
-	line := roleLine(display, title, pystr.Strip(strOr(data["description"])))
-	return headRunes(strings.Join(pystr.SplitWhitespace(line, -1), " "), 160)
+	return swallow(func() (string, error) {
+		data := readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), "")
+		title, display := friendlyFields(data)
+		lowered := pystr.Lower(display)
+		if lowered == pystr.Lower(pypath.PathName(profileDir)) || lowered == pystr.Lower(title) {
+			display = ""
+		}
+		line := roleLine(display, title, pystr.Strip(strOr(data["description"])))
+		return headRunes(strings.Join(pystr.SplitWhitespace(line, -1), " "), 160), nil
+	}, "")
 }
 
 // Bot Mode title and profile display name of a profile, empty when unset
@@ -322,6 +342,9 @@ func localTakenForms(h string) (map[string]bool, error) {
 func LocalTakenForms(h string) (map[string]bool, error) {
 	return localTakenForms(h)
 }
+
+// Registered peer gateway names of an install root, sorted and empty on any failure
+func Peers(root string) []string { return peers(root) }
 
 // Registered peer gateway names from the install config, sorted, empty on any failure
 func peers(root string) []string {
@@ -454,10 +477,7 @@ func ProtocolSection(h string, forceRefresh bool) string {
 	if cached, ok := sectionCache[resolved]; ok && !forceRefresh {
 		return cached
 	}
-	section, err := buildSection(resolved)
-	if err != nil {
-		section = ""
-	}
+	section := swallow(func() (string, error) { return buildSection(resolved) }, "")
 	sectionCache[resolved] = section
 	return section
 }

@@ -116,6 +116,9 @@ func provisionIndex() error {
 	}
 	indexFiles = map[string][]indexFile{}
 	for _, r := range reqs {
+		if !r.ServesTarget(target) {
+			continue
+		}
 		var chosen *pm.Wheel
 		for i, f := range r.Files {
 			base := f.URL[strings.LastIndex(f.URL, "/")+1:]

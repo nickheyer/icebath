@@ -624,20 +624,20 @@ func TestSVFeaturesFileAndDeclarations(t *testing.T) {
 func TestSVLegacySelectionCarriesWhatTheOldVenvHeld(t *testing.T) {
 	repo := svRepo(t)
 	saved := platformGatesCache.gates
-	platformGatesCache.gates = map[string]string{"matrix": "sys_platform == 'nowhere'"}
+	platformGatesCache.gates = map[string]string{"documents": "sys_platform == 'nowhere'"}
 	t.Cleanup(func() { platformGatesCache.gates = saved })
 	site := filepath.Join(repo, "venv", "lib", "python3.11", "site-packages")
-	sttMkdir(t, filepath.Join(site, "telegram"))
-	writeFile(t, filepath.Join(site, "fal_client.py"), nil, 0o666)
-	for _, anchor := range Anchors["matrix"] {
+	sttMkdir(t, filepath.Join(site, "pilk"))
+	writeFile(t, filepath.Join(site, "neutts.py"), nil, 0o666)
+	for _, anchor := range Anchors["documents"] {
 		sttMkdir(t, filepath.Join(site, anchor))
 	}
 	got, err := LegacySelection(context.Background(), repo)
-	if err != nil || strings.Join(got, ",") != "all,fal,telegram" {
+	if err != nil || strings.Join(got, ",") != "all,neutts,silk" {
 		t.Fatalf("legacy %v %v", got, err)
 	}
-	recordDeclinedExtras(context.Background(), []string{"fal"}, nil, nil, repo)
-	if got, _ := LegacySelection(context.Background(), repo); strings.Join(got, ",") != "all,telegram" {
+	recordDeclinedExtras(context.Background(), []string{"neutts"}, nil, nil, repo)
+	if got, _ := LegacySelection(context.Background(), repo); strings.Join(got, ",") != "all,silk" {
 		t.Fatalf("declined extra carried %v", got)
 	}
 }

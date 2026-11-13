@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 func (a *AIAgent) RequestedProvider() string                         { return a.requestedProvider }
@@ -62,7 +63,7 @@ func (a *AIAgent) CodexSessionDB() provider.CodexSessionDB {
 }
 
 // Flushes messages to the session db through the session persistence writer
-func (a *AIAgent) FlushMessagesToSessionDB(messages []map[string]any) (bool, error) {
+func (a *AIAgent) FlushMessagesToSessionDB(messages []map[string]any) state.FlushOutcome {
 	return a.flushMessagesToSessionDB(messages)
 }
 

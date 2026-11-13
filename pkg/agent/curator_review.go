@@ -15,7 +15,7 @@ func init() { memory.CuratorHooks.RunReview = runCuratorReview }
 func runCuratorReview(ctx context.Context, req memory.CuratorReviewRequest) (*memory.CuratorReviewResult, error) {
 	o := AIAgentOptions{
 		Model: req.Model, Provider: req.Provider, RequestOverrides: req.RequestOverrides,
-		ReasoningConfig: req.ReasoningConfig, EnabledToolsets: req.EnabledToolsets, MaxIterations: req.MaxIterations,
+		ReasoningConfig: req.ReasoningConfig, EnabledToolsets: req.EnabledToolsets, MaxIterations: new(req.MaxIterations),
 		QuietMode: req.QuietMode, Platform: req.Platform, SkipContextFiles: req.SkipContextFiles, SkipMemory: req.SkipMemory,
 		ACPCommand: req.ACPCommand, ACPArgs: req.ACPArgs, CredentialPool: req.CredentialPool,
 	}
@@ -40,8 +40,9 @@ func runCuratorReview(ctx context.Context, req memory.CuratorReviewRequest) (*me
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]any, len(a.sessionMessages))
-	for i, m := range a.sessionMessages {
+	live := a.liveSessionMessages()
+	messages := make([]any, len(live))
+	for i, m := range live {
 		messages[i] = state.MessageToDict(m)
 	}
 	return &memory.CuratorReviewResult{Conversation: result, Messages: messages}, nil

@@ -202,7 +202,14 @@ func (r *GatewayRunner) startupShouldAbort() bool {
 
 // Cancels an adapter's background tasks then disconnects it
 func (r *GatewayRunner) startupTeardownAdapter(ctx context.Context, adapter gateway.PlatformAdapter, platform gateway.Platform) {
-	adapter.Base().CancelBackgroundTasks(ctx)
+	func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				logSuppressed(slog.LevelDebug, fmt.Errorf("%v", rec), "✗ %s background-task cancel error: %v", platform)
+			}
+		}()
+		adapter.CancelBackgroundTasks(ctx)
+	}()
 	r.safeAdapterDisconnect(ctx, adapter, platform)
 }
 

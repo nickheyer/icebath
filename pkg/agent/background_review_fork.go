@@ -255,7 +255,7 @@ func routedReasoningConfig(ctx context.Context, taskCfg map[string]any) map[stri
 // Constructor keywords of the review fork, parent toolsets and a skipped external memory, parity fields on the same model
 func forkInitKwargs(ctx context.Context, a *AIAgent, rt reviewRuntime, routed bool, maxIterations int, taskCfg map[string]any) AIAgentOptions {
 	o := AIAgentOptions{
-		Model: pyStrOr(rt.Model, a.model), MaxIterations: maxIterations, QuietMode: true, Platform: a.platform,
+		Model: pyStrOr(rt.Model, a.model), MaxIterations: new(maxIterations), QuietMode: true, Platform: a.platform,
 		Provider: pyStrOr(rt.Provider, a.provider), APIMode: rt.APIMode, BaseURL: rt.BaseURL, APIKey: rt.APIKey,
 		CredentialPool: rt.CredentialPool, RequestOverrides: rt.RequestOverrides, ParentSessionID: a.sessionID,
 		EnabledToolsets: a.enabledToolsets, DisabledToolsets: a.disabledToolsets, SkipMemory: true,

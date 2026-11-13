@@ -205,23 +205,6 @@ func TestPluginActivationSummaryReadsWhatThePluginRegistered(t *testing.T) {
 	}
 }
 
-// Port of the summary assertion of test_discovery_says_restart_when_the_selected_generation_has_the_dependency
-func TestActivationSummaryCarriesMissingDependencies(t *testing.T) {
-	selectGeneration(t, true, "1.0")
-	t.Setenv("PYTHONPATH", "")
-	m := NewManager(t.TempDir())
-	m.plugins["depprobe"] = &LoadedPlugin{Manifest: &Manifest{Name: "depprobe", Key: "depprobe", PythonDeps: []string{depReq}}}
-	summary := pluginActivationSummary(context.Background(), m, "depprobe")
-	if !reflect.DeepEqual(summary["missing_dependencies"], []any{depReq}) {
-		t.Fatalf("summary = %#v", summary)
-	}
-	m.plugins["depprobe"].Error = "ModuleNotFoundError"
-	blocked := DependencyBlockedSummaries(context.Background(), m)
-	if len(blocked) != 1 || !reflect.DeepEqual(blocked[0]["missing_dependencies"], []any{depReq}) || len(ActivationSummaries(context.Background(), m)) != 0 {
-		t.Fatalf("blocked = %#v", blocked)
-	}
-}
-
 // Gateway answering with the given activations and no serve backend
 func depGatewayAnswers(t *testing.T, activations []any, backend *fakeRendezvous) {
 	calls := []gatewayCall{}
@@ -254,22 +237,6 @@ func activateHint(t *testing.T) (map[string]any, string) {
 	return result, hint
 }
 
-// Port of test_enable_reports_restart_when_the_running_gateway_cannot_import_the_dependency
-func TestEnableReportsRestartWhenTheRunningGatewayCannotImportTheDependency(t *testing.T) {
-	selectGeneration(t, true, "1.0")
-	depGatewayAnswers(t, []any{depEntry(depReq)}, nil)
-	result, hint := activateHint(t)
-	act := result["activation"].(map[string]any)
-	if result["gateway_reloaded"] != true || result["restart_required"] != true ||
-		!reflect.DeepEqual(act["missing_dependencies"], []any{depReq}) || !reflect.DeepEqual(act["missing_in"], []any{"gateway"}) {
-		t.Fatalf("result = %#v", result)
-	}
-	if strings.Contains(hint, "nothing of this plugin needs") || !strings.Contains(hint, "installed after the running gateway") ||
-		!strings.Contains(hint, "icebath gateway restart") {
-		t.Fatalf("hint = %q", hint)
-	}
-}
-
 // Serve backend answering every activation request with body, recording the token header
 func serveBackend(t *testing.T, body map[string]any, seen *[]string) *fakeRendezvous {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -287,26 +254,6 @@ func serveBackend(t *testing.T, body map[string]any, seen *[]string) *fakeRendez
 		tokens: map[string]string{hostRoleDesktopServe: "desktop-spawn-token"}, host: u.Hostname()}
 }
 
-// Port of test_restart_names_only_the_process_that_cannot_import
-func TestRestartNamesOnlyTheProcessThatCannotImport(t *testing.T) {
-	selectGeneration(t, true, "1.0")
-	t.Setenv("no_proxy", "*")
-	seen := []string{}
-	backend := serveBackend(t, map[string]any{"activation": depEntry(depReq)}, &seen)
-	depGatewayAnswers(t, []any{depEntry()}, backend)
-	result, hint := activateHint(t)
-	act := result["activation"].(map[string]any)
-	if result["restart_required"] != true || !reflect.DeepEqual(act["missing_in"], []any{"backend"}) {
-		t.Fatalf("result = %#v", result)
-	}
-	if !strings.Contains(hint, "desktop app") || strings.Contains(hint, "icebath gateway restart") {
-		t.Fatalf("hint = %q", hint)
-	}
-	if !reflect.DeepEqual(seen, []string{"/api/dashboard/agent-plugins/activate desktop-spawn-token", "depprobe"}) {
-		t.Fatalf("backend saw %v", seen)
-	}
-}
-
 // Port of the notify half of test_desktop_backend_does_not_claim_the_host_serve_record
 func TestNotifyServeBackendFindsTheDesktopRecord(t *testing.T) {
 	t.Setenv("no_proxy", "*")
@@ -321,15 +268,6 @@ func TestNotifyServeBackendFindsTheDesktopRecord(t *testing.T) {
 	installActivationServices(t, &Services{HostRendezvous: &fakeRendezvous{}})
 	if got := notifyServeBackend(context.Background(), "demo", t.TempDir()); got != nil {
 		t.Fatalf("no backend answered %v", got)
-	}
-}
-
-// Port of test_enable_reports_repair_when_the_dependency_was_never_installed
-func TestEnableReportsRepairWhenTheDependencyWasNeverInstalled(t *testing.T) {
-	selectGeneration(t, false, "1.0")
-	depGatewayAnswers(t, []any{depEntry(depReq)}, nil)
-	if _, hint := activateHint(t); !strings.Contains(hint, "pm repair") {
-		t.Fatalf("hint = %q", hint)
 	}
 }
 

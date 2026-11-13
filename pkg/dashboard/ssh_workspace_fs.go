@@ -41,6 +41,11 @@ func (e *SshWorkspaceFsError) Error() string {
 
 func (e *SshWorkspaceFsError) Unwrap() error { return e.Cause }
 
+// Error of a code, its text the message or the code when the message is empty
+func newSshWorkspaceFsError(code, message string) *SshWorkspaceFsError {
+	return &SshWorkspaceFsError{Code: code, Msg: message}
+}
+
 // Connection settings an SSH workspace adapter is built from
 type sshFsConfig struct {
 	host, user string
@@ -172,10 +177,10 @@ func (f *SshWorkspaceFs) Cwd() (string, error) { return f.normalize(f.env.Cwd())
 func (f *SshWorkspaceFs) normalize(path string) (string, error) {
 	raw := pystr.Strip(path)
 	if raw == "" {
-		return "", &SshWorkspaceFsError{Code: "EINVAL", Msg: "Path is required"}
+		return "", newSshWorkspaceFsError("EINVAL", "Path is required")
 	}
 	if strings.Contains(raw, "\x00") || strings.HasPrefix(strings.ToLower(raw), "file:") {
-		return "", &SshWorkspaceFsError{Code: "EINVAL", Msg: "Invalid path"}
+		return "", newSshWorkspaceFsError("EINVAL", "Invalid path")
 	}
 	remoteHome, _ := f.env.RemoteHome()
 	switch {
@@ -310,11 +315,11 @@ printf '__ICEBATH_FS_SIZE__:%s\n' "$size"
 		return nil, 0, "", err
 	}
 	if result.ReturnCode != 0 {
-		return nil, 0, "", &SshWorkspaceFsError{Code: sshFsErrorCode(result.Output, "EIO")}
+		return nil, 0, "", newSshWorkspaceFsError(sshFsErrorCode(result.Output, "EIO"), "")
 	}
 	lines := pystr.Splitlines(result.Output, false)
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "__ICEBATH_FS_SIZE__:") {
-		return nil, 0, "", &SshWorkspaceFsError{Code: "EIO", Msg: "SSH filesystem did not return a file size"}
+		return nil, 0, "", newSshWorkspaceFsError("EIO", "SSH filesystem did not return a file size")
 	}
 	size, err := sshFsInt(strings.SplitN(lines[0], ":", 2)[1])
 	if err != nil {
@@ -354,7 +359,7 @@ printf '__ICEBATH_FS_SIZE__:%s\n' "$size"
 		return "", 0, err
 	}
 	if result.ReturnCode != 0 {
-		return "", 0, &SshWorkspaceFsError{Code: sshFsErrorCode(result.Output, "EIO")}
+		return "", 0, newSshWorkspaceFsError(sshFsErrorCode(result.Output, "EIO"), "")
 	}
 	targetLine, sizeLine := "", ""
 	for _, line := range pystr.Splitlines(result.Output, false) {
@@ -366,7 +371,7 @@ printf '__ICEBATH_FS_SIZE__:%s\n' "$size"
 		}
 	}
 	if targetLine == "" || sizeLine == "" {
-		return "", 0, &SshWorkspaceFsError{Code: "EIO", Msg: "SSH filesystem did not return file metadata"}
+		return "", 0, newSshWorkspaceFsError("EIO", "SSH filesystem did not return file metadata")
 	}
 	invalid := func(cause error) error {
 		return &SshWorkspaceFsError{Code: "EIO", Msg: "SSH filesystem returned invalid file metadata", Cause: cause}
@@ -442,7 +447,7 @@ func (f *SshWorkspaceFs) WriteText(path, content string, maxBytes int64) (string
 	}
 	encodedSize := int64(len(content))
 	if encodedSize > maxBytes {
-		return "", 0, &SshWorkspaceFsError{Code: "EFBIG"}
+		return "", 0, newSshWorkspaceFsError("EFBIG", "")
 	}
 	parent := pypath.PosixDirname(target)
 	if parent == "" {
@@ -462,7 +467,7 @@ cat > "$tmp" && mv -f "$tmp" "$target"
 		return "", 0, err
 	}
 	if result.ReturnCode != 0 || result.StdinError != "" {
-		return "", 0, &SshWorkspaceFsError{Code: sshFsErrorCode(result.Output, "EIO")}
+		return "", 0, newSshWorkspaceFsError(sshFsErrorCode(result.Output, "EIO"), "")
 	}
 	return target, encodedSize, nil
 }
@@ -559,7 +564,7 @@ func getSshWorkspaceFs(ctx context.Context, profileKey string, terminal map[stri
 		cfg.cwd = "~"
 	}
 	if cfg.host == "" || cfg.user == "" {
-		return nil, &SshWorkspaceFsError{Code: "ECONN", Msg: "SSH host and user are required"}
+		return nil, newSshWorkspaceFsError("ECONN", "SSH host and user are required")
 	}
 	dial := sshFsDialLocks.lockFor(profileKey)
 	dial.Lock()

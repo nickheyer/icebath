@@ -62,11 +62,11 @@ func anySlice(items []string) []any {
 	return out
 }
 
-// Creates the main era venv anchors of matrix and fal under root
+// Creates the main era venv anchors of documents and silk under root
 func declLegacyVenv(t *testing.T, root string) {
 	t.Helper()
 	site := filepath.Join(root, "venv", "lib", "python3.11", "site-packages")
-	for _, anchor := range append(anchors("matrix"), "fal_client") {
+	for _, anchor := range append(anchors("documents"), "pilk") {
 		if err := os.MkdirAll(filepath.Join(site, anchor), 0o777); err != nil {
 			t.Fatal(err)
 		}
@@ -85,26 +85,26 @@ func declDeclined(t *testing.T, root string) map[string]bool {
 func TestWithoutDropsARecordedExtraFromEveryLaterSelection(t *testing.T) {
 	declSynced(t)
 	ctx := context.Background()
-	if code, err := CmdInstall(ctx, InstallArgs{Without: []string{"matrix"}}); code != 0 || err != nil {
+	if code, err := CmdInstall(ctx, InstallArgs{Without: []string{"documents"}}); code != 0 || err != nil {
 		t.Fatalf("install %d %v", code, err)
 	}
-	if got := declSelection(t, []string{"all", "fal", "matrix"}, nil); !reflect.DeepEqual(got, []string{"all", "fal"}) {
+	if got := declSelection(t, []string{"all", "silk", "documents"}, nil); !reflect.DeepEqual(got, []string{"all", "silk"}) {
 		t.Fatalf("next selection %v", got)
 	}
 	tmp := t.TempDir()
 	declLegacyVenv(t, tmp)
-	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "fal", "matrix"}) {
+	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "documents", "silk"}) {
 		t.Fatalf("legacy %v %v", got, err)
 	}
-	if _, err := recordDeclinedExtras(ctx, []string{"matrix"}, nil, nil, tmp); err != nil {
+	if _, err := recordDeclinedExtras(ctx, []string{"documents"}, nil, nil, tmp); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "fal"}) {
+	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "silk"}) {
 		t.Fatalf("legacy after decline %v %v", got, err)
 	}
 	v := NewVenv(RepoRoot()).(VenvState)
 	var ie *InstallError
-	if err := refuseDeclined(ctx, v, []string{"matrix"}, false); !errors.As(err, &ie) || !strings.Contains(err.Error(), "pm install --extra matrix") {
+	if err := refuseDeclined(ctx, v, []string{"documents"}, false); !errors.As(err, &ie) || !strings.Contains(err.Error(), "pm install --extra documents") {
 		t.Fatalf("lazy refusal %v", err)
 	}
 }
@@ -320,13 +320,13 @@ func TestWithoutAfterAFailedFirstMigrationKeepsTheOtherLegacyExtras(t *testing.T
 	root, calls := declSynced(t)
 	peSwap(t, &cliInstallDefaults, func(context.Context, []string, bool) error { return nil })
 	declLegacyVenv(t, root)
-	if code, err := CmdInstall(context.Background(), InstallArgs{Without: []string{"matrix"}}); code != 0 || err != nil {
+	if code, err := CmdInstall(context.Background(), InstallArgs{Without: []string{"documents"}}); code != 0 || err != nil {
 		t.Fatalf("install %d %v", code, err)
 	}
-	if !reflect.DeepEqual(*calls, [][]string{{"all", "fal"}}) {
+	if !reflect.DeepEqual(*calls, [][]string{{"all", "silk"}}) {
 		t.Fatalf("syncs %v", *calls)
 	}
-	if got := declDeclined(t, root); !reflect.DeepEqual(got, map[string]bool{"matrix": true}) {
+	if got := declDeclined(t, root); !reflect.DeepEqual(got, map[string]bool{"documents": true}) {
 		t.Fatalf("declined %v", got)
 	}
 }

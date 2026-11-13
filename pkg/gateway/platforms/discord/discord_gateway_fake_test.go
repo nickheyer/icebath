@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
@@ -142,6 +143,7 @@ func emptySlashRegistry(t *testing.T) {
 func newConnectAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
+	t.Cleanup(func() { gateway.FlushRuntimeStatus(5 * time.Second) })
 	cfg := gateway.NewPlatformConfig()
 	cfg.Enabled, cfg.Token = true, "test-token"
 	if extra != nil {

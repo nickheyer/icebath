@@ -210,18 +210,21 @@ func (s *SessionStore) openOrNil(ctx context.Context, dbPath string) SessionStor
 	return db
 }
 
+// Explicitly pinned database and whether one was pinned
+func (s *SessionStore) pinned() (SessionStoreDB, bool) { return s.pinnedDB, s.dbPinned }
+
 // Session database of the active scope unless one was pinned
 func (s *SessionStore) db(ctx context.Context) SessionStoreDB {
-	if s.dbPinned {
-		return s.pinnedDB
+	if db, ok := s.pinned(); ok {
+		return db
 	}
 	return s.openOrNil(ctx, "")
 }
 
 // The one store owning the routing index whatever scope is active
 func (s *SessionStore) routingDB(ctx context.Context) SessionStoreDB {
-	if s.dbPinned {
-		return s.pinnedDB
+	if db, ok := s.pinned(); ok {
+		return db
 	}
 	if s.routingHome == "" {
 		return s.db(ctx)
@@ -280,8 +283,8 @@ func (s *SessionStore) profileHomeForKey(sessionKey string) string {
 
 // Session database holding the key's rows whatever scope is active, nil when the owner cannot resolve
 func (s *SessionStore) dbForKey(ctx context.Context, sessionKey string) SessionStoreDB {
-	if s.dbPinned {
-		return s.pinnedDB
+	if db, ok := s.pinned(); ok {
+		return db
 	}
 	profile := s.namedProfileForKey(sessionKey)
 	if profile == "" {

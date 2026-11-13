@@ -299,7 +299,7 @@ func TestPersistenceNeverSnapshotsButExplicitSaveWorks(t *testing.T) {
 			defer db.Close()
 			a := &AIAgent{maxIterations: 1}
 			if err := initSessionState(ctx, a, AIAgentOptions{SessionID: "snapshot-removal", SessionDB: db,
-				CheckpointMaxSnapshots: 1, CheckpointMaxTotalSizeMB: 1, CheckpointMaxFileSizeMB: 1}); err != nil {
+				CheckpointMaxSnapshots: new(1), CheckpointMaxTotalSizeMB: new(1), CheckpointMaxFileSizeMB: new(1)}); err != nil {
 				t.Fatal(err)
 			}
 			a.model = "fixture"

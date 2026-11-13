@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 	"unicode/utf16"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Terminal config keys in declaration order with the env var each one mirrors
@@ -298,10 +296,10 @@ func ApplyTerminalConfigToEnv(ctx context.Context, h string, opts TerminalEnvOpt
 
 // Parsed .env of a home, empty for a frozen worker whose secrets arrive through its scope
 func LoadEnv(h string) map[string]string {
-	if WorkerConfigSnapshot() != nil {
+	if workerConfigSnapshot() != nil {
 		return map[string]string{}
 	}
-	env := LoadEnvFile(home.EnvPath(h))
+	env := LoadEnvFile(GetEnvPath(h))
 	var policy any
 	if v, ok := env["ICEBATH_REDACT_SECRETS"]; ok {
 		policy = v
@@ -324,7 +322,7 @@ func ReloadEnv(h string) (int, error) {
 	}
 	hk := hooks()
 	known := map[string]bool{}
-	if hk.DotenvUnreadable == nil || !hk.DotenvUnreadable(home.EnvPath(h)) {
+	if hk.DotenvUnreadable == nil || !hk.DotenvUnreadable(GetEnvPath(h)) {
 		for _, name := range OptionalEnvVars.Names() {
 			known[name] = true
 		}

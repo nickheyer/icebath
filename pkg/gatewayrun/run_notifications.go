@@ -580,7 +580,7 @@ func sortedKeys[V any](m map[string]V) []string {
 func (r *GatewayRunner) replayPendingPlannedRestartNotification(ctx context.Context) {
 	r.plannedRestartNoticeLock.Lock()
 	defer r.plannedRestartNoticeLock.Unlock()
-	path := gateway.PlannedRestartMarkerPath(home.Dir(ctx))
+	path := plannedRestartNotificationPath()
 	if !updatePathExists(path) {
 		return
 	}

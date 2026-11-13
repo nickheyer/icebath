@@ -471,7 +471,11 @@ func modelFlowNous(r *ModelFlowRun) error {
 				return err
 			}
 			func() {
-				defer func() { _ = recover() }()
+				defer func() {
+					if p := recover(); isSetupControlFlow(p) {
+						panic(p)
+					}
+				}()
 				cfg, cerr := r.loadConfig()
 				if cerr != nil {
 					return

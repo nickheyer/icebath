@@ -2,39 +2,43 @@ package dashboard
 
 import "context"
 
+// Middleware refusing plugin api websocket upgrades ahead of app
+type pluginAPIWebSocketGate struct{ app ASGIApp }
+
+// Wraps app with the plugin api websocket upgrade gate
+func PluginAPIWebSocketGate(app ASGIApp) ASGIApp { return (&pluginAPIWebSocketGate{app: app}).ASGI }
+
 // Refuses plugin api websocket upgrades the origin gate, native grant or scope consent bars before the route runs
-func PluginAPIWebSocketGate(app ASGIApp) ASGIApp {
-	return func(ctx context.Context, scope *Scope, receive Receive, send Send) error {
-		name := ""
-		if scope.Type == "websocket" {
-			name = pluginAPIName(scope)
-		}
-		if name == "" {
-			return app(ctx, scope, receive, send)
-		}
-		if !wsRequestIsAllowed(NewWebSocket(scope, receive, send)) {
-			return send(ctx, Message{Type: "websocket.close", Code: 4403})
-		}
-		sctx, admitted, err := nativeWSScope(ctx, scope)
-		if err != nil {
-			return err
-		}
-		sctx, release, err := pluginRequestScope(sctx, scope)
-		if err != nil {
-			return err
-		}
-		if admitted && !pluginAPIRequestRefused(sctx, name) {
-			refused, err := refuseSecondaryPluginSocket(sctx, scope, receive, send, name)
-			if err != nil || refused {
-				release()
-				return err
-			}
-			defer release()
-			return app(sctx, scope, receive, send)
-		}
-		release()
-		return send(ctx, Message{Type: "websocket.close", Code: 1008})
+func (g *pluginAPIWebSocketGate) ASGI(ctx context.Context, scope *Scope, receive Receive, send Send) error {
+	name := ""
+	if scope.Type == "websocket" {
+		name = pluginAPIName(scope)
 	}
+	if name == "" {
+		return g.app(ctx, scope, receive, send)
+	}
+	if !wsRequestIsAllowed(NewWebSocket(scope, receive, send)) {
+		return send(ctx, Message{Type: "websocket.close", Code: 4403})
+	}
+	sctx, admitted, err := nativeWSScope(ctx, scope)
+	if err != nil {
+		return err
+	}
+	sctx, release, err := pluginRequestScope(sctx, scope)
+	if err != nil {
+		return err
+	}
+	if admitted && !pluginAPIRequestRefused(sctx, name) {
+		refused, err := refuseSecondaryPluginSocket(sctx, scope, receive, send, name)
+		if err != nil || refused {
+			release()
+			return err
+		}
+		defer release()
+		return g.app(sctx, scope, receive, send)
+	}
+	release()
+	return send(ctx, Message{Type: "websocket.close", Code: 1008})
 }
 
 // Whether a plugin socket native grant was admitted with its home and secret scope bound, true without the header

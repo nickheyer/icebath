@@ -90,16 +90,16 @@ func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 	if len(tokens) > 1 {
 		reason = pystr.Strip(tokens[1])
 	}
-	switch {
-	case pid.IsInt64():
+	if pid.IsInt64() {
 		if _, err := m.WaitOn(pid.Int64(), reason); err != nil {
 			return GoalCommandResult{}, err
 		}
-	case pid.Sign() <= 0:
-		return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
-	default:
+	} else {
 		if state := m.State(); state == nil || state.Status != "active" {
 			return GoalCommandResult{}, &pyint.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
+		}
+		if pid.Sign() <= 0 {
+			return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
 		}
 		return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 	}

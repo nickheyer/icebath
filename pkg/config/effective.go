@@ -67,11 +67,11 @@ func LoadUserEffectiveFailClosed(configPath string, lookup Lookup) (map[string]a
 
 // Cached on the user and managed signatures and every referenced env value, a fresh copy each call
 func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, failClosed bool) (map[string]any, error) {
-	if snap := WorkerConfigSnapshot(); snap != nil {
+	if snap := workerConfigSnapshot(); snap != nil {
 		return effectiveOf(snap, lookup)
 	}
 	if configPath == "" {
-		configPath = home.ConfigPath(home.Dir(ctx))
+		configPath = GetConfigPath(home.Dir(ctx))
 	}
 	ctx, unlock := LockConfig(ctx)
 	defer unlock()
@@ -116,7 +116,7 @@ func loadUserEffective(ctx context.Context, configPath string, lookup Lookup, fa
 			rawCache[configPath] = rawEntry{sig: userSig, data: Clone(raw).(map[string]any)}
 			lastGoodUserRaw[configPath] = Clone(raw).(map[string]any)
 			loadCacheMu.Unlock()
-			if configPath == home.ConfigPath(home.Dir(ctx)) {
+			if configPath == GetConfigPath(home.Dir(ctx)) {
 				if _, err := BackupConfig(ctx, configPath, "good", DefaultBackupKeep); err != nil {
 					return nil, err
 				}

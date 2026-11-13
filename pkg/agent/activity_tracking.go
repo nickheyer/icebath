@@ -27,13 +27,16 @@ var (
 	activityMonoNow      = func() float64 { return time.Since(activityProcessStart).Seconds() }
 )
 
-// Lock guarding the activity clock and generation counter, the installed locker when one is set
-func (a *AIAgent) livenessActivityLock() sync.Locker {
+// Per agent lock of the activity clock, the installed locker when one is set
+func activityLock(a *AIAgent) sync.Locker {
 	if a.turnLivenessActivityLocker != nil {
 		return a.turnLivenessActivityLocker
 	}
 	return &a.turnLivenessActivityLock
 }
+
+// Shared lock the activity stamp and the liveness watchdog sample and commit under
+func (a *AIAgent) livenessActivityLock() sync.Locker { return activityLock(a) }
 
 // Stamps the activity clock without provenance or a forced persist
 func (a *AIAgent) TouchActivity(desc string) { a.touchActivity(desc, "", false) }
@@ -41,7 +44,7 @@ func (a *AIAgent) TouchActivity(desc string) { a.touchActivity(desc, "", false) 
 // Stamps time, description and provenance under the lock, bridges kanban and persists when due
 func (a *AIAgent) touchActivity(desc string, provenance string, forcePersist bool) {
 	resolved := state.NormalizeActivityProvenance(provenance)
-	lock := a.livenessActivityLock()
+	lock := activityLock(a)
 	lock.Lock()
 	a.turnLivenessActivityGeneration++
 	a.lastActivityTS = activityWallNow()
@@ -118,11 +121,11 @@ func (a *AIAgent) GetActivitySummary() map[string]any {
 	} else {
 		extra.Set("current_tool", nil)
 	}
-	extra.Set("api_call_count", a.apiCallCount)
+	extra.Set("api_call_count", int(a.apiCallCount.Load()))
 	extra.Set("max_iterations", a.maxIterations)
 	budgetUsed, budgetMax := 0, 0
-	if a.iterationBudget != nil {
-		budgetUsed, budgetMax = a.iterationBudget.Used(), a.iterationBudget.MaxTotal
+	if budget := a.iterationBudget.Load(); budget != nil {
+		budgetUsed, budgetMax = budget.Used(), budget.MaxTotal
 	}
 	extra.Set("budget_used", budgetUsed)
 	extra.Set("budget_max", budgetMax)

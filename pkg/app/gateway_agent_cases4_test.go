@@ -297,7 +297,8 @@ func TestCliCompressPrintsTheGatewaysNoopReportAndChangesNothing(t *testing.T) {
 			a.compressor.lastPromptTokens = 229
 			a.mu.Unlock()
 			host := bareCLI()
-			host.conversationHistory, host.agent, host.sessionID = sixRows(), a, scriptSID
+			host.conversationHistory, host.sessionID = sixRows(), scriptSID
+			host.setAgent(a)
 			host.manualCompress(tc.command)
 			out := printedText(rec)
 			if !strings.Contains(out, tc.shown) || strings.Contains(out, "✅") {

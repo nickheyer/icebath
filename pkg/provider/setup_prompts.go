@@ -210,7 +210,7 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 				return false, err
 			}
 			fmt.Fprintln(out, "  ✓ Claude Code credentials linked.")
-			fmt.Fprintf(out, "    Hermes will use Claude's credential store directly instead of copying a setup-token into %s/.env.\n", home.Display(h))
+			fmt.Fprintf(out, "    Icebath will use Claude's credential store directly instead of copying a setup-token into %s/.env.\n", home.Display(h))
 			return true, nil
 		}
 		return false, nil

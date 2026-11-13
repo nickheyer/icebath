@@ -178,7 +178,7 @@ func TestWireGuardScopesRetentionDropByRealEndpoint(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.baseURL+" "+tc.model, func(t *testing.T) {
 			a := newFixtureAgent(t, AIAgentOptions{Model: tc.model, APIMode: "codex_responses", BaseURL: tc.baseURL,
-				APIKey: "codex-token", MaxIterations: 4})
+				APIKey: "codex-token", MaxIterations: new(4)})
 			request := map[string]any{"model": tc.model, "prompt_cache_key": "cache-key-sentinel", "prompt_cache_retention": "24h",
 				"input": []any{map[string]any{"role": "user", "content": "hi"}}}
 			sanitized := provider.SanitizeConsumerCodexRequest(a, request)
@@ -198,7 +198,7 @@ func TestWireGuardScopesRetentionDropByRealEndpoint(t *testing.T) {
 
 func TestRunCodexStreamDeliversRedactedCommentaryOnce(t *testing.T) {
 	a := newFixtureAgent(t, AIAgentOptions{Model: "gpt-5-codex", BaseURL: "https://chatgpt.com/backend-api/codex", APIKey: "codex-token",
-		MaxIterations: 4})
+		MaxIterations: new(4)})
 	type delivery struct {
 		text            string
 		alreadyStreamed bool

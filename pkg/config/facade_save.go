@@ -7,8 +7,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Stream that receives managed mode refusals and managed key notices, standard error outside tests
@@ -62,6 +60,9 @@ type appliedWriteKey struct{}
 func AppliedWrite(ctx context.Context) context.Context {
 	return context.WithValue(ctx, appliedWriteKey{}, true)
 }
+
+// Reports a context whose saves are Icebath's own writes
+func IsAppliedWrite(ctx context.Context) bool { return ctx.Value(appliedWriteKey{}) != nil }
 
 // Copy of a document without the dotted leaves listed, plus the leaves it removed
 func stripDottedKeys(cfg map[string]any, dotted []string) (map[string]any, []string) {
@@ -284,18 +285,18 @@ func SaveConfig(ctx context.Context, h string, cfg map[string]any, opts SaveOpti
 	facadeMu.RLock()
 	observe := savedObserver
 	facadeMu.RUnlock()
-	if observe != nil && ctx.Value(appliedWriteKey{}) == nil {
+	if observe != nil && !IsAppliedWrite(ctx) {
 		observe(h, raw, current)
 	}
 	return nil
 }
 
 func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts SaveOptions) (map[string]any, map[string]any, bool, error) {
-	if ManagedSystem(ctx, h) != "" {
+	if IsManaged(ctx, h) {
 		fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(ctx, h, "save configuration"))
 		return nil, nil, false, nil
 	}
-	path := home.ConfigPath(h)
+	path := GetConfigPath(h)
 	if err := RefuseFailedRead(h, path, cfg); err != nil {
 		return nil, nil, false, err
 	}

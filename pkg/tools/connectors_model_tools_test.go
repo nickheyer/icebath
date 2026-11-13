@@ -47,6 +47,7 @@ func sessionToolNames(t *testing.T, enabled, disabled []string, connectors bool)
 	t.Helper()
 	connectorsGate(t, connectors)
 	env := &Env{Home: t.TempDir()}
+	t.Setenv("ICEBATH_HOME", env.Home)
 	names := map[string]bool{}
 	for _, td := range Default.computeToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: enabled, Disabled: disabled, Quiet: true, SkipToolSearchAssembly: true}) {
 		names[toolDefName(td)] = true
@@ -54,8 +55,10 @@ func sessionToolNames(t *testing.T, enabled, disabled []string, connectors bool)
 	return names
 }
 
-// Sorted platform toolsets of an empty config, the include_default_mcp_servers runtime variant
-func cliPlatformToolsets(platform string, cfg config.Tree, includeMCP bool) []string {
+// Sorted platform toolsets of a config read under a temp home, the include_default_mcp_servers runtime variant
+func cliPlatformToolsets(t *testing.T, platform string, cfg config.Tree, includeMCP bool) []string {
+	t.Helper()
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	set := Default.PlatformTools(context.Background(), "", cfg, platform, PlatformToolsOptions{IncludeDefaultMCPServers: includeMCP})
 	out := make([]string, 0, len(set))
 	for name := range set {
@@ -67,7 +70,7 @@ func cliPlatformToolsets(platform string, cfg config.Tree, includeMCP bool) []st
 
 func TestConnectorsToolCLISessionGetsTheToolOutsideACodeWorkspace(t *testing.T) {
 	t.Chdir(t.TempDir())
-	enabled := cliPlatformToolsets("cli", config.Tree{}, true)
+	enabled := cliPlatformToolsets(t, "cli", config.Tree{}, true)
 	if !slices.Contains(enabled, "connections") || !sessionToolNames(t, enabled, nil, true)["manage_connections"] {
 		t.Fatalf("enabled %v", enabled)
 	}
@@ -88,7 +91,7 @@ func TestConnectorsToolFocusModeCodingPostureGetsTheTool(t *testing.T) {
 
 func TestConnectorsToolSessionThePortalHasNotEnabledNeverReceivesTheTool(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for _, selection := range [][]string{cliPlatformToolsets("cli", config.Tree{}, true), {"coding"}} {
+	for _, selection := range [][]string{cliPlatformToolsets(t, "cli", config.Tree{}, true), {"coding"}} {
 		if sessionToolNames(t, selection, nil, false)["manage_connections"] {
 			t.Fatalf("selection %v carries the tool", selection)
 		}
@@ -105,7 +108,7 @@ func TestConnectorsToolSessionThePortalHasNotEnabledNeverReceivesTheTool(t *test
 
 func TestConnectorsToolOperatorCanStillTurnItOff(t *testing.T) {
 	t.Chdir(t.TempDir())
-	enabled := cliPlatformToolsets("cli", config.Tree{}, true)
+	enabled := cliPlatformToolsets(t, "cli", config.Tree{}, true)
 	if sessionToolNames(t, enabled, []string{"connections"}, true)["manage_connections"] {
 		t.Fatal("disabled connections kept the tool")
 	}
@@ -122,7 +125,7 @@ func TestConnectorsToolIsNeverDeferrable(t *testing.T) {
 
 func TestOrdinaryPlatformDefaultsGrantConnectionsWithoutWideningWebhook(t *testing.T) {
 	for _, platform := range []string{"cli", "telegram"} {
-		enabled := cliPlatformToolsets(platform, config.Tree{}, false)
+		enabled := cliPlatformToolsets(t, platform, config.Tree{}, false)
 		resolved := map[string]bool{}
 		for _, ts := range enabled {
 			for _, name := range Default.ResolveToolset(context.Background(), "", ts) {
@@ -133,12 +136,12 @@ func TestOrdinaryPlatformDefaultsGrantConnectionsWithoutWideningWebhook(t *testi
 			t.Fatalf("%s enabled %v", platform, enabled)
 		}
 	}
-	if slices.Contains(cliPlatformToolsets("webhook", config.Tree{}, false), "connections") {
+	if slices.Contains(cliPlatformToolsets(t, "webhook", config.Tree{}, false), "connections") {
 		t.Fatal("webhook widened to connections")
 	}
 	for _, selection := range [][]any{{}, {"safe"}, {"file"}} {
 		cfg := config.Tree{"platform_toolsets": map[string]any{"cli": selection}}
-		if slices.Contains(cliPlatformToolsets("cli", cfg, false), "connections") {
+		if slices.Contains(cliPlatformToolsets(t, "cli", cfg, false), "connections") {
 			t.Fatalf("selection %v widened to connections", selection)
 		}
 	}

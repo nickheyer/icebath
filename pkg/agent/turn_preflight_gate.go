@@ -16,9 +16,9 @@ func runPreflightGate(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 		appendLiveMessage(&s.Messages, map[string]any{"role": "assistant", "content": contextError})
 		a.emitDiagnosticStatus("❌ Ollama runtime context is too small for Icebath tool use")
 		s.APICallCount--
-		a.apiCallCount = s.APICallCount
-		if a.iterationBudget != nil {
-			a.iterationBudget.Refund()
+		a.apiCallCount.Store(int64(s.APICallCount))
+		if budget := a.iterationBudget.Load(); budget != nil {
+			budget.Refund()
 		}
 		return PhaseVerdict{Action: "break"}, nil
 	}

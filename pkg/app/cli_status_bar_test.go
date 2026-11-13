@@ -40,7 +40,7 @@ type usageSpec struct {
 // Attaches an agent whose status bar usage the test owns and may change between repaints
 func attachUsage(t *testing.T, c *CLI, spec *usageSpec) {
 	t.Helper()
-	c.agent = &GatewayAgent{ctx: context.Background()}
+	c.setAgent(&GatewayAgent{ctx: context.Background()})
 	prev := statusBarUsage
 	statusBarUsage = func(*CLI, cliAgent) agent.StatusBarUsage {
 		usage := agent.StatusBarUsage{Counters: map[string]int{

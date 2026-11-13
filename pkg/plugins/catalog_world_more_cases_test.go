@@ -59,7 +59,7 @@ func TestUpdateOfASubdirInstallKeepsFilesTheUserCreatedOrEdited(t *testing.T) {
 			mono := filepath.Join(w.root, "mono")
 			src := filepath.Join(mono, "plugins", "sub-plugin")
 			c6Write(t, filepath.Join(src, "plugin.yaml"), "name: sub-plugin\nversion: 1.0.0\ndescription: d\n")
-			c6Write(t, filepath.Join(src, "__init__.py"), "def register(ctx):\n    pass\n")
+			c6Write(t, filepath.Join(src, "helper.py"), "def register(ctx):\n    pass\n")
 			c6Write(t, filepath.Join(src, "config.yaml.example"), "endpoint: default\n")
 			c6Write(t, filepath.Join(src, "desktop", "plugin.js"), "export default { id: \"v1\" }\n")
 			c6Write(t, filepath.Join(src, "server.js"), "console.log('v1')\n")
@@ -136,7 +136,7 @@ func TestRepinKeepsAWhollyIgnoredDataDirInAGitCheckout(t *testing.T) {
 	}
 	c6Write(t, filepath.Join(target, ".venv", "pyvenv.cfg"), "home = /usr/bin")
 	c6Write(t, filepath.Join(target, "node_modules", "x", "index.js"), "module.exports = 1")
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), "def register(ctx):\n    pass  # v3\n")
+	c6Write(t, filepath.Join(w.repo, "helper.py"), "def register(ctx):\n    pass  # v3\n")
 	w.pin = c6Commit(t, w.repo, "v3")
 	if res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false); err != nil || res["unchanged"] != false {
 		t.Fatalf("dashboard update %v %v", res, err)
@@ -158,7 +158,7 @@ func TestRepinKeepsAWhollyIgnoredDataDirInAGitCheckout(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(target, "data", "link.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), "def register(ctx):\n    pass  # v4\n")
+	c6Write(t, filepath.Join(w.repo, "helper.py"), "def register(ctx):\n    pass  # v4\n")
 	w.pin = c6Commit(t, w.repo, "v4")
 	res, err := DashboardUpdateUserPlugin(w.ctx, "cat-plugin", false, false)
 	if err != nil || res["ok"] != false || !strings.Contains(pyStrOr(res["error"]), "data/link.yaml") {

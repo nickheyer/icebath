@@ -3,13 +3,11 @@ package config
 import (
 	"os"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Keys of the home .env in first assignment order, the order a load_env mapping iterates
 func EnvKeyOrder(h string) []string {
-	raw, err := os.ReadFile(home.EnvPath(h))
+	raw, err := os.ReadFile(GetEnvPath(h))
 	if err != nil {
 		return nil
 	}

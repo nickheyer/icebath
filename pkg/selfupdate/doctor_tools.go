@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -133,11 +134,15 @@ var doctorRunOK = func(ctx context.Context, cmd []string, timeout time.Duration)
 	return done.Returncode == 0, nil
 }
 
-var doctorTermuxInstallAllFallbackNotes = []string{
-	"Termux uses the Icebath APT package: pkg install icebath-agent.",
-	"Matrix E2EE extra is excluded on Termux (python-olm currently fails to build).",
-	"Local faster-whisper extra is excluded on Termux (ctranslate2/av build path unavailable).",
-	"STT fallback: use Groq Whisper (set GROQ_API_KEY) or OpenAI Whisper (set VOICE_TOOLS_OPENAI_KEY).",
+// Termux fallback notes, the Matrix line present only when this binary was built without the goolm tag
+func doctorTermuxInstallAllFallbackNotes() []string {
+	notes := []string{"Termux uses the Icebath APT package: pkg install icebath-agent."}
+	if !matrix.E2EEBuiltIn {
+		notes = append(notes, "Matrix E2EE is excluded from this binary (built without the goolm tag).")
+	}
+	return append(notes,
+		"Local faster-whisper extra is excluded on Termux (ctranslate2/av build path unavailable).",
+		"STT fallback: use Groq Whisper (set GROQ_API_KEY) or OpenAI Whisper (set VOICE_TOOLS_OPENAI_KEY).")
 }
 
 // True when Kanban is unavailable only because this process is not a dispatcher spawned worker
@@ -760,7 +765,7 @@ func doctorCheckWhatsAppSession(ctx context.Context, d *Doctor, f *Finding) {
 	}
 }
 
-// Runs npm audit for the root package and the web and ui-tui workspaces, then reports the WhatsApp session
+// Runs npm audit for the root package and the web workspace, then reports the WhatsApp session
 func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		npmBin := doctorPMToolPath(ctx, "npm")
@@ -774,7 +779,6 @@ func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 			}{
 				{d.ProjectRoot, "Root npm package", []string{"--workspaces=false"}},
 				{d.ProjectRoot, "web workspace", []string{"--workspace", "web"}},
-				{d.ProjectRoot, "ui-tui workspace", []string{"--workspace", "ui-tui"}},
 			} {
 				modulesRoot := tree.dir
 				if len(tree.extra) > 0 {
@@ -788,7 +792,7 @@ func checkNpmAudit(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 		doctorCheckWhatsAppSession(ctx, d, f)
 		if doctorIsTermux() {
 			doctorCheckInfo(d.W, "Termux compatibility fallbacks:")
-			for _, note := range doctorTermuxInstallAllFallbackNotes {
+			for _, note := range doctorTermuxInstallAllFallbackNotes() {
 				doctorCheckInfo(d.W, note)
 			}
 		}

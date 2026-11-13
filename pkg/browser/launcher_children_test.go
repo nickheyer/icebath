@@ -147,7 +147,7 @@ func runServingChromium() int {
 	return 0
 }
 
-// test_browser_launcher.py's fake, argv recorded, a helper child and a SIGTERM order log
+// test_browser_launcher.py's fake, argv recorded and a SIGTERM order log, ready once its helper child listens
 func runOrderChromium() int {
 	udd := userDataDirArg()
 	os.MkdirAll(udd, 0o777)
@@ -159,6 +159,9 @@ func runOrderChromium() int {
 	helper.Env = append(os.Environ(), childModeEnv+"=order-helper", "FAKE_ORDER_LOG="+log)
 	helper.Start()
 	onTerm(func() { appendLine(log, "parent"); os.Exit(0) })
+	for deadline := time.Now().Add(60 * time.Second); !lexists(log+".helper-ready") && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
 	os.WriteFile(filepath.Join(udd, devtoolsFile), []byte("45678\n/devtools/browser/fake-id\n"), 0o644)
 	sleepForever()
 	return 0
@@ -167,6 +170,7 @@ func runOrderChromium() int {
 func runOrderHelper() int {
 	log := os.Getenv("FAKE_ORDER_LOG")
 	onTerm(func() { appendLine(log, "child"); os.Exit(0) })
+	os.WriteFile(log+".helper-ready", nil, 0o644)
 	parent := os.Getppid()
 	for os.Getppid() == parent {
 		time.Sleep(100 * time.Millisecond)

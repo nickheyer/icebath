@@ -216,6 +216,39 @@ func TestConstructionRequiresIssuer(t *testing.T) {
 	}
 }
 
+// Register normalises issuer, scopes and secret, and a cleartext issuer fails construction with its reason
+func TestSelfHostedConstructionNormalisesThroughRegister(t *testing.T) {
+	oidcRegisterCase(t, "")
+	t.Setenv("ICEBATH_DASHBOARD_OIDC_ISSUER", "http://127.0.0.1:9000/realm//")
+	t.Setenv("ICEBATH_DASHBOARD_OIDC_CLIENT_ID", "dash")
+	t.Setenv("ICEBATH_DASHBOARD_OIDC_CLIENT_SECRET", "   ")
+	p := registerSelfHosted(t)
+	if p == nil || p.issuer != "http://127.0.0.1:9000/realm" || p.clientID != "dash" || p.scopes != selfHostedDefaultScopes ||
+		p.clientSecret != "" || p.discovery != nil || p.discoveryFetchedAt != 0 || p.jwksClient != nil || p.idTokenLeeway != DefaultTokenLeewaySeconds {
+		t.Fatalf("provider %+v %q", p, SelfHostedLastSkipReason())
+	}
+	oidcRegisterCase(t, "")
+	t.Setenv("ICEBATH_DASHBOARD_OIDC_ISSUER", "http://idp.example.com/")
+	t.Setenv("ICEBATH_DASHBOARD_OIDC_CLIENT_ID", "dash")
+	if registerSelfHosted(t) != nil || SelfHostedLastSkipReason() != "SelfHostedOIDCProvider construction failed: OIDC issuer must be https:// (or http on localhost), got 'http://idp.example.com'" {
+		t.Fatalf("cleartext issuer %q", SelfHostedLastSkipReason())
+	}
+	same := [][2]string{{"https://IdP.example.com:443/a", "https://idp.example.com"}, {"http://h/x", "HTTP://h:80"}, {"ftp://h", "ftp://h:0"}}
+	for _, pair := range same {
+		a, errA := originOf(pair[0])
+		b, errB := originOf(pair[1])
+		if errA != nil || errB != nil || a != b {
+			t.Fatalf("%v %v %v %v", a, b, errA, errB)
+		}
+	}
+	if a, _ := originOf("https://h:8443"); a.port != 8443 {
+		t.Fatalf("explicit port %+v", a)
+	}
+	if _, err := originOf("https://h:99999"); err == nil {
+		t.Fatal("out of range port accepted")
+	}
+}
+
 // test_self_hosted_provider.py TestConstruction test_rejects_non_https_issuer
 func TestConstructionRejectsNonHTTPSIssuer(t *testing.T) {
 	_, err := NewSelfHostedOIDCProvider("http://auth.example.com", oidcClientID, "", "", DefaultTokenLeewaySeconds)

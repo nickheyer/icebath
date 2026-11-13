@@ -1,85 +1,85 @@
-### 1. pkg/home: 78% (309 of 394 rows closed, defs 146/160, cases 163/234, 4 of 9 files completed)
+### 1. pkg/home: 70% (277 of 394 rows closed, defs 114/160, cases 163/234, verified 114, exercised 64, 2 of 9 files completed)
 #### Home directory resolution, named profiles, directory layout, path ACL checks
 - [x] hermes_cli/config_home.py  defs 6/6  cases 0/0
-- [x] hermes_cli/fs_utils.py  defs 1/1  cases 0/0
-- [x] hermes_cli/home_data_layout.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/fs_utils.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/home_data_layout.py  defs 0/1  cases 0/0
 - [x] hermes_cli/runtime_paths.py  defs 0/0  cases 0/0
-- [ ] hermes_constants.py  defs 93/95  cases 140/206
-- [ ] hermes_constants_scratch.py  defs 16/19  cases 4/4
+- [ ] hermes_constants.py  defs 68/95  cases 140/206
+- [ ] hermes_constants_scratch.py  defs 15/19  cases 4/4
 - [ ] hermes_constants_scratch_detach.py  defs 1/3  cases 0/0
-- [ ] hermes_constants_scratch_stuck.py  defs 8/13  cases 0/0
-- [ ] hermes_dir_acl.py  defs 20/22  cases 19/24
+- [ ] hermes_constants_scratch_stuck.py  defs 6/13  cases 0/0
+- [ ] hermes_dir_acl.py  defs 18/22  cases 19/24
 
-### 2. pkg/config: 82% (1365 of 1656 rows closed, defs 608/620, cases 757/1036, 24 of 40 files completed)
+### 2. pkg/config: 80% (1338 of 1656 rows closed, defs 580/620, cases 758/1036, verified 578, exercised 293, 17 of 40 files completed)
 #### Config defaults, YAML load and merge, env expansion, managed overlay, migrations, skins
 - [ ] hermes_cli/config.py  defs 182/182  cases 531/570
-- [ ] hermes_cli/config_backend.py  defs 87/87  cases 19/38
+- [ ] hermes_cli/config_backend.py  defs 85/87  cases 19/38
 - [ ] hermes_cli/config_backups.py  defs 5/5  cases 3/5
 - [x] hermes_cli/config_check_diagnostics.py  defs 1/1  cases 2/2
 - [x] hermes_cli/config_defaults.py  defs 0/0  cases 1/1
-- [x] hermes_cli/config_defaults_auxiliary.py  defs 1/1  cases 0/0
-- [x] hermes_cli/config_defaults_env.py  defs 15/15  cases 0/0
-- [x] hermes_cli/config_effective.py  defs 3/3  cases 3/3
+- [ ] hermes_cli/config_defaults_auxiliary.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/config_defaults_env.py  defs 9/15  cases 0/0
+- [ ] hermes_cli/config_effective.py  defs 1/3  cases 3/3
 - [x] hermes_cli/config_env_routing.py  defs 6/6  cases 0/0
 - [x] hermes_cli/config_issues.py  defs 2/2  cases 0/0
 - [x] hermes_cli/config_key_notices.py  defs 1/1  cases 0/0
 - [x] hermes_cli/config_language.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/config_migrations.py  defs 30/30  cases 5/6
+- [ ] hermes_cli/config_migrations.py  defs 28/30  cases 5/6
 - [ ] hermes_cli/config_migrations_browser.py  defs 9/9  cases 0/6
 - [x] hermes_cli/config_provider_env.py  defs 5/5  cases 7/7
 - [x] hermes_cli/config_providers.py  defs 25/25  cases 1/1
-- [ ] hermes_cli/config_read_errors.py  defs 12/12  cases 0/1
-- [x] hermes_cli/config_runtime_keys.py  defs 6/6  cases 12/12
+- [ ] hermes_cli/config_read_errors.py  defs 11/12  cases 0/1
+- [ ] hermes_cli/config_runtime_keys.py  defs 4/6  cases 12/12
 - [x] hermes_cli/config_section_guard.py  defs 1/1  cases 0/0
 - [ ] hermes_cli/config_show.py  defs 9/9  cases 0/1
 - [x] hermes_cli/config_value_checks.py  defs 5/5  cases 0/0
 - [x] hermes_cli/config_version_stamp.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/config_worker_save.py  defs 4/4  cases 1/8
+- [ ] hermes_cli/config_worker_save.py  defs 3/4  cases 1/8
 - [x] hermes_cli/default_soul.py  defs 2/2  cases 0/0
 - [x] hermes_cli/managed_scope.py  defs 14/14  cases 3/3
 - [x] hermes_cli/prompt_stash.py  defs 21/21  cases 44/44
 - [ ] hermes_cli/setup_hidden_env.py  defs 1/1  cases 0/4
-- [x] hermes_cli/skin_cmd.py  defs 6/6  cases 5/5
-- [ ] hermes_cli/skin_engine.py  defs 22/22  cases 30/39
-- [x] hermes_cli/ui_preferences.py  defs 14/14  cases 6/6
-- [ ] hermes_yaml.py  defs 4/6  cases 65/250
+- [ ] hermes_cli/skin_cmd.py  defs 4/6  cases 5/5
+- [ ] hermes_cli/skin_engine.py  defs 19/22  cases 30/39
+- [ ] hermes_cli/ui_preferences.py  defs 0/14  cases 6/6
+- [ ] hermes_yaml.py  defs 5/6  cases 66/250
 - [ ] plugins/config_backends/__init__.py  defs 0/0  cases 0/2
-- [x] plugins/config_backends/remote/__init__.py  defs 3/3  cases 0/0
-- [ ] plugins/config_backends/remote/backend.py  defs 58/64  cases 0/2
+- [ ] plugins/config_backends/remote/__init__.py  defs 2/3  cases 0/0
+- [ ] plugins/config_backends/remote/backend.py  defs 64/64  cases 0/2
 - [ ] plugins/config_backends/remote/client.py  defs 11/11  cases 9/10
-- [ ] plugins/config_backends/remote/credentials.py  defs 6/7  cases 2/2
-- [ ] plugins/config_backends/remote/destination.py  defs 5/8  cases 0/0
+- [x] plugins/config_backends/remote/credentials.py  defs 7/7  cases 2/2
+- [ ] plugins/config_backends/remote/destination.py  defs 7/8  cases 0/0
 - [x] plugins/config_backends/remote/diff.py  defs 11/11  cases 0/0
 - [x] plugins/config_backends/remote/paths.py  defs 7/7  cases 8/8
-- [x] plugins/config_backends/remote/values.py  defs 7/7  cases 0/0
+- [ ] plugins/config_backends/remote/values.py  defs 6/7  cases 0/0
 
-### 3. pkg/state: 60% (1907 of 3177 rows closed, defs 1214/1298, cases 693/1879, 20 of 67 files completed)
+### 3. pkg/state: 59% (1879 of 3177 rows closed, defs 1186/1298, cases 693/1879, verified 1186, exercised 449, 16 of 67 files completed)
 #### SQLite session store, messages, compaction, FTS search, titles, usage, locks, repair
 - [ ] hermes_cli/session_schema_history.py  defs 4/5  cases 1/1
 - [ ] hermes_cli/sqlite_runtime.py  defs 6/6  cases 1/6
 - [ ] hermes_cli/sqlite_safe_read.py  defs 14/19  cases 9/11
 - [ ] hermes_cli/sqlite_util.py  defs 4/4  cases 2/4
-- [ ] hermes_state.py  defs 68/75  cases 71/329
+- [ ] hermes_state.py  defs 66/75  cases 71/329
 - [ ] hermes_state_api_content.py  defs 3/3  cases 1/3
 - [ ] hermes_state_common.py  defs 38/39  cases 4/49
 - [x] hermes_state_compaction_display.py  defs 2/2  cases 0/0
-- [ ] hermes_state_compression.py  defs 36/46  cases 59/122
+- [ ] hermes_state_compression.py  defs 35/46  cases 59/122
 - [ ] hermes_state_coverage.py  defs 18/20  cases 0/0
 - [ ] hermes_state_dbfile.py  defs 33/33  cases 6/26
 - [ ] hermes_state_detached_results.py  defs 3/4  cases 0/0
-- [ ] hermes_state_errors.py  defs 20/21  cases 5/50
+- [ ] hermes_state_errors.py  defs 19/21  cases 5/50
 - [ ] hermes_state_fts.py  defs 28/29  cases 1/8
 - [ ] hermes_state_gateway.py  defs 33/34  cases 31/53
 - [ ] hermes_state_guard.py  defs 6/9  cases 13/18
 - [ ] hermes_state_health.py  defs 6/7  cases 0/8
 - [ ] hermes_state_holders.py  defs 21/22  cases 8/26
-- [x] hermes_state_identity.py  defs 12/12  cases 0/0
-- [ ] hermes_state_ids.py  defs 2/2  cases 0/1
+- [ ] hermes_state_identity.py  defs 11/12  cases 0/0
+- [ ] hermes_state_ids.py  defs 1/2  cases 0/1
 - [ ] hermes_state_keys.py  defs 9/9  cases 0/2
-- [ ] hermes_state_local.py  defs 24/25  cases 9/11
+- [ ] hermes_state_local.py  defs 23/25  cases 9/11
 - [x] hermes_state_local_lineage.py  defs 9/9  cases 0/0
-- [x] hermes_state_local_migration.py  defs 11/11  cases 0/0
-- [ ] hermes_state_lockguard.py  defs 6/8  cases 0/0
+- [ ] hermes_state_local_migration.py  defs 10/11  cases 0/0
+- [ ] hermes_state_lockguard.py  defs 3/8  cases 0/0
 - [x] hermes_state_lockowners.py  defs 4/4  cases 3/3
 - [ ] hermes_state_maintenance.py  defs 25/25  cases 10/37
 - [x] hermes_state_media.py  defs 4/4  cases 0/0
@@ -91,7 +91,7 @@
 - [x] hermes_state_mutation_guards.py  defs 7/7  cases 0/0
 - [x] hermes_state_mutation_prepared.py  defs 11/11  cases 0/0
 - [x] hermes_state_mutation_reset.py  defs 1/1  cases 0/0
-- [x] hermes_state_mutation_retirement.py  defs 25/25  cases 4/4
+- [ ] hermes_state_mutation_retirement.py  defs 23/25  cases 4/4
 - [x] hermes_state_mutation_transcript.py  defs 1/1  cases 0/0
 - [ ] hermes_state_mutations.py  defs 7/10  cases 0/0
 - [ ] hermes_state_pidns.py  defs 8/9  cases 2/2
@@ -101,54 +101,54 @@
 - [ ] hermes_state_prune_rewrite.py  defs 2/4  cases 2/2
 - [ ] hermes_state_readpool.py  defs 12/16  cases 1/3
 - [ ] hermes_state_reconcile.py  defs 27/30  cases 2/2
-- [ ] hermes_state_registry.py  defs 20/24  cases 14/20
-- [ ] hermes_state_repair.py  defs 56/56  cases 97/106
+- [ ] hermes_state_registry.py  defs 19/24  cases 14/20
+- [ ] hermes_state_repair.py  defs 54/56  cases 97/106
 - [x] hermes_state_rewind.py  defs 8/8  cases 0/0
-- [ ] hermes_state_runtime.py  defs 44/50  cases 77/94
+- [ ] hermes_state_runtime.py  defs 42/50  cases 77/94
 - [ ] hermes_state_runtime_workers.py  defs 10/11  cases 0/0
 - [ ] hermes_state_schema.py  defs 41/43  cases 3/10
 - [ ] hermes_state_search.py  defs 82/83  cases 5/48
 - [x] hermes_state_session_list.py  defs 1/1  cases 0/0
-- [ ] hermes_state_sessions.py  defs 78/84  cases 120/367
-- [x] hermes_state_sessions_model_config.py  defs 2/2  cases 0/0
+- [ ] hermes_state_sessions.py  defs 77/84  cases 120/367
+- [ ] hermes_state_sessions_model_config.py  defs 0/2  cases 0/0
 - [ ] hermes_state_telegram.py  defs 15/16  cases 1/1
-- [ ] hermes_state_terminal.py  defs 8/8  cases 0/2
+- [ ] hermes_state_terminal.py  defs 5/8  cases 0/2
 - [x] hermes_state_timeline.py  defs 6/6  cases 4/4
-- [ ] hermes_state_titles.py  defs 17/17  cases 0/23
+- [ ] hermes_state_titles.py  defs 16/17  cases 0/23
 - [ ] hermes_state_todo.py  defs 4/5  cases 0/0
 - [ ] hermes_state_usage.py  defs 17/18  cases 4/8
 - [ ] hermes_state_user_copy.py  defs 3/3  cases 0/3
-- [ ] hermes_state_wal.py  defs 29/29  cases 39/78
-- [ ] hermes_state_worker_compression.py  defs 28/34  cases 0/0
+- [ ] hermes_state_wal.py  defs 28/29  cases 39/78
+- [ ] hermes_state_worker_compression.py  defs 26/34  cases 0/0
 - [x] hermes_state_worker_context.py  defs 6/6  cases 0/0
 - [x] hermes_state_worker_lifecycle.py  defs 14/14  cases 0/0
 
-### 4. pkg/hostinfo: 57% (49 of 85 rows closed, defs 49/65, cases 0/20, 2 of 7 files completed)
+### 4. pkg/hostinfo: 50% (43 of 85 rows closed, defs 43/65, cases 0/20, verified 43, exercised 9, 1 of 7 files completed)
 #### OS, CPU, GPU, RAM, locale and container facts for prompts and onboarding
 - [x] hermes_platform/host/__init__.py  defs 0/0  cases 0/0
-- [ ] hermes_platform/host/darwin_pci.py  defs 1/3  cases 0/0
-- [ ] hermes_platform/host/facts.py  defs 28/34  cases 0/8
+- [ ] hermes_platform/host/darwin_pci.py  defs 0/3  cases 0/0
+- [ ] hermes_platform/host/facts.py  defs 26/34  cases 0/8
 - [ ] hermes_platform/host/gpu_adapters.py  defs 3/7  cases 0/2
 - [ ] hermes_platform/host/products.py  defs 3/3  cases 0/2
-- [x] hermes_platform/host/runtime.py  defs 7/7  cases 0/0
-- [ ] hermes_platform/host/summary.py  defs 7/11  cases 0/8
+- [ ] hermes_platform/host/runtime.py  defs 6/7  cases 0/0
+- [ ] hermes_platform/host/summary.py  defs 5/11  cases 0/8
 
-### 5. pkg/provider: 63% (8484 of 13305 rows closed, defs 5119/5839, cases 3365/7466, 95 of 334 files completed)
+### 5. pkg/provider: 60% (8106 of 13305 rows closed, defs 4709/5839, cases 3397/7466, verified 4709, exercised 1332, 70 of 334 files completed)
 #### Routes, credentials, OAuth flows, model catalogs, pricing, retry, four wire adapters
-- [ ] agent/account_usage.py  defs 43/51  cases 1/42
-- [ ] agent/account_usage_cache.py  defs 7/12  cases 0/12
-- [ ] agent/anthropic_adapter.py  defs 31/44  cases 5/157
-- [ ] agent/anthropic_credentials.py  defs 44/51  cases 10/39
-- [ ] agent/anthropic_endpoints.py  defs 15/17  cases 0/10
+- [ ] agent/account_usage.py  defs 47/51  cases 5/42
+- [ ] agent/account_usage_cache.py  defs 12/12  cases 0/12
+- [ ] agent/anthropic_adapter.py  defs 40/44  cases 5/157
+- [ ] agent/anthropic_credentials.py  defs 50/51  cases 10/39
+- [ ] agent/anthropic_endpoints.py  defs 17/17  cases 0/10
 - [ ] agent/anthropic_message_convert.py  defs 50/51  cases 2/33
 - [x] agent/anthropic_thinking_policy.py  defs 6/6  cases 0/0
-- [ ] agent/anthropic_thinking_replay.py  defs 12/12  cases 0/3
-- [ ] agent/api_error_summary.py  defs 9/13  cases 2/8
-- [ ] agent/api_request_hooks.py  defs 8/10  cases 0/0
-- [ ] agent/aux_accounting.py  defs 2/3  cases 1/11
+- [ ] agent/anthropic_thinking_replay.py  defs 10/12  cases 0/3
+- [ ] agent/api_error_summary.py  defs 13/13  cases 2/8
+- [ ] agent/api_request_hooks.py  defs 9/10  cases 0/0
+- [ ] agent/aux_accounting.py  defs 3/3  cases 1/11
 - [x] agent/auxiliary_async_rebuild.py  defs 2/2  cases 0/0
 - [ ] agent/auxiliary_call_outcome.py  defs 3/5  cases 0/0
-- [ ] agent/auxiliary_client.py  defs 369/399  cases 661/671
+- [ ] agent/auxiliary_client.py  defs 345/399  cases 661/671
 - [x] agent/auxiliary_client_registry.py  defs 5/5  cases 0/0
 - [x] agent/auxiliary_codex_response.py  defs 1/1  cases 0/0
 - [x] agent/auxiliary_error_shapes.py  defs 4/4  cases 0/0
@@ -160,170 +160,170 @@
 - [x] agent/auxiliary_managed_local.py  defs 2/2  cases 0/0
 - [x] agent/auxiliary_plugin_oauth.py  defs 2/2  cases 0/0
 - [x] agent/auxiliary_rate_limit_backoff.py  defs 3/3  cases 0/0
-- [x] agent/auxiliary_reasoning_floor.py  defs 7/7  cases 6/6
-- [ ] agent/auxiliary_stream_watchdog.py  defs 11/13  cases 0/0
-- [ ] agent/auxiliary_structured_output.py  defs 7/7  cases 2/3
-- [ ] agent/auxiliary_task_config.py  defs 6/6  cases 0/3
+- [ ] agent/auxiliary_reasoning_floor.py  defs 5/7  cases 6/6
+- [ ] agent/auxiliary_stream_watchdog.py  defs 10/13  cases 0/0
+- [ ] agent/auxiliary_structured_output.py  defs 6/7  cases 2/3
+- [ ] agent/auxiliary_task_config.py  defs 4/6  cases 0/3
 - [ ] agent/auxiliary_unavailable.py  defs 12/13  cases 8/9
 - [ ] agent/auxiliary_wire.py  defs 2/2  cases 1/2
-- [ ] agent/azure_identity_adapter.py  defs 14/22  cases 3/17
+- [ ] agent/azure_identity_adapter.py  defs 17/22  cases 4/17
 - [ ] agent/backend_identity.py  defs 7/9  cases 0/13
-- [ ] agent/bedrock_adapter.py  defs 76/97  cases 57/141
-- [ ] agent/billing_links.py  defs 6/7  cases 0/2
-- [ ] agent/billing_usage.py  defs 13/14  cases 0/3
+- [ ] agent/bedrock_adapter.py  defs 70/97  cases 57/141
+- [ ] agent/billing_links.py  defs 5/7  cases 0/2
+- [ ] agent/billing_usage.py  defs 12/14  cases 0/3
 - [ ] agent/billing_view.py  defs 30/31  cases 1/18
 - [x] agent/bounded_response.py  defs 1/1  cases 1/1
 - [x] agent/cache_bounds.py  defs 4/4  cases 0/0
 - [x] agent/chat_completion_headers.py  defs 1/1  cases 0/0
-- [ ] agent/chat_completion_helpers.py  defs 178/191  cases 175/191
+- [ ] agent/chat_completion_helpers.py  defs 150/191  cases 175/191
 - [ ] agent/chat_completion_helpers_relay.py  defs 3/5  cases 0/0
 - [ ] agent/chat_completion_helpers_tool_calls.py  defs 5/6  cases 0/2
 - [x] agent/chat_completion_local.py  defs 5/5  cases 0/0
 - [ ] agent/chat_completion_nonstream.py  defs 13/18  cases 0/0
 - [ ] agent/chat_completion_stream_monitor.py  defs 13/14  cases 0/0
 - [ ] agent/chat_completion_wait_notice.py  defs 6/7  cases 0/0
-- [ ] agent/client_lifecycle.py  defs 53/53  cases 31/55
+- [ ] agent/client_lifecycle.py  defs 51/53  cases 31/55
 - [ ] agent/codex_headers.py  defs 4/5  cases 0/0
-- [ ] agent/codex_responses_adapter.py  defs 69/72  cases 55/65
-- [ ] agent/codex_runtime.py  defs 49/54  cases 48/116
-- [ ] agent/codex_runtime_history_seed.py  defs 2/3  cases 2/2
-- [ ] agent/codex_service_tiers.py  defs 13/13  cases 9/12
-- [ ] agent/command_token_source.py  defs 4/8  cases 0/30
+- [ ] agent/codex_responses_adapter.py  defs 67/72  cases 55/65
+- [ ] agent/codex_runtime.py  defs 47/54  cases 48/116
+- [ ] agent/codex_runtime_history_seed.py  defs 1/3  cases 2/2
+- [ ] agent/codex_service_tiers.py  defs 12/13  cases 9/12
+- [ ] agent/command_token_source.py  defs 3/8  cases 0/30
 - [ ] agent/credential_auth_recovery.py  defs 6/7  cases 0/1
 - [ ] agent/credential_persistence.py  defs 5/6  cases 0/0
-- [ ] agent/credential_pool.py  defs 114/125  cases 127/211
+- [ ] agent/credential_pool.py  defs 111/125  cases 137/211
 - [ ] agent/credential_pool_admin.py  defs 8/9  cases 0/0
 - [ ] agent/credential_pool_model_cooldowns.py  defs 7/8  cases 0/0
 - [x] agent/credential_pool_plugin.py  defs 4/4  cases 0/0
 - [x] agent/credential_pool_timestamps.py  defs 1/1  cases 0/0
-- [ ] agent/credential_source.py  defs 2/3  cases 0/0
+- [ ] agent/credential_source.py  defs 1/3  cases 0/0
 - [ ] agent/credential_sources.py  defs 12/12  cases 0/1
-- [ ] agent/credits_tracker.py  defs 48/51  cases 4/194
-- [x] agent/custom_entry_pool.py  defs 9/9  cases 0/0
-- [ ] agent/deadline.py  defs 16/21  cases 11/58
-- [ ] agent/empty_response_guard.py  defs 9/13  cases 28/34
-- [ ] agent/error_classifier.py  defs 50/58  cases 52/300
-- [ ] agent/error_surface.py  defs 10/10  cases 27/28
+- [ ] agent/credits_tracker.py  defs 45/51  cases 4/194
+- [ ] agent/custom_entry_pool.py  defs 8/9  cases 0/0
+- [ ] agent/deadline.py  defs 14/21  cases 11/58
+- [ ] agent/empty_response_guard.py  defs 12/13  cases 28/34
+- [ ] agent/error_classifier.py  defs 47/58  cases 52/300
+- [ ] agent/error_surface.py  defs 6/10  cases 27/28
 - [x] agent/errors.py  defs 2/2  cases 0/0
-- [x] agent/fallback_cooldown.py  defs 5/5  cases 2/2
+- [ ] agent/fallback_cooldown.py  defs 3/5  cases 2/2
 - [ ] agent/fast_mode.py  defs 7/7  cases 0/5
-- [ ] agent/gemini_long_decode.py  defs 8/8  cases 0/4
-- [ ] agent/gemini_native_adapter.py  defs 60/75  cases 7/70
+- [ ] agent/gemini_long_decode.py  defs 7/8  cases 0/4
+- [ ] agent/gemini_native_adapter.py  defs 48/75  cases 7/70
 - [ ] agent/gemini_schema.py  defs 5/7  cases 0/13
 - [x] agent/image_eviction_policy.py  defs 9/9  cases 21/21
-- [ ] agent/image_token_cost.py  defs 6/10  cases 0/2
+- [ ] agent/image_token_cost.py  defs 9/10  cases 0/2
 - [x] agent/jiter_preload.py  defs 1/1  cases 2/2
 - [x] agent/lmstudio_reasoning.py  defs 1/1  cases 3/3
-- [ ] agent/model_metadata.py  defs 145/145  cases 250/259
+- [ ] agent/model_metadata.py  defs 136/145  cases 250/259
 - [ ] agent/model_metadata_cache.py  defs 2/3  cases 2/2
-- [ ] agent/model_metadata_http.py  defs 2/3  cases 3/3
-- [x] agent/model_metadata_llamacpp.py  defs 3/3  cases 0/0
+- [ ] agent/model_metadata_http.py  defs 0/3  cases 3/3
+- [ ] agent/model_metadata_llamacpp.py  defs 2/3  cases 0/0
 - [x] agent/model_metadata_memo_bounds.py  defs 2/2  cases 0/0
 - [ ] agent/model_metadata_token_memo.py  defs 6/7  cases 0/0
-- [ ] agent/models_dev.py  defs 48/72  cases 23/73
-- [x] agent/moonshot_schema.py  defs 7/7  cases 21/21
-- [ ] agent/native_compaction.py  defs 16/18  cases 0/102
+- [ ] agent/models_dev.py  defs 43/72  cases 23/73
+- [ ] agent/moonshot_schema.py  defs 6/7  cases 21/21
+- [ ] agent/native_compaction.py  defs 15/18  cases 0/102
 - [ ] agent/nous_rate_guard.py  defs 7/12  cases 5/17
-- [ ] agent/nous_wire.py  defs 3/4  cases 12/12
+- [x] agent/nous_wire.py  defs 4/4  cases 12/12
 - [x] agent/opencode_affinity.py  defs 6/6  cases 0/0
-- [ ] agent/plan_limits.py  defs 24/27  cases 0/33
+- [ ] agent/plan_limits.py  defs 21/27  cases 0/33
 - [ ] agent/plan_prompt.py  defs 1/1  cases 0/2
-- [ ] agent/plan_snapshot_sync.py  defs 5/5  cases 0/9
+- [ ] agent/plan_snapshot_sync.py  defs 3/5  cases 0/9
 - [ ] agent/portal_tags.py  defs 5/10  cases 3/9
-- [ ] agent/prompt_cache_boundary.py  defs 2/2  cases 15/23
+- [ ] agent/prompt_cache_boundary.py  defs 1/2  cases 15/23
 - [ ] agent/prompt_cache_scope.py  defs 10/10  cases 79/83
-- [ ] agent/prompt_caching.py  defs 21/22  cases 13/54
-- [x] agent/provider_base.py  defs 9/9  cases 0/0
+- [ ] agent/prompt_caching.py  defs 20/22  cases 13/54
+- [ ] agent/provider_base.py  defs 4/9  cases 0/0
 - [x] agent/provider_projection.py  defs 1/1  cases 8/8
-- [ ] agent/provider_registry.py  defs 14/16  cases 4/5
-- [ ] agent/provider_route_hooks.py  defs 10/11  cases 4/4
-- [ ] agent/proxy_bypass.py  defs 8/10  cases 0/3
-- [ ] agent/proxy_sources/iron_proxy.py  defs 57/57  cases 23/33
-- [ ] agent/rate_limit_credits.py  defs 11/15  cases 0/2
+- [ ] agent/provider_registry.py  defs 11/16  cases 4/5
+- [ ] agent/provider_route_hooks.py  defs 7/11  cases 4/4
+- [ ] agent/proxy_bypass.py  defs 6/10  cases 0/3
+- [ ] agent/proxy_sources/iron_proxy.py  defs 55/57  cases 23/33
+- [ ] agent/rate_limit_credits.py  defs 8/15  cases 0/2
 - [ ] agent/rate_limit_tracker.py  defs 16/18  cases 0/4
 - [ ] agent/reasoning_carriers.py  defs 11/16  cases 2/6
-- [x] agent/reasoning_effort.py  defs 13/13  cases 24/24
-- [ ] agent/reasoning_params.py  defs 17/18  cases 0/1
+- [ ] agent/reasoning_effort.py  defs 12/13  cases 24/24
+- [ ] agent/reasoning_params.py  defs 18/18  cases 0/1
 - [x] agent/reasoning_promotion.py  defs 1/1  cases 0/0
 - [ ] agent/reasoning_summaries.py  defs 3/3  cases 7/11
-- [ ] agent/reasoning_timeouts.py  defs 1/1  cases 1/6
+- [ ] agent/reasoning_timeouts.py  defs 0/1  cases 1/6
 - [ ] agent/repetition_guard.py  defs 7/9  cases 0/10
 - [ ] agent/retry_utils.py  defs 7/11  cases 7/13
 - [x] agent/route_binding.py  defs 3/3  cases 0/0
 - [ ] agent/sdk_transform_bypass.py  defs 3/3  cases 2/13
-- [ ] agent/secret_scope.py  defs 26/28  cases 54/92
+- [ ] agent/secret_scope.py  defs 19/28  cases 55/92
 - [x] agent/secret_sources/__init__.py  defs 0/0  cases 0/0
-- [ ] agent/secret_sources/_cache.py  defs 18/20  cases 11/11
-- [ ] agent/secret_sources/base.py  defs 20/23  cases 7/14
-- [ ] agent/secret_sources/bitwarden.py  defs 11/17  cases 0/12
-- [ ] agent/secret_sources/command.py  defs 6/8  cases 0/0
-- [ ] agent/secret_sources/onepassword.py  defs 13/16  cases 1/12
-- [ ] agent/secret_sources/registry.py  defs 24/25  cases 12/14
+- [ ] agent/secret_sources/_cache.py  defs 15/20  cases 11/11
+- [ ] agent/secret_sources/base.py  defs 19/23  cases 7/14
+- [ ] agent/secret_sources/bitwarden.py  defs 10/17  cases 0/12
+- [ ] agent/secret_sources/command.py  defs 5/8  cases 0/0
+- [ ] agent/secret_sources/onepassword.py  defs 12/16  cases 1/12
+- [ ] agent/secret_sources/registry.py  defs 23/25  cases 12/14
 - [ ] agent/served_model.py  defs 3/3  cases 0/1
-- [x] agent/ssl_verify.py  defs 12/12  cases 21/21
-- [ ] agent/stream_delivery.py  defs 35/35  cases 2/12
+- [ ] agent/ssl_verify.py  defs 10/12  cases 21/21
+- [ ] agent/stream_delivery.py  defs 33/35  cases 2/12
 - [ ] agent/stream_diag.py  defs 8/10  cases 0/0
 - [ ] agent/stream_max_lifetime.py  defs 1/6  cases 0/2
 - [ ] agent/stream_single_writer.py  defs 3/3  cases 5/9
-- [ ] agent/subscription_view.py  defs 16/18  cases 0/13
-- [ ] agent/think_scrubber.py  defs 10/13  cases 1/19
+- [ ] agent/subscription_view.py  defs 15/18  cases 0/13
+- [ ] agent/think_scrubber.py  defs 8/13  cases 1/19
 - [ ] agent/timeout_error_summary.py  defs 2/2  cases 3/5
 - [ ] agent/transports/__init__.py  defs 3/4  cases 0/27
-- [ ] agent/transports/anthropic.py  defs 5/10  cases 4/10
-- [x] agent/transports/base.py  defs 9/9  cases 0/0
-- [ ] agent/transports/bedrock.py  defs 4/7  cases 2/16
-- [ ] agent/transports/chat_completions.py  defs 26/36  cases 6/145
-- [ ] agent/transports/codex.py  defs 30/38  cases 45/127
-- [ ] agent/transports/codex_app_server.py  defs 25/29  cases 0/16
-- [ ] agent/transports/codex_app_server_session.py  defs 38/42  cases 1/72
-- [ ] agent/transports/codex_event_projector.py  defs 14/17  cases 0/20
+- [ ] agent/transports/anthropic.py  defs 1/10  cases 4/10
+- [ ] agent/transports/base.py  defs 8/9  cases 0/0
+- [ ] agent/transports/bedrock.py  defs 1/7  cases 2/16
+- [ ] agent/transports/chat_completions.py  defs 25/36  cases 7/145
+- [ ] agent/transports/codex.py  defs 29/38  cases 45/127
+- [ ] agent/transports/codex_app_server.py  defs 22/29  cases 0/16
+- [ ] agent/transports/codex_app_server_session.py  defs 37/42  cases 1/72
+- [ ] agent/transports/codex_event_projector.py  defs 12/17  cases 0/20
 - [x] agent/transports/hermes_tools_mcp_server.py  defs 3/3  cases 8/8
-- [x] agent/transports/types.py  defs 8/8  cases 11/11
-- [ ] agent/usage_anchor.py  defs 8/10  cases 9/18
+- [ ] agent/transports/types.py  defs 1/8  cases 11/11
+- [ ] agent/usage_anchor.py  defs 6/10  cases 18/18
 - [ ] agent/usage_gauges.py  defs 12/13  cases 0/7
-- [ ] agent/usage_pricing.py  defs 30/31  cases 15/60
-- [ ] agent/vertex_adapter.py  defs 11/17  cases 0/13
-- [ ] agent/web_search_provider.py  defs 7/9  cases 0/0
-- [ ] agent/web_search_registry.py  defs 6/8  cases 0/25
+- [ ] agent/usage_pricing.py  defs 29/31  cases 15/60
+- [ ] agent/vertex_adapter.py  defs 9/17  cases 0/13
+- [x] agent/web_search_provider.py  defs 9/9  cases 0/0
+- [ ] agent/web_search_registry.py  defs 0/8  cases 0/25
 - [x] hermes_cli/_secrets_common.py  defs 14/14  cases 0/0
-- [ ] hermes_cli/anon_auth.py  defs 59/61  cases 8/136
-- [ ] hermes_cli/anon_challenge.py  defs 29/33  cases 9/44
-- [ ] hermes_cli/anon_sign_in.py  defs 23/29  cases 0/0
+- [ ] hermes_cli/anon_auth.py  defs 56/61  cases 8/136
+- [ ] hermes_cli/anon_challenge.py  defs 19/33  cases 9/44
+- [ ] hermes_cli/anon_sign_in.py  defs 21/29  cases 0/0
 - [x] hermes_cli/anon_sign_in_cli.py  defs 4/4  cases 0/0
-- [ ] hermes_cli/auth.py  defs 100/123  cases 147/462
+- [ ] hermes_cli/auth.py  defs 88/123  cases 149/462
 - [ ] hermes_cli/auth_codex.py  defs 40/44  cases 12/28
 - [ ] hermes_cli/auth_codex_browser.py  defs 4/5  cases 2/2
-- [x] hermes_cli/auth_commands.py  defs 46/46  cases 26/26
-- [ ] hermes_cli/auth_constants.py  defs 3/10  cases 0/0
-- [ ] hermes_cli/auth_device_flow.py  defs 20/22  cases 0/2
-- [ ] hermes_cli/auth_error_copy.py  defs 10/12  cases 0/0
+- [ ] hermes_cli/auth_commands.py  defs 44/46  cases 26/26
+- [ ] hermes_cli/auth_constants.py  defs 2/10  cases 0/0
+- [ ] hermes_cli/auth_device_flow.py  defs 19/22  cases 0/2
+- [ ] hermes_cli/auth_error_copy.py  defs 9/12  cases 0/0
 - [x] hermes_cli/auth_external_process.py  defs 3/3  cases 0/0
 - [x] hermes_cli/auth_minimax.py  defs 16/16  cases 0/0
 - [ ] hermes_cli/auth_model_picker.py  defs 13/14  cases 0/0
-- [ ] hermes_cli/auth_nous.py  defs 68/82  cases 4/4
+- [ ] hermes_cli/auth_nous.py  defs 66/82  cases 4/4
 - [ ] hermes_cli/auth_oauth_grants.py  defs 33/37  cases 0/0
-- [ ] hermes_cli/auth_oauth_pkce_plugin.py  defs 9/13  cases 1/4
+- [ ] hermes_cli/auth_oauth_pkce_plugin.py  defs 8/13  cases 1/4
 - [x] hermes_cli/auth_openrouter.py  defs 4/4  cases 0/0
-- [ ] hermes_cli/auth_plugin_providers.py  defs 30/35  cases 0/0
-- [x] hermes_cli/auth_qwen.py  defs 9/9  cases 0/0
-- [ ] hermes_cli/auth_xai.py  defs 23/25  cases 0/0
+- [ ] hermes_cli/auth_plugin_providers.py  defs 24/35  cases 0/0
+- [ ] hermes_cli/auth_qwen.py  defs 8/9  cases 0/0
+- [ ] hermes_cli/auth_xai.py  defs 22/25  cases 0/0
 - [ ] hermes_cli/auth_zai_kimi.py  defs 4/5  cases 0/0
-- [ ] hermes_cli/azure_detect.py  defs 10/12  cases 2/4
+- [ ] hermes_cli/azure_detect.py  defs 9/12  cases 2/4
 - [ ] hermes_cli/backend_retirement.py  defs 9/10  cases 3/6
 - [ ] hermes_cli/codex_models.py  defs 5/11  cases 9/14
-- [ ] hermes_cli/codex_runtime_plugin_migration.py  defs 16/18  cases 20/20
-- [ ] hermes_cli/codex_runtime_switch.py  defs 6/8  cases 1/10
+- [ ] hermes_cli/codex_runtime_plugin_migration.py  defs 15/18  cases 20/20
+- [ ] hermes_cli/codex_runtime_switch.py  defs 5/8  cases 1/10
 - [x] hermes_cli/credential_lifecycle.py  defs 7/7  cases 7/7
-- [ ] hermes_cli/env_loader.py  defs 38/39  cases 82/90
-- [x] hermes_cli/fallback_cmd.py  defs 17/17  cases 13/13
-- [x] hermes_cli/fallback_config.py  defs 9/9  cases 11/11
-- [ ] hermes_cli/free_tier_bootstrap.py  defs 13/19  cases 1/4
+- [ ] hermes_cli/env_loader.py  defs 36/39  cases 82/90
+- [ ] hermes_cli/fallback_cmd.py  defs 16/17  cases 13/13
+- [ ] hermes_cli/fallback_config.py  defs 6/9  cases 11/11
+- [ ] hermes_cli/free_tier_bootstrap.py  defs 10/19  cases 1/4
 - [ ] hermes_cli/free_tier_offer.py  defs 11/11  cases 6/15
-- [ ] hermes_cli/guest_handoff.py  defs 28/28  cases 0/27
-- [ ] hermes_cli/left_core_migration.py  defs 68/69  cases 63/78
+- [ ] hermes_cli/guest_handoff.py  defs 26/28  cases 0/27
+- [ ] hermes_cli/left_core_migration.py  defs 63/69  cases 63/78
 - [ ] hermes_cli/local_runtime/__init__.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/local_runtime/binaries.py  defs 13/16  cases 12/12
-- [ ] hermes_cli/local_runtime/bootstrap.py  defs 22/24  cases 11/24
+- [ ] hermes_cli/local_runtime/binaries.py  defs 11/16  cases 12/12
+- [ ] hermes_cli/local_runtime/bootstrap.py  defs 19/24  cases 11/24
 - [ ] hermes_cli/local_runtime/capabilities.py  defs 3/3  cases 0/8
 - [ ] hermes_cli/local_runtime/catalog.py  defs 24/27  cases 27/60
 - [ ] hermes_cli/local_runtime/context_policy.py  defs 13/14  cases 0/29
@@ -333,52 +333,52 @@
 - [ ] hermes_cli/local_runtime/estimator.py  defs 14/14  cases 0/24
 - [ ] hermes_cli/local_runtime/gguf.py  defs 17/18  cases 0/15
 - [ ] hermes_cli/local_runtime/growth.py  defs 6/7  cases 0/0
-- [ ] hermes_cli/local_runtime/hardware.py  defs 21/23  cases 0/43
-- [x] hermes_cli/local_runtime/hf_browse.py  defs 8/8  cases 8/8
-- [ ] hermes_cli/local_runtime/load_progress.py  defs 5/9  cases 10/12
-- [ ] hermes_cli/local_runtime/presets.py  defs 20/20  cases 0/22
+- [ ] hermes_cli/local_runtime/hardware.py  defs 20/23  cases 0/43
+- [ ] hermes_cli/local_runtime/hf_browse.py  defs 7/8  cases 8/8
+- [ ] hermes_cli/local_runtime/load_progress.py  defs 3/9  cases 10/12
+- [ ] hermes_cli/local_runtime/presets.py  defs 19/20  cases 0/22
 - [ ] hermes_cli/local_runtime/processes.py  defs 2/9  cases 0/2
-- [ ] hermes_cli/local_runtime/recovery.py  defs 10/10  cases 0/1
-- [ ] hermes_cli/local_runtime/supervisor.py  defs 25/29  cases 12/31
-- [ ] hermes_cli/moa_cmd.py  defs 10/12  cases 0/0
-- [ ] hermes_cli/moa_config.py  defs 15/20  cases 11/11
-- [ ] hermes_cli/model_catalog.py  defs 16/27  cases 15/30
-- [ ] hermes_cli/model_cost_guard.py  defs 5/8  cases 0/9
-- [ ] hermes_cli/model_data_policy_guard.py  defs 3/3  cases 1/5
+- [ ] hermes_cli/local_runtime/recovery.py  defs 7/10  cases 0/1
+- [ ] hermes_cli/local_runtime/supervisor.py  defs 24/29  cases 12/31
+- [ ] hermes_cli/moa_cmd.py  defs 7/12  cases 0/0
+- [ ] hermes_cli/moa_config.py  defs 12/20  cases 11/11
+- [ ] hermes_cli/model_catalog.py  defs 9/27  cases 15/30
+- [ ] hermes_cli/model_cost_guard.py  defs 4/8  cases 0/9
+- [ ] hermes_cli/model_data_policy_guard.py  defs 2/3  cases 1/5
 - [ ] hermes_cli/model_normalize.py  defs 10/10  cases 2/26
-- [ ] hermes_cli/model_picker_usage.py  defs 44/47  cases 1/42
-- [ ] hermes_cli/model_search.py  defs 2/2  cases 1/5
+- [ ] hermes_cli/model_picker_usage.py  defs 41/47  cases 1/42
+- [ ] hermes_cli/model_search.py  defs 1/2  cases 1/5
 - [ ] hermes_cli/model_selection_guards.py  defs 9/11  cases 0/14
 - [x] hermes_cli/model_setup.py  defs 2/2  cases 4/4
 - [x] hermes_cli/model_setup_flows.py  defs 34/34  cases 17/17
 - [x] hermes_cli/model_setup_flows_azure.py  defs 7/7  cases 0/0
 - [x] hermes_cli/model_setup_flows_bedrock.py  defs 5/5  cases 3/3
-- [x] hermes_cli/model_setup_flows_common.py  defs 23/23  cases 3/3
+- [ ] hermes_cli/model_setup_flows_common.py  defs 22/23  cases 3/3
 - [x] hermes_cli/model_setup_flows_custom.py  defs 9/9  cases 13/13
 - [x] hermes_cli/model_setup_flows_local.py  defs 8/8  cases 0/0
-- [ ] hermes_cli/model_switch.py  defs 87/90  cases 210/228
-- [ ] hermes_cli/model_switch_providers.py  defs 60/61  cases 5/5
-- [ ] hermes_cli/models.py  defs 128/135  cases 47/360
+- [ ] hermes_cli/model_switch.py  defs 85/90  cases 214/228
+- [ ] hermes_cli/model_switch_providers.py  defs 59/61  cases 5/5
+- [ ] hermes_cli/models.py  defs 123/135  cases 47/360
 - [x] hermes_cli/models_cache_lock.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/models_catalog_static.py  defs 14/31  cases 5/9
+- [ ] hermes_cli/models_catalog_static.py  defs 10/31  cases 5/9
 - [x] hermes_cli/models_detect.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/models_local.py  defs 37/37  cases 0/19
-- [ ] hermes_cli/models_pricing.py  defs 39/40  cases 20/88
+- [ ] hermes_cli/models_local.py  defs 34/37  cases 0/19
+- [ ] hermes_cli/models_pricing.py  defs 37/40  cases 20/88
 - [ ] hermes_cli/models_profile_cache.py  defs 0/2  cases 0/0
-- [ ] hermes_cli/models_reasoning_caps.py  defs 15/23  cases 4/14
-- [ ] hermes_cli/models_validate.py  defs 36/41  cases 0/17
-- [ ] hermes_cli/nous_account.py  defs 38/49  cases 5/26
-- [ ] hermes_cli/nous_auth_keepalive.py  defs 11/12  cases 6/6
-- [ ] hermes_cli/nous_billing.py  defs 13/30  cases 0/12
-- [ ] hermes_cli/nous_subscription.py  defs 31/38  cases 0/21
-- [ ] hermes_cli/onepassword_secrets_cli.py  defs 9/12  cases 1/1
+- [ ] hermes_cli/models_reasoning_caps.py  defs 13/23  cases 4/14
+- [ ] hermes_cli/models_validate.py  defs 34/41  cases 0/17
+- [ ] hermes_cli/nous_account.py  defs 32/49  cases 5/26
+- [ ] hermes_cli/nous_auth_keepalive.py  defs 10/12  cases 6/6
+- [ ] hermes_cli/nous_billing.py  defs 8/30  cases 0/12
+- [ ] hermes_cli/nous_subscription.py  defs 26/38  cases 0/21
+- [ ] hermes_cli/onepassword_secrets_cli.py  defs 7/12  cases 1/1
 - [ ] hermes_cli/partial_compress.py  defs 6/6  cases 0/14
 - [ ] hermes_cli/profile_channels.py  defs 31/32  cases 0/0
-- [ ] hermes_cli/profile_cmd.py  defs 25/26  cases 13/13
+- [ ] hermes_cli/profile_cmd.py  defs 23/26  cases 13/13
 - [x] hermes_cli/profile_describer.py  defs 6/6  cases 4/4
-- [ ] hermes_cli/profile_distribution.py  defs 39/40  cases 40/41
+- [ ] hermes_cli/profile_distribution.py  defs 38/40  cases 40/41
 - [x] hermes_cli/profile_identity.py  defs 7/7  cases 0/0
-- [x] hermes_cli/profile_model_seed.py  defs 8/8  cases 9/9
+- [ ] hermes_cli/profile_model_seed.py  defs 6/8  cases 9/9
 - [ ] hermes_cli/profiles.py  defs 105/108  cases 163/174
 - [x] hermes_cli/profiles_cache.py  defs 2/2  cases 0/0
 - [x] hermes_cli/profiles_config.py  defs 1/1  cases 0/0
@@ -388,606 +388,606 @@
 - [x] hermes_cli/profiles_service_cleanup.py  defs 3/3  cases 0/0
 - [x] hermes_cli/prompt_size.py  defs 11/11  cases 3/3
 - [ ] hermes_cli/provider_catalog.py  defs 6/7  cases 2/2
-- [ ] hermes_cli/providers.py  defs 29/32  cases 55/99
+- [ ] hermes_cli/providers.py  defs 25/32  cases 55/99
 - [x] hermes_cli/proxy/adapters/__init__.py  defs 1/1  cases 0/0
-- [x] hermes_cli/proxy/adapters/base.py  defs 9/9  cases 0/0
+- [ ] hermes_cli/proxy/adapters/base.py  defs 7/9  cases 0/0
 - [ ] hermes_cli/proxy/adapters/nous_portal.py  defs 10/11  cases 0/0
 - [ ] hermes_cli/proxy/adapters/xai.py  defs 9/10  cases 0/0
 - [x] hermes_cli/proxy/cli.py  defs 5/5  cases 0/0
 - [ ] hermes_cli/proxy/server.py  defs 11/11  cases 8/18
 - [x] hermes_cli/proxy/sse_done.py  defs 8/8  cases 16/16
-- [ ] hermes_cli/proxy_cli.py  defs 17/24  cases 6/6
-- [ ] hermes_cli/release_channels.py  defs 16/30  cases 0/17
+- [ ] hermes_cli/proxy_cli.py  defs 12/24  cases 6/6
+- [ ] hermes_cli/release_channels.py  defs 12/30  cases 0/17
 - [ ] hermes_cli/route_identity.py  defs 4/5  cases 1/9
-- [ ] hermes_cli/runtime_provider.py  defs 66/74  cases 17/248
+- [ ] hermes_cli/runtime_provider.py  defs 60/74  cases 17/248
 - [ ] hermes_cli/runtime_provider_backends.py  defs 7/8  cases 0/0
-- [ ] hermes_cli/runtime_provider_custom.py  defs 44/46  cases 0/0
+- [ ] hermes_cli/runtime_provider_custom.py  defs 42/46  cases 0/0
 - [x] hermes_cli/runtime_provider_missing_key.py  defs 5/5  cases 0/0
 - [ ] hermes_cli/sandbox_image_switch.py  defs 5/6  cases 7/8
 - [ ] hermes_cli/secret_prompt.py  defs 3/6  cases 3/3
-- [ ] hermes_cli/secrets_cli.py  defs 14/19  cases 4/4
+- [ ] hermes_cli/secrets_cli.py  defs 12/19  cases 4/4
 - [ ] hermes_cli/shared_profile_warning.py  defs 1/1  cases 2/5
 - [x] hermes_cli/status_auth.py  defs 7/7  cases 0/0
-- [x] hermes_cli/subcommands/auth.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/subcommands/auth.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/egress.py  defs 0/1  cases 0/0
-- [x] hermes_cli/subcommands/fallback.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/login.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/logout.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/moa.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/model.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/subcommands/peer.py  defs 24/26  cases 0/26
+- [ ] hermes_cli/subcommands/fallback.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/login.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/logout.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/moa.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/model.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/peer.py  defs 23/26  cases 0/26
 - [ ] hermes_cli/subcommands/profile.py  defs 0/1  cases 0/0
 - [x] hermes_cli/subcommands/secrets.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/usage.py  defs 3/3  cases 0/0
-- [x] hermes_cli/subcommands/vault.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/timeouts.py  defs 4/5  cases 0/2
-- [ ] hermes_cli/url_utils.py  defs 1/1  cases 0/7
+- [ ] hermes_cli/subcommands/usage.py  defs 2/3  cases 0/0
+- [ ] hermes_cli/subcommands/vault.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/timeouts.py  defs 2/5  cases 0/2
+- [ ] hermes_cli/url_utils.py  defs 0/1  cases 0/7
 - [ ] hermes_cli/urllib_security.py  defs 9/11  cases 14/14
 - [x] hermes_cli/vercel_auth.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/welcome_trial.py  defs 5/8  cases 0/19
+- [ ] hermes_cli/welcome_trial.py  defs 4/8  cases 0/19
 - [ ] hermes_cli/xai_retirement.py  defs 6/8  cases 1/23
-- [ ] plugins/model-providers/actual/__init__.py  defs 3/5  cases 0/0
-- [ ] plugins/model-providers/ai-gateway/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/alibaba-coding-plan/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/alibaba/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/anthropic/__init__.py  defs 1/2  cases 0/0
+- [ ] plugins/model-providers/actual/__init__.py  defs 0/5  cases 0/0
+- [ ] plugins/model-providers/ai-gateway/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/alibaba-coding-plan/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/alibaba/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/anthropic/__init__.py  defs 0/2  cases 0/0
 - [x] plugins/model-providers/arcee/__init__.py  defs 0/0  cases 0/0
 - [x] plugins/model-providers/azure-foundry/__init__.py  defs 0/0  cases 0/0
 - [ ] plugins/model-providers/bedrock/__init__.py  defs 0/1  cases 0/0
-- [ ] plugins/model-providers/commandcode/__init__.py  defs 3/5  cases 0/0
-- [ ] plugins/model-providers/custom/__init__.py  defs 5/6  cases 0/0
-- [ ] plugins/model-providers/deepinfra/__init__.py  defs 2/3  cases 0/0
-- [ ] plugins/model-providers/deepseek/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/fireworks/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/gemini/__init__.py  defs 1/2  cases 0/0
+- [ ] plugins/model-providers/commandcode/__init__.py  defs 0/5  cases 0/0
+- [ ] plugins/model-providers/custom/__init__.py  defs 1/6  cases 0/0
+- [ ] plugins/model-providers/deepinfra/__init__.py  defs 0/3  cases 0/0
+- [ ] plugins/model-providers/deepseek/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/fireworks/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/gemini/__init__.py  defs 0/2  cases 0/0
 - [x] plugins/model-providers/gmi/__init__.py  defs 0/0  cases 0/0
 - [x] plugins/model-providers/huggingface/__init__.py  defs 0/0  cases 0/0
 - [x] plugins/model-providers/kilocode/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/model-providers/kimi-coding/__init__.py  defs 3/5  cases 0/0
-- [ ] plugins/model-providers/lmstudio/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/meta-ai/__init__.py  defs 2/3  cases 0/0
-- [ ] plugins/model-providers/minimax/__init__.py  defs 2/3  cases 0/0
-- [ ] plugins/model-providers/nebius-token-factory/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/nous/__init__.py  defs 4/5  cases 0/0
+- [ ] plugins/model-providers/kimi-coding/__init__.py  defs 1/5  cases 0/0
+- [ ] plugins/model-providers/lmstudio/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/meta-ai/__init__.py  defs 0/3  cases 0/0
+- [ ] plugins/model-providers/minimax/__init__.py  defs 0/3  cases 0/0
+- [ ] plugins/model-providers/nebius-token-factory/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/nous/__init__.py  defs 0/5  cases 0/0
 - [x] plugins/model-providers/novita/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/model-providers/nvidia/__init__.py  defs 2/3  cases 0/0
-- [ ] plugins/model-providers/ollama-cloud/__init__.py  defs 1/2  cases 0/0
+- [ ] plugins/model-providers/nvidia/__init__.py  defs 0/3  cases 0/0
+- [ ] plugins/model-providers/ollama-cloud/__init__.py  defs 0/2  cases 0/0
 - [x] plugins/model-providers/openai-codex/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/model-providers/opencode-zen/__init__.py  defs 5/9  cases 0/0
-- [ ] plugins/model-providers/openrouter/__init__.py  defs 4/7  cases 0/0
-- [ ] plugins/model-providers/qwen-oauth/__init__.py  defs 3/5  cases 0/0
+- [ ] plugins/model-providers/opencode-zen/__init__.py  defs 1/9  cases 0/0
+- [ ] plugins/model-providers/openrouter/__init__.py  defs 1/7  cases 0/0
+- [ ] plugins/model-providers/qwen-oauth/__init__.py  defs 0/5  cases 0/0
 - [ ] plugins/model-providers/router/__init__.py  defs 16/17  cases 0/0
-- [ ] plugins/model-providers/solstice/__init__.py  defs 3/4  cases 0/0
-- [x] plugins/model-providers/solstice/auth.py  defs 5/5  cases 0/0
-- [ ] plugins/model-providers/solstice/transport.py  defs 2/4  cases 0/0
+- [ ] plugins/model-providers/solstice/__init__.py  defs 0/4  cases 0/0
+- [ ] plugins/model-providers/solstice/auth.py  defs 4/5  cases 0/0
+- [ ] plugins/model-providers/solstice/transport.py  defs 0/4  cases 0/0
 - [x] plugins/model-providers/stepfun/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/model-providers/tencent-tokenhub/__init__.py  defs 2/3  cases 0/0
-- [ ] plugins/model-providers/upstage/__init__.py  defs 1/2  cases 0/0
-- [ ] plugins/model-providers/vertex/__init__.py  defs 1/2  cases 0/0
+- [ ] plugins/model-providers/tencent-tokenhub/__init__.py  defs 0/3  cases 0/0
+- [ ] plugins/model-providers/upstage/__init__.py  defs 0/2  cases 0/0
+- [ ] plugins/model-providers/vertex/__init__.py  defs 0/2  cases 0/0
 - [x] plugins/model-providers/xai/__init__.py  defs 0/0  cases 0/0
 - [x] plugins/model-providers/xiaomi/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/model-providers/zai/__init__.py  defs 4/5  cases 0/0
-- [ ] providers/__init__.py  defs 30/36  cases 12/56
-- [ ] providers/base.py  defs 64/66  cases 12/36
+- [ ] plugins/model-providers/zai/__init__.py  defs 0/5  cases 0/0
+- [ ] providers/__init__.py  defs 26/36  cases 12/56
+- [ ] providers/base.py  defs 61/66  cases 12/36
 
-### 6. pkg/tools: 52% (5750 of 11050 rows closed, defs 4030/4708, cases 1720/6342, 61 of 279 files completed)
+### 6. pkg/tools: 48% (5351 of 11050 rows closed, defs 3624/4708, cases 1727/6342, verified 3624, exercised 1114, 36 of 279 files completed)
 #### Tool registry, approval, terminal backends, file ops, search, web, vision, checkpoints
-- [x] agent/async_utils.py  defs 2/2  cases 2/2
-- [ ] agent/background_review.py  defs 51/52  cases 68/68
-- [ ] agent/coding_context.py  defs 29/34  cases 0/24
+- [ ] agent/async_utils.py  defs 0/2  cases 2/2
+- [x] agent/background_review.py  defs 52/52  cases 68/68
+- [ ] agent/coding_context.py  defs 28/34  cases 0/24
 - [ ] agent/compression_marker.py  defs 3/3  cases 2/21
-- [ ] agent/delegation_backends.py  defs 13/13  cases 15/17
-- [ ] agent/delegation_context.py  defs 13/13  cases 6/11
+- [ ] agent/delegation_backends.py  defs 11/13  cases 15/17
+- [ ] agent/delegation_context.py  defs 9/13  cases 6/11
 - [x] agent/delegation_provider.py  defs 8/8  cases 0/0
-- [ ] agent/delegation_registry.py  defs 8/10  cases 0/0
-- [ ] agent/display.py  defs 109/114  cases 48/50
+- [ ] agent/delegation_registry.py  defs 5/10  cases 0/0
+- [ ] agent/display.py  defs 106/114  cases 48/50
 - [x] agent/estop.py  defs 8/8  cases 7/7
-- [ ] agent/file_safety.py  defs 21/29  cases 2/47
-- [ ] agent/image_routing.py  defs 24/28  cases 1/59
+- [ ] agent/file_safety.py  defs 16/29  cases 2/47
+- [ ] agent/image_routing.py  defs 23/28  cases 1/59
 - [x] agent/interrupt_compat.py  defs 2/2  cases 7/7
-- [ ] agent/interrupt_control.py  defs 22/24  cases 3/9
+- [ ] agent/interrupt_control.py  defs 23/24  cases 3/9
 - [ ] agent/interrupt_scope.py  defs 5/6  cases 0/0
-- [x] agent/markdown_tables.py  defs 9/9  cases 5/5
+- [ ] agent/markdown_tables.py  defs 8/9  cases 5/5
 - [ ] agent/onboarding.py  defs 12/12  cases 13/16
 - [ ] agent/onboarding_first_tasks.py  defs 6/10  cases 0/11
-- [ ] agent/onboarding_flow.py  defs 22/41  cases 0/31
-- [ ] agent/onboarding_record.py  defs 5/12  cases 14/17
+- [ ] agent/onboarding_flow.py  defs 14/41  cases 0/31
+- [ ] agent/onboarding_record.py  defs 3/12  cases 14/17
 - [x] agent/onboarding_session.py  defs 9/9  cases 0/0
-- [ ] agent/onboarding_text.py  defs 19/23  cases 0/0
-- [ ] agent/process_bootstrap.py  defs 12/29  cases 15/21
-- [ ] agent/redact.py  defs 50/56  cases 4/163
-- [ ] agent/relay_cwd.py  defs 2/3  cases 5/5
+- [ ] agent/onboarding_text.py  defs 13/23  cases 0/0
+- [ ] agent/process_bootstrap.py  defs 6/29  cases 15/21
+- [ ] agent/redact.py  defs 48/56  cases 4/163
+- [ ] agent/relay_cwd.py  defs 1/3  cases 5/5
 - [ ] agent/review_engine.py  defs 7/7  cases 17/18
 - [ ] agent/review_idle_queue.py  defs 17/18  cases 20/20
-- [ ] agent/runtime_cwd.py  defs 9/10  cases 0/8
-- [ ] agent/runtime_self_protection.py  defs 9/12  cases 0/18
+- [ ] agent/runtime_cwd.py  defs 7/10  cases 0/8
+- [ ] agent/runtime_self_protection.py  defs 7/12  cases 0/18
 - [x] agent/search_policy.py  defs 0/0  cases 0/0
-- [ ] agent/subagent_lifecycle.py  defs 27/35  cases 1/14
+- [ ] agent/subagent_lifecycle.py  defs 26/35  cases 1/14
 - [ ] agent/subdirectory_hints.py  defs 15/17  cases 31/31
-- [ ] agent/terminal_approval_batch.py  defs 16/21  cases 0/4
-- [ ] agent/terminal_env_provider.py  defs 12/14  cases 0/0
-- [ ] agent/terminal_env_registry.py  defs 3/4  cases 17/17
-- [ ] agent/thread_scoped_output.py  defs 9/16  cases 6/6
+- [ ] agent/terminal_approval_batch.py  defs 15/21  cases 0/4
+- [ ] agent/terminal_env_provider.py  defs 0/14  cases 0/0
+- [ ] agent/terminal_env_registry.py  defs 2/4  cases 17/17
+- [ ] agent/thread_scoped_output.py  defs 5/16  cases 6/6
 - [ ] agent/tool_call_batches.py  defs 1/3  cases 0/2
 - [ ] agent/tool_dispatch_helpers.py  defs 29/30  cases 3/85
-- [ ] agent/tool_executor.py  defs 80/87  cases 27/29
-- [ ] agent/tool_guardrails.py  defs 39/41  cases 17/64
+- [ ] agent/tool_executor.py  defs 74/87  cases 27/29
+- [ ] agent/tool_guardrails.py  defs 37/41  cases 17/64
 - [ ] agent/tool_progress_relay.py  defs 3/4  cases 2/2
 - [ ] agent/tool_result_classification.py  defs 6/6  cases 0/2
-- [ ] agent/verification_evidence.py  defs 40/40  cases 0/40
-- [ ] agent/verification_stop.py  defs 9/9  cases 0/11
-- [ ] hermes_cli/_launchers.py  defs 35/38  cases 24/36
+- [ ] agent/verification_evidence.py  defs 39/40  cases 0/40
+- [ ] agent/verification_stop.py  defs 8/9  cases 0/11
+- [ ] hermes_cli/_launchers.py  defs 32/38  cases 24/36
 - [x] hermes_cli/approval_mode.py  defs 3/3  cases 0/0
 - [x] hermes_cli/approval_transport.py  defs 9/9  cases 20/20
-- [ ] hermes_cli/approvals_suggest.py  defs 17/19  cases 1/15
+- [ ] hermes_cli/approvals_suggest.py  defs 15/19  cases 1/15
 - [ ] hermes_cli/approvals_test.py  defs 2/3  cases 0/15
 - [ ] hermes_cli/archive_safe.py  defs 5/5  cases 0/3
-- [ ] hermes_cli/checkpoints.py  defs 9/9  cases 2/4
+- [ ] hermes_cli/checkpoints.py  defs 8/9  cases 2/4
 - [x] hermes_cli/cli_commands_worktree.py  defs 1/1  cases 0/0
 - [ ] hermes_cli/dump.py  defs 13/16  cases 11/11
-- [ ] hermes_cli/git_pack_tidy.py  defs 20/21  cases 3/3
+- [ ] hermes_cli/git_pack_tidy.py  defs 16/21  cases 3/3
 - [ ] hermes_cli/gitlock.py  defs 33/38  cases 51/52
 - [ ] hermes_cli/input_sanitize.py  defs 3/3  cases 3/5
-- [ ] hermes_cli/install_state.py  defs 39/47  cases 0/11
+- [ ] hermes_cli/install_state.py  defs 31/47  cases 0/11
 - [ ] hermes_cli/onboarding_due.py  defs 4/5  cases 0/3
 - [ ] hermes_cli/onboarding_run.py  defs 2/5  cases 2/8
-- [ ] hermes_cli/process_identity.py  defs 50/51  cases 87/131
-- [ ] hermes_cli/projects_db.py  defs 33/39  cases 4/13
-- [ ] hermes_cli/pty_bridge.py  defs 18/23  cases 0/20
-- [ ] hermes_cli/pty_session.py  defs 31/39  cases 51/52
-- [ ] hermes_cli/setup_terminal.py  defs 7/14  cases 6/6
-- [ ] hermes_cli/sizefmt.py  defs 1/1  cases 0/3
-- [x] hermes_cli/subcommands/approvals.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/backup.py  defs 2/2  cases 0/0
-- [x] hermes_cli/subcommands/checkpoints.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/import_cmd.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/migrate.py  defs 3/3  cases 0/0
-- [x] hermes_cli/subcommands/security.py  defs 1/1  cases 0/0
-- [x] hermes_cli/subcommands/worktree.py  defs 1/1  cases 1/1
+- [ ] hermes_cli/process_identity.py  defs 43/51  cases 87/131
+- [ ] hermes_cli/projects_db.py  defs 28/39  cases 4/13
+- [ ] hermes_cli/pty_bridge.py  defs 17/23  cases 0/20
+- [ ] hermes_cli/pty_session.py  defs 30/39  cases 51/52
+- [ ] hermes_cli/setup_terminal.py  defs 6/14  cases 6/6
+- [ ] hermes_cli/sizefmt.py  defs 0/1  cases 0/3
+- [ ] hermes_cli/subcommands/approvals.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/backup.py  defs 0/2  cases 0/0
+- [ ] hermes_cli/subcommands/checkpoints.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/import_cmd.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/migrate.py  defs 0/3  cases 0/0
+- [ ] hermes_cli/subcommands/security.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/worktree.py  defs 0/1  cases 1/1
 - [ ] hermes_cli/tool_availability_notices.py  defs 3/4  cases 0/9
-- [ ] hermes_cli/tools_config.py  defs 56/61  cases 104/116
-- [x] hermes_cli/tools_config_post_setup.py  defs 18/18  cases 3/3
+- [ ] hermes_cli/tools_config.py  defs 55/61  cases 104/116
+- [ ] hermes_cli/tools_config_post_setup.py  defs 17/18  cases 3/3
 - [x] hermes_cli/tools_config_providers.py  defs 43/43  cases 5/5
 - [x] hermes_cli/toolset_scope.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/toolset_validation.py  defs 7/7  cases 1/18
+- [ ] hermes_cli/toolset_validation.py  defs 6/7  cases 1/18
 - [x] hermes_cli/tui_worktree_resume.py  defs 7/7  cases 0/0
-- [ ] hermes_cli/win_pty_bridge.py  defs 14/19  cases 1/24
-- [ ] hermes_cli/worktree_archive.py  defs 23/27  cases 5/5
+- [ ] hermes_cli/win_pty_bridge.py  defs 13/19  cases 1/24
+- [ ] hermes_cli/worktree_archive.py  defs 22/27  cases 5/5
 - [x] hermes_cli/worktree_cmd.py  defs 9/9  cases 5/5
 - [x] hermes_cli/worktree_exit.py  defs 5/5  cases 1/1
-- [ ] hermes_cli/worktree_gc.py  defs 14/16  cases 24/24
-- [ ] hermes_cli/worktree_ops.py  defs 47/50  cases 54/77
+- [ ] hermes_cli/worktree_gc.py  defs 13/16  cases 24/24
+- [ ] hermes_cli/worktree_ops.py  defs 45/50  cases 54/77
 - [ ] hermes_cli/worktree_registry.py  defs 4/5  cases 0/0
 - [ ] hermes_cli/worktree_retention.py  defs 6/11  cases 0/0
-- [ ] hermes_cli/worktree_sweep.py  defs 20/21  cases 0/0
-- [ ] hermes_platform/declaration.py  defs 17/23  cases 0/15
+- [ ] hermes_cli/worktree_sweep.py  defs 18/21  cases 0/0
+- [ ] hermes_platform/declaration.py  defs 11/23  cases 0/15
 - [ ] hermes_platform/resolver/__init__.py  defs 0/0  cases 9/10
-- [ ] hermes_platform/resolver/app.py  defs 26/33  cases 0/14
-- [ ] hermes_platform/resolver/availability.py  defs 3/12  cases 0/0
-- [ ] hermes_platform/resolver/base.py  defs 8/10  cases 0/0
-- [ ] hermes_platform/resolver/core.py  defs 14/18  cases 0/0
-- [x] hermes_platform/resolver/known_dirs.py  defs 15/15  cases 0/0
-- [ ] model_tools.py  defs 41/44  cases 70/73
-- [ ] plugins/web/_common.py  defs 31/36  cases 0/0
-- [x] plugins/web/brave_free/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/brave_free/provider.py  defs 1/3  cases 0/0
-- [x] plugins/web/ddgs/__init__.py  defs 1/1  cases 0/0
+- [ ] hermes_platform/resolver/app.py  defs 18/33  cases 0/14
+- [ ] hermes_platform/resolver/availability.py  defs 2/12  cases 0/0
+- [ ] hermes_platform/resolver/base.py  defs 4/10  cases 0/0
+- [ ] hermes_platform/resolver/core.py  defs 10/18  cases 0/0
+- [ ] hermes_platform/resolver/known_dirs.py  defs 13/15  cases 0/0
+- [ ] model_tools.py  defs 27/44  cases 70/73
+- [ ] plugins/web/_common.py  defs 26/36  cases 0/0
+- [ ] plugins/web/brave_free/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/brave_free/provider.py  defs 0/3  cases 0/0
+- [ ] plugins/web/ddgs/__init__.py  defs 0/1  cases 0/0
 - [ ] plugins/web/ddgs/_search_worker.py  defs 0/5  cases 0/0
-- [ ] plugins/web/ddgs/provider.py  defs 6/11  cases 0/12
-- [x] plugins/web/exa/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/exa/provider.py  defs 3/6  cases 0/0
-- [x] plugins/web/firecrawl/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/firecrawl/provider.py  defs 15/33  cases 0/4
-- [x] plugins/web/keenable/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/keenable/provider.py  defs 2/5  cases 3/6
-- [ ] plugins/web/keyless_mcp.py  defs 26/29  cases 13/77
-- [x] plugins/web/openai_native/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/openai_native/provider.py  defs 3/6  cases 0/0
-- [x] plugins/web/parallel/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/parallel/provider.py  defs 4/8  cases 0/0
-- [x] plugins/web/perplexity/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/perplexity/provider.py  defs 13/16  cases 0/0
-- [x] plugins/web/searxng/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/searxng/provider.py  defs 1/3  cases 0/0
-- [x] plugins/web/tavily/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/tavily/provider.py  defs 7/11  cases 0/0
-- [x] plugins/web/xai/__init__.py  defs 1/1  cases 0/0
-- [ ] plugins/web/xai/provider.py  defs 12/14  cases 0/18
+- [ ] plugins/web/ddgs/provider.py  defs 5/11  cases 0/12
+- [ ] plugins/web/exa/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/exa/provider.py  defs 1/6  cases 0/0
+- [ ] plugins/web/firecrawl/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/firecrawl/provider.py  defs 10/33  cases 0/4
+- [ ] plugins/web/keenable/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/keenable/provider.py  defs 1/5  cases 3/6
+- [ ] plugins/web/keyless_mcp.py  defs 25/29  cases 13/77
+- [ ] plugins/web/openai_native/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/openai_native/provider.py  defs 0/6  cases 0/0
+- [ ] plugins/web/parallel/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/parallel/provider.py  defs 0/8  cases 0/0
+- [ ] plugins/web/perplexity/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/perplexity/provider.py  defs 9/16  cases 0/0
+- [ ] plugins/web/searxng/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/searxng/provider.py  defs 0/3  cases 0/0
+- [ ] plugins/web/tavily/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/tavily/provider.py  defs 5/11  cases 0/0
+- [ ] plugins/web/xai/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/web/xai/provider.py  defs 7/14  cases 0/18
 - [x] tools/__init__.py  defs 1/1  cases 0/0
 - [ ] tools/annotate_preview_tool.py  defs 1/1  cases 0/6
 - [ ] tools/ansi_strip.py  defs 3/3  cases 0/30
-- [ ] tools/approval.py  defs 62/65  cases 37/459
-- [ ] tools/approval_context.py  defs 30/33  cases 2/37
-- [ ] tools/approval_detection.py  defs 50/51  cases 0/11
+- [ ] tools/approval.py  defs 59/65  cases 39/459
+- [ ] tools/approval_context.py  defs 27/33  cases 2/37
+- [ ] tools/approval_detection.py  defs 49/51  cases 0/11
 - [ ] tools/approval_floors.py  defs 7/7  cases 0/14
 - [ ] tools/approval_gateway_wait.py  defs 7/8  cases 0/13
-- [ ] tools/approval_human_wait.py  defs 8/9  cases 7/16
-- [ ] tools/approval_prompt.py  defs 8/13  cases 1/16
+- [ ] tools/approval_human_wait.py  defs 6/9  cases 7/16
+- [ ] tools/approval_prompt.py  defs 7/13  cases 1/16
 - [ ] tools/approval_smart.py  defs 5/6  cases 0/24
 - [ ] tools/approval_yolo.py  defs 6/7  cases 0/2
-- [ ] tools/arg_coercion.py  defs 7/8  cases 0/27
-- [ ] tools/async_delegation.py  defs 69/72  cases 44/82
+- [ ] tools/arg_coercion.py  defs 5/8  cases 0/27
+- [ ] tools/async_delegation.py  defs 64/72  cases 44/82
 - [x] tools/async_delegation_recovery_hints.py  defs 3/3  cases 0/0
-- [ ] tools/async_delegation_worker.py  defs 14/15  cases 0/0
+- [ ] tools/async_delegation_worker.py  defs 12/15  cases 0/0
 - [x] tools/binary_extensions.py  defs 7/7  cases 0/0
 - [ ] tools/budget_config.py  defs 4/4  cases 1/16
-- [ ] tools/checkpoint_maintenance.py  defs 9/12  cases 0/1
-- [ ] tools/checkpoint_manager.py  defs 39/53  cases 6/93
+- [ ] tools/checkpoint_maintenance.py  defs 7/12  cases 0/1
+- [ ] tools/checkpoint_manager.py  defs 30/53  cases 6/93
 - [ ] tools/checkpoint_manager_profile_rename.py  defs 2/3  cases 0/0
-- [ ] tools/checkpoint_pruning.py  defs 12/13  cases 0/0
-- [x] tools/clarify_batch.py  defs 1/1  cases 0/0
-- [ ] tools/clarify_gateway.py  defs 12/20  cases 0/45
-- [ ] tools/clarify_tool.py  defs 7/8  cases 0/31
+- [ ] tools/checkpoint_pruning.py  defs 11/13  cases 0/0
+- [ ] tools/clarify_batch.py  defs 0/1  cases 0/0
+- [ ] tools/clarify_gateway.py  defs 8/20  cases 0/45
+- [ ] tools/clarify_tool.py  defs 5/8  cases 0/31
 - [ ] tools/close_preview_tool.py  defs 0/1  cases 0/4
 - [x] tools/close_terminal_tool.py  defs 1/1  cases 0/0
-- [ ] tools/credential_files.py  defs 19/21  cases 1/39
+- [ ] tools/credential_files.py  defs 17/21  cases 1/39
 - [ ] tools/daemon_pool.py  defs 0/3  cases 0/6
-- [ ] tools/debug_helpers.py  defs 5/6  cases 3/3
-- [ ] tools/delegate_tool.py  defs 23/25  cases 261/267
-- [ ] tools/delegate_tool_child_run.py  defs 47/51  cases 12/12
-- [ ] tools/delegate_tool_config.py  defs 34/36  cases 0/5
+- [ ] tools/debug_helpers.py  defs 4/6  cases 3/3
+- [ ] tools/delegate_tool.py  defs 22/25  cases 261/267
+- [ ] tools/delegate_tool_child_run.py  defs 44/51  cases 12/12
+- [ ] tools/delegate_tool_config.py  defs 31/36  cases 0/5
 - [ ] tools/delegate_tool_dispatch.py  defs 18/19  cases 3/5
-- [ ] tools/delegate_tool_progress.py  defs 26/31  cases 3/3
-- [ ] tools/delegate_tool_registry.py  defs 15/16  cases 5/5
+- [ ] tools/delegate_tool_progress.py  defs 23/31  cases 3/3
+- [ ] tools/delegate_tool_registry.py  defs 13/16  cases 5/5
 - [x] tools/delegate_tool_results.py  defs 21/21  cases 5/5
-- [ ] tools/delegate_tool_routes.py  defs 21/22  cases 15/15
+- [ ] tools/delegate_tool_routes.py  defs 20/22  cases 15/15
 - [x] tools/delegate_tool_tasks.py  defs 6/6  cases 0/0
 - [x] tools/delegate_tool_toolsets.py  defs 5/5  cases 0/0
 - [x] tools/delegate_tool_tuning.py  defs 4/4  cases 0/0
-- [ ] tools/delegation_live_log.py  defs 25/26  cases 24/24
+- [ ] tools/delegation_live_log.py  defs 23/26  cases 24/24
 - [x] tools/delegation_output_schema.py  defs 5/5  cases 0/0
 - [x] tools/delegation_redaction.py  defs 8/8  cases 0/0
 - [ ] tools/drive_preview_tool.py  defs 1/1  cases 0/13
-- [ ] tools/env_passthrough.py  defs 9/10  cases 12/45
+- [ ] tools/env_passthrough.py  defs 7/10  cases 12/45
 - [ ] tools/env_probe.py  defs 11/14  cases 0/14
 - [x] tools/environments/__init__.py  defs 0/0  cases 0/0
-- [ ] tools/environments/base.py  defs 39/46  cases 0/5
-- [ ] tools/environments/base_output.py  defs 25/30  cases 1/22
+- [ ] tools/environments/base.py  defs 38/46  cases 0/5
+- [ ] tools/environments/base_output.py  defs 22/30  cases 1/22
 - [ ] tools/environments/base_session_env.py  defs 11/11  cases 2/5
 - [ ] tools/environments/base_wait.py  defs 8/10  cases 0/0
 - [ ] tools/environments/daytona.py  defs 8/10  cases 0/15
-- [ ] tools/environments/docker.py  defs 56/60  cases 3/83
+- [ ] tools/environments/docker.py  defs 53/60  cases 3/83
 - [x] tools/environments/docker_egress.py  defs 11/11  cases 0/0
-- [ ] tools/environments/docker_ownership.py  defs 12/16  cases 0/0
+- [ ] tools/environments/docker_ownership.py  defs 10/16  cases 0/0
 - [ ] tools/environments/fd_wait.py  defs 0/5  cases 1/2
-- [ ] tools/environments/file_sync.py  defs 21/26  cases 0/31
-- [ ] tools/environments/local.py  defs 58/62  cases 36/204
-- [ ] tools/environments/local_env_policy.py  defs 16/18  cases 0/22
+- [ ] tools/environments/file_sync.py  defs 20/26  cases 0/31
+- [ ] tools/environments/local.py  defs 58/62  cases 37/204
+- [ ] tools/environments/local_env_policy.py  defs 15/18  cases 0/22
 - [ ] tools/environments/local_pythonpath.py  defs 5/7  cases 0/0
-- [ ] tools/environments/managed_modal.py  defs 10/13  cases 0/0
-- [ ] tools/environments/modal.py  defs 15/24  cases 0/9
+- [ ] tools/environments/managed_modal.py  defs 9/13  cases 0/0
+- [ ] tools/environments/modal.py  defs 14/24  cases 0/9
 - [ ] tools/environments/path_utils.py  defs 1/1  cases 7/21
 - [ ] tools/environments/remote_common.py  defs 6/7  cases 0/0
 - [ ] tools/environments/ssh.py  defs 18/20  cases 0/40
-- [ ] tools/environments/streams.py  defs 15/18  cases 2/2
-- [ ] tools/environments/vercel_sandbox.py  defs 24/33  cases 0/21
+- [ ] tools/environments/streams.py  defs 13/18  cases 2/2
+- [ ] tools/environments/vercel_sandbox.py  defs 19/33  cases 0/21
 - [ ] tools/escape_drift_autocorrect.py  defs 8/8  cases 0/10
-- [ ] tools/file_operations.py  defs 71/74  cases 1/210
-- [ ] tools/file_operations_common.py  defs 19/22  cases 0/0
+- [ ] tools/file_operations.py  defs 70/74  cases 1/210
+- [ ] tools/file_operations_common.py  defs 18/22  cases 0/0
 - [ ] tools/file_operations_lint.py  defs 17/20  cases 0/0
-- [ ] tools/file_operations_native.py  defs 4/5  cases 0/0
+- [ ] tools/file_operations_native.py  defs 1/5  cases 0/0
 - [ ] tools/file_operations_search.py  defs 60/61  cases 0/27
-- [ ] tools/file_state.py  defs 20/23  cases 0/10
-- [ ] tools/file_tools.py  defs 28/36  cases 2/185
-- [ ] tools/file_tools_paths.py  defs 20/21  cases 0/8
+- [ ] tools/file_state.py  defs 13/23  cases 0/10
+- [ ] tools/file_tools.py  defs 27/36  cases 2/185
+- [ ] tools/file_tools_paths.py  defs 16/21  cases 0/8
 - [ ] tools/file_tools_read_tracking.py  defs 22/24  cases 1/15
 - [ ] tools/file_tools_write_guards.py  defs 17/21  cases 0/69
 - [ ] tools/focus_pane_tool.py  defs 1/1  cases 0/1
-- [ ] tools/fuzzy_match.py  defs 38/40  cases 0/100
-- [ ] tools/hook_output_spill.py  defs 3/3  cases 0/5
-- [x] tools/human_input_hooks.py  defs 5/5  cases 10/10
-- [ ] tools/image_source.py  defs 15/23  cases 8/38
+- [ ] tools/fuzzy_match.py  defs 37/40  cases 0/100
+- [ ] tools/hook_output_spill.py  defs 2/3  cases 0/5
+- [ ] tools/human_input_hooks.py  defs 4/5  cases 10/10
+- [ ] tools/image_source.py  defs 13/23  cases 8/38
 - [ ] tools/interpreter_shutdown.py  defs 1/1  cases 1/5
 - [ ] tools/interrupt.py  defs 6/9  cases 0/39
 - [ ] tools/open_preview_tool.py  defs 3/4  cases 0/6
 - [x] tools/openrouter_client.py  defs 1/1  cases 3/3
-- [ ] tools/patch_parser.py  defs 12/21  cases 0/35
+- [ ] tools/patch_parser.py  defs 10/21  cases 0/35
 - [x] tools/path_security.py  defs 3/3  cases 0/0
 - [ ] tools/preview_tool.py  defs 2/2  cases 0/2
-- [ ] tools/process_registry.py  defs 104/113  cases 5/265
-- [ ] tools/process_registry_awaiting.py  defs 6/8  cases 0/8
-- [ ] tools/process_registry_checkpoint.py  defs 4/5  cases 0/7
+- [ ] tools/process_registry.py  defs 102/113  cases 5/265
+- [ ] tools/process_registry_awaiting.py  defs 5/8  cases 0/8
+- [ ] tools/process_registry_checkpoint.py  defs 3/5  cases 0/7
 - [x] tools/process_registry_env_log.py  defs 1/1  cases 0/0
-- [ ] tools/process_registry_notifications.py  defs 33/34  cases 0/16
-- [ ] tools/process_registry_output_log.py  defs 7/9  cases 0/0
+- [ ] tools/process_registry_notifications.py  defs 32/34  cases 1/16
+- [ ] tools/process_registry_output_log.py  defs 6/9  cases 0/0
 - [ ] tools/process_registry_ownership.py  defs 5/8  cases 0/1
 - [ ] tools/process_registry_results.py  defs 3/4  cases 0/4
 - [ ] tools/process_registry_stdin.py  defs 4/4  cases 0/5
 - [ ] tools/process_registry_termination.py  defs 4/6  cases 0/4
 - [ ] tools/process_registry_wait_policy.py  defs 5/9  cases 0/0
 - [x] tools/process_registry_wsl.py  defs 1/1  cases 0/0
-- [ ] tools/project_tools.py  defs 10/11  cases 0/10
+- [ ] tools/project_tools.py  defs 7/11  cases 0/10
 - [ ] tools/pty_query_responder.py  defs 3/4  cases 0/14
 - [ ] tools/read_extract.py  defs 27/38  cases 0/62
 - [ ] tools/read_preview_tool.py  defs 1/1  cases 0/7
 - [x] tools/read_terminal_tool.py  defs 2/2  cases 0/0
 - [ ] tools/read_window_tool.py  defs 1/1  cases 0/5
-- [ ] tools/registry.py  defs 73/82  cases 70/73
-- [ ] tools/schema_sanitizer.py  defs 21/21  cases 16/39
-- [ ] tools/self_repo_guard.py  defs 32/33  cases 0/45
-- [ ] tools/session_search_tool.py  defs 35/37  cases 56/58
+- [ ] tools/registry.py  defs 56/82  cases 70/73
+- [ ] tools/schema_sanitizer.py  defs 18/21  cases 16/39
+- [ ] tools/self_repo_guard.py  defs 29/33  cases 2/45
+- [ ] tools/session_search_tool.py  defs 33/37  cases 56/58
 - [ ] tools/set_theme_tool.py  defs 2/2  cases 0/2
 - [x] tools/shell_heredoc.py  defs 7/7  cases 0/0
 - [x] tools/spill_safety.py  defs 3/3  cases 11/11
 - [ ] tools/subagent_worktree.py  defs 10/11  cases 0/17
-- [ ] tools/terminal_hints.py  defs 4/5  cases 0/28
-- [ ] tools/terminal_scope.py  defs 10/15  cases 16/19
-- [ ] tools/terminal_tool.py  defs 62/71  cases 46/307
-- [ ] tools/terminal_tool_backends.py  defs 17/24  cases 1/12
+- [ ] tools/terminal_hints.py  defs 3/5  cases 1/28
+- [ ] tools/terminal_scope.py  defs 9/15  cases 16/19
+- [ ] tools/terminal_tool.py  defs 57/71  cases 46/307
+- [ ] tools/terminal_tool_backends.py  defs 12/24  cases 1/12
 - [ ] tools/terminal_tool_background.py  defs 7/8  cases 3/3
 - [ ] tools/terminal_tool_config.py  defs 14/21  cases 0/0
 - [ ] tools/terminal_tool_guards.py  defs 13/14  cases 0/2
-- [x] tools/terminal_tool_lifecycle.py  defs 14/14  cases 0/0
+- [ ] tools/terminal_tool_lifecycle.py  defs 13/14  cases 0/0
 - [ ] tools/terminal_tool_macos_open.py  defs 3/3  cases 0/24
-- [ ] tools/terminal_tool_result.py  defs 9/10  cases 0/15
+- [ ] tools/terminal_tool_result.py  defs 8/10  cases 0/15
 - [ ] tools/terminal_tool_sudo.py  defs 16/20  cases 3/38
 - [x] tools/thread_context.py  defs 2/2  cases 0/0
-- [ ] tools/threat_patterns.py  defs 3/3  cases 0/31
+- [ ] tools/threat_patterns.py  defs 1/3  cases 0/31
 - [ ] tools/tip_tool.py  defs 1/2  cases 0/6
 - [ ] tools/todo_tool.py  defs 15/19  cases 0/48
 - [ ] tools/tool_backend_helpers.py  defs 20/20  cases 1/33
 - [x] tools/tool_labels.py  defs 12/12  cases 0/0
-- [ ] tools/tool_output_limits.py  defs 6/7  cases 0/16
+- [ ] tools/tool_output_limits.py  defs 3/7  cases 0/16
 - [ ] tools/tool_output_truncate.py  defs 3/3  cases 1/5
 - [ ] tools/tool_result_storage.py  defs 20/21  cases 0/60
 - [ ] tools/tool_search.py  defs 30/33  cases 2/81
-- [ ] tools/tool_search_catalog.py  defs 15/18  cases 0/2
+- [ ] tools/tool_search_catalog.py  defs 12/18  cases 0/2
 - [ ] tools/tool_search_validation.py  defs 9/10  cases 0/0
-- [x] tools/tour_presets.py  defs 1/1  cases 0/0
+- [ ] tools/tour_presets.py  defs 0/1  cases 0/0
 - [ ] tools/tour_tool.py  defs 1/2  cases 0/10
-- [ ] tools/url_safety.py  defs 18/47  cases 2/66
-- [ ] tools/vision_tools.py  defs 39/48  cases 4/91
+- [ ] tools/url_safety.py  defs 15/47  cases 2/66
+- [ ] tools/vision_tools.py  defs 37/48  cases 4/91
 - [ ] tools/vision_tools_history_budget.py  defs 11/12  cases 0/8
-- [ ] tools/vision_tools_image_prep.py  defs 10/11  cases 0/0
-- [ ] tools/web_result_cache.py  defs 23/28  cases 0/33
-- [ ] tools/web_tools.py  defs 15/25  cases 6/114
-- [ ] tools/web_tools_extract.py  defs 15/18  cases 0/2
+- [ ] tools/vision_tools_image_prep.py  defs 8/11  cases 0/0
+- [ ] tools/web_result_cache.py  defs 19/28  cases 0/33
+- [ ] tools/web_tools.py  defs 12/25  cases 6/114
+- [ ] tools/web_tools_extract.py  defs 14/18  cases 0/2
 - [x] tools/web_tools_rescue.py  defs 7/7  cases 0/0
 - [ ] tools/web_tools_truncate.py  defs 10/10  cases 4/13
 - [ ] tools/website_policy.py  defs 6/11  cases 0/2
 - [ ] tools/working_diff.py  defs 4/4  cases 0/6
-- [ ] tools/write_approval.py  defs 20/23  cases 25/28
-- [ ] tools/x_search_tool.py  defs 16/17  cases 2/9
-- [ ] tools/xai_http.py  defs 10/13  cases 0/10
-- [ ] toolset_distributions.py  defs 5/7  cases 1/6
-- [ ] toolsets.py  defs 21/24  cases 3/23
+- [ ] tools/write_approval.py  defs 17/23  cases 25/28
+- [ ] tools/x_search_tool.py  defs 15/17  cases 2/9
+- [ ] tools/xai_http.py  defs 8/13  cases 0/10
+- [ ] toolset_distributions.py  defs 1/7  cases 1/6
+- [ ] toolsets.py  defs 16/24  cases 3/23
 
-### 7. pkg/pm: 64% (1066 of 1661 rows closed, defs 747/841, cases 319/820, 13 of 61 files completed)
+### 7. pkg/pm: 58% (977 of 1661 rows closed, defs 658/841, cases 319/820, verified 658, exercised 137, 8 of 61 files completed)
 #### Tool package manager, downloads, store, lockfile, uv runtimes, plugin dependencies, CLI
-- [ ] hermes_cli/_scan_venv_blockers.py  defs 1/2  cases 0/5
+- [ ] hermes_cli/_scan_venv_blockers.py  defs 0/2  cases 0/5
 - [ ] hermes_cli/managed_uv.py  defs 6/6  cases 0/6
 - [ ] hermes_cli/npm_engine.py  defs 1/1  cases 0/1
-- [ ] hermes_cli/runtime_state.py  defs 10/10  cases 8/14
-- [ ] hermes_cli/venv_sync.py  defs 27/27  cases 58/59
+- [ ] hermes_cli/runtime_state.py  defs 9/10  cases 8/14
+- [ ] hermes_cli/venv_sync.py  defs 24/27  cases 58/59
 - [ ] pm/__init__.py  defs 0/2  cases 5/10
 - [x] pm/_marker_eval.py  defs 0/0  cases 0/0
-- [x] pm/_uv.py  defs 1/1  cases 0/0
+- [ ] pm/_uv.py  defs 0/1  cases 0/0
 - [x] pm/_venv_entry.py  defs 2/2  cases 0/0
 - [ ] pm/artifact_mirror.py  defs 3/3  cases 1/2
 - [x] pm/build_compilers.py  defs 4/4  cases 0/0
-- [ ] pm/build_env.py  defs 2/3  cases 2/2
-- [ ] pm/build_operations.py  defs 9/10  cases 0/11
+- [ ] pm/build_env.py  defs 0/3  cases 2/2
+- [ ] pm/build_operations.py  defs 8/10  cases 0/11
 - [ ] pm/carried_extras.py  defs 3/3  cases 0/3
 - [ ] pm/cli.py  defs 35/39  cases 42/43
-- [ ] pm/client.py  defs 23/23  cases 5/38
+- [ ] pm/client.py  defs 15/23  cases 5/38
 - [x] pm/defaults.py  defs 6/6  cases 0/0
 - [ ] pm/download_state.py  defs 2/2  cases 1/2
-- [ ] pm/downloader.py  defs 29/36  cases 35/35
+- [ ] pm/downloader.py  defs 26/36  cases 35/35
 - [ ] pm/environment.py  defs 26/27  cases 0/14
-- [ ] pm/environments.py  defs 39/39  cases 23/134
-- [ ] pm/environments_adopt.py  defs 9/10  cases 0/0
-- [ ] pm/extras.py  defs 17/18  cases 1/17
-- [ ] pm/features.py  defs 7/7  cases 0/6
+- [ ] pm/environments.py  defs 37/39  cases 23/134
+- [ ] pm/environments_adopt.py  defs 8/10  cases 0/0
+- [ ] pm/extras.py  defs 13/18  cases 1/17
+- [ ] pm/features.py  defs 5/7  cases 0/6
 - [ ] pm/filesystem.py  defs 12/13  cases 2/3
 - [x] pm/index_config.py  defs 7/7  cases 0/0
-- [ ] pm/install.py  defs 54/60  cases 41/63
+- [ ] pm/install.py  defs 49/60  cases 41/63
 - [x] pm/install_states.py  defs 9/9  cases 11/11
-- [x] pm/launch.py  defs 1/1  cases 0/0
+- [ ] pm/launch.py  defs 0/1  cases 0/0
 - [ ] pm/libatomic.py  defs 8/11  cases 0/4
-- [ ] pm/lock.py  defs 21/27  cases 4/18
-- [x] pm/native_build.py  defs 2/2  cases 0/0
+- [ ] pm/lock.py  defs 19/27  cases 4/18
+- [ ] pm/native_build.py  defs 1/2  cases 0/0
 - [ ] pm/network.py  defs 3/4  cases 4/4
-- [ ] pm/operations.py  defs 13/15  cases 0/0
-- [ ] pm/package.py  defs 31/34  cases 10/18
-- [ ] pm/packages.py  defs 83/97  cases 15/40
-- [ ] pm/paths.py  defs 9/9  cases 1/25
-- [ ] pm/pip_check.py  defs 4/5  cases 0/10
-- [ ] pm/plugin_declarations.py  defs 12/12  cases 0/5
-- [ ] pm/plugin_eviction.py  defs 17/22  cases 0/1
-- [ ] pm/plugin_inputs.py  defs 5/6  cases 1/1
-- [ ] pm/plugins_state.py  defs 8/10  cases 0/11
-- [ ] pm/progress.py  defs 10/15  cases 0/2
+- [ ] pm/operations.py  defs 10/15  cases 0/0
+- [ ] pm/package.py  defs 29/34  cases 10/18
+- [ ] pm/packages.py  defs 77/97  cases 15/40
+- [ ] pm/paths.py  defs 8/9  cases 1/25
+- [ ] pm/pip_check.py  defs 3/5  cases 0/10
+- [ ] pm/plugin_declarations.py  defs 11/12  cases 0/5
+- [ ] pm/plugin_eviction.py  defs 16/22  cases 0/1
+- [ ] pm/plugin_inputs.py  defs 4/6  cases 1/1
+- [ ] pm/plugins_state.py  defs 7/10  cases 0/11
+- [ ] pm/progress.py  defs 9/15  cases 0/2
 - [ ] pm/publication.py  defs 9/11  cases 0/0
-- [ ] pm/receipt.py  defs 18/22  cases 3/23
+- [ ] pm/receipt.py  defs 14/22  cases 3/23
 - [ ] pm/recovery.py  defs 4/4  cases 7/9
 - [ ] pm/registry.py  defs 8/9  cases 0/7
-- [ ] pm/runtime.py  defs 11/13  cases 1/15
+- [ ] pm/runtime.py  defs 2/13  cases 1/15
 - [x] pm/runtime_stage.py  defs 1/1  cases 0/0
-- [x] pm/security_packages.py  defs 12/12  cases 0/0
-- [ ] pm/shell.py  defs 4/4  cases 0/4
-- [ ] pm/store.py  defs 26/27  cases 34/58
-- [ ] pm/termux_libs.py  defs 10/16  cases 1/14
+- [ ] pm/security_packages.py  defs 11/12  cases 0/0
+- [ ] pm/shell.py  defs 0/4  cases 0/4
+- [ ] pm/store.py  defs 25/27  cases 34/58
+- [ ] pm/termux_libs.py  defs 5/16  cases 1/14
 - [x] pm/testenv.py  defs 4/4  cases 0/0
 - [ ] pm/update.py  defs 20/23  cases 0/10
-- [ ] pm/user_facing.py  defs 7/9  cases 0/2
-- [ ] pm/uv_cache_health.py  defs 9/10  cases 0/0
-- [x] pm/uv_cache_prune.py  defs 4/4  cases 0/0
+- [ ] pm/user_facing.py  defs 5/9  cases 0/2
+- [ ] pm/uv_cache_health.py  defs 7/10  cases 0/0
+- [ ] pm/uv_cache_prune.py  defs 0/4  cases 0/0
 - [ ] pm/worker.py  defs 1/2  cases 3/19
 - [ ] pm/worker_operations.py  defs 1/2  cases 0/0
-- [ ] pm/workspace.py  defs 27/28  cases 0/41
+- [ ] pm/workspace.py  defs 26/28  cases 0/41
 
-### 8. pkg/lsp: 81% (271 of 332 rows closed, defs 210/245, cases 61/87, 1 of 14 files completed)
+### 8. pkg/lsp: 76% (255 of 332 rows closed, defs 194/245, cases 61/87, verified 194, exercised 25, 1 of 14 files completed)
 #### Language server clients, diagnostics on edits, workspace trust, server install
-- [ ] agent/lsp/__init__.py  defs 3/6  cases 0/0
+- [ ] agent/lsp/__init__.py  defs 1/6  cases 0/0
 - [ ] agent/lsp/cli.py  defs 11/12  cases 0/0
 - [ ] agent/lsp/client.py  defs 47/54  cases 11/18
-- [ ] agent/lsp/deferred.py  defs 5/12  cases 0/5
-- [ ] agent/lsp/edit_check.py  defs 8/14  cases 0/0
+- [ ] agent/lsp/deferred.py  defs 0/12  cases 0/5
+- [ ] agent/lsp/edit_check.py  defs 7/14  cases 0/0
 - [x] agent/lsp/eventlog.py  defs 18/18  cases 5/5
-- [ ] agent/lsp/install.py  defs 16/18  cases 3/5
-- [ ] agent/lsp/manager.py  defs 46/52  cases 9/9
+- [ ] agent/lsp/install.py  defs 13/18  cases 3/5
+- [ ] agent/lsp/manager.py  defs 44/52  cases 9/9
 - [ ] agent/lsp/protocol.py  defs 10/11  cases 3/4
 - [ ] agent/lsp/range_shift.py  defs 3/3  cases 0/6
-- [ ] agent/lsp/reporter.py  defs 4/4  cases 4/5
+- [ ] agent/lsp/reporter.py  defs 3/4  cases 4/5
 - [ ] agent/lsp/servers.py  defs 27/28  cases 18/21
-- [ ] agent/lsp/sync_diagnostics.py  defs 2/3  cases 0/0
-- [ ] agent/lsp/workspace.py  defs 10/10  cases 8/9
+- [ ] agent/lsp/sync_diagnostics.py  defs 1/3  cases 0/0
+- [ ] agent/lsp/workspace.py  defs 9/10  cases 8/9
 
-### 9. pkg/commands: 65% (271 of 414 rows closed, defs 196/197, cases 75/217, 6 of 14 files completed)
+### 9. pkg/commands: 71% (295 of 414 rows closed, defs 178/197, cases 117/217, verified 178, exercised 60, 6 of 14 files completed)
 #### Slash command table, dispatch, completion, help, cobra CLI tree
-- [ ] hermes_cli/_parser.py  defs 11/11  cases 12/22
+- [ ] hermes_cli/_parser.py  defs 10/11  cases 12/22
 - [x] hermes_cli/bang_shell.py  defs 7/7  cases 11/11
-- [ ] hermes_cli/cli_info_mixin.py  defs 39/39  cases 1/43
-- [ ] hermes_cli/cli_unknown_command.py  defs 1/1  cases 0/1
-- [ ] hermes_cli/commands.py  defs 19/19  cases 7/69
-- [x] hermes_cli/commands_completion.py  defs 35/35  cases 10/10
+- [ ] hermes_cli/cli_info_mixin.py  defs 35/39  cases 40/43
+- [ ] hermes_cli/cli_unknown_command.py  defs 0/1  cases 1/1
+- [ ] hermes_cli/commands.py  defs 14/19  cases 9/69
+- [ ] hermes_cli/commands_completion.py  defs 33/35  cases 10/10
 - [ ] hermes_cli/commands_platforms.py  defs 19/19  cases 0/3
 - [x] hermes_cli/completion.py  defs 7/7  cases 6/6
 - [x] hermes_cli/personality.py  defs 10/10  cases 18/18
 - [x] hermes_cli/slash_exec.py  defs 13/13  cases 1/1
 - [x] hermes_cli/source_completion.py  defs 4/4  cases 8/8
-- [ ] hermes_cli/subcommands/completion.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/update_completion.py  defs 25/25  cases 1/17
-- [ ] tools/slash_confirm.py  defs 6/6  cases 0/8
+- [x] hermes_cli/subcommands/completion.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/update_completion.py  defs 21/25  cases 1/17
+- [ ] tools/slash_confirm.py  defs 4/6  cases 0/8
 
-### 10. pkg/skills: 50% (807 of 1585 rows closed, defs 659/762, cases 148/823, 3 of 36 files completed)
+### 10. pkg/skills: 48% (771 of 1585 rows closed, defs 623/762, cases 148/823, verified 623, exercised 287, 2 of 36 files completed)
 #### Bundled skill trees, frontmatter, guard scan, catalog, hub, sync, linter, ledger
 - [ ] agent/skill_bundles.py  defs 13/14  cases 4/21
-- [ ] agent/skill_commands.py  defs 40/45  cases 16/80
-- [ ] agent/skill_preprocessing.py  defs 6/6  cases 1/11
-- [ ] agent/skill_utils.py  defs 55/59  cases 18/70
-- [ ] agent/skills_index_delta.py  defs 4/6  cases 2/2
+- [ ] agent/skill_commands.py  defs 38/45  cases 16/80
+- [ ] agent/skill_preprocessing.py  defs 5/6  cases 1/11
+- [ ] agent/skill_utils.py  defs 53/59  cases 18/70
+- [ ] agent/skills_index_delta.py  defs 5/6  cases 2/2
 - [ ] hermes_cli/bundles.py  defs 8/9  cases 2/2
-- [ ] hermes_cli/skills_config.py  defs 7/8  cases 0/11
-- [ ] hermes_cli/skills_hub.py  defs 78/86  cases 4/23
+- [ ] hermes_cli/skills_config.py  defs 6/8  cases 0/11
+- [ ] hermes_cli/skills_hub.py  defs 72/86  cases 4/23
 - [ ] hermes_cli/subcommands/bundles.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/skills.py  defs 0/2  cases 0/0
 - [ ] tools/osv_check.py  defs 9/11  cases 0/21
 - [ ] tools/skill_linter.py  defs 3/9  cases 0/20
-- [ ] tools/skill_lock.py  defs 27/33  cases 3/3
-- [x] tools/skill_manager_batch.py  defs 7/7  cases 0/0
-- [ ] tools/skill_manager_guards.py  defs 17/21  cases 2/2
-- [ ] tools/skill_manager_tool.py  defs 35/43  cases 10/125
-- [ ] tools/skill_provenance.py  defs 5/7  cases 0/3
+- [ ] tools/skill_lock.py  defs 25/33  cases 3/3
+- [ ] tools/skill_manager_batch.py  defs 5/7  cases 0/0
+- [ ] tools/skill_manager_guards.py  defs 16/21  cases 2/2
+- [ ] tools/skill_manager_tool.py  defs 34/43  cases 10/125
+- [ ] tools/skill_provenance.py  defs 4/7  cases 0/3
 - [ ] tools/skillevaluator_scan.py  defs 9/10  cases 0/22
-- [ ] tools/skills_ast_audit.py  defs 5/5  cases 0/4
+- [ ] tools/skills_ast_audit.py  defs 4/5  cases 0/4
 - [ ] tools/skills_guard.py  defs 23/24  cases 0/83
-- [ ] tools/skills_hub.py  defs 28/32  cases 28/102
-- [ ] tools/skills_hub_clawhub.py  defs 23/25  cases 0/32
+- [ ] tools/skills_hub.py  defs 27/32  cases 28/102
+- [ ] tools/skills_hub_clawhub.py  defs 22/25  cases 0/32
 - [ ] tools/skills_hub_github.py  defs 32/39  cases 6/6
-- [ ] tools/skills_hub_install.py  defs 11/11  cases 2/6
-- [ ] tools/skills_hub_models.py  defs 29/32  cases 9/19
-- [ ] tools/skills_hub_official.py  defs 29/34  cases 1/1
+- [ ] tools/skills_hub_install.py  defs 10/11  cases 2/6
+- [ ] tools/skills_hub_models.py  defs 24/32  cases 9/19
+- [ ] tools/skills_hub_official.py  defs 28/34  cases 1/1
 - [x] tools/skills_hub_search.py  defs 10/10  cases 0/0
 - [ ] tools/skills_hub_skillssh.py  defs 25/27  cases 0/1
-- [ ] tools/skills_hub_sources.py  defs 31/37  cases 0/2
-- [ ] tools/skills_sync.py  defs 25/30  cases 23/46
+- [ ] tools/skills_hub_sources.py  defs 30/37  cases 0/2
+- [ ] tools/skills_sync.py  defs 22/30  cases 23/46
 - [ ] tools/skills_sync_bundled_ops.py  defs 9/9  cases 0/2
-- [ ] tools/skills_sync_optional.py  defs 12/16  cases 0/0
-- [ ] tools/skills_tool.py  defs 26/31  cases 17/103
+- [ ] tools/skills_sync_optional.py  defs 11/16  cases 0/0
+- [ ] tools/skills_tool.py  defs 24/31  cases 17/103
 - [x] tools/skills_tool_dedup.py  defs 2/2  cases 0/0
 - [ ] tools/skills_tool_plugin.py  defs 7/11  cases 0/0
-- [ ] tools/skills_tool_setup.py  defs 9/10  cases 0/0
+- [ ] tools/skills_tool_setup.py  defs 8/10  cases 0/0
 
-### 11. pkg/memory: 55% (720 of 1307 rows closed, defs 614/727, cases 106/580, 4 of 32 files completed)
+### 11. pkg/memory: 50% (655 of 1307 rows closed, defs 549/727, cases 106/580, verified 549, exercised 116, 2 of 32 files completed)
 #### Memory store and tool, providers, manager, curator, learning graph, insights
-- [ ] agent/curator.py  defs 48/57  cases 7/65
-- [ ] agent/curator_backup.py  defs 23/28  cases 0/20
+- [ ] agent/curator.py  defs 44/57  cases 7/65
+- [ ] agent/curator_backup.py  defs 17/28  cases 0/20
 - [ ] agent/insights.py  defs 21/30  cases 0/29
 - [ ] agent/learn_prompt.py  defs 1/1  cases 1/2
-- [ ] agent/learning_graph.py  defs 13/15  cases 5/5
-- [ ] agent/learning_graph_render.py  defs 37/41  cases 6/6
-- [x] agent/learning_mutations.py  defs 16/16  cases 11/11
-- [ ] agent/memory_caller_scope.py  defs 9/9  cases 9/18
+- [ ] agent/learning_graph.py  defs 12/15  cases 5/5
+- [ ] agent/learning_graph_render.py  defs 36/41  cases 6/6
+- [ ] agent/learning_mutations.py  defs 9/16  cases 11/11
+- [ ] agent/memory_caller_scope.py  defs 8/9  cases 9/18
 - [ ] agent/memory_context.py  defs 11/12  cases 0/16
-- [ ] agent/memory_manager.py  defs 44/54  cases 1/57
+- [ ] agent/memory_manager.py  defs 43/54  cases 1/57
 - [x] agent/memory_manager_tools.py  defs 5/5  cases 0/0
 - [ ] agent/memory_provider.py  defs 28/28  cases 9/61
 - [ ] agent/onboarding_facts.py  defs 0/2  cases 0/0
-- [ ] hermes_cli/curator.py  defs 33/35  cases 0/2
-- [ ] hermes_cli/mem_trim.py  defs 6/10  cases 0/14
+- [ ] hermes_cli/curator.py  defs 32/35  cases 0/2
+- [ ] hermes_cli/mem_trim.py  defs 5/10  cases 0/14
 - [x] hermes_cli/memory_oauth.py  defs 4/4  cases 0/0
-- [ ] hermes_cli/memory_provider_migration.py  defs 13/20  cases 9/12
-- [ ] hermes_cli/memory_setup.py  defs 14/19  cases 6/16
-- [ ] hermes_cli/profile_memory_config.py  defs 3/4  cases 0/3
+- [ ] hermes_cli/memory_provider_migration.py  defs 6/20  cases 9/12
+- [ ] hermes_cli/memory_setup.py  defs 11/19  cases 6/16
+- [ ] hermes_cli/profile_memory_config.py  defs 2/4  cases 0/3
 - [ ] hermes_cli/subcommands/curator.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/insights.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/memory.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/write_approval_commands.py  defs 7/11  cases 0/0
-- [ ] plugins/memory/__init__.py  defs 25/36  cases 12/28
-- [ ] plugins/memory/byterover/__init__.py  defs 25/28  cases 0/2
+- [ ] hermes_cli/write_approval_commands.py  defs 5/11  cases 0/0
+- [ ] plugins/memory/__init__.py  defs 17/36  cases 12/28
+- [ ] plugins/memory/byterover/__init__.py  defs 24/28  cases 0/2
 - [ ] plugins/memory/config_schema.py  defs 8/8  cases 0/3
-- [x] plugins/memory/query_rewrite.py  defs 4/4  cases 0/0
-- [ ] plugins/memory/retaindb/__init__.py  defs 51/64  cases 0/22
-- [ ] tools/memory_tool.py  defs 19/19  cases 23/115
-- [ ] tools/memory_tool_store.py  defs 52/54  cases 0/1
-- [ ] tools/skill_ledger.py  defs 25/38  cases 1/31
-- [ ] tools/skill_usage.py  defs 69/72  cases 6/41
+- [ ] plugins/memory/query_rewrite.py  defs 3/4  cases 0/0
+- [ ] plugins/memory/retaindb/__init__.py  defs 48/64  cases 0/22
+- [ ] tools/memory_tool.py  defs 18/19  cases 23/115
+- [ ] tools/memory_tool_store.py  defs 48/54  cases 0/1
+- [ ] tools/skill_ledger.py  defs 18/38  cases 1/31
+- [ ] tools/skill_usage.py  defs 65/72  cases 6/41
 
-### 12. pkg/cron: 61% (1657 of 2710 rows closed, defs 945/1049, cases 712/1661, 28 of 68 files completed)
+### 12. pkg/cron: 61% (1660 of 2710 rows closed, defs 946/1049, cases 714/1661, verified 945, exercised 406, 32 of 68 files completed)
 #### Job store, schedules, due scan, scheduler, delivery, blueprints, cronjob tool
-- [ ] agent/periodic_scheduler.py  defs 11/14  cases 3/9
-- [ ] agent/sleep_clock.py  defs 1/4  cases 0/0
+- [ ] agent/periodic_scheduler.py  defs 14/14  cases 3/9
+- [x] agent/sleep_clock.py  defs 4/4  cases 0/0
 - [x] cron/__init__.py  defs 0/0  cases 0/0
-- [ ] cron/blueprint_catalog.py  defs 12/15  cases 0/17
-- [ ] cron/blueprint_plugins.py  defs 3/7  cases 0/0
+- [ ] cron/blueprint_catalog.py  defs 15/15  cases 0/17
+- [ ] cron/blueprint_plugins.py  defs 6/7  cases 0/0
 - [ ] cron/bot_chat_legacy.py  defs 4/5  cases 0/0
-- [ ] cron/cancellation.py  defs 21/25  cases 12/12
+- [ ] cron/cancellation.py  defs 23/25  cases 12/12
 - [x] cron/constants.py  defs 1/1  cases 0/0
-- [ ] cron/delivery_outcome.py  defs 4/5  cases 0/0
-- [ ] cron/delivery_queue.py  defs 10/14  cases 12/16
+- [x] cron/delivery_outcome.py  defs 5/5  cases 0/0
+- [ ] cron/delivery_queue.py  defs 13/14  cases 12/16
 - [x] cron/dispatch_hold.py  defs 5/5  cases 0/0
 - [x] cron/env_settings.py  defs 1/1  cases 0/0
-- [x] cron/execution_identity.py  defs 4/4  cases 2/2
-- [ ] cron/executions.py  defs 32/36  cases 37/59
+- [ ] cron/execution_identity.py  defs 3/4  cases 2/2
+- [ ] cron/executions.py  defs 34/36  cases 37/59
 - [x] cron/extra_fire.py  defs 9/9  cases 0/0
-- [ ] cron/incidents.py  defs 15/17  cases 19/19
+- [ ] cron/incidents.py  defs 14/17  cases 19/19
 - [x] cron/job_definition.py  defs 3/3  cases 0/0
-- [ ] cron/jobs.py  defs 162/166  cases 349/396
+- [ ] cron/jobs.py  defs 159/166  cases 349/396
 - [x] cron/jobs_invariants.py  defs 3/3  cases 0/0
 - [x] cron/jobs_model_pin.py  defs 1/1  cases 0/0
-- [ ] cron/jobs_oneshot_diagnostics.py  defs 2/3  cases 0/0
-- [ ] cron/jobs_time.py  defs 7/8  cases 0/25
-- [ ] cron/lifecycle_guard.py  defs 50/52  cases 10/135
+- [x] cron/jobs_oneshot_diagnostics.py  defs 3/3  cases 0/0
+- [ ] cron/jobs_time.py  defs 8/8  cases 0/25
+- [ ] cron/lifecycle_guard.py  defs 46/52  cases 10/135
 - [x] cron/missed_runs.py  defs 5/5  cases 0/0
 - [x] cron/monitor.py  defs 12/12  cases 2/2
-- [ ] cron/notepad.py  defs 5/11  cases 6/26
+- [ ] cron/notepad.py  defs 9/11  cases 6/26
 - [x] cron/occurrences.py  defs 6/6  cases 0/0
 - [x] cron/quota_hold.py  defs 8/8  cases 4/4
-- [ ] cron/scheduler.py  defs 130/142  cases 34/286
-- [ ] cron/scheduler_authority.py  defs 7/8  cases 18/18
+- [ ] cron/scheduler.py  defs 138/142  cases 34/286
+- [x] cron/scheduler_authority.py  defs 8/8  cases 18/18
 - [x] cron/scheduler_bookkeeping.py  defs 4/4  cases 0/0
-- [ ] cron/scheduler_delivery.py  defs 62/64  cases 19/147
+- [ ] cron/scheduler_delivery.py  defs 63/64  cases 21/147
 - [x] cron/scheduler_delivery_origin.py  defs 1/1  cases 0/0
-- [ ] cron/scheduler_detached_worker.py  defs 2/3  cases 1/1
+- [x] cron/scheduler_detached_worker.py  defs 3/3  cases 1/1
 - [x] cron/scheduler_diagnostics.py  defs 2/2  cases 0/0
 - [x] cron/scheduler_failure_copy.py  defs 8/8  cases 2/2
 - [x] cron/scheduler_gateway_gate.py  defs 3/3  cases 0/0
-- [ ] cron/scheduler_liveness.py  defs 3/4  cases 5/5
+- [x] cron/scheduler_liveness.py  defs 4/4  cases 5/5
 - [x] cron/scheduler_ownership.py  defs 7/7  cases 1/1
-- [ ] cron/scheduler_preflight.py  defs 14/16  cases 25/25
+- [x] cron/scheduler_preflight.py  defs 16/16  cases 25/25
 - [ ] cron/scheduler_prompt.py  defs 13/13  cases 7/40
-- [ ] cron/scheduler_provider.py  defs 29/31  cases 57/64
-- [ ] cron/scheduler_script.py  defs 18/19  cases 40/42
-- [ ] cron/scheduler_thread.py  defs 6/8  cases 0/0
+- [ ] cron/scheduler_provider.py  defs 22/31  cases 57/64
+- [ ] cron/scheduler_script.py  defs 13/19  cases 40/42
+- [ ] cron/scheduler_thread.py  defs 5/8  cases 0/0
 - [ ] cron/scheduler_tick.py  defs 5/6  cases 0/0
 - [x] cron/scheduler_worker_env.py  defs 3/3  cases 2/2
 - [x] cron/scheduler_worker_failure.py  defs 2/2  cases 0/0
-- [x] cron/scheduler_worktree_maintenance.py  defs 4/4  cases 0/0
-- [ ] cron/store_health.py  defs 20/23  cases 0/0
+- [ ] cron/scheduler_worktree_maintenance.py  defs 3/4  cases 0/0
+- [ ] cron/store_health.py  defs 19/23  cases 0/0
 - [x] cron/suggestion_catalog.py  defs 3/3  cases 0/0
-- [ ] cron/suggestions.py  defs 8/13  cases 3/16
+- [ ] cron/suggestions.py  defs 5/13  cases 3/16
 - [x] cron/unreachable_retry.py  defs 9/9  cases 4/4
 - [x] cron/worker_bootstrap.py  defs 2/2  cases 1/1
 - [x] gateway/cron_store_notices.py  defs 3/3  cases 0/0
-- [ ] gateway/session_cron.py  defs 7/15  cases 13/43
-- [x] gateway/session_cron_commands.py  defs 2/2  cases 0/0
+- [ ] gateway/session_cron.py  defs 5/15  cases 13/43
+- [ ] gateway/session_cron_commands.py  defs 0/2  cases 0/0
 - [ ] hermes_cli/backup_cron_prompts.py  defs 7/8  cases 7/7
-- [ ] hermes_cli/blueprint_cmd.py  defs 10/12  cases 0/0
+- [ ] hermes_cli/blueprint_cmd.py  defs 9/12  cases 0/0
 - [ ] hermes_cli/cli_cron_lines.py  defs 8/9  cases 0/0
-- [ ] hermes_cli/cron.py  defs 43/44  cases 0/66
-- [ ] plugins/cron_providers/__init__.py  defs 5/10  cases 0/0
-- [ ] plugins/cron_providers/chronos/__init__.py  defs 17/19  cases 0/0
+- [ ] hermes_cli/cron.py  defs 39/44  cases 0/66
+- [ ] plugins/cron_providers/__init__.py  defs 3/10  cases 0/0
+- [ ] plugins/cron_providers/chronos/__init__.py  defs 16/19  cases 0/0
 - [ ] plugins/cron_providers/chronos/_nas_client.py  defs 7/10  cases 0/0
 - [ ] plugins/cron_providers/chronos/verify.py  defs 2/3  cases 0/9
 - [ ] tools/blueprints.py  defs 10/10  cases 1/7
@@ -995,290 +995,290 @@
 - [x] tools/cronjob_prompt_scan.py  defs 6/6  cases 0/0
 - [ ] tools/cronjob_tools.py  defs 35/39  cases 16/149
 
-### 13. pkg/plugins: 75% (2204 of 2928 rows closed, defs 1523/1769, cases 681/1159, 28 of 111 files completed)
+### 13. pkg/plugins: 71% (2083 of 2928 rows closed, defs 1400/1769, cases 683/1159, verified 1400, exercised 233, 16 of 111 files completed)
 #### Plugin manifests, discovery, hooks, middleware, host wire, install, catalog, guard
-- [ ] agent/plugin_live_notes.py  defs 4/6  cases 0/3
-- [ ] agent/plugin_llm.py  defs 33/38  cases 9/49
-- [ ] agent/plugin_stream_hooks.py  defs 9/13  cases 9/20
-- [ ] agent/shell_hooks.py  defs 16/54  cases 10/87
+- [ ] agent/plugin_live_notes.py  defs 6/6  cases 0/3
+- [ ] agent/plugin_llm.py  defs 38/38  cases 9/49
+- [ ] agent/plugin_stream_hooks.py  defs 12/13  cases 9/20
+- [ ] agent/shell_hooks.py  defs 45/54  cases 10/87
 - [x] agent/verify/__init__.py  defs 0/0  cases 0/0
 - [x] agent/verify/environment.py  defs 4/4  cases 0/0
 - [ ] agent/verify/recipes.py  defs 18/18  cases 28/29
-- [ ] agent/verify/runner.py  defs 13/15  cases 22/25
+- [ ] agent/verify/runner.py  defs 15/15  cases 22/25
 - [ ] agent/verify_hooks.py  defs 3/3  cases 3/6
-- [x] hermes_cli/agent_plugins.py  defs 34/34  cases 28/28
-- [ ] hermes_cli/git_credentials.py  defs 11/12  cases 7/7
-- [ ] hermes_cli/github_api.py  defs 4/5  cases 0/0
-- [ ] hermes_cli/hooks.py  defs 8/10  cases 0/0
-- [ ] hermes_cli/middleware.py  defs 11/12  cases 3/3
-- [ ] hermes_cli/plugin_capabilities.py  defs 10/13  cases 5/36
-- [ ] hermes_cli/plugin_catalog.py  defs 33/34  cases 22/31
-- [ ] hermes_cli/plugin_catalog_presence.py  defs 10/11  cases 4/5
-- [ ] hermes_cli/plugin_choices.py  defs 4/6  cases 0/1
+- [ ] hermes_cli/agent_plugins.py  defs 32/34  cases 28/28
+- [ ] hermes_cli/git_credentials.py  defs 9/12  cases 7/7
+- [x] hermes_cli/github_api.py  defs 5/5  cases 0/0
+- [ ] hermes_cli/hooks.py  defs 6/10  cases 0/0
+- [x] hermes_cli/middleware.py  defs 12/12  cases 3/3
+- [ ] hermes_cli/plugin_capabilities.py  defs 13/13  cases 5/36
+- [ ] hermes_cli/plugin_catalog.py  defs 30/34  cases 22/31
+- [ ] hermes_cli/plugin_catalog_presence.py  defs 6/11  cases 4/5
+- [ ] hermes_cli/plugin_choices.py  defs 6/6  cases 0/1
 - [ ] hermes_cli/plugin_command_dispatch.py  defs 1/1  cases 0/2
 - [x] hermes_cli/plugin_compat.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/plugin_dev.py  defs 18/22  cases 18/18
-- [ ] hermes_cli/plugin_events.py  defs 2/2  cases 1/4
-- [ ] hermes_cli/plugin_host.py  defs 46/49  cases 7/7
-- [ ] hermes_cli/plugin_host_child.py  defs 23/54  cases 0/0
-- [ ] hermes_cli/plugin_host_http_auth.py  defs 1/2  cases 0/0
-- [ ] hermes_cli/plugin_host_profiles.py  defs 3/8  cases 0/1
-- [ ] hermes_cli/plugin_host_wire.py  defs 26/37  cases 0/0
+- [ ] hermes_cli/plugin_dev.py  defs 19/22  cases 18/18
+- [ ] hermes_cli/plugin_events.py  defs 0/2  cases 1/4
+- [ ] hermes_cli/plugin_host.py  defs 41/49  cases 7/7
+- [ ] hermes_cli/plugin_host_child.py  defs 1/54  cases 0/0
+- [ ] hermes_cli/plugin_host_http_auth.py  defs 0/2  cases 0/0
+- [ ] hermes_cli/plugin_host_profiles.py  defs 0/8  cases 1/1
+- [ ] hermes_cli/plugin_host_wire.py  defs 23/37  cases 0/0
 - [x] hermes_cli/plugin_install_phase.py  defs 1/1  cases 0/0
-- [x] hermes_cli/plugin_isolation.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/plugin_isolation_audit.py  defs 13/20  cases 0/0
+- [ ] hermes_cli/plugin_isolation.py  defs 2/5  cases 0/0
+- [ ] hermes_cli/plugin_isolation_audit.py  defs 11/20  cases 0/0
 - [ ] hermes_cli/plugin_messages.py  defs 14/19  cases 0/0
-- [x] hermes_cli/plugin_oauth.py  defs 43/43  cases 25/25
+- [ ] hermes_cli/plugin_oauth.py  defs 37/43  cases 25/25
 - [ ] hermes_cli/plugin_packs.py  defs 27/27  cases 3/25
-- [ ] hermes_cli/plugin_provider_requests.py  defs 9/12  cases 4/4
-- [x] hermes_cli/plugin_session.py  defs 6/6  cases 0/0
-- [ ] hermes_cli/plugin_validate.py  defs 25/25  cases 6/33
-- [ ] hermes_cli/plugin_validate_core_override.py  defs 19/20  cases 0/0
+- [ ] hermes_cli/plugin_provider_requests.py  defs 11/12  cases 4/4
+- [ ] hermes_cli/plugin_session.py  defs 4/6  cases 0/0
+- [ ] hermes_cli/plugin_validate.py  defs 18/25  cases 6/33
+- [ ] hermes_cli/plugin_validate_core_override.py  defs 18/20  cases 0/0
 - [ ] hermes_cli/plugin_validate_desktop.py  defs 8/9  cases 0/0
 - [ ] hermes_cli/plugin_validate_locales.py  defs 3/5  cases 5/5
-- [ ] hermes_cli/plugin_validate_private_imports.py  defs 12/14  cases 5/6
-- [ ] hermes_cli/plugins.py  defs 138/143  cases 177/205
-- [x] hermes_cli/plugins_activation.py  defs 15/15  cases 4/4
+- [ ] hermes_cli/plugin_validate_private_imports.py  defs 10/14  cases 5/6
+- [ ] hermes_cli/plugins.py  defs 126/143  cases 178/205
+- [ ] hermes_cli/plugins_activation.py  defs 13/15  cases 4/4
 - [ ] hermes_cli/plugins_activation_live.py  defs 7/7  cases 0/2
 - [ ] hermes_cli/plugins_admission.py  defs 4/5  cases 1/2
 - [x] hermes_cli/plugins_aux_tasks.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/plugins_cadence.py  defs 13/14  cases 0/8
+- [ ] hermes_cli/plugins_cadence.py  defs 9/14  cases 0/8
 - [ ] hermes_cli/plugins_capability_ctx.py  defs 2/4  cases 0/0
-- [ ] hermes_cli/plugins_cmd.py  defs 65/73  cases 75/144
+- [ ] hermes_cli/plugins_cmd.py  defs 59/73  cases 75/144
 - [ ] hermes_cli/plugins_cmd_capabilities.py  defs 5/7  cases 0/0
-- [ ] hermes_cli/plugins_cmd_catalog.py  defs 48/50  cases 21/21
-- [x] hermes_cli/plugins_cmd_git.py  defs 24/24  cases 0/0
-- [ ] hermes_cli/plugins_cmd_inspect.py  defs 8/11  cases 15/15
-- [ ] hermes_cli/plugins_cmd_install.py  defs 28/30  cases 0/0
+- [ ] hermes_cli/plugins_cmd_catalog.py  defs 46/50  cases 21/21
+- [ ] hermes_cli/plugins_cmd_git.py  defs 23/24  cases 0/0
+- [ ] hermes_cli/plugins_cmd_inspect.py  defs 1/11  cases 15/15
+- [ ] hermes_cli/plugins_cmd_install.py  defs 23/30  cases 0/0
 - [ ] hermes_cli/plugins_cmd_listing.py  defs 4/5  cases 0/0
 - [ ] hermes_cli/plugins_cmd_remove.py  defs 7/8  cases 0/0
-- [x] hermes_cli/plugins_cmd_toggle.py  defs 11/11  cases 0/0
+- [ ] hermes_cli/plugins_cmd_toggle.py  defs 10/11  cases 0/0
 - [ ] hermes_cli/plugins_cmd_update.py  defs 9/11  cases 0/0
-- [ ] hermes_cli/plugins_cmd_update_all.py  defs 4/7  cases 0/0
+- [ ] hermes_cli/plugins_cmd_update_all.py  defs 3/7  cases 0/0
 - [x] hermes_cli/plugins_content.py  defs 3/3  cases 0/0
-- [x] hermes_cli/plugins_discovery.py  defs 14/14  cases 1/1
+- [ ] hermes_cli/plugins_discovery.py  defs 11/14  cases 1/1
 - [ ] hermes_cli/plugins_dispatch.py  defs 36/39  cases 32/32
 - [ ] hermes_cli/plugins_injection.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/plugins_ledger.py  defs 20/25  cases 12/12
-- [ ] hermes_cli/plugins_loader.py  defs 39/39  cases 17/18
-- [ ] hermes_cli/plugins_manifest.py  defs 28/29  cases 10/10
+- [ ] hermes_cli/plugins_ledger.py  defs 19/25  cases 12/12
+- [ ] hermes_cli/plugins_loader.py  defs 27/39  cases 17/18
+- [ ] hermes_cli/plugins_manifest.py  defs 23/29  cases 10/10
 - [x] hermes_cli/plugins_provenance.py  defs 5/5  cases 7/7
-- [ ] hermes_cli/plugins_registrars.py  defs 1/2  cases 0/1
-- [ ] hermes_cli/plugins_settings.py  defs 4/6  cases 0/0
+- [ ] hermes_cli/plugins_registrars.py  defs 0/2  cases 0/1
+- [ ] hermes_cli/plugins_settings.py  defs 0/6  cases 0/0
 - [ ] hermes_cli/plugins_state.py  defs 14/16  cases 0/0
-- [ ] hermes_cli/plugins_transaction.py  defs 4/4  cases 3/4
-- [ ] hermes_cli/plugins_updates.py  defs 15/15  cases 2/26
-- [x] hermes_cli/relay_plugin_cutover.py  defs 2/2  cases 6/6
-- [ ] hermes_cli/relay_plugin_migrate.py  defs 12/15  cases 5/5
-- [x] hermes_cli/subcommands/hooks.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/plugins_transaction.py  defs 3/4  cases 3/4
+- [ ] hermes_cli/plugins_updates.py  defs 12/15  cases 2/26
+- [ ] hermes_cli/relay_plugin_cutover.py  defs 1/2  cases 6/6
+- [ ] hermes_cli/relay_plugin_migrate.py  defs 11/15  cases 5/5
+- [ ] hermes_cli/subcommands/hooks.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/plugins.py  defs 0/1  cases 0/1
 - [x] hermes_cli/subcommands/verify.py  defs 1/1  cases 0/0
 - [ ] plugins/context_engine/__init__.py  defs 8/10  cases 2/4
 - [x] plugins/delegation/default/__init__.py  defs 6/6  cases 0/0
 - [ ] plugins/disk-cleanup/__init__.py  defs 13/15  cases 6/6
-- [ ] plugins/disk-cleanup/disk_cleanup.py  defs 21/24  cases 17/28
-- [x] plugins/google_meet/__init__.py  defs 2/2  cases 0/0
+- [ ] plugins/disk-cleanup/disk_cleanup.py  defs 20/24  cases 17/28
+- [ ] plugins/google_meet/__init__.py  defs 0/2  cases 0/0
 - [x] plugins/google_meet/_jsonfile.py  defs 2/2  cases 0/0
 - [ ] plugins/google_meet/audio_bridge.py  defs 8/10  cases 3/3
-- [x] plugins/google_meet/cli.py  defs 11/11  cases 0/0
+- [ ] plugins/google_meet/cli.py  defs 9/11  cases 0/0
 - [ ] plugins/google_meet/meet_bot.py  defs 20/23  cases 20/20
 - [x] plugins/google_meet/node/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/google_meet/node/cli.py  defs 6/7  cases 0/0
+- [ ] plugins/google_meet/node/cli.py  defs 0/7  cases 0/0
 - [ ] plugins/google_meet/node/client.py  defs 8/9  cases 0/0
 - [ ] plugins/google_meet/node/protocol.py  defs 5/7  cases 5/5
-- [ ] plugins/google_meet/node/registry.py  defs 9/10  cases 0/0
+- [ ] plugins/google_meet/node/registry.py  defs 8/10  cases 0/0
 - [ ] plugins/google_meet/node/server.py  defs 7/8  cases 0/0
-- [ ] plugins/google_meet/process_manager.py  defs 8/11  cases 2/8
+- [ ] plugins/google_meet/process_manager.py  defs 5/11  cases 2/8
 - [ ] plugins/google_meet/realtime/openai_client.py  defs 12/15  cases 5/5
-- [ ] plugins/google_meet/tools.py  defs 8/12  cases 0/0
-- [ ] plugins/hermes-achievements/dashboard/plugin_api.py  defs 41/45  cases 0/0
+- [ ] plugins/google_meet/tools.py  defs 7/12  cases 0/0
+- [ ] plugins/hermes-achievements/dashboard/plugin_api.py  defs 38/45  cases 0/0
 - [ ] plugins/plugin_loader.py  defs 5/17  cases 1/4
 - [ ] plugins/plugin_storage.py  defs 2/3  cases 0/4
 - [ ] plugins/plugin_utils.py  defs 4/6  cases 0/6
 - [ ] plugins/security-guidance/__init__.py  defs 9/9  cases 1/17
 - [ ] plugins/security-guidance/patterns.py  defs 0/1  cases 0/2
-- [x] plugins/teams_pipeline/__init__.py  defs 1/1  cases 0/0
-- [x] plugins/teams_pipeline/cli.py  defs 22/22  cases 0/0
+- [ ] plugins/teams_pipeline/__init__.py  defs 0/1  cases 0/0
+- [ ] plugins/teams_pipeline/cli.py  defs 20/22  cases 0/0
 - [x] plugins/teams_pipeline/meetings.py  defs 24/24  cases 0/0
-- [ ] plugins/teams_pipeline/models.py  defs 16/18  cases 0/0
-- [ ] plugins/teams_pipeline/pipeline.py  defs 42/44  cases 0/0
+- [ ] plugins/teams_pipeline/models.py  defs 13/18  cases 0/0
+- [ ] plugins/teams_pipeline/pipeline.py  defs 40/44  cases 0/0
 - [x] plugins/teams_pipeline/runtime.py  defs 4/4  cases 0/0
 - [ ] plugins/teams_pipeline/store.py  defs 12/13  cases 0/0
 - [x] plugins/teams_pipeline/subscriptions.py  defs 7/7  cases 0/0
-- [ ] tools/lazy_deps.py  defs 2/2  cases 0/1
+- [ ] tools/lazy_deps.py  defs 1/2  cases 0/1
 - [ ] tools/plugin_guard.py  defs 16/17  cases 7/62
 - [ ] tools/plugin_guard_context.py  defs 37/38  cases 0/0
 
-### 14. pkg/mcp: 58% (1023 of 1737 rows closed, defs 698/832, cases 325/905, 0 of 35 files completed)
+### 14. pkg/mcp: 56% (975 of 1737 rows closed, defs 650/832, cases 325/905, verified 650, exercised 202, 0 of 35 files completed)
 #### MCP sessions, transports, OAuth, config, server lifecycle, tool registration, catalog
-- [ ] hermes_cli/mcp_catalog.py  defs 44/48  cases 2/43
-- [ ] hermes_cli/mcp_config.py  defs 37/49  cases 2/69
-- [ ] hermes_cli/mcp_picker.py  defs 9/15  cases 0/0
+- [ ] hermes_cli/mcp_catalog.py  defs 43/48  cases 2/43
+- [ ] hermes_cli/mcp_config.py  defs 34/49  cases 2/69
+- [ ] hermes_cli/mcp_picker.py  defs 7/15  cases 0/0
 - [ ] hermes_cli/mcp_security.py  defs 4/4  cases 2/4
 - [ ] hermes_cli/mcp_startup.py  defs 13/17  cases 6/29
 - [ ] hermes_cli/tools_config_mcp.py  defs 8/9  cases 0/0
-- [ ] tools/connectors/mcp.py  defs 47/54  cases 0/18
-- [ ] tools/connectors/mcp_oauth.py  defs 13/15  cases 0/0
+- [ ] tools/connectors/mcp.py  defs 36/54  cases 0/18
+- [ ] tools/connectors/mcp_oauth.py  defs 12/15  cases 0/0
 - [ ] tools/mcp_dashboard_oauth.py  defs 14/15  cases 3/14
-- [ ] tools/mcp_liveness.py  defs 8/10  cases 0/11
-- [ ] tools/mcp_oauth.py  defs 66/73  cases 0/112
-- [ ] tools/mcp_oauth_device.py  defs 4/8  cases 0/2
-- [ ] tools/mcp_oauth_manager.py  defs 16/25  cases 3/40
-- [ ] tools/mcp_oauth_provider.py  defs 30/34  cases 0/5
-- [ ] tools/mcp_schema_cache.py  defs 7/9  cases 0/15
-- [ ] tools/mcp_tool.py  defs 12/14  cases 67/68
-- [ ] tools/mcp_tool_agent.py  defs 22/23  cases 19/21
-- [ ] tools/mcp_tool_common.py  defs 10/13  cases 5/14
-- [ ] tools/mcp_tool_config.py  defs 27/31  cases 30/60
+- [ ] tools/mcp_liveness.py  defs 6/10  cases 0/11
+- [ ] tools/mcp_oauth.py  defs 63/73  cases 0/112
+- [ ] tools/mcp_oauth_device.py  defs 3/8  cases 0/2
+- [ ] tools/mcp_oauth_manager.py  defs 15/25  cases 3/40
+- [ ] tools/mcp_oauth_provider.py  defs 27/34  cases 0/5
+- [ ] tools/mcp_schema_cache.py  defs 6/9  cases 0/15
+- [ ] tools/mcp_tool.py  defs 8/14  cases 67/68
+- [ ] tools/mcp_tool_agent.py  defs 21/23  cases 19/21
+- [ ] tools/mcp_tool_common.py  defs 8/13  cases 5/14
+- [ ] tools/mcp_tool_config.py  defs 26/31  cases 30/60
 - [ ] tools/mcp_tool_content.py  defs 14/15  cases 2/31
 - [ ] tools/mcp_tool_costs.py  defs 23/27  cases 2/7
-- [ ] tools/mcp_tool_discovery.py  defs 38/44  cases 27/41
+- [ ] tools/mcp_tool_discovery.py  defs 36/44  cases 27/41
 - [ ] tools/mcp_tool_errors.py  defs 21/27  cases 11/64
-- [ ] tools/mcp_tool_events.py  defs 23/30  cases 0/21
+- [ ] tools/mcp_tool_events.py  defs 18/30  cases 0/21
 - [ ] tools/mcp_tool_handlers.py  defs 34/38  cases 20/38
 - [ ] tools/mcp_tool_health.py  defs 18/21  cases 22/22
 - [ ] tools/mcp_tool_lifecycle.py  defs 12/14  cases 0/29
 - [ ] tools/mcp_tool_loop.py  defs 15/16  cases 3/8
-- [ ] tools/mcp_tool_node_abi.py  defs 5/5  cases 0/2
+- [ ] tools/mcp_tool_node_abi.py  defs 4/5  cases 0/2
 - [ ] tools/mcp_tool_registration.py  defs 31/32  cases 0/7
 - [ ] tools/mcp_tool_sampling.py  defs 18/27  cases 0/9
 - [ ] tools/mcp_tool_schema.py  defs 9/10  cases 0/0
 - [ ] tools/mcp_tool_scope.py  defs 4/6  cases 3/5
 - [ ] tools/mcp_tool_server_run.py  defs 22/26  cases 81/81
-- [ ] tools/mcp_tool_transport.py  defs 20/28  cases 15/15
+- [ ] tools/mcp_tool_transport.py  defs 17/28  cases 15/15
 
-### 15. pkg/browser: 71% (1163 of 1635 rows closed, defs 753/852, cases 410/783, 18 of 61 files completed)
+### 15. pkg/browser: 66% (1093 of 1635 rows closed, defs 682/852, cases 411/783, verified 661, exercised 75, 12 of 61 files completed)
 #### Chromium launch, CDP sessions, page tools, supervisor, cloud providers, vault
 - [x] agent/browser_page_backend.py  defs 3/3  cases 0/0
 - [x] agent/browser_page_registry.py  defs 1/1  cases 0/0
-- [x] agent/browser_provider.py  defs 5/5  cases 0/0
-- [ ] agent/browser_registry.py  defs 1/1  cases 3/7
-- [x] agent/vault_backend_registry.py  defs 5/5  cases 6/6
+- [ ] agent/browser_provider.py  defs 2/5  cases 0/0
+- [ ] agent/browser_registry.py  defs 0/1  cases 3/7
+- [ ] agent/vault_backend_registry.py  defs 4/5  cases 6/6
 - [x] agent/vault_backends/__init__.py  defs 0/0  cases 8/8
-- [ ] agent/vault_backends/base.py  defs 17/19  cases 0/0
-- [ ] agent/vault_backends/bitwarden.py  defs 9/11  cases 0/0
-- [ ] agent/vault_backends/local.py  defs 6/7  cases 0/0
-- [ ] agent/vault_backends/onepassword.py  defs 12/14  cases 0/0
-- [ ] agent/vault_backends/plugin.py  defs 14/15  cases 0/0
-- [ ] agent/vault_backends/unlock.py  defs 17/20  cases 5/16
-- [ ] agent/vault_keychain.py  defs 11/13  cases 0/2
-- [x] agent/vault_login_classifier.py  defs 12/12  cases 0/0
-- [ ] agent/vault_store.py  defs 35/37  cases 13/17
-- [ ] hermes_cli/browser_connect.py  defs 50/54  cases 45/116
-- [ ] hermes_cli/browser_credential.py  defs 7/7  cases 0/2
+- [ ] agent/vault_backends/base.py  defs 16/19  cases 0/0
+- [x] agent/vault_backends/bitwarden.py  defs 11/11  cases 0/0
+- [ ] agent/vault_backends/local.py  defs 4/7  cases 0/0
+- [x] agent/vault_backends/onepassword.py  defs 14/14  cases 0/0
+- [ ] agent/vault_backends/plugin.py  defs 11/15  cases 0/0
+- [ ] agent/vault_backends/unlock.py  defs 15/20  cases 5/16
+- [ ] agent/vault_keychain.py  defs 8/13  cases 0/2
+- [ ] agent/vault_login_classifier.py  defs 11/12  cases 0/0
+- [ ] agent/vault_store.py  defs 34/37  cases 13/17
+- [ ] hermes_cli/browser_connect.py  defs 49/54  cases 45/116
+- [ ] hermes_cli/browser_credential.py  defs 6/7  cases 0/2
 - [x] hermes_cli/browser_runtime.py  defs 7/7  cases 8/8
-- [ ] hermes_cli/cli_browser_gateway.py  defs 2/3  cases 0/0
+- [ ] hermes_cli/cli_browser_gateway.py  defs 1/3  cases 0/0
 - [ ] hermes_cli/vault.py  defs 6/10  cases 2/2
-- [ ] plugins/browser/_common.py  defs 15/17  cases 0/0
-- [x] plugins/browser/browser_use/__init__.py  defs 1/1  cases 0/0
+- [ ] plugins/browser/_common.py  defs 12/17  cases 0/0
+- [ ] plugins/browser/browser_use/__init__.py  defs 0/1  cases 0/0
 - [ ] plugins/browser/browser_use/provider.py  defs 9/10  cases 0/0
-- [x] plugins/browser/browserbase/__init__.py  defs 1/1  cases 0/0
+- [ ] plugins/browser/browserbase/__init__.py  defs 0/1  cases 0/0
 - [x] plugins/browser/browserbase/provider.py  defs 6/6  cases 0/0
-- [x] plugins/browser/firecrawl/__init__.py  defs 1/1  cases 0/0
+- [ ] plugins/browser/firecrawl/__init__.py  defs 0/1  cases 0/0
 - [x] plugins/browser/firecrawl/provider.py  defs 6/6  cases 0/0
 - [x] tools/bot_desktop/__init__.py  defs 0/0  cases 0/0
 - [ ] tools/bot_desktop/browser.py  defs 9/10  cases 0/17
 - [x] tools/bot_desktop/idle_watch.py  defs 3/3  cases 0/0
 - [ ] tools/bot_desktop/install.py  defs 8/10  cases 11/11
-- [ ] tools/bot_desktop/lease.py  defs 18/23  cases 8/23
+- [ ] tools/bot_desktop/lease.py  defs 14/23  cases 8/23
 - [ ] tools/bot_desktop/placement.py  defs 7/7  cases 0/12
 - [ ] tools/bot_desktop/resources.py  defs 8/9  cases 0/6
 - [ ] tools/bot_desktop/rfb_filter.py  defs 3/4  cases 4/4
-- [ ] tools/bot_desktop/runtime.py  defs 48/50  cases 0/38
-- [ ] tools/bot_desktop/sandbox_host.py  defs 14/19  cases 0/13
+- [ ] tools/bot_desktop/runtime.py  defs 46/50  cases 0/38
+- [ ] tools/bot_desktop/sandbox_host.py  defs 12/19  cases 0/13
 - [ ] tools/bot_desktop/thumbnail.py  defs 0/1  cases 0/0
-- [ ] tools/browser_cdp_tool.py  defs 13/15  cases 31/31
+- [ ] tools/browser_cdp_tool.py  defs 12/15  cases 31/31
 - [x] tools/browser_dialog_tool.py  defs 2/2  cases 0/0
-- [ ] tools/browser_harness_dirs.py  defs 11/12  cases 1/4
-- [ ] tools/browser_launcher.py  defs 76/84  cases 61/80
+- [ ] tools/browser_harness_dirs.py  defs 0/12  cases 1/4
+- [ ] tools/browser_launcher.py  defs 72/84  cases 62/80
 - [ ] tools/browser_launcher_holders.py  defs 15/18  cases 2/3
-- [ ] tools/browser_lightpanda.py  defs 24/26  cases 17/49
+- [ ] tools/browser_lightpanda.py  defs 21/26  cases 17/49
 - [ ] tools/browser_session.py  defs 22/23  cases 7/37
-- [ ] tools/browser_session_cdp.py  defs 9/10  cases 0/18
-- [ ] tools/browser_session_cloud.py  defs 22/23  cases 4/29
+- [ ] tools/browser_session_cdp.py  defs 6/10  cases 0/18
+- [ ] tools/browser_session_cloud.py  defs 21/23  cases 4/29
 - [ ] tools/browser_session_lifecycle.py  defs 21/24  cases 0/0
 - [ ] tools/browser_session_real_profile.py  defs 8/9  cases 0/0
-- [ ] tools/browser_session_sandbox.py  defs 7/13  cases 2/2
-- [ ] tools/browser_supervisor.py  defs 28/33  cases 15/15
-- [ ] tools/browser_supervisor_capture.py  defs 6/8  cases 9/9
+- [ ] tools/browser_session_sandbox.py  defs 4/13  cases 2/2
+- [ ] tools/browser_supervisor.py  defs 27/33  cases 15/15
+- [ ] tools/browser_supervisor_capture.py  defs 1/8  cases 9/9
 - [ ] tools/browser_supervisor_dialogs.py  defs 17/20  cases 0/0
 - [ ] tools/browser_supervisor_frames.py  defs 10/12  cases 0/0
-- [x] tools/browser_tool.py  defs 1/1  cases 0/0
-- [x] tools/browser_tool_install.py  defs 1/1  cases 0/0
+- [ ] tools/browser_tool.py  defs 0/1  cases 0/0
+- [ ] tools/browser_tool_install.py  defs 0/1  cases 0/0
 - [ ] tools/browser_url_policy.py  defs 11/12  cases 7/13
-- [ ] tools/browser_use_cli.py  defs 41/48  cases 67/110
-- [ ] tools/browser_use_shot.py  defs 10/10  cases 4/5
+- [ ] tools/browser_use_cli.py  defs 38/48  cases 67/110
+- [ ] tools/browser_use_shot.py  defs 8/10  cases 4/5
 - [x] tools/browser_vault_context.py  defs 4/4  cases 0/0
-- [ ] tools/browser_vault_tool.py  defs 17/22  cases 70/70
+- [ ] tools/browser_vault_tool.py  defs 16/22  cases 70/70
 
-### 16. pkg/media: 55% (1193 of 2146 rows closed, defs 887/1022, cases 306/1124, 6 of 61 files completed)
+### 16. pkg/media: 54% (1180 of 2146 rows closed, defs 773/1022, cases 407/1124, verified 773, exercised 44, 3 of 61 files completed)
 #### Image and video generation, TTS, transcription, voice mode, wake word
-- [ ] agent/image_gen_provider.py  defs 9/9  cases 2/3
-- [ ] agent/image_gen_registry.py  defs 1/1  cases 0/4
-- [ ] agent/provider_media.py  defs 6/6  cases 0/4
+- [ ] agent/image_gen_provider.py  defs 7/9  cases 2/3
+- [ ] agent/image_gen_registry.py  defs 0/1  cases 0/4
+- [ ] agent/provider_media.py  defs 5/6  cases 0/4
 - [x] agent/transcription_provider.py  defs 8/8  cases 0/0
-- [ ] agent/transcription_registry.py  defs 0/1  cases 8/10
-- [x] agent/tts_provider.py  defs 9/9  cases 0/0
+- [ ] agent/transcription_registry.py  defs 1/1  cases 8/10
+- [ ] agent/tts_provider.py  defs 3/9  cases 0/0
 - [x] agent/tts_registry.py  defs 1/1  cases 11/11
-- [x] agent/video_gen_provider.py  defs 14/14  cases 0/0
-- [ ] agent/video_gen_registry.py  defs 1/1  cases 0/15
-- [ ] agent/voice_turn_route.py  defs 9/13  cases 0/5
+- [ ] agent/video_gen_provider.py  defs 11/14  cases 0/0
+- [ ] agent/video_gen_registry.py  defs 0/1  cases 0/15
+- [ ] agent/voice_turn_route.py  defs 11/13  cases 0/5
 - [x] hermes_cli/setup_tts.py  defs 12/12  cases 7/7
-- [ ] hermes_cli/voice.py  defs 27/27  cases 4/33
-- [ ] plugins/image_gen/_common.py  defs 21/23  cases 0/0
-- [ ] plugins/image_gen/deepinfra/__init__.py  defs 9/10  cases 0/0
+- [ ] hermes_cli/voice.py  defs 23/27  cases 4/33
+- [ ] plugins/image_gen/_common.py  defs 19/23  cases 0/0
+- [ ] plugins/image_gen/deepinfra/__init__.py  defs 6/10  cases 0/0
 - [ ] plugins/image_gen/fal/__init__.py  defs 7/7  cases 0/4
-- [x] plugins/image_gen/krea/__init__.py  defs 27/27  cases 35/35
-- [ ] plugins/image_gen/meta-ai/__init__.py  defs 6/8  cases 2/20
-- [ ] plugins/image_gen/openai-codex/__init__.py  defs 14/20  cases 0/17
-- [ ] plugins/image_gen/openai/__init__.py  defs 9/11  cases 2/19
-- [ ] plugins/image_gen/openrouter/__init__.py  defs 19/41  cases 3/50
-- [ ] plugins/image_gen/xai/__init__.py  defs 13/19  cases 6/24
-- [ ] plugins/video_gen/deepinfra/__init__.py  defs 4/5  cases 0/4
-- [ ] plugins/video_gen/fal/__init__.py  defs 21/22  cases 1/32
-- [ ] plugins/video_gen/openrouter/__init__.py  defs 21/25  cases 0/9
-- [ ] plugins/video_gen/xai/__init__.py  defs 24/24  cases 0/2
+- [ ] plugins/image_gen/krea/__init__.py  defs 25/27  cases 35/35
+- [ ] plugins/image_gen/meta-ai/__init__.py  defs 4/8  cases 2/20
+- [ ] plugins/image_gen/openai-codex/__init__.py  defs 11/20  cases 0/17
+- [ ] plugins/image_gen/openai/__init__.py  defs 5/11  cases 2/19
+- [ ] plugins/image_gen/openrouter/__init__.py  defs 3/41  cases 3/50
+- [ ] plugins/image_gen/xai/__init__.py  defs 9/19  cases 6/24
+- [ ] plugins/video_gen/deepinfra/__init__.py  defs 0/5  cases 0/4
+- [ ] plugins/video_gen/fal/__init__.py  defs 18/22  cases 1/32
+- [ ] plugins/video_gen/openrouter/__init__.py  defs 20/25  cases 0/9
+- [ ] plugins/video_gen/xai/__init__.py  defs 22/24  cases 0/2
 - [ ] tools/audio_container.py  defs 2/2  cases 2/7
 - [ ] tools/fal_common.py  defs 9/12  cases 0/35
 - [ ] tools/image_generation_catalog.py  defs 0/1  cases 0/0
 - [ ] tools/image_generation_managed.py  defs 4/4  cases 0/2
-- [ ] tools/image_generation_tool.py  defs 40/41  cases 13/96
+- [ ] tools/image_generation_tool.py  defs 39/41  cases 13/96
 - [ ] tools/neutts_synth.py  defs 0/2  cases 0/0
 - [ ] tools/stt_lease.py  defs 4/5  cases 0/0
-- [ ] tools/transcription_audio.py  defs 13/13  cases 2/22
-- [ ] tools/transcription_chunking.py  defs 6/8  cases 0/2
-- [ ] tools/transcription_cloud.py  defs 16/17  cases 0/0
-- [ ] tools/transcription_command.py  defs 7/7  cases 2/22
-- [ ] tools/transcription_common.py  defs 7/8  cases 0/0
+- [ ] tools/transcription_audio.py  defs 11/13  cases 2/22
+- [ ] tools/transcription_chunking.py  defs 5/8  cases 0/2
+- [ ] tools/transcription_cloud.py  defs 15/17  cases 0/0
+- [ ] tools/transcription_command.py  defs 6/7  cases 2/22
+- [ ] tools/transcription_common.py  defs 4/8  cases 0/0
 - [ ] tools/transcription_local.py  defs 16/17  cases 0/11
 - [ ] tools/transcription_streaming.py  defs 25/57  cases 2/2
-- [ ] tools/transcription_tools.py  defs 31/33  cases 77/157
-- [ ] tools/transcription_whisper_cpp.py  defs 4/4  cases 0/2
+- [ ] tools/transcription_tools.py  defs 28/33  cases 77/157
+- [ ] tools/transcription_whisper_cpp.py  defs 3/4  cases 0/2
 - [ ] tools/tts_command_provider.py  defs 20/20  cases 29/31
 - [ ] tools/tts_elevenlabs_voices.py  defs 4/5  cases 0/0
-- [ ] tools/tts_streaming.py  defs 35/40  cases 18/35
+- [ ] tools/tts_streaming.py  defs 30/40  cases 18/35
 - [ ] tools/tts_text_normalize.py  defs 10/10  cases 23/25
-- [ ] tools/tts_tool.py  defs 33/36  cases 5/112
-- [ ] tools/tts_tool_delivery.py  defs 21/22  cases 1/20
+- [ ] tools/tts_tool.py  defs 26/36  cases 17/112
+- [ ] tools/tts_tool_delivery.py  defs 21/22  cases 16/20
 - [ ] tools/tts_tool_lifecycle.py  defs 12/12  cases 21/33
-- [ ] tools/tts_tool_local.py  defs 9/9  cases 0/2
+- [ ] tools/tts_tool_local.py  defs 6/9  cases 2/2
 - [ ] tools/tts_tool_openai.py  defs 6/6  cases 0/8
-- [ ] tools/tts_tool_plugins.py  defs 6/7  cases 2/11
-- [ ] tools/tts_tool_providers.py  defs 26/29  cases 0/9
+- [ ] tools/tts_tool_plugins.py  defs 5/7  cases 2/11
+- [ ] tools/tts_tool_providers.py  defs 22/29  cases 0/9
 - [ ] tools/tts_tool_speaker.py  defs 24/26  cases 0/6
-- [ ] tools/video_generation_tool.py  defs 13/14  cases 0/11
-- [ ] tools/voice_client_config.py  defs 7/9  cases 0/15
-- [ ] tools/voice_live.py  defs 8/9  cases 0/9
-- [ ] tools/voice_mode.py  defs 84/89  cases 28/84
+- [ ] tools/video_generation_tool.py  defs 8/14  cases 0/11
+- [ ] tools/voice_client_config.py  defs 6/9  cases 15/15
+- [ ] tools/voice_live.py  defs 6/9  cases 0/9
+- [ ] tools/voice_mode.py  defs 83/89  cases 67/84
 - [ ] tools/voice_mode_transcript.py  defs 7/7  cases 0/11
-- [ ] tools/wake_word.py  defs 59/63  cases 0/36
-- [ ] tools/wake_word_engines.py  defs 20/26  cases 0/0
-- [ ] tools/xai_video_tools.py  defs 7/8  cases 0/0
+- [ ] tools/wake_word.py  defs 53/63  cases 18/36
+- [ ] tools/wake_word_engines.py  defs 16/26  cases 0/0
+- [ ] tools/xai_video_tools.py  defs 6/8  cases 0/0
 
-### 17. pkg/agent: 68% (3497 of 5109 rows closed, defs 2304/2307, cases 1193/2802, 54 of 127 files completed)
+### 17. pkg/agent: 67% (3434 of 5109 rows closed, defs 2230/2307, cases 1204/2802, verified 2186, exercised 723, 48 of 127 files completed)
 #### Turn loop, prompt builder, compression, delegation, session search, interrupts, hooks
-- [ ] agent/acp_client.py  defs 34/34  cases 34/35
-- [x] agent/acp_openai_bridge.py  defs 8/8  cases 13/13
+- [ ] agent/acp_client.py  defs 0/34  cases 34/35
+- [ ] agent/acp_openai_bridge.py  defs 0/8  cases 13/13
 - [ ] agent/activity_tracking.py  defs 6/6  cases 0/8
 - [x] agent/agent_init.py  defs 61/61  cases 28/28
 - [x] agent/agent_init_compression_notice.py  defs 6/6  cases 3/3
@@ -1289,7 +1289,7 @@
 - [ ] agent/agent_runtime_helpers.py  defs 121/121  cases 192/200
 - [x] agent/agent_runtime_helpers_dead_connections.py  defs 3/3  cases 2/2
 - [x] agent/agent_runtime_helpers_placeholders.py  defs 1/1  cases 0/0
-- [x] agent/battery.py  defs 8/8  cases 2/2
+- [ ] agent/battery.py  defs 7/8  cases 2/2
 - [x] agent/compaction_display.py  defs 1/1  cases 1/1
 - [ ] agent/compaction_events.py  defs 22/22  cases 3/18
 - [x] agent/compression_automation.py  defs 1/1  cases 0/0
@@ -1299,11 +1299,11 @@
 - [x] agent/context_compressor_prellm.py  defs 5/5  cases 0/0
 - [ ] agent/context_compressor_prune.py  defs 4/4  cases 5/9
 - [ ] agent/context_compressor_retry.py  defs 1/1  cases 0/3
-- [x] agent/context_compressor_summary.py  defs 4/4  cases 0/0
+- [ ] agent/context_compressor_summary.py  defs 3/4  cases 0/0
 - [ ] agent/context_compressor_tail.py  defs 11/11  cases 0/5
 - [x] agent/context_compressor_telemetry.py  defs 9/9  cases 1/1
 - [x] agent/context_compressor_window.py  defs 5/5  cases 0/0
-- [ ] agent/context_engine.py  defs 23/23  cases 3/16
+- [ ] agent/context_engine.py  defs 22/23  cases 3/16
 - [x] agent/context_file_sources.py  defs 6/6  cases 3/3
 - [x] agent/context_pin.py  defs 4/4  cases 2/2
 - [ ] agent/context_references.py  defs 37/37  cases 39/41
@@ -1316,19 +1316,19 @@
 - [x] agent/conversation_compression_reply_anchor.py  defs 6/6  cases 0/0
 - [x] agent/conversation_compression_telemetry.py  defs 8/8  cases 0/0
 - [x] agent/conversation_compression_watermark.py  defs 1/1  cases 0/0
-- [x] agent/conversation_loop.py  defs 65/65  cases 120/120
-- [ ] agent/copilot_acp_client.py  defs 14/14  cases 0/5
-- [x] agent/history_commentary.py  defs 8/8  cases 0/0
-- [ ] agent/i18n.py  defs 17/17  cases 23/91
+- [ ] agent/conversation_loop.py  defs 62/65  cases 120/120
+- [ ] agent/copilot_acp_client.py  defs 2/14  cases 0/5
+- [ ] agent/history_commentary.py  defs 7/8  cases 0/0
+- [ ] agent/i18n.py  defs 16/17  cases 24/91
 - [x] agent/i18n_languages.py  defs 3/3  cases 4/4
-- [ ] agent/i18n_layers.py  defs 24/24  cases 6/9
+- [ ] agent/i18n_layers.py  defs 20/24  cases 6/9
 - [x] agent/image_replay.py  defs 7/7  cases 6/6
 - [ ] agent/inline_tool_executors.py  defs 17/17  cases 1/2
 - [x] agent/iteration_budget.py  defs 7/7  cases 5/5
-- [x] agent/lazy_forward.py  defs 3/3  cases 0/0
+- [ ] agent/lazy_forward.py  defs 2/3  cases 0/0
 - [ ] agent/legacy_cli.py  defs 2/2  cases 0/2
 - [ ] agent/local_prompt_progress.py  defs 9/9  cases 3/21
-- [ ] agent/managed_worker.py  defs 26/27  cases 2/42
+- [ ] agent/managed_worker.py  defs 27/27  cases 2/42
 - [ ] agent/manual_compression_feedback.py  defs 2/2  cases 2/5
 - [x] agent/message_content.py  defs 3/3  cases 2/2
 - [ ] agent/message_metadata.py  defs 26/26  cases 6/35
@@ -1348,17 +1348,17 @@
 - [x] agent/reactions.py  defs 1/1  cases 3/3
 - [ ] agent/relay_compaction.py  defs 5/5  cases 2/10
 - [ ] agent/relay_llm.py  defs 70/70  cases 2/44
-- [ ] agent/relay_runtime.py  defs 113/113  cases 49/84
+- [ ] agent/relay_runtime.py  defs 111/113  cases 49/84
 - [ ] agent/relay_tools.py  defs 4/4  cases 4/9
 - [ ] agent/replay_cleanup.py  defs 11/11  cases 6/9
 - [x] agent/runtime_session_child.py  defs 5/5  cases 0/0
 - [x] agent/runtime_session_compression.py  defs 27/27  cases 0/0
 - [x] agent/runtime_session_lifecycle.py  defs 16/16  cases 0/0
 - [ ] agent/runtime_session_store.py  defs 49/49  cases 25/27
-- [ ] agent/safe_worker_policy.py  defs 7/7  cases 3/8
+- [ ] agent/safe_worker_policy.py  defs 6/7  cases 3/8
 - [ ] agent/session_activity.py  defs 10/10  cases 8/15
 - [ ] agent/session_client_env.py  defs 13/13  cases 11/21
-- [ ] agent/session_persistence.py  defs 26/28  cases 6/15
+- [ ] agent/session_persistence.py  defs 28/28  cases 6/15
 - [x] agent/session_source.py  defs 3/3  cases 6/6
 - [ ] agent/side_question.py  defs 6/6  cases 0/14
 - [ ] agent/side_question_lease.py  defs 7/7  cases 16/19
@@ -1367,29 +1367,29 @@
 - [x] agent/surface_switch.py  defs 6/6  cases 0/0
 - [ ] agent/system_prompt.py  defs 43/43  cases 72/80
 - [x] agent/thinking_timeout_guidance.py  defs 2/2  cases 6/6
-- [ ] agent/title_generator.py  defs 38/38  cases 48/49
+- [ ] agent/title_generator.py  defs 37/38  cases 48/49
 - [ ] agent/trajectory.py  defs 4/4  cases 0/2
 - [x] agent/transcript_repair.py  defs 11/11  cases 0/0
 - [x] agent/turn_api_call.py  defs 8/8  cases 3/3
 - [ ] agent/turn_api_error.py  defs 5/5  cases 2/3
 - [x] agent/turn_api_request.py  defs 6/6  cases 3/3
 - [ ] agent/turn_author.py  defs 9/9  cases 0/3
-- [ ] agent/turn_context.py  defs 48/48  cases 100/111
+- [ ] agent/turn_context.py  defs 47/48  cases 100/111
 - [ ] agent/turn_context_compaction.py  defs 14/14  cases 4/5
 - [ ] agent/turn_empty_response.py  defs 6/6  cases 0/2
 - [ ] agent/turn_explainers.py  defs 13/13  cases 0/6
 - [ ] agent/turn_facade.py  defs 3/3  cases 9/83
 - [ ] agent/turn_facade_lease.py  defs 20/20  cases 8/9
-- [ ] agent/turn_failure_copy.py  defs 20/20  cases 5/23
+- [ ] agent/turn_failure_copy.py  defs 18/20  cases 9/23
 - [ ] agent/turn_final_response.py  defs 5/5  cases 0/1
 - [ ] agent/turn_finalizer.py  defs 24/24  cases 2/58
-- [ ] agent/turn_iteration_prep.py  defs 13/13  cases 6/10
+- [x] agent/turn_iteration_prep.py  defs 13/13  cases 10/10
 - [ ] agent/turn_liveness.py  defs 13/13  cases 0/19
 - [x] agent/turn_loop_errors.py  defs 2/2  cases 2/2
-- [ ] agent/turn_overflow.py  defs 14/14  cases 2/4
-- [x] agent/turn_preflight.py  defs 4/4  cases 2/2
+- [ ] agent/turn_overflow.py  defs 13/14  cases 4/4
+- [ ] agent/turn_preflight.py  defs 3/4  cases 2/2
 - [x] agent/turn_preflight_gate.py  defs 1/1  cases 0/0
-- [ ] agent/turn_recovery.py  defs 52/52  cases 2/32
+- [ ] agent/turn_recovery.py  defs 51/52  cases 2/32
 - [ ] agent/turn_recovery_autorecover.py  defs 5/5  cases 0/4
 - [x] agent/turn_recovery_codex.py  defs 3/3  cases 0/0
 - [x] agent/turn_request_assembly.py  defs 4/4  cases 2/2
@@ -1809,80 +1809,80 @@
 - [x] impeccable/skill/scripts/live-browser.js
 - [x] impeccable/skill/scripts/modern-screenshot.umd.js
 
-### 19. pkg/kanban: 62% (1651 of 2654 rows closed, defs 1353/1578, cases 298/1076, 14 of 59 files completed)
+### 19. pkg/kanban: 59% (1584 of 2654 rows closed, defs 1278/1578, cases 306/1076, verified 1278, exercised 296, 15 of 59 files completed)
 #### Boards, worker swarm, task dispatch, hosted rooms, PR acceptance
 - [x] agent/kanban_stop.py  defs 4/4  cases 7/7
 - [x] agent/kanban_turn_recovery.py  defs 14/14  cases 16/16
-- [ ] gateway/hosted_room_attachments.py  defs 44/52  cases 0/17
-- [ ] gateway/hosted_room_authority_history.py  defs 7/8  cases 0/0
-- [ ] gateway/hosted_room_discussion.py  defs 39/59  cases 0/41
-- [ ] gateway/hosted_room_driver.py  defs 65/69  cases 0/105
-- [ ] gateway/hosted_room_execution_policy.py  defs 10/11  cases 6/9
+- [ ] gateway/hosted_room_attachments.py  defs 48/52  cases 0/17
+- [x] gateway/hosted_room_authority_history.py  defs 8/8  cases 0/0
+- [ ] gateway/hosted_room_discussion.py  defs 53/59  cases 0/41
+- [ ] gateway/hosted_room_driver.py  defs 57/69  cases 0/105
+- [ ] gateway/hosted_room_execution_policy.py  defs 9/11  cases 6/9
 - [ ] gateway/hosted_room_links.py  defs 12/12  cases 0/5
-- [ ] gateway/hosted_room_peer.py  defs 32/33  cases 0/16
+- [ ] gateway/hosted_room_peer.py  defs 28/33  cases 0/16
 - [ ] gateway/hosted_room_policy_checkpoint.py  defs 20/23  cases 0/0
-- [ ] gateway/hosted_room_replicas.py  defs 15/15  cases 0/11
+- [ ] gateway/hosted_room_replicas.py  defs 13/15  cases 0/11
 - [x] gateway/hosted_room_task_input.py  defs 1/1  cases 0/0
 - [x] gateway/hosted_room_work_lineage.py  defs 3/3  cases 0/0
-- [ ] gateway/hosted_room_work_records.py  defs 21/28  cases 0/3
-- [ ] gateway/hosted_room_work_storage.py  defs 11/12  cases 0/0
-- [ ] gateway/hosted_rooms.py  defs 73/77  cases 7/94
-- [ ] gateway/hosted_rooms_common.py  defs 11/14  cases 0/0
+- [ ] gateway/hosted_room_work_records.py  defs 18/28  cases 0/3
+- [ ] gateway/hosted_room_work_storage.py  defs 10/12  cases 0/0
+- [ ] gateway/hosted_rooms.py  defs 68/77  cases 7/94
+- [ ] gateway/hosted_rooms_common.py  defs 2/14  cases 0/0
 - [ ] gateway/hosted_rooms_gateway_import.py  defs 9/10  cases 0/6
-- [x] gateway/hosted_rooms_legacy_import.py  defs 5/5  cases 0/0
+- [ ] gateway/hosted_rooms_legacy_import.py  defs 4/5  cases 0/0
 - [x] gateway/kanban_watchers.py  defs 12/12  cases 2/2
-- [ ] gateway/kanban_watchers_common.py  defs 9/10  cases 2/2
-- [ ] gateway/kanban_watchers_dispatcher.py  defs 16/17  cases 1/1
-- [ ] gateway/kanban_watchers_notifier.py  defs 41/44  cases 1/1
-- [ ] hermes_cli/kanban.py  defs 63/64  cases 2/7
+- [ ] gateway/kanban_watchers_common.py  defs 8/10  cases 2/2
+- [ ] gateway/kanban_watchers_dispatcher.py  defs 13/17  cases 1/1
+- [ ] gateway/kanban_watchers_notifier.py  defs 36/44  cases 1/1
+- [ ] hermes_cli/kanban.py  defs 64/64  cases 2/7
 - [ ] hermes_cli/kanban_boards.py  defs 12/12  cases 0/20
-- [ ] hermes_cli/kanban_db.py  defs 173/181  cases 147/446
+- [ ] hermes_cli/kanban_db.py  defs 170/181  cases 155/446
 - [x] hermes_cli/kanban_db_boards.py  defs 8/8  cases 0/0
-- [ ] hermes_cli/kanban_db_connect.py  defs 38/41  cases 6/14
+- [ ] hermes_cli/kanban_db_connect.py  defs 41/41  cases 6/14
 - [x] hermes_cli/kanban_db_context.py  defs 11/11  cases 0/0
-- [ ] hermes_cli/kanban_db_dispatch.py  defs 83/86  cases 0/32
+- [ ] hermes_cli/kanban_db_dispatch.py  defs 84/86  cases 0/32
 - [x] hermes_cli/kanban_db_graph.py  defs 5/5  cases 0/0
 - [x] hermes_cli/kanban_db_notify.py  defs 16/16  cases 7/7
-- [ ] hermes_cli/kanban_db_workspace.py  defs 34/37  cases 1/3
-- [ ] hermes_cli/kanban_decompose.py  defs 13/13  cases 0/6
-- [ ] hermes_cli/kanban_diagnostics.py  defs 39/40  cases 0/5
-- [ ] hermes_cli/kanban_ops.py  defs 7/8  cases 0/0
-- [ ] hermes_cli/kanban_output.py  defs 7/9  cases 0/0
+- [ ] hermes_cli/kanban_db_workspace.py  defs 37/37  cases 1/3
+- [ ] hermes_cli/kanban_decompose.py  defs 11/13  cases 0/6
+- [ ] hermes_cli/kanban_diagnostics.py  defs 37/40  cases 0/5
+- [x] hermes_cli/kanban_ops.py  defs 8/8  cases 0/0
+- [x] hermes_cli/kanban_output.py  defs 9/9  cases 0/0
 - [ ] hermes_cli/kanban_owner_recovery.py  defs 14/15  cases 4/8
-- [ ] hermes_cli/kanban_parser.py  defs 4/10  cases 0/0
+- [ ] hermes_cli/kanban_parser.py  defs 0/10  cases 0/0
 - [ ] hermes_cli/kanban_pr_acceptance.py  defs 7/7  cases 0/5
-- [x] hermes_cli/kanban_pr_acceptance_store.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/kanban_resume_guard.py  defs 1/2  cases 9/9
-- [ ] hermes_cli/kanban_specify.py  defs 10/11  cases 0/2
-- [ ] hermes_cli/kanban_swarm.py  defs 11/11  cases 0/5
-- [ ] hermes_cli/kanban_transfer.py  defs 11/11  cases 0/15
-- [ ] hermes_cli/kanban_worker_client.py  defs 8/11  cases 0/2
+- [ ] hermes_cli/kanban_pr_acceptance_store.py  defs 2/3  cases 0/0
+- [x] hermes_cli/kanban_resume_guard.py  defs 2/2  cases 9/9
+- [ ] hermes_cli/kanban_specify.py  defs 9/11  cases 0/2
+- [ ] hermes_cli/kanban_swarm.py  defs 10/11  cases 0/5
+- [ ] hermes_cli/kanban_transfer.py  defs 8/11  cases 0/15
+- [ ] hermes_cli/kanban_worker_client.py  defs 5/11  cases 0/2
 - [x] hermes_cli/kanban_worker_log.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/kanban_workflow.py  defs 9/10  cases 6/7
-- [ ] plugins/kanban/dashboard/plugin_api.py  defs 23/129  cases 0/5
+- [ ] hermes_cli/kanban_workflow.py  defs 8/10  cases 6/7
+- [ ] plugins/kanban/dashboard/plugin_api.py  defs 5/129  cases 0/5
 - [ ] tools/kanban_tools.py  defs 59/62  cases 69/69
 - [x] tools/kanban_tools_schemas.py  defs 3/3  cases 0/0
-- [x] tools/kanban_toolset_context.py  defs 2/2  cases 0/0
-- [ ] tui_gateway/hosted_room_driver.py  defs 71/73  cases 0/0
+- [ ] tools/kanban_toolset_context.py  defs 1/2  cases 0/0
+- [ ] tui_gateway/hosted_room_driver.py  defs 68/73  cases 0/0
 - [ ] tui_gateway/hosted_room_member_activity.py  defs 2/2  cases 0/1
-- [ ] tui_gateway/hosted_room_peer_http.py  defs 37/43  cases 0/25
-- [ ] tui_gateway/hosted_room_peer_transport.py  defs 24/29  cases 0/10
-- [ ] tui_gateway/hosted_room_prepare_stall.py  defs 9/11  cases 0/0
-- [ ] tui_gateway/hosted_room_server_rpc.py  defs 13/15  cases 5/5
-- [ ] tui_gateway/hosted_room_service.py  defs 46/51  cases 0/32
+- [ ] tui_gateway/hosted_room_peer_http.py  defs 35/43  cases 0/25
+- [ ] tui_gateway/hosted_room_peer_transport.py  defs 15/29  cases 0/10
+- [ ] tui_gateway/hosted_room_prepare_stall.py  defs 7/11  cases 0/0
+- [ ] tui_gateway/hosted_room_server_rpc.py  defs 12/15  cases 5/5
+- [ ] tui_gateway/hosted_room_service.py  defs 40/51  cases 0/32
 
-### 20. pkg/codeexec: 56% (465 of 823 rows closed, defs 382/428, cases 83/395, 5 of 24 files completed)
+### 20. pkg/codeexec: 54% (451 of 823 rows closed, defs 368/428, cases 83/395, verified 368, exercised 24, 3 of 24 files completed)
 #### execute_code kernel, RPC bridge, computer use backends
 - [ ] hermes_cli/subcommands/computer_use.py  defs 6/7  cases 1/1
 - [ ] hermes_cli/subcommands/computer_use_screen.py  defs 1/5  cases 0/0
-- [ ] hermes_cli/tools_config_cua.py  defs 13/17  cases 24/25
-- [ ] plugins/computer_use/__init__.py  defs 7/11  cases 0/0
-- [x] plugins/computer_use/cua/__init__.py  defs 4/4  cases 0/0
-- [ ] tools/code_execution_env.py  defs 9/10  cases 5/7
+- [ ] hermes_cli/tools_config_cua.py  defs 12/17  cases 24/25
+- [ ] plugins/computer_use/__init__.py  defs 5/11  cases 0/0
+- [ ] plugins/computer_use/cua/__init__.py  defs 3/4  cases 0/0
+- [ ] tools/code_execution_env.py  defs 7/10  cases 5/7
 - [x] tools/code_execution_rpc.py  defs 10/10  cases 0/0
 - [ ] tools/code_execution_tool.py  defs 26/27  cases 10/45
-- [ ] tools/code_kernel.py  defs 35/41  cases 30/30
-- [ ] tools/code_kernel_remote.py  defs 14/16  cases 2/14
+- [ ] tools/code_kernel.py  defs 34/41  cases 30/30
+- [ ] tools/code_kernel_remote.py  defs 12/16  cases 2/14
 - [ ] tools/computer_use/__init__.py  defs 0/0  cases 1/87
 - [ ] tools/computer_use/backend.py  defs 22/22  cases 0/3
 - [ ] tools/computer_use/cua_backend.py  defs 31/32  cases 0/8
@@ -1892,201 +1892,201 @@
 - [ ] tools/computer_use/cua_backend_input.py  defs 10/12  cases 0/0
 - [ ] tools/computer_use/cua_backend_parse.py  defs 17/19  cases 0/9
 - [ ] tools/computer_use/cua_backend_session.py  defs 30/34  cases 0/0
-- [ ] tools/computer_use/doctor.py  defs 34/36  cases 0/25
+- [ ] tools/computer_use/doctor.py  defs 33/36  cases 0/25
 - [x] tools/computer_use/permissions.py  defs 8/8  cases 0/0
-- [x] tools/computer_use/schema.py  defs 1/1  cases 0/0
-- [ ] tools/computer_use/tool.py  defs 55/61  cases 10/95
+- [ ] tools/computer_use/schema.py  defs 0/1  cases 0/0
+- [ ] tools/computer_use/tool.py  defs 52/61  cases 10/95
 - [x] tools/computer_use_tool.py  defs 0/0  cases 0/0
 
-### 21. pkg/app: 66% (1794 of 2704 rows closed, defs 1542/1553, cases 252/1151, 17 of 71 files completed)
+### 21. pkg/app: 68% (1863 of 2704 rows closed, defs 1474/1553, cases 389/1151, verified 1464, exercised 397, 15 of 71 files completed)
 #### Interactive TUI session driver, docks, streaming, modals, desktop app
-- [ ] hermes_cli/banner.py  defs 44/44  cases 2/13
+- [ ] hermes_cli/banner.py  defs 42/44  cases 2/13
 - [ ] hermes_cli/bundled_app.py  defs 7/7  cases 0/19
 - [x] hermes_cli/callbacks.py  defs 5/5  cases 0/0
 - [x] hermes_cli/chat_catalog.py  defs 9/9  cases 0/0
-- [ ] hermes_cli/cli_agent_setup_mixin.py  defs 32/32  cases 0/25
+- [ ] hermes_cli/cli_agent_setup_mixin.py  defs 31/32  cases 4/25
 - [ ] hermes_cli/cli_auto_maintenance.py  defs 2/2  cases 0/3
-- [x] hermes_cli/cli_billing_mixin.py  defs 62/62  cases 0/0
-- [ ] hermes_cli/cli_chat_error_copy.py  defs 4/4  cases 0/9
-- [ ] hermes_cli/cli_chat_turn_mixin.py  defs 15/15  cases 0/26
-- [ ] hermes_cli/cli_commands_mixin.py  defs 99/99  cases 6/81
-- [ ] hermes_cli/cli_commands_session_tools.py  defs 32/32  cases 0/7
-- [ ] hermes_cli/cli_config_load.py  defs 10/10  cases 0/9
-- [ ] hermes_cli/cli_enter_burst.py  defs 2/2  cases 0/6
-- [ ] hermes_cli/cli_footer_split.py  defs 2/2  cases 0/2
+- [ ] hermes_cli/cli_billing_mixin.py  defs 61/62  cases 0/0
+- [ ] hermes_cli/cli_chat_error_copy.py  defs 4/4  cases 1/9
+- [ ] hermes_cli/cli_chat_turn_mixin.py  defs 15/15  cases 25/26
+- [ ] hermes_cli/cli_commands_mixin.py  defs 92/99  cases 9/81
+- [ ] hermes_cli/cli_commands_session_tools.py  defs 28/32  cases 0/7
+- [ ] hermes_cli/cli_config_load.py  defs 8/10  cases 0/9
+- [x] hermes_cli/cli_enter_burst.py  defs 2/2  cases 6/6
+- [ ] hermes_cli/cli_footer_split.py  defs 0/2  cases 1/2
 - [x] hermes_cli/cli_info_lines.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/cli_init_mixin.py  defs 18/18  cases 0/9
-- [ ] hermes_cli/cli_loops_mixin.py  defs 50/50  cases 3/8
-- [ ] hermes_cli/cli_modal_mixin.py  defs 62/62  cases 0/42
-- [ ] hermes_cli/cli_model_switch_mixin.py  defs 38/38  cases 0/28
-- [ ] hermes_cli/cli_modern_layout.py  defs 34/34  cases 0/10
-- [ ] hermes_cli/cli_output.py  defs 9/9  cases 3/6
+- [ ] hermes_cli/cli_init_mixin.py  defs 17/18  cases 0/9
+- [ ] hermes_cli/cli_loops_mixin.py  defs 48/50  cases 3/8
+- [ ] hermes_cli/cli_modal_mixin.py  defs 61/62  cases 13/42
+- [ ] hermes_cli/cli_model_switch_mixin.py  defs 37/38  cases 4/28
+- [ ] hermes_cli/cli_modern_layout.py  defs 33/34  cases 1/10
+- [ ] hermes_cli/cli_output.py  defs 8/9  cases 3/6
 - [x] hermes_cli/cli_panel.py  defs 5/5  cases 0/0
-- [x] hermes_cli/cli_process_dock.py  defs 7/7  cases 0/0
+- [ ] hermes_cli/cli_process_dock.py  defs 6/7  cases 0/0
 - [ ] hermes_cli/cli_process_notifications.py  defs 5/5  cases 0/3
-- [ ] hermes_cli/cli_render.py  defs 61/61  cases 27/29
-- [ ] hermes_cli/cli_session_dock.py  defs 6/6  cases 0/5
-- [ ] hermes_cli/cli_session_mixin.py  defs 38/38  cases 8/45
+- [ ] hermes_cli/cli_render.py  defs 57/61  cases 27/29
+- [ ] hermes_cli/cli_session_dock.py  defs 5/6  cases 4/5
+- [ ] hermes_cli/cli_session_mixin.py  defs 34/38  cases 8/45
 - [x] hermes_cli/cli_session_switch.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/cli_shutdown.py  defs 21/21  cases 0/17
+- [ ] hermes_cli/cli_shutdown.py  defs 19/21  cases 0/17
 - [ ] hermes_cli/cli_single_query.py  defs 12/12  cases 2/12
 - [x] hermes_cli/cli_snapshot.py  defs 4/4  cases 0/0
-- [ ] hermes_cli/cli_status_bar_mixin.py  defs 57/57  cases 0/51
-- [ ] hermes_cli/cli_stream_mixin.py  defs 34/34  cases 38/40
-- [ ] hermes_cli/cli_subagent_monitor.py  defs 28/28  cases 10/16
-- [ ] hermes_cli/cli_terminal_input.py  defs 26/26  cases 6/49
+- [ ] hermes_cli/cli_status_bar_mixin.py  defs 57/57  cases 23/51
+- [ ] hermes_cli/cli_stream_mixin.py  defs 32/34  cases 40/40
+- [ ] hermes_cli/cli_subagent_monitor.py  defs 27/28  cases 10/16
+- [ ] hermes_cli/cli_terminal_input.py  defs 25/26  cases 6/49
 - [ ] hermes_cli/cli_terminal_mixin.py  defs 27/27  cases 0/25
-- [ ] hermes_cli/cli_tui_mixin.py  defs 115/115  cases 0/21
-- [ ] hermes_cli/cli_tui_runtime_mixin.py  defs 18/18  cases 0/2
+- [ ] hermes_cli/cli_tui_mixin.py  defs 115/115  cases 4/21
+- [ ] hermes_cli/cli_tui_runtime_mixin.py  defs 17/18  cases 0/2
 - [x] hermes_cli/cli_tui_wrap.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/cli_voice_mixin.py  defs 29/29  cases 0/29
-- [ ] hermes_cli/clipboard.py  defs 29/29  cases 0/37
+- [ ] hermes_cli/cli_voice_mixin.py  defs 28/29  cases 29/29
+- [ ] hermes_cli/clipboard.py  defs 28/29  cases 0/37
 - [x] hermes_cli/colors.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/console_engine.py  defs 61/61  cases 2/12
-- [ ] hermes_cli/context_switch_guard.py  defs 5/5  cases 1/4
-- [ ] hermes_cli/curses_ui.py  defs 51/51  cases 30/33
-- [ ] hermes_cli/desktop_build_lock.py  defs 9/9  cases 9/13
+- [ ] hermes_cli/console_engine.py  defs 49/61  cases 2/12
+- [ ] hermes_cli/context_switch_guard.py  defs 4/5  cases 1/4
+- [ ] hermes_cli/curses_ui.py  defs 50/51  cases 30/33
+- [ ] hermes_cli/desktop_build_lock.py  defs 7/9  cases 13/13
 - [x] hermes_cli/desktop_build_reuse.py  defs 2/2  cases 2/2
 - [ ] hermes_cli/desktop_console.py  defs 2/2  cases 0/4
-- [ ] hermes_cli/desktop_plugin_halves.py  defs 16/16  cases 8/12
-- [ ] hermes_cli/desktop_plugin_install.py  defs 8/8  cases 19/20
+- [ ] hermes_cli/desktop_plugin_halves.py  defs 15/16  cases 8/12
+- [ ] hermes_cli/desktop_plugin_install.py  defs 7/8  cases 19/20
 - [x] hermes_cli/desktop_release_holders.py  defs 16/16  cases 4/4
 - [x] hermes_cli/desktop_update_verify.py  defs 4/4  cases 5/5
 - [ ] hermes_cli/focus_view.py  defs 7/7  cases 0/5
-- [ ] hermes_cli/gui_uninstall.py  defs 11/11  cases 1/4
-- [ ] hermes_cli/linux_desktop_entry.py  defs 51/51  cases 0/61
-- [ ] hermes_cli/macos_tcc_anchor.py  defs 22/22  cases 17/35
-- [ ] hermes_cli/main_desktop.py  defs 71/71  cases 15/107
-- [ ] hermes_cli/main_desktop_apparmor.py  defs 13/13  cases 0/8
+- [ ] hermes_cli/gui_uninstall.py  defs 9/11  cases 4/4
+- [ ] hermes_cli/linux_desktop_entry.py  defs 48/51  cases 1/61
+- [ ] hermes_cli/macos_tcc_anchor.py  defs 19/22  cases 17/35
+- [ ] hermes_cli/main_desktop.py  defs 70/71  cases 23/107
+- [ ] hermes_cli/main_desktop_apparmor.py  defs 11/13  cases 0/8
 - [x] hermes_cli/main_desktop_tcc.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/oneshot.py  defs 22/22  cases 20/30
-- [ ] hermes_cli/pt_input_extras.py  defs 13/13  cases 0/65
+- [ ] hermes_cli/oneshot.py  defs 21/22  cases 20/30
+- [ ] hermes_cli/pt_input_extras.py  defs 13/13  cases 1/65
 - [ ] hermes_cli/quiet_single_query.py  defs 9/9  cases 0/7
 - [ ] hermes_cli/session_export.py  defs 23/23  cases 10/11
 - [x] hermes_cli/session_export_html.py  defs 10/10  cases 2/2
-- [x] hermes_cli/session_export_md.py  defs 18/18  cases 2/2
-- [ ] hermes_cli/session_recap.py  defs 2/11  cases 0/2
-- [ ] hermes_cli/suggestions_cmd.py  defs 5/7  cases 0/0
-- [ ] hermes_cli/terminal_breadcrumbs.py  defs 7/7  cases 0/13
+- [ ] hermes_cli/session_export_md.py  defs 17/18  cases 2/2
+- [ ] hermes_cli/session_recap.py  defs 11/11  cases 0/2
+- [x] hermes_cli/suggestions_cmd.py  defs 7/7  cases 0/0
+- [ ] hermes_cli/terminal_breadcrumbs.py  defs 5/7  cases 0/13
 - [ ] hermes_cli/terminal_notify.py  defs 5/5  cases 0/3
 - [ ] hermes_cli/tips.py  defs 6/6  cases 0/3
-- [x] hermes_cli/turn_exit.py  defs 2/2  cases 0/0
+- [ ] hermes_cli/turn_exit.py  defs 1/2  cases 0/0
 
-### 22. cmd/icebath: 64% (4055 of 6304 rows closed, defs 2753/2863, cases 1302/3441, 65 of 161 files completed)
+### 22. cmd/icebath: 62% (3931 of 6304 rows closed, defs 2572/2863, cases 1359/3441, verified 2547, exercised 566, 62 of 161 files completed)
 #### CLI entry, subcommands, setup, doctor, update, backup, uninstall
-- [ ] cli.py  defs 60/60  cases 15/146
-- [ ] hermes_cli/__init__.py  defs 2/2  cases 2/5
-- [ ] hermes_cli/_early_recovery.py  defs 65/65  cases 7/56
+- [ ] cli.py  defs 55/60  cases 22/146
+- [ ] hermes_cli/__init__.py  defs 1/2  cases 0/5
+- [ ] hermes_cli/_early_recovery.py  defs 56/65  cases 7/56
 - [ ] hermes_cli/_early_recovery_zip.py  defs 12/12  cases 10/31
 - [ ] hermes_cli/_install_repair.py  defs 8/8  cases 6/22
-- [ ] hermes_cli/_old_updater.py  defs 5/8  cases 0/7
-- [ ] hermes_cli/_startup_fast.py  defs 16/16  cases 4/9
-- [ ] hermes_cli/_subprocess_compat.py  defs 30/30  cases 19/105
+- [ ] hermes_cli/_old_updater.py  defs 7/8  cases 0/7
+- [ ] hermes_cli/_startup_fast.py  defs 13/16  cases 4/9
+- [ ] hermes_cli/_subprocess_compat.py  defs 23/30  cases 18/105
 - [ ] hermes_cli/_update_takeover.py  defs 8/8  cases 10/21
-- [ ] hermes_cli/backup.py  defs 62/62  cases 112/113
+- [ ] hermes_cli/backup.py  defs 60/62  cases 112/113
 - [x] hermes_cli/backup_restore.py  defs 18/18  cases 1/1
-- [ ] hermes_cli/backup_sqlite.py  defs 17/17  cases 2/3
-- [ ] hermes_cli/boot_bootstrap.py  defs 15/15  cases 0/21
-- [x] hermes_cli/build_info.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/backup_sqlite.py  defs 15/17  cases 2/3
+- [ ] hermes_cli/boot_bootstrap.py  defs 12/15  cases 0/21
+- [ ] hermes_cli/build_info.py  defs 0/1  cases 0/0
 - [x] hermes_cli/data_cleanup.py  defs 3/3  cases 0/0
 - [x] hermes_cli/data_cleanup_holders.py  defs 7/7  cases 0/0
 - [ ] hermes_cli/debug.py  defs 35/35  cases 54/58
 - [x] hermes_cli/debug_redaction.py  defs 4/4  cases 0/0
 - [ ] hermes_cli/diagnostics_upload.py  defs 4/4  cases 8/15
 - [x] hermes_cli/doctor.py  defs 6/6  cases 76/76
-- [x] hermes_cli/doctor_config.py  defs 27/27  cases 4/4
-- [x] hermes_cli/doctor_connectivity.py  defs 19/19  cases 10/10
+- [ ] hermes_cli/doctor_config.py  defs 25/27  cases 4/4
+- [ ] hermes_cli/doctor_connectivity.py  defs 18/19  cases 10/10
 - [x] hermes_cli/doctor_live.py  defs 13/13  cases 22/22
-- [ ] hermes_cli/doctor_platform.py  defs 27/27  cases 40/43
-- [x] hermes_cli/doctor_report.py  defs 10/10  cases 0/0
-- [ ] hermes_cli/doctor_state.py  defs 30/30  cases 32/33
-- [x] hermes_cli/doctor_tools.py  defs 29/29  cases 4/4
+- [ ] hermes_cli/doctor_platform.py  defs 26/27  cases 40/43
+- [ ] hermes_cli/doctor_report.py  defs 8/10  cases 0/0
+- [ ] hermes_cli/doctor_state.py  defs 25/30  cases 32/33
+- [ ] hermes_cli/doctor_tools.py  defs 28/29  cases 4/4
 - [x] hermes_cli/git_commit_graph.py  defs 14/14  cases 0/0
-- [ ] hermes_cli/init_command.py  defs 3/3  cases 0/10
-- [x] hermes_cli/install_identity.py  defs 4/4  cases 4/4
+- [ ] hermes_cli/init_command.py  defs 1/3  cases 0/10
+- [ ] hermes_cli/install_identity.py  defs 3/4  cases 4/4
 - [ ] hermes_cli/inventory.py  defs 36/36  cases 55/59
-- [ ] hermes_cli/lifecycle.py  defs 7/7  cases 6/71
-- [ ] hermes_cli/logs.py  defs 18/18  cases 17/18
-- [ ] hermes_cli/loops.py  defs 49/49  cases 67/72
+- [ ] hermes_cli/lifecycle.py  defs 6/7  cases 27/71
+- [ ] hermes_cli/logs.py  defs 16/18  cases 18/18
+- [ ] hermes_cli/loops.py  defs 40/49  cases 67/72
 - [ ] hermes_cli/macos_signing.py  defs 1/1  cases 1/2
-- [ ] hermes_cli/main.py  defs 90/105  cases 37/297
-- [ ] hermes_cli/main_agent_cmds.py  defs 10/10  cases 6/7
-- [ ] hermes_cli/main_dashboard.py  defs 42/42  cases 8/17
+- [ ] hermes_cli/main.py  defs 93/105  cases 49/297
+- [ ] hermes_cli/main_agent_cmds.py  defs 7/10  cases 7/7
+- [ ] hermes_cli/main_dashboard.py  defs 40/42  cases 8/17
 - [x] hermes_cli/main_dep_hints.py  defs 2/2  cases 4/4
-- [ ] hermes_cli/main_install_repair.py  defs 23/23  cases 3/7
-- [ ] hermes_cli/main_platform_setup.py  defs 6/8  cases 0/0
+- [ ] hermes_cli/main_install_repair.py  defs 21/23  cases 3/7
+- [ ] hermes_cli/main_platform_setup.py  defs 4/8  cases 0/0
 - [x] hermes_cli/main_profile_recovery.py  defs 2/2  cases 0/0
 - [x] hermes_cli/main_provider_setup.py  defs 37/37  cases 17/17
 - [x] hermes_cli/main_query_file.py  defs 1/1  cases 0/0
 - [x] hermes_cli/main_resume_args.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/main_tui_launch.py  defs 25/25  cases 2/15
-- [x] hermes_cli/main_web_build.py  defs 12/12  cases 0/0
+- [ ] hermes_cli/main_tui_launch.py  defs 16/25  cases 11/15
+- [ ] hermes_cli/main_web_build.py  defs 9/12  cases 0/0
 - [x] hermes_cli/migrate.py  defs 5/5  cases 0/0
-- [x] hermes_cli/old_updater_deps.py  defs 14/14  cases 0/0
-- [x] hermes_cli/old_updater_main.py  defs 25/25  cases 0/0
-- [ ] hermes_cli/post_update.py  defs 11/11  cases 1/26
-- [x] hermes_cli/projects_cmd.py  defs 17/17  cases 0/0
-- [ ] hermes_cli/prune_advisor.py  defs 28/29  cases 9/9
+- [ ] hermes_cli/old_updater_deps.py  defs 7/14  cases 0/0
+- [ ] hermes_cli/old_updater_main.py  defs 21/25  cases 0/0
+- [ ] hermes_cli/post_update.py  defs 10/11  cases 1/26
+- [ ] hermes_cli/projects_cmd.py  defs 3/17  cases 0/0
+- [x] hermes_cli/prune_advisor.py  defs 29/29  cases 9/9
 - [x] hermes_cli/psutil_android.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/relaunch.py  defs 5/5  cases 0/15
+- [ ] hermes_cli/relaunch.py  defs 5/5  cases 7/15
 - [ ] hermes_cli/runtime_readiness.py  defs 3/3  cases 0/5
 - [x] hermes_cli/security_advisories.py  defs 16/16  cases 12/12
-- [x] hermes_cli/security_audit.py  defs 20/20  cases 13/13
-- [ ] hermes_cli/security_audit_startup.py  defs 10/10  cases 0/3
+- [ ] hermes_cli/security_audit.py  defs 18/20  cases 13/13
+- [ ] hermes_cli/security_audit_startup.py  defs 9/10  cases 0/3
 - [ ] hermes_cli/session_filters.py  defs 5/5  cases 0/4
 - [ ] hermes_cli/session_listing.py  defs 5/5  cases 2/14
-- [ ] hermes_cli/session_lost_and_found.py  defs 40/40  cases 3/34
-- [ ] hermes_cli/session_recovery.py  defs 56/56  cases 0/13
+- [ ] hermes_cli/session_lost_and_found.py  defs 36/40  cases 3/34
+- [ ] hermes_cli/session_recovery.py  defs 51/56  cases 0/13
 - [x] hermes_cli/session_reset_retirement.py  defs 3/3  cases 1/1
-- [ ] hermes_cli/sessions_adopt.py  defs 6/6  cases 0/4
+- [ ] hermes_cli/sessions_adopt.py  defs 4/6  cases 0/4
 - [ ] hermes_cli/sessions_cmd.py  defs 61/61  cases 10/23
 - [ ] hermes_cli/sessions_cmd_browse.py  defs 18/18  cases 0/7
 - [x] hermes_cli/sessions_cmd_journal_mode.py  defs 3/3  cases 0/0
 - [x] hermes_cli/sessions_cmd_repair_profiles.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/sessions_discard.py  defs 5/5  cases 0/1
+- [ ] hermes_cli/sessions_discard.py  defs 4/5  cases 0/1
 - [x] hermes_cli/sessions_owner.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/sessions_repair_profiles.py  defs 44/44  cases 0/8
-- [ ] hermes_cli/setup.py  defs 43/43  cases 14/24
-- [ ] hermes_cli/setup_agent_import.py  defs 10/10  cases 7/8
+- [ ] hermes_cli/sessions_repair_profiles.py  defs 43/44  cases 0/8
+- [ ] hermes_cli/setup.py  defs 42/43  cases 14/24
+- [ ] hermes_cli/setup_agent_import.py  defs 7/10  cases 7/8
 - [x] hermes_cli/setup_migration.py  defs 7/7  cases 0/0
-- [x] hermes_cli/setup_quick.py  defs 15/15  cases 0/0
-- [ ] hermes_cli/setup_summary.py  defs 16/16  cases 0/1
-- [ ] hermes_cli/source_build.py  defs 18/18  cases 26/30
-- [ ] hermes_cli/source_check.py  defs 34/34  cases 1/36
-- [ ] hermes_cli/source_releases.py  defs 23/23  cases 0/6
+- [ ] hermes_cli/setup_quick.py  defs 14/15  cases 0/0
+- [x] hermes_cli/setup_summary.py  defs 16/16  cases 1/1
+- [ ] hermes_cli/source_build.py  defs 15/18  cases 26/30
+- [ ] hermes_cli/source_check.py  defs 26/34  cases 1/36
+- [ ] hermes_cli/source_releases.py  defs 21/23  cases 0/6
 - [ ] hermes_cli/source_stamp.py  defs 2/2  cases 0/6
 - [x] hermes_cli/stale_modules.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/status.py  defs 31/31  cases 19/20
-- [ ] hermes_cli/status_bar_git.py  defs 2/2  cases 0/2
+- [ ] hermes_cli/status.py  defs 30/31  cases 19/20
+- [ ] hermes_cli/status_bar_git.py  defs 2/2  cases 1/2
 - [x] hermes_cli/status_report.py  defs 4/4  cases 0/0
-- [ ] hermes_cli/stderr_timestamp.py  defs 13/13  cases 3/13
+- [ ] hermes_cli/stderr_timestamp.py  defs 11/13  cases 3/13
 - [x] hermes_cli/stdio.py  defs 6/6  cases 0/0
 - [x] hermes_cli/subcommands/__init__.py  defs 0/0  cases 0/0
-- [ ] hermes_cli/subcommands/_shared.py  defs 0/3  cases 0/0
+- [x] hermes_cli/subcommands/_shared.py  defs 3/3  cases 0/0
 - [x] hermes_cli/subcommands/browser.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/subcommands/codex_runtime.py  defs 0/2  cases 0/0
-- [ ] hermes_cli/subcommands/config.py  defs 0/1  cases 0/2
-- [x] hermes_cli/subcommands/console.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/subcommands/cron.py  defs 0/4  cases 0/3
-- [ ] hermes_cli/subcommands/debug.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/doctor.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/dump.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/gui.py  defs 0/1  cases 2/2
-- [ ] hermes_cli/subcommands/logs.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/mcp.py  defs 0/1  cases 0/0
-- [x] hermes_cli/subcommands/pause.py  defs 3/3  cases 3/3
-- [ ] hermes_cli/subcommands/prompt_size.py  defs 0/1  cases 0/0
-- [x] hermes_cli/subcommands/sessions.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/subcommands/setup.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/skin.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/status.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/uninstall.py  defs 0/1  cases 0/0
-- [x] hermes_cli/subcommands/update.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/codex_runtime.py  defs 2/2  cases 0/0
+- [ ] hermes_cli/subcommands/config.py  defs 1/1  cases 0/2
+- [ ] hermes_cli/subcommands/console.py  defs 0/1  cases 0/0
+- [ ] hermes_cli/subcommands/cron.py  defs 4/4  cases 0/3
+- [x] hermes_cli/subcommands/debug.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/doctor.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/dump.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/gui.py  defs 1/1  cases 2/2
+- [x] hermes_cli/subcommands/logs.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/mcp.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/subcommands/pause.py  defs 0/3  cases 3/3
+- [x] hermes_cli/subcommands/prompt_size.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/subcommands/sessions.py  defs 1/5  cases 0/0
+- [x] hermes_cli/subcommands/setup.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/skin.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/status.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/uninstall.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/subcommands/update.py  defs 0/1  cases 0/0
 - [x] hermes_cli/timefmt.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/uninstall.py  defs 46/46  cases 20/40
+- [ ] hermes_cli/uninstall.py  defs 43/46  cases 20/40
 - [x] hermes_cli/update_abort_recovery.py  defs 10/10  cases 0/0
-- [ ] hermes_cli/update_channel.py  defs 19/19  cases 1/16
-- [ ] hermes_cli/update_cmd.py  defs 71/71  cases 120/281
+- [ ] hermes_cli/update_channel.py  defs 16/19  cases 1/16
+- [ ] hermes_cli/update_cmd.py  defs 66/71  cases 120/281
 - [x] hermes_cli/update_cmd_check.py  defs 17/17  cases 2/2
 - [ ] hermes_cli/update_cmd_commit.py  defs 33/33  cases 21/37
 - [x] hermes_cli/update_cmd_common.py  defs 2/2  cases 0/0
@@ -2097,71 +2097,71 @@
 - [x] hermes_cli/update_cmd_fleet_gatewayless.py  defs 2/2  cases 0/0
 - [x] hermes_cli/update_cmd_fleet_unit_budget.py  defs 7/7  cases 0/0
 - [x] hermes_cli/update_cmd_fleet_verify.py  defs 14/14  cases 1/1
-- [x] hermes_cli/update_cmd_git.py  defs 37/37  cases 3/3
-- [x] hermes_cli/update_cmd_maint.py  defs 40/40  cases 6/6
+- [ ] hermes_cli/update_cmd_git.py  defs 35/37  cases 3/3
+- [ ] hermes_cli/update_cmd_maint.py  defs 38/40  cases 6/6
 - [x] hermes_cli/update_cmd_pause_gate.py  defs 3/3  cases 0/0
 - [ ] hermes_cli/update_cmd_posix_pause.py  defs 38/38  cases 6/7
 - [x] hermes_cli/update_cmd_stale_survivors.py  defs 2/2  cases 1/1
 - [x] hermes_cli/update_cmd_stash.py  defs 37/37  cases 7/7
 - [x] hermes_cli/update_cmd_validation.py  defs 3/3  cases 2/2
-- [ ] hermes_cli/update_cmd_windows.py  defs 68/68  cases 15/18
+- [ ] hermes_cli/update_cmd_windows.py  defs 55/68  cases 15/18
 - [x] hermes_cli/update_cmd_zip.py  defs 25/25  cases 4/4
 - [x] hermes_cli/update_contract.py  defs 6/6  cases 13/13
-- [ ] hermes_cli/update_custody.py  defs 26/26  cases 1/24
-- [ ] hermes_cli/update_downgrade_guard.py  defs 9/9  cases 0/7
+- [ ] hermes_cli/update_custody.py  defs 24/26  cases 1/24
+- [ ] hermes_cli/update_downgrade_guard.py  defs 8/9  cases 0/7
 - [ ] hermes_cli/update_finish.py  defs 3/3  cases 0/8
 - [x] hermes_cli/update_fleet_scope.py  defs 12/12  cases 0/0
-- [x] hermes_cli/update_handoff.py  defs 9/9  cases 0/0
-- [ ] hermes_cli/update_host_obligation.py  defs 26/26  cases 2/15
+- [ ] hermes_cli/update_handoff.py  defs 8/9  cases 0/0
+- [ ] hermes_cli/update_host_obligation.py  defs 23/26  cases 2/15
 - [ ] hermes_cli/update_inventory.py  defs 25/25  cases 7/60
-- [ ] hermes_cli/update_lock.py  defs 91/91  cases 7/91
+- [ ] hermes_cli/update_lock.py  defs 82/91  cases 7/91
 - [x] hermes_cli/update_owning_install.py  defs 3/3  cases 1/1
-- [ ] hermes_cli/update_pause_record.py  defs 72/72  cases 26/51
-- [ ] hermes_cli/update_proxy_env.py  defs 2/2  cases 2/3
-- [ ] hermes_cli/update_receipt.py  defs 67/67  cases 1/78
-- [ ] hermes_cli/update_restart_recovery.py  defs 22/22  cases 20/72
-- [x] hermes_cli/update_serve_obligations.py  defs 8/8  cases 0/0
+- [ ] hermes_cli/update_pause_record.py  defs 62/72  cases 26/51
+- [ ] hermes_cli/update_proxy_env.py  defs 1/2  cases 2/3
+- [ ] hermes_cli/update_receipt.py  defs 65/67  cases 1/78
+- [ ] hermes_cli/update_restart_recovery.py  defs 17/22  cases 20/72
+- [ ] hermes_cli/update_serve_obligations.py  defs 7/8  cases 0/0
 - [x] hermes_cli/update_serve_resume.py  defs 1/1  cases 0/0
-- [x] hermes_cli/update_stage.py  defs 6/6  cases 6/6
+- [ ] hermes_cli/update_stage.py  defs 5/6  cases 6/6
 - [x] hermes_cli/update_windows_acl.py  defs 1/1  cases 5/5
 - [ ] hermes_cli/verify_cmd.py  defs 5/5  cases 6/15
-- [ ] hermes_cli/version_info.py  defs 16/16  cases 14/19
-- [ ] hermes_cli/windows_appinstaller_update.py  defs 0/2  cases 0/0
-- [ ] hermes_cli/windows_store_update.py  defs 1/4  cases 0/0
-- [ ] hermes_logging.py  defs 42/55  cases 38/43
-- [ ] hermes_startup_watchdog.py  defs 23/30  cases 0/39
-- [ ] hermes_time.py  defs 8/10  cases 3/6
-- [ ] registration_lifecycle.py  defs 7/8  cases 0/0
+- [ ] hermes_cli/version_info.py  defs 14/16  cases 14/19
+- [x] hermes_cli/windows_appinstaller_update.py  defs 2/2  cases 0/0
+- [x] hermes_cli/windows_store_update.py  defs 4/4  cases 0/0
+- [ ] hermes_logging.py  defs 52/55  cases 38/43
+- [ ] hermes_startup_watchdog.py  defs 24/30  cases 0/39
+- [ ] hermes_time.py  defs 9/10  cases 3/6
+- [x] registration_lifecycle.py  defs 8/8  cases 0/0
 - [ ] run_agent.py  defs 82/84  cases 84/489
-- [ ] trajectory_compressor.py  defs 9/47  cases 1/20
+- [ ] trajectory_compressor.py  defs 2/47  cases 1/20
 - [ ] utils.py  defs 56/56  cases 14/142
 
-### 23. arena: 61% (3092 of 5014 rows closed, defs 2597/2766, cases 495/2248, 37 of 115 files completed)
+### 23. arena: 59% (2988 of 5014 rows closed, defs 2489/2766, cases 499/2248, verified 2466, exercised 167, 22 of 115 files completed)
 #### TUI gateway RPC methods driving pkg/vxl/arena from agent events
-- [x] tui_gateway/_env.py  defs 3/3  cases 0/0
+- [ ] tui_gateway/_env.py  defs 2/3  cases 0/0
 - [x] tui_gateway/_stdin_recovery.py  defs 4/4  cases 0/0
-- [ ] tui_gateway/agent_callbacks.py  defs 28/29  cases 16/39
-- [ ] tui_gateway/agent_factory.py  defs 40/41  cases 18/114
-- [ ] tui_gateway/billing_view.py  defs 13/13  cases 0/7
-- [x] tui_gateway/change_watcher.py  defs 27/27  cases 33/33
-- [x] tui_gateway/checkpoints.py  defs 3/3  cases 6/6
+- [ ] tui_gateway/agent_callbacks.py  defs 25/29  cases 16/39
+- [ ] tui_gateway/agent_factory.py  defs 38/41  cases 18/114
+- [ ] tui_gateway/billing_view.py  defs 12/13  cases 0/7
+- [ ] tui_gateway/change_watcher.py  defs 25/27  cases 33/33
+- [ ] tui_gateway/checkpoints.py  defs 2/3  cases 6/6
 - [ ] tui_gateway/command_discovery.py  defs 11/14  cases 2/5
 - [ ] tui_gateway/compute_host.py  defs 28/35  cases 1/10
-- [ ] tui_gateway/compute_host_bridge.py  defs 23/23  cases 1/6
+- [ ] tui_gateway/compute_host_bridge.py  defs 22/23  cases 1/6
 - [x] tui_gateway/connector_payload.py  defs 1/1  cases 0/0
 - [x] tui_gateway/connector_refusals.py  defs 1/1  cases 0/0
 - [x] tui_gateway/contracts/__init__.py  defs 0/0  cases 0/0
-- [x] tui_gateway/contracts/base.py  defs 4/4  cases 0/0
+- [ ] tui_gateway/contracts/base.py  defs 1/4  cases 0/0
 - [ ] tui_gateway/contracts/billing_delegation_pets.py  defs 60/60  cases 1/8
 - [ ] tui_gateway/contracts/canonical.py  defs 50/50  cases 1/17
 - [x] tui_gateway/contracts/canonical_projections.py  defs 12/12  cases 0/0
 - [x] tui_gateway/contracts/canonical_sessions.py  defs 27/27  cases 0/0
-- [x] tui_gateway/contracts/common.py  defs 23/23  cases 0/0
+- [ ] tui_gateway/contracts/common.py  defs 22/23  cases 0/0
 - [x] tui_gateway/contracts/config_free_tier_control.py  defs 64/64  cases 0/0
 - [x] tui_gateway/contracts/connectors.py  defs 38/38  cases 0/0
 - [x] tui_gateway/contracts/connectors_operation.py  defs 24/24  cases 7/7
 - [ ] tui_gateway/contracts/display.py  defs 20/20  cases 0/1
-- [x] tui_gateway/contracts/events.py  defs 64/64  cases 0/0
+- [ ] tui_gateway/contracts/events.py  defs 63/64  cases 0/0
 - [ ] tui_gateway/contracts/groups_bot_relay.py  defs 61/61  cases 0/3
 - [x] tui_gateway/contracts/i18n.py  defs 5/5  cases 0/0
 - [x] tui_gateway/contracts/liveness.py  defs 5/5  cases 0/0
@@ -2169,418 +2169,418 @@
 - [x] tui_gateway/contracts/profiles_vault_complete_foreign_subagents.py  defs 73/73  cases 2/2
 - [x] tui_gateway/contracts/projects_pets.py  defs 47/47  cases 0/0
 - [x] tui_gateway/contracts/prompt_voice.py  defs 55/55  cases 0/0
-- [ ] tui_gateway/contracts/registry.py  defs 18/18  cases 12/15
+- [ ] tui_gateway/contracts/registry.py  defs 16/18  cases 12/15
 - [x] tui_gateway/contracts/server_requests.py  defs 42/42  cases 0/0
 - [ ] tui_gateway/contracts/sessions.py  defs 81/81  cases 2/11
-- [ ] tui_gateway/contracts/tools_commands.py  defs 53/53  cases 0/1
+- [ ] tui_gateway/contracts/tools_commands.py  defs 52/53  cases 0/1
 - [ ] tui_gateway/contracts/tools_mcp_plugins.py  defs 84/84  cases 0/1
-- [ ] tui_gateway/entry.py  defs 20/20  cases 9/16
+- [ ] tui_gateway/entry.py  defs 17/20  cases 9/16
 - [ ] tui_gateway/event_publisher.py  defs 4/5  cases 0/0
 - [x] tui_gateway/event_replay.py  defs 14/14  cases 19/19
 - [x] tui_gateway/free_tier_task_done.py  defs 2/2  cases 4/4
-- [ ] tui_gateway/git_probe.py  defs 10/11  cases 0/0
-- [ ] tui_gateway/host_supervisor.py  defs 36/38  cases 1/2
-- [ ] tui_gateway/launch_profile_policy.py  defs 10/12  cases 0/20
+- [ ] tui_gateway/git_probe.py  defs 6/11  cases 0/0
+- [ ] tui_gateway/host_supervisor.py  defs 32/38  cases 1/2
+- [ ] tui_gateway/launch_profile_policy.py  defs 12/12  cases 0/20
 - [x] tui_gateway/loop_noise.py  defs 2/2  cases 6/6
-- [ ] tui_gateway/mcp_oauth_sessions.py  defs 2/8  cases 0/14
-- [ ] tui_gateway/mcp_rpc_helpers.py  defs 2/3  cases 0/0
-- [ ] tui_gateway/method_ctx.py  defs 5/8  cases 0/0
-- [ ] tui_gateway/methods_bot_relay.py  defs 6/6  cases 1/2
-- [x] tui_gateway/methods_browser.py  defs 8/8  cases 0/0
-- [ ] tui_gateway/methods_complete.py  defs 17/18  cases 4/30
-- [x] tui_gateway/methods_complete_helpers.py  defs 7/7  cases 0/0
-- [ ] tui_gateway/methods_config.py  defs 25/26  cases 5/34
-- [ ] tui_gateway/methods_config_set.py  defs 29/31  cases 3/68
-- [ ] tui_gateway/methods_connectors.py  defs 29/34  cases 0/0
-- [x] tui_gateway/methods_connectors_account.py  defs 15/15  cases 0/0
-- [ ] tui_gateway/methods_display.py  defs 13/15  cases 4/14
-- [x] tui_gateway/methods_display_watch.py  defs 9/9  cases 0/0
-- [x] tui_gateway/methods_free_tier.py  defs 7/7  cases 0/0
-- [ ] tui_gateway/methods_groups.py  defs 30/34  cases 0/34
-- [ ] tui_gateway/methods_groups_forward.py  defs 9/14  cases 0/0
-- [ ] tui_gateway/methods_i18n.py  defs 2/4  cases 0/0
-- [x] tui_gateway/methods_images.py  defs 3/3  cases 0/0
-- [x] tui_gateway/methods_machine.py  defs 2/2  cases 0/0
-- [ ] tui_gateway/methods_onboarding.py  defs 19/20  cases 27/28
-- [x] tui_gateway/methods_plugin_catalog.py  defs 2/2  cases 0/0
-- [ ] tui_gateway/methods_profiles.py  defs 38/42  cases 7/29
-- [ ] tui_gateway/methods_projects.py  defs 23/26  cases 7/10
-- [ ] tui_gateway/methods_prompt.py  defs 51/53  cases 10/128
-- [ ] tui_gateway/methods_session.py  defs 116/128  cases 39/204
-- [ ] tui_gateway/methods_session_branch.py  defs 8/8  cases 0/2
-- [ ] tui_gateway/methods_session_control.py  defs 20/23  cases 17/19
-- [x] tui_gateway/methods_session_foreign.py  defs 5/5  cases 0/0
-- [ ] tui_gateway/methods_session_interrupt.py  defs 7/7  cases 4/18
+- [ ] tui_gateway/mcp_oauth_sessions.py  defs 0/8  cases 0/14
+- [ ] tui_gateway/mcp_rpc_helpers.py  defs 1/3  cases 0/0
+- [ ] tui_gateway/method_ctx.py  defs 4/8  cases 0/0
+- [ ] tui_gateway/methods_bot_relay.py  defs 5/6  cases 1/2
+- [ ] tui_gateway/methods_browser.py  defs 7/8  cases 0/0
+- [ ] tui_gateway/methods_complete.py  defs 16/18  cases 4/30
+- [ ] tui_gateway/methods_complete_helpers.py  defs 6/7  cases 0/0
+- [ ] tui_gateway/methods_config.py  defs 24/26  cases 5/34
+- [ ] tui_gateway/methods_config_set.py  defs 28/31  cases 3/68
+- [ ] tui_gateway/methods_connectors.py  defs 26/34  cases 0/0
+- [ ] tui_gateway/methods_connectors_account.py  defs 14/15  cases 0/0
+- [ ] tui_gateway/methods_display.py  defs 12/15  cases 4/14
+- [ ] tui_gateway/methods_display_watch.py  defs 8/9  cases 0/0
+- [ ] tui_gateway/methods_free_tier.py  defs 6/7  cases 0/0
+- [ ] tui_gateway/methods_groups.py  defs 25/34  cases 0/34
+- [ ] tui_gateway/methods_groups_forward.py  defs 7/14  cases 0/0
+- [ ] tui_gateway/methods_i18n.py  defs 1/4  cases 0/0
+- [ ] tui_gateway/methods_images.py  defs 2/3  cases 0/0
+- [ ] tui_gateway/methods_machine.py  defs 1/2  cases 0/0
+- [ ] tui_gateway/methods_onboarding.py  defs 16/20  cases 27/28
+- [ ] tui_gateway/methods_plugin_catalog.py  defs 1/2  cases 0/0
+- [ ] tui_gateway/methods_profiles.py  defs 37/42  cases 7/29
+- [ ] tui_gateway/methods_projects.py  defs 22/26  cases 7/10
+- [ ] tui_gateway/methods_prompt.py  defs 50/53  cases 11/128
+- [ ] tui_gateway/methods_session.py  defs 112/128  cases 39/204
+- [ ] tui_gateway/methods_session_branch.py  defs 7/8  cases 0/2
+- [ ] tui_gateway/methods_session_control.py  defs 17/23  cases 17/19
+- [ ] tui_gateway/methods_session_foreign.py  defs 4/5  cases 0/0
+- [ ] tui_gateway/methods_session_interrupt.py  defs 6/7  cases 4/18
 - [x] tui_gateway/methods_session_model_guard.py  defs 2/2  cases 0/0
-- [ ] tui_gateway/methods_shared_metrics.py  defs 14/14  cases 0/4
-- [ ] tui_gateway/methods_slash.py  defs 23/23  cases 9/18
-- [ ] tui_gateway/methods_subagents.py  defs 11/11  cases 0/7
-- [ ] tui_gateway/methods_tools.py  defs 77/112  cases 6/132
-- [ ] tui_gateway/methods_tools_plugin_servers.py  defs 1/5  cases 0/0
-- [ ] tui_gateway/methods_vault.py  defs 8/8  cases 0/8
-- [ ] tui_gateway/methods_voice.py  defs 49/58  cases 0/30
-- [ ] tui_gateway/model_switch.py  defs 21/21  cases 0/18
-- [ ] tui_gateway/notification_park.py  defs 9/11  cases 0/0
-- [ ] tui_gateway/owner_forward.py  defs 13/16  cases 0/10
+- [ ] tui_gateway/methods_shared_metrics.py  defs 13/14  cases 0/4
+- [ ] tui_gateway/methods_slash.py  defs 22/23  cases 9/18
+- [ ] tui_gateway/methods_subagents.py  defs 10/11  cases 0/7
+- [ ] tui_gateway/methods_tools.py  defs 91/112  cases 6/132
+- [ ] tui_gateway/methods_tools_plugin_servers.py  defs 3/5  cases 0/0
+- [ ] tui_gateway/methods_vault.py  defs 7/8  cases 0/8
+- [ ] tui_gateway/methods_voice.py  defs 48/58  cases 0/30
+- [ ] tui_gateway/model_switch.py  defs 19/21  cases 0/18
+- [ ] tui_gateway/notification_park.py  defs 6/11  cases 0/0
+- [ ] tui_gateway/owner_forward.py  defs 12/16  cases 0/10
 - [x] tui_gateway/pet_sheet.py  defs 4/4  cases 0/0
-- [ ] tui_gateway/plugin_inject.py  defs 4/4  cases 4/5
-- [ ] tui_gateway/profile_roster_cache.py  defs 7/8  cases 0/8
-- [ ] tui_gateway/project_tree.py  defs 31/35  cases 38/38
-- [ ] tui_gateway/prompt_attachments.py  defs 19/20  cases 0/15
-- [ ] tui_gateway/prompt_turn.py  defs 34/36  cases 1/54
-- [ ] tui_gateway/render.py  defs 3/4  cases 0/0
+- [ ] tui_gateway/plugin_inject.py  defs 3/4  cases 4/5
+- [ ] tui_gateway/profile_roster_cache.py  defs 5/8  cases 0/8
+- [ ] tui_gateway/project_tree.py  defs 27/35  cases 38/38
+- [ ] tui_gateway/prompt_attachments.py  defs 18/20  cases 0/15
+- [ ] tui_gateway/prompt_turn.py  defs 33/36  cases 1/54
+- [ ] tui_gateway/render.py  defs 0/4  cases 0/0
 - [ ] tui_gateway/rpc_dispatch.py  defs 4/4  cases 0/15
-- [ ] tui_gateway/server.py  defs 107/111  cases 43/239
-- [ ] tui_gateway/server_requests.py  defs 22/23  cases 22/56
-- [ ] tui_gateway/session_auto_continue.py  defs 22/22  cases 7/54
-- [ ] tui_gateway/session_compression.py  defs 13/14  cases 13/24
-- [ ] tui_gateway/session_history.py  defs 29/29  cases 0/53
-- [ ] tui_gateway/session_lifecycle.py  defs 42/43  cases 32/81
-- [ ] tui_gateway/session_notifications.py  defs 43/48  cases 1/49
-- [ ] tui_gateway/session_reaper.py  defs 27/29  cases 0/29
-- [ ] tui_gateway/session_registry.py  defs 45/46  cases 3/41
-- [ ] tui_gateway/session_transports.py  defs 12/13  cases 2/7
-- [ ] tui_gateway/session_workdir.py  defs 52/53  cases 10/97
+- [ ] tui_gateway/server.py  defs 103/111  cases 43/239
+- [ ] tui_gateway/server_requests.py  defs 21/23  cases 22/56
+- [ ] tui_gateway/session_auto_continue.py  defs 21/22  cases 9/54
+- [ ] tui_gateway/session_compression.py  defs 9/14  cases 13/24
+- [ ] tui_gateway/session_history.py  defs 28/29  cases 0/53
+- [ ] tui_gateway/session_lifecycle.py  defs 40/43  cases 32/81
+- [ ] tui_gateway/session_notifications.py  defs 42/48  cases 1/49
+- [ ] tui_gateway/session_reaper.py  defs 26/29  cases 0/29
+- [ ] tui_gateway/session_registry.py  defs 43/46  cases 3/41
+- [ ] tui_gateway/session_transports.py  defs 11/13  cases 2/7
+- [ ] tui_gateway/session_workdir.py  defs 50/53  cases 11/97
 - [ ] tui_gateway/slash_fuzzy.py  defs 5/5  cases 1/12
-- [ ] tui_gateway/slash_worker.py  defs 7/10  cases 0/10
-- [ ] tui_gateway/slash_worker_client.py  defs 9/10  cases 0/9
+- [ ] tui_gateway/slash_worker.py  defs 6/10  cases 0/10
+- [ ] tui_gateway/slash_worker_client.py  defs 8/10  cases 0/9
 - [ ] tui_gateway/stream_segments.py  defs 7/8  cases 0/0
-- [ ] tui_gateway/synthetic_turn.py  defs 8/9  cases 0/1
+- [ ] tui_gateway/synthetic_turn.py  defs 7/9  cases 0/1
 - [ ] tui_gateway/theme_bridge.py  defs 1/1  cases 0/2
-- [ ] tui_gateway/tool_progress.py  defs 34/35  cases 7/37
-- [ ] tui_gateway/transport.py  defs 26/30  cases 5/7
-- [ ] tui_gateway/turn_marker.py  defs 11/12  cases 3/26
-- [ ] tui_gateway/user_messages.py  defs 7/7  cases 2/5
-- [ ] tui_gateway/ws.py  defs 25/28  cases 17/60
+- [ ] tui_gateway/tool_progress.py  defs 33/35  cases 7/37
+- [ ] tui_gateway/transport.py  defs 24/30  cases 5/7
+- [ ] tui_gateway/turn_marker.py  defs 10/12  cases 3/26
+- [ ] tui_gateway/user_messages.py  defs 6/7  cases 2/5
+- [ ] tui_gateway/ws.py  defs 24/28  cases 17/60
 - [x] tui_gateway/ws_legacy_fallback.py  defs 8/8  cases 0/0
 
-### 24. gateway: 50% (15389 of 30473 rows closed, defs 12313/15496, cases 3076/14977, 184 of 760 files completed)
+### 24. gateway: 52% (15897 of 30473 rows closed, defs 12563/15496, cases 3334/14977, verified 12552, exercised 2981, 202 of 760 files completed)
 #### Messaging platforms, web dashboard, relay, ACP adapter, session workers, delivery
 - [x] acp_adapter/__main__.py  defs 0/0  cases 0/0
 - [x] acp_adapter/auth.py  defs 2/2  cases 3/3
 - [ ] acp_adapter/catalog.py  defs 5/5  cases 2/3
-- [ ] acp_adapter/commands.py  defs 15/16  cases 0/0
+- [x] acp_adapter/commands.py  defs 16/16  cases 0/0
 - [x] acp_adapter/content.py  defs 16/16  cases 0/0
-- [ ] acp_adapter/edit_approval.py  defs 13/16  cases 6/7
+- [ ] acp_adapter/edit_approval.py  defs 15/16  cases 6/7
 - [x] acp_adapter/elicitation.py  defs 4/4  cases 0/0
-- [x] acp_adapter/entry.py  defs 11/11  cases 10/10
-- [ ] acp_adapter/events.py  defs 13/15  cases 11/11
-- [ ] acp_adapter/gateway_commands.py  defs 16/22  cases 1/3
-- [ ] acp_adapter/gateway_media.py  defs 3/4  cases 0/0
-- [ ] acp_adapter/gateway_reply.py  defs 9/11  cases 0/0
-- [ ] acp_adapter/gateway_server.py  defs 61/65  cases 39/47
-- [x] acp_adapter/gateway_session_meta.py  defs 11/11  cases 3/3
+- [ ] acp_adapter/entry.py  defs 10/11  cases 10/10
+- [ ] acp_adapter/events.py  defs 14/15  cases 11/11
+- [ ] acp_adapter/gateway_commands.py  defs 17/22  cases 1/3
+- [x] acp_adapter/gateway_media.py  defs 4/4  cases 0/0
+- [ ] acp_adapter/gateway_reply.py  defs 10/11  cases 0/0
+- [ ] acp_adapter/gateway_server.py  defs 64/65  cases 39/47
+- [ ] acp_adapter/gateway_session_meta.py  defs 6/11  cases 3/3
 - [ ] acp_adapter/model_catalog.py  defs 11/12  cases 4/13
 - [x] acp_adapter/modes.py  defs 0/0  cases 0/0
 - [ ] acp_adapter/permissions.py  defs 7/7  cases 9/10
-- [ ] acp_adapter/provenance.py  defs 3/4  cases 4/4
-- [ ] acp_adapter/server.py  defs 48/51  cases 56/57
-- [ ] acp_adapter/session.py  defs 28/29  cases 47/48
-- [ ] acp_adapter/tools.py  defs 44/47  cases 14/14
+- [x] acp_adapter/provenance.py  defs 4/4  cases 4/4
+- [ ] acp_adapter/server.py  defs 51/51  cases 56/57
+- [ ] acp_adapter/session.py  defs 11/29  cases 47/48
+- [ ] acp_adapter/tools.py  defs 45/47  cases 14/14
 - [x] agent/monitoring/__init__.py  defs 0/0  cases 0/0
 - [x] agent/monitoring/cron_health.py  defs 11/11  cases 6/6
-- [ ] agent/monitoring/emitter.py  defs 13/14  cases 3/3
-- [x] agent/monitoring/events.py  defs 5/5  cases 0/0
-- [ ] agent/monitoring/gateway_health.py  defs 24/26  cases 0/0
-- [ ] agent/monitoring/gateway_health_export.py  defs 19/22  cases 5/6
-- [ ] agent/monitoring/otlp_exporter.py  defs 20/23  cases 6/6
+- [x] agent/monitoring/emitter.py  defs 14/14  cases 3/3
+- [ ] agent/monitoring/events.py  defs 4/5  cases 0/0
+- [ ] agent/monitoring/gateway_health.py  defs 25/26  cases 0/0
+- [ ] agent/monitoring/gateway_health_export.py  defs 20/22  cases 5/6
+- [ ] agent/monitoring/otlp_exporter.py  defs 18/23  cases 6/6
 - [x] agent/monitoring/policy.py  defs 1/1  cases 0/0
 - [x] agent/monitoring/redaction.py  defs 2/2  cases 4/4
-- [ ] agent/outbound_webhooks.py  defs 15/16  cases 35/36
-- [ ] agent/trace_upload.py  defs 16/17  cases 0/7
-- [ ] gateway/__init__.py  defs 0/1  cases 1/66
-- [x] gateway/active_lease_io.py  defs 2/2  cases 0/0
-- [ ] gateway/agent_cache_pressure.py  defs 11/12  cases 3/29
-- [ ] gateway/authz_mixin.py  defs 47/48  cases 3/66
-- [ ] gateway/bot_loop_guard.py  defs 11/12  cases 7/12
+- [ ] agent/outbound_webhooks.py  defs 10/16  cases 35/36
+- [ ] agent/trace_upload.py  defs 11/17  cases 0/7
+- [x] gateway/__init__.py  defs 1/1  cases 66/66
+- [ ] gateway/active_lease_io.py  defs 1/2  cases 0/0
+- [ ] gateway/agent_cache_pressure.py  defs 11/12  cases 8/29
+- [ ] gateway/authz_mixin.py  defs 44/48  cases 3/66
+- [ ] gateway/bot_loop_guard.py  defs 12/12  cases 7/12
 - [ ] gateway/cgroup_cleanup.py  defs 6/6  cases 0/4
-- [ ] gateway/channel_directory.py  defs 27/27  cases 0/23
-- [ ] gateway/code_skew.py  defs 4/5  cases 7/13
+- [ ] gateway/channel_directory.py  defs 23/27  cases 0/23
+- [ ] gateway/code_skew.py  defs 5/5  cases 7/13
 - [ ] gateway/config.py  defs 50/53  cases 1/153
-- [ ] gateway/config_env.py  defs 18/21  cases 0/4
-- [ ] gateway/config_loader.py  defs 23/24  cases 0/0
+- [ ] gateway/config_env.py  defs 20/21  cases 0/4
+- [x] gateway/config_loader.py  defs 24/24  cases 0/0
 - [ ] gateway/control_socket.py  defs 42/44  cases 2/39
-- [ ] gateway/cwd_placeholder.py  defs 1/1  cases 0/2
-- [ ] gateway/dead_targets.py  defs 7/8  cases 0/6
-- [ ] gateway/delivery.py  defs 18/22  cases 0/27
-- [ ] gateway/delivery_ledger.py  defs 26/29  cases 12/81
+- [ ] gateway/cwd_placeholder.py  defs 0/1  cases 0/2
+- [ ] gateway/dead_targets.py  defs 7/8  cases 1/6
+- [ ] gateway/delivery.py  defs 20/22  cases 0/27
+- [ ] gateway/delivery_ledger.py  defs 24/29  cases 32/81
 - [ ] gateway/disk_status.py  defs 2/2  cases 0/14
-- [ ] gateway/display_config.py  defs 9/13  cases 1/13
+- [ ] gateway/display_config.py  defs 13/13  cases 1/13
 - [ ] gateway/drain_control.py  defs 14/14  cases 0/16
-- [ ] gateway/hooks.py  defs 15/18  cases 8/8
-- [ ] gateway/host_attach.py  defs 23/24  cases 0/4
-- [ ] gateway/host_rendezvous.py  defs 36/43  cases 24/59
-- [ ] gateway/host_topology.py  defs 8/8  cases 0/6
-- [ ] gateway/lifecycle_ledger.py  defs 20/20  cases 0/29
-- [ ] gateway/local_desktop_ui.py  defs 6/14  cases 0/8
-- [ ] gateway/local_viewer_events.py  defs 8/13  cases 0/0
+- [x] gateway/hooks.py  defs 18/18  cases 8/8
+- [ ] gateway/host_attach.py  defs 18/24  cases 0/4
+- [ ] gateway/host_rendezvous.py  defs 38/43  cases 24/59
+- [ ] gateway/host_topology.py  defs 7/8  cases 0/6
+- [ ] gateway/lifecycle_ledger.py  defs 17/20  cases 0/29
+- [ ] gateway/local_desktop_ui.py  defs 12/14  cases 0/8
+- [ ] gateway/local_viewer_events.py  defs 10/13  cases 0/0
 - [x] gateway/media_fetch.py  defs 3/3  cases 0/0
-- [ ] gateway/media_policy.py  defs 9/9  cases 0/5
-- [ ] gateway/media_repair.py  defs 6/7  cases 2/11
+- [ ] gateway/media_policy.py  defs 8/9  cases 0/5
+- [ ] gateway/media_repair.py  defs 7/7  cases 2/11
 - [ ] gateway/memory_monitor.py  defs 3/6  cases 0/2
 - [ ] gateway/memory_status.py  defs 4/6  cases 0/16
 - [ ] gateway/message_timestamps.py  defs 6/7  cases 0/18
-- [ ] gateway/mirror.py  defs 3/5  cases 0/9
-- [ ] gateway/owner_identity.py  defs 8/8  cases 0/5
-- [ ] gateway/pairing.py  defs 54/56  cases 1/48
-- [ ] gateway/parked_route_refusal.py  defs 6/11  cases 0/4
-- [ ] gateway/platform_activation.py  defs 5/7  cases 0/0
-- [x] gateway/platform_env.py  defs 20/20  cases 0/0
-- [ ] gateway/platform_registry.py  defs 32/32  cases 12/53
+- [ ] gateway/mirror.py  defs 5/5  cases 3/9
+- [ ] gateway/owner_identity.py  defs 7/8  cases 0/5
+- [ ] gateway/pairing.py  defs 55/56  cases 1/48
+- [ ] gateway/parked_route_refusal.py  defs 9/11  cases 0/4
+- [ ] gateway/platform_activation.py  defs 6/7  cases 0/0
+- [ ] gateway/platform_env.py  defs 18/20  cases 0/0
+- [ ] gateway/platform_registry.py  defs 32/32  cases 13/53
 - [x] gateway/platforms/__init__.py  defs 0/0  cases 0/0
-- [ ] gateway/platforms/_http_client_limits.py  defs 1/2  cases 2/2
+- [x] gateway/platforms/_http_client_limits.py  defs 2/2  cases 2/2
 - [ ] gateway/platforms/_shared.py  defs 14/14  cases 5/17
 - [ ] gateway/platforms/access_policy_mixin.py  defs 9/10  cases 1/10
-- [ ] gateway/platforms/api_server.py  defs 202/216  cases 24/291
-- [x] gateway/platforms/api_server_authority_runs.py  defs 9/9  cases 0/0
-- [ ] gateway/platforms/api_server_bot_chat.py  defs 10/11  cases 4/4
+- [ ] gateway/platforms/api_server.py  defs 200/216  cases 24/291
+- [ ] gateway/platforms/api_server_authority_runs.py  defs 7/9  cases 0/0
+- [ ] gateway/platforms/api_server_bot_chat.py  defs 9/11  cases 4/4
 - [x] gateway/platforms/api_server_config_guard.py  defs 1/1  cases 0/0
 - [ ] gateway/platforms/api_server_fire_startup.py  defs 3/3  cases 0/6
-- [ ] gateway/platforms/api_server_memory_sessions.py  defs 9/10  cases 0/2
-- [ ] gateway/platforms/api_server_openai_routes.py  defs 70/75  cases 0/5
+- [ ] gateway/platforms/api_server_memory_sessions.py  defs 8/10  cases 0/2
+- [ ] gateway/platforms/api_server_openai_routes.py  defs 68/75  cases 0/5
 - [ ] gateway/platforms/api_server_profile_prefix.py  defs 3/4  cases 0/0
 - [x] gateway/platforms/api_server_request_options.py  defs 2/2  cases 0/0
 - [ ] gateway/platforms/api_server_response_admissions.py  defs 11/12  cases 0/0
 - [x] gateway/platforms/api_server_response_identity.py  defs 3/3  cases 0/0
-- [ ] gateway/platforms/api_server_response_store.py  defs 24/27  cases 0/6
-- [x] gateway/platforms/api_server_room_dispatch.py  defs 3/3  cases 2/2
-- [x] gateway/platforms/api_server_room_grants.py  defs 17/17  cases 2/2
+- [ ] gateway/platforms/api_server_response_store.py  defs 26/27  cases 2/6
+- [ ] gateway/platforms/api_server_room_dispatch.py  defs 1/3  cases 2/2
+- [ ] gateway/platforms/api_server_room_grants.py  defs 15/17  cases 2/2
 - [ ] gateway/platforms/api_server_run_idempotency.py  defs 15/17  cases 0/4
-- [ ] gateway/platforms/api_server_runs.py  defs 62/70  cases 0/60
+- [ ] gateway/platforms/api_server_runs.py  defs 48/70  cases 4/60
 - [x] gateway/platforms/api_server_store.py  defs 1/1  cases 0/0
 - [ ] gateway/platforms/api_server_turn_boundary.py  defs 2/2  cases 1/2
-- [ ] gateway/platforms/base.py  defs 306/306  cases 45/544
-- [ ] gateway/platforms/base_exec_approval.py  defs 8/10  cases 0/0
+- [ ] gateway/platforms/base.py  defs 304/306  cases 52/544
+- [ ] gateway/platforms/base_exec_approval.py  defs 7/10  cases 0/0
 - [x] gateway/platforms/base_log_safety.py  defs 1/1  cases 0/0
 - [x] gateway/platforms/base_post_delivery.py  defs 1/1  cases 0/0
 - [x] gateway/platforms/base_streaming_tts.py  defs 4/4  cases 0/0
-- [ ] gateway/platforms/docker_media_paths.py  defs 7/8  cases 0/0
-- [ ] gateway/platforms/event.py  defs 10/10  cases 7/249
-- [ ] gateway/platforms/helpers.py  defs 49/49  cases 21/26
-- [ ] gateway/platforms/media_cache.py  defs 1/4  cases 0/5
-- [ ] gateway/platforms/msgraph_webhook.py  defs 27/28  cases 0/12
+- [x] gateway/platforms/docker_media_paths.py  defs 8/8  cases 0/0
+- [ ] gateway/platforms/event.py  defs 10/10  cases 11/249
+- [ ] gateway/platforms/helpers.py  defs 48/49  cases 21/26
+- [ ] gateway/platforms/media_cache.py  defs 2/4  cases 0/5
+- [ ] gateway/platforms/msgraph_webhook.py  defs 25/28  cases 0/12
 - [x] gateway/platforms/send_targets.py  defs 4/4  cases 0/0
 - [ ] gateway/platforms/shared_ingress.py  defs 8/8  cases 0/2
 - [x] gateway/platforms/tcp_site.py  defs 2/2  cases 0/0
-- [ ] gateway/platforms/webhook.py  defs 55/58  cases 0/100
-- [ ] gateway/platforms/webhook_coalesce.py  defs 9/11  cases 0/0
+- [ ] gateway/platforms/webhook.py  defs 58/58  cases 0/100
+- [x] gateway/platforms/webhook_coalesce.py  defs 11/11  cases 0/0
 - [ ] gateway/platforms/webhook_delivery.py  defs 4/4  cases 0/6
-- [ ] gateway/platforms/webhook_filters.py  defs 10/12  cases 0/2
-- [ ] gateway/platforms/webhook_ingress.py  defs 14/15  cases 2/4
-- [ ] gateway/platforms/webhook_mcp_events.py  defs 7/10  cases 0/7
-- [ ] gateway/platforms/whatsapp_common.py  defs 24/25  cases 2/6
+- [ ] gateway/platforms/webhook_filters.py  defs 12/12  cases 0/2
+- [ ] gateway/platforms/webhook_ingress.py  defs 12/15  cases 2/4
+- [ ] gateway/platforms/webhook_mcp_events.py  defs 10/10  cases 0/7
+- [ ] gateway/platforms/whatsapp_common.py  defs 23/25  cases 2/6
 - [ ] gateway/plugin_command_choice.py  defs 3/4  cases 0/2
-- [ ] gateway/plugin_keyless_inject.py  defs 2/5  cases 3/11
-- [ ] gateway/plugin_messages.py  defs 4/11  cases 0/0
-- [ ] gateway/profile_routing.py  defs 11/12  cases 2/20
+- [ ] gateway/plugin_keyless_inject.py  defs 4/5  cases 3/11
+- [ ] gateway/plugin_messages.py  defs 10/11  cases 0/0
+- [ ] gateway/profile_routing.py  defs 12/12  cases 2/20
 - [ ] gateway/readiness.py  defs 7/7  cases 0/3
-- [ ] gateway/relay/__init__.py  defs 31/32  cases 0/6
-- [ ] gateway/relay/adapter.py  defs 113/116  cases 0/58
+- [ ] gateway/relay/__init__.py  defs 30/32  cases 0/6
+- [ ] gateway/relay/adapter.py  defs 108/116  cases 0/58
 - [ ] gateway/relay/adapter_discord_interaction.py  defs 8/9  cases 0/0
-- [ ] gateway/relay/auth.py  defs 2/3  cases 0/2
+- [ ] gateway/relay/auth.py  defs 0/3  cases 0/2
 - [ ] gateway/relay/command_manifest.py  defs 1/3  cases 0/0
 - [ ] gateway/relay/descriptor.py  defs 4/4  cases 0/122
 - [ ] gateway/relay/egress.py  defs 16/17  cases 0/87
 - [x] gateway/relay/http_diagnostics.py  defs 6/6  cases 0/0
-- [ ] gateway/relay/inbound_admission.py  defs 2/3  cases 0/0
+- [ ] gateway/relay/inbound_admission.py  defs 1/3  cases 0/0
 - [ ] gateway/relay/media.py  defs 10/11  cases 0/11
-- [x] gateway/relay/transport.py  defs 11/11  cases 0/0
-- [ ] gateway/relay/ws_transport.py  defs 46/56  cases 0/70
-- [ ] gateway/response_filters.py  defs 22/23  cases 0/29
-- [ ] gateway/restart.py  defs 21/21  cases 4/54
-- [x] gateway/restart_loop_guard.py  defs 8/8  cases 0/0
+- [ ] gateway/relay/transport.py  defs 1/11  cases 0/0
+- [ ] gateway/relay/ws_transport.py  defs 45/56  cases 0/70
+- [ ] gateway/response_filters.py  defs 23/23  cases 0/29
+- [ ] gateway/restart.py  defs 20/21  cases 4/54
+- [ ] gateway/restart_loop_guard.py  defs 6/8  cases 0/0
 - [x] gateway/restart_notice.py  defs 2/2  cases 0/0
-- [ ] gateway/rich_sent_store.py  defs 5/10  cases 0/3
-- [ ] gateway/run.py  defs 223/232  cases 78/431
+- [ ] gateway/rich_sent_store.py  defs 0/10  cases 0/3
+- [ ] gateway/run.py  defs 219/232  cases 78/431
 - [x] gateway/run_active_work_verb.py  defs 3/3  cases 0/0
 - [ ] gateway/run_adapters.py  defs 78/80  cases 11/117
 - [ ] gateway/run_adapters_recovery.py  defs 17/18  cases 0/19
-- [ ] gateway/run_agent_cache.py  defs 52/52  cases 23/64
-- [ ] gateway/run_api.py  defs 16/22  cases 9/183
-- [ ] gateway/run_background.py  defs 2/4  cases 0/1
-- [ ] gateway/run_bootstrap.py  defs 16/17  cases 0/11
-- [ ] gateway/run_busy.py  defs 80/82  cases 5/42
+- [ ] gateway/run_agent_cache.py  defs 49/52  cases 23/64
+- [ ] gateway/run_api.py  defs 17/22  cases 9/183
+- [ ] gateway/run_background.py  defs 3/4  cases 0/1
+- [ ] gateway/run_bootstrap.py  defs 17/17  cases 0/11
+- [ ] gateway/run_busy.py  defs 81/82  cases 5/42
 - [x] gateway/run_common.py  defs 1/1  cases 0/0
-- [ ] gateway/run_config_loaders.py  defs 40/42  cases 5/21
-- [ ] gateway/run_delivery_queue_watch.py  defs 5/6  cases 0/0
-- [ ] gateway/run_goals.py  defs 25/25  cases 1/15
+- [ ] gateway/run_config_loaders.py  defs 41/42  cases 5/21
+- [x] gateway/run_delivery_queue_watch.py  defs 6/6  cases 0/0
+- [ ] gateway/run_goals.py  defs 24/25  cases 1/15
 - [x] gateway/run_heartbeat_acceptance.py  defs 4/4  cases 0/0
-- [ ] gateway/run_heartbeat_restore.py  defs 2/2  cases 0/4
-- [ ] gateway/run_housekeeping_disk.py  defs 4/5  cases 0/1
+- [ ] gateway/run_heartbeat_restore.py  defs 1/2  cases 0/4
+- [ ] gateway/run_housekeeping_disk.py  defs 5/5  cases 0/1
 - [ ] gateway/run_idle_exit.py  defs 18/18  cases 4/7
-- [ ] gateway/run_idle_gates.py  defs 5/6  cases 0/0
-- [ ] gateway/run_inbound.py  defs 71/72  cases 0/32
+- [x] gateway/run_idle_gates.py  defs 6/6  cases 0/0
+- [ ] gateway/run_inbound.py  defs 72/72  cases 0/32
 - [x] gateway/run_inbound_consumer.py  defs 2/2  cases 0/0
 - [ ] gateway/run_inbound_hooks.py  defs 10/11  cases 2/2
 - [x] gateway/run_inbound_media.py  defs 1/1  cases 0/0
 - [x] gateway/run_inbound_transcription.py  defs 9/9  cases 0/0
-- [ ] gateway/run_inbound_unauthorized.py  defs 7/8  cases 4/4
-- [ ] gateway/run_notifications.py  defs 66/67  cases 12/86
+- [x] gateway/run_inbound_unauthorized.py  defs 8/8  cases 4/4
+- [ ] gateway/run_notifications.py  defs 67/67  cases 12/86
 - [x] gateway/run_notifications_ownership.py  defs 7/7  cases 3/3
-- [ ] gateway/run_notifications_update.py  defs 22/23  cases 11/11
+- [x] gateway/run_notifications_update.py  defs 23/23  cases 11/11
 - [x] gateway/run_plugin_injection.py  defs 17/17  cases 0/0
 - [ ] gateway/run_plugin_rewire.py  defs 6/6  cases 0/1
 - [ ] gateway/run_profile_reconcile.py  defs 26/27  cases 0/24
-- [ ] gateway/run_runtime.py  defs 43/44  cases 2/16
+- [ ] gateway/run_runtime.py  defs 38/44  cases 2/16
 - [x] gateway/run_runtime_init.py  defs 7/7  cases 1/1
-- [ ] gateway/run_shutdown.py  defs 92/96  cases 0/61
+- [ ] gateway/run_shutdown.py  defs 93/96  cases 0/61
 - [ ] gateway/run_shutdown_session_end.py  defs 3/4  cases 0/2
-- [ ] gateway/run_startup.py  defs 76/78  cases 4/32
-- [ ] gateway/run_topics.py  defs 43/43  cases 0/8
-- [ ] gateway/run_turn.py  defs 56/59  cases 12/26
+- [ ] gateway/run_startup.py  defs 78/78  cases 4/32
+- [ ] gateway/run_topics.py  defs 42/43  cases 0/8
+- [ ] gateway/run_turn.py  defs 59/59  cases 12/26
 - [x] gateway/run_turn_followup_ack.py  defs 3/3  cases 0/0
-- [ ] gateway/run_turn_hygiene.py  defs 21/21  cases 0/3
-- [ ] gateway/run_turn_persistence.py  defs 21/22  cases 0/1
+- [ ] gateway/run_turn_hygiene.py  defs 20/21  cases 0/3
+- [ ] gateway/run_turn_persistence.py  defs 22/22  cases 0/1
 - [ ] gateway/run_turn_prepare.py  defs 16/16  cases 6/23
-- [ ] gateway/run_turn_progress.py  defs 57/61  cases 0/2
-- [ ] gateway/run_turn_runner.py  defs 35/37  cases 1/42
-- [ ] gateway/run_turn_runner_approval_settle.py  defs 3/4  cases 3/6
-- [ ] gateway/run_turn_runner_clarify_delivery.py  defs 9/11  cases 9/13
-- [ ] gateway/run_voice.py  defs 24/24  cases 2/28
+- [ ] gateway/run_turn_progress.py  defs 61/61  cases 0/2
+- [ ] gateway/run_turn_runner.py  defs 37/37  cases 1/42
+- [ ] gateway/run_turn_runner_approval_settle.py  defs 4/4  cases 3/6
+- [ ] gateway/run_turn_runner_clarify_delivery.py  defs 11/11  cases 9/13
+- [ ] gateway/run_voice.py  defs 24/24  cases 7/28
 - [x] gateway/run_watchers.py  defs 11/11  cases 0/0
-- [ ] gateway/runtime_bootstrap.py  defs 5/6  cases 0/9
-- [ ] gateway/runtime_bootstrap_windows.py  defs 23/32  cases 0/22
+- [ ] gateway/runtime_bootstrap.py  defs 6/6  cases 0/9
+- [ ] gateway/runtime_bootstrap_windows.py  defs 29/32  cases 0/22
 - [x] gateway/runtime_contract.py  defs 2/2  cases 0/0
 - [ ] gateway/runtime_downgrade_exit.py  defs 4/4  cases 0/3
 - [ ] gateway/runtime_footer.py  defs 7/7  cases 0/18
-- [ ] gateway/runtime_ownership.py  defs 24/26  cases 3/22
+- [ ] gateway/runtime_ownership.py  defs 26/26  cases 3/22
 - [ ] gateway/scale_to_zero.py  defs 14/14  cases 2/22
 - [ ] gateway/session.py  defs 64/64  cases 19/324
-- [ ] gateway/session_a2a.py  defs 5/7  cases 0/4
+- [ ] gateway/session_a2a.py  defs 7/7  cases 0/4
 - [x] gateway/session_acp_lifecycle.py  defs 4/4  cases 0/0
-- [x] gateway/session_active_list.py  defs 2/2  cases 0/0
+- [ ] gateway/session_active_list.py  defs 1/2  cases 0/0
 - [x] gateway/session_admission.py  defs 0/0  cases 0/0
-- [ ] gateway/session_ancillary.py  defs 29/31  cases 0/6
-- [ ] gateway/session_api.py  defs 15/16  cases 0/52
+- [ ] gateway/session_ancillary.py  defs 28/31  cases 0/6
+- [ ] gateway/session_api.py  defs 16/16  cases 0/52
 - [x] gateway/session_api_media.py  defs 7/7  cases 0/0
-- [ ] gateway/session_api_turn.py  defs 30/31  cases 3/53
+- [ ] gateway/session_api_turn.py  defs 31/31  cases 3/53
 - [ ] gateway/session_authorities.py  defs 34/34  cases 0/23
-- [ ] gateway/session_authority.py  defs 72/74  cases 1/159
-- [ ] gateway/session_automation.py  defs 36/39  cases 0/2
-- [ ] gateway/session_bot.py  defs 42/47  cases 0/50
-- [ ] gateway/session_bot_mailbox.py  defs 17/18  cases 0/0
-- [ ] gateway/session_busy_controls.py  defs 9/9  cases 0/7
+- [ ] gateway/session_authority.py  defs 68/74  cases 1/159
+- [ ] gateway/session_automation.py  defs 37/39  cases 0/2
+- [ ] gateway/session_bot.py  defs 39/47  cases 0/50
+- [x] gateway/session_bot_mailbox.py  defs 18/18  cases 0/0
+- [ ] gateway/session_busy_controls.py  defs 6/9  cases 0/7
 - [ ] gateway/session_clarify_batch.py  defs 1/1  cases 0/4
 - [x] gateway/session_clarify_lock.py  defs 1/1  cases 0/0
 - [ ] gateway/session_cli_turn.py  defs 11/12  cases 0/21
 - [x] gateway/session_cold_review.py  defs 4/4  cases 0/0
-- [ ] gateway/session_command_sink.py  defs 2/3  cases 0/0
-- [ ] gateway/session_commands.py  defs 12/18  cases 0/2
+- [x] gateway/session_command_sink.py  defs 3/3  cases 0/0
+- [ ] gateway/session_commands.py  defs 15/18  cases 0/2
 - [x] gateway/session_complete_path.py  defs 1/1  cases 0/0
 - [x] gateway/session_completion_notes.py  defs 4/4  cases 0/0
-- [ ] gateway/session_config.py  defs 12/14  cases 0/0
-- [ ] gateway/session_connections.py  defs 10/13  cases 0/0
-- [ ] gateway/session_context.py  defs 14/15  cases 10/121
+- [ ] gateway/session_config.py  defs 11/14  cases 0/0
+- [ ] gateway/session_connections.py  defs 8/13  cases 0/0
+- [ ] gateway/session_context.py  defs 13/15  cases 10/121
 - [x] gateway/session_context_refs.py  defs 6/6  cases 0/0
-- [ ] gateway/session_contract.py  defs 19/19  cases 0/70
-- [ ] gateway/session_control_actions.py  defs 6/7  cases 0/2
+- [ ] gateway/session_contract.py  defs 9/19  cases 0/70
+- [ ] gateway/session_control_actions.py  defs 4/7  cases 0/2
 - [ ] gateway/session_controls.py  defs 60/61  cases 0/39
-- [ ] gateway/session_db_recovery.py  defs 8/10  cases 1/8
-- [ ] gateway/session_deferred_pick.py  defs 4/5  cases 0/0
-- [ ] gateway/session_detached.py  defs 21/21  cases 0/1
+- [ ] gateway/session_db_recovery.py  defs 10/10  cases 1/8
+- [x] gateway/session_deferred_pick.py  defs 5/5  cases 0/0
+- [ ] gateway/session_detached.py  defs 20/21  cases 0/1
 - [x] gateway/session_discovery.py  defs 2/2  cases 0/0
 - [x] gateway/session_display.py  defs 8/8  cases 0/0
 - [ ] gateway/session_envelope.py  defs 13/13  cases 0/5
-- [ ] gateway/session_events.py  defs 6/7  cases 0/1
-- [ ] gateway/session_execution.py  defs 9/10  cases 0/1
-- [ ] gateway/session_finite.py  defs 6/7  cases 0/0
-- [ ] gateway/session_group_controls.py  defs 10/12  cases 0/12
+- [ ] gateway/session_events.py  defs 7/7  cases 0/1
+- [ ] gateway/session_execution.py  defs 10/10  cases 0/1
+- [x] gateway/session_finite.py  defs 7/7  cases 0/0
+- [ ] gateway/session_group_controls.py  defs 11/12  cases 0/12
 - [x] gateway/session_history_mount.py  defs 6/6  cases 0/0
-- [ ] gateway/session_hosted_attachments.py  defs 13/13  cases 0/2
-- [ ] gateway/session_hosted_controls.py  defs 4/5  cases 0/1
-- [ ] gateway/session_hosted_members.py  defs 4/6  cases 0/0
-- [ ] gateway/session_hosted_rpc.py  defs 26/28  cases 0/9
-- [ ] gateway/session_hosted_service.py  defs 15/18  cases 0/5
+- [ ] gateway/session_hosted_attachments.py  defs 12/13  cases 0/2
+- [ ] gateway/session_hosted_controls.py  defs 5/5  cases 0/1
+- [ ] gateway/session_hosted_members.py  defs 5/6  cases 0/0
+- [ ] gateway/session_hosted_rpc.py  defs 27/28  cases 0/9
+- [ ] gateway/session_hosted_service.py  defs 18/18  cases 0/5
 - [ ] gateway/session_hosted_transport.py  defs 13/15  cases 0/10
-- [ ] gateway/session_identity.py  defs 18/18  cases 0/8
-- [ ] gateway/session_images.py  defs 1/2  cases 0/2
-- [x] gateway/session_info_reads.py  defs 4/4  cases 0/0
+- [ ] gateway/session_identity.py  defs 17/18  cases 0/8
+- [ ] gateway/session_images.py  defs 2/2  cases 0/2
+- [ ] gateway/session_info_reads.py  defs 2/4  cases 0/0
 - [ ] gateway/session_ingress.py  defs 23/23  cases 0/4
-- [ ] gateway/session_ingress_burst.py  defs 9/16  cases 0/0
+- [ ] gateway/session_ingress_burst.py  defs 12/16  cases 0/0
 - [ ] gateway/session_ingress_context.py  defs 14/14  cases 0/15
-- [ ] gateway/session_ingress_media.py  defs 29/32  cases 0/20
+- [ ] gateway/session_ingress_media.py  defs 32/32  cases 0/20
 - [ ] gateway/session_kanban.py  defs 13/15  cases 0/19
-- [ ] gateway/session_lifecycle.py  defs 18/21  cases 0/21
+- [ ] gateway/session_lifecycle.py  defs 19/21  cases 0/21
 - [x] gateway/session_listing.py  defs 5/5  cases 0/0
-- [ ] gateway/session_live_listing.py  defs 5/6  cases 0/5
-- [ ] gateway/session_llm_oneshot.py  defs 13/16  cases 0/11
+- [ ] gateway/session_live_listing.py  defs 6/6  cases 0/5
+- [ ] gateway/session_llm_oneshot.py  defs 12/16  cases 0/11
 - [ ] gateway/session_local.py  defs 32/33  cases 1/36
 - [ ] gateway/session_local_adoption.py  defs 5/6  cases 0/0
-- [x] gateway/session_local_close.py  defs 3/3  cases 0/0
-- [ ] gateway/session_local_editor.py  defs 3/4  cases 0/0
-- [ ] gateway/session_local_inventory.py  defs 11/12  cases 0/4
-- [ ] gateway/session_local_mcp.py  defs 25/33  cases 0/14
+- [ ] gateway/session_local_close.py  defs 2/3  cases 0/0
+- [x] gateway/session_local_editor.py  defs 4/4  cases 0/0
+- [ ] gateway/session_local_inventory.py  defs 9/12  cases 0/4
+- [ ] gateway/session_local_mcp.py  defs 28/33  cases 0/14
 - [ ] gateway/session_local_migration.py  defs 14/14  cases 0/2
-- [ ] gateway/session_local_recovery.py  defs 25/26  cases 5/17
+- [ ] gateway/session_local_recovery.py  defs 26/26  cases 5/17
 - [ ] gateway/session_local_route.py  defs 1/1  cases 0/2
 - [ ] gateway/session_local_title.py  defs 4/4  cases 0/2
-- [ ] gateway/session_managed_worker.py  defs 39/40  cases 0/36
+- [ ] gateway/session_managed_worker.py  defs 40/40  cases 0/36
 - [ ] gateway/session_managed_worker_log.py  defs 5/5  cases 0/2
-- [ ] gateway/session_messaging_picks.py  defs 4/6  cases 0/0
-- [ ] gateway/session_mutation_compress.py  defs 8/10  cases 0/1
-- [ ] gateway/session_mutation_model.py  defs 12/14  cases 0/15
-- [x] gateway/session_mutation_policy.py  defs 4/4  cases 0/0
+- [ ] gateway/session_messaging_picks.py  defs 5/6  cases 0/0
+- [ ] gateway/session_mutation_compress.py  defs 5/10  cases 0/1
+- [ ] gateway/session_mutation_model.py  defs 13/14  cases 0/15
+- [ ] gateway/session_mutation_policy.py  defs 3/4  cases 0/0
 - [ ] gateway/session_mutations.py  defs 11/11  cases 0/22
-- [ ] gateway/session_onboarding.py  defs 15/21  cases 0/0
+- [ ] gateway/session_onboarding.py  defs 17/21  cases 0/0
 - [ ] gateway/session_operator.py  defs 2/2  cases 0/1
-- [ ] gateway/session_pending_controls.py  defs 5/6  cases 0/0
+- [x] gateway/session_pending_controls.py  defs 6/6  cases 0/0
 - [ ] gateway/session_persistence.py  defs 37/40  cases 0/14
 - [ ] gateway/session_policy.py  defs 70/70  cases 34/169
-- [ ] gateway/session_policy_credentials.py  defs 14/19  cases 0/0
-- [ ] gateway/session_policy_refresh.py  defs 13/16  cases 0/29
-- [ ] gateway/session_producer_lifecycle.py  defs 8/11  cases 0/0
-- [ ] gateway/session_prompt_pin.py  defs 3/4  cases 0/3
-- [ ] gateway/session_prune.py  defs 2/3  cases 0/0
-- [ ] gateway/session_queued_controls.py  defs 12/13  cases 0/0
+- [ ] gateway/session_policy_credentials.py  defs 16/19  cases 0/0
+- [ ] gateway/session_policy_refresh.py  defs 9/16  cases 0/29
+- [x] gateway/session_producer_lifecycle.py  defs 11/11  cases 0/0
+- [ ] gateway/session_prompt_pin.py  defs 4/4  cases 0/3
+- [x] gateway/session_prune.py  defs 3/3  cases 0/0
+- [ ] gateway/session_queued_controls.py  defs 8/13  cases 0/0
 - [ ] gateway/session_reactions.py  defs 2/3  cases 0/0
 - [x] gateway/session_readiness.py  defs 1/1  cases 0/0
-- [ ] gateway/session_recovery.py  defs 24/26  cases 0/17
+- [ ] gateway/session_recovery.py  defs 26/26  cases 0/17
 - [ ] gateway/session_refine.py  defs 2/2  cases 0/2
 - [ ] gateway/session_results.py  defs 7/8  cases 0/63
 - [x] gateway/session_retirement.py  defs 10/10  cases 0/0
 - [ ] gateway/session_retry_admission.py  defs 6/7  cases 0/0
-- [ ] gateway/session_route_identity.py  defs 6/6  cases 0/4
+- [ ] gateway/session_route_identity.py  defs 4/6  cases 0/4
 - [x] gateway/session_route_recovery.py  defs 13/13  cases 0/0
-- [ ] gateway/session_runtime_workers.py  defs 13/13  cases 0/9
-- [ ] gateway/session_secret_prompt.py  defs 2/2  cases 0/3
+- [ ] gateway/session_runtime_workers.py  defs 11/13  cases 0/9
+- [ ] gateway/session_secret_prompt.py  defs 1/2  cases 0/3
 - [ ] gateway/session_server_requests.py  defs 9/13  cases 1/7
 - [ ] gateway/session_setting_commands.py  defs 9/9  cases 0/2
-- [ ] gateway/session_settlement_recovery.py  defs 11/11  cases 0/20
+- [ ] gateway/session_settlement_recovery.py  defs 11/11  cases 1/20
 - [ ] gateway/session_shell.py  defs 2/3  cases 0/2
 - [x] gateway/session_skin.py  defs 1/1  cases 0/0
 - [ ] gateway/session_stall.py  defs 5/5  cases 13/24
-- [ ] gateway/session_state.py  defs 22/36  cases 0/0
+- [ ] gateway/session_state.py  defs 29/36  cases 0/0
 - [x] gateway/session_sudo_prompt.py  defs 2/2  cases 0/0
-- [ ] gateway/session_surface.py  defs 7/10  cases 0/0
+- [ ] gateway/session_surface.py  defs 9/10  cases 0/0
 - [x] gateway/session_tool_events.py  defs 2/2  cases 0/0
-- [ ] gateway/session_transcript.py  defs 30/33  cases 1/37
-- [ ] gateway/session_tui_config.py  defs 14/19  cases 0/6
-- [ ] gateway/session_tui_ops.py  defs 13/14  cases 0/12
-- [ ] gateway/session_tui_reads.py  defs 8/10  cases 0/0
-- [ ] gateway/session_tui_side.py  defs 11/15  cases 1/6
+- [ ] gateway/session_transcript.py  defs 33/33  cases 1/37
+- [ ] gateway/session_tui_config.py  defs 16/19  cases 0/6
+- [ ] gateway/session_tui_ops.py  defs 11/14  cases 0/12
+- [ ] gateway/session_tui_reads.py  defs 9/10  cases 0/0
+- [ ] gateway/session_tui_side.py  defs 12/15  cases 1/6
 - [x] gateway/session_unattended_unknown.py  defs 4/4  cases 0/0
-- [ ] gateway/session_usage.py  defs 13/14  cases 0/11
+- [ ] gateway/session_usage.py  defs 12/14  cases 0/11
 - [x] gateway/session_vault_prompt.py  defs 2/2  cases 0/0
-- [ ] gateway/session_viewer_automation.py  defs 4/8  cases 0/7
-- [ ] gateway/session_viewer_close.py  defs 25/28  cases 0/36
+- [ ] gateway/session_viewer_automation.py  defs 6/8  cases 0/7
+- [ ] gateway/session_viewer_close.py  defs 24/28  cases 0/36
 - [ ] gateway/session_worker.py  defs 3/3  cases 0/3
 - [ ] gateway/session_worker_child.py  defs 4/4  cases 0/5
-- [ ] gateway/session_worker_construct.py  defs 18/21  cases 0/10
+- [ ] gateway/session_worker_construct.py  defs 21/21  cases 0/10
 - [ ] gateway/session_worker_delegation.py  defs 14/14  cases 0/5
 - [ ] gateway/session_worker_reservation.py  defs 4/4  cases 0/24
 - [x] gateway/session_worker_spawn.py  defs 1/1  cases 0/0
-- [ ] gateway/shutdown_flush.py  defs 17/20  cases 0/33
-- [ ] gateway/shutdown_forensics.py  defs 11/12  cases 0/8
-- [ ] gateway/shutdown_watchdog.py  defs 19/23  cases 0/9
-- [ ] gateway/slash_access.py  defs 9/9  cases 0/7
+- [ ] gateway/shutdown_flush.py  defs 19/20  cases 0/33
+- [ ] gateway/shutdown_forensics.py  defs 10/12  cases 0/8
+- [ ] gateway/shutdown_watchdog.py  defs 21/23  cases 0/9
+- [ ] gateway/slash_access.py  defs 8/9  cases 0/7
 - [ ] gateway/slash_commands.py  defs 56/57  cases 0/18
 - [x] gateway/slash_commands_branch_thread.py  defs 4/4  cases 0/0
-- [ ] gateway/slash_commands_goals.py  defs 9/12  cases 0/10
-- [ ] gateway/slash_commands_login.py  defs 9/11  cases 0/0
-- [ ] gateway/slash_commands_model.py  defs 37/38  cases 0/36
-- [ ] gateway/slash_commands_session.py  defs 44/45  cases 0/1
-- [ ] gateway/slash_commands_status.py  defs 24/31  cases 0/1
-- [ ] gateway/status.py  defs 114/125  cases 31/255
+- [ ] gateway/slash_commands_goals.py  defs 12/12  cases 0/10
+- [x] gateway/slash_commands_login.py  defs 11/11  cases 0/0
+- [ ] gateway/slash_commands_model.py  defs 38/38  cases 0/36
+- [ ] gateway/slash_commands_session.py  defs 45/45  cases 0/1
+- [ ] gateway/slash_commands_status.py  defs 31/31  cases 0/1
+- [ ] gateway/status.py  defs 124/125  cases 31/255
 - [x] gateway/status_inline_source.py  defs 4/4  cases 0/0
 - [x] gateway/status_lock_dir.py  defs 5/5  cases 0/0
 - [ ] gateway/status_phrases.py  defs 10/10  cases 0/3
@@ -2588,347 +2588,347 @@
 - [x] gateway/status_scoped_locks.py  defs 3/3  cases 0/0
 - [x] gateway/status_served.py  defs 2/2  cases 0/0
 - [ ] gateway/sticker_cache.py  defs 8/8  cases 0/6
-- [ ] gateway/stream_consumer.py  defs 55/57  cases 0/127
+- [ ] gateway/stream_consumer.py  defs 57/57  cases 0/127
 - [x] gateway/stream_consumer_directives.py  defs 2/2  cases 0/0
 - [ ] gateway/stream_consumer_fallback.py  defs 19/19  cases 0/14
 - [ ] gateway/stream_consumer_fences.py  defs 2/2  cases 0/7
-- [ ] gateway/stream_consumer_think.py  defs 6/6  cases 0/13
-- [ ] gateway/stream_consumer_transport.py  defs 28/29  cases 0/24
-- [ ] gateway/stream_dispatch.py  defs 4/5  cases 0/0
+- [ ] gateway/stream_consumer_think.py  defs 6/6  cases 2/13
+- [ ] gateway/stream_consumer_transport.py  defs 29/29  cases 0/24
+- [x] gateway/stream_dispatch.py  defs 5/5  cases 0/0
 - [ ] gateway/stream_events.py  defs 7/7  cases 0/5
-- [ ] gateway/streaming_tts_consumer.py  defs 15/16  cases 0/16
+- [ ] gateway/streaming_tts_consumer.py  defs 16/16  cases 0/16
 - [x] gateway/stuck_loop_counts.py  defs 3/3  cases 0/0
 - [ ] gateway/systemd_notify.py  defs 10/11  cases 0/3
-- [ ] gateway/systemd_stop_mark.py  defs 1/2  cases 0/2
+- [ ] gateway/systemd_stop_mark.py  defs 2/2  cases 0/2
 - [ ] gateway/turn_context.py  defs 1/1  cases 0/4
-- [ ] gateway/turn_executor.py  defs 5/8  cases 0/0
-- [ ] gateway/turn_lease.py  defs 11/16  cases 0/14
+- [x] gateway/turn_executor.py  defs 8/8  cases 0/0
+- [ ] gateway/turn_lease.py  defs 15/16  cases 0/14
 - [x] gateway/turn_thread_reset.py  defs 1/1  cases 0/0
-- [ ] gateway/wake.py  defs 9/10  cases 7/19
-- [ ] gateway/warning_notifications.py  defs 10/10  cases 3/10
-- [ ] gateway/webapp_listener.py  defs 25/25  cases 22/59
+- [ ] gateway/wake.py  defs 10/10  cases 7/19
+- [ ] gateway/warning_notifications.py  defs 9/10  cases 3/10
+- [ ] gateway/webapp_listener.py  defs 20/25  cases 22/59
 - [ ] gateway/whatsapp_identity.py  defs 5/5  cases 0/1
-- [ ] hermes_cli/active_sessions.py  defs 44/53  cases 36/40
-- [ ] hermes_cli/connectors_cmd.py  defs 13/17  cases 0/7
-- [ ] hermes_cli/container_boot.py  defs 2/18  cases 9/9
+- [ ] hermes_cli/active_sessions.py  defs 53/53  cases 36/40
+- [ ] hermes_cli/connectors_cmd.py  defs 0/17  cases 0/7
+- [ ] hermes_cli/container_boot.py  defs 0/18  cases 9/9
 - [ ] hermes_cli/dashboard_auth/__init__.py  defs 0/0  cases 91/129
-- [x] hermes_cli/dashboard_auth/audit.py  defs 5/5  cases 5/5
-- [ ] hermes_cli/dashboard_auth/base.py  defs 14/17  cases 0/0
-- [ ] hermes_cli/dashboard_auth/body_limit.py  defs 1/5  cases 0/0
-- [ ] hermes_cli/dashboard_auth/cookies.py  defs 19/24  cases 13/15
-- [x] hermes_cli/dashboard_auth/listener_client.py  defs 3/3  cases 0/0
+- [ ] hermes_cli/dashboard_auth/audit.py  defs 4/5  cases 5/5
+- [ ] hermes_cli/dashboard_auth/base.py  defs 8/17  cases 0/0
+- [x] hermes_cli/dashboard_auth/body_limit.py  defs 5/5  cases 0/0
+- [ ] hermes_cli/dashboard_auth/cookies.py  defs 24/24  cases 13/15
+- [ ] hermes_cli/dashboard_auth/listener_client.py  defs 0/3  cases 0/0
 - [x] hermes_cli/dashboard_auth/login_page.py  defs 4/4  cases 0/0
 - [ ] hermes_cli/dashboard_auth/middleware.py  defs 11/11  cases 0/35
-- [ ] hermes_cli/dashboard_auth/native_flow.py  defs 7/15  cases 0/0
+- [ ] hermes_cli/dashboard_auth/native_flow.py  defs 14/15  cases 0/0
 - [ ] hermes_cli/dashboard_auth/native_http.py  defs 14/14  cases 4/10
-- [x] hermes_cli/dashboard_auth/prefix.py  defs 8/8  cases 0/0
+- [ ] hermes_cli/dashboard_auth/prefix.py  defs 7/8  cases 0/0
 - [x] hermes_cli/dashboard_auth/public_paths.py  defs 0/0  cases 0/0
-- [ ] hermes_cli/dashboard_auth/refresh_singleflight.py  defs 3/4  cases 0/3
-- [x] hermes_cli/dashboard_auth/registry.py  defs 14/14  cases 19/19
-- [ ] hermes_cli/dashboard_auth/request_utils.py  defs 7/8  cases 0/0
-- [ ] hermes_cli/dashboard_auth/routes.py  defs 33/36  cases 0/0
+- [ ] hermes_cli/dashboard_auth/refresh_singleflight.py  defs 4/4  cases 0/3
+- [ ] hermes_cli/dashboard_auth/registry.py  defs 7/14  cases 19/19
+- [x] hermes_cli/dashboard_auth/request_utils.py  defs 8/8  cases 0/0
+- [ ] hermes_cli/dashboard_auth/routes.py  defs 35/36  cases 0/0
 - [ ] hermes_cli/dashboard_auth/token_auth.py  defs 5/5  cases 7/16
-- [ ] hermes_cli/dashboard_auth/ws_tickets.py  defs 3/7  cases 10/10
-- [ ] hermes_cli/dashboard_procs.py  defs 40/42  cases 3/61
-- [ ] hermes_cli/dashboard_register.py  defs 7/8  cases 0/15
+- [ ] hermes_cli/dashboard_auth/ws_tickets.py  defs 6/7  cases 10/10
+- [ ] hermes_cli/dashboard_procs.py  defs 31/42  cases 3/61
+- [ ] hermes_cli/dashboard_register.py  defs 6/8  cases 0/15
 - [x] hermes_cli/dingtalk_auth.py  defs 8/8  cases 11/11
-- [ ] hermes_cli/foreign_sessions.py  defs 16/19  cases 0/14
-- [ ] hermes_cli/foreign_sessions_browser.py  defs 6/8  cases 0/3
-- [ ] hermes_cli/gateway.py  defs 246/255  cases 38/449
-- [ ] hermes_cli/gateway_agent.py  defs 102/117  cases 5/97
-- [ ] hermes_cli/gateway_automation.py  defs 43/47  cases 6/6
-- [ ] hermes_cli/gateway_chat.py  defs 20/20  cases 4/22
-- [ ] hermes_cli/gateway_chat_commands.py  defs 6/14  cases 0/2
-- [x] hermes_cli/gateway_chat_listing.py  defs 2/2  cases 0/0
+- [ ] hermes_cli/foreign_sessions.py  defs 17/19  cases 0/14
+- [ ] hermes_cli/foreign_sessions_browser.py  defs 8/8  cases 0/3
+- [ ] hermes_cli/gateway.py  defs 244/255  cases 38/449
+- [ ] hermes_cli/gateway_agent.py  defs 114/117  cases 52/97
+- [ ] hermes_cli/gateway_automation.py  defs 46/47  cases 6/6
+- [ ] hermes_cli/gateway_chat.py  defs 18/20  cases 4/22
+- [ ] hermes_cli/gateway_chat_commands.py  defs 1/14  cases 0/2
+- [ ] hermes_cli/gateway_chat_listing.py  defs 1/2  cases 0/0
 - [x] hermes_cli/gateway_chat_startup.py  defs 2/2  cases 1/1
-- [ ] hermes_cli/gateway_chat_view.py  defs 36/37  cases 0/17
-- [ ] hermes_cli/gateway_cli_commands.py  defs 2/4  cases 0/8
+- [ ] hermes_cli/gateway_chat_view.py  defs 37/37  cases 0/17
+- [ ] hermes_cli/gateway_cli_commands.py  defs 0/4  cases 0/8
 - [ ] hermes_cli/gateway_client.py  defs 21/26  cases 40/118
 - [ ] hermes_cli/gateway_command_errors.py  defs 3/4  cases 0/0
 - [ ] hermes_cli/gateway_connection.py  defs 29/33  cases 3/13
 - [ ] hermes_cli/gateway_enroll.py  defs 5/6  cases 6/6
-- [ ] hermes_cli/gateway_host_record.py  defs 1/2  cases 0/0
-- [ ] hermes_cli/gateway_launchd.py  defs 39/40  cases 0/0
+- [ ] hermes_cli/gateway_host_record.py  defs 0/2  cases 0/0
+- [ ] hermes_cli/gateway_launchd.py  defs 37/40  cases 0/0
 - [ ] hermes_cli/gateway_launchd_runtime.py  defs 6/8  cases 0/1
 - [ ] hermes_cli/gateway_lifecycle_guards.py  defs 6/6  cases 2/11
-- [ ] hermes_cli/gateway_migrate.py  defs 76/78  cases 39/41
-- [x] hermes_cli/gateway_migrate_guards.py  defs 11/11  cases 0/0
+- [ ] hermes_cli/gateway_migrate.py  defs 66/78  cases 39/41
+- [ ] hermes_cli/gateway_migrate_guards.py  defs 10/11  cases 0/0
 - [ ] hermes_cli/gateway_multiplex_mode.py  defs 19/21  cases 7/11
-- [ ] hermes_cli/gateway_multiplex_s6.py  defs 9/9  cases 1/4
+- [ ] hermes_cli/gateway_multiplex_s6.py  defs 8/9  cases 1/4
 - [ ] hermes_cli/gateway_multiplex_served.py  defs 7/7  cases 0/3
-- [ ] hermes_cli/gateway_mutations.py  defs 9/11  cases 0/6
-- [ ] hermes_cli/gateway_plugin_commands.py  defs 8/20  cases 0/26
+- [ ] hermes_cli/gateway_mutations.py  defs 11/11  cases 0/6
+- [ ] hermes_cli/gateway_plugin_commands.py  defs 4/20  cases 26/26
 - [ ] hermes_cli/gateway_profile_lifecycle.py  defs 11/12  cases 0/11
-- [ ] hermes_cli/gateway_queue.py  defs 11/13  cases 0/1
-- [ ] hermes_cli/gateway_replay_gap.py  defs 3/3  cases 5/6
-- [ ] hermes_cli/gateway_rollback.py  defs 5/5  cases 0/2
-- [ ] hermes_cli/gateway_runtime.py  defs 17/20  cases 1/39
+- [ ] hermes_cli/gateway_queue.py  defs 10/13  cases 0/1
+- [ ] hermes_cli/gateway_replay_gap.py  defs 2/3  cases 5/6
+- [ ] hermes_cli/gateway_rollback.py  defs 4/5  cases 2/2
+- [ ] hermes_cli/gateway_runtime.py  defs 15/20  cases 1/39
 - [x] hermes_cli/gateway_runtime_cli.py  defs 2/2  cases 0/0
 - [ ] hermes_cli/gateway_runtime_discovery.py  defs 12/14  cases 0/18
 - [x] hermes_cli/gateway_runtime_multiplex.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/gateway_runtime_replace.py  defs 6/8  cases 0/9
-- [ ] hermes_cli/gateway_runtime_service.py  defs 9/15  cases 0/18
-- [ ] hermes_cli/gateway_runtime_service_identity.py  defs 17/19  cases 0/0
+- [ ] hermes_cli/gateway_runtime_replace.py  defs 3/8  cases 0/9
+- [ ] hermes_cli/gateway_runtime_service.py  defs 5/15  cases 0/18
+- [ ] hermes_cli/gateway_runtime_service_identity.py  defs 15/19  cases 0/0
 - [ ] hermes_cli/gateway_runtime_start.py  defs 5/5  cases 0/2
-- [ ] hermes_cli/gateway_service_owner.py  defs 11/12  cases 0/4
-- [ ] hermes_cli/gateway_session_store.py  defs 37/42  cases 29/50
-- [ ] hermes_cli/gateway_setting_commands.py  defs 1/5  cases 0/6
-- [x] hermes_cli/gateway_setup_service.py  defs 4/4  cases 0/0
+- [ ] hermes_cli/gateway_service_owner.py  defs 10/12  cases 0/4
+- [ ] hermes_cli/gateway_session_store.py  defs 36/42  cases 32/50
+- [ ] hermes_cli/gateway_setting_commands.py  defs 4/5  cases 0/6
+- [ ] hermes_cli/gateway_setup_service.py  defs 3/4  cases 0/0
 - [ ] hermes_cli/gateway_setup_wizard.py  defs 20/23  cases 0/7
-- [ ] hermes_cli/gateway_side.py  defs 2/2  cases 0/4
+- [ ] hermes_cli/gateway_side.py  defs 2/2  cases 1/4
 - [x] hermes_cli/gateway_status_notes.py  defs 3/3  cases 0/0
 - [x] hermes_cli/gateway_supervised_restart.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/gateway_tools.py  defs 28/36  cases 0/9
-- [ ] hermes_cli/gateway_tools_notify.py  defs 8/10  cases 1/9
-- [ ] hermes_cli/gateway_windows.py  defs 92/111  cases 1/54
-- [x] hermes_cli/gateway_windows_legacy.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/goal_command.py  defs 11/17  cases 2/16
-- [ ] hermes_cli/goals.py  defs 88/90  cases 79/84
+- [ ] hermes_cli/gateway_tools.py  defs 25/36  cases 9/9
+- [ ] hermes_cli/gateway_tools_notify.py  defs 9/10  cases 7/9
+- [ ] hermes_cli/gateway_windows.py  defs 79/111  cases 1/54
+- [ ] hermes_cli/gateway_windows_legacy.py  defs 4/5  cases 0/0
+- [ ] hermes_cli/goal_command.py  defs 17/17  cases 2/16
+- [ ] hermes_cli/goals.py  defs 90/90  cases 79/84
 - [ ] hermes_cli/heartbeat.py  defs 19/25  cases 27/41
-- [x] hermes_cli/image_provenance.py  defs 5/5  cases 0/0
-- [ ] hermes_cli/journey.py  defs 19/22  cases 3/3
+- [ ] hermes_cli/image_provenance.py  defs 4/5  cases 0/0
+- [ ] hermes_cli/journey.py  defs 16/22  cases 3/3
 - [ ] hermes_cli/main_container.py  defs 1/2  cases 0/0
-- [x] hermes_cli/observability/__init__.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/observability/relay_shared_metrics.py  defs 113/120  cases 7/62
-- [ ] hermes_cli/observability/shared_metrics.py  defs 41/44  cases 0/23
-- [ ] hermes_cli/observability/shared_metrics_busy.py  defs 18/23  cases 0/9
-- [ ] hermes_cli/observability/shared_metrics_catalog.py  defs 20/26  cases 0/0
-- [ ] hermes_cli/observability/shared_metrics_connectors.py  defs 11/11  cases 0/12
+- [ ] hermes_cli/observability/__init__.py  defs 0/2  cases 0/0
+- [ ] hermes_cli/observability/relay_shared_metrics.py  defs 117/120  cases 7/62
+- [ ] hermes_cli/observability/shared_metrics.py  defs 44/44  cases 1/23
+- [ ] hermes_cli/observability/shared_metrics_busy.py  defs 22/23  cases 0/9
+- [ ] hermes_cli/observability/shared_metrics_catalog.py  defs 19/26  cases 0/0
+- [ ] hermes_cli/observability/shared_metrics_connectors.py  defs 10/11  cases 0/12
 - [ ] hermes_cli/observability/shared_metrics_consent.py  defs 8/8  cases 9/192
-- [ ] hermes_cli/observability/shared_metrics_contract.py  defs 74/78  cases 4/16
-- [ ] hermes_cli/observability/shared_metrics_desktop.py  defs 21/24  cases 0/11
-- [ ] hermes_cli/observability/shared_metrics_disabled.py  defs 15/20  cases 0/0
+- [ ] hermes_cli/observability/shared_metrics_contract.py  defs 77/78  cases 4/16
+- [ ] hermes_cli/observability/shared_metrics_desktop.py  defs 23/24  cases 0/11
+- [ ] hermes_cli/observability/shared_metrics_disabled.py  defs 17/20  cases 0/0
 - [x] hermes_cli/observability/shared_metrics_drift.py  defs 2/2  cases 0/0
 - [ ] hermes_cli/observability/shared_metrics_efficiency.py  defs 31/33  cases 0/10
 - [ ] hermes_cli/observability/shared_metrics_engagement.py  defs 24/26  cases 0/13
-- [ ] hermes_cli/observability/shared_metrics_events.py  defs 13/13  cases 0/4
-- [x] hermes_cli/observability/shared_metrics_fields.py  defs 20/20  cases 0/0
-- [ ] hermes_cli/observability/shared_metrics_gateway.py  defs 33/34  cases 0/3
-- [ ] hermes_cli/observability/shared_metrics_harness.py  defs 28/30  cases 2/13
-- [ ] hermes_cli/observability/shared_metrics_install.py  defs 14/16  cases 0/27
-- [ ] hermes_cli/observability/shared_metrics_install_run.py  defs 9/11  cases 0/11
-- [ ] hermes_cli/observability/shared_metrics_loop.py  defs 30/32  cases 3/17
+- [ ] hermes_cli/observability/shared_metrics_events.py  defs 12/13  cases 0/4
+- [ ] hermes_cli/observability/shared_metrics_fields.py  defs 19/20  cases 0/0
+- [ ] hermes_cli/observability/shared_metrics_gateway.py  defs 27/34  cases 0/3
+- [ ] hermes_cli/observability/shared_metrics_harness.py  defs 21/30  cases 2/13
+- [ ] hermes_cli/observability/shared_metrics_install.py  defs 13/16  cases 0/27
+- [ ] hermes_cli/observability/shared_metrics_install_run.py  defs 11/11  cases 0/11
+- [ ] hermes_cli/observability/shared_metrics_loop.py  defs 20/32  cases 3/17
 - [ ] hermes_cli/observability/shared_metrics_model.py  defs 15/15  cases 0/4
-- [ ] hermes_cli/observability/shared_metrics_prepared_compaction.py  defs 5/5  cases 0/3
-- [ ] hermes_cli/observability/shared_metrics_process.py  defs 16/16  cases 0/13
+- [ ] hermes_cli/observability/shared_metrics_prepared_compaction.py  defs 3/5  cases 0/3
+- [ ] hermes_cli/observability/shared_metrics_process.py  defs 14/16  cases 0/13
 - [ ] hermes_cli/observability/shared_metrics_send_config.py  defs 3/3  cases 0/16
-- [ ] hermes_cli/observability/shared_metrics_sender.py  defs 16/20  cases 0/72
-- [ ] hermes_cli/observability/shared_metrics_setup.py  defs 27/28  cases 0/0
-- [ ] hermes_cli/observability/shared_metrics_signals.py  defs 7/8  cases 0/29
-- [ ] hermes_cli/observability/shared_metrics_snapshot.py  defs 11/12  cases 0/0
+- [ ] hermes_cli/observability/shared_metrics_sender.py  defs 20/20  cases 0/72
+- [x] hermes_cli/observability/shared_metrics_setup.py  defs 28/28  cases 0/0
+- [ ] hermes_cli/observability/shared_metrics_signals.py  defs 8/8  cases 6/29
+- [ ] hermes_cli/observability/shared_metrics_snapshot.py  defs 10/12  cases 0/0
 - [ ] hermes_cli/observability/shared_metrics_startup.py  defs 13/14  cases 0/0
 - [ ] hermes_cli/observability/shared_metrics_subscriber.py  defs 10/11  cases 0/0
 - [x] hermes_cli/observability/shared_metrics_update.py  defs 20/20  cases 0/0
 - [ ] hermes_cli/pairing.py  defs 5/5  cases 0/1
-- [ ] hermes_cli/pets.py  defs 21/22  cases 0/2
-- [ ] hermes_cli/platform_actions.py  defs 12/15  cases 2/22
-- [ ] hermes_cli/platforms.py  defs 3/4  cases 0/0
-- [ ] hermes_cli/portal_cli.py  defs 7/8  cases 0/0
+- [ ] hermes_cli/pets.py  defs 17/22  cases 0/2
+- [ ] hermes_cli/platform_actions.py  defs 15/15  cases 2/22
+- [ ] hermes_cli/platforms.py  defs 0/4  cases 0/0
+- [ ] hermes_cli/portal_cli.py  defs 3/8  cases 0/0
 - [ ] hermes_cli/resource_limits.py  defs 9/9  cases 0/21
-- [ ] hermes_cli/send_cmd.py  defs 8/8  cases 11/13
-- [ ] hermes_cli/service_manager.py  defs 49/61  cases 10/12
-- [x] hermes_cli/setup_platforms.py  defs 17/17  cases 0/0
-- [ ] hermes_cli/shared_session_attach.py  defs 3/3  cases 0/3
+- [ ] hermes_cli/send_cmd.py  defs 6/8  cases 11/13
+- [ ] hermes_cli/service_manager.py  defs 38/61  cases 10/12
+- [ ] hermes_cli/setup_platforms.py  defs 16/17  cases 0/0
+- [ ] hermes_cli/shared_session_attach.py  defs 2/3  cases 0/3
 - [x] hermes_cli/slack_cli.py  defs 2/2  cases 7/7
-- [ ] hermes_cli/ssh_workspace_fs.py  defs 16/19  cases 11/11
+- [ ] hermes_cli/ssh_workspace_fs.py  defs 18/19  cases 11/11
 - [ ] hermes_cli/staged_uploads.py  defs 10/10  cases 3/23
-- [ ] hermes_cli/steward.py  defs 6/6  cases 12/26
+- [ ] hermes_cli/steward.py  defs 5/6  cases 12/26
 - [ ] hermes_cli/stream_json.py  defs 10/10  cases 0/1
-- [ ] hermes_cli/subcommands/acp.py  defs 0/1  cases 0/1
-- [ ] hermes_cli/subcommands/connectors.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/dashboard.py  defs 0/4  cases 0/1
-- [ ] hermes_cli/subcommands/gateway.py  defs 0/8  cases 3/3
-- [ ] hermes_cli/subcommands/journey.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/monitoring.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/pairing.py  defs 0/1  cases 0/0
-- [ ] hermes_cli/subcommands/pets.py  defs 0/1  cases 0/0
-- [x] hermes_cli/subcommands/slack.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/acp.py  defs 1/1  cases 1/1
+- [x] hermes_cli/subcommands/connectors.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/dashboard.py  defs 4/4  cases 1/1
+- [x] hermes_cli/subcommands/gateway.py  defs 8/8  cases 3/3
+- [x] hermes_cli/subcommands/journey.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/monitoring.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/pairing.py  defs 1/1  cases 0/0
+- [x] hermes_cli/subcommands/pets.py  defs 1/1  cases 0/0
+- [ ] hermes_cli/subcommands/slack.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/tools.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/webapp.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/webhook.py  defs 0/1  cases 0/0
 - [ ] hermes_cli/subcommands/whatsapp.py  defs 0/2  cases 0/0
-- [ ] hermes_cli/telegram_managed_bot.py  defs 7/11  cases 0/9
-- [ ] hermes_cli/web_asset_mime_types.py  defs 0/1  cases 0/6
+- [ ] hermes_cli/telegram_managed_bot.py  defs 6/11  cases 8/9
+- [ ] hermes_cli/web_asset_mime_types.py  defs 1/1  cases 0/6
 - [ ] hermes_cli/web_build_limits.py  defs 7/8  cases 10/10
-- [ ] hermes_cli/web_deps.py  defs 5/23  cases 0/0
-- [ ] hermes_cli/web_git.py  defs 56/60  cases 9/9
+- [x] hermes_cli/web_deps.py  defs 23/23  cases 0/0
+- [ ] hermes_cli/web_git.py  defs 59/60  cases 9/9
 - [ ] hermes_cli/web_host_terminal.py  defs 7/7  cases 6/8
-- [ ] hermes_cli/web_host_terminal_sessions.py  defs 35/39  cases 6/30
-- [x] hermes_cli/web_models.py  defs 97/97  cases 2/2
-- [ ] hermes_cli/web_read_coalescing.py  defs 1/2  cases 1/1
+- [ ] hermes_cli/web_host_terminal_sessions.py  defs 39/39  cases 6/30
+- [ ] hermes_cli/web_models.py  defs 96/97  cases 2/2
+- [x] hermes_cli/web_read_coalescing.py  defs 2/2  cases 1/1
 - [x] hermes_cli/web_routers/__init__.py  defs 0/0  cases 0/0
 - [ ] hermes_cli/web_routers/_common.py  defs 12/12  cases 1/2
-- [x] hermes_cli/web_routers/actions.py  defs 20/20  cases 3/3
+- [ ] hermes_cli/web_routers/actions.py  defs 18/20  cases 3/3
 - [ ] hermes_cli/web_routers/analytics.py  defs 10/12  cases 9/9
 - [ ] hermes_cli/web_routers/audio.py  defs 20/20  cases 3/4
 - [ ] hermes_cli/web_routers/chat_workspaces.py  defs 2/3  cases 0/0
 - [ ] hermes_cli/web_routers/chat_ws.py  defs 24/29  cases 2/5
 - [x] hermes_cli/web_routers/chat_ws_errors.py  defs 3/3  cases 0/0
-- [ ] hermes_cli/web_routers/config_env.py  defs 34/39  cases 6/18
-- [ ] hermes_cli/web_routers/cron.py  defs 38/49  cases 22/61
-- [ ] hermes_cli/web_routers/dashboard_ui.py  defs 18/23  cases 0/1
-- [ ] hermes_cli/web_routers/delegation.py  defs 15/15  cases 0/6
-- [ ] hermes_cli/web_routers/desktop_plugins.py  defs 2/8  cases 0/0
+- [ ] hermes_cli/web_routers/config_env.py  defs 29/39  cases 6/18
+- [ ] hermes_cli/web_routers/cron.py  defs 35/49  cases 22/61
+- [ ] hermes_cli/web_routers/dashboard_ui.py  defs 16/23  cases 0/1
+- [ ] hermes_cli/web_routers/delegation.py  defs 14/15  cases 0/6
+- [ ] hermes_cli/web_routers/desktop_plugins.py  defs 0/8  cases 0/0
 - [x] hermes_cli/web_routers/display.py  defs 6/6  cases 0/0
-- [ ] hermes_cli/web_routers/files.py  defs 64/65  cases 0/1
+- [ ] hermes_cli/web_routers/files.py  defs 62/65  cases 0/1
 - [ ] hermes_cli/web_routers/git.py  defs 3/25  cases 2/15
-- [ ] hermes_cli/web_routers/local_models.py  defs 73/74  cases 45/46
-- [ ] hermes_cli/web_routers/mcp.py  defs 8/18  cases 2/7
-- [ ] hermes_cli/web_routers/memory_providers.py  defs 17/34  cases 3/3
-- [ ] hermes_cli/web_routers/messaging.py  defs 53/53  cases 21/24
+- [ ] hermes_cli/web_routers/local_models.py  defs 59/74  cases 45/46
+- [ ] hermes_cli/web_routers/mcp.py  defs 7/18  cases 2/7
+- [ ] hermes_cli/web_routers/memory_providers.py  defs 14/34  cases 3/3
+- [ ] hermes_cli/web_routers/messaging.py  defs 52/53  cases 21/24
 - [ ] hermes_cli/web_routers/models.py  defs 13/13  cases 11/16
-- [ ] hermes_cli/web_routers/oauth.py  defs 44/46  cases 0/3
-- [x] hermes_cli/web_routers/ops.py  defs 37/37  cases 12/12
-- [ ] hermes_cli/web_routers/profiles.py  defs 36/54  cases 2/39
-- [ ] hermes_cli/web_routers/sessions.py  defs 24/35  cases 1/46
+- [ ] hermes_cli/web_routers/oauth.py  defs 42/46  cases 0/3
+- [ ] hermes_cli/web_routers/ops.py  defs 34/37  cases 12/12
+- [ ] hermes_cli/web_routers/profiles.py  defs 33/54  cases 2/39
+- [ ] hermes_cli/web_routers/sessions.py  defs 23/35  cases 1/46
 - [x] hermes_cli/web_routers/shared_metrics.py  defs 4/4  cases 0/0
 - [ ] hermes_cli/web_routers/skills.py  defs 20/21  cases 5/5
-- [ ] hermes_cli/web_routers/status.py  defs 33/41  cases 4/4
-- [ ] hermes_cli/web_routers/tools.py  defs 27/28  cases 2/5
-- [ ] hermes_cli/web_routers/ui_preferences.py  defs 1/3  cases 0/2
+- [ ] hermes_cli/web_routers/status.py  defs 32/41  cases 4/4
+- [ ] hermes_cli/web_routers/tools.py  defs 26/28  cases 2/5
+- [ ] hermes_cli/web_routers/ui_preferences.py  defs 0/3  cases 0/2
 - [x] hermes_cli/web_routers/uploads.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/web_routers/webapp.py  defs 11/16  cases 0/0
+- [ ] hermes_cli/web_routers/webapp.py  defs 10/16  cases 0/0
 - [ ] hermes_cli/web_routers/webapp_access.py  defs 5/11  cases 0/0
-- [ ] hermes_cli/web_server.py  defs 38/43  cases 234/758
+- [ ] hermes_cli/web_server.py  defs 41/43  cases 234/758
 - [x] hermes_cli/web_server_app.py  defs 4/4  cases 0/0
-- [x] hermes_cli/web_server_boundary.py  defs 15/15  cases 0/0
+- [ ] hermes_cli/web_server_boundary.py  defs 12/15  cases 0/0
 - [ ] hermes_cli/web_server_chat.py  defs 25/26  cases 6/7
-- [ ] hermes_cli/web_server_config.py  defs 33/37  cases 7/28
-- [ ] hermes_cli/web_server_cron.py  defs 21/22  cases 8/24
-- [ ] hermes_cli/web_server_dashboard.py  defs 37/41  cases 5/5
-- [ ] hermes_cli/web_server_file_response.py  defs 4/7  cases 0/0
-- [ ] hermes_cli/web_server_file_tickets.py  defs 7/9  cases 0/0
-- [ ] hermes_cli/web_server_files.py  defs 27/27  cases 0/75
-- [ ] hermes_cli/web_server_gateway.py  defs 26/28  cases 21/47
-- [ ] hermes_cli/web_server_idle_exit.py  defs 11/12  cases 2/4
-- [ ] hermes_cli/web_server_idle_proof.py  defs 1/2  cases 2/4
-- [ ] hermes_cli/web_server_lifecycle.py  defs 18/20  cases 24/24
-- [ ] hermes_cli/web_server_mcp.py  defs 3/5  cases 0/0
-- [x] hermes_cli/web_server_memory.py  defs 23/23  cases 1/1
-- [ ] hermes_cli/web_server_messaging.py  defs 15/16  cases 0/1
-- [ ] hermes_cli/web_server_oauth.py  defs 9/13  cases 11/21
+- [ ] hermes_cli/web_server_config.py  defs 36/37  cases 7/28
+- [ ] hermes_cli/web_server_cron.py  defs 22/22  cases 8/24
+- [ ] hermes_cli/web_server_dashboard.py  defs 38/41  cases 5/5
+- [x] hermes_cli/web_server_file_response.py  defs 7/7  cases 0/0
+- [ ] hermes_cli/web_server_file_tickets.py  defs 8/9  cases 0/0
+- [ ] hermes_cli/web_server_files.py  defs 26/27  cases 0/75
+- [ ] hermes_cli/web_server_gateway.py  defs 28/28  cases 21/47
+- [ ] hermes_cli/web_server_idle_exit.py  defs 12/12  cases 2/4
+- [ ] hermes_cli/web_server_idle_proof.py  defs 2/2  cases 2/4
+- [x] hermes_cli/web_server_lifecycle.py  defs 20/20  cases 24/24
+- [x] hermes_cli/web_server_mcp.py  defs 5/5  cases 0/0
+- [ ] hermes_cli/web_server_memory.py  defs 20/23  cases 1/1
+- [ ] hermes_cli/web_server_messaging.py  defs 16/16  cases 0/1
+- [ ] hermes_cli/web_server_oauth.py  defs 13/13  cases 11/21
 - [ ] hermes_cli/web_server_owner_exit.py  defs 2/2  cases 2/3
 - [ ] hermes_cli/web_server_plugin_profiles.py  defs 17/18  cases 2/31
 - [ ] hermes_cli/web_server_profiles.py  defs 21/23  cases 1/15
-- [x] hermes_cli/web_server_remote_media.py  defs 4/4  cases 0/0
+- [ ] hermes_cli/web_server_remote_media.py  defs 3/4  cases 0/0
 - [x] hermes_cli/web_server_session_token.py  defs 1/1  cases 7/7
-- [ ] hermes_cli/web_server_sessions.py  defs 14/15  cases 2/39
-- [x] hermes_cli/web_server_skew_exit.py  defs 4/4  cases 6/6
+- [ ] hermes_cli/web_server_sessions.py  defs 15/15  cases 2/39
+- [ ] hermes_cli/web_server_skew_exit.py  defs 3/4  cases 6/6
 - [x] hermes_cli/web_server_static_assets.py  defs 2/2  cases 0/0
-- [ ] hermes_cli/web_server_surface.py  defs 5/5  cases 0/4
+- [ ] hermes_cli/web_server_surface.py  defs 4/5  cases 0/4
 - [ ] hermes_cli/web_session_sockets.py  defs 5/7  cases 0/0
-- [ ] hermes_cli/web_upload_limit.py  defs 0/3  cases 0/0
+- [x] hermes_cli/web_upload_limit.py  defs 3/3  cases 0/0
 - [x] hermes_cli/web_whatsapp_session.py  defs 2/2  cases 0/0
 - [ ] hermes_cli/webapp.py  defs 8/8  cases 9/32
-- [ ] hermes_cli/webapp_access.py  defs 23/24  cases 0/39
-- [ ] hermes_cli/webapp_launcher.py  defs 20/23  cases 1/52
-- [ ] hermes_cli/webapp_page_policy.py  defs 1/6  cases 0/0
+- [ ] hermes_cli/webapp_access.py  defs 18/24  cases 0/39
+- [ ] hermes_cli/webapp_launcher.py  defs 15/23  cases 1/52
+- [x] hermes_cli/webapp_page_policy.py  defs 6/6  cases 0/0
 - [x] hermes_cli/webapp_previews.py  defs 1/1  cases 0/0
-- [ ] hermes_cli/webapp_sign_in.py  defs 11/16  cases 0/0
-- [ ] hermes_cli/webhook.py  defs 10/20  cases 2/22
-- [ ] hermes_cli/windows_ssh_runtime.py  defs 33/41  cases 0/8
-- [ ] plugins/dashboard_auth/_shared.py  defs 22/23  cases 18/18
-- [ ] plugins/dashboard_auth/basic/__init__.py  defs 14/16  cases 5/5
+- [ ] hermes_cli/webapp_sign_in.py  defs 14/16  cases 0/0
+- [ ] hermes_cli/webhook.py  defs 7/20  cases 2/22
+- [ ] hermes_cli/windows_ssh_runtime.py  defs 26/41  cases 0/8
+- [x] plugins/dashboard_auth/_shared.py  defs 23/23  cases 18/18
+- [x] plugins/dashboard_auth/basic/__init__.py  defs 16/16  cases 5/5
 - [ ] plugins/dashboard_auth/drain/__init__.py  defs 10/11  cases 0/0
 - [ ] plugins/dashboard_auth/nous/__init__.py  defs 12/13  cases 0/0
-- [ ] plugins/dashboard_auth/self_hosted/__init__.py  defs 16/18  cases 0/0
-- [ ] plugins/dashboard_auth/session_token/__init__.py  defs 9/10  cases 0/0
-- [ ] plugins/platforms/a2a/__init__.py  defs 4/5  cases 0/1
-- [ ] plugins/platforms/a2a/adapter.py  defs 14/75  cases 103/177
-- [ ] plugins/platforms/a2a/protocol.py  defs 57/62  cases 0/0
-- [ ] plugins/platforms/a2a/security.py  defs 20/21  cases 0/0
-- [ ] plugins/platforms/a2a/tools.py  defs 22/23  cases 0/0
-- [ ] plugins/platforms/bluebubbles/adapter.py  defs 15/55  cases 0/24
+- [ ] plugins/dashboard_auth/self_hosted/__init__.py  defs 17/18  cases 0/0
+- [ ] plugins/dashboard_auth/session_token/__init__.py  defs 8/10  cases 0/0
+- [ ] plugins/platforms/a2a/__init__.py  defs 5/5  cases 0/1
+- [ ] plugins/platforms/a2a/adapter.py  defs 75/75  cases 103/177
+- [x] plugins/platforms/a2a/protocol.py  defs 62/62  cases 0/0
+- [x] plugins/platforms/a2a/security.py  defs 21/21  cases 0/0
+- [x] plugins/platforms/a2a/tools.py  defs 23/23  cases 0/0
+- [ ] plugins/platforms/bluebubbles/adapter.py  defs 55/55  cases 0/24
 - [x] plugins/platforms/bluebubbles/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/buzz/adapter.py  defs 24/119  cases 0/223
-- [ ] plugins/platforms/buzz/buzz_cursors.py  defs 7/8  cases 0/0
-- [x] plugins/platforms/buzz/nostr_auth.py  defs 11/11  cases 0/0
+- [ ] plugins/platforms/buzz/adapter.py  defs 1/119  cases 0/223
+- [ ] plugins/platforms/buzz/buzz_cursors.py  defs 0/8  cases 0/0
+- [ ] plugins/platforms/buzz/nostr_auth.py  defs 0/11  cases 0/0
 - [x] plugins/platforms/buzz/send_targets.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/dingtalk/adapter.py  defs 12/58  cases 0/48
+- [ ] plugins/platforms/dingtalk/adapter.py  defs 0/58  cases 0/48
 - [x] plugins/platforms/dingtalk/gateway_env.py  defs 0/0  cases 0/0
-- [x] plugins/platforms/dingtalk/inbound.py  defs 11/11  cases 0/0
-- [ ] plugins/platforms/discord/adapter.py  defs 264/305  cases 132/356
+- [ ] plugins/platforms/dingtalk/inbound.py  defs 6/11  cases 0/0
+- [ ] plugins/platforms/discord/adapter.py  defs 298/305  cases 150/356
 - [x] plugins/platforms/discord/adapter_authorization.py  defs 2/2  cases 5/5
-- [ ] plugins/platforms/discord/adapter_component_auth.py  defs 2/2  cases 2/4
-- [ ] plugins/platforms/discord/adapter_config_readers.py  defs 3/3  cases 0/7
-- [ ] plugins/platforms/discord/adapter_exec_approval_view.py  defs 0/1  cases 0/0
+- [ ] plugins/platforms/discord/adapter_component_auth.py  defs 2/2  cases 3/4
+- [ ] plugins/platforms/discord/adapter_config_readers.py  defs 3/3  cases 1/7
+- [x] plugins/platforms/discord/adapter_exec_approval_view.py  defs 1/1  cases 0/0
 - [x] plugins/platforms/discord/adapter_hint.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/discord/adapter_media.py  defs 8/16  cases 0/10
-- [ ] plugins/platforms/discord/adapter_slash_auth.py  defs 3/3  cases 0/1
-- [ ] plugins/platforms/discord/adapter_thread_titles.py  defs 9/10  cases 0/0
-- [ ] plugins/platforms/discord/adapter_voice_info.py  defs 0/4  cases 0/2
+- [ ] plugins/platforms/discord/adapter_media.py  defs 15/16  cases 6/10
+- [ ] plugins/platforms/discord/adapter_slash_auth.py  defs 2/3  cases 0/1
+- [ ] plugins/platforms/discord/adapter_thread_titles.py  defs 8/10  cases 0/0
+- [ ] plugins/platforms/discord/adapter_voice_info.py  defs 4/4  cases 0/2
 - [x] plugins/platforms/discord/dashboard_card.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/discord/ffmpeg_utils.py  defs 2/2  cases 1/1
 - [x] plugins/platforms/discord/gateway_env.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/discord/onboarding.py  defs 14/14  cases 0/0
-- [ ] plugins/platforms/discord/recovery.py  defs 4/5  cases 0/0
+- [x] plugins/platforms/discord/recovery.py  defs 5/5  cases 0/0
 - [x] plugins/platforms/discord/send_targets.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/discord/voice_mixer.py  defs 1/16  cases 0/7
-- [ ] plugins/platforms/email/adapter.py  defs 12/67  cases 0/69
+- [ ] plugins/platforms/discord/voice_mixer.py  defs 16/16  cases 0/7
+- [ ] plugins/platforms/email/adapter.py  defs 0/67  cases 0/69
 - [x] plugins/platforms/email/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/feishu/adapter.py  defs 37/267  cases 14/169
+- [ ] plugins/platforms/feishu/adapter.py  defs 249/267  cases 14/169
 - [x] plugins/platforms/feishu/adapter_hint.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/feishu/dashboard_card.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/feishu/feishu_admission_diagnostics.py  defs 1/1  cases 0/0
-- [ ] plugins/platforms/feishu/feishu_comment.py  defs 4/42  cases 0/17
-- [ ] plugins/platforms/feishu/feishu_comment_rules.py  defs 26/27  cases 8/11
-- [ ] plugins/platforms/feishu/feishu_meeting_invite.py  defs 13/13  cases 0/4
+- [ ] plugins/platforms/feishu/feishu_comment.py  defs 42/42  cases 0/17
+- [ ] plugins/platforms/feishu/feishu_comment_rules.py  defs 19/27  cases 8/11
+- [ ] plugins/platforms/feishu/feishu_meeting_invite.py  defs 12/13  cases 0/4
 - [x] plugins/platforms/feishu/gateway_env.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/feishu/send_targets.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/google_chat/adapter.py  defs 16/99  cases 4/75
-- [x] plugins/platforms/google_chat/cards.py  defs 15/15  cases 0/0
-- [ ] plugins/platforms/google_chat/oauth.py  defs 5/30  cases 0/0
-- [ ] plugins/platforms/google_chat/setup_files.py  defs 1/2  cases 0/0
-- [ ] plugins/platforms/irc/adapter.py  defs 7/43  cases 0/22
-- [ ] plugins/platforms/line/adapter.py  defs 22/71  cases 0/33
-- [ ] plugins/platforms/matrix/adapter.py  defs 19/184  cases 2/183
-- [ ] plugins/platforms/matrix/adapter_crypto.py  defs 1/5  cases 0/0
+- [ ] plugins/platforms/google_chat/adapter.py  defs 0/99  cases 4/75
+- [ ] plugins/platforms/google_chat/cards.py  defs 0/15  cases 0/0
+- [ ] plugins/platforms/google_chat/oauth.py  defs 0/30  cases 0/0
+- [ ] plugins/platforms/google_chat/setup_files.py  defs 0/2  cases 0/0
+- [ ] plugins/platforms/irc/adapter.py  defs 0/43  cases 0/22
+- [ ] plugins/platforms/line/adapter.py  defs 71/71  cases 0/33
+- [ ] plugins/platforms/matrix/adapter.py  defs 182/184  cases 2/183
+- [x] plugins/platforms/matrix/adapter_crypto.py  defs 5/5  cases 0/0
 - [x] plugins/platforms/matrix/adapter_hint.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/matrix/dashboard_card.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/matrix/gateway_env.py  defs 0/1  cases 0/0
+- [x] plugins/platforms/matrix/gateway_env.py  defs 1/1  cases 0/0
 - [x] plugins/platforms/matrix/send_targets.py  defs 1/1  cases 0/0
-- [ ] plugins/platforms/matrix/voice_mention.py  defs 12/14  cases 0/0
-- [ ] plugins/platforms/mattermost/adapter.py  defs 12/45  cases 2/33
+- [ ] plugins/platforms/matrix/voice_mention.py  defs 13/14  cases 0/0
+- [ ] plugins/platforms/mattermost/adapter.py  defs 0/45  cases 2/33
 - [x] plugins/platforms/mattermost/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/ntfy/adapter.py  defs 6/23  cases 0/28
-- [ ] plugins/platforms/photon/adapter.py  defs 17/113  cases 1/104
-- [ ] plugins/platforms/photon/auth.py  defs 59/60  cases 23/24
-- [ ] plugins/platforms/photon/cli.py  defs 6/16  cases 1/15
-- [ ] plugins/platforms/photon/sidecar_paths.py  defs 5/5  cases 5/6
-- [ ] plugins/platforms/qqbot/adapter.py  defs 19/107  cases 10/81
-- [ ] plugins/platforms/qqbot/chunked_upload.py  defs 22/27  cases 0/0
+- [ ] plugins/platforms/ntfy/adapter.py  defs 0/23  cases 0/28
+- [ ] plugins/platforms/photon/adapter.py  defs 0/113  cases 1/104
+- [ ] plugins/platforms/photon/auth.py  defs 0/60  cases 23/24
+- [ ] plugins/platforms/photon/cli.py  defs 0/16  cases 1/15
+- [ ] plugins/platforms/photon/sidecar_paths.py  defs 0/5  cases 5/6
+- [ ] plugins/platforms/qqbot/adapter.py  defs 0/107  cases 10/81
+- [ ] plugins/platforms/qqbot/chunked_upload.py  defs 0/27  cases 0/0
 - [x] plugins/platforms/qqbot/constants.py  defs 0/0  cases 0/0
-- [x] plugins/platforms/qqbot/crypto.py  defs 2/2  cases 0/0
+- [ ] plugins/platforms/qqbot/crypto.py  defs 0/2  cases 0/0
 - [ ] plugins/platforms/qqbot/gateway_env.py  defs 0/1  cases 0/0
-- [ ] plugins/platforms/qqbot/keyboards.py  defs 18/19  cases 0/0
-- [ ] plugins/platforms/qqbot/onboard.py  defs 1/7  cases 0/0
-- [x] plugins/platforms/qqbot/register.py  defs 4/4  cases 0/0
-- [ ] plugins/platforms/qqbot/send.py  defs 1/9  cases 0/0
-- [x] plugins/platforms/qqbot/utils.py  defs 4/4  cases 0/0
-- [ ] plugins/platforms/raft/adapter.py  defs 13/45  cases 1/8
+- [ ] plugins/platforms/qqbot/keyboards.py  defs 0/19  cases 0/0
+- [ ] plugins/platforms/qqbot/onboard.py  defs 0/7  cases 0/0
+- [ ] plugins/platforms/qqbot/register.py  defs 0/4  cases 0/0
+- [ ] plugins/platforms/qqbot/send.py  defs 0/9  cases 0/0
+- [ ] plugins/platforms/qqbot/utils.py  defs 0/4  cases 0/0
+- [ ] plugins/platforms/raft/adapter.py  defs 0/45  cases 1/8
 - [x] plugins/platforms/signal/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/signal/adapter.py  defs 15/65  cases 1/52
+- [ ] plugins/platforms/signal/adapter.py  defs 0/65  cases 1/52
 - [x] plugins/platforms/signal/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/signal/register.py  defs 3/4  cases 0/0
-- [ ] plugins/platforms/signal/setup.py  defs 2/3  cases 0/0
-- [ ] plugins/platforms/signal/signal_format.py  defs 1/5  cases 0/20
-- [ ] plugins/platforms/signal/signal_rate_limit.py  defs 17/19  cases 6/6
-- [ ] plugins/platforms/signal/standalone.py  defs 1/3  cases 0/0
-- [ ] plugins/platforms/simplex/adapter.py  defs 8/45  cases 0/19
-- [ ] plugins/platforms/slack/adapter.py  defs 247/302  cases 203/426
+- [ ] plugins/platforms/signal/register.py  defs 0/4  cases 0/0
+- [ ] plugins/platforms/signal/setup.py  defs 0/3  cases 0/0
+- [ ] plugins/platforms/signal/signal_format.py  defs 0/5  cases 0/20
+- [ ] plugins/platforms/signal/signal_rate_limit.py  defs 1/19  cases 6/6
+- [ ] plugins/platforms/signal/standalone.py  defs 0/3  cases 0/0
+- [ ] plugins/platforms/simplex/adapter.py  defs 1/45  cases 0/19
+- [ ] plugins/platforms/slack/adapter.py  defs 278/302  cases 203/426
 - [x] plugins/platforms/slack/adapter_config_readers.py  defs 2/2  cases 0/0
 - [x] plugins/platforms/slack/adapter_hint.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/slack/adapter_reactions_context.py  defs 1/1  cases 0/0
 - [x] plugins/platforms/slack/adapter_slash_lane.py  defs 5/5  cases 0/0
 - [x] plugins/platforms/slack/adapter_slash_payload.py  defs 2/2  cases 0/0
-- [ ] plugins/platforms/slack/block_kit.py  defs 21/21  cases 5/25
+- [ ] plugins/platforms/slack/block_kit.py  defs 19/21  cases 5/25
 - [x] plugins/platforms/slack/dashboard_card.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/slack/gateway_env.py  defs 1/1  cases 0/0
 - [x] plugins/platforms/slack/send_targets.py  defs 1/1  cases 0/0
-- [ ] plugins/platforms/sms/adapter.py  defs 10/20  cases 0/18
-- [x] plugins/platforms/sms/gateway_env.py  defs 1/1  cases 0/0
-- [ ] plugins/platforms/teams/adapter.py  defs 17/50  cases 29/63
-- [ ] plugins/platforms/teams/summary_writer.py  defs 12/17  cases 0/0
+- [ ] plugins/platforms/sms/adapter.py  defs 20/20  cases 0/18
+- [ ] plugins/platforms/sms/gateway_env.py  defs 0/1  cases 0/0
+- [ ] plugins/platforms/teams/adapter.py  defs 46/50  cases 29/63
+- [x] plugins/platforms/teams/summary_writer.py  defs 17/17  cases 0/0
 - [ ] plugins/platforms/telegram/adapter.py  defs 372/372  cases 211/499
 - [x] plugins/platforms/telegram/adapter_hint.py  defs 0/0  cases 0/0
 - [x] plugins/platforms/telegram/dashboard_card.py  defs 0/0  cases 0/0
@@ -2942,77 +2942,77 @@
 - [x] plugins/platforms/telegram/telegram_resolved_prompt.py  defs 1/1  cases 0/0
 - [x] plugins/platforms/telegram/telegram_topic_routing.py  defs 5/5  cases 0/0
 - [ ] plugins/platforms/telegram/telegram_topic_transfer.py  defs 1/1  cases 0/1
-- [ ] plugins/platforms/telegram/update_admission.py  defs 23/23  cases 4/5
-- [ ] plugins/platforms/wecom/adapter.py  defs 18/61  cases 1/36
-- [ ] plugins/platforms/wecom/callback_adapter.py  defs 3/26  cases 0/0
+- [ ] plugins/platforms/telegram/update_admission.py  defs 21/23  cases 4/5
+- [ ] plugins/platforms/wecom/adapter.py  defs 1/61  cases 1/36
+- [ ] plugins/platforms/wecom/callback_adapter.py  defs 0/26  cases 0/0
 - [x] plugins/platforms/wecom/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/wecom/media.py  defs 8/31  cases 0/6
-- [ ] plugins/platforms/wecom/send_queue.py  defs 5/6  cases 0/1
-- [ ] plugins/platforms/wecom/streaming.py  defs 28/32  cases 3/69
-- [ ] plugins/platforms/wecom/wecom_crypto.py  defs 11/16  cases 0/0
-- [ ] plugins/platforms/weixin/adapter.py  defs 23/98  cases 1/62
+- [ ] plugins/platforms/wecom/media.py  defs 0/31  cases 0/6
+- [ ] plugins/platforms/wecom/send_queue.py  defs 0/6  cases 0/1
+- [ ] plugins/platforms/wecom/streaming.py  defs 3/32  cases 3/69
+- [ ] plugins/platforms/wecom/wecom_crypto.py  defs 3/16  cases 0/0
+- [ ] plugins/platforms/weixin/adapter.py  defs 0/98  cases 1/62
 - [x] plugins/platforms/weixin/gateway_env.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/whatsapp/adapter.py  defs 74/74  cases 113/122
+- [ ] plugins/platforms/whatsapp/adapter.py  defs 73/74  cases 113/122
 - [x] plugins/platforms/whatsapp/bridge_ownership.py  defs 6/6  cases 0/0
 - [x] plugins/platforms/whatsapp/gateway_env.py  defs 1/1  cases 0/0
-- [ ] plugins/platforms/whatsapp_cloud/adapter.py  defs 18/65  cases 10/67
+- [ ] plugins/platforms/whatsapp_cloud/adapter.py  defs 65/65  cases 10/67
 - [x] plugins/platforms/whatsapp_cloud/gateway_env.py  defs 0/0  cases 0/0
-- [x] plugins/platforms/whatsapp_cloud/setup_wizard.py  defs 13/13  cases 0/0
+- [ ] plugins/platforms/whatsapp_cloud/setup_wizard.py  defs 12/13  cases 0/0
 - [x] plugins/platforms/yuanbao/__init__.py  defs 0/0  cases 0/0
-- [ ] plugins/platforms/yuanbao/adapter.py  defs 32/239  cases 1/90
+- [ ] plugins/platforms/yuanbao/adapter.py  defs 2/239  cases 1/90
 - [x] plugins/platforms/yuanbao/gateway_env.py  defs 0/0  cases 0/0
-- [x] plugins/platforms/yuanbao/register.py  defs 6/6  cases 0/0
-- [ ] plugins/platforms/yuanbao/yuanbao_media.py  defs 20/21  cases 0/0
-- [ ] plugins/platforms/yuanbao/yuanbao_proto.py  defs 48/49  cases 17/20
-- [x] plugins/platforms/yuanbao/yuanbao_sticker.py  defs 12/12  cases 0/0
+- [ ] plugins/platforms/yuanbao/register.py  defs 0/6  cases 0/0
+- [ ] plugins/platforms/yuanbao/yuanbao_media.py  defs 0/21  cases 0/0
+- [ ] plugins/platforms/yuanbao/yuanbao_proto.py  defs 15/49  cases 17/20
+- [ ] plugins/platforms/yuanbao/yuanbao_sticker.py  defs 0/12  cases 0/0
 - [ ] tools/bot_failure_reasons.py  defs 6/6  cases 9/12
-- [ ] tools/bot_live_delivery.py  defs 23/31  cases 0/58
-- [ ] tools/bot_mode_dm.py  defs 8/35  cases 7/66
-- [ ] tools/bot_mode_probe.py  defs 30/34  cases 20/20
+- [ ] tools/bot_live_delivery.py  defs 21/31  cases 0/58
+- [ ] tools/bot_mode_dm.py  defs 33/35  cases 7/66
+- [ ] tools/bot_mode_probe.py  defs 32/34  cases 20/20
 - [ ] tools/bot_relay.py  defs 34/41  cases 28/71
-- [ ] tools/connectors/__init__.py  defs 0/2  cases 0/0
-- [ ] tools/connectors/account.py  defs 1/5  cases 0/0
-- [ ] tools/connectors/catalog.py  defs 29/31  cases 0/0
-- [ ] tools/connectors/catalog_tool.py  defs 6/6  cases 1/11
+- [x] tools/connectors/__init__.py  defs 2/2  cases 0/0
+- [x] tools/connectors/account.py  defs 5/5  cases 0/0
+- [x] tools/connectors/catalog.py  defs 31/31  cases 0/0
+- [ ] tools/connectors/catalog_tool.py  defs 4/6  cases 1/11
 - [ ] tools/connectors/contract.py  defs 4/5  cases 12/26
 - [x] tools/connectors/data_use.py  defs 2/2  cases 0/0
 - [x] tools/connectors/dispatch.py  defs 2/2  cases 0/0
-- [ ] tools/connectors/display.py  defs 6/7  cases 0/0
+- [ ] tools/connectors/display.py  defs 5/7  cases 0/0
 - [x] tools/connectors/gateway/__init__.py  defs 0/0  cases 0/0
-- [ ] tools/connectors/gateway/bridge.py  defs 6/7  cases 0/46
-- [ ] tools/connectors/gateway/client.py  defs 32/37  cases 0/0
-- [ ] tools/connectors/gateway/config.py  defs 10/11  cases 0/3
-- [ ] tools/connectors/gateway/errors.py  defs 5/10  cases 0/19
-- [ ] tools/connectors/gateway/files.py  defs 16/22  cases 0/17
-- [ ] tools/connectors/gateway/merge.py  defs 8/11  cases 0/0
-- [ ] tools/connectors/gateway/names.py  defs 5/5  cases 0/3
-- [ ] tools/connectors/gateway/wire.py  defs 3/32  cases 0/0
+- [ ] tools/connectors/gateway/bridge.py  defs 7/7  cases 0/46
+- [ ] tools/connectors/gateway/client.py  defs 34/37  cases 0/0
+- [ ] tools/connectors/gateway/config.py  defs 8/11  cases 0/3
+- [ ] tools/connectors/gateway/errors.py  defs 9/10  cases 0/19
+- [ ] tools/connectors/gateway/files.py  defs 20/22  cases 0/17
+- [x] tools/connectors/gateway/merge.py  defs 11/11  cases 0/0
+- [ ] tools/connectors/gateway/names.py  defs 4/5  cases 0/3
+- [x] tools/connectors/gateway/wire.py  defs 32/32  cases 0/0
 - [ ] tools/connectors/live.py  defs 10/11  cases 6/37
 - [x] tools/connectors/managed.py  defs 22/22  cases 0/0
-- [ ] tools/connectors/operation.py  defs 20/22  cases 0/0
-- [ ] tools/connectors/portal/client.py  defs 22/25  cases 0/0
-- [ ] tools/connectors/portal/errors.py  defs 1/3  cases 0/0
+- [x] tools/connectors/operation.py  defs 22/22  cases 0/0
+- [ ] tools/connectors/portal/client.py  defs 23/25  cases 0/0
+- [x] tools/connectors/portal/errors.py  defs 3/3  cases 0/0
 - [x] tools/connectors/portal/policy.py  defs 6/6  cases 0/0
 - [ ] tools/connectors/portal/tools_cache.py  defs 8/10  cases 0/0
-- [ ] tools/connectors/portal/wire.py  defs 14/21  cases 0/0
-- [ ] tools/connectors/run.py  defs 7/9  cases 0/0
+- [ ] tools/connectors/portal/wire.py  defs 16/21  cases 0/0
+- [ ] tools/connectors/run.py  defs 6/9  cases 0/0
 - [x] tools/connectors/search.py  defs 5/5  cases 0/0
 - [x] tools/connectors/targets.py  defs 9/9  cases 0/0
-- [ ] tools/connectors/tool.py  defs 1/1  cases 0/11
-- [ ] tools/connectors/turn.py  defs 3/4  cases 0/19
-- [ ] tools/desktop_ui.py  defs 4/6  cases 3/7
-- [ ] tools/discord_tool.py  defs 6/37  cases 2/40
-- [ ] tools/feishu_doc_tool.py  defs 0/1  cases 0/0
-- [ ] tools/feishu_drive_tool.py  defs 1/3  cases 0/0
-- [ ] tools/feishu_lark.py  defs 4/7  cases 0/0
+- [ ] tools/connectors/tool.py  defs 0/1  cases 0/11
+- [ ] tools/connectors/turn.py  defs 2/4  cases 0/19
+- [ ] tools/desktop_ui.py  defs 5/6  cases 3/7
+- [ ] tools/discord_tool.py  defs 34/37  cases 2/40
+- [x] tools/feishu_doc_tool.py  defs 1/1  cases 0/0
+- [x] tools/feishu_drive_tool.py  defs 3/3  cases 0/0
+- [x] tools/feishu_lark.py  defs 7/7  cases 0/0
 - [x] tools/managed_gateway_auth.py  defs 4/4  cases 0/0
-- [x] tools/managed_gateway_identity.py  defs 10/10  cases 1/1
-- [ ] tools/managed_tool_gateway.py  defs 13/14  cases 2/15
+- [ ] tools/managed_gateway_identity.py  defs 8/10  cases 1/1
+- [ ] tools/managed_tool_gateway.py  defs 11/14  cases 2/15
 - [ ] tools/microsoft_graph_auth.py  defs 18/19  cases 2/6
-- [ ] tools/microsoft_graph_client.py  defs 15/17  cases 0/4
+- [ ] tools/microsoft_graph_client.py  defs 12/17  cases 0/4
 - [ ] tools/react_to_message_tool.py  defs 2/3  cases 3/3
-- [ ] tools/send_message_senders.py  defs 21/22  cases 0/0
+- [ ] tools/send_message_senders.py  defs 19/22  cases 0/0
 - [x] tools/send_message_targets.py  defs 4/4  cases 0/0
-- [ ] tools/send_message_tool.py  defs 27/27  cases 37/86
-- [ ] tools/setup_beat_tool.py  defs 10/12  cases 0/10
-- [ ] tools/yuanbao_tools.py  defs 3/15  cases 0/0
+- [ ] tools/send_message_tool.py  defs 27/27  cases 38/86
+- [ ] tools/setup_beat_tool.py  defs 9/12  cases 0/10
+- [ ] tools/yuanbao_tools.py  defs 0/15  cases 0/0

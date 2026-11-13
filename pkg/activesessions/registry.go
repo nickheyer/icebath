@@ -56,11 +56,26 @@ func SessionOwnerDetails(sessionID string, entry *pyjson.Object) string {
 
 // Registry file and lock file under the runtime directory of the registry home, the active home when empty
 func leasePaths(ctx context.Context, registryHome string) (string, string) {
-	if registryHome == "" {
-		registryHome = home.Dir(ctx)
+	h := resolveRegistryHome(ctx, registryHome)
+	return filepath.Join(h, "runtime", "active_sessions.json"), filepath.Join(h, "runtime", "active_sessions.lock")
+}
+
+// Registry home given, else the active icebath home
+func resolveRegistryHome(ctx context.Context, registryHome string) string {
+	if registryHome != "" {
+		return registryHome
 	}
-	runtime := filepath.Join(registryHome, "runtime")
-	return filepath.Join(runtime, "active_sessions.json"), filepath.Join(runtime, "active_sessions.lock")
+	return home.Dir(ctx)
+}
+
+// Registry file of a registry home
+func registryStatePath(ctx context.Context, registryHome string) string {
+	return filepath.Join(resolveRegistryHome(ctx, registryHome), "runtime", "active_sessions.json")
+}
+
+// Registry lock file of a registry home
+func registryLockPath(ctx context.Context, registryHome string) string {
+	return filepath.Join(resolveRegistryHome(ctx, registryHome), "runtime", "active_sessions.lock")
 }
 
 // Registry entries, every malformed shape an error when strict and dropped otherwise

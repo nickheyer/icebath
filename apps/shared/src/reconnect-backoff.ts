@@ -1,6 +1,6 @@
 /**
  * Exponential reconnect backoff shared by every Icebath front-end socket
- * (desktop gateway/plugins, web events feed, web PTY, Ink TUI attach mode).
+ * (desktop gateway/plugins, web events feed, web PTY, terminal UI attach mode).
  *
  * Default is full jitter: a bare exponential backoff still lets every client
  * in a fleet retry in lockstep — after a gateway restart, N clients that all

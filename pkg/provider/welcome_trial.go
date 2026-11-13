@@ -81,7 +81,7 @@ func welcomeClaimBlocker(env PoolEnv, assumeFresh bool, configured *bool) (strin
 	if isConfigured {
 		return "a provider is configured", nil
 	}
-	if welcomeMachineIsUsed(env.Ctx, assumeFresh) {
+	if welcomeMachineIsUsed(env.ctx(), assumeFresh) {
 		return "Icebath was used on this machine", nil
 	}
 	return "", nil
@@ -127,7 +127,7 @@ func claimDesktopFreeTier(env PoolEnv, assumeFresh, force bool) (map[string]any,
 			wait, has := anyFloat(failure["retry_after"])
 			return nil, anonErr(message, code, time.Duration(wait*float64(time.Second)), has && failure["retry_after"] != nil)
 		}
-		if err := welcomeMarkUsed(env.Ctx); err != nil {
+		if err := welcomeMarkUsed(env.ctx()); err != nil {
 			return nil, err
 		}
 		return state, nil
@@ -154,7 +154,7 @@ func SettleInterruptedClaim(env PoolEnv) (bool, error) {
 	if !stamped {
 		return false, nil
 	}
-	if err := welcomeMarkUsed(env.Ctx); err != nil {
+	if err := welcomeMarkUsed(env.ctx()); err != nil {
 		return false, err
 	}
 	env.log().Info("Nous free tier: an interrupted welcome-trial claim was settled")

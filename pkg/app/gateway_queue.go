@@ -250,13 +250,18 @@ func beginOwnQueueHold(c *CLI, item any) *ownQueueHold {
 	if admission == "" {
 		return nil
 	}
+	return newOwnQueueHold(item, state, admission)
+}
+
+// Hold of item on the queued admission, one settling idle list allowed while the owner runs a turn
+func newOwnQueueHold(item any, state *gatewaycli.SessionState, admission string) *ownQueueHold {
 	state.Lock()
+	defer state.Unlock()
 	h := &ownQueueHold{item: item, state: state, admission: admission, seq: state.PendingSeq,
 		deadline: time.Now().Add(time.Duration(ownQueueHoldSeconds * float64(time.Second)))}
 	if pyrepr.Truthy(state.Info["running"]) {
 		h.allowedIdleLists = 1
 	}
-	state.Unlock()
 	return h
 }
 

@@ -13,7 +13,7 @@ func TestUrlInstallOfAnArchivedHandoffRepoIsRepinnedToItsCatalogEntry(t *testing
 	w := catWorld(t)
 	archived := filepath.Join(w.root, "archived")
 	c6Write(t, filepath.Join(archived, "plugin.yaml"), "name: cat-plugin\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(archived, "__init__.py"), "def register(ctx):\n    pass\n")
+	c6Write(t, filepath.Join(archived, "helper.py"), "def register(ctx):\n    pass\n")
 	c6Write(t, filepath.Join(archived, "ARCHIVED.md"), "moved\n")
 	c6Git(t, archived, "init", "-q")
 	c6Commit(t, archived, "v1")
@@ -63,7 +63,7 @@ func TestRepinKeepsLocalFilesBacksUpEditsAndFollowsManifestRename(t *testing.T) 
 		t.Fatal(err)
 	}
 	c6Write(t, filepath.Join(target, "config.yaml"), "api_key: real\n")
-	c6Write(t, filepath.Join(target, "__init__.py"), "def register(ctx):\n    pass  # mine\n")
+	c6Write(t, filepath.Join(target, "helper.py"), "def register(ctx):\n    pass  # mine\n")
 	if err := writeConfigValue(w.ctx, w.h, "plugins", "enabled", []any{"cat-plugin"}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestRepinKeepsLocalFilesBacksUpEditsAndFollowsManifestRename(t *testing.T) 
 	if enabled := getEnabledSet(w.h); len(enabled) != 1 || !enabled["cat-plugin-v2"] {
 		t.Fatalf("enabled %v", enabled)
 	}
-	backups, _ := filepath.Glob(filepath.Join(filepath.Dir(w.pluginsDir), "plugins-backup", "cat-plugin-*", "__init__.py"))
+	backups, _ := filepath.Glob(filepath.Join(filepath.Dir(w.pluginsDir), "plugins-backup", "cat-plugin-*", "helper.py"))
 	if len(backups) == 0 || !strings.Contains(gitPullRead(t, backups[0]), "# mine") {
 		t.Fatalf("backups %v", backups)
 	}

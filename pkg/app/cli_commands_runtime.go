@@ -33,8 +33,8 @@ var fastTiers = map[string][2]string{
 // Provider, model and api mode the effort labels read, the live agent's mode before the configured runtime
 func (c *CLI) reasoningRoute() (string, string, string) {
 	apiMode := ""
-	if c.agent != nil {
-		apiMode = c.agent.APIMode()
+	if c.agentRef() != nil {
+		apiMode = c.agentRef().APIMode()
 	}
 	if apiMode == "" {
 		apiMode = provider.GetCurrentCodexRuntime(c.config)
@@ -75,8 +75,8 @@ func (c *CLI) handleReasoningCommand(cmd string) {
 		key := "display." + toggle.attr
 		if toggle.attr == "show_reasoning" {
 			c.showReasoning = toggle.value
-			if c.agent != nil {
-				c.agent.SetReasoningCallback(c.currentReasoningCallback())
+			if c.agentRef() != nil {
+				c.agentRef().SetReasoningCallback(c.currentReasoningCallback())
 			}
 			key = "display.platforms.cli.show_reasoning"
 		} else {
@@ -121,8 +121,8 @@ func (c *CLI) handleFastCommand(cmd string) {
 		return
 	}
 	model := c.model
-	if c.agent != nil && c.agent.Model() != "" {
-		model = c.agent.Model()
+	if c.agentRef() != nil && c.agentRef().Model() != "" {
+		model = c.agentRef().Model()
 	}
 	feature := c.commandsT("fast.feature_openai", nil)
 	if provider.IsAnthropicFastModeModel(model) {

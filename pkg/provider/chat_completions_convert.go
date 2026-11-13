@@ -1440,18 +1440,9 @@ func (c *ccRoute) fixedTemperature() (omit bool, fixed *float64) {
 	return omit, fixed
 }
 
-func modelForcesMaxCompletionTokens(model string) bool {
-	return hasAnyPrefix(bareModel(model), []string{"gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4"})
-}
-
-// Model whose chat completions requests must send max_completion_tokens instead of max_tokens
-func ModelForcesMaxCompletionTokens(model string) bool {
-	return modelForcesMaxCompletionTokens(model)
-}
-
 // Name of the output cap parameter the route accepts
 func (c *ccRoute) maxTokensParam() string {
-	if c.isDirectOpenAI() || c.isAzureOpenAI() || modelForcesMaxCompletionTokens(c.route.Model) {
+	if c.isDirectOpenAI() || c.isAzureOpenAI() || config.ModelForcesMaxCompletionTokens(c.route.Model) {
 		return "max_completion_tokens"
 	}
 	return "max_tokens"

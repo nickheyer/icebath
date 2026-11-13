@@ -239,8 +239,13 @@ func NewInsightsEngine(conn *sql.DB) *InsightsEngine {
 	return e
 }
 
+// Session store an engine reads through its database file
+type InsightsStore interface {
+	Path() string
+}
+
 // Engine on a read connection of the session store file that Close releases
-func OpenInsightsEngine(db *state.DB) (*InsightsEngine, error) {
+func OpenInsightsEngine(db InsightsStore) (*InsightsEngine, error) {
 	conn, err := sql.Open("sqlite", "file:"+db.Path()+"?_pragma=busy_timeout(1000)&mode=ro")
 	if err != nil {
 		return nil, err

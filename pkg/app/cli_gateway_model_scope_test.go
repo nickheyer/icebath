@@ -126,7 +126,7 @@ func scopeCLI(t *testing.T, conn *gatewaycli.GatewayConnection) (*CLI, *printRec
 	c.model, c.provider, c.requestedProvider, c.apiKey = "old/model", "openrouter", "openrouter", "sk-old"
 	c.baseURL, c.apiMode = "https://openrouter.ai/api/v1", "chat_completions"
 	c.sessionID, c.sessionDB, c.gatewaySessionOpen = scriptSID, gatewaycli.NewGatewaySessionStore(conn), true
-	c.agent = scriptedAgentOn(t, conn, gatewayAgentOptions{Model: "old/model", Provider: "openrouter"})
+	c.setAgent(scriptedAgentOn(t, conn, gatewayAgentOptions{Model: "old/model", Provider: "openrouter"}))
 	c.interruptQueue, c.pendingInput = &inputQueue{}, &inputQueue{}
 	scopePick(t, "claude-sonnet-4.6", "anthropic", "https://api.anthropic.com", "anthropic_messages")
 	return c, rec
@@ -169,8 +169,8 @@ func TestModelOnceRidesOneTurnAndNeverTouchesTheSession(t *testing.T) {
 	if _, present := submits[1]["model_override"]; present {
 		t.Fatalf("after submit %v", submits[1])
 	}
-	if owner.model() != "old/model" || c.model != "old/model" || c.agent.Model() != "old/model" {
-		t.Fatalf("owner %v cli %q agent %q", owner.model(), c.model, c.agent.Model())
+	if owner.model() != "old/model" || c.model != "old/model" || c.agentRef().Model() != "old/model" {
+		t.Fatalf("owner %v cli %q agent %q", owner.model(), c.model, c.agentRef().Model())
 	}
 }
 
@@ -243,8 +243,8 @@ func TestSessionSwitchOfTheOneTurnTargetCommitsOnTheFence(t *testing.T) {
 			t.Fatalf("submits %v", owner.submits())
 		}
 	}
-	if c.model != "claude-sonnet-4.6" || c.agent.Model() != "claude-sonnet-4.6" {
-		t.Fatalf("cli %q agent %q", c.model, c.agent.Model())
+	if c.model != "claude-sonnet-4.6" || c.agentRef().Model() != "claude-sonnet-4.6" {
+		t.Fatalf("cli %q agent %q", c.model, c.agentRef().Model())
 	}
 }
 
@@ -255,7 +255,7 @@ func TestSessionModelSwitchCommitsTheRouteOnTheOwner(t *testing.T) {
 			owner, conn := newScopeOwner(t, map[string]any{"model": "old/model", "provider": "openrouter"}, guarded)
 			c, rec := scopeCLI(t, conn)
 			var asked []any
-			c.agent.(*GatewayAgent).opts.ModelConfirmCallback = func(refusal map[string]any) bool {
+			c.agentRef().(*GatewayAgent).opts.ModelConfirmCallback = func(refusal map[string]any) bool {
 				asked = append(asked, refusal["confirm_message"])
 				return true
 			}
@@ -270,7 +270,7 @@ func TestSessionModelSwitchCommitsTheRouteOnTheOwner(t *testing.T) {
 			if !reflect.DeepEqual(asked, wantAsked) {
 				t.Fatalf("asked %v", asked)
 			}
-			runTurn(t, c.agent.(*GatewayAgent), "next turn")
+			runTurn(t, c.agentRef().(*GatewayAgent), "next turn")
 			mutates := owner.modelMutates()
 			want := map[string]any{"model": "claude-sonnet-4.6", "provider": "anthropic"}
 			if guarded {
@@ -300,7 +300,7 @@ func TestSwitchingToTheRouteTheSessionRunsCommitsNothing(t *testing.T) {
 	c, _ := scopeCLI(t, conn)
 	scopePick(t, "old/model", "openrouter", "https://openrouter.ai/api/v1", "chat_completions")
 	c.handleModelSwitch("/model old/model --provider openrouter")
-	runTurn(t, c.agent.(*GatewayAgent), "next turn")
+	runTurn(t, c.agentRef().(*GatewayAgent), "next turn")
 	if mutates, overrides := owner.routes(); len(mutates) > 0 || len(overrides) > 0 {
 		t.Fatalf("mutates %v overrides %v", mutates, overrides)
 	}
@@ -353,7 +353,7 @@ func TestOnceReasoningEqualToTheInheritedLevelCommitsNothing(t *testing.T) {
 	owner, conn := newScopeOwner(t, map[string]any{"model": "old/model", "provider": "openrouter", "reasoning_effort": "high"}, false)
 	c, _ := scopeCLI(t, conn)
 	high := map[string]any{"enabled": true, "effort": "high"}
-	c.agent = scriptedAgentOn(t, conn, gatewayAgentOptions{Model: "old/model", Provider: "openrouter", ReasoningConfig: high})
+	c.setAgent(scriptedAgentOn(t, conn, gatewayAgentOptions{Model: "old/model", Provider: "openrouter", ReasoningConfig: high}))
 	c.reasoningConfig, c.reasoningUserSet = high, false
 	result := provider.ModelSwitchResult{Success: true, NewModel: "next/model", TargetProvider: "openrouter",
 		APIKey: "key", BaseURL: c.baseURL, APIMode: "chat_completions"}
@@ -375,7 +375,7 @@ func aliasSessionCLI(t *testing.T, sessionModel string) (*scopeOwner, *CLI, *pri
 	c.model, c.provider, c.requestedProvider = sessionModel, "custom", "custom"
 	c.baseURL, c.explicitBaseURL = "http://127.0.0.1:7001/v1", "http://127.0.0.1:7001/v1"
 	c.apiKey, c.explicitAPIKey = "sk-session", "sk-session"
-	c.agent = scriptedAgentOn(t, conn, gatewayAgentOptions{Model: sessionModel, Provider: "custom"})
+	c.setAgent(scriptedAgentOn(t, conn, gatewayAgentOptions{Model: sessionModel, Provider: "custom"}))
 	return owner, c, rec
 }
 
@@ -432,8 +432,8 @@ func TestOnceSendsTheAliasItResolvedThrough(t *testing.T) {
 			if failed := failedLines(rec); len(failed) > 0 {
 				t.Fatalf("printed %v", failed)
 			}
-			if c.agent.Model() != "shared-model" {
-				t.Fatalf("the agent shows %q, not the resolved model", c.agent.Model())
+			if c.agentRef().Model() != "shared-model" {
+				t.Fatalf("the agent shows %q, not the resolved model", c.agentRef().Model())
 			}
 			c.chat("run on second", nil, false)
 			c.chat("the turn after", nil, false)
@@ -522,8 +522,8 @@ func TestAOncePickRefusedAsSessionBusyRidesTheResend(t *testing.T) {
 	if _, present := submits[2]["model_override"]; present {
 		t.Fatalf("after submit %v", submits[2])
 	}
-	if c.model != "old/model" || c.agent.Model() != "old/model" {
-		t.Fatalf("cli %q agent %q", c.model, c.agent.Model())
+	if c.model != "old/model" || c.agentRef().Model() != "old/model" {
+		t.Fatalf("cli %q agent %q", c.model, c.agentRef().Model())
 	}
 }
 
@@ -582,7 +582,7 @@ func TestAnImageStagingFailureIsAFailedTurnNotAnException(t *testing.T) {
 func TestASessionReasoningPickIsCommittedOnceNotOnEveryRebuild(t *testing.T) {
 	owner, conn := newScopeOwner(t, map[string]any{"model": "old/model", "provider": "openrouter"}, false)
 	c, _ := scopeCLI(t, conn)
-	c.agent = nil
+	c.setAgent(nil)
 	c.reasoningConfig, c.reasoningUserSet = map[string]any{"enabled": true, "effort": "high"}, true
 	if reply, _ := c.chat("first", nil, false); reply != "ok" {
 		t.Fatalf("first %q", reply)

@@ -806,6 +806,11 @@ func promptReasoningEffortSelection(out io.Writer, efforts []string, currentEffo
 	return *value, true
 }
 
+// Count of saved picks that the provider selection snapshots before a flow runs
+func modelChoiceSaveCount() int {
+	return ModelChoiceSaveCount()
+}
+
 // Offers the effort step after a flow saved a pick or changed model.default, never after a cancel
 func offerReasoningAfterPick(r *ModelFlowRun, modelBefore string, savesBefore int) error {
 	cfg, err := r.loadConfig()
@@ -817,7 +822,7 @@ func offerReasoningAfterPick(r *ModelFlowRun, modelBefore string, savesBefore in
 		return nil
 	}
 	model := pystr.Strip(pyOrStr(modelCfg["default"]))
-	if model == "" || (model == modelBefore && ModelChoiceSaveCount() == savesBefore) {
+	if model == "" || (model == modelBefore && modelChoiceSaveCount() == savesBefore) {
 		return nil
 	}
 	return promptMainReasoningEffortFn(r, model, pyOrStr(modelCfg["provider"]))

@@ -22,10 +22,7 @@ func emitLoop(ctx context.Context, mark, homeDir string, build func() map[string
 			slog.Debug(fmt.Sprintf("Shared-metrics %s not recorded", mark), "error", r)
 		}
 	}()
-	if homeDir != "" {
-		ctx = home.WithOverride(ctx, homeDir)
-	}
-	emit(ctx, mark, build)
+	emit(boundHome(ctx, homeDir), mark, build)
 }
 
 // Dict form of a tool result, decoding JSON text and reading anything else as an empty dict

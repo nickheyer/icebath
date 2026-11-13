@@ -25,6 +25,14 @@ type routedHome struct {
 // Marker of a named routed profile whose home does not resolve
 var unresolvedProfileHome = &routedHome{unresolved: true}
 
+// Diagnostic text of the home, the unresolved marker reading as hermes logs it
+func (h *routedHome) String() string {
+	if h.unresolved {
+		return "<unresolved profile home>"
+	}
+	return h.path
+}
+
 // Waits up to timeout for the task, detaching it on deadline or on the caller's cancellation, true when it finished
 func waitOrDetach(ctx context.Context, task *gatewayTask, timeout float64) (bool, error) {
 	timer := time.NewTimer(time.Duration(timeout * float64(time.Second)))

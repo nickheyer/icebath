@@ -131,7 +131,7 @@ func TestClassicCliModelSwitchReachesTheGatewaySession(t *testing.T) {
 	c.baseURL, c.explicitBaseURL, c.apiMode = "https://openrouter.ai/api/v1", "https://openrouter.ai/api/v1", "chat_completions"
 	c.sessionID = scriptSID
 	a := scriptedAgentOn(t, conn, gatewayAgentOptions{Model: "old/model", Provider: "openrouter"})
-	c.agent = a
+	c.setAgent(a)
 	prev := switchModelResolve
 	t.Cleanup(func() { switchModelResolve = prev })
 	switchModelResolve = func(context.Context, provider.SwitchModelOptions) (provider.ModelSwitchResult, error) {

@@ -347,6 +347,32 @@ func coerceStatusField(key string, v any) (any, error) {
 	return v, nil
 }
 
+// One status field an update may pass, its snapshot key, its keyword and the coercion of its value
+type statusSetField struct {
+	key     string
+	keyword string
+	coerce  func(any) (any, error)
+}
+
+// Assigns each field whose keyword was explicitly passed, coerced when the field names a coercion
+func applySetFields(target *pyjson.Object, passed map[string]any, fields []statusSetField) error {
+	for _, field := range fields {
+		value, set := passed[field.keyword]
+		if !set {
+			continue
+		}
+		if field.coerce != nil {
+			coerced, err := field.coerce(value)
+			if err != nil {
+				return err
+			}
+			value = coerced
+		}
+		target.Set(field.key, value)
+	}
+	return nil
+}
+
 // Merges one update into the process wide canonical snapshot, the state lock held by the caller
 func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloadExisting bool) (string, *pyjson.Object, *pyjson.Object, error) {
 	for key := range u.Fields {
@@ -402,15 +428,20 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 	for _, kv := range codeIdentityFields() {
 		payload.Set(kv[0].(string), kv[1])
 	}
-	for _, key := range []string{"gateway_state", "exit_reason", "restart_requested", "active_agents", "active_work",
-		"served_profiles", "parked_profiles", "multiplex_standalone_reason", "session_store"} {
-		if v, set := u.Fields[key]; set {
-			coerced, err := coerceStatusField(key, v)
-			if err != nil {
-				return "", nil, nil, err
-			}
-			payload.Set(key, coerced)
-		}
+	coerced := func(key string) func(any) (any, error) {
+		return func(v any) (any, error) { return coerceStatusField(key, v) }
+	}
+	if err := applySetFields(payload, u.Fields, []statusSetField{
+		{"gateway_state", "gateway_state", nil}, {"exit_reason", "exit_reason", nil},
+		{"restart_requested", "restart_requested", coerced("restart_requested")},
+		{"active_agents", "active_agents", coerced("active_agents")},
+		{"active_work", "active_work", coerced("active_work")},
+		{"served_profiles", "served_profiles", coerced("served_profiles")},
+		{"parked_profiles", "parked_profiles", coerced("parked_profiles")},
+		{"multiplex_standalone_reason", "multiplex_standalone_reason", coerced("multiplex_standalone_reason")},
+		{"session_store", "session_store", coerced("session_store")},
+	}); err != nil {
+		return "", nil, nil, err
 	}
 	if platformValue, set := u.Fields["platform"]; set {
 		platform := jsonKey(platformValue)
@@ -430,15 +461,12 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 				fields["retrying_since"] = nil
 			}
 		}
-		for _, kv := range [][2]string{{"state", "platform_state"}, {"error_code", "error_code"}, {"error_message", "error_message"},
-			{"needs_attention", "needs_attention"}, {"retrying_since", "retrying_since"}, {"metrics", "platform_metrics"},
-			{"ingress_url", "ingress_url"}, {"listener_base", "listener_base"}} {
-			if v, set := fields[kv[1]]; set {
-				if kv[0] == "needs_attention" {
-					v = pyrepr.Truthy(v)
-				}
-				entry.Set(kv[0], v)
-			}
+		if err := applySetFields(entry, fields, []statusSetField{
+			{"state", "platform_state", nil}, {"error_code", "error_code", nil}, {"error_message", "error_message", nil},
+			{"needs_attention", "needs_attention", coerced("needs_attention")}, {"retrying_since", "retrying_since", nil},
+			{"metrics", "platform_metrics", nil}, {"ingress_url", "ingress_url", nil}, {"listener_base", "listener_base", nil},
+		}); err != nil {
+			return "", nil, nil, err
 		}
 		entry.Set("updated_at", utcNowISO())
 		entry.Set("writer_pid", recGet(current, "pid"))

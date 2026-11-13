@@ -428,6 +428,49 @@ func TestConnectReinitializesSchemaWhenDBReplacedByEmptyFile(t *testing.T) {
 	}
 }
 
+// A failing unlock of the init lock surfaces from connect and repair while a free lock retakes
+func TestInitLockUnlockFailureSurfaces(t *testing.T) {
+	dbPath := defaultBoardDB(t)
+	ctx := context.Background()
+	old := crossProcessInitLockFn
+	crossProcessInitLockFn = func(path string) (func() error, error) {
+		release, err := old(path)
+		if err != nil {
+			return nil, err
+		}
+		return func() error {
+			if err := release(); err != nil {
+				return err
+			}
+			gone, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			gone.Close()
+			return unlock(gone)
+		}, nil
+	}
+	t.Cleanup(func() { crossProcessInitLockFn = old })
+	if conn, err := Connect(ctx, "", nil); err == nil || conn != nil {
+		t.Fatalf("connect hid the unlock failure %v %v", conn, err)
+	}
+	if res, err := RepairDB(ctx, dbPath, nil); err == nil || res != nil {
+		t.Fatalf("repair hid the unlock failure %v %v", res, err)
+	}
+	crossProcessInitLockFn = old
+	handle, err := os.OpenFile(dbPath+".init.lock", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	if ok, err := tryLockNB(handle); !ok || err != nil {
+		t.Fatalf("init lock left held %v %v", ok, err)
+	}
+	if err := unlock(handle); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHealthyFastPathStaysLockFree(t *testing.T) {
 	dbPath := defaultBoardDB(t)
 	ctx := context.Background()
@@ -437,7 +480,7 @@ func TestHealthyFastPathStaysLockFree(t *testing.T) {
 	}
 	var locks []string
 	old := crossProcessInitLockFn
-	crossProcessInitLockFn = func(path string) (func(), error) {
+	crossProcessInitLockFn = func(path string) (func() error, error) {
 		locks = append(locks, path)
 		return old(path)
 	}

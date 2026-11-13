@@ -164,14 +164,14 @@ type DeliveryTarget struct {
 // Target parsed from origin, local, a platform name or platform chat and thread
 func ParseDeliveryTarget(ctx context.Context, target string, origin *SessionSource) DeliveryTarget {
 	target = pystr.Strip(target)
-	if strings.ToLower(target) == "origin" {
+	if pystr.Lower(target) == "origin" {
 		if origin != nil {
 			return DeliveryTarget{Platform: origin.Platform, ChatID: origin.ChatID, ThreadID: origin.ThreadID, IsOrigin: true}
 		}
 		return DeliveryTarget{Platform: PlatformLocal, IsOrigin: true}
 	}
 	parts := strings.SplitN(target, ":", 3)
-	platform, err := ParsePlatform(ctx, strings.ToLower(parts[0]))
+	platform, err := ParsePlatform(ctx, pystr.Lower(parts[0]))
 	if err != nil {
 		raw := target
 		return DeliveryTarget{Platform: PlatformLocal, UnknownPlatform: &raw}
@@ -234,6 +234,11 @@ type DeliveryRouter struct {
 	Adapters    any
 	OutputDir   string
 	DeadTargets *DeadTargetRegistry
+}
+
+// Silence narration filter flag of the gateway config, on when no config is attached
+func (r *DeliveryRouter) filterSilenceNarrationEnabled() bool {
+	return r.Config == nil || r.Config.FilterSilenceNarration
 }
 
 // Router over the config and live adapters with the process profile output dir and dead target registry
@@ -397,7 +402,7 @@ func (r *DeliveryRouter) DeliverToPlatform(ctx context.Context, target DeliveryT
 		return nil, err
 	}
 	_, isCronArtifact := metadata["job_id"]
-	if r.Config.FilterSilenceNarration && !isCronArtifact && isSilenceNarration(content) {
+	if r.filterSilenceNarrationEnabled() && !isCronArtifact && isSilenceNarration(content) {
 		head := []rune(content)
 		if len(head) > 40 {
 			head = head[:40]

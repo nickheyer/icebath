@@ -160,7 +160,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 			nudge = degenerateFinalNudge
 		}
 		appendLiveMessage(&s.Messages, map[string]any{"role": "user", "content": nudge})
-		a.sessionMessages = s.Messages
+		a.setSessionMessages(s.Messages)
 		s.FinalResponse = nil
 		return PhaseVerdict{Action: "continue"}, nil
 	}
@@ -195,7 +195,7 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 		finalMsg["_dropped_toolcall_nudge"] = true
 		appendLiveMessage(&s.Messages, finalMsg)
 		appendLiveMessage(&s.Messages, map[string]any{"role": "user", "content": droppedToolcallNudgeContent, "_dropped_toolcall_nudge": true})
-		a.sessionMessages = s.Messages
+		a.setSessionMessages(s.Messages)
 		s.FinalResponse = nil
 		return PhaseVerdict{Action: "continue"}, nil
 	}
@@ -225,13 +225,13 @@ func finishTextResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVer
 	}
 	publishHeldFinalRow(a, finalMsg, final, joined)
 	appendLiveMessage(&s.Messages, finalMsg)
-	if _, err := a.flushLiveMessages(s.Messages, s.ConversationHistory); err != nil {
+	guardedFlush(func() { a.flushLiveMessages(s.Messages, s.ConversationHistory) }, func(exc *OuterLoopError) {
 		session := a.sessionID
 		if session == "" {
 			session = "none"
 		}
-		conversationLoopLog().Warn(fmt.Sprintf("final text-turn flush failed (session=%s) — reply is not yet durable; relying on finalize_turn retry", session), "error", err)
-	}
+		conversationLoopLog().Warn(fmt.Sprintf("final text-turn flush failed (session=%s) — reply is not yet durable; relying on finalize_turn retry", session), "exc_info", exc.Stack, "error", exc)
+	})
 	s.TurnExitReason = fmt.Sprintf("text_response(finish_reason=%s)", finishReason)
 	if !a.quietMode {
 		a.safePrint(fmt.Sprintf("🎉 Conversation completed after %d OpenAI-compatible API call(s)", s.APICallCount), false)

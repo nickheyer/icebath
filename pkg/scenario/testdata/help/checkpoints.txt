@@ -1,0 +1,16 @@
+usage: icebath checkpoints [-h] COMMAND ...
+
+Manage the filesystem checkpoint store — the shadow git repo icebath uses to snapshot working
+directories before write_file/patch/terminal calls. Lets you see how much space checkpoints
+occupy, force a prune, or wipe the base.
+
+positional arguments:
+  COMMAND
+    status        Show total size, project count, and per-project breakdown
+    list          Alias for 'status'
+    prune         Delete orphan/stale checkpoints and GC the store
+    clear         Delete the entire checkpoint base (all /rollback history)
+    clear-legacy  Delete only the legacy-<ts>/ archives from v1 migration
+
+options:
+  -h, --help      show this help message and exit

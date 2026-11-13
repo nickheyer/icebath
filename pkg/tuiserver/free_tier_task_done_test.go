@@ -222,7 +222,7 @@ func TestPromptSubmitRecordsOnlyUntouchedTurns(t *testing.T) {
 			ctx = tuigateway.BindTransport(context.Background(), transport)
 			opts := agent.AIAgentOptions{Model: fakellm.ModelID, Provider: "nous", BaseURL: srv.BaseURL(), APIKey: freeTierAgentKey(),
 				APIMode: "chat_completions", SessionID: "k", Platform: "tui", QuietMode: true, SkipContextFiles: true, SkipMemory: true,
-				MaxIterations: 10, SessionDB: db, EnabledToolsets: []string{"todo"}}
+				MaxIterations: new(10), SessionDB: db, EnabledToolsets: []string{"todo"}}
 			agentCbs(ctx, "sid").applyTo(&opts)
 			built, err := agent.NewAIAgent(ctx, opts)
 			if err != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -30,18 +31,9 @@ type ttsImportError struct{ msg string }
 
 func (e *ttsImportError) Error() string { return e.msg }
 
-var ttsPMFeatureAliases = map[string]string{"tts.edge": "edge-tts", "tts.elevenlabs": "tts-premium", "tts.mistral": "mistral"}
-
-// Lazy package importer that first offers the pm extra of a feature, failing like a missing import
-func ttsSDKImporter(module, feature string) func(ctx context.Context) error {
+// Importer of a local engine package, failing like a missing import
+func ttsSDKImporter(module string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		if feature != "" {
-			extra, ok := ttsPMFeatureAliases[feature]
-			if !ok {
-				extra = feature
-			}
-			_ = ttsEnsureImport(ctx, extra)
-		}
 		if !ttsModuleImportable(ctx, module) {
 			return &ttsImportError{msg: fmt.Sprintf("No module named '%s'", module)}
 		}
@@ -49,16 +41,12 @@ func ttsSDKImporter(module, feature string) func(ctx context.Context) error {
 	}
 }
 
-// pm lazy install of an extra, the seam tests record
-var ttsEnsureImport = pm.EnsureImport
-
 // Whether the managed environment finds a module, the find_spec seam tests replace
 var ttsModuleImportable = func(ctx context.Context, module string) bool { return pm.AnchorImportable(ctx, module) }
 
 var (
-	ttsImportEdgeTTS   = ttsSDKImporter("edge_tts", "tts.edge")
-	ttsImportKittenTTS = ttsSDKImporter("kittentts", "")
-	ttsImportPiper     = ttsSDKImporter("piper", "")
+	ttsImportKittenTTS = ttsSDKImporter("kittentts")
+	ttsSpeechSupported = speech.Supported
 )
 
 // Whether an importer succeeds
@@ -68,7 +56,6 @@ func ttsImportable(ctx context.Context, importer func(context.Context) error) bo
 
 func checkNeuTTSAvailable(ctx context.Context) bool    { return ttsModuleImportable(ctx, "neutts") }
 func checkKittenTTSAvailable(ctx context.Context) bool { return ttsModuleImportable(ctx, "kittentts") }
-func checkPiperAvailable(ctx context.Context) bool     { return ttsModuleImportable(ctx, "piper") }
 
 const defaultTTSProvider = "edge"
 
@@ -128,19 +115,18 @@ type builtinTTSEntry struct {
 
 var builtinTTSDispatch = map[string]builtinTTSEntry{
 	"elevenlabs": {nil, "ElevenLabs", func() ttsGenerator { return ttsGenerateElevenLabs }, ""},
-	"openai":     {openAIClientImportable, "OpenAI TTS", nil, "OpenAI provider selected but 'openai' package not installed."},
-	"deepinfra": {openAIClientImportable, "DeepInfra TTS", func() ttsGenerator { return ttsGenerateDeepInfra },
-		"DeepInfra TTS uses the 'openai' SDK but it isn't installed."},
-	"minimax": {nil, "MiniMax TTS", func() ttsGenerator { return ttsGenerateMiniMax }, ""},
-	"xai":     {nil, "xAI TTS", func() ttsGenerator { return ttsGenerateXAI }, ""},
-	"mistral": {nil, "Mistral Voxtral TTS", func() ttsGenerator { return ttsGenerateMistral }, ""},
-	"gemini":  {nil, "Google Gemini TTS", func() ttsGenerator { return ttsGenerateGemini }, ""},
+	"openai":     {nil, "OpenAI TTS", nil, ""},
+	"deepinfra":  {nil, "DeepInfra TTS", func() ttsGenerator { return ttsGenerateDeepInfra }, ""},
+	"minimax":    {nil, "MiniMax TTS", func() ttsGenerator { return ttsGenerateMiniMax }, ""},
+	"xai":        {nil, "xAI TTS", func() ttsGenerator { return ttsGenerateXAI }, ""},
+	"mistral":    {nil, "Mistral Voxtral TTS", func() ttsGenerator { return ttsGenerateMistral }, ""},
+	"gemini":     {nil, "Google Gemini TTS", func() ttsGenerator { return ttsGenerateGemini }, ""},
 	"neutts": {func(ctx context.Context) bool { return ttsCheckNeuTTS(ctx) }, "NeuTTS (local)", func() ttsGenerator { return ttsGenerateNeuTTS },
 		"NeuTTS provider selected but neutts is not installed. Run icebath setup tts and choose NeuTTS; espeak-ng is also required."},
 	"kittentts": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportKittenTTS) }, "KittenTTS (local, ~25MB)", func() ttsGenerator { return ttsGenerateKittenTTS },
 		"KittenTTS provider selected but 'kittentts' package not installed. Run 'icebath setup tts' and choose KittenTTS."},
-	"piper": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportPiper) }, "Piper (local)", func() ttsGenerator { return ttsGeneratePiper },
-		"Piper provider selected but 'piper-tts' package not installed. Run 'icebath tools' and select Piper under TTS."},
+	"piper": {func(context.Context) bool { return ttsSpeechSupported() }, "Piper (local)", func() ttsGenerator { return ttsGeneratePiper },
+		"Piper provider selected but the local speech engine has no build for this platform. Run 'icebath setup tts' and choose another provider."},
 }
 
 // Generator seams resolved at call time so tests can replace each engine
@@ -157,12 +143,6 @@ var (
 	ttsGeneratePiper      ttsGenerator = generatePiperTTS
 	ttsCheckNeuTTS                     = checkNeuTTSAvailable
 )
-
-// Whether the OpenAI speech client importer succeeds
-func openAIClientImportable(context.Context) bool {
-	_, err := ttsImportOpenAIClient()
-	return err == nil
-}
 
 // Python json.dumps with ensure_ascii off over an ordered object
 func ttsDumps(v any) string {
@@ -183,22 +163,12 @@ func ttsToolError(message string) string {
 	return ttsDumps(pyjson.ObjectOf("error", tools.BoundErrorText(message), "success", false))
 }
 
-// Built in engine of a provider with no error, else the provider and a missing package envelope
+// Built in engine of a provider with no error, unknown names taking the Edge default
 func selectBuiltinEngine(ctx context.Context, provider string) (string, string) {
-	if entry, ok := builtinTTSDispatch[provider]; ok {
-		if entry.available != nil && !entry.available(ctx) {
-			return provider, ttsErrorJSON(entry.missingError)
-		}
-		return provider, ""
+	if entry, ok := builtinTTSDispatch[provider]; ok && entry.available != nil && !entry.available(ctx) {
+		return provider, ttsErrorJSON(entry.missingError)
 	}
-	if ttsImportable(ctx, ttsImportEdgeTTS) {
-		return provider, ""
-	}
-	if ttsCheckNeuTTS(ctx) {
-		ttsLog().Info("Edge TTS not available, falling back to NeuTTS (local)...")
-		return "neutts", ""
-	}
-	return provider, ttsErrorJSON("No TTS provider available. Enable Edge TTS with: " + pm.InstallHint("edge-tts") + " or run 'icebath setup tts' and choose NeuTTS for local synthesis.")
+	return provider, ""
 }
 
 // Runs the already selected built in engine
@@ -703,25 +673,17 @@ func xaiRequirements(env *tools.Env) bool {
 	return ok
 }
 
-// Whether pm reports the extra's anchors importable, the seam tests replace
-var ttsPMExtraAvailable = func(ctx context.Context, extra string) bool {
-	ok, err := pm.Available(ctx, extra)
-	return err == nil && ok
-}
-
 // Passive availability of each built in provider, never installing
 var builtinTTSRequirements = map[string]func(ctx context.Context, env *tools.Env) bool{
-	"edge": func(ctx context.Context, env *tools.Env) bool {
-		return ttsPMExtraAvailable(ctx, "edge-tts") || ttsCheckNeuTTS(ctx)
-	},
+	"edge": func(ctx context.Context, env *tools.Env) bool { return true },
 	"elevenlabs": func(ctx context.Context, env *tools.Env) bool {
-		return ttsPMExtraAvailable(ctx, "tts-premium") && ttsResolveProviderKey(env, "ELEVENLABS_API_KEY", "elevenlabs") != ""
+		return ttsResolveProviderKey(env, "ELEVENLABS_API_KEY", "elevenlabs") != ""
 	},
 	"openai": func(ctx context.Context, env *tools.Env) bool {
-		return openAIClientImportable(ctx) && hasOpenAIAudioBackend(ctx, env)
+		return hasOpenAIAudioBackend(ctx, env)
 	},
 	"deepinfra": func(ctx context.Context, env *tools.Env) bool {
-		return openAIClientImportable(ctx) && ttsResolveProviderKey(env, "DEEPINFRA_API_KEY", "deepinfra") != ""
+		return ttsResolveProviderKey(env, "DEEPINFRA_API_KEY", "deepinfra") != ""
 	},
 	"minimax": miniMaxRequirements,
 	"xai":     func(ctx context.Context, env *tools.Env) bool { return xaiRequirements(env) },
@@ -729,41 +691,14 @@ var builtinTTSRequirements = map[string]func(ctx context.Context, env *tools.Env
 		return ttsResolveProviderKey(env, "GEMINI_API_KEY", "gemini") != "" || ttsResolveProviderKey(env, "GOOGLE_API_KEY", "gemini") != ""
 	},
 	"mistral": func(ctx context.Context, env *tools.Env) bool {
-		return ttsPMExtraAvailable(ctx, "mistral") && ttsResolveProviderKey(env, "MISTRAL_API_KEY", "mistral") != ""
+		return ttsResolveProviderKey(env, "MISTRAL_API_KEY", "mistral") != ""
 	},
 	"neutts":    func(ctx context.Context, env *tools.Env) bool { return ttsCheckNeuTTS(ctx) },
 	"kittentts": func(ctx context.Context, env *tools.Env) bool { return checkKittenTTSAvailable(ctx) },
-	"piper":     func(ctx context.Context, env *tools.Env) bool { return checkPiperAvailable(ctx) },
+	"piper":     func(ctx context.Context, env *tools.Env) bool { return ttsSpeechSupported() },
 }
 
-var sdkOnDemand = map[string]string{"edge": "", "elevenlabs": "ELEVENLABS_API_KEY", "mistral": "MISTRAL_API_KEY"}
-
-// Platform gate and lazy install policy seams tests replace
-var (
-	ttsExtraSupported = func(ctx context.Context, extra string) bool {
-		ok, err := pm.ExtraSupported(ctx, extra)
-		return err == nil && ok
-	}
-	ttsLazyInstallsAllowed = pm.LazyInstallsAllowedFor
-)
-
-// Whether pm may install the provider SDK at first synthesis here and its credential is present
-func readyAfterFirstUseInstall(ctx context.Context, env *tools.Env, provider string) bool {
-	keyEnv, ok := sdkOnDemand[provider]
-	if !ok {
-		return false
-	}
-	feature, ok := ttsPMFeatureAliases["tts."+provider]
-	if !ok {
-		return false
-	}
-	if keyEnv != "" && ttsResolveProviderKey(env, keyEnv, provider) == "" {
-		return false
-	}
-	return ttsExtraSupported(ctx, feature) && ttsLazyInstallsAllowed(ctx)
-}
-
-// Whether the resolved provider can run now or after the first use SDK install, never installing
+// Whether the resolved provider can run now
 func checkTTSRequirements(ctx context.Context, env *tools.Env) bool {
 	ttsConfig := loadTTSConfig(ctx, env)
 	provider := getTTSProvider(ttsConfig)
@@ -771,7 +706,7 @@ func checkTTSRequirements(ctx context.Context, env *tools.Env) bool {
 		return true
 	}
 	if check, ok := builtinTTSRequirements[provider]; ok {
-		return check(ctx, env) || readyAfterFirstUseInstall(ctx, env, provider)
+		return check(ctx, env)
 	}
 	return pluginProviderIsAvailable(ctx, provider)
 }

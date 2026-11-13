@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.npm \
     set -eu; \
     go run ./cmd/icebath-build web; \
-    CGO_ENABLED=0 go build -tags webdist -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+    CGO_ENABLED=0 go build -tags webdist,goolm -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
         -o /out/icebath ./cmd/icebath; \
     CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/icebath-init ./cmd/icebath-init
 

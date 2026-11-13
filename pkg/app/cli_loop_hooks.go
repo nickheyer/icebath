@@ -294,8 +294,8 @@ func (c *CLI) goalTurnBackground() (procs []map[string]any, active int) {
 	}()
 	procs = goals.GatherBackgroundProcesses(c.ctx, "", c.sessionID)
 	agentSession := ""
-	if c.agent != nil {
-		agentSession = c.agent.SessionID()
+	if c.agentRef() != nil {
+		agentSession = c.agentRef().SessionID()
 	}
 	return procs, goals.CountActiveDelegations(agentSession)
 }

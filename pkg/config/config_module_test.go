@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Seeded default every install between its introduction and the rewrite carried, kept as a literal
@@ -522,9 +523,9 @@ func TestRemoveEnvValueRemoveEnvValuePreservesExistingFileModeOnPosix(t *testing
 // Fails every temp file flush with a full disk the way a writer dying before the replace does
 func failConfigFlush(t *testing.T) {
 	t.Helper()
-	prev := fsyncFile
-	fsyncFile = func(f *os.File) error { return &os.PathError{Op: "write", Path: f.Name(), Err: syscall.ENOSPC} }
-	t.Cleanup(func() { fsyncFile = prev })
+	prev := pyfs.Fsync
+	pyfs.Fsync = func(f *os.File) error { return &os.PathError{Op: "write", Path: f.Name(), Err: syscall.ENOSPC} }
+	t.Cleanup(func() { pyfs.Fsync = prev })
 }
 
 func TestSaveConfigAtomicityNoPartialWriteOnCrash(t *testing.T) {
@@ -535,11 +536,11 @@ func TestSaveConfigAtomicityNoPartialWriteOnCrash(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal(err)
 	}
-	prev := fsyncFile
+	prev := pyfs.Fsync
 	failConfigFlush(t)
 	cfg["model"] = "should-not-persist"
 	err := SaveConfig(t.Context(), h, cfg, SaveOptions{})
-	fsyncFile = prev
+	pyfs.Fsync = prev
 	if !errors.Is(err, syscall.ENOSPC) {
 		t.Fatalf("crash surfaced as %v", err)
 	}

@@ -4,8 +4,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/sleepclock"
 )
+
+var activityMonoStart = time.Now()
 
 // ActivityDescriptionMax is the code point budget of a session activity description
 const ActivityDescriptionMax = 120
@@ -54,9 +55,10 @@ type AwakeIdleMeter struct {
 	asleepS          float64
 }
 
-// Meter whose clocks start now, wall time against the clock that stops during sleep
+// Meter whose clocks start now, wall time against the monotonic clock
 func NewAwakeIdleMeter() *AwakeIdleMeter {
-	return newAwakeIdleMeter(func() float64 { return float64(time.Now().UnixNano()) / 1e9 }, sleepclock.AwakeSeconds)
+	return newAwakeIdleMeter(func() float64 { return float64(time.Now().UnixNano()) / 1e9 },
+		func() float64 { return time.Since(activityMonoStart).Seconds() })
 }
 
 func newAwakeIdleMeter(wallNow, monoNow func() float64) *AwakeIdleMeter {

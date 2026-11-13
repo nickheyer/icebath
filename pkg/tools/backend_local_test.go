@@ -692,9 +692,9 @@ func TestForcePrefixUnwrapsOnlyFromExtras(t *testing.T) {
 
 func TestBuildersStripRuntimeMarkersAndOwnedPythonpath(t *testing.T) {
 	env := newTestToolEnv(t)
-	root := RunningSourceRoot()
+	root := runtimeSourceRootDir()
 	if root == "" {
-		t.Skip("source root unknown")
+		t.Fatal("source checkout unknown")
 	}
 	base := map[string]string{"PATH": "/bin", "PYTHONPATH": root + string(os.PathListSeparator) + "/user/lib" + string(os.PathListSeparator) + root + "/child" + string(os.PathListSeparator), "VIRTUAL_ENV": "/venv", "CONDA_PREFIX": "/c", "PYTHONHOME": "/p"}
 	out := mustSanitize(t, env, base, nil)
@@ -951,6 +951,7 @@ func TestSessionToolEnvHookIsUnsetUntilInstalled(t *testing.T) {
 
 func TestIcebathSubprocessEnvCheckedReturnsTheDamagedRecordError(t *testing.T) {
 	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
 	base := map[string]string{"OPENAI_API_KEY": "sk", "PATH": "/bin"}
 	out, err := IcebathSubprocessEnvChecked(env, false, base)
 	if err != nil || out["PATH"] != "/bin" {

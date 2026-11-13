@@ -2,8 +2,6 @@ package plugins
 
 import (
 	"context"
-	"path/filepath"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -31,41 +29,6 @@ func TestTheHoldLastsAsLongAsTheRegistrationThatDeclaredIt(t *testing.T) {
 	}
 	if m.HoldsStream() || !m.HasHook("transform_llm_output") {
 		t.Fatalf("after dispose holds=%v has_hook=%v", m.HoldsStream(), m.HasHook("transform_llm_output"))
-	}
-}
-
-func TestOnlyTheDeclaringProfileHolds(t *testing.T) {
-	python := liveInterpreters(t)["system"]
-	installLiveServices(t)
-	installHostEnvHooks()
-	ledgerSwapBundled(t)
-	tmp := t.TempDir()
-	t.Setenv(EnvEnableProjectPlugins, "0")
-	t.Setenv("ICEBATH_BUNDLED_PLUGINS", filepath.Join(tmp, "no-bundled"))
-	previous := hostInterpreter
-	hostInterpreter = func(context.Context) (string, error) { return python, nil }
-	t.Cleanup(func() { hostInterpreter = previous })
-	homes := map[string]string{}
-	for _, name := range []string{"alpha", "beta"} {
-		h := filepath.Join(tmp, name)
-		homes[name] = h
-		body := holdStreamRedactor
-		if name != "alpha" {
-			body = strings.Replace(body, ", hold_stream=True", "", 1)
-		}
-		writePluginDir(t, filepath.Join(h, "plugins", "redactor"), "name: redactor\nversion: 0.1.0\n")
-		writeFile(t, filepath.Join(h, "plugins", "redactor", "__init__.py"), body)
-		writeFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  isolation: host\n  enabled:\n  - redactor\n")
-	}
-	ResetPluginManagersForTests()
-	t.Cleanup(ResetPluginManagersForTests)
-	var seen []bool
-	for _, name := range []string{"alpha", "beta", "alpha"} {
-		t.Setenv("ICEBATH_HOME", homes[name])
-		seen = append(seen, StreamHeld(homeCtx(homes[name])))
-	}
-	if !reflect.DeepEqual(seen, []bool{true, false, true}) {
-		t.Fatalf("stream held per profile = %v (alpha load error %q)", seen, loadedError(GetPluginManager(homeCtx(homes["alpha"])), "redactor"))
 	}
 }
 

@@ -251,7 +251,7 @@ func TestShowUsageMatchesReference(t *testing.T) {
 			c.sessionStart = time.Now().Add(-(3*time.Hour + 5*time.Minute))
 			c.conversationHistory = []map[string]any{{"role": "user", "content": "a"}, {"role": "user", "content": "a"}, {"role": "user", "content": "a"}, {"role": "user", "content": "a"}}
 			if tc.reading != nil {
-				c.agent = &GatewayAgent{ctx: context.Background()}
+				c.setAgent(&GatewayAgent{ctx: context.Background()})
 				reading := *tc.reading
 				swap(t, &readAgentUsage, func(*CLI, *GatewayAgent) agentUsageReading { return reading })
 			}
@@ -389,7 +389,7 @@ func TestShowBannerWarningsMatchReference(t *testing.T) {
 			c, out := referenceCLI(t, ref.Columns)
 			t.Chdir(t.TempDir())
 			c.model, c.baseURL, c.enabledToolsets = tc.model, tc.baseURL, []string{"file"}
-			c.agent = &GatewayAgent{ctx: context.Background()}
+			c.setAgent(&GatewayAgent{ctx: context.Background()})
 			swap(t, &readAgentUsage, func(*CLI, *GatewayAgent) agentUsageReading {
 				return agentUsageReading{HasCompressor: true, ContextLength: tc.ctxLen}
 			})

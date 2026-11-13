@@ -24,8 +24,8 @@ func TestRestartNoticeReplacesTheCoreFailedTurnBoundaryOfTheSameTurn(t *testing.
 			}
 			t.Cleanup(func() { a.Close() })
 			rows := []map[string]any{{"role": "user", "content": "please work"}}
-			if _, err := a.FlushMessagesToSessionDB(rows); err != nil {
-				t.Fatal(err)
+			if outcome := a.FlushMessagesToSessionDB(rows); outcome == state.FlushFailed {
+				t.Fatalf("flush outcome %v", outcome)
 			}
 			result := map[string]any{"final_response": "", "interrupted": true, "completed": false, "interrupt_message": "Gateway restarting",
 				"messages": []*state.Message{state.MessageFromDict(rows[0])}}

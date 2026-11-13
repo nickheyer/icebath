@@ -312,7 +312,7 @@ func (c *CLI) tuiSignalHandler(sig os.Signal) {
 	running, app := c.agentRunning, c.app
 	c.uiMu.Unlock()
 	if running {
-		interruptAgentForSignal(c.agent, sig)
+		interruptAgentForSignal(c.agentRef(), sig)
 	}
 	if app != nil && app.IsRunning() {
 		app.Exit()
@@ -462,8 +462,8 @@ func (c *CLI) tuiStdinUsable() bool {
 
 // The session quitting closes, the agent's when one exists
 func (c *CLI) closingSessionID() string {
-	if c.agent != nil {
-		return c.agent.SessionID()
+	if a := c.agentRef(); a != nil {
+		return a.SessionID()
 	}
 	if c.gatewaySessionOpen {
 		return c.sessionID
@@ -479,8 +479,8 @@ func (c *CLI) tuiShutdown() {
 	c.uiMu.Lock()
 	running := c.agentRunning
 	c.uiMu.Unlock()
-	if c.agent != nil && running && !c.detachOnExit {
-		quietly(func() { requestHardInterrupt(c.agent) })
+	if a := c.agentRef(); a != nil && running && !c.detachOnExit {
+		quietly(func() { requestHardInterrupt(a) })
 	}
 	if rec := c.voiceRecorderHandle(); rec != nil {
 		quietly(rec.Shutdown)

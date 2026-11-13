@@ -56,13 +56,12 @@ func lifetimeAgeAndPrune(t *testing.T, repo, checkout string) {
 	}
 }
 
-// Launch seams of a worktree TUI whose Ink child runs ink and reports the checkout it worked in
+// Launch seams of a worktree launch whose terminal UI run reports the checkout it worked in
 func lifetimeDeps(t *testing.T, ink func(env map[string]string) string, checkout *string) tuiLaunchDeps {
 	t.Helper()
 	var captured []map[string]string
 	deps, _ := tuiFakeDeps(t, 0, &captured)
-	deps.makeArgv = func(context.Context, string, bool) ([]string, string, error) { return []string{"node"}, ".", nil }
-	deps.call = func(argv []string, cwd string, env map[string]string) (int, error) {
+	deps.run = func(ctx context.Context, env map[string]string) (int, error) {
 		attached := ink(env)
 		if err := os.WriteFile(env["ICEBATH_TUI_ACTIVE_SESSION_FILE"], []byte(`{"session_id": "`+attached+`"}`), 0o644); err != nil {
 			t.Fatal(err)

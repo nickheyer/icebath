@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Temp home with a skins dir and display.skin set to name, returning the context and skins dir
@@ -115,9 +117,9 @@ func TestSetPersistsTheSkinDurably(t *testing.T) {
 	path := filepath.Join(dir, "oasis.yaml")
 	os.WriteFile(path, []byte(oasisSkin), 0o644)
 	synced := 0
-	prev := fsyncFile
-	fsyncFile = func(f *os.File) error { synced++; return prev(f) }
-	t.Cleanup(func() { fsyncFile = prev })
+	prev := pyfs.Fsync
+	pyfs.Fsync = func(f *os.File) error { synced++; return prev(f) }
+	t.Cleanup(func() { pyfs.Fsync = prev })
 	if code, _, _ := runSkinSet(t, ctx, "ui_tool", "#00FFFF"); code != 0 {
 		t.Fatalf("exit %d", code)
 	}

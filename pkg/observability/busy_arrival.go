@@ -49,6 +49,11 @@ type Arrival struct {
 	parked      bool
 }
 
+// Arrival stamped now for a platform and home, queued until the busy resolution says otherwise
+func newArrival(platform any, homeDir string) *Arrival {
+	return &Arrival{arrived: busyMonotonic(), platform: platform, home: homeDir, disposition: "queued"}
+}
+
 // BusyEvent is the gateway message event the busy seams read and stamp, implemented by pkg/gateway
 type BusyEvent interface {
 	BusyArrival() *Arrival
@@ -100,8 +105,7 @@ func StampBusyArrival(adapter any, event BusyEvent) {
 	homeDir, _ := RuntimeHomeOfSourceHook(event.Source())
 	busyMu.Lock()
 	defer busyMu.Unlock()
-	event.SetBusyArrival(&Arrival{arrived: busyMonotonic(), platform: sourcePlatform(adapter, event.ChatID()),
-		home: homeDir, disposition: "queued"})
+	event.SetBusyArrival(newArrival(sourcePlatform(adapter, event.ChatID()), homeDir))
 }
 
 // Folds an event into the held burst head so its fate is the head's
@@ -123,7 +127,7 @@ func NoteBusyOutcome(ctx context.Context, event BusyEvent, outcome BusySteerOutc
 	if tag == nil {
 		return
 	}
-	tag.home = home.Dir(ctx)
+	bindHome(ctx, tag)
 	if outcome.Steered || outcome.Redirected {
 		resolveArrival(ctx, tag, "steered", ptrFloat(busyMonotonic()))
 	} else if outcome.EffectiveMode == "interrupt" {
@@ -137,8 +141,13 @@ func NoteBusyAdmitting(ctx context.Context, event BusyEvent) {
 	defer busyMu.Unlock()
 	if tag := busyTag(event); tag != nil {
 		tag.admitting = true
-		tag.home = home.Dir(ctx)
+		bindHome(ctx, tag)
 	}
+}
+
+// Rebinds an arrival to the profile home of the scope that now owns its chat
+func bindHome(ctx context.Context, tag *Arrival) {
+	tag.home = home.Dir(ctx)
 }
 
 func ptrFloat(v float64) *float64 { return &v }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -54,7 +55,6 @@ var (
 	shellHookPreToolDialects  = [][4]string{{"action", "message", "reason", "args"}, {"decision", "reason", "message", "tool_input"}}
 	shellHooksRegistered      = map[shellHookKey]bool{}
 	shellHooksRegisteredMu    sync.Mutex
-	shellHookAllowlistWriteMu sync.Mutex
 	shellHooksSyncMu          sync.Mutex
 	shellHookLaunchConsent    = map[[3]string]bool{}
 	shellHookProcessAccept    atomic.Bool
@@ -78,12 +78,50 @@ var (
 // Identity of a wired shell hook, home event matcher and command
 type shellHookKey struct{ home, event, matcher, command string }
 
+// Matcher regex shared by shell hook specs and outbound webhook targets, compiled nil for a literal matcher
+type toolMatcher struct {
+	Matcher  string
+	compiled *regexp2.Regexp
+}
+
+// Strips the matcher and compiles it, an invalid regex warned about under the kind and kept literal
+func (m *toolMatcher) postInit(kind string) {
+	m.Matcher = strings.TrimSpace(m.Matcher)
+	m.compiled = nil
+	if m.Matcher == "" {
+		return
+	}
+	re, err := pyre.CompileFullmatch(m.Matcher)
+	if err != nil {
+		logWarn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, pyrepr.StrRepr(m.Matcher), err))
+	}
+	m.compiled = re
+}
+
+// Whether the tool name passes the matcher, a TypeError for a non string name against a regex
+func (m *toolMatcher) MatchesTool(toolName any) (bool, error) {
+	if m.Matcher == "" {
+		return true, nil
+	}
+	if toolName == nil {
+		return false, nil
+	}
+	name, isStr := toolName.(string)
+	if m.compiled == nil {
+		return isStr && name == m.Matcher, nil
+	}
+	if !isStr {
+		return false, fmt.Errorf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(toolName))
+	}
+	return m.compiled.MatchString(name)
+}
+
 // One parsed hooks entry, the matcher empty when absent
 type ShellHookSpec struct {
-	Event, Command, Matcher string
-	Timeout                 int
-	FailClosed              bool
-	compiled                *regexp2.Regexp
+	toolMatcher
+	Event, Command string
+	Timeout        int
+	FailClosed     bool
 }
 
 // Outcome of one hook subprocess, Error empty and ReturnCode nil when not applicable
@@ -98,47 +136,22 @@ type ShellHookResult struct {
 
 // Spec with its matcher stripped and compiled, an invalid regex kept for literal equality
 func NewShellHookSpec(event, command, matcher string, timeout int, failClosed bool) *ShellHookSpec {
-	s := &ShellHookSpec{Event: event, Command: command, Matcher: strings.TrimSpace(matcher), Timeout: timeout, FailClosed: failClosed}
-	if s.Matcher != "" {
-		re, err := pyre.CompileFullmatch(s.Matcher)
-		if err != nil {
-			logWarn(fmt.Sprintf("shell hook matcher %s is invalid (%v) — treating as literal equality", pyrepr.StrRepr(s.Matcher), err))
-		}
-		s.compiled = re
-	}
+	s := &ShellHookSpec{toolMatcher: toolMatcher{Matcher: matcher}, Event: event, Command: command, Timeout: timeout, FailClosed: failClosed}
+	s.postInit("shell hook")
 	return s
-}
-
-// Whether the tool name passes the matcher, a TypeError for a non string name against a regex
-func (s *ShellHookSpec) MatchesTool(toolName any) (bool, error) {
-	if s.Matcher == "" {
-		return true, nil
-	}
-	if toolName == nil {
-		return false, nil
-	}
-	name, isStr := toolName.(string)
-	if s.compiled == nil {
-		return isStr && name == s.Matcher, nil
-	}
-	if !isStr {
-		return false, fmt.Errorf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(toolName))
-	}
-	ok, err := s.compiled.MatchString(name)
-	return ok, err
 }
 
 // Resolved current home, the registration namespace of a profile
 func shellHomeKey(ctx context.Context) string { return home.Key(home.Dir(ctx)) }
 
-// Drops the current home's wired keys only so one profile's reload never drops another's
-func forgetHomeShellRegistrations(ctx context.Context) {
+// Drops the current home's keys from a wired registry so one profile's reload never drops another's
+func forgetHomeRegistrations[K comparable](ctx context.Context, registry map[K]bool, mu *sync.Mutex, homeOf func(K) string) {
 	h := shellHomeKey(ctx)
-	shellHooksRegisteredMu.Lock()
-	defer shellHooksRegisteredMu.Unlock()
-	for k := range shellHooksRegistered {
-		if k.home == h {
-			delete(shellHooksRegistered, k)
+	mu.Lock()
+	defer mu.Unlock()
+	for k := range registry {
+		if homeOf(k) == h {
+			delete(registry, k)
 		}
 	}
 }
@@ -495,7 +508,7 @@ func IterConfiguredShellHooks(cfg any) []*ShellHookSpec {
 
 // Rewires this home's config hooks after a force reload cleared the manager, never prompting
 func reRegisterConfigHooks(ctx context.Context) error {
-	forgetHomeShellRegistrations(ctx)
+	forgetHomeRegistrations(ctx, shellHooksRegistered, &shellHooksRegisteredMu, func(k shellHookKey) string { return k.home })
 	cfg, err := loadConfig(home.Dir(ctx))
 	if err != nil {
 		return err
@@ -634,7 +647,7 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 }
 
 // Argv with an interpreter prepended for an existing Windows script whose suffix names one
-func windowsShellHookArgv(ctx context.Context, argv []string) ([]string, error) {
+func windowsShellHookArgv(argv []string) ([]string, error) {
 	kind, ok := shellHookWindowsInterp[strings.ToLower(filepath.Ext(argv[0]))]
 	if !ok || !isFile(argv[0]) {
 		return argv, nil
@@ -642,7 +655,7 @@ func windowsShellHookArgv(ctx context.Context, argv []string) ([]string, error) 
 	var interp string
 	var err error
 	if kind == "python" {
-		interp, err = hostInterpreter(ctx)
+		interp, err = exec.LookPath("python")
 	} else {
 		interp, err = tools.FindBash()
 	}
@@ -668,7 +681,7 @@ func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) 
 	}
 	t0 := time.Now()
 	if runtime.GOOS == "windows" {
-		if argv, err = windowsShellHookArgv(ctx, argv); err != nil {
+		if argv, err = windowsShellHookArgv(argv); err != nil {
 			return failed(err.Error())
 		}
 	}
@@ -966,21 +979,11 @@ func lockedUpdateShellHookApprovals(ctx context.Context, update func(data map[st
 	if err := os.MkdirAll(filepath.Dir(p), 0o777); err != nil {
 		return err
 	}
-	if runtime.GOOS == "windows" {
-		shellHookAllowlistWriteMu.Lock()
-		defer shellHookAllowlistWriteMu.Unlock()
-	} else {
-		handle, err := os.OpenFile(p+".lock", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
-		if err != nil {
-			return err
-		}
-		defer handle.Close()
-		release, err := lockStateFile(handle)
-		if err != nil {
-			return err
-		}
-		defer release()
+	release, err := lockShellHookAllowlist(p)
+	if err != nil {
+		return err
 	}
+	defer release()
 	data := LoadShellHookAllowlist(ctx)
 	update(data)
 	return SaveShellHookAllowlist(ctx, data)

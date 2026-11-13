@@ -1,7 +1,7 @@
 import { setShowReasoningFromConfig } from '@/store/reasoning-disclosure'
 
-// `/reasoning` typed into the composer — the Ink TUI's path
-// (ui-tui/src/app/slash/commands/session.ts). The gateway's `config.set
+// `/reasoning` typed into the composer — the terminal UI's path
+// (pkg/tui/slash_session.go). The gateway's `config.set
 // key=reasoning` handles both the display words (show/hide/full/clamp) and the
 // effort levels; through `slash.exec` the words only reached config.yaml and
 // the transcript kept rendering Thinking until the next config refresh.

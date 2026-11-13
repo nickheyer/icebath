@@ -548,6 +548,9 @@ func newStderrTee(log io.Writer) (*stderrTee, error) {
 	return t, nil
 }
 
+// Tee copying child stderr into log as stamped lines, the writer of mcp-stderr.log
+func NewStderrTee(log io.Writer) (*stderrTee, error) { return newStderrTee(log) }
+
 // Copies the pipe into the log, stamping whole lines and holding a partial line until its newline or EOF
 func (t *stderrTee) pump(r *os.File) {
 	defer close(t.drained)

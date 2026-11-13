@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"math"
+	"math/big"
 	"os"
 	"runtime"
 	"strconv"
@@ -55,7 +56,7 @@ func cgroupFileText(path string) (string, error) {
 // Python int that is not a bool
 func isPlainInt(v any) bool {
 	switch v.(type) {
-	case int, int64, int32:
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, *big.Int:
 		return true
 	}
 	return false

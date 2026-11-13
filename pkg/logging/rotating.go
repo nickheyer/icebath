@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -25,7 +26,7 @@ var (
 	lockFile  = pyfs.LockFile
 	chown     = os.Chown
 	geteuid   = os.Geteuid
-	isManaged = func(ctx context.Context) bool { return home.ManagedSystem(ctx, home.Dir(ctx)) != "" }
+	isManaged = func(ctx context.Context) bool { return config.IsManaged(ctx, home.Dir(ctx)) }
 )
 
 var (

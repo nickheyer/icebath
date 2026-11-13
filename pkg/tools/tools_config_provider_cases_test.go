@@ -205,6 +205,7 @@ func TestModelPickerConfigureSttModelDefaultsToCurrent(t *testing.T) {
 }
 
 func TestConfigOnlyExclusionSttExcludedFromChecklistUniverse(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	keys := checklistToolsetKeys(context.Background(), "cli")
 	if keys["stt"] || !keys["tts"] {
 		t.Fatalf("universe %v", keys)
@@ -370,18 +371,6 @@ func TestBrowserExecEngineCheckedForEveryBrowserRowBrowserPostSetupAttemptsCliIn
 				t.Fatalf("%s ensured %d times", key, ensured)
 			}
 		})
-	}
-}
-
-func TestBrowserExecEngineCheckedForEveryBrowserRowEnsureHelperMissingHarnessIsNonFatal(t *testing.T) {
-	s, out := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return nil })
-	s.ensureBrowserUseCLI()
-	if !anyContains(printedWith(out.String(), "⚠ "), "browser-harness") {
-		t.Fatalf("warning lacks browser-harness:\n%s", out.String())
-	}
-	if !anyContains(printedWith(out.String(), "  "), "icebath update") {
-		t.Fatalf("info lacks icebath update:\n%s", out.String())
 	}
 }
 

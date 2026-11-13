@@ -31,7 +31,8 @@ func TestContextBreakdownPrefersTurnBaseAnchor(t *testing.T) {
 		lastAnchor := provider.CaptureUsageAnchor(900_000, 50, rowsToMessages(messages))
 		a := turnBaseBreakdownAgent(t)
 		a.contextCompressor.Base().LastPromptTokens = 900_000
-		a.usageAnchor, a.turnBaseUsageAnchor = lastAnchor, turnBase
+		a.usageAnchor = lastAnchor
+		a.turnBaseUsageAnchor.Store(turnBase)
 		payload, err := ComputeSessionContextBreakdown(ctx, a, messages)
 		if err != nil {
 			t.Fatal(err)
@@ -45,7 +46,8 @@ func TestContextBreakdownPrefersTurnBaseAnchor(t *testing.T) {
 		lastAnchor := provider.CaptureUsageAnchor(300_000, 50, rowsToMessages(messages))
 		a := turnBaseBreakdownAgent(t)
 		a.contextCompressor.Base().LastPromptTokens = 1
-		a.usageAnchor, a.turnBaseUsageAnchor = lastAnchor, nil
+		a.usageAnchor = lastAnchor
+		a.turnBaseUsageAnchor.Store(nil)
 		payload, err := ComputeSessionContextBreakdown(ctx, a, messages)
 		if err != nil {
 			t.Fatal(err)

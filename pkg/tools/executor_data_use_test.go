@@ -18,10 +18,10 @@ func TestConnectorDataUseRidesTheToolMessage(t *testing.T) {
 				return payload
 			}))
 			var flushed []*state.Message
-			host.flush = func(msgs []*state.Message) (bool, error) {
+			host.flush = func(msgs []*state.Message) state.FlushOutcome {
 				last := *msgs[len(msgs)-1]
 				flushed = append(flushed, &last)
-				return true, nil
+				return state.FlushPersisted
 			}
 			messages := []*state.Message{{Role: "user", Content: "read my mail"}}
 			calls := toolCallsFor("web_search", "mail-call")

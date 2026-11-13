@@ -33,6 +33,9 @@ func copySpaBundle(t *testing.T, withIndex bool) string {
 		}
 		return os.WriteFile(filepath.Join(dist, rel), raw, 0o644)
 	})
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dist, "assets", "index-abc123.js"), []byte("console.log('bundle');"), 0o644)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

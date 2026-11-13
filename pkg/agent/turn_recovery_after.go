@@ -284,7 +284,7 @@ func recoverWelcomeTier(ctx context.Context, a *AIAgent, classified *provider.Cl
 		requested := a.model
 		if len(alternates) > 0 && alternates[0] != requested {
 			target := alternates[0]
-			a.model = target
+			a.model, a.modelNone = target, false
 			a.nousModelSwitch = &[2]string{requested, target}
 			vlines(a, fmt.Sprintf("↪️  %s isn't available without signing in; using %s for now. Retrying...", requested, target))
 			conversationLoopLog().Info(fmt.Sprintf("%sNous free tier: moved %s -> %s after model_not_free", a.logPrefix, requested, target))

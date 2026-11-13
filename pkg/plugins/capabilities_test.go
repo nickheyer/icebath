@@ -94,24 +94,6 @@ func TestDeclarationParsing(t *testing.T) {
 	}
 }
 
-func TestEntrypointCompanionMetadataDeclaresCapabilitiesWithoutImport(t *testing.T) {
-	ctx, _ := listWorld(t)
-	site := writeEntryPointSite(t, "thread_namer", "1.2.3", "Names gateway threads",
-		"[icebath_agent.plugins]\nthread-namer = thread_namer.plugin:register\n\n[icebath_agent.plugin_capabilities]\nthread-namer.gateway.platform_actions = thread_namer.plugin:register\n")
-	t.Setenv("PYTHONPATH", site)
-	manifests := discoverEntrypointManifests(ctx)
-	if len(manifests) != 1 {
-		t.Fatalf("%+v", manifests)
-	}
-	mf := manifests[0]
-	if mf.Name != "thread-namer" || mf.Version != "1.2.3" || mf.Description != "Names gateway threads" || !slices.Equal(mf.Capabilities, []string{"gateway.platform_actions"}) {
-		t.Fatalf("%+v", mf)
-	}
-	if _, err := os.Stat(filepath.Join(site, "thread_namer", "plugin.py")); err == nil {
-		t.Fatal("the site must hold no importable plugin code")
-	}
-}
-
 func TestConsentPersistence(t *testing.T) {
 	h := capHome(t)
 	capRecord(t, h, "capplug", []string{"tools.override"}, []string{"tools.override"})

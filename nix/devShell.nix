@@ -12,7 +12,7 @@
           goreleaser
         ];
         shellHook = ''
-          echo "Icebath dev shell. Build with: go run ./cmd/icebath-build web && go build -tags webdist ./cmd/icebath"
+          echo "Icebath dev shell. Build with: go run ./cmd/icebath-build web && go build -tags webdist,goolm ./cmd/icebath"
         '';
       };
     };

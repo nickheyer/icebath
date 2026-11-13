@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 )
 
 // Dispatches the scratch prune and plugin host entries so a re-executed child runs its mode instead of this suite
@@ -16,7 +15,6 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
-	pluginhost.DispatchPluginHostEntry(context.Background())
 	plugins.DropImportedBundledPlugins()
 	os.Exit(m.Run())
 }

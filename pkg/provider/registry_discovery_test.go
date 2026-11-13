@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,14 +52,6 @@ func rediscoverProviders(t *testing.T, ctx context.Context) {
 	discoverProviders(ctx)
 }
 
-// Entry point scan double returning the given entry points
-func fakeEntryPoints(t *testing.T, eps ...ProviderEntryPoint) {
-	t.Helper()
-	prev := installedProviderEntryPointsFn
-	installedProviderEntryPointsFn = func(context.Context) ([]ProviderEntryPoint, error) { return eps, nil }
-	t.Cleanup(func() { installedProviderEntryPointsFn = prev })
-}
-
 // Writes plugins.enabled and plugins.disabled into the home config
 func enablePlugins(t *testing.T, h string, enabled, disabled []string) {
 	t.Helper()
@@ -68,12 +59,6 @@ func enablePlugins(t *testing.T, h string, enabled, disabled []string) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func callableEntryPoint(name string, p Profile) ProviderEntryPoint {
-	return ProviderEntryPoint{Name: name, Value: name + ":register", Load: func(context.Context) (ProviderEntryPointTarget, error) {
-		return ProviderEntryPointTarget{Callable: true, Invoke: func(context.Context) ([]Profile, error) { return []Profile{p}, nil }}, nil
-	}}
 }
 
 func TestBundledPluginDirsAllRegisterProfiles(t *testing.T) {
@@ -201,87 +186,5 @@ func TestOtherPluginsInTheFlatDirectoryAreLeftToThePluginManager(t *testing.T) {
 	}
 	if getProviderProfile(ctx, "openrouter") == nil {
 		t.Fatal("bundled set intact")
-	}
-}
-
-func TestEntryPointCallableAndModuleTargets(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	enablePlugins(t, h, []string{"ep-callable", "ep-module"}, nil)
-	module := ProviderEntryPoint{Name: "ep-module", Value: "ep_module", Load: func(context.Context) (ProviderEntryPointTarget, error) {
-		return ProviderEntryPointTarget{Profiles: []Profile{{Name: "ep-module", BaseURL: "https://b.test/v1"}}, Invoke: func(context.Context) ([]Profile, error) {
-			t.Fatal("a non callable target is never invoked")
-			return nil, nil
-		}}, nil
-	}}
-	fakeEntryPoints(t, callableEntryPoint("ep-callable", Profile{Name: "ep-callable", Aliases: []string{"epc"}, BaseURL: "https://a.test/v1"}), module)
-	ctx := context.Background()
-	rediscoverProviders(t, ctx)
-	for _, n := range []string{"ep-callable", "epc", "ep-module"} {
-		if getProviderProfile(ctx, n) == nil {
-			t.Fatalf("%s not registered", n)
-		}
-	}
-}
-
-func TestEntryPointNotEnabledOrDisabledIsSkipped(t *testing.T) {
-	for _, tc := range []struct{ enabled, disabled []string }{
-		{[]string{"some-other-plugin"}, nil},
-		{[]string{"ep-callable"}, []string{"ep-callable"}},
-	} {
-		h := t.TempDir()
-		t.Setenv("ICEBATH_HOME", h)
-		enablePlugins(t, h, tc.enabled, tc.disabled)
-		fakeEntryPoints(t, callableEntryPoint("ep-callable", Profile{Name: "ep-callable", BaseURL: "https://a.test/v1"}))
-		ctx := context.Background()
-		rediscoverProviders(t, ctx)
-		if getProviderProfile(ctx, "ep-callable") != nil {
-			t.Fatalf("%v/%v: entry point must be skipped", tc.enabled, tc.disabled)
-		}
-	}
-}
-
-func TestGeneralPluginRegisterCtxNotInvoked(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	enablePlugins(t, h, []string{"general-plugin"}, nil)
-	calls := 0
-	fakeEntryPoints(t, ProviderEntryPoint{Name: "general-plugin", Value: "general:register", Load: func(context.Context) (ProviderEntryPointTarget, error) {
-		return ProviderEntryPointTarget{Callable: true, RequiresArguments: true, Invoke: func(context.Context) ([]Profile, error) {
-			calls++
-			return nil, nil
-		}}, nil
-	}})
-	rediscoverProviders(t, context.Background())
-	if calls != 0 {
-		t.Fatal("a register(ctx) target is never invoked")
-	}
-}
-
-func TestEntryPointFailureIsIsolated(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	enablePlugins(t, h, []string{"broken", "ep-callable"}, nil)
-	broken := ProviderEntryPoint{Name: "broken", Value: "broken", Load: func(context.Context) (ProviderEntryPointTarget, error) {
-		return ProviderEntryPointTarget{}, errors.New("broken plugin")
-	}}
-	fakeEntryPoints(t, broken, callableEntryPoint("ep-callable", Profile{Name: "ep-callable", BaseURL: "https://a.test/v1"}))
-	ctx := context.Background()
-	rediscoverProviders(t, ctx)
-	if getProviderProfile(ctx, "ep-callable") == nil {
-		t.Fatal("a broken entry point must not block the next one")
-	}
-}
-
-func TestFilesystemPluginsWinOverEntryPoints(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	enablePlugins(t, h, []string{"openrouter"}, nil)
-	fakeEntryPoints(t, callableEntryPoint("openrouter", Profile{Name: "openrouter", BaseURL: "https://impostor.test/v1"}))
-	ctx := context.Background()
-	rediscoverProviders(t, ctx)
-	p := getProviderProfile(ctx, "openrouter")
-	if p == nil || strings.Contains(p.BaseURL, "impostor.test") {
-		t.Fatalf("bundled openrouter must win: %+v", p)
 	}
 }

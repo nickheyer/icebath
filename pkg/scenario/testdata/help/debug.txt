@@ -1,0 +1,21 @@
+usage: icebath debug [-h] {share,delete} ...
+
+Debug utilities for Icebath Agent. Use 'icebath debug share' to upload a debug report (system info + recent logs) to a paste service and get a shareable URL.
+
+positional arguments:
+  {share,delete}
+    share         Upload debug report to a paste service and print a shareable URL
+    delete        Delete a paste uploaded by 'icebath debug share'
+
+options:
+  -h, --help      show this help message and exit
+
+Examples:
+    icebath debug share              Upload debug report (asks for confirmation)
+    icebath debug share --yes        Skip confirmation (for scripts/CI)
+    icebath debug share --lines 500  Include more log lines
+    icebath debug share --expire 30  Keep dpaste.com fallback pastes for 30 days
+    icebath debug share --local      Print report locally (no upload)
+    icebath debug share --no-redact  Disable upload-time secret redaction
+    icebath debug share --nous       Upload to Nous-internal storage (private)
+    icebath debug delete <url>       Delete a previously uploaded paste

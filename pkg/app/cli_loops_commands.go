@@ -229,9 +229,9 @@ func (c *CLI) recordModelFriction(signal string, turns int) {
 		return
 	}
 	opts := observability.FrictionOptions{SessionID: c.sessionID, Provider: c.provider, Model: c.model, Turns: turns}
-	if c.agent != nil {
-		opts.Provider, opts.Model = c.agent.Provider(), c.agent.Model()
-		if sid := c.agent.SessionID(); sid != "" {
+	if a := c.agentRef(); a != nil {
+		opts.Provider, opts.Model = a.Provider(), a.Model()
+		if sid := a.SessionID(); sid != "" {
 			opts.SessionID = sid
 		}
 	}
@@ -729,17 +729,18 @@ func (c *CLI) cmdQueue(cmdOriginal string) {
 // Handles /steer, injecting text after the next tool call while a turn runs, else queueing it
 func (c *CLI) cmdSteer(cmdOriginal string) {
 	payload := slashArgs(cmdOriginal)
+	a := c.agentRef()
 	switch {
 	case payload == "":
 		cprint("  " + c.t("cli.steer.usage", nil))
-	case c.agentRunning && c.agent != nil:
+	case c.agentRunning && a != nil:
 		accepted, err := func() (ok any, err error) {
 			defer func() {
 				if r := recover(); r != nil {
 					err = asError(r)
 				}
 			}()
-			return c.agent.Steer(payload), nil
+			return a.Steer(payload), nil
 		}()
 		switch {
 		case err != nil:

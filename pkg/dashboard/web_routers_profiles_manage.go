@@ -283,14 +283,6 @@ func isFilePath(p string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// Permission bits a rewrite keeps, the existing file's mode or createMode for a new file
-func modeForWrite(path string, createMode os.FileMode) os.FileMode {
-	if st, err := os.Stat(path); err == nil {
-		return st.Mode() & (os.ModePerm | os.ModeSetuid | os.ModeSetgid | os.ModeSticky)
-	}
-	return createMode
-}
-
 // Router of the profile management routes, registered after the cross profile session reads
 func profilesRouter() *APIRouter {
 	r := NewAPIRouter("")
@@ -431,7 +423,8 @@ func profilesRouter() *APIRouter {
 			}
 			soulPath := filepath.Join(dir, "SOUL.md")
 			content, _ := c.Object("body").GetOr("content", nil).(string)
-			err = pyfs.AtomicWriteTextMode(ctx, soulPath, content, ".tmp_", modeForWrite(soulPath, 0o644))
+			createMode := os.FileMode(0o644)
+			err = pyfs.AtomicWriteTextWith(ctx, soulPath, content, pyfs.TextWrite{PreserveMode: true, CreateMode: &createMode})
 			if err != nil {
 				if pypath.IsOSError(err) {
 					webServerLog().Error(fmt.Sprintf("PUT /api/profiles/%s/soul failed", name), "exc_info", err)

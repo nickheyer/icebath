@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/goals"
 
@@ -20,7 +21,7 @@ func heartbeatLogger() *slog.Logger { return slog.Default().With("logger", "herm
 // Serializable per session heartbeat
 type HeartbeatState struct {
 	Prompt          string
-	IntervalSeconds int64
+	IntervalSeconds *big.Int
 	Status          string
 	CreatedAt       float64
 	LastFiredAt     float64
@@ -29,12 +30,12 @@ type HeartbeatState struct {
 
 // Active heartbeat of prompt every intervalSeconds with the dataclass defaults
 func NewHeartbeatState(prompt string, intervalSeconds int64) *HeartbeatState {
-	return &HeartbeatState{Prompt: prompt, IntervalSeconds: intervalSeconds, Status: "active"}
+	return &HeartbeatState{Prompt: prompt, IntervalSeconds: big.NewInt(intervalSeconds), Status: "active"}
 }
 
 // JSON of every field in declaration order with non ASCII kept
 func (s *HeartbeatState) ToJSON() (string, error) {
-	return pyjson.Dumps(pyjson.ObjectOf("prompt", s.Prompt, "interval_seconds", s.IntervalSeconds, "status", s.Status,
+	return pyjson.Dumps(pyjson.ObjectOf("prompt", s.Prompt, "interval_seconds", pyint.Value(s.IntervalSeconds), "status", s.Status,
 		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount), pyjson.EnsureASCII(false))
 }
 
@@ -46,7 +47,7 @@ func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
 	}
 	get := func(k string) any { return d.GetOr(k, nil) }
 	s := &HeartbeatState{Prompt: pyrepr.Str(pyOr(get("prompt"), ""))}
-	if s.IntervalSeconds, err = pyint.Int64(pyOr(get("interval_seconds"), int64(0))); err != nil {
+	if s.IntervalSeconds, err = pyint.Of(pyOr(get("interval_seconds"), int64(0))); err != nil {
 		return nil, err
 	}
 	s.Status = pyrepr.Str(pyOr(get("status"), "active"))

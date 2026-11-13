@@ -148,8 +148,8 @@ func TestOfferFirstRunSetupRoutesIntoSharedPicker(t *testing.T) {
 	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
 		return &provider.Runtime{Provider: "nous", APIKey: "portal-token", BaseURL: "https://inference-api.nousresearch.com/v1", Source: "oauth"}, nil
 	})
-	if !c.offerFirstRunSetup() || *calls != 1 || c.requestedProvider != "nous" || c.model != "hermes-4-405b" || c.agent != nil {
-		t.Fatalf("calls %d provider %q model %q agent %v", *calls, c.requestedProvider, c.model, c.agent)
+	if !c.offerFirstRunSetup() || *calls != 1 || c.requestedProvider != "nous" || c.model != "hermes-4-405b" || c.agentRef() != nil {
+		t.Fatalf("calls %d provider %q model %q agent %v", *calls, c.requestedProvider, c.model, c.agentRef())
 	}
 }
 

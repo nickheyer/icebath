@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"fmt"
+	"iter"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -73,6 +74,11 @@ func (m ManualMoves) Get(src string) []string {
 type Workflow struct {
 	Columns []Column
 	Manual  ManualMoves
+}
+
+// Columns in board order as an iterator
+func (w Workflow) All() iter.Seq[Column] {
+	return slices.Values(w.Columns)
 }
 
 // Column keys in board order, never including archived

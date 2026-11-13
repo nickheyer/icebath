@@ -192,7 +192,7 @@ func jsToNumber(v any) (float64, bool) {
 	case float64:
 		return x, x == x
 	case string:
-		t := strings.TrimSpace(x)
+		t := jsTrim(x)
 		if t == "" {
 			return 0, true
 		}

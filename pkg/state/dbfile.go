@@ -182,34 +182,44 @@ func fdIsTrulyUnlinked(fdPath, watchedPath string) bool {
 
 // Calls fn with pid, readlink target and fd path for every readable /proc descriptor entry
 func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
-	entries, err := os.ReadDir("/proc")
+	pids, err := listdirUnordered("/proc")
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		pidStr := entry.Name()
+	for _, pidStr := range pids {
 		if pidStr == "" || !pystr.All(pidStr, pystr.IsDigit) {
 			continue
 		}
 		fdDir := "/proc/" + pidStr + "/fd"
-		fds, err := os.ReadDir(fdDir)
-		if err != nil {
+		fds, err := listdirUnordered(fdDir)
+		if err != nil || len(fds) == 0 {
 			continue
 		}
+		n, ok := pyint.Parse(pidStr)
+		if !ok || !n.IsInt64() {
+			return &pyConvError{"ValueError", "invalid literal for int() with base 10: " + pyrepr.StrRepr(pidStr)}
+		}
+		pid := int(n.Int64())
 		for _, fd := range fds {
-			fdPath := fdDir + "/" + fd.Name()
-			n, ok := pyint.Parse(pidStr)
-			if !ok || !n.IsInt64() {
-				return &pyConvError{"ValueError", "invalid literal for int() with base 10: " + pyrepr.StrRepr(pidStr)}
-			}
+			fdPath := fdDir + "/" + fd
 			target, err := os.Readlink(fdPath)
 			if err != nil {
 				continue
 			}
-			fn(int(n.Int64()), target, fdPath)
+			fn(pid, target, fdPath)
 		}
 	}
 	return nil
+}
+
+// Directory entries in the order the kernel returns them, like os.listdir
+func listdirUnordered(dir string) ([]string, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Readdirnames(-1)
 }
 
 const (

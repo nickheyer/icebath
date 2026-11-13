@@ -10,6 +10,20 @@ import (
 // Most characters of an API side text one CLI turn may commit
 const apiTextLimit = 1_000_000
 
+// Per turn fields the classic CLI sends with a prompt.submit request
+var cliTurnSubmitFields = []string{"turn_author", "api_text", "model_override", "clarify_batch"}
+
+// Raw per turn CLI fields present on a prompt.submit request, forwarded to admission
+func submitCLITurnFields(params map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, key := range cliTurnSubmitFields {
+		if value, ok := params[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 // Committed CLI turn fields of a submission, empty when it carries none, malformed values refused
 func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
 	committed := pyjson.NewObject()

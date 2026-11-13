@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -18,7 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -100,13 +101,27 @@ func (f *fakePiperEngine) worker(t *testing.T) (*localTTSWorker, error) {
 	return &localTTSWorker{cmd: cmd, stdin: reqW, out: bufio.NewReader(repR)}, nil
 }
 
+// Voice of the Piper double, recording each text and answering 160 silent samples at 16 kHz
+type fakePiperVoice struct{ engine *fakePiperEngine }
+
+func (v fakePiperVoice) Speak(text string, speaker int, speed float32) ([]float32, int, error) {
+	v.engine.mu.Lock()
+	v.engine.synthesized = append(v.engine.synthesized, text)
+	v.engine.mu.Unlock()
+	return make([]float32, 160), 16000, nil
+}
+
+func (fakePiperVoice) Close() {}
+
 // Installs the Piper double with an on disk voice and returns the engine and the TTS config
 func fakePiper(t *testing.T) (*fakePiperEngine, map[string]any) {
 	t.Helper()
 	cleanLifecycle(t)
 	engine := &fakePiperEngine{}
-	swap(t, &ttsImportPiper, func(context.Context) error { return nil })
-	swap(t, &startLocalTTSWorker, func(_ context.Context, spec map[string]any) (*localTTSWorker, error) {
+	swap(t, &resolvePiperVoice, func(_ context.Context, voice, voicesDir string) (speech.PiperVoice, error) {
+		return speech.PiperVoice{Model: filepath.Join(voicesDir, voice+".onnx"), NoiseScale: 0.667, NoiseW: 0.8, LengthScale: 1}, nil
+	})
+	swap(t, &loadPiperVoice, func(context.Context, speech.PiperVoice, bool) (localVoice, error) {
 		engine.mu.Lock()
 		engine.loads++
 		onLoad := engine.onLoad
@@ -114,7 +129,7 @@ func fakePiper(t *testing.T) (*fakePiperEngine, map[string]any) {
 		if onLoad != nil {
 			onLoad()
 		}
-		return engine.worker(t)
+		return fakePiperVoice{engine}, nil
 	})
 	voices := filepath.Join(t.TempDir(), "voices")
 	if err := os.MkdirAll(voices, 0o755); err != nil {
@@ -214,8 +229,8 @@ func TestWarmReadsConfiguredProviderWhenNoneGiven(t *testing.T) {
 
 func TestWarmNeverRaisesOnEngineFailure(t *testing.T) {
 	cleanLifecycle(t)
-	swap(t, &ttsImportPiper, func(context.Context) error {
-		return &localEngineError{Class: "ImportError", Msg: "No module named 'piper'"}
+	swap(t, &resolvePiperVoice, func(context.Context, string, string) (speech.PiperVoice, error) {
+		return speech.PiperVoice{}, errors.New("piper voice archive unreachable")
 	})
 	result := WarmTTSProvider(context.Background(), nil, map[string]any{"provider": "piper"}, "")
 	if result["warmed"] != false || result["action"] != "error" || !strings.Contains(result["error"].(string), "piper") {
@@ -329,7 +344,9 @@ func TestReleaseUnknownLeaseIsNoop(t *testing.T) {
 
 func TestAcquireFailureStillRegistersLease(t *testing.T) {
 	cleanLifecycle(t)
-	swap(t, &ttsImportPiper, func(context.Context) error { return &localEngineError{Class: "RuntimeError", Msg: "engine missing"} })
+	swap(t, &resolvePiperVoice, func(context.Context, string, string) (speech.PiperVoice, error) {
+		return speech.PiperVoice{}, errors.New("engine missing")
+	})
 	result := AcquireTTSLease(context.Background(), nil, "desktop:conversation", map[string]any{"provider": "piper"})
 	if result["action"] != "error" || result["leases"] != 1 {
 		t.Fatalf("result %v", result)
@@ -584,49 +601,5 @@ func TestZeroKeepWarmUnloadsInline(t *testing.T) {
 	}
 	if len(piperVoiceCache.Keys()) != 0 || len(pendingTimers(timers)) != 0 {
 		t.Fatal("inline unload left state")
-	}
-}
-
-func TestWarmSdkUsesPmAvailabilityAndRefusesInactiveGeneration(t *testing.T) {
-	for _, installed := range []bool{true, false} {
-		t.Run(map[bool]string{true: "True", false: "False"}[installed], func(t *testing.T) {
-			cleanLifecycle(t)
-			ctx := context.Background()
-			root := filepath.Join(t.TempDir(), "repo")
-			if err := os.MkdirAll(root, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(pm.PatchRepoRoot(root))
-			prevAnchor := pm.SwapAnchorImportable(func(context.Context, string) bool { return installed })
-			t.Cleanup(func() { pm.SwapAnchorImportable(prevAnchor) })
-			candidate := filepath.Join(filepath.Dir(pm.RuntimeFactsPath(ctx)), "environments", "new", "venv")
-			if err := os.MkdirAll(candidate, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(candidate, "pyvenv.cfg"), []byte("home = fixture\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			var calls [][]string
-			prevSync := pm.SwapClientSyncVenv(func(ctx context.Context, opts pm.SyncVenvOptions) error {
-				calls = append(calls, opts.Extras)
-				facts, err := pm.NewFacts(pm.RuntimeFactsPath(ctx), false)
-				if err != nil {
-					return err
-				}
-				return facts.RecordState("venv", "new", opts.Extras, candidate, "")
-			})
-			t.Cleanup(func() { pm.SwapClientSyncVenv(prevSync) })
-			result := WarmTTSProvider(ctx, nil, map[string]any{"provider": "edge"}, "")
-			wantAction, wantCalls := "cached", [][]string(nil)
-			if !installed {
-				wantAction, wantCalls = "error", [][]string{{"edge-tts"}}
-			}
-			if result["warmed"] != installed || result["action"] != wantAction || !reflect.DeepEqual(calls, wantCalls) {
-				t.Fatalf("result %v calls %q", result, calls)
-			}
-			if !installed && !strings.Contains(result["error"].(string), "restart") {
-				t.Fatalf("error %q", result["error"])
-			}
-		})
 	}
 }

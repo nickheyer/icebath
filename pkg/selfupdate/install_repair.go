@@ -12,12 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
@@ -345,7 +343,7 @@ func RecoverPausedGateways(ctx context.Context, argv []string) {
 // Gives pm the configured feature scan, which needs the gateway platform registry pm cannot import
 func init() { pm.ConfiguredFeaturesMissingDeps = configuredFeaturesMissingDeps }
 
-// Connected platforms whose adapter check fails and MCP servers whose module the selected environment lacks
+// Connected platforms whose adapter check fails
 func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGap {
 	var missing []pm.ConfiguredFeatureGap
 	if err := func() error {
@@ -361,7 +359,7 @@ func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGa
 			if entry.CheckFn == nil {
 				return fmt.Errorf("'NoneType' object is not callable")
 			}
-			if !entry.CheckFn() {
+			if !entry.RunCheck(ctx) {
 				hint := entry.InstallHint
 				if hint == "" {
 					hint = "Run `icebath setup` to install support."
@@ -372,14 +370,6 @@ func configuredFeaturesMissingDeps(ctx context.Context) []pm.ConfiguredFeatureGa
 		return nil
 	}(); err != nil {
 		installRepairLog.Debug(fmt.Sprintf("configured-platform dependency check skipped: %s", err.Error()))
-	}
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		installRepairLog.Debug(fmt.Sprintf("configured-MCP dependency check skipped: %s", err.Error()))
-		return missing
-	}
-	if pyrepr.Truthy(tree["mcp_servers"]) && !pm.AnchorImportable(ctx, "mcp") {
-		missing = append(missing, pm.ConfiguredFeatureGap{Feature: "MCP servers", Hint: "Run `icebath pm install` to install MCP support.", Extra: "mcp"})
 	}
 	return missing
 }

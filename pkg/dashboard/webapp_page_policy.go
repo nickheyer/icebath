@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"regexp"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -54,8 +56,15 @@ func inlineScriptHashes(html string) []string {
 		if gt < 0 {
 			break
 		}
+		tail := pystr.Strip(rest[pos : pos+gt+1])
 		i += pos + gt + 1
-		if strings.ToLower(m[1]) != "script" || hasSrc {
+		if (tail != ">" && tail != "/>") || strings.ToLower(m[1]) != "script" || hasSrc {
+			continue
+		}
+		if tail == "/>" {
+			// A self-closed script opens and closes at once, hashing empty text and leaving no script data mode
+			digest := sha256.Sum256(nil)
+			hashes = append(hashes, "'sha256-"+base64.StdEncoding.EncodeToString(digest[:])+"'")
 			continue
 		}
 		end := htmlScriptEndRE.FindStringIndex(html[i:])

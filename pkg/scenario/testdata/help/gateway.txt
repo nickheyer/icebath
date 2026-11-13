@@ -1,0 +1,26 @@
+usage: icebath gateway [-h] [--accept-hooks]
+                       {run,ensure,start,stop,restart,status,install,uninstall,list,setup,migrate-legacy,migrate,enroll} ...
+
+Manage the messaging gateway (Telegram, Discord, WhatsApp, Weixin, and more)
+
+positional arguments:
+  {run,ensure,start,stop,restart,status,install,uninstall,list,setup,migrate-legacy,migrate,enroll}
+    run                 Run gateway in foreground (recommended for WSL and Docker)
+    ensure              Ensure a local runtime without installing or replacing a service
+    start               Start the installed systemd/launchd background service
+    stop                Stop gateway service
+    restart             Restart gateway service
+    status              Show gateway status
+    install             Install gateway as a systemd/launchd background service
+    uninstall           Uninstall gateway service
+    list                List all profiles and their gateway status
+    setup               Configure messaging platforms
+    migrate-legacy      Remove legacy icebath.service units from pre-rename installs
+    migrate             Converge every per-profile gateway onto the ONE host gateway
+    enroll              Enroll this gateway with a relay connector (writes relay auth creds to
+                        .env)
+
+options:
+  -h, --help            show this help message and exit
+  --accept-hooks        Auto-approve unseen shell hooks without a TTY prompt (equivalent to
+                        ICEBATH_ACCEPT_HOOKS=1 / hooks_auto_accept: true).

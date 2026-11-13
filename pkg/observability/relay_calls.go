@@ -57,8 +57,8 @@ func (r *Runtime) recordApproval(ctx context.Context, event map[string]any) erro
 		identity := toolCallIdentity(event)
 		call, _ := session.toolCalls.Get(toolCallKey{task.taskID, identity})
 		if call == nil {
-			if keys := compatibleToolCallKeys(session, task.taskID, identity); len(keys) == 1 {
-				call, _ = session.toolCalls.Get(keys[0])
+			if key, ok := sole(compatibleToolCallKeys(session, task.taskID, identity)); ok {
+				call, _ = session.toolCalls.Get(key)
 			}
 		}
 		if call != nil {
@@ -436,7 +436,8 @@ func (r *Runtime) taskSession(event map[string]any, allowTaskIDFallback bool) *m
 			candidates = append(candidates, s)
 		}
 	}
-	return soleSession(candidates)
+	owner, _ = sole(candidates)
+	return owner
 }
 
 // Remembers the event's turn on the task and indexes the session by it
@@ -507,7 +508,7 @@ func (r *Runtime) approvalTask(ctx context.Context, event map[string]any) (*metr
 			}
 		}
 		r.taskSessionsMu.Unlock()
-		session = soleSession(candidates)
+		session, _ = sole(candidates)
 	}
 	if session == nil {
 		return nil, nil
@@ -520,10 +521,11 @@ func (r *Runtime) approvalTask(ctx context.Context, event map[string]any) (*metr
 		}
 	}
 	session.mu.Unlock()
-	if len(matches) != 1 {
+	task, ok := sole(matches)
+	if !ok {
 		return nil, nil
 	}
-	return session, matches[0]
+	return session, task
 }
 
 // Opens one Relay tool call under the task scope

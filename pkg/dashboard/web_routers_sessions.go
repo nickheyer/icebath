@@ -194,7 +194,7 @@ func listSessionsPage(ctx context.Context, limit, offset, minMessages int64, arc
 	minMessageCount := int(max(0, minMessages))
 	archivedOnly, includeArchived := archived == "only", archived == "include"
 	sourceList := splitCSV(sources)
-	includeSubagents, excludeList := subagentListingScope(ctx, filepath.Dir(db.Path()), source, sourceList, splitCSV(excludeSources))
+	includeSubagents, excludeList := state.SubagentListingScope(ctx, filepath.Dir(db.Path()), source, sourceList, splitCSV(excludeSources))
 	pageLimit := int(limit)
 	sessions, err := db.ListSessionsRich(ctx, state.ListSessionsRichOptions{Source: source, Sources: sourceList,
 		ExcludeSources: excludeList, CwdPrefix: cwdPrefix, MinMessageCount: minMessageCount, IncludeArchived: includeArchived,

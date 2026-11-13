@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/plugins/pluginhost"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
@@ -28,7 +27,6 @@ func TestMain(m *testing.M) {
 	hermetic.BlockExternalDNS()
 	dispatchLoopbackOwnerChild()
 	home.DispatchScratchPruneEntry(context.Background())
-	pluginhost.DispatchPluginHostEntry(context.Background())
 	dispatchTrajectoryChild()
 	dispatchLifecycleChild()
 	dispatchVerifyRunChild()

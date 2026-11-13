@@ -61,8 +61,11 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 				merged["response_previewed"] = true
 			}
 			captured.Set("result", pyjson.Ordered(merged))
+			t.ctx.capturedResult = nil
 		} else {
-			captured.Set("result", pyjson.Ordered(result))
+			shared := pyjson.Ordered(result)
+			captured.Set("result", shared)
+			t.ctx.capturedResult, _ = shared.(*pyjson.Object)
 		}
 	}
 	return result, nil

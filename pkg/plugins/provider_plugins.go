@@ -98,67 +98,11 @@ func (o *HostedObject) attributeReload(name string) func(context.Context) (map[s
 	}
 }
 
-// Entry points of the provider plugin group on the import path, the first distribution of each name winning
-func ProviderEntryPoints() []PipEntryPoint {
-	return pipEntryPoints(processImportPath())
-}
-
 // What loading a provider entry point did in the plugin host
 type ProviderEntryPointLoad struct {
 	Profiles          []*HostedProfile
 	Callable          bool
 	RequiresArguments bool
-}
-
-// Loads a provider entry point in the plugin host, profiles registered before a failure returned with its error
-func LoadProviderEntryPoint(ctx context.Context, ep PipEntryPoint) (*ProviderEntryPointLoad, error) {
-	reply, err := providerEntryPointCall(ctx, "provider_entry_point_load", ep)
-	if reply == nil {
-		return &ProviderEntryPointLoad{}, err
-	}
-	profiles, decodeErr := hostedProfilesFrom(entryPointProfileKey+ep.Name, ep.Value, reply["profiles"])
-	if decodeErr != nil {
-		return &ProviderEntryPointLoad{}, decodeErr
-	}
-	return &ProviderEntryPointLoad{Profiles: profiles, Callable: config.PyTruthy(reply["callable"]),
-		RequiresArguments: config.PyTruthy(reply["requires_arguments"])}, err
-}
-
-// Calls a loaded provider entry point with no arguments in the plugin host and returns the profiles it registered
-func InvokeProviderEntryPoint(ctx context.Context, ep PipEntryPoint) ([]*HostedProfile, error) {
-	reply, err := providerEntryPointCall(ctx, "provider_entry_point_invoke", ep)
-	if reply == nil {
-		return nil, err
-	}
-	profiles, decodeErr := hostedProfilesFrom(entryPointProfileKey+ep.Name, ep.Value, reply["profiles"])
-	if decodeErr != nil {
-		return nil, decodeErr
-	}
-	return profiles, err
-}
-
-// Reply of one provider entry point request plus the exception the plugin code raised there
-func providerEntryPointCall(ctx context.Context, op string, ep PipEntryPoint) (map[string]any, error) {
-	m := GetPluginManager(ctx)
-	if m == nil {
-		return nil, &PluginHostUnavailable{Reason: "no plugin manager is bound to this profile"}
-	}
-	host, err := m.pluginHost()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := host.ensureStarted(ctx); err != nil {
-		return nil, err
-	}
-	raw, err := host.call(ctx, op, map[string]any{"name": ep.Name, "value": ep.Value}, nil, 0, nil)
-	if err != nil {
-		return nil, err
-	}
-	reply, _ := raw.(map[string]any)
-	if failure, ok := reply["error"].(map[string]any); ok {
-		return reply, &HostBuiltinError{Type: wireStr(failure["type"]), Message: wireStr(failure["message"])}
-	}
-	return reply, nil
 }
 
 // Object ref marked with the child generation that issued it, so the slot addresses that child

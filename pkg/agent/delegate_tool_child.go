@@ -138,7 +138,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	if err != nil {
 		return nil, err
 	}
-	o.MaxIterations = intArg(spec.MaxIterations, delegateDefaultMaxIterations)
+	o.MaxIterations = new(intArg(spec.MaxIterations, delegateDefaultMaxIterations))
 	o.PrefillMessages = parent.prefillMessages
 	o.EnabledToolsets, o.DisabledToolsets = childToolsets, childDisabled
 	o.QuietMode, o.EphemeralSystemPrompt = true, childPrompt

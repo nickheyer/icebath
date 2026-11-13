@@ -1,6 +1,7 @@
 package gatewayrun
 
 import (
+	"fmt"
 	"slices"
 	"sync"
 
@@ -221,6 +222,11 @@ func (v SessionFieldView[T]) Replace(mapping map[string]T) {
 	for key, value := range mapping {
 		v.Set(key, value)
 	}
+}
+
+// Debug text naming the viewed scope field with its present entries
+func (v SessionFieldView[T]) String() string {
+	return fmt.Sprintf("SessionFieldView(%s.%s, %v)", v.spec.scope, v.spec.name, v.Items())
 }
 
 // Session key and run generation naming one held turn lease token

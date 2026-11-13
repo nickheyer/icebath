@@ -6,7 +6,7 @@ import "context"
 type BackgroundReviewRun = backgroundReviewRun
 
 // Fresh review run token for a guard that is not an agent, a local session's review slot
-func NewBackgroundReviewRun() *BackgroundReviewRun { return &backgroundReviewRun{} }
+func NewBackgroundReviewRun() *BackgroundReviewRun { return newBackgroundReviewRun() }
 
 // Latches request completion once, true for the caller that latched it
 func (r *backgroundReviewRun) MarkRequestFinished() bool { return r.markRequestFinished() }

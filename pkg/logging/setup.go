@@ -122,7 +122,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 		return "", fmt.Errorf("TypeError: logging.backup_count must be an integer, not %s", pyrepr.TypeName(rawBackups))
 	}
 	maxBytes := sizeMB * 1024 * 1024
-	formatter, err := newRedactingFormatter(logFormat, "")
+	formatter, err := LogFileFormatter()
 	if err != nil {
 		return "", err
 	}
@@ -314,7 +314,11 @@ func addRotatingHandler(ctx context.Context, path string, level int, maxBytes fl
 			sorted = append(sorted, k)
 		}
 		slices.Sort(sorted)
-		queued = newProfileRoutingFileHandler(handler, sorted)
+		router, err := newProfileRoutingFileHandler(handler, sorted)
+		if err != nil {
+			return err
+		}
+		queued = router
 		quietly(handler.Close)
 	}
 	registerQueuedHandler(queued)

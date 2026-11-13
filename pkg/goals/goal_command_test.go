@@ -132,6 +132,36 @@ func TestGoalCommandWaitParksOnALivePidOrReportsUsage(t *testing.T) {
 	}
 }
 
+func TestGoalCommandWaitChecksTheActiveGoalBeforeAHugePid(t *testing.T) {
+	goalsTestHome(t)
+	m := NewGoalManager(context.Background(), "cmd-wait-huge", 0)
+	for _, arg := range []string{"wait -99999999999999999999", "wait 99999999999999999999 later"} {
+		if r := goalCmd(t, m, arg, GoalCommandOptions{}); r.Output != "/goal wait: no active goal to park" || !r.Error {
+			t.Fatalf("%q without a goal gave %+v", arg, r)
+		}
+	}
+	goalCmd(t, m, "ship it", GoalCommandOptions{})
+	if r := goalCmd(t, m, "pause", GoalCommandOptions{}); r.Output != "⏸ Goal paused: ship it" || r.ClearPending != "pause" {
+		t.Fatalf("pause %+v", r)
+	}
+	if r := goalCmd(t, m, "wait -99999999999999999999", GoalCommandOptions{}); r.Output != "/goal wait: no active goal to park" || !r.Error {
+		t.Fatalf("paused goal gave %+v", r)
+	}
+	goalCmd(t, m, "resume", GoalCommandOptions{})
+	if r := goalCmd(t, m, "wait -99999999999999999999", GoalCommandOptions{}); r.Output != "/goal wait: pid must be a positive integer" || !r.Error {
+		t.Fatalf("active goal gave %+v", r)
+	}
+	if r := goalCmd(t, m, "show", GoalCommandOptions{}); !strings.HasPrefix(r.Output, m.StatusLine()+"\n") || r.Error {
+		t.Fatalf("show %+v", r)
+	}
+	if r := goalCmd(t, m, "clear", GoalCommandOptions{}); r.Output != "✓ Goal cleared." || r.ClearPending != "clear" {
+		t.Fatalf("clear %+v", r)
+	}
+	if r := goalCmd(t, m, "stop", GoalCommandOptions{}); r.Output != "No active goal." || r.ClearPending != "clear" {
+		t.Fatalf("second clear %+v", r)
+	}
+}
+
 func TestGoalCommandGatesNeedAuthorizationToBeAdded(t *testing.T) {
 	goalsTestHome(t)
 	m := NewGoalManager(context.Background(), "cmd-gate", 0)

@@ -14,14 +14,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Longest a checkpoint write waits for the store lock, the Python lock blocks without a deadline
-const checkpointWriteLockWait = 24 * time.Hour
 
 // Durable state of the process registry, the crash checkpoint, completed receipts, ownership, awaiting, wait policy and notifications
 
@@ -133,9 +131,7 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Objec
 	}
 	r.mu.Unlock()
 	path := checkpointPathFn(env)
-	lockPath := path + ".lock"
-	os.MkdirAll(filepath.Dir(lockPath), 0o700)
-	unlock, err := lockStoreFile(lockPath, checkpointWriteLockWait)
+	unlock, err := activesessions.FileLock(path+".lock", activesessions.NoLockTimeout)
 	if err != nil {
 		toolsLogger(env).Debug(fmt.Sprintf("Failed to write checkpoint file: %v", err))
 		return

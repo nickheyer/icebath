@@ -92,20 +92,3 @@ func TestEnableRejectsAliasResolvingToRemovedRelayPlugin(t *testing.T) {
 		t.Fatalf("output %q", text)
 	}
 }
-
-// Discovery records an enabled removed Relay identity as a disabled gated record without loading it
-func TestRemovedRelayPluginIdentityCannotBeReloaded(t *testing.T) {
-	h := removedRelayHome(t, "nemo_relay", "observability/nemo_relay")
-	m := NewManager(h)
-	m.DiscoverAndLoad(homeCtx(h), false)
-	m.mu.RLock()
-	state := m.plugins["observability/nemo_relay"]
-	host := m.pluginHostInstance
-	m.mu.RUnlock()
-	if state == nil || state.Enabled || !strings.Contains(state.Error, tools.RelayPluginsConfigEnv) {
-		t.Fatalf("state %+v", state)
-	}
-	if host != nil {
-		t.Fatal("removed Relay plugin reached the loader")
-	}
-}

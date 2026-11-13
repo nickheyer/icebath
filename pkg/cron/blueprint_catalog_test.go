@@ -247,7 +247,8 @@ func TestPriceWatchFillsAndPersistsWithChosenCadence(t *testing.T) {
 
 func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 	base := func() plugins.BlueprintSpec {
-		return plugins.BlueprintSpec{Title: "T", Description: "d", ScheduleTemplate: "0 9 * * *", PromptTemplate: "hi", Category: "general", DeliverDefault: "origin"}
+		return plugins.BlueprintSpec{Title: "T", Description: "d", ScheduleTemplate: "0 9 * * *", PromptTemplate: "hi", Category: "general", DeliverDefault: "origin",
+			Slots: []any{}, Skills: []any{}, Tags: []any{}}
 	}
 	cases := []struct {
 		edit   func(*plugins.BlueprintSpec)
@@ -272,6 +273,13 @@ func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 			s.Slots = []any{map[string]any{"name": "x", "type": "text", "label": "X", "optional": true}}
 		}, "prompt_template uses optional slot 'x' that has no default"},
 		{func(s *plugins.BlueprintSpec) { s.Skills = []string{" "} }, "skills must be a list of non-empty strings"},
+		{func(s *plugins.BlueprintSpec) { s.Tags = []any{"ok", 7} }, "tags must be a list of non-empty strings"},
+		{func(s *plugins.BlueprintSpec) { s.Skills = "daily" }, "skills must be a list of strings"},
+		{func(s *plugins.BlueprintSpec) { s.Tags = nil }, "tags must be a list of strings"},
+		{func(s *plugins.BlueprintSpec) { s.Slots = map[string]any{"name": "x"} }, "slots must be a list"},
+		{func(s *plugins.BlueprintSpec) { s.Slots = "x" }, "slots must be a list"},
+		{func(s *plugins.BlueprintSpec) { s.Category = "" }, "category must be a non-empty string"},
+		{func(s *plugins.BlueprintSpec) { s.Title = 42 }, "title must be a non-empty string"},
 	}
 	for _, c := range cases {
 		spec := base()
@@ -283,8 +291,16 @@ func TestBuildPluginBlueprintRejectsMalformedInput(t *testing.T) {
 	if _, _, err := BuildPluginBlueprint("teamtools", "other:spoof", base()); err == nil || !strings.Contains(err.Error(), "invalid key 'other:spoof'") {
 		t.Fatalf("spoof %v", err)
 	}
+	if _, _, err := BuildPluginBlueprint("teamtools", nil, base()); err == nil || !strings.Contains(err.Error(), "invalid key None") {
+		t.Fatalf("missing key %v", err)
+	}
 	key, bp, err := BuildPluginBlueprint("teamtools", "morning-brief", base())
 	if err != nil || key != "teamtools:morning-brief" || bp.(AutomationBlueprint).Plugin != "teamtools" {
 		t.Fatalf("built %q %v %v", key, bp, err)
+	}
+	spec := base()
+	spec.Tags = map[string]any{"news": 1, "am": 2}
+	if _, bp, err := BuildPluginBlueprint("teamtools", "tagged", spec); err != nil || strings.Join(bp.(AutomationBlueprint).Tags, ",") != "am,news" {
+		t.Fatalf("mapping tags gave %v %v", bp, err)
 	}
 }

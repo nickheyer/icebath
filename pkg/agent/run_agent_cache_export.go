@@ -12,7 +12,7 @@ func (a *AIAgent) LastFlushedDBIdx() int { return a.lastFlushedDBIdx }
 func (a *AIAgent) NousModelSwitch() *[2]string { return a.nousModelSwitch }
 
 // Drops the live transcript so an evicted agent frees its history
-func (a *AIAgent) ClearSessionMessages() { a.sessionMessages = []*state.Message{} }
+func (a *AIAgent) ClearSessionMessages() { a.setSessionMessages([]*state.Message{}) }
 
 // Drops the flushed prefix snapshot that pins the transcript rows
 func (a *AIAgent) ClearDBFlushScanPrefix() { a.dbFlushScanPrefix = nil }

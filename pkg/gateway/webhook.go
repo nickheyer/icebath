@@ -1313,12 +1313,28 @@ func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEve
 				return &PyError{Kind: "TypeError", Msg: "'NoneType' object is not subscriptable"}
 			}
 		}
-		_, err = FinalizeWebhook(ctx, authority, authority.receiptOf(row))
-		return err
+		event.webhookReceipt = &webhookReceiptBinding{authority: authority, receipt: authority.receiptOf(row)}
+		return a.endWebhookSession(ctx, event)
 	}()
 	if err != nil {
 		webhookLog().Error("[webhook] Could not finalize admitted delivery "+receipt.AdmissionID, "error", err)
 	}
+}
+
+// Authority and receipt of the admitted delivery whose one shot session an event closes
+type webhookReceiptBinding struct {
+	authority *SessionAuthority
+	receipt   AdmissionReceipt
+}
+
+// Finalizes the admitted webhook delivery bound to the event, nothing for an event that carries none
+func (a *WebhookAdapter) endWebhookSession(ctx context.Context, event *MessageEvent) error {
+	binding := event.webhookReceipt
+	if binding == nil {
+		return nil
+	}
+	_, err := FinalizeWebhook(ctx, binding.authority, binding.receipt)
+	return err
 }
 
 // Validates a GitHub, GitLab, Svix, Standard Webhooks, Linear or generic HMAC signature of the body

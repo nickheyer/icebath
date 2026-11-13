@@ -205,9 +205,9 @@ func TestSVAvailableMissingModule(t *testing.T) {
 func TestSVAvailableCountsImportedFakes(t *testing.T) {
 	isolateHome(t)
 	svGates(t, nil)
-	svImportable(t, map[string]bool{"microsoft_teams.apps": true})
-	if ok, err := Available(context.Background(), "teams"); !ok || err != nil {
-		t.Fatalf("teams gave %v %v", ok, err)
+	svImportable(t, map[string]bool{"piper": true})
+	if ok, err := Available(context.Background(), "piper"); !ok || err != nil {
+		t.Fatalf("piper gave %v %v", ok, err)
 	}
 }
 
@@ -238,9 +238,9 @@ func TestSVAvailableUnknownExtraUsesUnderscoreGuess(t *testing.T) {
 func TestSVEnsureImportNoopWhenAvailable(t *testing.T) {
 	isolateHome(t)
 	svGates(t, nil)
-	svImportable(t, map[string]bool{"fal_client": true})
+	svImportable(t, map[string]bool{"pilk": true})
 	synced := svSynced(t)
-	if err := EnsureImport(context.Background(), "fal"); err != nil || len(*synced) != 0 {
+	if err := EnsureImport(context.Background(), "silk"); err != nil || len(*synced) != 0 {
 		t.Fatalf("available extra gave %v, synced %v", err, *synced)
 	}
 }
@@ -250,10 +250,10 @@ func TestSVEnsureImportSyncsWhenMissing(t *testing.T) {
 	svGates(t, nil)
 	svImportable(t, nil)
 	synced := svSynced(t)
-	if err := EnsureImport(context.Background(), "fal"); err != nil {
+	if err := EnsureImport(context.Background(), "silk"); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(*synced, [][]string{{"fal"}}) {
+	if !reflect.DeepEqual(*synced, [][]string{{"silk"}}) {
 		t.Fatalf("synced %v", *synced)
 	}
 }
@@ -269,12 +269,12 @@ func TestSVEnsureImportRespectsTerminalDeclineWithoutInstalling(t *testing.T) {
 		prompts = append(prompts, text)
 		return "n", nil
 	})
-	err := EnsureImport(context.Background(), "fal")
+	err := EnsureImport(context.Background(), "silk")
 	var ie *InstallError
 	if !errors.As(err, &ie) || !strings.Contains(err.Error(), "declined") {
 		t.Fatalf("declined prompt gave %v", err)
 	}
-	if len(prompts) != 1 || !strings.Contains(prompts[0], "'fal' feature") || strings.Contains(prompts[0], "fal_client") {
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "'silk' feature") || strings.Contains(prompts[0], "pilk") {
 		t.Fatalf("prompts %q", prompts)
 	}
 	if len(*synced) != 0 {
@@ -290,7 +290,7 @@ func TestSVEnsureImportPropagatesInstallError(t *testing.T) {
 		return NewInstallError("venv", "lazy installs are disabled", "")
 	})
 	var ie *InstallError
-	if err := EnsureImport(context.Background(), "fal"); !errors.As(err, &ie) {
+	if err := EnsureImport(context.Background(), "silk"); !errors.As(err, &ie) {
 		t.Fatalf("install error became %v", err)
 	}
 }
@@ -300,7 +300,7 @@ func TestSVEnsureAndBindPreservesTargetOnFailure(t *testing.T) {
 		t.Run("failure="+failure, func(t *testing.T) {
 			isolateHome(t)
 			svGates(t, nil)
-			svImportable(t, map[string]bool{"fal_client": failure != "install"})
+			svImportable(t, map[string]bool{"pilk": failure != "install"})
 			peSwap(t, &clientSyncVenv, func(context.Context, SyncVenvOptions) error {
 				return NewInstallError("venv", "install refused", "")
 			})
@@ -311,7 +311,7 @@ func TestSVEnsureAndBindPreservesTargetOnFailure(t *testing.T) {
 				return map[string]any{"NAME": 42}, nil
 			}
 			target := map[string]any{"existing": "kept"}
-			ok, err := EnsureAndBind(context.Background(), "fal", importer, target)
+			ok, err := EnsureAndBind(context.Background(), "silk", importer, target)
 			if err != nil || ok != (failure == "") {
 				t.Fatalf("bound %v %v", ok, err)
 			}

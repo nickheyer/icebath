@@ -135,8 +135,8 @@ func initSessionState(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	}
 	setSessionStateDefaults(a)
 	a.checkpointMgr = tools.NewCheckpointManager(a.env, tools.CheckpointManagerOptions{
-		Enabled: o.CheckpointsEnabled, MaxSnapshots: o.CheckpointMaxSnapshots,
-		MaxTotalSizeMB: o.CheckpointMaxTotalSizeMB, MaxFileSizeMB: o.CheckpointMaxFileSizeMB,
+		Enabled: o.CheckpointsEnabled, MaxSnapshots: *o.CheckpointMaxSnapshots,
+		MaxTotalSizeMB: *o.CheckpointMaxTotalSizeMB, MaxFileSizeMB: *o.CheckpointMaxFileSizeMB,
 	})
 	a.sessionDB = sessionStoreOrNil(o.SessionDB)
 	a.parentSessionID = o.ParentSessionID
@@ -157,7 +157,7 @@ func initSessionState(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 
 // The session state table, every factory entry a fresh value for this agent
 func setSessionStateDefaults(a *AIAgent) {
-	a.sessionMessages = []*state.Message{}
+	a.setSessionMessages([]*state.Message{})
 	a.codexReasoningReplayEnabled, a.codexReasoningReplayRejected = true, false
 	a.memoryWriteOrigin, a.memoryWriteContext = "assistant_tool", "foreground"
 	a.cachedSystemPrompt, a.cachedSystemPromptStatic = "", ""

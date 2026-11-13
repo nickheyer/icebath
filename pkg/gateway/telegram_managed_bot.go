@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -152,16 +151,12 @@ func renderQRTerminal(url string) (string, error) {
 	return code.PrintASCII(true), nil
 }
 
-// Prints a QR code of the URL, the install hint when no QR renders, and the link when asked
+// Prints a QR code of the URL and the link when asked
 func printQRCode(url string, includeLink bool) error {
 	w := telegramOut()
 	rendered, err := telegramRenderQR(url)
 	if err != nil {
 		return err
-	}
-	if rendered == "" {
-		rendered = "  (QR code unavailable. From the Icebath environment, run: " + pm.InstallHint("messaging") + ". " +
-			"Then restart Icebath.)"
 	}
 	fmt.Fprintln(w, rendered)
 	if includeLink {

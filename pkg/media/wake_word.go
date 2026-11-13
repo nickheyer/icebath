@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -101,8 +102,9 @@ var (
 	wakeLoadConfig = func(ctx context.Context) (config.Tree, error) {
 		return config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
 	}
-	wakeExtraSupported      = pm.ExtraSupported
-	wakePMAvailable         = pm.Available
+	wakeSpeechSupported     = speech.Supported
+	wakeExtraSupported      = wakeEngineSupported
+	wakePMAvailable         = wakeEngineAvailable
 	wakeEnsureImport        = pm.EnsureImport
 	wakeLazyInstallsAllowed = pm.LazyInstallsAllowedFor
 	wakeSysPlatform         = sysPlatform
@@ -580,22 +582,10 @@ func sttReady(ctx context.Context) bool {
 	return err == nil && provider != "none"
 }
 
-var wakeLazyTTSFeatures = map[string]string{"edge": "edge-tts", "elevenlabs": "tts-premium", "mistral": "mistral"}
-
-// Whether the configured text to speech provider runs or installs at first use, probing and never installing
+// Whether the configured text to speech provider can run
 func ttsReady(ctx context.Context) bool {
-	provider, err := wakeGetTTSProvider(wakeLoadTTSConfig(ctx))
-	if err != nil {
+	if _, err := wakeGetTTSProvider(wakeLoadTTSConfig(ctx)); err != nil {
 		return false
-	}
-	if feature, ok := wakeLazyTTSFeatures[provider]; ok {
-		available, err := wakePMAvailable(ctx, feature)
-		if err != nil {
-			return false
-		}
-		if !available {
-			return wakeLazyInstallsAllowed(ctx)
-		}
 	}
 	ok, err := wakeCheckTTS(ctx)
 	return err == nil && ok
@@ -614,6 +604,22 @@ type WakeRequirements struct {
 	TTSAvailable        bool   `json:"tts_available"`
 	Phrase              string `json:"phrase"`
 	Hint                string `json:"hint"`
+}
+
+// Whether an engine can run on this platform, the compiled in sherpa engine by its library build
+func wakeEngineSupported(ctx context.Context, extra string) (bool, error) {
+	if extra == "wake-sherpa" {
+		return wakeSpeechSupported(), nil
+	}
+	return pm.ExtraSupported(ctx, extra)
+}
+
+// Whether an engine's dependencies are present, the compiled in sherpa engine needing only its library build
+func wakeEngineAvailable(ctx context.Context, extra string) (bool, error) {
+	if extra == "wake-sherpa" {
+		return wakeSpeechSupported(), nil
+	}
+	return pm.Available(ctx, extra)
 }
 
 // CheckWakeWordRequirements probes engine support, deps, key, mic, STT and TTS without installing anything
@@ -678,7 +684,7 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 	case !depsOK && !lazyOK:
 		hint = pm.InstallHint(feature)
 	case depsOK && !audioOK && ResolveCaptureMode(ctx, cfg, false, false) == "local":
-		hint = "Microphone capture needs sounddevice + numpy and a working audio device."
+		hint = "Microphone capture needs the PortAudio library and a working audio device."
 	case !sttOK || !ttsOK:
 		var missing []string
 		if !sttOK {

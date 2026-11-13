@@ -20,15 +20,13 @@ buildNpmPackage {
       ../apps/shared
       ../apps/desktop/package.json
       ../apps/bootstrap-installer/package.json
-      ../ui-tui/package.json
-      ../ui-tui/packages/hermes-ink/package.json
       ../tests-js/package.json
       ../scripts/build/web.mjs
       ../scripts/build/freshness.mjs
       ../scripts/build/frontend-common.mjs
     ];
   };
-  npmDepsHash = "sha256-nLsqcdcLsw/is73PZ8o5SWLGFUAyluTEwXcemV9Alxo=";
+  npmDepsHash = "sha256-pcScClCF3QF05x8rTSjaG0ZlzPCa2g8+ikAfsjifJCI=";
   npmFlags = [ "--ignore-scripts" ];
   makeCacheWritable = true;
   doCheck = false;

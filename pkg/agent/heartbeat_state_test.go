@@ -17,7 +17,7 @@ func TestHeartbeatModule(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if loaded.Prompt != "check CI" || loaded.IntervalSeconds != 600 || loaded.Status != "active" {
+		if loaded.Prompt != "check CI" || loaded.IntervalSeconds.Int64() != 600 || loaded.Status != "active" {
 			t.Fatalf("loaded %#v", loaded)
 		}
 	})

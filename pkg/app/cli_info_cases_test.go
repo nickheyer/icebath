@@ -130,7 +130,7 @@ func lowContextCLI(t *testing.T, contextLength int, columns string) (*CLI, *prin
 	c, rec := infoCLI(t)
 	t.Setenv("COLUMNS", columns)
 	c.model, c.enabledToolsets, c.compact, c.apiKey, c.baseURL, c.provider = "test-model", []string{"icebath-core"}, false, "test", "", "test"
-	c.agent = &GatewayAgent{ctx: context.Background()}
+	c.setAgent(&GatewayAgent{ctx: context.Background()})
 	c.env = &tools.Env{Home: home.Dir(c.ctx)}
 	swap(t, &readAgentUsage, func(*CLI, *GatewayAgent) agentUsageReading {
 		return agentUsageReading{HasCompressor: true, ContextLength: contextLength}
@@ -691,9 +691,9 @@ func TestBangLeavesHistoryByteIdentical(t *testing.T) {
 	})
 	t.Run("test_agent_is_never_invoked", func(t *testing.T) {
 		c, _ := bangCLI(t, seedHistory())
-		c.agent = &GatewayAgent{ctx: context.Background()}
+		c.setAgent(&GatewayAgent{ctx: context.Background()})
 		c.handleBangShell("!echo no-model-turn")
-		if !reflect.DeepEqual(c.agent, &GatewayAgent{ctx: context.Background()}) || historyJSON(t, c.conversationHistory) != historyJSON(t, seedHistory()) {
+		if !reflect.DeepEqual(c.agentRef(), &GatewayAgent{ctx: context.Background()}) || historyJSON(t, c.conversationHistory) != historyJSON(t, seedHistory()) {
 			t.Fatal("bang command touched the agent or the history")
 		}
 	})

@@ -1991,7 +1991,7 @@ func bindMoaRuntime(ctx context.Context, a *AIAgent, presetName string, apiKey a
 	if presetName == "" {
 		presetName = "default"
 	}
-	a.model = presetName
+	a.model, a.modelNone = presetName, false
 	a.provider, a.requestedProvider = "moa", "moa"
 	a.apiMode = "chat_completions"
 	a.apiKey = moaVirtualAPIKey

@@ -628,8 +628,11 @@ func computeThresholdTokens(contextLength int, thresholdPercent float64, maxToke
 	return floored
 }
 
-// Resolves and caches the model window on first access, flooring the percent before the trigger derives
-func (c *ContextCompressor) contextLength() int {
+// Model window of the engine, resolved on first access
+func (c *ContextCompressor) contextLength() int { return c.resolveContextLength() }
+
+// Model window resolved and cached on first access, flooring the threshold percent and logging the init summary once
+func (c *ContextCompressor) resolveContextLength() int {
 	if c.resolvedContextLength == nil {
 		cfg := 0
 		if c.configContextLength != nil {

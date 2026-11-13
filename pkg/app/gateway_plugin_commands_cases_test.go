@@ -563,7 +563,7 @@ func TestSlashNewRereadsTheCatalog(t *testing.T) {
 	c := configuredCLI(t, map[string]any{}, CLIOptions{})
 	c.sessionDB, c.gatewaySessionOpen, c.sessionID = gatewaycli.NewGatewaySessionStore(gw.conn), true, "local-s"
 	t.Cleanup(func() { _ = c.sessionDB.CloseReader() })
-	c.agent = nil
+	c.setAgent(nil)
 	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"old-plugin"}) {
 		t.Fatalf("names %v", got)
 	}

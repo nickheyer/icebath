@@ -67,16 +67,22 @@ func TestExecDescriptionHeaderLightpanda(t *testing.T) {
 	}
 }
 
-// Both tools register under hermes's toolsets with their static schemas and the exec rewriter
+// Both tools register under their toolsets with their static schemas and the exec rewriter
 func TestBrowserToolsRegistered(t *testing.T) {
 	for name, toolset := range map[string]string{"browser_exec": "browser-use", "browser_cdp": "browser-cdp"} {
 		def := tools.Default.Get(name)
-		if def == nil || def.Toolset != toolset || def.Schema["name"] != name || def.Check == nil {
+		if def == nil || def.Toolset != toolset || def.Schema["name"] != name {
 			t.Fatalf("%s registered as %+v", name, def)
 		}
 	}
+	if tools.Default.Get("browser_exec").Check != nil || tools.Default.Get("browser_cdp").Check == nil {
+		t.Fatal("browser_exec is built in and browser_cdp needs a configured endpoint")
+	}
 	if tools.Default.Get("browser_exec").DynamicSchema == nil || tools.Default.Get("browser_cdp").DynamicSchema != nil {
-		t.Fatal("dynamic schema wiring differs from hermes")
+		t.Fatal("only browser_exec tailors its schema per session")
+	}
+	if required := BrowserExecSchema()["parameters"].(map[string]any)["required"].([]any); len(required) != 1 || required[0] != "code" {
+		t.Fatalf("exec schema requires %v", required)
 	}
 	if BrowserCDPSchema()["parameters"].(map[string]any)["required"].([]any)[0] != "method" {
 		t.Fatal("cdp schema required")

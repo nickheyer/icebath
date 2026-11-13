@@ -19,9 +19,9 @@ type ProviderProfileHooks struct {
 	AuthHandler func(action string, args []string, provider string) (bool, error)
 }
 
-// Credential hooks of the provider's registered profile, nil when the profile ships none
-func providerProfileHooks(provider string) *ProviderProfileHooks {
-	p := getProviderProfile(context.Background(), strings.ToLower(strings.TrimSpace(provider)))
+// Credential hooks of the provider's profile registered in the home the context binds, nil when it ships none
+func providerProfileHooks(ctx context.Context, provider string) *ProviderProfileHooks {
+	p := getProviderProfile(ctx, strings.ToLower(strings.TrimSpace(provider)))
 	if p == nil || (p.RefreshCredential == nil && p.SeedPoolCredentialsHook == nil && p.RemoveCredentialSourceHook == nil && p.AuthHandler == nil) {
 		return nil
 	}
@@ -30,8 +30,8 @@ func providerProfileHooks(provider string) *ProviderProfileHooks {
 }
 
 // The profile's refresh hook, nil when its pooled OAuth rows are not refreshable
-func pluginRefreshHook(provider string) func(PooledCredential) (map[string]any, error) {
-	hooks := providerProfileHooks(provider)
+func pluginRefreshHook(ctx context.Context, provider string) func(PooledCredential) (map[string]any, error) {
+	hooks := providerProfileHooks(ctx, provider)
 	if hooks == nil {
 		return nil
 	}
@@ -39,7 +39,9 @@ func pluginRefreshHook(provider string) func(PooledCredential) (map[string]any, 
 }
 
 // PluginRefreshHookExists reports whether a plugin profile ships refresh_credential for the provider
-func PluginRefreshHookExists(provider string) bool { return pluginRefreshHook(provider) != nil }
+func PluginRefreshHookExists(provider string) bool {
+	return pluginRefreshHook(context.Background(), provider) != nil
+}
 
 // IsRefreshableOAuthProvider is the built in refreshable set or a plugin profile shipping refresh_credential
 func IsRefreshableOAuthProvider(provider string) bool {
@@ -48,7 +50,7 @@ func IsRefreshableOAuthProvider(provider string) bool {
 
 // PluginAuthHandler is the profile's auth action handler, nil when none
 func PluginAuthHandler(provider string) func(action string, args []string, provider string) (bool, error) {
-	hooks := providerProfileHooks(provider)
+	hooks := providerProfileHooks(context.Background(), provider)
 	if hooks == nil {
 		return nil
 	}

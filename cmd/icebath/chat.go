@@ -107,13 +107,14 @@ func resolveWorkspaceKey() string {
 
 // Runs body against a read only session store of the home, nil when it cannot open, body errors swallowed
 func withSessionDB(body func(db *gatewaycli.SurfaceLabelReader)) {
+	defer func() { _ = recover() }()
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, home.StatePath(home.Dir(ctx)), true)
 	if err != nil {
 		body(nil)
 		return
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	body(gatewaycli.NewSurfaceLabelReader(db))
 }
 
@@ -173,21 +174,27 @@ func resolveSessionByNameOrID(nameOrID string) string {
 			return
 		}
 		ctx := context.Background()
-		if session, err := db.GetSession(ctx, nameOrID); err == nil && session != nil {
-			resolved = pyStr(rowValue(session, "id"))
-		} else if byTitle, err := db.ResolveSessionByTitle(ctx, nameOrID); err == nil {
-			resolved = byTitle
+		session, err := db.GetSession(ctx, nameOrID)
+		if err != nil {
+			return
 		}
-		if resolved == "" && strings.HasPrefix(nameOrID, "local-") {
-			if id, err := db.ResolveSessionID(ctx, nameOrID); err == nil {
-				resolved = id
+		id := ""
+		if session != nil {
+			id = pyStr(rowValue(session, "id"))
+		} else if id, err = db.ResolveSessionByTitle(ctx, nameOrID); err != nil {
+			return
+		}
+		if id == "" && strings.HasPrefix(nameOrID, "local-") {
+			if id, err = db.ResolveSessionID(ctx, nameOrID); err != nil {
+				return
 			}
 		}
-		if resolved != "" {
-			if tip, err := db.GetCompressionTip(ctx, resolved); err == nil && tip != "" {
-				resolved = tip
+		if id != "" {
+			if tip, err := db.GetCompressionTip(ctx, id); err == nil && tip != "" {
+				id = tip
 			}
 		}
+		resolved = id
 	})
 	return resolved
 }
@@ -783,7 +790,7 @@ func cmdChat(a *chatArgs) int {
 	}
 	confirmStartupExpensiveModelOverride(a)
 	if useTUI {
-		return app.LaunchTUI(ctx, app.TUILaunch{Resume: a.Resume, Dev: a.TUIDev, Native: a.TUINative, Model: a.Model, AcceptHooks: a.AcceptHooks,
+		return app.LaunchTUI(ctx, app.TUILaunch{Resume: a.Resume, Native: a.TUINative, Model: a.Model, AcceptHooks: a.AcceptHooks,
 			Provider: a.Provider, Toolsets: a.Toolsets, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Query: a.Query, Image: a.Image,
 			Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID, MaxTurns: a.MaxTurns})
 	}

@@ -26,11 +26,8 @@ type toolExecutorState struct {
 // Host view whose flush and interrupt take the executor shapes beside the codex runtime ones
 type agentExecutorHost struct{ *AIAgent }
 
-// Live flush where a disabled store reads persisted, the None that is not False
-func (h agentExecutorHost) FlushMessagesToSessionDB(messages []*state.Message) (bool, error) {
-	if h.persistDisabled || h.sessionDB == nil {
-		return true, nil
-	}
+// Live flush of the executor's message list through the session persistence writer
+func (h agentExecutorHost) FlushMessagesToSessionDB(messages []*state.Message) state.FlushOutcome {
 	return h.flushLiveMessages(messages, nil)
 }
 

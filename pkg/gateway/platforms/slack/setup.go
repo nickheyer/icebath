@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -84,6 +83,9 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 			"token_rotation_enabled", false)), nil
 }
 
+// Slack app manifest of the command registry for a config tree, installed by the process wiring from pkg/commands
+var AppManifest func(ctx context.Context, cfg config.Tree) map[string]any
+
 // Slash command entries of the manifest in key order, one per gateway command of the registry
 func slashCommandEntries(ctx context.Context) ([]any, error) {
 	h := home.Dir(ctx)
@@ -91,7 +93,7 @@ func slashCommandEntries(ctx context.Context) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := commands.SlackAppManifest(ctx, commands.Default, cfg, "")["features"].(map[string]any)["slash_commands"].([]map[string]any)
+	raw, _ := AppManifest(ctx, cfg)["features"].(map[string]any)["slash_commands"].([]map[string]any)
 	slashes := make([]any, 0, len(raw))
 	for _, e := range raw {
 		entry := pyjson.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])

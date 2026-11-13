@@ -103,7 +103,7 @@ func (telegramPlugin) Register(ctx *plugins.Context) error {
 	}
 	_, err := ctx.RegisterPlatform(plugins.PlatformSpec{Name: "telegram", Label: "Telegram", AdapterFactory: gateway.AdapterFactory(buildAdapter),
 		Check: func() bool { return true }, RequiredEnv: []string{"TELEGRAM_BOT_TOKEN"},
-		InstallHint: i18n.T(context.Background(), "platform.telegram.install_hint", "", nil), Extra: extra})
+		InstallHint: i18n.T(ctx.HomeContext(), "platform.telegram.install_hint", "", nil), Extra: extra})
 	return err
 }
 

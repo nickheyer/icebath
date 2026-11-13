@@ -372,7 +372,7 @@ func (r *GatewayRunner) handleSetHomeCommand(ctx context.Context, event *gateway
 		if err := config.SaveEnvValueContext(ctx, home.Dir(ctx), homeTargetEnvVar(ctx, platformName), chatID); err != nil {
 			return err
 		}
-		return config.SaveEnvValueContext(ctx, home.Dir(ctx), homeTargetEnvVar(ctx, platformName)+"_THREAD_ID", threadText)
+		return config.SaveEnvValueContext(ctx, home.Dir(ctx), homeThreadEnvVar(ctx, platformName), threadText)
 	}(); err != nil {
 		runLog().Warn(fmt.Sprintf("Home config saved but legacy env persistence failed: %s", pyrepr.ExceptionMessage(err)))
 	}

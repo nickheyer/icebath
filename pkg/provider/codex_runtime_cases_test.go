@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -132,7 +133,7 @@ func TestCodexAppServerPersist(t *testing.T) {
 		a := codexCaseAgent(t, f)
 		a.db, a.dbCreated = &fakeCodexDB{values: map[string]any{}}, true
 		var flushed []map[string]any
-		a.flush = func(m []map[string]any) (bool, error) { flushed = slices.Clone(m); return true, nil }
+		a.flush = func(m []map[string]any) state.FlushOutcome { flushed = slices.Clone(m); return state.FlushPersisted }
 		result := codexCaseRun(t, a, "USER_TURN", []map[string]any{{"role": "user", "content": "USER_TURN"}})
 		var users, assistants int
 		for _, m := range flushed {
@@ -482,6 +483,7 @@ func TestCodexRuntimeHistorySeed(t *testing.T) {
 }
 
 func TestCodexNamedCustomProviderSelectsCodexModelProvider(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	threadStart := func(t *testing.T, provider, requested, model string) map[string]any {
 		f := &fakeCodexClient{}
 		a := codexCaseAgent(t, f)

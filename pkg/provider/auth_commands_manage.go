@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // The two line free tier rendering shared by every auth display surface
@@ -404,28 +403,22 @@ func (c *authCLI) printAzureEntraStatus() {
 	}
 	fmt.Fprintf(c.out, "  Endpoint: %s\n", endpoint)
 	fmt.Fprintf(c.out, "  Scope: %s\n", scope)
-	if !HasAzureIdentityInstalled() {
-		fmt.Fprintln(c.out, "  Status: ⚠ azure-identity not installed")
-		fmt.Fprintf(c.out, "  From the Icebath environment, run: %s\n", pm.InstallHint("azure-identity"))
-		fmt.Fprintln(c.out, "  Then restart Icebath.")
+	info := DescribeActiveEntraCredential(c.ctx, &EntraIdentityConfig{Scope: scope}, "", 10*time.Second)
+	envSources := authStrings(info["env_sources"])
+	if pyTruthy(info["ok"]) {
+		source := "default chain"
+		if len(envSources) > 0 {
+			source = strings.Join(envSources, ", ")
+		}
+		fmt.Fprintf(c.out, "  Status: ✓ token acquired (%s)\n", source)
 	} else {
-		info := DescribeActiveEntraCredential(c.ctx, &EntraIdentityConfig{Scope: scope}, "", 10*time.Second)
-		envSources := authStrings(info["env_sources"])
-		if pyTruthy(info["ok"]) {
-			source := "default chain"
-			if len(envSources) > 0 {
-				source = strings.Join(envSources, ", ")
-			}
-			fmt.Fprintf(c.out, "  Status: ✓ token acquired (%s)\n", source)
-		} else {
-			errText := authTextOr(info["error"])
-			if errText == "" {
-				errText = "credential chain exhausted"
-			}
-			fmt.Fprintf(c.out, "  Status: ⚠ %s\n", errText)
-			if pyTruthy(info["hint"]) {
-				fmt.Fprintf(c.out, "  Hint: %s\n", pyStr(info["hint"]))
-			}
+		errText := authTextOr(info["error"])
+		if errText == "" {
+			errText = "credential chain exhausted"
+		}
+		fmt.Fprintf(c.out, "  Status: ⚠ %s\n", errText)
+		if pyTruthy(info["hint"]) {
+			fmt.Fprintf(c.out, "  Hint: %s\n", pyStr(info["hint"]))
 		}
 	}
 	fmt.Fprintln(c.out)

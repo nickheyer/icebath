@@ -20,7 +20,7 @@ func policyLayerValues(body PolicyBody) (bool, []string) {
 
 // Write key, listed connectors and allow flag of the member layer, unrestricted when there is none
 func policyLayer(member *PolicyBody) (string, []string, bool) {
-	body := PolicyBody{Mode: "unrestricted"}
+	body := wireUnrestrictedPolicyBody()
 	if member != nil {
 		body = *member
 	}

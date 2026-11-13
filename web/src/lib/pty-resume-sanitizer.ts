@@ -1,6 +1,6 @@
 /**
  * PTY resume output sanitizer — strips pathological ANSI sequences that
- * Ink's two-pass virtual scroll emits during session resume.
+ * the terminal UI's two-pass virtual scroll emits during session resume.
  *
  * Three properties of the real pipeline drive this design:
  *

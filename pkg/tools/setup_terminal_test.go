@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -82,6 +81,7 @@ func TestSSHWizardPortHandling(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			env := newTestToolEnv(t)
+			t.Setenv("ICEBATH_HOME", env.Home)
 			console := &fakeSetupConsole{prompt: answersFrom(t, "host.example.com", "me", c.answer, "/tmp/key"),
 				yesNo: func(string, bool) bool { return false }}
 			withSetupConsole(t, console, sshKeys...)
@@ -119,15 +119,14 @@ func TestDockerWizardReportsTheResolvedPodmanRuntime(t *testing.T) {
 	}
 }
 
-// Stubs the managed modal checks and the SDK import probe
+// Makes the managed modal checks pass for the wizard
 func withManagedModal(t *testing.T) {
-	prevTools, prevGateway, prevAuth, prevImport := setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent, setupExtraImportable
+	prevTools, prevGateway, prevAuth := setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent
 	setupManagedNousToolsEnabled = func(*Env) bool { return true }
 	setupManagedGatewayReady = func(_ *Env, vendor string) bool { return vendor == "modal" }
 	NousSubscriptionAuthPresent = func(*Env, map[string]any) bool { return true }
-	setupExtraImportable = func(context.Context, string) (bool, error) { return true, nil }
 	t.Cleanup(func() {
-		setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent, setupExtraImportable = prevTools, prevGateway, prevAuth, prevImport
+		setupManagedNousToolsEnabled, setupManagedGatewayReady, NousSubscriptionAuthPresent = prevTools, prevGateway, prevAuth
 	})
 }
 
@@ -149,6 +148,7 @@ func backendChoice(t *testing.T, backendIdx, billingIdx int) func(string, []stri
 // Choosing an own Modal account persists the direct mode
 func TestModalSetupPersistsDirectModeWhenUserChoosesTheirOwnAccount(t *testing.T) {
 	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
 	withManagedModal(t)
 	console := &fakeSetupConsole{choice: backendChoice(t, 2, 1), prompt: answersFrom(t, "token-id", "token-secret", "")}
 	withSetupConsole(t, console, "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET")
@@ -162,20 +162,18 @@ func TestModalSetupPersistsDirectModeWhenUserChoosesTheirOwnAccount(t *testing.T
 	}
 }
 
-func clearVercelEnv(t *testing.T) []string {
+func clearVercelEnv() []string {
 	keys := []string{"VERCEL_OIDC_TOKEN", "VERCEL_TOKEN", "VERCEL_PROJECT_ID", "VERCEL_TEAM_ID"}
-	prev := setupExtraImportable
-	setupExtraImportable = func(context.Context, string) (bool, error) { return true, nil }
-	t.Cleanup(func() { setupExtraImportable = prev })
 	return keys
 }
 
 // The Vercel wizard drops the OIDC token and saves the access token, project and team
 func TestVercelSetupConfiguresAccessTokenAuth(t *testing.T) {
 	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
 	console := &fakeSetupConsole{choice: backendChoice(t, 5, -1),
 		prompt: answersFrom(t, "vercel/sandbox/python:3.14", "yes", "2", "4096", "token", "project", "team")}
-	withSetupConsole(t, console, clearVercelEnv(t)...)
+	withSetupConsole(t, console, clearVercelEnv()...)
 	os.Setenv("VERCEL_OIDC_TOKEN", "old-oidc")
 	cfg := loadSetupConfig(t, env)
 	if err := SetupTerminalBackend(context.Background(), env, cfg); err != nil {
@@ -198,6 +196,7 @@ func TestVercelSetupConfiguresAccessTokenAuth(t *testing.T) {
 // The nearest Vercel link file prefills the project and team prompts
 func TestVercelSetupPrefillsProjectAndTeamFromLinkFile(t *testing.T) {
 	env := newTestToolEnv(t)
+	t.Setenv("ICEBATH_HOME", env.Home)
 	project := filepath.Join(t.TempDir(), "project")
 	nested := filepath.Join(project, "app", "src")
 	if err := os.MkdirAll(nested, 0o755); err != nil {
@@ -221,7 +220,7 @@ func TestVercelSetupPrefillsProjectAndTeamFromLinkFile(t *testing.T) {
 		}
 		return a
 	}}
-	withSetupConsole(t, console, clearVercelEnv(t)...)
+	withSetupConsole(t, console, clearVercelEnv()...)
 	cfg := loadSetupConfig(t, env)
 	cfg["terminal"].(map[string]any)["container_disk"] = 999
 	if err := SetupTerminalBackend(context.Background(), env, cfg); err != nil {
@@ -268,7 +267,6 @@ func TestReadNearestVercelProjectBranches(t *testing.T) {
 	}
 }
 
-// A missing SDK installs the declared extra explicitly and reports a restart or the failure
 func TestSetupSyncFailureHandledMatchesTheWizardClasses(t *testing.T) {
 	handled := []error{pm.NewInstallError("venv", "resolution refused", ""), &pm.PyError{Class: "ValueError", Message: "bad"}, &pm.PyError{Class: "PermissionError", Message: "denied"}}
 	for _, err := range handled {
@@ -278,42 +276,6 @@ func TestSetupSyncFailureHandledMatchesTheWizardClasses(t *testing.T) {
 	}
 	if SetupSyncFailureHandled(&pm.PyError{Class: "RuntimeError", Message: "boom"}) || SetupSyncFailureHandled(fmt.Errorf("boom")) {
 		t.Fatal("an unhandled class was reported handled")
-	}
-}
-
-func TestEnsureSDKUsesDeclaredExtrasAndReportsRestart(t *testing.T) {
-	for _, extra := range []string{"modal", "daytona", "vercel"} {
-		for _, succeeds := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s-%v", extra, succeeds), func(t *testing.T) {
-				env := newTestToolEnv(t)
-				console := &fakeSetupConsole{}
-				withSetupConsole(t, console)
-				var calls [][]string
-				prevImport, prevSync := setupExtraImportable, setupSyncVenv
-				setupExtraImportable = func(context.Context, string) (bool, error) { return false, nil }
-				setupSyncVenv = func(_ context.Context, o pm.SyncVenvOptions) error {
-					calls = append(calls, append(slices.Clone(o.Extras), fmt.Sprint(o.Explicit)))
-					if !succeeds {
-						return pm.NewInstallError("venv", "resolution refused", "")
-					}
-					return nil
-				}
-				t.Cleanup(func() { setupExtraImportable, setupSyncVenv = prevImport, prevSync })
-				if err := newTerminalSetup(t, env).ensureSDK(extra); err != nil {
-					t.Fatal(err)
-				}
-				if fmt.Sprint(calls) != fmt.Sprint([][]string{{extra, "true"}}) {
-					t.Fatalf("calls %v", calls)
-				}
-				out := console.text()
-				if succeeds && !strings.Contains(out, "Restart Icebath") {
-					t.Fatalf("output %q", out)
-				}
-				if !succeeds && (!strings.Contains(out, "resolution refused") || !strings.Contains(out, "Retry with: icebath setup") || strings.Contains(out, "installed.")) {
-					t.Fatalf("output %q", out)
-				}
-			})
-		}
 	}
 }
 

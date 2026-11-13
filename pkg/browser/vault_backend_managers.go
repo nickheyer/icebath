@@ -210,7 +210,7 @@ func (b *OnePasswordLoginBackend) runOp(args ...string) (string, error) {
 	if b.serviceToken == "" {
 		token, _ = VaultSessionToken(b.ctx, b.Name())
 		if token == "" {
-			return "", &UnlockRequired{Backend: b}
+			return "", newUnlockRequired(b)
 		}
 	}
 	op, err := b.op()
@@ -227,7 +227,7 @@ func (b *OnePasswordLoginBackend) runOp(args ...string) (string, error) {
 		if b.serviceToken == "" && (strings.Contains(lowered, "session") || strings.Contains(lowered, "sign in") || strings.Contains(lowered, "not signed in")) {
 			name := b.Name()
 			LockVault(b.ctx, &name)
-			return "", &UnlockRequired{Backend: b}
+			return "", newUnlockRequired(b)
 		}
 		return "", fmt.Errorf("op failed: %s", vaultHead(detail, 200))
 	}
@@ -440,7 +440,7 @@ func (b *BitwardenLoginBackend) Unlock(masterPassword string) error {
 func (b *BitwardenLoginBackend) runBw(args ...string) (string, error) {
 	token, _ := VaultSessionToken(b.ctx, b.Name())
 	if token == "" {
-		return "", &UnlockRequired{Backend: b}
+		return "", newUnlockRequired(b)
 	}
 	bw, err := b.bw()
 	if err != nil {
@@ -457,7 +457,7 @@ func (b *BitwardenLoginBackend) runBw(args ...string) (string, error) {
 		if strings.Contains(lowered, "locked") || strings.Contains(lowered, "session") {
 			name := b.Name()
 			LockVault(b.ctx, &name)
-			return "", &UnlockRequired{Backend: b}
+			return "", newUnlockRequired(b)
 		}
 		return "", fmt.Errorf("bw failed: %s", vaultHead(detail, 200))
 	}

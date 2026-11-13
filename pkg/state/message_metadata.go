@@ -269,6 +269,25 @@ func WithoutPersistenceFields(msg map[string]any) map[string]any {
 // Fresh random durable id for a message or tool call occurrence
 func MintUID() string { return uuid4Hex() }
 
+// Unique non empty string uids of a list in order, empty for anything else
+func UIDList(value any) []string {
+	items, _ := value.([]any)
+	if strs, ok := value.([]string); ok {
+		for _, s := range strs {
+			items = append(items, s)
+		}
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, item := range items {
+		if s, ok := item.(string); ok && s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // Message uid when it is a non empty string, false otherwise
 func MessageUIDOrNone(msg map[string]any) (string, bool) {
 	uid, ok := msg[MessageUID].(string)

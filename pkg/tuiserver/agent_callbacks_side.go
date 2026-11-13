@@ -80,7 +80,7 @@ func backgroundAgentKwargs(ctx context.Context, parent sideAgentParent, taskID s
 		APIMode: parent.APIMode(), ACPCommand: parent.ACPCommand(), ACPArgs: parent.ACPArgs(),
 		EphemeralSystemPrompt: parent.EphemeralSystemPrompt(), ProvidersAllowed: routing.Allowed, ProvidersIgnored: routing.Ignored,
 		ProvidersOrder: routing.Order, ProviderSort: routing.Sort, ProviderDataCollection: routing.DataCollection,
-		OpenRouterMinCodingScore: routing.MinCodingScore, Model: model, MaxIterations: cfgMaxTurns(cfg, 25),
+		OpenRouterMinCodingScore: routing.MinCodingScore, Model: model, MaxIterations: new(cfgMaxTurns(cfg, 25)),
 		EnabledToolsets: enabled, DisabledToolsets: disabled, QuietMode: true, VerboseLogging: false,
 		ProviderRequireParameters: routing.RequireParameters, SessionID: taskID, ReasoningConfig: reasoning, ServiceTier: tier,
 		RequestOverrides: overrides, Platform: "tui", SessionDB: store, FallbackModel: fallback, SideAgent: true}

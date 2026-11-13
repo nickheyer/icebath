@@ -318,7 +318,7 @@ func RunSignIn(env PoolEnv, opts SignInOptions) iter.Seq[SignInState] {
 			yield(SignInAlreadySignedIn{})
 			return
 		}
-		pconfig, err := providerConfig(env.Ctx, "nous")
+		pconfig, err := providerConfig(env.ctx(), "nous")
 		if err != nil {
 			yield(signInStateFromError(err))
 			return

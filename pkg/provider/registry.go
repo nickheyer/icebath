@@ -850,21 +850,6 @@ func inProcessImportRefusal(cfg map[string]any, what string) string {
 		"never runs inside the icebath process); set plugins.isolation: in_process to load it"
 }
 
-// ProviderEntryPoint is one icebath_agent.plugins entry point of the PM managed site-packages
-type ProviderEntryPoint struct {
-	Name  string
-	Value string
-	Load  func(ctx context.Context) (ProviderEntryPointTarget, error)
-}
-
-// ProviderEntryPointTarget is what loading an entry point produced in the plugin host
-type ProviderEntryPointTarget struct {
-	Profiles          []Profile
-	Callable          bool
-	RequiresArguments bool
-	Invoke            func(ctx context.Context) ([]Profile, error)
-}
-
 // Names of a plugins config list as a set, nil when the key is not a list
 func pluginsConfigSet(cfg map[string]any, key string) map[string]bool {
 	plugins, _ := cfg["plugins"].(map[string]any)
@@ -879,53 +864,6 @@ func pluginsConfigSet(cfg map[string]any, key string) map[string]bool {
 		}
 	}
 	return out
-}
-
-// Loads enabled pip entry point provider plugins, logging and skipping each one that fails
-func discoverEntryPointProviders(ctx context.Context) {
-	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
-	enabled := pluginsConfigSet(cfg, "enabled")
-	disabled := pluginsConfigSet(cfg, "disabled")
-	if len(enabled) == 0 {
-		return
-	}
-	eps, err := installedProviderEntryPointsFn(ctx)
-	if err != nil {
-		slog.Debug(fmt.Sprintf("entry-point provider scan skipped: %s", err))
-		return
-	}
-	for _, ep := range eps {
-		if !enabled[ep.Name] || disabled[ep.Name] {
-			slog.Debug(fmt.Sprintf("entry-point provider %s skipped: not enabled in config", pyRepr(ep.Name)))
-			continue
-		}
-		if refusal := inProcessImportRefusal(cfg, "pip-installed model-provider plugin "+pyRepr(ep.Name)); refusal != "" {
-			slog.Warn(refusal)
-			continue
-		}
-		target, err := ep.Load(ctx)
-		for _, p := range target.Profiles {
-			RegisterProvider(p)
-		}
-		if err != nil {
-			slog.Warn(fmt.Sprintf("Failed to load entry-point provider plugin %s: %s", pyRepr(ep.Name), err))
-			continue
-		}
-		if !target.Callable {
-			continue
-		}
-		if target.RequiresArguments {
-			slog.Debug(fmt.Sprintf("entry-point %s skipped by provider scan: target requires arguments (general plugin owned by PluginManager)", pyRepr(ep.Name)))
-			continue
-		}
-		profiles, err := target.Invoke(ctx)
-		for _, p := range profiles {
-			RegisterProvider(p)
-		}
-		if err != nil {
-			slog.Warn(fmt.Sprintf("Entry-point provider plugin %s raised on invocation: %s", pyRepr(ep.Name), err))
-		}
-	}
 }
 
 // Every bundled plugin profile in discovery order, the source both discovery and the catalog read
@@ -984,7 +922,6 @@ func discoverProviders(ctx context.Context) {
 
 // The discovery passes in precedence order
 func runDiscoverySteps(ctx context.Context) {
-	discoverEntryPointProviders(ctx)
 	for _, p := range bundledSource() {
 		registerBundledProvider(p)
 	}
@@ -992,9 +929,6 @@ func runDiscoverySteps(ctx context.Context) {
 
 // Plugin host loader of a home plugin dir, replaced in tests
 var loadExternalProviderPluginFn = loadExternalProviderPlugin
-
-// Installed distribution entry point scan, replaced in tests
-var installedProviderEntryPointsFn = installedProviderEntryPoints
 
 // Plugin dir stamp reader, replaced in tests to count directory checks
 var pluginDirStampsFn = pluginDirStamps

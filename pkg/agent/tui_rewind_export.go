@@ -10,7 +10,7 @@ func (a *AIAgent) InstallRewoundHistory(history []map[string]any, persisted bool
 		messages[i] = state.MessageFromDict(m)
 		keys[i] = rowIdentity(m)
 	}
-	a.sessionMessages = messages
+	a.setSessionMessages(messages)
 	if persisted {
 		a.lastFlushedDBIdx = len(history)
 		a.dbFlushScanPrefix = keys

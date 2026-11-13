@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
@@ -730,7 +729,7 @@ func (a *APIServerAdapter) createAgent(ctx context.Context, o agentOptions) (*ag
 		manager = checked
 	}
 	opts := agent.AIAgentOptions{
-		Model: model, MaxIterations: maxIterations, QuietMode: true, VerboseLogging: false,
+		Model: model, MaxIterations: new(maxIterations), QuietMode: true, VerboseLogging: false,
 		EphemeralSystemPrompt: o.ephemeralSystemPrompt, EnabledToolsets: enabledToolsets, SessionID: o.sessionID,
 		Platform: "api_server", StreamDeltaCallback: o.streamDeltaCallback, ToolProgressCallback: o.toolProgressCallback,
 		ToolStartCallback: o.toolStartCallback, ToolCompleteCallback: o.toolCompleteCallback, InterimAssistantCallback: interim,
@@ -739,7 +738,9 @@ func (a *APIServerAdapter) createAgent(ctx context.Context, o agentOptions) (*ag
 		MemoryManager: manager, Env: o.env,
 	}
 	applyRuntimeKwargs(&opts, runtimeKwargs)
-	applyCheckpointKwargs(&opts, checkpoint)
+	if err := applyCheckpointKwargs(&opts, checkpoint); err != nil {
+		return nil, err
+	}
 	if requestServiceTier != gateway.APIRequestOptionMissing {
 		opts.ServiceTier = pyrepr.Str(requestServiceTier)
 		if requestServiceTier == nil {
@@ -805,17 +806,23 @@ func applyRuntimeKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) {
 	}
 }
 
-// Copies the checkpoint config kwargs onto the agent options
-func applyCheckpointKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) {
+// Copies the checkpoint config kwargs onto the agent options, a limit Python int refuses returning its error
+func applyCheckpointKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) error {
 	opts.CheckpointsEnabled = pyrepr.Truthy(kwargs["checkpoints_enabled"])
-	intOf := func(key string) int {
-		n, err := pyint.Of(kwargs[key])
-		if err != nil || !n.IsInt64() {
-			return 0
+	for _, field := range []struct {
+		key   string
+		limit **int
+	}{{"checkpoint_max_snapshots", &opts.CheckpointMaxSnapshots}, {"checkpoint_max_total_size_mb", &opts.CheckpointMaxTotalSizeMB},
+		{"checkpoint_max_file_size_mb", &opts.CheckpointMaxFileSizeMB}} {
+		value, ok := kwargs[field.key]
+		if !ok {
+			continue
 		}
-		return int(n.Int64())
+		n, err := tools.CheckpointLimit(value)
+		if err != nil {
+			return err
+		}
+		*field.limit = &n
 	}
-	opts.CheckpointMaxSnapshots = intOf("checkpoint_max_snapshots")
-	opts.CheckpointMaxTotalSizeMB = intOf("checkpoint_max_total_size_mb")
-	opts.CheckpointMaxFileSizeMB = intOf("checkpoint_max_file_size_mb")
+	return nil
 }

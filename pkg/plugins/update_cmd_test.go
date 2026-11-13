@@ -30,7 +30,7 @@ func catWorld(t *testing.T) *catWorldT {
 	return catWorldNamed(t, "cat-plugin", "def register(ctx):\n    pass\n", "def register(ctx):\n    pass  # v2\n")
 }
 
-// Catalog world of one named plugin whose two commits carry the given __init__.py bodies, at tier community
+// Catalog world of one named plugin whose two commits carry the given helper.py bodies, at tier community
 func catWorldNamed(t *testing.T, name, v1, v2 string) *catWorldT {
 	t.Helper()
 	c6RequireGit(t)
@@ -38,10 +38,10 @@ func catWorldNamed(t *testing.T, name, v1, v2 string) *catWorldT {
 	w := &catWorldT{ctx: home.WithOverride(context.Background(), h), root: root, h: h, repo: filepath.Join(root, "repo"),
 		pluginsDir: filepath.Join(h, "plugins"), name: name, tier: "community", category: "tools"}
 	c6Write(t, filepath.Join(w.repo, "plugin.yaml"), "name: "+name+"\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), v1)
+	c6Write(t, filepath.Join(w.repo, "helper.py"), v1)
 	c6Git(t, w.repo, "init", "-q")
 	w.sha1 = c6Commit(t, w.repo, "v1")
-	c6Write(t, filepath.Join(w.repo, "__init__.py"), v2)
+	c6Write(t, filepath.Join(w.repo, "helper.py"), v2)
 	w.sha2 = c6Commit(t, w.repo, "v2")
 	w.pin = w.sha1
 	savedURL, savedClient, savedTree, savedScan, savedVersion := LiveCatalogURL, liveCatalogClient, inTreeCatalogEntries, scanOnInstallEnabled, RunningVersion
@@ -99,7 +99,7 @@ func TestUpdateKeepsTheInstalledPinWhenTheNewPinNeedsANewerIcebath(t *testing.T)
 	if err != nil || dashboard["ok"] != false || !strings.Contains(dashboard["error"].(string), refusal) {
 		t.Fatalf("dashboard %v %v", dashboard, err)
 	}
-	plan := PlanUpdateAll(RunChecks(w.ctx, w.pluginsDir, RunChecksOptions{SkipPip: true}))
+	plan := PlanUpdateAll(RunChecks(w.ctx, w.pluginsDir, RunChecksOptions{}))
 	if len(plan.Movable) != 0 || len(plan.Skipped) != 1 || plan.Skipped[0].Row.Name != "cat-plugin" ||
 		!strings.Contains(plan.Skipped[0].Reason, "after updating Icebath") {
 		t.Fatalf("plan %+v", plan)
@@ -120,7 +120,7 @@ func TestTheCatalogNameYouInstalledWithWorksForEveryLaterVerb(t *testing.T) {
 	w.pin = c6Commit(t, w.repo, "manifest name differs from catalog name")
 	evil := filepath.Join(w.root, "evil")
 	c6Write(t, filepath.Join(evil, "plugin.yaml"), "name: evil-plugin\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(evil, "__init__.py"), "def register(ctx):\n    pass\n")
+	c6Write(t, filepath.Join(evil, "helper.py"), "def register(ctx):\n    pass\n")
 	c6Write(t, filepath.Join(evil, CatalogSidecar), `{"catalog_name": "cat-plugin", "tier": "official", "sha": "`+strings.Repeat("0", 40)+`", "repo": "x"}`)
 	c6Git(t, evil, "init", "-q")
 	c6Commit(t, evil, "v1")
@@ -180,7 +180,7 @@ func adoptWorld(t *testing.T, origin string, git bool) (context.Context, string,
 	ctx := home.WithOverride(context.Background(), h)
 	plugin := filepath.Join(h, "plugins", "plug")
 	c6Write(t, filepath.Join(plugin, "plugin.yaml"), "name: plug\nversion: 1.0.0\n")
-	c6Write(t, filepath.Join(plugin, "__init__.py"), "def register(ctx):\n    pass\n")
+	c6Write(t, filepath.Join(plugin, "helper.py"), "def register(ctx):\n    pass\n")
 	if git {
 		c6Git(t, plugin, "init", "-q")
 		if origin != "" {

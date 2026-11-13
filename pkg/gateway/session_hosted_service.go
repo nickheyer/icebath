@@ -41,12 +41,15 @@ func NewCanonicalHostedRoomService(ctx context.Context, authority *SessionAuthor
 	c := &CanonicalHostedRoomService{HostedRoomService: &HostedRoomService{}, Authority: authority, loop: loop,
 		memberRPCs: pydict.New[[5]string, InternalSessionRPC]()}
 	err := c.HostedRoomService.init(ctx, c, HostedRoomServiceOptions{DBPath: authority.DB.Path(),
-		MakeRPC: func(string) (HostedRoomRPC, error) { return c, nil }})
+		MakeRPC: c.makeRPC})
 	if err != nil {
 		return nil, err
 	}
 	return c, nil
 }
+
+// The service itself as the producer of its rooms, so member transports keep exact durable history
+func (c *CanonicalHostedRoomService) makeRPC(string) (HostedRoomRPC, error) { return c, nil }
 
 // Seatable local profile homes by name for this authority's groups
 func (c *CanonicalHostedRoomService) ProfileHomes() (map[string]string, []string, error) {

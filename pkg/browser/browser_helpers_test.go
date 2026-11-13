@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/browser/harnesshost"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -16,12 +15,10 @@ import (
 var extraChildModes = map[string]func() int{}
 
 func TestMain(m *testing.M) {
-	harnesshost.DispatchEntry()
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	home.DispatchScratchPruneEntry(context.Background())
 	removeRoot := startChildGuard()
-	claimPrivateDir = func(string) bool { return false }
 	if tools.ConfigEnvTableKeys == nil {
 		tools.ConfigEnvTableKeys = func() []string { return nil }
 	}
@@ -39,12 +36,6 @@ func pin[T any](t *testing.T, target *T, value T) {
 	old := *target
 	*target = value
 	t.Cleanup(func() { *target = old })
-}
-
-func realClaimPrivateDir(t *testing.T) func(string) bool {
-	t.Helper()
-	pin(t, &claimPrivateDir, realClaim)
-	return realClaim
 }
 
 func testEnv(t *testing.T) *tools.Env {

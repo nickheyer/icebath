@@ -273,6 +273,7 @@ func auxUsageResponse(model string) map[string]any {
 }
 
 func TestRecordAuxUsageWritesThroughContext(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	db := &auxUsageRecorderFake{}
 	ctx := SetAccountingContext(context.Background(), db, "s1")
 	RecordAuxUsage(ctx, auxUsageResponse("aux-m"), "vision", "gemini", "")

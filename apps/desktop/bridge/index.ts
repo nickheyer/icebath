@@ -1,16 +1,16 @@
 // Rebuilds window.hermesDesktop over Wails bindings and events before the renderer loads
 import * as LifecycleService from './bindings/github.com/nickheyer/icebath/apps/desktop/lifecycleservice.js'
 import * as WindowService from './bindings/github.com/nickheyer/icebath/apps/desktop/windowservice.js'
-import { boot, fire, filesGroupSync, lazyGroup, overlayBoot, storageBoot, subscribe, subscribeScreenshotRequests, zoomFactor } from './runtime'
+import { boot, fire, lazyGroup, overlayBoot, storageBoot, subscribe, subscribeScreenshotRequests, zoomFactor } from './runtime'
+import * as files from './groups/files'
+import * as system from './groups/system'
 
 const lazyStorage = lazyGroup(() => import('./groups/storage'))
 const lazyBackend = lazyGroup(() => import('./groups/backend'))
 const lazyPreview = lazyGroup(() => import('./groups/preview'))
 const lazyConnections = lazyGroup(() => import('./groups/connections'))
 const lazyPty = lazyGroup(() => import('./groups/pty'))
-const lazySystem = lazyGroup(() => import('./groups/system'))
 const lazyOverlays = lazyGroup(() => import('./groups/overlays'))
-const lazyFiles = lazyGroup(() => import('./groups/files'))
 const lazyChrome = lazyGroup(() => import('./groups/chrome'))
 const lazyGit = lazyGroup(() => import('./groups/git'))
 const lazyUpdater = lazyGroup(() => import('./groups/updater'))
@@ -45,7 +45,7 @@ const hermesDesktop = {
     onMessage: callback => subscribe('window:relay', callback)
   },
   onBrowserPopoutClosed: callback => subscribe('browser-popout:closed', callback),
-  claimAmbientCue: (key) => lazySystem().then(m => m.claimAmbientCue(key)),
+  claimAmbientCue: (key) => system.claimAmbientCue(key),
   windowControls: {
     custom: boot.windowControlsCustom === true,
     minimize: () => fire(WindowService.WindowControl('minimize')),
@@ -103,10 +103,10 @@ const hermesDesktop = {
     onStatus: callback => subscribe('hud-modifier:status', callback)
   },
   screenshot: boot.platform === 'darwin' ? {
-    getSettings: () => lazySystem().then(m => m.screenshotGetSettings()),
-    setEnabled: (enabled) => lazySystem().then(m => m.screenshotSetEnabled(enabled)),
-    openPermissionSettings: (kind) => lazySystem().then(m => m.screenshotOpenPermissionSettings(kind)),
-    capture: (requestId) => lazySystem().then(m => m.screenshotCapture(requestId)),
+    getSettings: () => system.screenshotGetSettings(),
+    setEnabled: (enabled) => system.screenshotSetEnabled(enabled),
+    openPermissionSettings: (kind) => system.screenshotOpenPermissionSettings(kind),
+    capture: (requestId) => system.screenshotCapture(requestId),
     onStatus: callback => subscribe('screenshot:status', callback),
     onRequest: callback => subscribeScreenshotRequests(callback)
   } : undefined,
@@ -164,9 +164,9 @@ const hermesDesktop = {
     set: (name) => lazyConnections().then(m => m.profileSet(name))
   },
   api: (request) => lazyConnections().then(m => m.api(request)),
-  notify: (payload) => lazySystem().then(m => m.notify(payload)),
-  claimStartupLatency: () => lazySystem().then(m => m.claimStartupLatency()),
-  requestMicrophoneAccess: () => lazySystem().then(m => m.requestMicrophoneAccess()),
+  notify: (payload) => system.notify(payload),
+  claimStartupLatency: () => system.claimStartupLatency(),
+  requestMicrophoneAccess: () => system.requestMicrophoneAccess(),
   readWindowBelow: () => lazyOverlays().then(m => m.readWindowBelow()),
   readFileDataUrl: (filePath) => lazyStorage().then(m => m.readFileDataUrl(filePath)),
   readFileDataUrlForAttach: (filePath) => lazyStorage().then(m => m.readFileDataUrlForAttach(filePath)),
@@ -176,11 +176,11 @@ const hermesDesktop = {
   },
   readFileText: (filePath) => lazyStorage().then(m => m.readFileText(filePath)),
   readPluginSource: (filePath) => lazyStorage().then(m => m.readPluginSource(filePath)),
-  selectPaths: (options) => lazyFiles().then(m => m.selectPaths(options)),
-  selectSavePath: (options) => lazyFiles().then(m => m.selectSavePath(options)),
-  saveTextFileAs: (request) => lazyFiles().then(m => m.saveTextFileAs(request)),
-  writeClipboard: (text) => lazySystem().then(m => m.writeClipboard(text)),
-  readClipboard: () => lazySystem().then(m => m.readClipboard()),
+  selectPaths: (options) => files.selectPaths(options),
+  selectSavePath: (options) => files.selectSavePath(options),
+  saveTextFileAs: (request) => files.saveTextFileAs(request),
+  writeClipboard: (text) => system.writeClipboard(text),
+  readClipboard: () => system.readClipboard(),
   saveGatewayFile: (payload) => lazyStorage().then(m => m.saveGatewayFile(payload)),
   saveImageFromUrl: (url) => lazyStorage().then(m => m.saveImageFromUrl(url)),
   contextMenuEdit: (command) => lazyChrome().then(m => m.contextMenuEdit(command)),
@@ -192,17 +192,17 @@ const hermesDesktop = {
   saveImageBuffer: (data, ext, name) => lazyStorage().then(m => m.saveImageBuffer(data, ext, name)),
   capturePreview: (payload) => lazyPreview().then(m => m.capturePreview(payload)),
   savePastedText: (text) => lazyStorage().then(m => m.savePastedText(text)),
-  saveClipboardImage: () => lazySystem().then(m => m.saveClipboardImage()),
-  getPathForFile: file => filesGroupSync().getPathForFile(file),
+  saveClipboardImage: () => system.saveClipboardImage(),
+  getPathForFile: file => files.getPathForFile(file),
   normalizePreviewTarget: (target, baseDir) => lazyPreview().then(m => m.normalizePreviewTarget(target, baseDir)),
-  watchPreviewFile: (url) => lazyFiles().then(m => m.watchPreviewFile(url)),
-  watchDirectory: (dir) => lazyFiles().then(m => m.watchDirectory(dir)),
-  stopPreviewFileWatch: (id) => lazyFiles().then(m => m.stopPreviewFileWatch(id)),
-  setActiveWork: (payload) => lazySystem().then(m => m.setActiveWork(payload)),
+  watchPreviewFile: (url) => files.watchPreviewFile(url),
+  watchDirectory: (dir) => files.watchDirectory(dir),
+  stopPreviewFileWatch: (id) => files.stopPreviewFileWatch(id),
+  setActiveWork: (payload) => system.setActiveWork(payload),
   setTitleBarTheme: payload => fire(WindowService.SetTitleBarTheme(payload)),
   setNativeTheme: mode => fire(WindowService.SetNativeTheme(mode)),
   setTranslucency: payload => fire(WindowService.SetTranslucency(payload)),
-  setKeepAwake: (mode) => lazySystem().then(m => m.setKeepAwake(mode)),
+  setKeepAwake: (mode) => system.setKeepAwake(mode),
   onKeepAwakeOffer: callback => subscribe('keep-awake-offer', callback, true),
   minimizeToTray: {
     get: () => WindowService.MinimizeToTrayGet(),
@@ -228,7 +228,7 @@ const hermesDesktop = {
   setActiveConnectionRoute: (route) => lazyBackend().then(m => m.setActiveConnectionRoute(route)),
   fetchLinkTitle: (url) => lazyPreview().then(m => m.fetchLinkTitle(url)),
   resolveFavicon: (url) => lazyPreview().then(m => m.resolveFavicon(url)),
-  sanitizeWorkspaceCwd: (cwd) => lazyFiles().then(m => m.sanitizeWorkspaceCwd(cwd)),
+  sanitizeWorkspaceCwd: (cwd) => files.sanitizeWorkspaceCwd(cwd),
   settings: {
     getDefaultProjectDir: () => lazyStorage().then(m => m.settingsGetDefaultProjectDir()),
     setDefaultProjectDir: (dir) => lazyStorage().then(m => m.settingsSetDefaultProjectDir(dir)),
@@ -249,22 +249,22 @@ const hermesDesktop = {
   getRecentLogs: () => lazyStorage().then(m => m.getRecentLogs()),
   reportRendererError: (report) => lazyStorage().then(m => m.reportRendererError(report)),
   logLine: (line) => lazyStorage().then(m => m.logLine(line)),
-  readDir: (dirPath) => lazyFiles().then(m => m.readDir(dirPath)),
-  gitRoot: (startPath) => lazyFiles().then(m => m.gitRoot(startPath)),
-  revealPath: (targetPath) => lazyFiles().then(m => m.revealPath(targetPath)),
-  openDir: (dirPath) => lazyFiles().then(m => m.openDir(dirPath)),
-  desktopPluginsRoot: () => lazyFiles().then(m => m.desktopPluginsRoot()),
-  reconcileDesktopPlugins: () => lazyFiles().then(m => m.reconcileDesktopPlugins()),
-  reconcileDesktopPluginsReport: () => lazyFiles().then(m => m.reconcileDesktopPluginsReport()),
-  logsRoot: (profile) => lazyFiles().then(m => m.logsRoot(profile)),
-  renamePath: (targetPath, newName) => lazyFiles().then(m => m.renamePath(targetPath, newName)),
-  writeTextFile: (filePath, content) => lazyFiles().then(m => m.writeTextFile(filePath, content)),
-  trashPath: (targetPath) => lazyFiles().then(m => m.trashPath(targetPath)),
+  readDir: (dirPath) => files.readDir(dirPath),
+  gitRoot: (startPath) => files.gitRoot(startPath),
+  revealPath: (targetPath) => files.revealPath(targetPath),
+  openDir: (dirPath) => files.openDir(dirPath),
+  desktopPluginsRoot: () => files.desktopPluginsRoot(),
+  reconcileDesktopPlugins: () => files.reconcileDesktopPlugins(),
+  reconcileDesktopPluginsReport: () => files.reconcileDesktopPluginsReport(),
+  logsRoot: (profile) => files.logsRoot(profile),
+  renamePath: (targetPath, newName) => files.renamePath(targetPath, newName),
+  writeTextFile: (filePath, content) => files.writeTextFile(filePath, content),
+  trashPath: (targetPath) => files.trashPath(targetPath),
   pluginFiles: {
-    request: (pluginId, labels) => lazyFiles().then(m => m.pluginFilesRequest(pluginId, labels)),
-    grants: (pluginId) => lazyFiles().then(m => m.pluginFilesGrants(pluginId)),
-    revoke: (pluginId, folderId) => lazyFiles().then(m => m.pluginFilesRevoke(pluginId, folderId)),
-    op: (pluginId, request) => lazyFiles().then(m => m.pluginFilesOp(pluginId, request)),
+    request: (pluginId, labels) => files.pluginFilesRequest(pluginId, labels),
+    grants: (pluginId) => files.pluginFilesGrants(pluginId),
+    revoke: (pluginId, folderId) => files.pluginFilesRevoke(pluginId, folderId),
+    op: (pluginId, request) => files.pluginFilesOp(pluginId, request),
     onChanged: callback => subscribe('pluginFiles:changed', callback)
   },
   git: {
@@ -308,9 +308,9 @@ const hermesDesktop = {
   onOpenUpdatesRequested: callback => subscribe('open-updates', callback),
   onDeepLink: callback => subscribe('deep-link', callback),
   signalDeepLinkReady: () => LifecycleService.SignalDeepLinkReady(),
-  probePluginRepo: (payload) => lazyFiles().then(m => m.probePluginRepo(payload)),
-  installDesktopPlugin: (payload) => lazyFiles().then(m => m.installDesktopPlugin(payload)),
-  removeDesktopPlugin: (payload) => lazyFiles().then(m => m.removeDesktopPlugin(payload)),
+  probePluginRepo: (payload) => files.probePluginRepo(payload),
+  installDesktopPlugin: (payload) => files.installDesktopPlugin(payload),
+  removeDesktopPlugin: (payload) => files.removeDesktopPlugin(payload),
   onWindowStateChanged: callback => subscribe('window-state-changed', callback),
   onFocusSession: callback => subscribe('focus-session', callback),
   onNotificationAction: callback => subscribe('notification-action', callback),
@@ -320,7 +320,7 @@ const hermesDesktop = {
   onBackendExit: callback => subscribe('backend-exit', callback),
   onConnectionApplied: callback => subscribe('connection:applied', callback, true),
   onPowerResume: callback => subscribe('power-resume', callback),
-  getOnBattery: () => lazySystem().then(m => m.getOnBattery()),
+  getOnBattery: () => system.getOnBattery(),
   onBatteryChanged: callback => subscribe('power-battery', callback),
   onBootProgress: callback => subscribe('boot-progress', callback),
   getBootstrapState: () => lazyUpdater().then(m => m.getBootstrapState()),

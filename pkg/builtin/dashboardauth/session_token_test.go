@@ -110,6 +110,19 @@ func TestProviderConstructionRejectsEmptyToken(t *testing.T) {
 	}
 }
 
+// Construction keeps the exact token and names the empty token in its ValueError text
+func TestSessionTokenConstructionKeepsToken(t *testing.T) {
+	if _, err := NewSessionTokenProvider(""); err == nil || err.Error() != "token must be non-empty" {
+		t.Fatal(err)
+	}
+	sessionTokenCase(t, "")
+	token := tokenURLSafeForTest()
+	t.Setenv("ICEBATH_DASHBOARD_SESSION_TOKEN", token)
+	if p := registerSessionToken(t); p == nil || p.token != token {
+		t.Fatalf("provider %+v", p)
+	}
+}
+
 // test_session_token_provider.py TestRegister test_skips_when_no_token_provisioned
 func TestRegisterSkipsWhenNoTokenProvisioned(t *testing.T) {
 	sessionTokenCase(t, "")

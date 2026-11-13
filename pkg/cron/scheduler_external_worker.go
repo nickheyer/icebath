@@ -382,6 +382,7 @@ func (s *Store) waitForExternalCronWorkerBody(ctx context.Context, proc workerPr
 				continue
 			}
 			if returncode = proc.Poll(); returncode == nil {
+				reapTerminalWorkerInBackground(proc)
 				return true, nil
 			}
 		}

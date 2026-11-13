@@ -31,6 +31,7 @@ func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Disco
 		typingTasks: map[string]*typingTask{}, semanticThreadRenames: newSemanticThreadRenames(), voiceState: newVoiceState()}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformDiscord, a)
 	a.handleMessage = a.BasePlatformAdapter.HandleMessage
+	applyDiscordTraits(a)
 	a.textBatchDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_DELAY_SECONDS", 0.6)
 	a.textBatchSplitDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0)
 	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds)
@@ -271,21 +272,25 @@ func (a *DiscordAdapter) registerGatewayHandlers(ctx context.Context, link *gate
 	})
 }
 
-// Resolves username allowlist entries, marks ready and starts post connect work and recovery
+// Resolves username allowlist entries, marks ready and starts post connect work and recovery while the link is live
 func (a *DiscordAdapter) onReady(ctx context.Context, link *gatewayLink) {
 	if user := link.State.User; user != nil {
 		slog.Info(fmt.Sprintf("[%s] Connected as %s", a.Name(), user.String()))
 	}
 	a.resolveAllowedUsernames(ctx)
-	a.readyEvent.Set()
 	a.mu.Lock()
+	if a.disconnecting || a.link != link {
+		a.mu.Unlock()
+		return
+	}
+	a.readyEvent.Set()
 	if a.postConnectTask != nil && !a.postConnectTask.isDone() {
 		a.postConnectTask.cancel()
 	}
 	a.postConnectTask = spawnTask(ctx, a.runPostConnectInitialization)
 	a.mu.Unlock()
 	if a.missedMessageBackfillEnabled(ctx) {
-		a.ensureMissedMessageBackfillTask(ctx)
+		a.ensureMissedMessageBackfillTask(ctx, link)
 	}
 }
 

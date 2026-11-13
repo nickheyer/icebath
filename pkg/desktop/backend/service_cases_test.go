@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/desktop/desktoplog"
 )
 
 type sent struct {
@@ -61,35 +64,35 @@ type fakeRoutes struct {
 }
 
 func (r *fakeRoutes) ActiveProfile() string { return r.active }
-func (r *fakeRoutes) ResolveRequest(requested *string, source *WindowConnectionRoute, primaryKey string) (string, string, bool) {
+func (r *fakeRoutes) ResolveRequest(requested *string, source *WindowConnectionRoute, primaryKey string) (string, string, bool, error) {
 	if requested != nil && strings.TrimSpace(*requested) != "" {
-		return "", strings.TrimSpace(*requested), false
+		return "", strings.TrimSpace(*requested), false, nil
 	}
 	if source != nil && source.profile() != "" {
 		if source.RegistryScoped {
-			return source.connectionID(), source.profile(), false
+			return source.connectionID(), source.profile(), false, nil
 		}
-		return "", source.profile(), false
+		return "", source.profile(), false, nil
 	}
-	return "", primaryKey, true
+	return "", primaryKey, true, nil
 }
-func (r *fakeRoutes) ResolvedConnectionID(conn Connection) string {
+func (r *fakeRoutes) ResolvedConnectionID(conn Connection) (string, error) {
 	if conn["mode"] == "local" {
-		return LocalConnectionID
+		return LocalConnectionID, nil
 	}
-	return ""
+	return "", nil
 }
 func (r *fakeRoutes) EnsureRegistryBackend(id, profile string) (Connection, error) {
 	return Connection{"baseUrl": "https://" + id + ".invalid", "mode": "remote", "profile": profile}, nil
 }
-func (r *fakeRoutes) ProfileRoute(key string) ProfileBackendRoute {
+func (r *fakeRoutes) ProfileRoute(key string, _ *RouteRequest) ProfileBackendRoute {
 	if key == r.active || (r.active == "" && key == "default") {
 		return ProfileBackendRoute{Backend: "primary"}
 	}
 	return ProfileBackendRoute{Backend: "pool"}
 }
 func (r *fakeRoutes) AssertCanStart(string) error { return nil }
-func (r *fakeRoutes) ResolveRemote(string, bool, bool) (Connection, error) {
+func (r *fakeRoutes) ResolveRemote(string, RemoteResolveOptions) (Connection, error) {
 	return nil, nil
 }
 func (r *fakeRoutes) ConnectRemote(remote Connection, profile string, boot *PrimaryRemoteBoot) (Connection, error) {
@@ -101,7 +104,10 @@ func (r *fakeRoutes) WaitForFirstRunDecision(ResolvedBackend) (string, error) {
 func (r *fakeRoutes) RevalidatePrimary(*Future[Connection], func()) (RevalidateResult, error) {
 	return r.revalidate, nil
 }
-func (r *fakeRoutes) RevalidatePool() error { return nil }
+func (r *fakeRoutes) RevalidatePool([]PoolBackend, func(string) error) error { return nil }
+func (r *fakeRoutes) MigrateActiveProfileIfMissing() error                   { return nil }
+func (r *fakeRoutes) PrimaryIsRemote() bool                                  { return false }
+func (r *fakeRoutes) ClearRemoteLiveness()                                   {}
 func (r *fakeRoutes) RemoteWsURL(conn Connection) (string, error) {
 	return conn.str("wsUrl"), nil
 }
@@ -129,6 +135,9 @@ func (fakeRuntime) EnsureRuntime(b ResolvedBackend, assert func() error) (Resolv
 func (fakeRuntime) WaitForUpdate() error                        { return nil }
 func (fakeRuntime) WaitForPoolUpdate(string, func() bool) error { return nil }
 func (r fakeRuntime) UpdateHold() any                           { return r.hold }
+func (fakeRuntime) BootstrapFailure() error                     { return nil }
+func (fakeRuntime) SetBootstrapFailure(error)                   {}
+func (fakeRuntime) ResetBootstrapRepair()                       {}
 
 // fakeEnsureCLI is an icebath stand in that answers gateway ensure with a ready endpoint for its profile home
 func fakeEnsureCLI(t *testing.T, home string) string {
@@ -139,12 +148,19 @@ func fakeEnsureCLI(t *testing.T, home string) string {
 }
 
 func newTestService(t *testing.T, routes *fakeRoutes, cli string) (*Service, *fakeHost) {
-	home := t.TempDir()
+	home, cwd := t.TempDir(), t.TempDir()
+	previousLoginPath := ensureLoginShellPath
+	ensureLoginShellPath = func() LoginShellPathResult { return LoginShellPathResult{Reason: "unchanged"} }
+	t.Cleanup(func() { ensureLoginShellPath = previousLoginPath })
 	host := &fakeHost{primary: true, states: map[string]map[string]any{"main": {"isFullscreen": false}, "w2": {"isFullscreen": true}}}
 	svc := NewService(host, routes, fakeRuntime{hold: map[string]any{"holdId": "h1"}}, ServiceOptions{
-		IcebathHome: home,
-		Cwd:         t.TempDir(),
-		Env:         func() map[string]string { return map[string]string{"PATH": os.Getenv("PATH")} },
+		IcebathHome:  home,
+		Cwd:          func() string { return cwd },
+		DesktopLog:   desktoplog.New(filepath.Join(t.TempDir(), "desktop.log"), time.Now),
+		Ownership:    NewDesktopOwnership(t.TempDir(), func(string) {}),
+		WindowRoutes: NewWindowConnectionRoutes(),
+		PrimaryPin:   &PrimaryProfilePin{},
+		Env:          func() map[string]string { return map[string]string{"PATH": os.Getenv("PATH")} },
 		Resolve: func(args []string) (ResolvedBackend, error) {
 			if cli == "" {
 				return ResolvedBackend{Kind: "bootstrap-needed", Bootstrap: true}, nil

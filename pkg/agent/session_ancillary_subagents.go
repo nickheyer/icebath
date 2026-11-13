@@ -188,7 +188,7 @@ func compressionLineageOf(ctx context.Context, db any, sessionID string) (map[st
 		if err != nil {
 			return nil, err
 		}
-		for row != nil && len(ids) < 200 {
+		for row != nil {
 			child, err := reader.IsCompressionChildRow(ctx, row)
 			if err != nil {
 				return nil, err
@@ -201,7 +201,7 @@ func compressionLineageOf(ctx context.Context, db any, sessionID string) (map[st
 				return nil, fmt.Errorf("KeyError: 'parent_session_id'")
 			}
 			parentID := pyrepr.Str(parentValue)
-			if ids[parentID] {
+			if ids[parentID] || len(ids) >= 200 {
 				break
 			}
 			ids[parentID] = true

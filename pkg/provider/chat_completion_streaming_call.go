@@ -402,7 +402,7 @@ func (c *streamingCall) chatStreamCreated(raw any) {
 	c.mu.Lock()
 	c.attemptResponse, c.attemptConn = resp, nil
 	if s, ok := raw.(*auxSDKStream); ok {
-		c.attemptConn = s.auxAttemptConn
+		c.attemptConn = func() net.Conn { return socketFromResponse(s) }
 	}
 	diag := c.diag
 	c.mu.Unlock()
@@ -578,8 +578,9 @@ func (c *streamingCall) callChatCompletions(id int) (any, error) {
 			}
 		}
 	}
+	chunks := stream.Iter()
 	for {
-		raw, err := stream.Next(c.ctx)
+		raw, err := chunks.Next(c.ctx)
 		if errors.Is(err, io.EOF) {
 			break
 		}

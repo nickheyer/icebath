@@ -524,13 +524,12 @@ type laneParams struct {
 	spawnFn           SpawnFunc
 	perProfileCap     *int
 	perProfileRunning map[string]int
-	profileExists     func(string) bool
 }
 
 // Guards, claims, resolves the workspace and spawns one lane row, true when a spawn slot was consumed
 func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assignee string, result *DispatchResult, lane string, p *laneParams) (bool, error) {
 	taskID := pyrepr.Str(row.Get("id"))
-	if !p.profileExists(assignee) {
+	if !dispatchProfileExistsFn(ctx)(assignee) {
 		result.SkippedNonspawnable = append(result.SkippedNonspawnable, taskID)
 		if !p.dryRun {
 			err := WriteTxn(ctx, conn, false, func() error {
@@ -780,7 +779,11 @@ func laneRows(ctx context.Context, conn state.SQLiteConn, status string) ([]*Row
 }
 
 // Whether a review row would pass the review lane gates this tick and so may hold a reserved slot
-func anySpawnableReview(ctx context.Context, conn state.SQLiteConn, reviewRows []*Row, perProfileCap *int, perProfileRunning map[string]int, exists func(string) bool) (bool, error) {
+func anySpawnableReview(ctx context.Context, conn state.SQLiteConn, reviewRows []*Row, perProfileCap *int, perProfileRunning map[string]int) (bool, error) {
+	if len(reviewRows) == 0 {
+		return false, nil
+	}
+	exists := dispatchProfileExistsFn(ctx)
 	for _, row := range reviewRows {
 		assignee, _ := row.Get("assignee").(string)
 		if assignee == "" || !exists(assignee) {
@@ -850,10 +853,9 @@ func dispatchOnceLocked(ctx context.Context, conn state.SQLiteConn, o DispatchOp
 			perProfileRunning[pyrepr.Str(prow.Get("assignee"))] = int(n.Int64())
 		}
 	}
-	exists := dispatchProfileExistsFn(ctx)
 	readyBudget := spawnBudget
-	if spawnBudget != nil && *spawnBudget > 0 && len(reviewRows) > 0 {
-		reserve, err := anySpawnableReview(ctx, conn, reviewRows, perProfileCap, perProfileRunning, exists)
+	if spawnBudget != nil && *spawnBudget > 0 {
+		reserve, err := anySpawnableReview(ctx, conn, reviewRows, perProfileCap, perProfileRunning)
 		if err != nil {
 			return nil, err
 		}
@@ -864,7 +866,7 @@ func dispatchOnceLocked(ctx context.Context, conn state.SQLiteConn, o DispatchOp
 	}
 	params := &laneParams{
 		dryRun: o.DryRun, ttlSeconds: o.TTLSeconds, board: o.Board, failureLimit: o.FailureLimit, spawnFn: o.SpawnFn,
-		perProfileCap: perProfileCap, perProfileRunning: perProfileRunning, profileExists: exists,
+		perProfileCap: perProfileCap, perProfileRunning: perProfileRunning,
 	}
 	defaultAssignee := resolveDefaultAssignee(ctx, o.DefaultAssignee)
 	spawned := 0

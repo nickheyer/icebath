@@ -105,7 +105,7 @@ func getPluginOAuthAuthStatus(env PoolEnv, provider string) map[string]any {
 			live = append(live, e)
 		}
 	}
-	if len(live) == 0 && pluginRefreshHook(provider) != nil {
+	if len(live) == 0 && pluginRefreshHook(env.ctx(), provider) != nil {
 		for _, e := range entries {
 			if e.RefreshToken != "" {
 				refreshable = append(refreshable, e)

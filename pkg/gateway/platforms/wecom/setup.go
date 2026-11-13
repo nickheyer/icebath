@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -134,7 +133,6 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 		fmt.Fprintf(out, "\n  Scan the QR code above, or open this URL directly:\n  %s\n", pageURL)
 	} else {
 		fmt.Fprintf(out, "  Open this URL in WeCom on your phone:\n\n  %s\n\n", pageURL)
-		fmt.Fprintf(out, "  Tip: from the Icebath environment, run: %s to display a scannable QR code here next time\n", pm.InstallHint("messaging"))
 	}
 	fmt.Fprint(out, "\n  Fetching configuration results...")
 	deadline := qrMonotonic() + float64(timeoutSeconds)

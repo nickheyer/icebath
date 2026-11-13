@@ -32,6 +32,7 @@ type AIAgent struct {
 	provider                         string
 	requestedProvider                string
 	model                            string
+	modelNone                        bool
 	baseURL                          string
 	baseURLLower                     string
 	baseURLHostname                  string
@@ -89,7 +90,8 @@ type AIAgent struct {
 	quietMode            bool
 	suppressStatusOutput bool
 	maxIterations        int
-	iterationBudget      *IterationBudget
+	iterationBudget      atomic.Pointer[IterationBudget]
+	mainKey              atomic.Pointer[mainKeyAdapter]
 	budgetWarningRatio   float64
 	runBudgetSeconds     float64
 	checkpointMgr        *tools.CheckpointManager
@@ -278,11 +280,11 @@ type AIAgent struct {
 	turnLivenessActivityGeneration     int64
 	turnLivenessAbortClaim             any
 	currentTool                        string
-	apiCallCount                       int
+	apiCallCount                       atomic.Int64
 	skipMCPRefresh                     bool
 	credits                            *provider.CreditsCapture
 	creditsMu                          sync.Mutex
-	sessionMessages                    []*state.Message
+	sessionMessages                    atomic.Pointer[[]*state.Message]
 	sessionMessageOrigins              map[*state.Message]map[string]any
 	sharedRowStamps                    map[*state.Message]map[string]any
 	codexReasoningReplayEnabled        bool
@@ -295,7 +297,7 @@ type AIAgent struct {
 	userTurnCount                      int
 	isUserInitiatedTurn                bool
 	usageAnchor                        *provider.UsageAnchor
-	turnBaseUsageAnchor                *provider.UsageAnchor
+	turnBaseUsageAnchor                atomic.Pointer[provider.UsageAnchor]
 	requestPressureAnchored            bool
 	sessionPromptTokens                int
 	sessionCompletionTokens            int
@@ -396,9 +398,20 @@ func (a *AIAgent) SetToolProgressMode(mode string) { a.toolProgressMode = mode }
 func (a *AIAgent) SetPrintFn(fn func(string)) { a.printFn = fn }
 
 // Transcript messages of the live session, refreshed every turn by persistence
-func (a *AIAgent) SessionMessages() []*state.Message { return a.sessionMessages }
+func (a *AIAgent) SessionMessages() []*state.Message { return a.liveSessionMessages() }
 
-// AIAgentOptions are the AIAgent constructor keywords, nil and zero values standing for None
+// Transcript the turn last published, readable from the status bar and other goroutines outside the turn
+func (a *AIAgent) liveSessionMessages() []*state.Message {
+	if p := a.sessionMessages.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// Publishes the turn transcript so readers outside the turn see one whole list
+func (a *AIAgent) setSessionMessages(messages []*state.Message) { a.sessionMessages.Store(&messages) }
+
+// AIAgentOptions are the AIAgent constructor keywords, zero values standing for None and nil pointers for omitted defaults
 type AIAgentOptions struct {
 	BaseURL, Provider, APIMode         string
 	APIKey                             any
@@ -408,13 +421,14 @@ type AIAgentOptions struct {
 	Args                               []string
 	Runtime                            *provider.Runtime
 	Model                              string
-	MaxIterations                      int
+	ModelNone                          bool
+	MaxIterations                      *int
 	EnabledToolsets, DisabledToolsets  []string
 	SaveTrajectories, VerboseLogging   bool
 	QuietMode                          bool
-	ToolProgressMode                   string
+	ToolProgressMode                   *string
 	EphemeralSystemPrompt              string
-	LogPrefixChars                     int
+	LogPrefixChars                     *int
 	LogPrefix                          string
 	ProvidersAllowed, ProvidersIgnored any
 	ProvidersOrder, ProviderSort       any
@@ -463,9 +477,9 @@ type AIAgentOptions struct {
 	FallbackModel                      []map[string]any
 	CredentialPool                     *provider.Pool
 	CheckpointsEnabled                 bool
-	CheckpointMaxSnapshots             int
-	CheckpointMaxTotalSizeMB           int
-	CheckpointMaxFileSizeMB            int
+	CheckpointMaxSnapshots             *int
+	CheckpointMaxTotalSizeMB           *int
+	CheckpointMaxFileSizeMB            *int
 	PassSessionID                      bool
 	RequestedProvider                  string
 	Capabilities                       map[string]bool
@@ -496,12 +510,12 @@ type RunConversationOptions struct {
 	Prelude                    Prelude
 }
 
-// Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does
 // Python DeprecationWarning channel, recorded on the warnings logger below the default level so it stays silent
 var warnDeprecation = func(message string) {
 	slog.Default().With("logger", "py.warnings").Debug("DeprecationWarning: " + message)
 }
 
+// Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does
 func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 	if o.ToolDelay != nil {
 		warnDeprecation("tool_delay is deprecated and ignored; sequential tool calls no longer sleep between executions.")
@@ -511,23 +525,23 @@ func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 		o.RequestedProvider, o.APIMode = rt.RequestedProvider, string(rt.APIMode)
 		o.RequestOverrides, o.ACPCommand, o.ACPArgs = rt.RequestOverrides, rt.Command, rt.Args
 	}
-	if o.MaxIterations == 0 {
-		o.MaxIterations = int(^uint(0) >> 1)
+	if o.MaxIterations == nil {
+		o.MaxIterations = new(int(^uint(0) >> 1))
 	}
-	if o.ToolProgressMode == "" {
-		o.ToolProgressMode = "all"
+	if o.ToolProgressMode == nil {
+		o.ToolProgressMode = new("all")
 	}
-	if o.LogPrefixChars == 0 {
-		o.LogPrefixChars = 100
+	if o.LogPrefixChars == nil {
+		o.LogPrefixChars = new(100)
 	}
-	if o.CheckpointMaxSnapshots == 0 {
-		o.CheckpointMaxSnapshots = 20
+	if o.CheckpointMaxSnapshots == nil {
+		o.CheckpointMaxSnapshots = new(20)
 	}
-	if o.CheckpointMaxTotalSizeMB == 0 {
-		o.CheckpointMaxTotalSizeMB = 500
+	if o.CheckpointMaxTotalSizeMB == nil {
+		o.CheckpointMaxTotalSizeMB = new(500)
 	}
-	if o.CheckpointMaxFileSizeMB == 0 {
-		o.CheckpointMaxFileSizeMB = 10
+	if o.CheckpointMaxFileSizeMB == nil {
+		o.CheckpointMaxFileSizeMB = new(10)
 	}
 	a := &AIAgent{}
 	if err := initAgent(ctx, a, o); err != nil {

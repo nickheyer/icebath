@@ -101,7 +101,10 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		stored, _ := loaded.Get("params")
+		stored, has := loaded.Get("params")
+		if !has {
+			return jobRunOutcome{}, errors.New("KeyError: 'params'")
+		}
 		if !jsonEqual(stored, params) {
 			return jobRunOutcome{}, &CronExecutionUnknown{Msg: "cron admission identity conflict"}
 		}

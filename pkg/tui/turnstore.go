@@ -81,19 +81,46 @@ type notice struct {
 
 // Session level UI state the turn core reads and writes
 type uiState struct {
-	Busy          bool
-	Compacting    bool
-	Info          map[string]any
-	Notice        *notice
-	ShowReasoning bool
-	Sid           string
-	Status        string
-	Streaming     bool
+	Battery                    bool
+	BatteryStatus              *batteryInfo
+	BgTasks                    map[string]bool
+	Busy                       bool
+	BusyInputMode              string
+	Compact                    bool
+	Compacting                 bool
+	DestructiveSlashConfirm    bool
+	DetailsMode                string
+	DetailsModeCommandOverride bool
+	FocusView                  bool
+	GatewayConnected           *bool
+	IndicatorStyle             string
+	MouseTracking              string
+	PasteCollapseLines         int
+	PasteCollapseChars         int
+	Sections                   map[string]string
+	SessionTitle               string
+	StatusBar                  string
+	StatusBarFields            map[string]bool
+	Timestamps                 bool
+	Info                       map[string]any
+	InlineDiffs                bool
+	Notice                     *notice
+	ShowReasoning              bool
+	Sid                        string
+	Status                     string
+	StoredSid                  string
+	Streaming                  bool
+	Theme                      theme
+	Usage                      map[string]any
 }
 
 // UI state of a fresh session
 func newUIState() uiState {
-	return uiState{Status: tr("status.summoning"), Streaming: true}
+	return uiState{
+		BgTasks: map[string]bool{}, BusyInputMode: defaultBusyMode, DestructiveSlashConfirm: true, DetailsMode: "collapsed", IndicatorStyle: defaultIndicator,
+		InlineDiffs: true, MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
+		Status: tr("status.summoning"), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(),
+	}
 }
 
 // Live state of the turn in flight
@@ -127,17 +154,48 @@ type spawnSnapshot struct {
 	Subagents  []subagentProgress
 }
 
-// App state shared by the turn core, the ui, turn and spawn history stores of ui-tui
+// App state shared by the turn core, holding the ui, turn and spawn history stores
 type tuiStore struct {
 	ui           uiState
 	turn         turnState
 	spawnHistory []spawnSnapshot
+	overlay      overlayState
 	now          func() time.Time
+
+	serverRequests         map[string]*serverRequest
+	delegation             delegationState
+	petFlash               *petFlash
+	goodVibesTick          int
+	bubblesShown           map[string]bool
+	voicePartial           string
+	connectionOp           *connectionOperation
+	settledOperations      []string
+	dismissedOperations    []string
+	goalSnapshot           controlSnapshot
+	loopSnapshot           controlSnapshot
+	loopTickGen            int
+	processSnapshot        processSnapshot
+	agentSnapshot          agentSnapshot
+	pendingVoiceTranscript *string
+	pendingMutations       map[string]pendingMutation
+	themes                 themeSync
+	lastAdmission          map[string]string
+	wakeUserDisabled       bool
+}
+
+// Marks the next submit of this transcript as a voice turn
+func (s *tuiStore) markNextSubmitVoice(text string) { s.pendingVoiceTranscript = &text }
+
+// Voice transcript a submit carries as its voice turn, taken once
+func (s *tuiStore) takeVoiceTranscript() *string {
+	t := s.pendingVoiceTranscript
+	s.pendingVoiceTranscript = nil
+	return t
 }
 
 // Store of a fresh session on wall time
 func newTUIStore() *tuiStore {
-	return &tuiStore{ui: newUIState(), now: time.Now}
+	return &tuiStore{ui: newUIState(), now: time.Now, themes: themeSync{configPinned: loadBootTheme().seededPin}}
 }
 
 // Collapses or expands the live task list

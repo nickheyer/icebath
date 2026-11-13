@@ -20,8 +20,6 @@ const nativeAuditSite = "native-audit"
 // File the native audit site appends its JSON records to
 const nativeAuditEnv = "ICEBATH_TEST_AUDIT"
 
-func init() { siteHooks[nativeAuditSite] = installNativeAudit }
-
 var nativeAuditMu sync.Mutex
 
 // Appends one record of this process to the audit file

@@ -713,8 +713,9 @@ type PtySessionRegistryOptions struct {
 	BufferCap     int
 	ReadTimeout   time.Duration
 	DrainExecutor func(task func())
-	RetainIdle    bool
-	ReapIdle      func(ctx context.Context, now time.Time)
+	// Replaces the idle eviction a full registry runs, the subclass override of a registry that retains idle sessions
+	ReapOneIdleOrRaise func() error
+	ReapIdle           func(ctx context.Context, now time.Time)
 }
 
 // PtySessionRegistry tracks keep alive sessions by attach key under one spawn reservation
@@ -994,8 +995,8 @@ func (r *PtySessionRegistry) reapIdleDefault(ctx context.Context, now time.Time)
 
 // Evicts the longest idle session to free a slot, RegistryFull when every session is viewed or idle ones are retained
 func (r *PtySessionRegistry) reapOneIdleOrRaiseLocked() error {
-	if r.o.RetainIdle {
-		return NewRegistryFull("")
+	if r.o.ReapOneIdleOrRaise != nil {
+		return r.o.ReapOneIdleOrRaise()
 	}
 	var oldest *PtySession
 	var oldestAt time.Time

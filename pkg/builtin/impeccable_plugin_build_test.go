@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// Upstream impeccable checkout files the cases read beyond the skill and plugin subtrees the payload ships
-var impeccableRepoRoot = filepath.Join("testdata", "impeccable")
+// Upstream impeccable checkout files the cases read, unpacked from testdata/impeccable.tar.zst by TestMain
+var impeccableRepoRoot string
 
 // Unpacked copy of the embedded payload archive the cases read as a tree, set by TestMain
 var payloadTestDir string

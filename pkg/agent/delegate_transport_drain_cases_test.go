@@ -55,9 +55,10 @@ func newSSLBlockedChild(t *testing.T, env *tools.Env) *sslBlockedChild {
 	t.Helper()
 	c := &sslBlockedChild{readSettled: make(chan struct{}), unwound: make(chan struct{}), closed: make(chan struct{})}
 	child := interruptibleChild()
-	child.env, child.delegateRole, child.delegateDepth, child.model, child.apiCallCount = env, "leaf", 1, "test-model", 1
+	child.env, child.delegateRole, child.delegateDepth, child.model = env, "leaf", 1, "test-model"
+	child.apiCallCount.Store(1)
 	child.sessionCostStatus = "unknown"
-	child.iterationBudget = NewIterationBudget(50)
+	child.iterationBudget.Store(NewIterationBudget(50))
 	child.memoryManager = memory.NewMemoryManager(context.Background(), nil, nil)
 	if err := child.memoryManager.AddProvider(context.Background(), &closeSignal{child: c}); err != nil {
 		t.Fatal(err)

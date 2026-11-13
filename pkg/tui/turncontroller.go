@@ -48,9 +48,6 @@ type turnTimerMsg struct {
 	gen  int
 }
 
-// Flow prompts close when the turn goes idle, the overlay store handling it
-type flowOverlaysResetMsg struct{}
-
 // What an interrupt sealed into the transcript, the bubble text when it appended one and its partial reply
 type sealedInterrupt struct {
 	Partial string
@@ -244,6 +241,7 @@ type turnController struct {
 	interrupted         bool
 	sealed              *sealedInterrupt
 	lastStatusNote      string
+	statusFromBusy      bool
 	persistedToolLabels map[string]bool
 	protocolWarned      bool
 	reasoningText       string
@@ -297,6 +295,9 @@ func (c *turnController) fire(m turnTimerMsg) {
 	switch m.kind {
 	case timerStatus:
 		c.store.ui.Status = "ready"
+		if c.statusFromBusy {
+			c.store.ui.Status = c.store.statusFromBusy()
+		}
 	case timerNotice:
 		if n := c.store.ui.Notice; n != nil && n.ID == c.noticeArmedID {
 			c.store.ui.Notice = nil
@@ -416,7 +417,7 @@ func (c *turnController) idle(keepTurnArchive bool) {
 	}
 	t.Streaming, t.Subagents, t.Tools, t.TurnTrail = "", nil, nil, nil
 	c.store.ui.Busy, c.store.ui.Compacting = false, false
-	c.cmds = append(c.cmds, func() tea.Msg { return flowOverlaysResetMsg{} })
+	c.store.resetFlowOverlays()
 }
 
 // Interrupts the turn, a canonical one only after the owner confirms the running generation
@@ -500,8 +501,24 @@ func (c *turnController) sealInterrupt(deps interruptDeps, keepBusy bool) {
 		return
 	}
 	c.store.ui.Status = "interrupted"
+	c.statusFromBusy = false
 	c.arm(timerStatus, interruptCooldown)
 	c.flushPendingNotice()
+}
+
+// Puts the busy or ready status back after a transient status line
+func (c *turnController) restoreStatusAfter(d time.Duration) {
+	c.clearStatusTimer()
+	c.statusFromBusy = true
+	c.arm(timerStatus, d)
+}
+
+// Status of the session when no transient line shows
+func (s *tuiStore) statusFromBusy() string {
+	if s.ui.Busy {
+		return "running…"
+	}
+	return "ready"
 }
 
 // Drops passing status lines from the trail

@@ -153,7 +153,7 @@ func NewHookRegistry() *HookRegistry {
 
 // Metadata of every loaded hook
 func (h *HookRegistry) LoadedHooks() []map[string]any {
-	return append([]map[string]any(nil), h.loadedHooks...)
+	return append([]map[string]any{}, h.loadedHooks...)
 }
 
 // Registers the always on built in hooks, of which none ship

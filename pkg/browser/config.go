@@ -72,11 +72,24 @@ type settings struct {
 
 func cfgOf(env *tools.Env) settings { return settings{env: env} }
 
+// The browser section of the session config, read from the home's effective user config when the session carries none
 func (s settings) section() config.Tree {
-	if s.env == nil || s.env.Config == nil {
+	if s.env == nil {
 		return config.Tree{}
 	}
-	return s.env.Config.Sub("browser")
+	if s.env.Config != nil {
+		return s.env.Config.Sub("browser")
+	}
+	lookup := config.Lookup(os.LookupEnv)
+	if s.env.Secrets != nil {
+		lookup = s.env.Secrets.Lookup()
+	}
+	user, err := config.LoadUserEffective(home.ConfigPath(s.homeDir()), lookup)
+	if err != nil {
+		s.logger().Debug("browser config unreadable: " + err.Error())
+		return config.Tree{}
+	}
+	return config.Tree(user).Sub("browser")
 }
 
 func (s settings) logger() *slog.Logger {

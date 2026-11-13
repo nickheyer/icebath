@@ -99,6 +99,9 @@ func apItems(cmd *cobra.Command) ([]apItem, *apParser) {
 	if ok {
 		items := make([]apItem, 0, len(p.Acts))
 		for _, a := range p.Acts {
+			if a.Kind == 'h' && helpRemoved(cmd) {
+				continue
+			}
 			items = append(items, apResolve(cmd, a))
 		}
 		return items, p
@@ -149,7 +152,10 @@ func apResolve(cmd *cobra.Command, a apAction) apItem {
 // Builds argparse actions from a cobra command the hermes tree does not carry, such as a plugin command
 func apDerive(cmd *cobra.Command) ([]apItem, *apParser) {
 	p := &apParser{Desc: cmd.Long != "", Epilog: cmd.Annotations["epilog"] != ""}
-	items := []apItem{apResolve(cmd, apHelpActionTemplate)}
+	var items []apItem
+	if !helpRemoved(cmd) {
+		items = append(items, apResolve(cmd, apHelpActionTemplate))
+	}
 	mutex := map[string]int{}
 	cmd.Flags().SortFlags = false
 	cmd.LocalFlags().VisitAll(func(fl *pflag.Flag) {

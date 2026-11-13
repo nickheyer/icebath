@@ -89,7 +89,12 @@ func ProxyBypassEnvironment(host string, proxies map[string]string) bool {
 
 // Transport proxy choice of urllib urlopen on posix, environment proxies without a loopback exemption
 func UrlopenProxy(req *http.Request) (*url.URL, error) {
-	proxies := EnvironProxies(os.Environ())
+	return EnvironUrlopenProxy(os.Environ(), req)
+}
+
+// Urlopen proxy choice over an explicit environment in place of the process one
+func EnvironUrlopenProxy(environ []string, req *http.Request) (*url.URL, error) {
+	proxies := EnvironProxies(environ)
 	proxy, ok := proxies[req.URL.Scheme]
 	if !ok || req.URL.Host == "" || ProxyBypassEnvironment(req.URL.Host, proxies) {
 		return nil, nil

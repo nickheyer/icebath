@@ -15,7 +15,7 @@ import (
 func catInstallURL(t *testing.T, w *catWorldT, repo, name string, files map[string]string) string {
 	t.Helper()
 	c6Write(t, filepath.Join(repo, "plugin.yaml"), "name: "+name+"\nversion: 1.0.0\ndescription: d\n")
-	c6Write(t, filepath.Join(repo, "__init__.py"), "def register(ctx):\n    pass\n")
+	c6Write(t, filepath.Join(repo, "helper.py"), "def register(ctx):\n    pass\n")
 	for rel, text := range files {
 		c6Write(t, filepath.Join(repo, rel), text)
 	}

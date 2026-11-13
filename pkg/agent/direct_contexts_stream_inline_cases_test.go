@@ -101,7 +101,7 @@ func inlineWireAgent(t *testing.T, baseURL, platform string) (*AIAgent, context.
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
 	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "test-key", BaseURL: baseURL, Model: "m", Provider: "custom", Platform: platform,
-		QuietMode: true, SkipContextFiles: true, SkipMemory: true, EnabledToolsets: []string{}, MaxIterations: 1, Cwd: h, Env: env})
+		QuietMode: true, SkipContextFiles: true, SkipMemory: true, EnabledToolsets: []string{}, MaxIterations: new(1), Cwd: h, Env: env})
 	if err != nil {
 		t.Fatal(err)
 	}

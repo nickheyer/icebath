@@ -510,10 +510,7 @@ dist/
 /icebath.exe.build
 icebath_agent.egg-info/
 cmd/icebath/web_dist/
-cmd/icebath/tui_dist/*
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/dist-webapp/
 apps/desktop/release/
-!/ui-tui/packages/*
-/ui-tui/**/dist/

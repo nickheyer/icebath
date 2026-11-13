@@ -99,6 +99,27 @@ func portalFloat(v any) (float64, bool) {
 	return 0, false
 }
 
+// Items a for loop yields over a decoded JSON value, a dict its keys and a string its characters, false when not iterable
+func portalIterated(v any) ([]any, bool) {
+	switch t := v.(type) {
+	case []any:
+		return t, true
+	case *pyjson.Object:
+		keys := make([]any, len(t.Keys))
+		for i, k := range t.Keys {
+			keys[i] = k
+		}
+		return keys, true
+	case string:
+		chars := []any{}
+		for _, r := range t {
+			chars = append(chars, string(r))
+		}
+		return chars, true
+	}
+	return nil, false
+}
+
 // Cached listing at path, nil when missing, malformed or holding an invalid tool
 func portalCachedTools(path string) *ToolsRead {
 	raw := pyjson.NewObject()
@@ -109,8 +130,8 @@ func portalCachedTools(path string) *ToolsRead {
 			}
 		}
 	}
-	rows, isList := raw.GetOr("tools", nil).([]any)
-	if !isList {
+	rows, iterable := portalIterated(raw.GetOr("tools", nil))
+	if !iterable {
 		return nil
 	}
 	tools := make([]ConnectorTool, 0, len(rows))

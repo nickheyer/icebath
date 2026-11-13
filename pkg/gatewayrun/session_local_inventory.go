@@ -25,6 +25,9 @@ func publishSettledInfo(ctx context.Context, t *TurnRunner, a *agent.AIAgent) {
 }
 
 func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent) error {
+	if t.approvalOwner == nil {
+		return &pyTypeError{"cannot unpack non-iterable NoneType object"}
+	}
 	authority, sessionID := t.approvalOwner.authority, t.approvalOwner.sessionID
 	var messageID any
 	if t.ctx != nil {

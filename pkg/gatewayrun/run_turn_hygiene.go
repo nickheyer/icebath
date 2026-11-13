@@ -585,7 +585,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 			checkpointRequired = provider.IsTruthyValue(comp["checkpoint_required"])
 		}
 	}
-	opts := agent.AIAgentOptions{Model: model, MaxIterations: 4, QuietMode: true, SkipMemory: !checkpointRequired,
+	opts := agent.AIAgentOptions{Model: model, MaxIterations: new(4), QuietMode: true, SkipMemory: !checkpointRequired,
 		EnabledToolsets: []string{"memory"}, SessionID: entry.SessionID, SessionDB: db}
 	applyRuntimeKwargs(&opts, runtime)
 	hygAgent, err := newAIAgent(ctx, opts)

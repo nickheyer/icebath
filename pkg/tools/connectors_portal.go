@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydantic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 )
@@ -79,17 +79,25 @@ func NewPortalConnectorClient(ctx context.Context, env *Env, opts PortalOptions)
 		c.transport = portalDefaultTransport
 	}
 	if c.endpoint == nil {
-		c.endpoint = func() (string, error) { return NousPortalBaseURL(ctx) }
+		c.endpoint = func() (string, error) { return portalDefaultEndpointResolver(ctx) }
 	}
 	if c.headers == nil {
-		c.headers = func(string) map[string]string {
-			if token := readNousAccessToken(env); strings.TrimSpace(token) != "" {
-				return map[string]string{"Authorization": "Bearer " + token}
-			}
-			return map[string]string{}
-		}
+		c.headers = func(string) map[string]string { return portalDefaultHeaderProvider(env) }
 	}
 	return c
+}
+
+// Portal origin of the stored Nous login
+func portalDefaultEndpointResolver(ctx context.Context) (string, error) {
+	return NousPortalBaseURL(ctx)
+}
+
+// Bearer header of the stored Nous access token for any Portal URL, none when no token is stored
+func portalDefaultHeaderProvider(env *Env) map[string]string {
+	if token := readNousAccessToken(env); strings.TrimSpace(token) != "" {
+		return map[string]string{"Authorization": "Bearer " + token}
+	}
+	return map[string]string{}
 }
 
 func portalDefaultTransport(ctx context.Context, method, rawURL string, headers map[string]string, body any, timeout time.Duration) (*http.Response, error) {
@@ -194,25 +202,14 @@ func (c *PortalConnectorClient) ListAccounts() ([]map[string]any, error) {
 		return nil, err
 	}
 	parsed, err := c.parse(resp, status, route, PortalKindConnectorUnavailable, "portal accounts unavailable", func(m map[string]any) (any, error) {
-		raw, ok := m["accounts"]
-		if !ok {
-			return nil, &wireError{"accounts: Field required"}
+		inventory, verr := ConnectorAccountsResponse.Validate(m)
+		if verr != nil {
+			return nil, verr
 		}
-		rows, ok := raw.([]any)
-		if !ok {
-			return nil, &wireError{"accounts: Input should be a valid list"}
-		}
+		rows := inventory.Get("accounts").([]any)
 		accounts := make([]map[string]any, 0, len(rows))
-		for i, row := range rows {
-			m, ok := row.(map[string]any)
-			if !ok {
-				return nil, &wireError{fmt.Sprintf("accounts.%d: Input should be a valid dictionary", i)}
-			}
-			account, err := wireAccount(m)
-			if err != nil {
-				return nil, err
-			}
-			accounts = append(accounts, account)
+		for _, account := range rows {
+			accounts = append(accounts, wireDump(account.(*pydantic.Instance), true))
 		}
 		return accounts, nil
 	})
@@ -228,7 +225,9 @@ func (c *PortalConnectorClient) RenameAccount(connectionID, alias string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.parse(resp, status, route, PortalKindConnectorUnavailable, "portal accounts unavailable", func(m map[string]any) (any, error) { return wireAccount(m) })
+	parsed, err := c.parse(resp, status, route, PortalKindConnectorUnavailable, "portal accounts unavailable", func(m map[string]any) (any, error) {
+		return wireModelDump(ConnectorAccount, m)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -241,26 +240,22 @@ func (c *PortalConnectorClient) DeleteAccount(connectionID string) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := c.parse(resp, status, route, PortalKindConnectorUnavailable, "portal accounts unavailable", wireRemovedAccount)
+	parsed, err := c.parse(resp, status, route, PortalKindConnectorUnavailable, "portal accounts unavailable", func(m map[string]any) (any, error) {
+		return wireModelDump(RemovedConnectorAccount, m)
+	})
 	if err != nil {
 		return nil, err
 	}
 	return parsed.(map[string]any), nil
 }
 
-func wireRemovedAccount(m map[string]any) (any, error) {
-	if err := wireRequire(m, "", "connectionId", "connector", "status"); err != nil {
-		return nil, err
+// Alias keyed dump of a body the model validates, the validation error otherwise
+func wireModelDump(model *pydantic.Model, m map[string]any) (any, error) {
+	inst, verr := model.Validate(m)
+	if verr != nil {
+		return nil, verr
 	}
-	id, ok1 := m["connectionId"].(string)
-	connector, ok2 := m["connector"].(string)
-	if !ok1 || !ok2 {
-		return nil, &wireError{"Input should be a valid string"}
-	}
-	if m["status"] != "removed" {
-		return nil, &wireError{"status: Input should be 'removed'"}
-	}
-	return map[string]any{"connectionId": id, "connector": connector, "status": "removed"}, nil
+	return wireDump(inst, true), nil
 }
 
 // Sends one request, raising the parsed gateway error for a failed status and logging a 304
@@ -294,7 +289,10 @@ func (c *PortalConnectorClient) request(method, path string, body any, extra map
 	status := resp.StatusCode
 	requestID := responseRequestID(resp)
 	if (status < 200 || status >= 300) && status != 304 {
-		gerr := ParseGatewayError(status, portalSafeJSON(resp), resp.Header)
+		gerr, err := ParseGatewayError(status, portalSafeJSON(resp), resp.Header)
+		if err != nil {
+			return nil, status, route, err
+		}
 		if gerr.RequestID == "" {
 			gerr.RequestID = requestID
 		}

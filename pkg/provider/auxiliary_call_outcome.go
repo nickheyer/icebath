@@ -61,14 +61,19 @@ func auxErrorClass(err error, provider, model string) (reason string) {
 	in := auxClassifyInput(err, provider, model)
 	var re *AuxRuntimeError
 	if errors.As(err, &re) && re.ProviderError != nil {
-		msg := ""
-		if v := re.ProviderError["message"]; auxTruthy(v) {
-			msg = fmt.Sprint(v)
-		}
-		body, _ := json.Marshal(map[string]any{"error": re.ProviderError})
-		in = ClassifyInput{Err: errors.New(msg), Body: string(body), Provider: provider, Model: model}
+		in = embeddedProviderErrorInput(re.ProviderError, provider, model)
 	}
 	return string(ClassifyError(in).Reason)
+}
+
+// Classifier input of an HTTP 200 error object, its message as the error text and the object as an SDK body
+func embeddedProviderErrorInput(providerError map[string]any, provider, model string) ClassifyInput {
+	msg := ""
+	if v := providerError["message"]; auxTruthy(v) {
+		msg = fmt.Sprint(v)
+	}
+	body, _ := json.Marshal(map[string]any{"error": providerError})
+	return ClassifyInput{Err: errors.New(msg), Body: string(body), Provider: provider, Model: model}
 }
 
 // Classifier input carrying the status, body, and headers an auxiliary error exposes

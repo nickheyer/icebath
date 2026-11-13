@@ -220,7 +220,7 @@ func buildToolCategories() *pyjson.Object {
 			toolRow("Google Gemini TTS", "preview", "30 prebuilt voices, controllable via prompts",
 				[]any{toolKey("GEMINI_API_KEY", "Gemini API key", "https://aistudio.google.com/app/apikey")}, "tts_provider", "gemini"),
 			toolRow("KittenTTS", "local · free", "Lightweight local ONNX TTS (~25MB), no API key", nil, "tts_provider", "kittentts", "post_setup", "kittentts"),
-			toolRow("Piper", "local · free", "Local neural TTS, 44 languages (voices ~20-90MB)", nil, "tts_provider", "piper", "post_setup", "piper"),
+			toolRow("Piper", "local · free", "Local neural TTS, 44 languages (voices ~20-90MB, downloaded on first use)", nil, "tts_provider", "piper"),
 			toolRow("DeepInfra TTS", "paid", "Chatterbox, Qwen3-TTS, … — live catalog from api.deepinfra.com", []any{deepinfra}, "tts_provider", "deepinfra"),
 		}),
 		"stt", toolCategory("name", "Speech-to-Text", "icon", "🎙️", "providers", []any{

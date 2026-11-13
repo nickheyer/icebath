@@ -148,27 +148,42 @@ func (a *AIAgent) emptyGuardThreshold() guardDecimal {
 	return defaultEmptyGuardCostThresholdUSD
 }
 
-// Canonical usage of the response, false when it carries none
-func (a *AIAgent) emptyGuardUsage(response any) (provider.CanonicalUsage, bool) {
+// Attempt history of the current empty streak, the list the agent itself holds
+func (a *AIAgent) emptyAttempts() *[]emptyAttempt { return &a.emptyAttemptHistory }
+
+// Canonical usage of the response, false when it carries none or its normalization fails
+func (a *AIAgent) emptyGuardUsage(response any, what string) (usage provider.CanonicalUsage, ok bool) {
 	rawUsage := pyAttr(response, "usage")
 	if !pyrepr.Truthy(rawUsage) {
 		return provider.CanonicalUsage{}, false
 	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			emptyGuardLog().Debug(fmt.Sprintf("empty-guard: %s failed", what), "error", rec)
+			usage, ok = provider.CanonicalUsage{}, false
+		}
+	}()
 	return provider.NormalizeUsage(rawUsage, a.provider, a.apiMode), true
 }
 
-// Estimated USD input cost of one attempt, nil when pricing or usage is unknown
-func estimateEmptyAttemptCost(ctx context.Context, a *AIAgent, response any) *big.Rat {
-	canonical, ok := a.emptyGuardUsage(response)
+// Estimated USD input cost of one attempt, nil when pricing or usage is unknown or the estimate fails
+func estimateEmptyAttemptCost(ctx context.Context, a *AIAgent, response any) (cost *big.Rat) {
+	canonical, ok := a.emptyGuardUsage(response, "cost estimation")
 	if !ok {
 		return nil
 	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			emptyGuardLog().Debug("empty-guard: cost estimation failed", "error", rec)
+			cost = nil
+		}
+	}()
 	return provider.EstimateUsageCost(ctx, a.model, canonical, a.provider, a.baseURL, a.apiKey).AmountUSD
 }
 
 // Usage presence and zero generation of a response, both false without evidence
 func (a *AIAgent) emptyZeroOutput(response any) (usagePresent, zeroOutput bool) {
-	canonical, ok := a.emptyGuardUsage(response)
+	canonical, ok := a.emptyGuardUsage(response, "usage normalization")
 	if !ok || canonical.PromptTokens() <= 0 {
 		return false, false
 	}
@@ -177,12 +192,13 @@ func (a *AIAgent) emptyZeroOutput(response any) (usagePresent, zeroOutput bool) 
 
 // Records one empty completion, a zero retry counter starting a new streak with cleared history
 func (a *AIAgent) recordEmptyAttempt(ctx context.Context, finishReason string, response any, observedGeneration bool) {
+	attempts := a.emptyAttempts()
 	if a.emptyContentRetries == 0 {
-		a.emptyAttemptHistory = a.emptyAttemptHistory[:0]
+		*attempts = (*attempts)[:0]
 		a.emptyStreakCostUSD = new(big.Rat)
 	}
 	usagePresent, zeroOutput := a.emptyZeroOutput(response)
-	a.emptyAttemptHistory = append(a.emptyAttemptHistory, emptyAttempt{
+	*attempts = append(*attempts, emptyAttempt{
 		model: a.model, provider: a.provider, finishReason: finishReason,
 		usagePresent: usagePresent, zeroOutput: zeroOutput, observedGeneration: observedGeneration,
 	})

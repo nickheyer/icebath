@@ -57,10 +57,9 @@ func fakeSTTPosts(t *testing.T, replies ...[2]any) *[]sttPostCall {
 	return calls
 }
 
-// Scripted Mistral SDK double
+// Scripted Mistral transcription endpoint double
 func fakeMistral(result any, class string, err error) *int {
 	n := new(int)
-	safeFindSpec = func(m string) bool { return m == "mistralai" }
 	sttMistralTranscribe = func(context.Context, string, string, [][2]string) (any, string, error) {
 		*n++
 		return result, class, err
@@ -89,17 +88,9 @@ func TestTranscribeMistralApiErrorReturnsFailure(t *testing.T) {
 	}
 }
 
-func TestGetProviderMistralMistralExplicitNoSdkReturnsNone(t *testing.T) {
-	ctx := keepSTTSeams(t)
-	t.Setenv("MISTRAL_API_KEY", "test-key")
-	if got, _ := getProvider(ctx, map[string]any{"provider": "mistral"}); got != "none" {
-		t.Fatalf("getProvider = %q", got)
-	}
-}
-
-// No local backend and no OpenAI SDK, the auto detection ladder starting at mistral
+// No local backend and no OpenAI credential, the auto detection ladder starting at mistral
 func noLocalNoOpenAI() {
-	hasFasterWhisper, hasOpenAI = func() bool { return false }, func() bool { return false }
+	hasFasterWhisper = func() bool { return false }
 	hasLocalCommand = func(context.Context) bool { return false }
 }
 
@@ -107,7 +98,6 @@ func TestGetProviderMistralAutoDetectMistralAfterOpenai(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("MISTRAL_API_KEY", "test-key")
 	noLocalNoOpenAI()
-	hasMistral = func() bool { return true }
 	if got, _ := getProvider(ctx, map[string]any{}); got != "mistral" {
 		t.Fatalf("getProvider = %q", got)
 	}

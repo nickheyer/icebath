@@ -2,7 +2,8 @@ package cron
 
 import (
 	"context"
-	"os/exec"
+	"math"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -36,7 +37,7 @@ func deferTeardownToRunningWorker(s *Store, future *agentFuture, sessionDB *stat
 	return true
 }
 
-// Waits on an external worker in the background so it never lingers as a zombie
-func reapTerminalWorkerInBackground(cmd *exec.Cmd) {
-	go func() { _ = cmd.Wait() }()
+// Holds the wait on a terminal worker still in teardown after the waiter returned, ending with its exit
+func reapTerminalWorkerInBackground(proc workerProcess) {
+	go func() { _, _ = proc.Wait(time.Duration(math.MaxInt64)) }()
 }

@@ -13,6 +13,7 @@ import (
 )
 
 func TestRegisteredDeadlineSurvivesSequentialExecutionAndBridge(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	names := []string{"deadline_probe_slow", "deadline_probe_ordinary"}
 	var mu sync.Mutex
 	var release, finished chan struct{}
@@ -167,14 +168,14 @@ func TestContainerBackendTaskLeavesHostStoreUntouchedThroughExecutor(t *testing.
 // Executor whose relay runs the icebath pipeline on its own goroutine like relay_tools.execute on a pool thread
 func relayGoroutineExecutor(t *testing.T, defs ...Def) (*Executor, *fakeExecutorHost) {
 	e, host, _ := registryExecutor(t, defs...)
-	e.Dispatcher.Relay = func(_ context.Context, _ *Env, _ string, args map[string]any, _ ToolHookIDs, pipeline func(map[string]any) (string, error)) (string, map[string]any, error) {
+	e.Dispatcher.Relay = func(rctx context.Context, _ *Env, _ string, args map[string]any, _ ToolHookIDs, pipeline func(context.Context, map[string]any) (string, error)) (string, map[string]any, error) {
 		type out struct {
 			result string
 			err    error
 		}
 		ch := make(chan out, 1)
 		go func() {
-			r, err := pipeline(args)
+			r, err := pipeline(rctx, args)
 			ch <- out{r, err}
 		}()
 		o := <-ch

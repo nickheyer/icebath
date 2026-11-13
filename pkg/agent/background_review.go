@@ -45,6 +45,9 @@ type backgroundReviewRun struct {
 	cancelDispatched bool
 }
 
+// Review run with no cancel requested, no request finished and no review agent yet
+func newBackgroundReviewRun() *backgroundReviewRun { return &backgroundReviewRun{} }
+
 // Admits the first provider capable review phase unless the run was cancelled or finished
 func (r *backgroundReviewRun) beginRequest(reviewAgent any) bool {
 	r.mu.Lock()
@@ -93,7 +96,7 @@ func prepareBackgroundReviewRun(a *AIAgent) *backgroundReviewRun {
 	if a == nil {
 		return nil
 	}
-	run := &backgroundReviewRun{}
+	run := newBackgroundReviewRun()
 	if a.backgroundReviewLock == nil {
 		a.backgroundReviewLock = &sync.Mutex{}
 	}
@@ -256,18 +259,19 @@ var reviewResolveRuntimeProvider = provider.ResolveRuntimeProvider
 
 // Provider, model and credentials a review fork runs on, routed when the config names a different model
 type reviewRuntime struct {
-	Provider, Model, APIKey, BaseURL, APIMode, Command string
-	CredentialPool                                     *provider.Pool
-	RequestOverrides                                   map[string]any
-	MaxTokens                                          *int
-	Args                                               []string
-	Routed                                             bool
+	Provider, Model, BaseURL, APIMode, Command string
+	APIKey                                     any
+	CredentialPool                             *provider.Pool
+	RequestOverrides                           map[string]any
+	MaxTokens                                  *int
+	Args                                       []string
+	Routed                                     bool
 }
 
 // Review fork runtime, the parent live runtime unless background_review names a different concrete model
 var resolveReviewRuntime = func(ctx context.Context, a *AIAgent, taskCfg map[string]any) reviewRuntime {
-	parentRuntime := a.currentMainRuntime()
-	apiMode := parentRuntime["api_mode"]
+	parentRuntime := a.currentMainRuntime(ctx)
+	apiMode, _ := parentRuntime["api_mode"].(string)
 	if apiMode == "codex_app_server" {
 		apiMode = "codex_responses"
 	}
@@ -276,7 +280,7 @@ var resolveReviewRuntime = func(ctx context.Context, a *AIAgent, taskCfg map[str
 		overrides[k] = v
 	}
 	parent := reviewRuntime{
-		Provider: a.provider, Model: a.model, APIKey: parentRuntime["api_key"], BaseURL: parentRuntime["base_url"],
+		Provider: a.provider, Model: a.model, APIKey: parentRuntime["api_key"], BaseURL: a.baseURL,
 		APIMode: apiMode, CredentialPool: a.credentialPool, RequestOverrides: overrides, MaxTokens: a.maxTokens,
 		Command: a.acpCommand, Args: append([]string{}, a.acpArgs...),
 	}
@@ -305,7 +309,7 @@ var resolveReviewRuntime = func(ctx context.Context, a *AIAgent, taskCfg map[str
 		return parent
 	}
 	routed := reviewRuntime{
-		Provider: rp.Provider, Model: rp.Model, APIKey: rp.APIKey, BaseURL: rp.BaseURL, APIMode: string(rp.APIMode),
+		Provider: rp.Provider, Model: rp.Model, APIKey: rp.APIKeyValue(), BaseURL: rp.BaseURL, APIMode: string(rp.APIMode),
 		CredentialPool: rp.CredentialPool, Command: rp.Command, RequestOverrides: map[string]any{},
 		Args: append([]string{}, rp.Args...), Routed: true,
 	}

@@ -19,8 +19,9 @@ func livenessParent(env *tools.Env, child *AIAgent) *AIAgent {
 func livenessChild(env *tools.Env, sessionID string, calls int, activityTS float64) *AIAgent {
 	child := interruptibleChild()
 	child.env, child.delegateRole, child.delegateDepth, child.sessionID, child.model = env, "leaf", 1, sessionID, "test/model"
-	child.apiCallCount, child.maxIterations, child.lastActivityTS = calls, 50, activityTS
-	child.iterationBudget = NewIterationBudget(50)
+	child.maxIterations, child.lastActivityTS = 50, activityTS
+	child.apiCallCount.Store(int64(calls))
+	child.iterationBudget.Store(NewIterationBudget(50))
 	return child
 }
 

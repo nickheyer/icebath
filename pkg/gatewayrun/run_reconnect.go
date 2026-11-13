@@ -98,8 +98,13 @@ func disposeUnusedAdapter(ctx context.Context, adapter gateway.PlatformAdapter) 
 	return nil
 }
 
+// Planned restart notice marker in the launch home, never a profile override
+func plannedRestartNotificationPath() string {
+	return gateway.PlannedRestartMarkerPath(home.Process())
+}
+
 // Whether a planned restart notice marker waits in the process home
 func plannedRestartNotificationPending() bool {
-	_, err := os.Stat(gateway.PlannedRestartMarkerPath(home.Process()))
+	_, err := os.Stat(plannedRestartNotificationPath())
 	return err == nil
 }

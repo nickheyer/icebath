@@ -2,13 +2,12 @@ package gatewayrun
 
 import (
 	"context"
-	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -32,8 +31,6 @@ type metadataMessageEditor interface {
 	EditMessageWithMetadata(ctx context.Context, chatID, messageID, content string, finalize bool, metadata map[string]any) (gateway.SendResult, error)
 }
 
-var taskCardSpaceRe = regexp.MustCompile(`\s+`)
-
 // Task card rail state of one turn
 type taskCardState struct {
 	adapter               gateway.PlatformAdapter
@@ -55,11 +52,11 @@ func taskCardCompact(value any, limit int) string {
 	if pyrepr.Truthy(value) {
 		raw = pyrepr.Str(value)
 	}
-	text := strings.TrimSpace(taskCardSpaceRe.ReplaceAllString(raw, " "))
-	if utf8.RuneCountInString(text) <= limit {
+	text := strings.Join(pystr.SplitWhitespace(raw, -1), " ")
+	if pystr.Len(text) <= limit {
 		return text
 	}
-	return strings.TrimRight(string([]rune(text)[:limit-3]), " \t\n\r\v\f") + "..."
+	return pystr.Rstrip(pystr.Slice(text, 0, limit-3)) + "..."
 }
 
 // The last eight tasks in start order

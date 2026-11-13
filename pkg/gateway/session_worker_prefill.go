@@ -67,10 +67,7 @@ func (p *prefillPublication) Read() error {
 func (p *prefillPublication) Publish() error {
 	p.authority.mu.Lock()
 	defer p.authority.mu.Unlock()
-	if p.authority.localPrefill == nil {
-		p.authority.localPrefill = map[string]*prefillBox{}
-	}
-	p.authority.localPrefill[p.sessionID] = p.box
+	heldPrefill(p.authority)[p.sessionID] = p.box
 	return nil
 }
 
@@ -78,8 +75,8 @@ func (p *prefillPublication) Publish() error {
 func (p *prefillPublication) Withdraw() {
 	p.authority.mu.Lock()
 	defer p.authority.mu.Unlock()
-	if p.authority.localPrefill[p.sessionID] == p.box {
-		delete(p.authority.localPrefill, p.sessionID)
+	if held := heldPrefill(p.authority); held[p.sessionID] == p.box {
+		delete(held, p.sessionID)
 	}
 }
 
@@ -102,9 +99,9 @@ func sessionPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 		return nil, nil
 	}
 	a.mu.Lock()
-	box, held := a.localPrefill[sessionID]
+	box, kept := heldPrefill(a)[sessionID]
 	a.mu.Unlock()
-	if held {
+	if kept {
 		return box.messages, nil
 	}
 	messages, err := readPrefill(ctx, a, policy)
@@ -113,14 +110,20 @@ func sessionPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	held := heldPrefill(a)
+	if first, raced := held[sessionID]; raced {
+		return first.messages, nil
+	}
+	held[sessionID] = &prefillBox{messages: messages}
+	return messages, nil
+}
+
+// Prefill snapshots the authority holds per session, the map made on first use under the caller's lock
+func heldPrefill(a *SessionAuthority) map[string]*prefillBox {
 	if a.localPrefill == nil {
 		a.localPrefill = map[string]*prefillBox{}
 	}
-	if kept, raced := a.localPrefill[sessionID]; raced {
-		return kept.messages, nil
-	}
-	a.localPrefill[sessionID] = &prefillBox{messages: messages}
-	return messages, nil
+	return a.localPrefill
 }
 
 // Drops the held prefill snapshots of deleted sessions

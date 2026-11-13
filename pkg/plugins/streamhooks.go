@@ -35,6 +35,15 @@ var (
 	streamDispatchers  = map[streamDispatcherKey]*consumerDispatcher{}
 )
 
+// Name of a dispatcher callback, the name derived from the function itself when none was recorded
+func streamCallbackName(entry *hookEntry) string {
+	if entry.name != "" {
+		return entry.name
+	}
+	_, short := callbackNames(entry.fn)
+	return short
+}
+
 // Queues an item, evicting the oldest pending one once when the queue is full
 func putDropOldest(events chan streamHookItem, item streamHookItem) bool {
 	select {
@@ -148,7 +157,7 @@ func EnqueuePluginStreamHook(ctx context.Context, hookName string, payload map[s
 		if putDropOldest(d.events, item) {
 			queued = true
 		} else {
-			logDebug("plugin stream hook queue full after drop-oldest: " + hookName + " callback=" + d.entry.name)
+			logDebug("plugin stream hook queue full after drop-oldest: " + hookName + " callback=" + streamCallbackName(d.entry))
 		}
 	}
 	return queued

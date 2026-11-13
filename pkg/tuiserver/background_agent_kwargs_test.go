@@ -87,24 +87,24 @@ func TestBackgroundAgentKwargsFallsBackToConfigDisabledToolsets(t *testing.T) {
 func TestBackgroundAgentKwargsReadsNestedMaxTurns(t *testing.T) {
 	ctx := backgroundCfgHome(t, "agent:\n  max_turns: 300\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got != 300 {
-		t.Fatalf("max_iterations %d", got)
+	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 300 {
+		t.Fatalf("max_iterations %v", got)
 	}
 }
 
 func TestBackgroundAgentKwargsFallsBackToRootMaxTurns(t *testing.T) {
 	ctx := backgroundCfgHome(t, "max_turns: 50\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got != 50 {
-		t.Fatalf("max_iterations %d", got)
+	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 50 {
+		t.Fatalf("max_iterations %v", got)
 	}
 }
 
 func TestBackgroundAgentKwargsHandlesNullAgentConfig(t *testing.T) {
 	ctx := backgroundCfgHome(t, "agent: null\nmax_turns: 40\n")
 	parent := fakeBackgroundParent{model: "test-model"}
-	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got != 40 {
-		t.Fatalf("max_iterations %d", got)
+	if got := backgroundAgentKwargs(ctx, parent, "task_1").MaxIterations; got == nil || *got != 40 {
+		t.Fatalf("max_iterations %v", got)
 	}
 }
 

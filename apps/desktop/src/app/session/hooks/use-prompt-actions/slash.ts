@@ -750,8 +750,8 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           }
         },
         // /background (alias /bg) starts a detached background turn via the
-        // gateway's prompt.background RPC — the TUI's path
-        // (ui-tui/src/app/slash/commands/session.ts). It must NOT go through
+        // gateway's prompt.background RPC — the terminal UI's path
+        // (pkg/tui/slash_session.go). It must NOT go through
         // runExec: the slash worker's HermesCLI prints the completion from a
         // fire-and-forget thread after process_command already returned, past
         // the worker's stdout capture window, so the result never reached the
@@ -802,8 +802,8 @@ export function useSlashCommand(deps: SlashCommandDeps) {
           }
         },
         // /compress (alias /compact) runs the gateway's dedicated
-        // session.compress RPC — the TUI's path
-        // (ui-tui/src/app/slash/commands/session.ts). It must NOT go through
+        // session.compress RPC — the terminal UI's path
+        // (pkg/tui/slash_control.go). It must NOT go through
         // runExec: compressing a large session outlives the slash worker's pipe
         // timeout (45s) and the desktop's 30s WS default, and the resulting
         // slash.exec error cascaded into command.dispatch's misleading "not a
@@ -997,7 +997,7 @@ export function useSlashCommand(deps: SlashCommandDeps) {
             compressInFlightRef.current.delete(sessionId)
           }
         },
-        // /reasoning runs the gateway's `config.set key=reasoning` — the Ink
+        // /reasoning runs the gateway's `config.set key=reasoning` — the terminal UI
         // TUI's path. Through slash.exec the display words only reached
         // config.yaml and the Thinking gate ($showReasoning) waited for the
         // next config refresh; the effort level was set on a throwaway CLI.

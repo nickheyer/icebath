@@ -464,8 +464,8 @@ func (c *kanbanCLI) cmdGC() (int, error) {
 			if deferred {
 				continue
 			}
-			_ = os.RemoveAll(path)
-			if _, err := os.Lstat(path); err != nil {
+			rmtreeIgnoreErrors(path)
+			if _, err := os.Stat(path); err != nil {
 				removedWS++
 			}
 		}

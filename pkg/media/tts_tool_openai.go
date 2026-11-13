@@ -187,30 +187,21 @@ func generateOpenAITTS(ctx context.Context, env *tools.Env, text, outputPath str
 	for k, v := range openAIExtraBody(oaiConfig) {
 		body[k] = v
 	}
-	factory, err := ttsImportOpenAIClient()
-	if err != nil {
-		return "", err
-	}
-	client := factory(apiKey, baseURL)
+	client := newOpenAISpeechClient(apiKey, baseURL)
 	if err := client.CreateSpeech(ctx, body, map[string]string{"x-idempotency-key": uuid4()}, outputPath); err != nil {
 		return "", err
 	}
 	return outputPath, nil
 }
 
-// Speech client constructed from an API key and base URL
-type ttsSpeechClientFactory func(apiKey, baseURL string) ttsSpeechClient
-
 // One OpenAI compatible audio.speech.create call streamed to a file
 type ttsSpeechClient interface {
 	CreateSpeech(ctx context.Context, body map[string]any, headers map[string]string, outputPath string) error
 }
 
-// OpenAI client constructor, the importer seam tests replace with a missing package or a double
-var ttsImportOpenAIClient = func() (ttsSpeechClientFactory, error) {
-	return func(apiKey, baseURL string) ttsSpeechClient {
-		return &openAISpeechClient{apiKey: apiKey, baseURL: baseURL, maxRetries: 2, timeout: 600 * time.Second}
-	}, nil
+// OpenAI compatible speech client of an API key and base URL with two retries and a ten minute timeout
+func newOpenAISpeechClient(apiKey, baseURL string) ttsSpeechClient {
+	return &openAISpeechClient{apiKey: apiKey, baseURL: baseURL, maxRetries: 2, timeout: 600 * time.Second}
 }
 
 // Native OpenAI audio speech client with the SDK retry policy

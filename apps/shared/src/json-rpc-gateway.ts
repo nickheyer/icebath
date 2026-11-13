@@ -74,7 +74,7 @@ export function isGatewayWebSocketUrl(value: unknown): value is string {
 
 /**
  * Typed fan-out of gateway `event` notifications: per-type handlers plus a
- * `*` wildcard. Shared by the WebSocket client below and the Ink TUI's stdio
+ * `*` wildcard. Shared by the WebSocket client below and the terminal UI's stdio
  * client so both dispatch the same way.
  */
 export class GatewayEventHub {

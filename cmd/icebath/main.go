@@ -20,6 +20,9 @@ func main() {
 	if code, ok := containerinit.Dispatch(os.Args); ok {
 		os.Exit(code)
 	}
+	if code, ok := runNixModuleVerb(os.Args[1:], os.Stdout, os.Stderr); ok {
+		os.Exit(code)
+	}
 	containerinit.DropRootInImage(os.Args)
 	startProcess(context.Background())
 	args, pinned := pm.LauncherStart(pm.RepoRoot(), os.Args)
@@ -50,9 +53,6 @@ func main() {
 	home.ExportScratchTmpEnv(context.Background())
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
-	}
-	if code, ok := runTUIHelperVerb(argv); ok {
-		exit(code)
 	}
 	if code, ok := runBuildHelperVerb(argv); ok {
 		exit(code)

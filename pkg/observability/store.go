@@ -219,6 +219,15 @@ type SharedMetricsStore struct {
 	drainAtExit     bool
 }
 
+// Resource dimensions of one aggregate row keyed by column, values in column order
+func rowResource(values []string) map[string]string {
+	resource := make(map[string]string, len(resourceColumns))
+	for i, column := range resourceColumns {
+		resource[column] = values[i]
+	}
+	return resource
+}
+
 // Opens the store under the profile's telemetry/shared_metrics, empty paths taking the defaults
 func NewSharedMetricsStore(ctx context.Context, databasePath, outboxDirectory string) (*SharedMetricsStore, error) {
 	root := filepath.Join(home.Dir(ctx), "telemetry", "shared_metrics")
@@ -656,13 +665,13 @@ func (s *SharedMetricsStore) CounterSnapshot(ctx context.Context) ([]CounterRow,
 		defer rows.Close()
 		for rows.Next() {
 			var r CounterRow
-			var version, osFamily, arch, method, dimsJSON string
-			if err := rows.Scan(&r.PeriodStart, &r.MetricName, &version, &osFamily, &arch, &method, &dimsJSON,
-				&r.Value, &r.PackagedValue); err != nil {
+			var dimsJSON string
+			resourceValues := make([]string, len(resourceColumns))
+			if err := rows.Scan(&r.PeriodStart, &r.MetricName, &resourceValues[0], &resourceValues[1], &resourceValues[2], &resourceValues[3],
+				&dimsJSON, &r.Value, &r.PackagedValue); err != nil {
 				return err
 			}
-			r.Resource = map[string]string{"icebath_version": version, "os_family": osFamily, "architecture": arch,
-				"install_method": method}
+			r.Resource = rowResource(resourceValues)
 			decoded, err := pyjson.Loads(dimsJSON)
 			if err != nil {
 				return err
@@ -836,10 +845,7 @@ func (s *SharedMetricsStore) createPackageInTransaction(ctx context.Context, con
 	if err != nil {
 		return nil, err
 	}
-	resource := map[string]string{}
-	for i, column := range resourceColumns {
-		resource[column] = resourceValues[i]
-	}
+	resource := rowResource(resourceValues)
 	args := []any{periodValue.String}
 	for _, v := range resourceValues {
 		args = append(args, v)

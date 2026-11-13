@@ -146,70 +146,89 @@ type boundedCronSessionDB struct {
 	disabled bool
 }
 
-// Runs one session store call under the bound, disabling the proxy once a call times out
-func (b *boundedCronSessionDB) call(name string, fn func() error) error {
+// Proxy over a session store for one job with every call enabled
+func newBoundedCronSessionDB(s *Store, db cronSessionDB, jobID string) *boundedCronSessionDB {
+	return &boundedCronSessionDB{s: s, db: db, jobID: jobID}
+}
+
+// Runs one session store call under the bound, its error or panic raised again, a timeout disabling the proxy
+func boundedCall[T any](b *boundedCronSessionDB, name string, fn func() (T, error)) (T, error) {
+	var zero T
 	b.mu.Lock()
 	disabled := b.disabled
 	b.mu.Unlock()
 	if disabled {
-		return errors.New("session finalization disabled after prior cleanup failure")
+		return zero, errors.New("session finalization disabled after prior cleanup failure")
 	}
+	var resMu sync.Mutex
+	var value T
 	var callErr error
-	ok := b.s.runCronCleanupWithTimeout(b.jobID, fmt.Sprintf("session finalization (%s)", name), nil, func() error {
-		callErr = fn()
-		return callErr
+	ok := b.s.runCronCleanupWithTimeout(b.jobID, fmt.Sprintf("session finalization (%s)", name), nil, func() (err error) {
+		var v T
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("%v", r)
+			}
+			resMu.Lock()
+			value, callErr = v, err
+			resMu.Unlock()
+		}()
+		v, err = fn()
+		return err
 	})
+	resMu.Lock()
+	gotValue, gotErr := value, callErr
+	resMu.Unlock()
 	if ok {
-		return nil
+		return gotValue, nil
 	}
-	if callErr != nil {
-		return callErr
+	if gotErr != nil {
+		return zero, gotErr
 	}
 	b.mu.Lock()
 	b.disabled = true
 	b.mu.Unlock()
-	return fmt.Errorf("session finalization method %s timed out", name)
+	return zero, fmt.Errorf("session finalization method %s timed out", name)
 }
 
-func (b *boundedCronSessionDB) CompressionTip(id string) (tip string, err error) {
-	err = b.call("get_compression_tip", func() (e error) { tip, e = b.db.CompressionTip(id); return e })
-	return tip, err
+func (b *boundedCronSessionDB) CompressionTip(id string) (string, error) {
+	return boundedCall(b, "get_compression_tip", func() (string, error) { return b.db.CompressionTip(id) })
 }
 
-func (b *boundedCronSessionDB) SetSessionTitle(ctx context.Context, sessionID, title string) (ok bool, err error) {
-	err = b.call("set_session_title", func() (e error) { ok, e = b.db.SetTitle(sessionID, title); return e })
-	return ok, err
+func (b *boundedCronSessionDB) SetSessionTitle(ctx context.Context, sessionID, title string) (bool, error) {
+	return boundedCall(b, "set_session_title", func() (bool, error) { return b.db.SetTitle(sessionID, title) })
 }
 
-func (b *boundedCronSessionDB) GetNextTitleInLineage(ctx context.Context, base string) (next string, err error) {
+func (b *boundedCronSessionDB) GetNextTitleInLineage(ctx context.Context, base string) (string, error) {
 	lineage, has := b.db.(cronTitleLineageDB)
 	if !has {
 		return base, nil
 	}
-	err = b.call("get_next_title_in_lineage", func() (e error) { next, e = lineage.GetNextTitleInLineage(ctx, base); return e })
-	return next, err
+	return boundedCall(b, "get_next_title_in_lineage", func() (string, error) { return lineage.GetNextTitleInLineage(ctx, base) })
 }
 
-func (b *boundedCronSessionDB) sessionLifecycleStatuses(ctx context.Context, ids []string) (statuses map[string]string, err error) {
-	err = b.call("session_lifecycle_statuses", func() (e error) { statuses, e = b.db.SessionLifecycleStatuses(ctx, ids); return e })
-	return statuses, err
+func (b *boundedCronSessionDB) sessionLifecycleStatuses(ctx context.Context, ids []string) (map[string]string, error) {
+	return boundedCall(b, "session_lifecycle_statuses", func() (map[string]string, error) { return b.db.SessionLifecycleStatuses(ctx, ids) })
 }
 
 func (b *boundedCronSessionDB) UpdateSessionCwd(id, cwd string) error {
-	return b.call("update_session_cwd", func() error { return b.db.UpdateSessionCwd(id, cwd, "", "") })
+	_, err := boundedCall(b, "update_session_cwd", func() (struct{}, error) { return struct{}{}, b.db.UpdateSessionCwd(id, cwd, "", "") })
+	return err
 }
 
 func (b *boundedCronSessionDB) EndSession(id, reason string) error {
-	return b.call("end_session", func() error { return b.db.EndSession(id, reason) })
+	_, err := boundedCall(b, "end_session", func() (struct{}, error) { return struct{}{}, b.db.EndSession(id, reason) })
+	return err
 }
 
 func (b *boundedCronSessionDB) release() error {
-	return b.call("release_or_close", func() error {
+	_, err := boundedCall(b, "release_or_close", func() (struct{}, error) {
 		if db, ok := b.db.(*state.DB); ok {
 			state.ReleaseOrClose(db)
 		}
-		return nil
+		return struct{}{}, nil
 	})
+	return err
 }
 
 // Script is the job, stdout delivered verbatim, empty or wakeAgent false silent, failure alerted
@@ -821,6 +840,21 @@ func (s *Store) runAgentWithWatchdog(ctx context.Context, a CronAgent, prompt st
 	return future.result, nil
 }
 
+// Messages of a conversation result as generic values whether the agent returned rows or a generic list
+func cronResultMessages(result map[string]any) []any {
+	switch messages := result["messages"].(type) {
+	case []map[string]any:
+		out := make([]any, len(messages))
+		for i, m := range messages {
+			out[i] = m
+		}
+		return out
+	case []any:
+		return messages
+	}
+	return nil
+}
+
 // Deliverable reply of a conversation result, failing on a reported failure and dropping explainer only turns
 func finalResponseFromResult(ctx context.Context, s *Store, result map[string]any, jobID, jobName string) (string, error) {
 	turnExitReason := pyStrOrEmpty(result["turn_exit_reason"])
@@ -843,8 +877,7 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 	}
 	finalResponse := pyStrOrEmpty(result["final_response"])
 	if finalResponse != "" {
-		messages, _ := result["messages"].([]any)
-		finalResponse = gateway.RepairExplicitComputerUseMediaPathsAt(ctx, finalResponse, messages, 0)
+		finalResponse = gateway.RepairExplicitComputerUseMediaPathsAt(ctx, finalResponse, cronResultMessages(result), 0)
 	}
 	if pystr.Strip(finalResponse) == "(No response generated)" {
 		finalResponse = ""
@@ -880,7 +913,7 @@ func finalResponseFromResult(ctx context.Context, s *Store, result map[string]an
 
 // Titles, classifies, ends and releases the cron session after the agent turn returned
 func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a CronAgent, jobID, jobName, cronSessionID, workdir string) {
-	b := &boundedCronSessionDB{s: s, db: db, jobID: jobID}
+	b := newBoundedCronSessionDB(s, db, jobID)
 	finalID := cronSessionID
 	if tip, err := b.CompressionTip(cronSessionID); err != nil {
 		if a != nil {
@@ -1166,15 +1199,37 @@ func (s *Store) resolveCronAgentSetup(ctx context.Context, job *Job, jobID, jobN
 	return setup, nil
 }
 
+// Quiet cron agent of the run built from the resolved setup, the config routing and the session store
+func (s *Store) constructCronAgent(ctx context.Context, job *Job, cfg config.Tree, setup *cronAgentSetup, scope *cronRunScope, sessionID string, db *state.DB) (CronAgent, error) {
+	spec, err := s.cronAgentSpecFor(ctx, job, cfg, setup, scope, sessionID, db)
+	if err != nil {
+		return nil, err
+	}
+	return newCronAgent(ctx, spec)
+}
+
+// Config section read like cfg.get(key) or {} followed by a get, failing on a truthy non mapping
+func cronConfigSection(cfg config.Tree, key string) (map[string]any, error) {
+	raw := cfg[key]
+	if !pyrepr.Truthy(raw) {
+		return map[string]any{}, nil
+	}
+	section, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))
+	}
+	return section, nil
+}
+
 // Agent construction arguments for the run, the AIAgent keyword set the cron path passes
 func (s *Store) cronAgentSpecFor(ctx context.Context, job *Job, cfg config.Tree, setup *cronAgentSetup, scope *cronRunScope, sessionID string, db *state.DB) (AgentOptions, error) {
-	pr, _ := cfg["provider_routing"].(map[string]any)
-	if pr == nil {
-		pr = map[string]any{}
+	pr, err := cronConfigSection(cfg, "provider_routing")
+	if err != nil {
+		return AgentOptions{}, err
 	}
-	openrouter, _ := cfg["openrouter"].(map[string]any)
-	if openrouter == nil {
-		openrouter = map[string]any{}
+	openrouter, err := cronConfigSection(cfg, "openrouter")
+	if err != nil {
+		return AgentOptions{}, err
 	}
 	enabled, err := resolveCronEnabledToolsets(ctx, job, cfg)
 	if err != nil {
@@ -1342,11 +1397,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		spec, err := s.cronAgentSpecFor(runCtx, job, jc.cfg, setup, scope, cronSessionID, sessionDB)
-		if err != nil {
-			return jobRunOutcome{}, err
-		}
-		a, err = newCronAgent(runCtx, spec)
+		a, err = s.constructCronAgent(runCtx, job, jc.cfg, setup, scope, cronSessionID, sessionDB)
 		if err != nil {
 			a = nil
 			return jobRunOutcome{}, err

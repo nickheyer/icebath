@@ -55,8 +55,8 @@ func TestFlushPersistOverrideReplacesAPILocalMultimodalNote(t *testing.T) {
 	apiContent := []any{map[string]any{"type": "text", "text": "[MODEL SWITCH NOTE]\n\nDescribe this screenshot"}, image}
 	idx := 0
 	a.persistUserMessageIdx, a.persistUserMessageOverride, a.persistUserMessageTimestamp = &idx, clean, nil
-	if ok, err := a.flushMessagesToSessionDBWithHistory([]map[string]any{{"role": "user", "content": apiContent}}, nil); !ok || err != nil {
-		t.Fatalf("flush %v %v", ok, err)
+	if ok := a.flushMessagesToSessionDBWithHistory([]map[string]any{{"role": "user", "content": apiContent}}, nil); ok != state.FlushPersisted {
+		t.Fatalf("flush %v", ok)
 	}
 	rows := persistConversation(t, db, "session-123", false)
 	if len(rows) != 1 || rows[0]["content"] != "Describe this screenshot\n[screenshot]" {
@@ -105,7 +105,7 @@ func TestDirectSessionDBFlushesShareMarkerClaim(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("normal writer never reached the db")
 	}
-	go func() { defer close(direct); _, _ = a.flushLiveMessages([]*state.Message{message}, nil) }()
+	go func() { defer close(direct); a.flushLiveMessages([]*state.Message{message}, nil) }()
 	select {
 	case <-direct:
 		t.Fatal("direct flush ran while the normal writer held the persistence lock")

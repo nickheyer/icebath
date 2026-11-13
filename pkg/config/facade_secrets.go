@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Reads an env name through the registered secret scope, the plain process env when none is registered
@@ -100,7 +98,7 @@ func RemoveHomeEnvValue(ctx context.Context, h, key string) (bool, error) {
 	if !envVarNameRe.MatchString(key) {
 		return false, &EnvValueError{fmt.Sprintf("Invalid environment variable name: %s", pyStringRepr(key))}
 	}
-	path := home.EnvPath(h)
+	path := GetEnvPath(h)
 	if _, err := os.Stat(path); err != nil {
 		publishEnvValue(ctx, key, nil)
 		return false, nil

@@ -95,7 +95,7 @@ func refineCLI(t *testing.T) (*CLI, *refineChokepointAgent) {
 	t.Helper()
 	c := chatCLI(t)
 	double := &refineChokepointAgent{GatewayAgent: offlineAgent(t, c)}
-	c.agent = double
+	c.setAgent(double)
 	c.conversationHistory = refineNestedHistory()
 	return c, double
 }

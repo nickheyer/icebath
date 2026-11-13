@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/net/http/httpproxy"
-
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -33,8 +31,11 @@ var (
 )
 
 // Read only git probe environment that never prompts, takes optional locks, lazy fetches or inherits targeting
-func sourceGitEnv() []string {
-	env := tools.NoninteractiveGitEnv(nil)
+func sourceGitEnv() []string { return sourceGitEnvFor(context.Background()) }
+
+// Probe environment over the source check environment the context carries
+func sourceGitEnvFor(ctx context.Context) []string {
+	env := tools.NoninteractiveGitEnv(sourceEnvironMap(ctx))
 	for _, key := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
 		"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_SHALLOW_FILE", "GIT_NAMESPACE",
 		"GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"} {
@@ -91,7 +92,7 @@ func execSourceGit(ctx context.Context, argv []string, cwd string, timeout time.
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	cmd.Dir = cwd
-	cmd.Env = sourceGitEnv()
+	cmd.Env = sourceGitEnvFor(ctx)
 	cmd.WaitDelay = time.Second
 	hideProbeWindow(cmd)
 	var stdout, stderr bytes.Buffer
@@ -160,7 +161,7 @@ func sourceRequestWith(ctx context.Context, target, accept, token string) (strin
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	proxy := httpproxy.FromEnvironment().ProxyFunc()
+	proxy := sourceProxyFunc(ctx)
 	client := &http.Client{Timeout: sourceRequestTimeout, Transport: &http.Transport{
 		Proxy:       func(r *http.Request) (*url.URL, error) { return proxy(r.URL) },
 		DialContext: (&net.Dialer{Timeout: sourceRequestTimeout}).DialContext,

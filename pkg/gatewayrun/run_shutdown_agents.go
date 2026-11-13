@@ -16,7 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/state"
 )
+
+// Writes the agent's live in memory transcript through its session flush
+var shutdownTranscriptFlush = func(a *agent.AIAgent) state.FlushOutcome {
+	return a.FlushSessionMessages()
+}
 
 // Persists an interrupted agent's in flight transcript before teardown, a recovery snapshot when the flush fails
 func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
@@ -32,10 +38,10 @@ func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
 		defer func() { _ = recover() }()
 		a.DropTrailingSessionScaffolding()
 	}()
-	messages := agent.SessionMessageDicts(a.SessionMessages())
-	if _, err := a.FlushMessagesToSessionDB(messages); err != nil {
+	if raised := shutdownFlushRaised(a); raised != nil {
+		messages := agent.SessionMessageDicts(a.SessionMessages())
 		runLog().Warn(fmt.Sprintf("Shutdown transcript flush failed (%s); preserving %d in-memory message(s) to recovery snapshot",
-			pyrepr.ExceptionMessage(err), len(messages)))
+			pyrepr.ExceptionMessage(raised), len(messages)))
 		history := make([]any, len(messages))
 		for i, m := range messages {
 			history[i] = m
@@ -43,6 +49,17 @@ func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
 		sessionID := a.SessionID()
 		gateway.FlushAgentHistoryToFile(ctx, &sessionID, history)
 	}
+}
+
+// Error a shutdown flush raised, nil when it returned any outcome since a failed write is already logged
+func shutdownFlushRaised(a *agent.AIAgent) (raised error) {
+	defer func() {
+		if r := recover(); r != nil {
+			raised = agent.RecoveredOuterLoopError(r)
+		}
+	}()
+	shutdownTranscriptFlush(a)
+	return nil
 }
 
 // Flushes, finalizes, delivers plugin session end text and cleans up every agent the drain snapshot held

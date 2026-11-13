@@ -4,7 +4,7 @@ import "github.com/nickheyer/icebath/pkg/provider"
 
 // Anchor state view over the agent anchor fields and the session row the anchor mirrors to
 func (a *AIAgent) usageAnchorState() *provider.UsageAnchorState {
-	s := &provider.UsageAnchorState{Anchor: a.usageAnchor, TurnBaseAnchor: a.turnBaseUsageAnchor, PersistDisabled: a.persistDisabled, SessionID: a.sessionID}
+	s := &provider.UsageAnchorState{Anchor: a.usageAnchor, TurnBaseAnchor: a.turnBaseUsageAnchor.Load(), PersistDisabled: a.persistDisabled, SessionID: a.sessionID}
 	if a.sessionDB != nil {
 		s.Store = a.sessionDB
 	}
@@ -15,7 +15,8 @@ func (a *AIAgent) usageAnchorState() *provider.UsageAnchorState {
 func (a *AIAgent) setUsageAnchor(anchor *provider.UsageAnchor, turnBase bool) {
 	s := a.usageAnchorState()
 	s.Set(anchor, turnBase)
-	a.usageAnchor, a.turnBaseUsageAnchor = s.Anchor, s.TurnBaseAnchor
+	a.usageAnchor = s.Anchor
+	a.turnBaseUsageAnchor.Store(s.TurnBaseAnchor)
 }
 
 // Adopts the persisted anchor while the resumed history keeps its priced prefix, else clears the stale blob

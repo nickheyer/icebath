@@ -16,14 +16,7 @@ func init() {
 		return tools.RunTaskList(a.todoStore, args), nil
 	}))
 	tools.RegisterInlineToolExecutor("manage_connections", agentInlineExecutor("manage_connections", manageConnectionsInline))
-	tools.RegisterInlineToolExecutor("manage_catalog", agentInlineExecutor("manage_catalog", func(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
-		callback, err := connectionCallbackOf(a.connectionCallback)
-		if err != nil {
-			return "", err
-		}
-		return mcp.ManageCatalog(ctx, a.env, args, mcp.CatalogOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
-			Callback: callback, CardSurface: a.platform == "desktop"})
-	}))
+	tools.RegisterInlineToolExecutor("manage_catalog", agentInlineExecutor("manage_catalog", manageCatalogInline))
 	tools.RegisterInlineToolExecutor("setup_mcp", agentInlineExecutor("setup_mcp", setupMCPShimInline))
 }
 
@@ -74,6 +67,16 @@ func connectionCallbackOf(cb any) (tools.ConnCallback, error) {
 		}, nil
 	}
 	return nil, fmt.Errorf("connection_callback is a %T, not a connection request callback", cb)
+}
+
+// Runs manage_catalog with the agent's card callback, a desktop chat alone drawing catalog rows
+func manageCatalogInline(a *AIAgent, ctx context.Context, args map[string]any, ictx tools.InlineToolContext) (string, error) {
+	callback, err := connectionCallbackOf(a.connectionCallback)
+	if err != nil {
+		return "", err
+	}
+	return mcp.ManageCatalog(ctx, a.env, args, mcp.CatalogOptions{SessionID: a.sessionID, ToolCallID: ictx.ToolCallID,
+		Callback: callback, CardSurface: a.platform == "desktop"})
 }
 
 // Runs manage_connections with the agent's card callback, then scopes newly connected MCP servers into the turn

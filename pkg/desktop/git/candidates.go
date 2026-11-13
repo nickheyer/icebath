@@ -6,13 +6,13 @@ import (
 	"unicode"
 )
 
-// CandidateFS is the filesystem slice the Windows git and ssh candidate probes read
+// Filesystem slice the Windows git and ssh candidate probes read
 type CandidateFS interface {
 	Exists(path string) bool
 	ReadDir(dir string) ([]string, error)
 }
 
-// WindowsGitEnv is the Windows environment the git candidates are rooted in
+// Windows environment the git candidates are rooted in
 type WindowsGitEnv struct {
 	LocalAppData    string
 	ProgramFiles    string

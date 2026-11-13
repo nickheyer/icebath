@@ -15,7 +15,7 @@ func fastInfo(t *testing.T, o agent.AIAgentOptions) map[string]any {
 	if o.APIMode == "" {
 		o.APIMode = "chat_completions"
 	}
-	o.APIKey, o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = "test", 5, true, true, true
+	o.APIKey, o.MaxIterations, o.QuietMode, o.SkipContextFiles, o.SkipMemory = "test", new(5), true, true, true
 	a, err := agent.NewAIAgent(context.Background(), o)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestSessionInfoFastFollowsTheRouteFastCapableModelBehindAProxyReportsNoFast
 func TestSessionInfoFastFollowsTheRoutePendingSwitchIsJudgedByTheNewRoute(t *testing.T) {
 	a, err := agent.NewAIAgent(context.Background(), agent.AIAgentOptions{ServiceTier: "priority", SessionID: "sess-key",
 		APIMode: "chat_completions", Model: "gpt-5.4", Provider: "openai", BaseURL: "https://api.openai.com/v1",
-		APIKey: "test", MaxIterations: 5, QuietMode: true, SkipContextFiles: true, SkipMemory: true})
+		APIKey: "test", MaxIterations: new(5), QuietMode: true, SkipContextFiles: true, SkipMemory: true})
 	if err != nil {
 		t.Fatal(err)
 	}

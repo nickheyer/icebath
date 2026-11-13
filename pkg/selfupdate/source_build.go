@@ -194,30 +194,11 @@ func PrepareSourceDependencies(ctx context.Context, projectRoot string, workspac
 func PrepareLaunchDependencies(ctx context.Context, projectRoot string, env map[string]string) error {
 	desktopDir := filepath.Join(projectRoot, "apps", "desktop")
 	_, packaged := desktopPackagedExecutable(desktopDir)
-	workspaces := []string{"ui-tui", "web"}
+	workspaces := []string{"web"}
 	if desktopDistExists(desktopDir) || packaged {
 		workspaces = append(workspaces, "apps/desktop")
 	}
 	return PrepareSourceDependencies(ctx, projectRoot, workspaces, env, false)
-}
-
-// TUI compiler of the source builds, the tui build step update and launch tests replace with a fixture compiler
-var compileSourceTUI = frontendBuildDeveloperTUI
-
-// Compiles the TUI bundle of the checkout into ui-tui/dist
-func BuildSourceTUI(ctx context.Context, projectRoot string, env map[string]string) error {
-	st := newFrontendStep("Building the TUI")
-	_, err := compileSourceTUI(ctx, st, projectRoot, env)
-	return st.close(err)
-}
-
-// Replaces the TUI compiler for tests of other packages, the returned function restoring the real one
-func SwapTUICompilerForTests(compile func(ctx context.Context, source string, env map[string]string) error) func() {
-	prev := compileSourceTUI
-	compileSourceTUI = func(ctx context.Context, _ *frontendStep, source string, env map[string]string) (string, error) {
-		return filepath.Join(source, "ui-tui", "dist", "entry.js"), compile(ctx, source, env)
-	}
-	return func() { compileSourceTUI = prev }
 }
 
 // Directory the bundled web UI of a checkout is built into and served from
@@ -247,10 +228,10 @@ func buildSourceWebapp(ctx context.Context, projectRoot string, env map[string]s
 	return st.close(compileSourceWebapp(ctx, st, projectRoot, "", sourceInstallAllowed(ctx, explicit), env))
 }
 
-// Frontend workspaces the checkout carries among ui-tui and web
+// Frontend workspaces the checkout carries, the web UI
 func sourceFrontends(projectRoot string) []string {
 	out := []string{}
-	for _, name := range []string{"ui-tui", "web"} {
+	for _, name := range []string{"web"} {
 		if info, err := os.Stat(filepath.Join(projectRoot, name, "package.json")); err == nil && info.Mode().IsRegular() {
 			out = append(out, name)
 		}

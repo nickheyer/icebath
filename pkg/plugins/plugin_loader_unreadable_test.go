@@ -56,14 +56,6 @@ func TestIterPluginDirsSkipsUnreadableChild(t *testing.T) {
 	}
 }
 
-// The same case over the plugin SDK twin with the hermes Path.exists and Path.is_dir monkeypatch
-func TestSDKIterPluginDirsSkipsUnreadableChild(t *testing.T) {
-	root, _, _ := unreadableRoot(t)
-	if out := runSDKDriver(t, unreadableDriver, root); out != "ok" {
-		t.Fatalf("driver output %q", out)
-	}
-}
-
 const unreadableDriver = `
 import io, logging, sys
 from pathlib import Path

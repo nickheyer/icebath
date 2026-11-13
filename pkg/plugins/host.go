@@ -56,13 +56,23 @@ type PluginHost struct {
 	restartWait func(time.Duration)
 	parents     map[int64]parentCallableSlot
 	parentIDs   int64
+	guest       *guestSpec
 }
 
 // One started child with its exit status once known
 type hostProcess struct {
 	cmd  *exec.Cmd
+	stop func()
 	done chan struct{}
 	code int
+}
+
+// Process id of a child program, zero for a guest that runs inside this process
+func (p *hostProcess) pid() int {
+	if p.cmd == nil || p.cmd.Process == nil {
+		return 0
+	}
+	return p.cmd.Process.Pid
 }
 
 // Exit code once the process has exited, a signal death reported as the negative signal number
@@ -89,7 +99,7 @@ func (h *PluginHost) PID() int {
 	if h.proc == nil {
 		return 0
 	}
-	return h.proc.cmd.Process.Pid
+	return h.proc.pid()
 }
 
 // Profile home this host serves
@@ -127,47 +137,6 @@ func (h *PluginHost) buildBaseContext() context.Context {
 		ctx = s.BindProfileSecretScope(ctx, h.home)
 	}
 	return ctx
-}
-
-// Launcher, interpreter and module argv of the child
-func (h *PluginHost) argv(ctx context.Context, extra ...string) ([]string, error) {
-	launcher, err := hostLauncher(h.home)
-	if err != nil {
-		return nil, err
-	}
-	python, err := hostInterpreter(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return hostChildArgv(launcher, python, extra...)
-}
-
-// Child environment acting for this profile with its hosted ambient credentials and the resource path
-func (h *PluginHost) env() ([]string, error) {
-	env, err := tools.ServedProfileChildEnv(h.baseCtx, nil, nil, h.home, true)
-	if err != nil {
-		return nil, err
-	}
-	ambient, err := hostedAmbientCredentials(h.baseCtx, h.home)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range ambient {
-		env[k] = v
-	}
-	pythonPath, err := hostPythonPath(h.baseCtx, env["PYTHONPATH"])
-	if err != nil {
-		return nil, err
-	}
-	env["PYTHONPATH"] = pythonPath
-	if _, ok := env[HostLogLevelEnv]; !ok {
-		env[HostLogLevelEnv] = "WARNING"
-	}
-	env[HostProcessEnv] = "1"
-	for k, v := range h.envOverride {
-		env[k] = v
-	}
-	return envList(env), nil
 }
 
 func envList(env map[string]string) []string {
@@ -244,16 +213,11 @@ func (h *PluginHost) runStart(ctx context.Context, s *hostStart) {
 			s.resolve(nil, nil, p)
 		}
 	}()
-	argv, err := h.argv(ctx)
-	if err != nil {
-		h.abandonStart(s, nil, nil)
-		s.resolve(nil, s.failure(nil, err), nil)
-		return
-	}
+	argv := h.guest.argv()
 	h.mu.Lock()
 	s.argv = argv
 	h.mu.Unlock()
-	ch, spawned, err = h.spawn(argv, s)
+	ch, spawned, err := h.launchGuest(ctx, s)
 	if err != nil {
 		h.abandonStart(s, spawned, ch)
 		s.resolve(nil, s.failure(argv, err), nil)
@@ -275,7 +239,7 @@ func (h *PluginHost) runStart(ctx context.Context, s *hostStart) {
 	if !current {
 		return
 	}
-	logInfo(fmt.Sprintf("Plugin host started for %s (pid %d)", h.home, spawned.cmd.Process.Pid))
+	logInfo(fmt.Sprintf("Plugin host started for %s (pid %d)", h.home, spawned.pid()))
 	s.resolve(ch, nil, nil)
 }
 
@@ -298,82 +262,14 @@ func (h *PluginHost) abandonStart(s *hostStart, spawned *hostProcess, ch *Channe
 	}
 }
 
-// Launches the child in its own process group and installs it unless a shutdown abandoned the start
-func (h *PluginHost) spawn(argv []string, s *hostStart) (*Channel, *hostProcess, error) {
-	env, err := h.env()
-	if err != nil {
-		return nil, nil, err
-	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Env, cmd.Dir = env, h.home
-	proc.Group(cmd)
-	var parentEnds, childEnds []*os.File
-	closeAll := func(files []*os.File) {
-		for _, f := range files {
-			_ = f.Close()
-		}
-	}
-	for i := 0; i < 3; i++ {
-		r, w, err := os.Pipe()
-		if err != nil {
-			closeAll(parentEnds)
-			closeAll(childEnds)
-			return nil, nil, err
-		}
-		if i == 0 {
-			parentEnds, childEnds = append(parentEnds, w), append(childEnds, r)
-		} else {
-			parentEnds, childEnds = append(parentEnds, r), append(childEnds, w)
-		}
-	}
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = childEnds[0], childEnds[1], childEnds[2]
-	terminal, releaseTerminal, err := attachTerminal(cmd)
-	if err != nil {
-		closeAll(parentEnds)
-		closeAll(childEnds)
-		return nil, nil, err
-	}
-	cmd.Env = append(cmd.Env, HostTerminalEnv+"="+terminal)
-	err = cmd.Start()
-	releaseTerminal()
-	closeAll(childEnds)
-	if err != nil {
-		closeAll(parentEnds)
-		return nil, nil, err
-	}
-	stdin, stdout, stderr := parentEnds[0], parentEnds[1], parentEnds[2]
-	child := &hostProcess{cmd: cmd, done: make(chan struct{})}
-	go func() {
-		pumpHostStderr(stderr, filepath.Base(h.home))
-		_ = stderr.Close()
-	}()
-	go func() {
-		_ = cmd.Wait()
-		child.code = exitCode(cmd.ProcessState)
-		close(child.done)
-	}()
-	h.mu.Lock()
-	if h.starting != s {
-		h.mu.Unlock()
-		_ = stdin.Close()
-		_ = stdout.Close()
-		return nil, child, fmt.Errorf("shutdown")
-	}
-	h.generation++
-	generation := h.generation
-	ch := newChannel(stdout, stdin, h.handle, fmt.Sprintf("plugin-host[%d]", cmd.Process.Pid),
-		func(reason string) { h.onChannelClose(generation, reason) }, h.contextForOrigin)
-	h.proc, h.channel = child, ch
-	h.releases = nil
-	h.mu.Unlock()
-	ch.Start()
-	return ch, child, nil
-}
-
 // Kills the child and every process of its group, then waits a grace period for the exit status
 func (p *hostProcess) kill() {
 	if _, exited := p.poll(); !exited {
-		_ = proc.Kill(p.cmd)
+		if p.cmd == nil {
+			p.stop()
+		} else {
+			_ = proc.Kill(p.cmd)
+		}
 	}
 	select {
 	case <-p.done:
@@ -578,6 +474,9 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 	}
 	key := mf.ID()
 	served := hostInProcessCtxMethods(ctx)
+	if h.guest != nil {
+		served = guestServedCtxMethods()
+	}
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
 	pctx.hostInProcess = served
@@ -933,6 +832,12 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 		return nil, nil
 	case "collect_source":
 		return h.serveCollectSource(ctx, params)
+	case "io":
+		result, err := h.serveIO(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		return h.encodeForHost(result), nil
 	case "dispose":
 		id, _ := wireInt(params["handle"])
 		h.stateMu.Lock()
@@ -984,6 +889,9 @@ func (h *PluginHost) serveCtx(ctx context.Context, params map[string]any) (any, 
 	rawKwargs, err := wireDecode(mapOrEmpty(params["kwargs"]), resolve)
 	if err != nil {
 		return nil, err
+	}
+	if text, ok := params["action_repr"].(string); ok {
+		ctx = context.WithValue(ctx, actionReprKey{}, text)
 	}
 	var result any
 	if c.engineCollector != nil {
@@ -1185,6 +1093,8 @@ type HostedCallable struct {
 	Name       string
 	QualName   string
 	Module     string
+	// Dataclass fields or partial function and arguments of the callable, nil for a plain function
+	Shape map[string]any
 }
 
 func (h *PluginHost) callableProxy(ref map[string]any) *HostedCallable {
@@ -1204,6 +1114,11 @@ func (h *PluginHost) callableProxy(ref map[string]any) *HostedCallable {
 	f.Module = wireStr(ref["module"])
 	if f.Module == "" {
 		f.Module = "icebath_cli.plugin_host"
+	}
+	if raw, ok := ref["shape"].(map[string]any); ok {
+		if shape, err := wireDecode(raw, func(r map[string]any) (any, error) { return h.resolveRef(r, "") }); err == nil {
+			f.Shape, _ = shape.(map[string]any)
+		}
 	}
 	return f
 }

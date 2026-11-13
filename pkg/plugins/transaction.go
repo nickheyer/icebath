@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -41,37 +41,21 @@ func activePluginTree(ctx context.Context, target string, installing bool) (bool
 
 // How a staged tree is published and whose consent it already carries
 type publishOptions struct {
-	TargetDigest   *string
-	RequireConsent bool
-	AssumeConsent  bool
+	TargetDigest *string
 }
 
 // Publishes a staged tree over its target and the metadata change through one PM sync
 func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newMetadata map[string]any, opts publishOptions) error {
 	_, statErr := os.Stat(target)
 	exists := statErr == nil
-	if opts.RequireConsent && !opts.AssumeConsent {
-		active, err := activePluginTree(ctx, target, true)
+	if isFilePath(filepath.Join(staged, "__init__.py")) {
+		manifest, err := ReadManifestForInstall(staged)
 		if err != nil {
 			return err
 		}
-		if active {
-			manifest, err := ReadManifestForInstall(staged)
-			if err != nil {
-				return err
-			}
-			consented, reason := installPluginPythonDeps(ctx, manifest, staged, NewConsole(os.Stdout), false)
-			if !consented {
-				outcome := "Install declined: %s. Nothing was installed."
-				if exists {
-					outcome = "Reinstall declined: %s. The installed plugin and active environment are unchanged."
-				}
-				class := "other"
-				if reason != nil && reason.FailureClass != "" {
-					class = reason.FailureClass
-				}
-				return &PluginOperationError{Msg: fmt.Sprintf(outcome, reason.Text), FailureClass: class}
-			}
+		if !config.PyTruthy(manifest["entry"]) {
+			return &PluginOperationError{Msg: fmt.Sprintf("%s is Python source and was not installed; %s.", manifestText(manifest, "name", filepath.Base(target)), PluginFormsText),
+				FailureClass: "unsupported_form"}
 		}
 	}
 	absTarget, err := filepath.Abs(target)
@@ -98,9 +82,6 @@ var enabledPluginDirs = pm.EnabledPluginDirs
 // Venv publication of a staged plugin, swapped by tests that act inside the window before its lock
 var syncVenv = pm.SyncVenv
 
-// Node sidecar install of a plugin tree, swapped by tests that stand in for npm
-var installNodeSidecar = pm.InstallNodeSidecar
-
 // File bytes, nil when the file cannot be read
 func bytesOrNil(path string) []byte {
 	data, err := os.ReadFile(path)
@@ -120,79 +101,6 @@ func isFilePath(path string) bool {
 	return err == nil && st.Mode().IsRegular()
 }
 
-// Rebuilds a moved Node sidecar and gates newly declared Python dependencies like an install does
-func refreshDeclaredDependencies(ctx context.Context, target, staged string, manifest map[string]any, interactive bool) error {
-	if isDirPath(filepath.Join(target, "node_modules")) && isFilePath(filepath.Join(staged, "package.json")) {
-		moved := !isDirPath(filepath.Join(staged, "node_modules"))
-		for _, name := range []string{"package.json", "package-lock.json"} {
-			if !bytes.Equal(bytesOrNil(filepath.Join(target, name)), bytesOrNil(filepath.Join(staged, name))) {
-				moved = true
-			}
-		}
-		if moved {
-			if reason := installNodeSidecar(ctx, staged, true); reason != "" {
-				return &PluginOperationError{Msg: fmt.Sprintf("Node dependencies could not be refreshed: %s. "+
-					"The installed plugin and active environment are unchanged.", reason)}
-			}
-		}
-	}
-	active, err := activePluginTree(ctx, target, true)
-	if err != nil || !active {
-		return err
-	}
-	beforeDecl, err := pm.ReadPythonDeclaration(target)
-	if err != nil {
-		return err
-	}
-	afterDecl, err := pm.ReadPythonDeclaration(staged)
-	if err != nil {
-		return err
-	}
-	before, err := beforeDecl.InstallRequirements()
-	if err != nil {
-		return err
-	}
-	after, err := afterDecl.InstallRequirements()
-	if err != nil {
-		return err
-	}
-	had, err := beforeDecl.InstallsPackages()
-	if err != nil {
-		return err
-	}
-	has, err := afterDecl.InstallsPackages()
-	if err != nil {
-		return err
-	}
-	previous := toSet(before)
-	added := []string{}
-	for _, spec := range after {
-		if !previous[spec] {
-			added = append(added, spec)
-		}
-	}
-	if len(added) == 0 && !(has && !had) {
-		return nil
-	}
-	if !interactive {
-		shown := strings.Join(added, ", ")
-		if shown == "" {
-			shown = "in its pyproject.toml"
-		}
-		return &PluginOperationError{Msg: fmt.Sprintf("The update declares new Python dependencies (%s); "+
-			"run `icebath plugins update %s` in a terminal to review them.", shown, filepath.Base(target))}
-	}
-	name := filepath.Base(target)
-	if v, ok := manifest["name"]; ok {
-		name = pyrepr.Str(v)
-	}
-	consented, reason := consentPythonDeps(ctx, name, added, NewConsole(os.Stdout), false)
-	if !consented {
-		return &PluginOperationError{Msg: fmt.Sprintf("Update declined: %s. The installed plugin and active environment are unchanged.", reason.Text)}
-	}
-	return nil
-}
-
 // Copy ignore rule dropping bytecode caches
 func ignorePycache(_ string, names []string) map[string]bool {
 	out := map[string]bool{}
@@ -207,7 +115,6 @@ func ignorePycache(_ string, names []string) map[string]bool {
 // Update inputs, the catalog entry selects a re pin and its absence a git pull
 type updatePluginOptions struct {
 	CatalogEntry   *PluginCatalogEntry
-	Interactive    bool
 	Force          bool
 	ScanDecision   func(scan any) bool
 	CarryUserFiles func(staged string) ([]string, error)
@@ -384,9 +291,6 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 		return "", err
 	}
 	copyExampleFiles(staged, NewConsole(os.Stdout))
-	if err := refreshDeclaredDependencies(ctx, target, staged, manifest, opts.Interactive); err != nil {
-		return "", err
-	}
 	current, err := pm.TreeDigest(target)
 	if err != nil {
 		return "", err

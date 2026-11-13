@@ -14,9 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 )
 
-// Kanban CLI run on a slash argument string returning its captured output, assigned in cmd/icebath wiring
-var KanbanRunSlash func(ctx context.Context, rest string) (string, error)
-
 // Task id of the kanban CLI create success line
 var kanbanCreatedRe = pyre.MustCompile(`Created\s+(t_[0-9a-f]+)\b`)
 
@@ -50,7 +47,7 @@ func (r *GatewayRunner) handleKanbanCommand(ctx context.Context, event *gateway.
 			}
 		}
 	}
-	output, err := KanbanRunSlash(ctx, text)
+	output, err := kanban.RunSlash(ctx, text)
 	if err != nil {
 		return i18n.T(ctx, "gateway.kanban.error_prefix", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}

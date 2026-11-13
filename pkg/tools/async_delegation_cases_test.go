@@ -268,6 +268,7 @@ func asyncIDs(events []map[string]any) []string {
 }
 
 func TestSchemaInitPreservesSharedStateDbJournalMode(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	conn := asyncRawConn(t, filepath.Join(t.TempDir(), "state.db"))
 	if mode := asyncPragma(t, conn, "journal_mode=DELETE"); mode != "delete" {
 		t.Fatalf("journal mode %v", mode)
@@ -285,6 +286,7 @@ func TestSchemaInitPreservesSharedStateDbJournalMode(t *testing.T) {
 }
 
 func TestSchemaInitPreservesSharedStateDbWalMode(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	conn := asyncRawConn(t, filepath.Join(t.TempDir(), "state.db"))
 	if mode := asyncPragma(t, conn, "journal_mode=WAL"); mode != "wal" {
 		t.Fatalf("journal mode %v", mode)

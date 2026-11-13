@@ -680,22 +680,26 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	a.mu.Lock()
 	delete(a.PendingResults, admissionID)
 	a.mu.Unlock()
-	captured, _ := stored.(*pyjson.Object)
-	if captured == nil {
+	if stored == nil {
 		if waiter := a.popWaiter(admissionID); waiter != nil {
 			waiter.setException(runtimeRefusal("unknown_execution"))
 		}
 		return settleContinue, nil
 	}
 	*settled = current
-	*response = ""
-	if result, ok := rowGet(captured, "result"); ok {
-		if obj, isObj := result.(*pyjson.Object); isObj {
-			if text, _ := obj.Get("final_response"); pyTruthy(text) {
-				*response = text
-			}
-		}
+	result, err := referenceItem(stored, "result")
+	if err != nil {
+		return settleDeliver, err
 	}
+	text, err := pyDictGet(result, "final_response", nil)
+	if err != nil {
+		return settleDeliver, err
+	}
+	*response = ""
+	if pyTruthy(text) {
+		*response = text
+	}
+	captured, _ := stored.(*pyjson.Object)
 	return settleDeliver, publishTerminal(ctx, a, ref, row, *settled, *response, captured)
 }
 

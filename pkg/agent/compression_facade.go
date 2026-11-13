@@ -188,10 +188,10 @@ func mirrorResultOntoLiveLists(a *AIAgent, result, messages []map[string]any, di
 	if directPath || !same {
 		syncPersistedMarkers(messages, result)
 	}
-	if a.sessionMessages != nil {
+	if live := a.liveSessionMessages(); live != nil {
 		for _, source := range result {
 			if source != nil && pyTruthy(source[dbPersistedMarker]) {
-				stampScopedTwinMessages(a.sessionMessages, source, false)
+				stampScopedTwinMessages(live, source, false)
 			}
 		}
 	}

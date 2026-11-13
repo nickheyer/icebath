@@ -16,7 +16,7 @@ func (a *AIAgent) ResetActivityTriple(desc string) {
 func (a *AIAgent) SetLastFlushedDBIdx(i int) { a.lastFlushedDBIdx = i }
 
 // Sets the API call count of the current turn
-func (a *AIAgent) SetAPICallCount(n int) { a.apiCallCount = n }
+func (a *AIAgent) SetAPICallCount(n int) { a.apiCallCount.Store(int64(n)) }
 
 // Stamps the activity clock with the description and provenance a producer reports
 func (a *AIAgent) TouchActivityAs(desc, provenance string) { a.touchActivity(desc, provenance, false) }

@@ -98,7 +98,7 @@ func TestZipSwapKeepsEveryNestedBuildOutputAndTheGuardAdmitsThem(t *testing.T) {
 
 	for _, line := range []string{"!! apps/desktop/release/", "!! apps/desktop/dist/", "!! apps/desktop/node_modules/",
 		"!! apps/desktop/build/", "!! cmd/icebath/web_dist/", "!! cmd/icebath/__pycache__/",
-		"!! __pycache__/", "!! ui-tui/dist/", "!! ui-tui/packages/hermes-ink/dist/",
+		"!! __pycache__/",
 		"!! scripts/whatsapp-bridge/node_modules/", "!! web/node_modules/", "!! tests-js/node_modules/"} {
 		if !isZipPreservedEntryStatusLine(line, nil) {
 			t.Fatalf("not admitted: %s", line)
@@ -119,7 +119,7 @@ func TestGuardAdmitsARealInstallsIgnoredSetAndBlocksOnlyWhatTheSwapDestroys(t *t
 		t.Fatal(err)
 	}
 	ugGit(t, root, "init", "-q", root)
-	ignore, err := os.ReadFile(filepath.Join("..", "..", ".gitignore"))
+	ignore, err := os.ReadFile(filepath.Join("testdata", "install.gitignore"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestGuardAdmitsARealInstallsIgnoredSetAndBlocksOnlyWhatTheSwapDestroys(t *t
 		t.Fatal(err)
 	}
 	for _, tracked := range []string{"apps/desktop/package.json", "cmd/icebath/main.py", "scripts/whatsapp-bridge/index.js",
-		"ui-tui/package.json", "web/package.json", "tests-js/a.test.ts", "run_agent.py"} {
+		"web/package.json", "tests-js/a.test.ts", "run_agent.py"} {
 		ugWrite(t, filepath.Join(root, filepath.FromSlash(tracked)), "src")
 	}
 	ugGit(t, root, "add", "-A")
@@ -136,21 +136,20 @@ func TestGuardAdmitsARealInstallsIgnoredSetAndBlocksOnlyWhatTheSwapDestroys(t *t
 		"icebath_agent.egg-info/PKG-INFO", "cmd/icebath/__pycache__/main.pyc", "__pycache__/x.pyc",
 		"apps/desktop/release/win-unpacked/Hermes.exe", "apps/desktop/dist/index.html",
 		"apps/desktop/build/icon.ico", "apps/desktop/node_modules/electron/index.js",
-		"cmd/icebath/web_dist/index.html", "ui-tui/dist/entry.js", "ui-tui/node_modules/x/index.js",
-		"ui-tui/packages/hermes-ink/dist/index.js", "web/node_modules/x/index.js",
+		"cmd/icebath/web_dist/index.html", "web/node_modules/x/index.js",
 		"tests-js/node_modules/x/index.js", "scripts/whatsapp-bridge/node_modules/x/index.js",
 		"venv/lib.py", "node_modules/x/index.js", ".env"} {
 		ugWrite(t, filepath.Join(root, filepath.FromSlash(ignored)), "artifact")
 	}
 	status := ugGit(t, root, "status", "--porcelain", "-uall", "--ignored=matching")
-	if strings.Count(status, "!!") < 19 || strings.Contains(status, "??") {
+	if strings.Count(status, "!!") < 16 || strings.Contains(status, "??") {
 		t.Fatalf("the fixture is not all ignored:\n%s", status)
 	}
 
 	if uzBlocked(t, root, nil) {
 		t.Fatal("the guard refused an install that only carries ignored artifacts")
 	}
-	shipped := []string{"apps", "cmd", "scripts", "ui-tui", "web", "tests-js", "run_agent.py"}
+	shipped := []string{"apps", "cmd", "scripts", "web", "tests-js", "run_agent.py"}
 	if uzBlocked(t, root, uzSet(shipped...)) {
 		t.Fatal("the guard refused with the real shipped set")
 	}
@@ -172,7 +171,7 @@ func uzCleanInstall(t *testing.T) string {
 		t.Fatal(err)
 	}
 	ugGit(t, root, "init", "-q", root)
-	ignore, err := os.ReadFile(filepath.Join("..", "..", ".gitignore"))
+	ignore, err := os.ReadFile(filepath.Join("testdata", "install.gitignore"))
 	if err != nil {
 		t.Fatal(err)
 	}

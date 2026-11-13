@@ -164,46 +164,16 @@ func TestTuiExitSummaryResumeHintTuiHintsNoProfileFlagOnDefault(t *testing.T) {
 	}
 }
 
-func TestReadCgroupMemoryLimitV2MaxIsUnlimited(t *testing.T) {
-	files := map[string]string{"/sys/fs/cgroup/memory.max": "max"}
-	read := func(path string) ([]byte, error) {
-		if content, ok := files[path]; ok {
-			return []byte(content), nil
-		}
-		return nil, fs.ErrNotExist
-	}
-	if limit, ok := readCgroupMemoryLimit(read); ok {
-		t.Fatalf("v2 max read as %d", limit)
-	}
-}
-
-func TestTuiFindsBundledEntryJs(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "icebath_cli")
-	if err := os.MkdirAll(filepath.Join(dir, "tui_dist"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "tui_dist", "entry.js"), []byte("// bundled TUI"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	result := findBundledTUI(dir)
-	if result == "" || filepath.Base(result) != "entry.js" {
-		t.Fatalf("bundled entry: %q", result)
-	}
-}
-
 // Launch seams that record the child environment and answer code
 func tuiFakeDeps(t *testing.T, code int, captured *[]map[string]string) (tuiLaunchDeps, *bytes.Buffer) {
 	t.Helper()
 	var errOut bytes.Buffer
 	return tuiLaunchDeps{
-		makeArgv: func(context.Context, string, bool) ([]string, string, error) {
-			return []string{"node", "dist/entry.js"}, ".", nil
-		},
 		setupWorktree: func(context.Context) (map[string]any, error) {
 			t.Fatal("worktree setup without --worktree")
 			return nil, nil
 		},
-		call: func(argv []string, cwd string, env map[string]string) (int, error) {
+		run: func(_ context.Context, env map[string]string) (int, error) {
 			copied := map[string]string{}
 			for k, v := range env {
 				copied[k] = v
@@ -234,13 +204,13 @@ func TestLaunchTuiExportsModelProviderAndToolsets(t *testing.T) {
 	var captured []map[string]string
 	deps, _ := tuiFakeDeps(t, 1, &captured)
 	activeDuringCall := ""
-	call := deps.call
-	deps.call = func(argv []string, cwd string, env map[string]string) (int, error) {
+	run := deps.run
+	deps.run = func(ctx context.Context, env map[string]string) (int, error) {
 		activeDuringCall = env["ICEBATH_TUI_ACTIVE_SESSION_FILE"]
 		if _, err := os.Stat(activeDuringCall); err != nil {
 			t.Fatalf("active session file missing during call: %v", err)
 		}
-		return call(argv, cwd, env)
+		return run(ctx, env)
 	}
 	code := launchTUIWith(context.Background(), TUILaunch{Model: "nous/icebath-test", Provider: "nous", Toolsets: "web, terminal"}, deps)
 	if code != 1 {
@@ -248,7 +218,7 @@ func TestLaunchTuiExportsModelProviderAndToolsets(t *testing.T) {
 	}
 	env := captured[0]
 	for key, want := range map[string]string{"ICEBATH_MODEL": "nous/icebath-test", "ICEBATH_INFERENCE_MODEL": "nous/icebath-test",
-		"ICEBATH_TUI_PROVIDER": "nous", "ICEBATH_INFERENCE_PROVIDER": "nous", "ICEBATH_TUI_TOOLSETS": "web,terminal", "NODE_ENV": "production"} {
+		"ICEBATH_TUI_PROVIDER": "nous", "ICEBATH_INFERENCE_PROVIDER": "nous", "ICEBATH_TUI_TOOLSETS": "web,terminal"} {
 		if env[key] != want {
 			t.Fatalf("%s = %q, want %q", key, env[key], want)
 		}
@@ -386,7 +356,7 @@ func TestLaunchTuiBypassWithoutModelRefusesBeforeTheTuiStarts(t *testing.T) {
 	}
 }
 
-func TestTuiLauncherHandsTheShellEnvToInk(t *testing.T) {
+func TestTuiLauncherHandsTheShellEnvToTheTerminalUI(t *testing.T) {
 	tuiTestHome(t)
 	t.Setenv("PATH", "/client/venv/bin:/usr/bin")
 	t.Setenv("VIRTUAL_ENV", "/client/venv")
@@ -472,7 +442,7 @@ func tuiQuitWith(t *testing.T, prepare func(db *state.SessionDB, cwd string)) (s
 		}
 		return out, nil
 	}
-	deps.call = func(argv []string, cwd string, env map[string]string) (int, error) {
+	deps.run = func(ctx context.Context, env map[string]string) (int, error) {
 		db, err := state.NewSessionDB(ctx, retain, false)
 		if err != nil {
 			t.Fatal(err)

@@ -1,0 +1,6 @@
+usage: icebath whatsapp [-h]
+
+Configure WhatsApp and pair via QR code
+
+options:
+  -h, --help  show this help message and exit

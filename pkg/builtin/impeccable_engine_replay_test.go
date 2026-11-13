@@ -61,6 +61,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	impeccablePayloadRoot = filepath.Join(payloadTestDir, "impeccable")
+	checkout, err := os.ReadFile(filepath.Join("testdata", "impeccable.tar.zst"))
+	if err == nil {
+		err = tarzst.Extract(checkout, cache)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	impeccableRepoRoot = filepath.Join(cache, "impeccable")
 	code := m.Run()
 	os.RemoveAll(cache)
 	os.Exit(code)

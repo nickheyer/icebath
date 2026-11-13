@@ -260,11 +260,16 @@ var (
 	catalogRunners   = map[string]*CatalogRunner{}
 )
 
-// Runner over installer built on the tool call's context, its home the default install target
+// Runner over the installer with the host installer when none is given
 func OpenCatalogRunner(ctx context.Context, env *tools.Env, installer CatalogInstaller) *CatalogRunner {
 	if installer == nil {
 		installer = HostInstaller{}
 	}
+	return newCatalogRunner(ctx, env, installer)
+}
+
+// Empty runner on the tool call's context, its home the default install target and its profile the row label
+func newCatalogRunner(ctx context.Context, env *tools.Env, installer CatalogInstaller) *CatalogRunner {
 	h := home.Dir(ctx)
 	return &CatalogRunner{installer: installer, env: env, facts: map[string]any{}, work: map[string]*catalogWork{},
 		approvedEnv: map[string]*pyjson.Object{}, home: h, label: home.ProfileNameFor(h)}

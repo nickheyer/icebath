@@ -41,10 +41,6 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 		"kittentts": "      Installing kittentts (~25-80MB model, CPU-only)...\n✓     kittentts dependencies ready. Restart Icebath to use them.\n" +
 			"      Voices: Jasper, Bella, Luna, Bruno, Rosie, Hugo, Kiki, Leo\n" +
 			"      Models: KittenML/kitten-tts-nano-0.8-int8 (25MB), micro (41MB), mini (80MB)\n",
-		"piper": "      Installing piper-tts (~14MB wheel, voices downloaded on first use)...\n✓     piper-tts dependencies ready. Restart Icebath to use them.\n" +
-			"      Default voice: en_US-lessac-medium (downloaded on first TTS call)\n" +
-			"      Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md\n" +
-			"      Switch voices by setting tts.piper.voice in config.yaml\n",
 	}
 	for key, want := range cases {
 		s, out := newTestToolsSetup(t, "")
@@ -58,7 +54,7 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 	}
 	s, _ := newTestToolsSetup(t, "")
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { return errors.New("worker crashed") })
-	if err := s.runPostSetup("piper"); err == nil || err.Error() != "worker crashed" {
+	if err := s.runPostSetup("kittentts"); err == nil || err.Error() != "worker crashed" {
 		t.Fatalf("unhandled sync failure %v", err)
 	}
 	if err := s.runPostSetup("no_such_hook"); err != nil {
@@ -66,17 +62,11 @@ func TestPythonHooksPrintTheirClosingLines(t *testing.T) {
 	}
 }
 
-func TestEnsureBrowserUseCLIReportsTheHarness(t *testing.T) {
+func TestEnsureBrowserUseCLIReportsTheBuiltInDriver(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	s, out := newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"python", "-m", "browser_harness.run"} })
 	s.ensureBrowserUseCLI()
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return nil })
-	s.ensureBrowserUseCLI()
-	want := "✓     browser_exec ready (browser-harness, bundled with Icebath)\n" +
-		"⚠     browser-harness is missing from Icebath's Python environment\n" +
-		"      Re-sync it with: icebath update\n"
-	if out.String() != want {
+	if want := "✓     browser_exec ready (built in)\n"; out.String() != want {
 		t.Fatalf("output %q", out.String())
 	}
 }
@@ -92,14 +82,13 @@ func TestPostSetupLightpandaReportsTheBinary(t *testing.T) {
 			"      Lightpanda has no native Windows build; run Icebath under WSL2.\n"},
 	} {
 		s, out := newTestToolsSetup(t, "")
-		swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"harness"} })
 		swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return c.bin })
 		swapHook(t, &ToolsConfigHooks.LightpandaInstallHint, func() string { return "Install it" })
 		swapHook(t, &postSetupGOOS, c.goos)
 		if err := s.runPostSetup("lightpanda"); err != nil {
 			t.Fatal(err)
 		}
-		want := "✓     browser_exec ready (browser-harness, bundled with Icebath)\n" + c.want
+		want := "✓     browser_exec ready (built in)\n" + c.want
 		if out.String() != want {
 			t.Fatalf("%+v output %q", c, out.String())
 		}
@@ -111,7 +100,6 @@ func TestPostSetupChromiumInstallFailures(t *testing.T) {
 	setup := func(t *testing.T, ensureErr error, termux bool) (*ToolsSetup, *strings.Builder, *int) {
 		s, out := newTestToolsSetup(t, "")
 		ensures := 0
-		swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"harness"} })
 		swapHook(t, &ToolsConfigHooks.BakedChromiumFile, func() string { return "/nonexistent/chromium-executable-path" })
 		swapHook(t, &ToolsConfigHooks.ChromiumExecutable, func(*Env) string { return "" })
 		swapHook(t, &ToolsConfigHooks.ChromiumMissingHint, func(*Env) string { return "No Chromium here." })
@@ -125,7 +113,7 @@ func TestPostSetupChromiumInstallFailures(t *testing.T) {
 	if err := s.runPostSetup("chromium"); err != nil {
 		t.Fatal(err)
 	}
-	want := "✓     browser_exec ready (browser-harness, bundled with Icebath)\n" +
+	want := "✓     browser_exec ready (built in)\n" +
 		"⚠     Chromium install failed: chromium: download failed — retry, or run `icebath pm doctor`\n" +
 		"      Retry with: icebath tools post-setup chromium\n"
 	if out.String() != want || *ensures != 1 {
@@ -151,7 +139,7 @@ func TestPostSetupChromiumInstallFailures(t *testing.T) {
 	if err := s.runPostSetup("chromium"); err != nil {
 		t.Fatal(err)
 	}
-	if *ensures != 0 || out.String() != "✓     browser_exec ready (browser-harness, bundled with Icebath)\n⚠     No Chromium here.\n" {
+	if *ensures != 0 || out.String() != "✓     browser_exec ready (built in)\n⚠     No Chromium here.\n" {
 		t.Fatalf("termux output %q ensures %d", out.String(), *ensures)
 	}
 }
@@ -163,7 +151,6 @@ func TestPostSetupChromiumSkipsHostLibrariesOffLinux(t *testing.T) {
 		termux bool
 	}{{"darwin", false}, {"linux", true}} {
 		s, out := newTestToolsSetup(t, "")
-		swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"harness"} })
 		swapHook(t, &ToolsConfigHooks.BakedChromiumFile, func() string { return "/nonexistent" })
 		swapHook(t, &ToolsConfigHooks.ChromiumExecutable, func(*Env) string { return "/pm/chrome" })
 		swapHook(t, &ToolsConfigHooks.ChromiumMissingHint, func(*Env) string { return "" })
@@ -172,7 +159,7 @@ func TestPostSetupChromiumSkipsHostLibrariesOffLinux(t *testing.T) {
 		if err := s.runPostSetup("chromium"); err != nil {
 			t.Fatal(err)
 		}
-		if out.String() != "✓     browser_exec ready (browser-harness, bundled with Icebath)\n✓     Chromium ready: /pm/chrome\n" {
+		if out.String() != "✓     browser_exec ready (built in)\n✓     Chromium ready: /pm/chrome\n" {
 			t.Fatalf("%+v output %q", c, out.String())
 		}
 	}
@@ -378,7 +365,7 @@ func TestValidPostSetupKeysCoverCatalogAndPluginRows(t *testing.T) {
 	swapHook(t, &ToolsConfigHooks.ImageGenRegistry, &PickerRegistry{List: func(context.Context, *Env) []PickerProvider { panic("image registry boom") }})
 	swapHook(t, &ToolsConfigHooks.VideoGenRegistry, nil)
 	got := s.ValidPostSetupKeys()
-	want := []string{"browserbase", "chromium", "cua_driver", "faster_whisper", "kittentts", "lightpanda", "piper", "steel_cli", "xai_grok"}
+	want := []string{"browserbase", "chromium", "cua_driver", "faster_whisper", "kittentts", "lightpanda", "steel_cli", "xai_grok"}
 	var keys []string
 	for k := range got {
 		keys = append(keys, k)
@@ -400,20 +387,13 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	}
 	s, out = newTestToolsSetup(t, "")
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "bogus"}); code != 2 ||
-		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: browserbase, chromium, cua_driver, faster_whisper, kittentts, lightpanda, piper, xai_grok\n" {
+		out.String() != "✗ Unknown post-setup key: 'bogus'. Valid keys: browserbase, chromium, cua_driver, faster_whisper, kittentts, lightpanda, xai_grok\n" {
 		t.Fatalf("unknown %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { return []string{"h"} })
 	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "browserbase"}); code != 0 ||
-		out.String() != "  Running post-setup hook: browserbase\n✓     browser_exec ready (browser-harness, bundled with Icebath)\n✓ Post-setup 'browserbase' complete\n" {
+		out.String() != "  Running post-setup hook: browserbase\n✓     browser_exec ready (built in)\n✓ Post-setup 'browserbase' complete\n" {
 		t.Fatalf("success %d %q", code, out.String())
-	}
-	s, out = newTestToolsSetup(t, "")
-	swapHook(t, &ToolsConfigHooks.FindBrowserUseCLI, func(*Env) []string { panic("harness probe crashed") })
-	if code := s.RunPostSetupCommand(map[string]any{"post_setup_key": "browserbase"}); code != 1 ||
-		out.String() != "  Running post-setup hook: browserbase\n✗ Post-setup failed: harness probe crashed\n" {
-		t.Fatalf("panic %d %q", code, out.String())
 	}
 	s, out = newTestToolsSetup(t, "")
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { return false, errors.New("pm offline") })
@@ -454,18 +434,18 @@ func TestPostSetupInstalledChecks(t *testing.T) {
 		t.Fatal("crashing check read as missing")
 	}
 	swapHook(t, &postSetupModuleImportable, func(context.Context, string) bool { panic("probe crash") })
-	if s.moduleInstalled("piper") {
+	if s.moduleInstalled("kittentts") {
 		t.Fatal("crashing probe read as installed")
 	}
 	var probed []string
-	swapHook(t, &postSetupModuleImportable, func(_ context.Context, m string) bool { probed = append(probed, m); return m == "piper" })
-	for key, want := range map[string]bool{"faster_whisper": false, "kittentts": false, "piper": true} {
+	swapHook(t, &postSetupModuleImportable, func(_ context.Context, m string) bool { probed = append(probed, m); return m == "kittentts" })
+	for key, want := range map[string]bool{"faster_whisper": false, "kittentts": true} {
 		if got, err := postSetupReady[key](s); err != nil || got != want {
 			t.Fatalf("%s ready %v %v", key, got, err)
 		}
 	}
 	slices.Sort(probed)
-	if !slices.Equal(probed, []string{"faster_whisper", "kittentts", "piper"}) {
+	if !slices.Equal(probed, []string{"faster_whisper", "kittentts"}) {
 		t.Fatalf("probed %v", probed)
 	}
 	swapHook(t, &ToolsConfigHooks.LightpandaBinary, func(*Env) string { return "/bin/lightpanda" })

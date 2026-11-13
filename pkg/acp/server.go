@@ -892,7 +892,7 @@ func (a *HermesACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRe
 
 // Acknowledges only an auth method initialize advertised, nil otherwise
 func authenticate(ctx context.Context, methodID string) *pyacp.AuthenticateResponse {
-	normalized := strings.ToLower(pystr.Strip(methodID))
+	normalized := pystr.Lower(pystr.Strip(methodID))
 	providerName := DetectProvider(ctx)
 	if normalized == TerminalSetupAuthMethodID {
 		if providerName != "" {

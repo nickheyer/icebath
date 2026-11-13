@@ -81,21 +81,3 @@ Events.On('zoom:changed', (e: { data: { level?: number } }) => {
 export function zoomFactor(): number {
   return factor
 }
-
-let filesModule: typeof import('./groups/files') | null = null
-
-import('./groups/files').then(
-  m => {
-    filesModule = m
-  },
-  (error: unknown) => console.error('[hermesDesktop] files group', error)
-)
-
-// Returns the files group for synchronous calls such as getPathForFile
-export function filesGroupSync(): typeof import('./groups/files') {
-  if (!filesModule) {
-    throw new Error('hermesDesktop files group is not loaded')
-  }
-
-  return filesModule
-}

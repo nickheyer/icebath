@@ -263,6 +263,7 @@ func TestBraveFreeProvider(t *testing.T) {
 	if !CheckWebAPIKey(configured) {
 		t.Fatal("brave failed the gate")
 	}
+	stubPublicHosts(t)
 	out := mustJSONMap(WebExtractTool(context.Background(), configured, []any{"https://example.com"}, "", nil))
 	if msg := strings.ToLower(asStr(out["error"])); out["success"] != false || !strings.Contains(msg, "search-only") || !strings.Contains(msg, "brave") {
 		t.Fatalf("%v", out)
@@ -346,9 +347,11 @@ func TestSearXNGProvider(t *testing.T) {
 	if !CheckWebAPIKey(httpxProviderEnv(t, "SEARXNG_URL=http://localhost:8080\n", map[string]any{"web.backend": "searxng"})) {
 		t.Fatal("searxng failed the gate")
 	}
+	swapDDGS(t, &ddgsClientAvailable, func(context.Context) bool { return false })
 	if CheckWebAPIKey(httpxProviderEnv(t, "", map[string]any{"web.keyless_fallback": false})) {
 		t.Fatal("no credentials passed the gate")
 	}
+	stubPublicHosts(t)
 	out := mustJSONMap(WebExtractTool(context.Background(), httpxProviderEnv(t, "SEARXNG_URL=http://localhost:8080\n", map[string]any{"web.backend": "searxng"}), []any{"https://example.com"}, "", nil))
 	if msg := strings.ToLower(asStr(out["error"])); out["success"] != false || !strings.Contains(msg, "searxng") {
 		t.Fatalf("%v", out)

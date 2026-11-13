@@ -72,6 +72,34 @@ func glKilledUpdateReceipt(t *testing.T) context.Context {
 	return ctx
 }
 
+// Repeats a release while a git of another sandbox, its cwd unreadable from here, keeps the holder scan unknowable
+func glReleaseOnceTheScanCanTell[T any](lock, root string, release func() (T, error), done func(T) bool) (T, error) {
+	deadline := time.Now().Add(60 * time.Second)
+	for knowable := 0; ; {
+		got, err := release()
+		if err != nil || done(got) || time.Now().After(deadline) {
+			return got, err
+		}
+		if !pm.HeldOpen(lock, root, true).Unknown {
+			if knowable++; knowable > 3 {
+				return got, err
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// Index lock release of a killed update, repeated while a foreign git hides its place from the scan
+func glReleaseDeadIndexLock(ctx context.Context, repo string) (bool, error) {
+	lock := filepath.Join(repo, ".git", "index.lock")
+	return glReleaseOnceTheScanCanTell(lock, repo, func() (bool, error) { return ReleaseDeadIndexLock(ctx, repo) }, func(released bool) bool { return released })
+}
+
+// Fetch lock release of a killed update, repeated while a foreign git hides its place from the scan
+func glReleaseDeadFetchLocks(ctx context.Context, repo, lock string) ([]string, error) {
+	return glReleaseOnceTheScanCanTell(lock, repo, func() ([]string, error) { return ReleaseDeadFetchLocks(ctx, repo) }, func(released []string) bool { return len(released) > 0 })
+}
+
 func TestAFreshLockWithNoKilledUpdateBehindItIsKept(t *testing.T) {
 	repo := glRepo(t)
 	ctx := glReceiptHome(t)
@@ -178,7 +206,7 @@ func TestAFailedRetryNeverErasesTheKilledUpdatesClaim(t *testing.T) {
 	if got := updaterecord.ReadLatestReceipt(ctx)["outcome"]; got != "failed" {
 		t.Fatalf("latest outcome %v", got)
 	}
-	released, err := ReleaseDeadIndexLock(ctx, repo)
+	released, err := glReleaseDeadIndexLock(ctx, repo)
 	if err != nil || !released {
 		t.Fatalf("released %v %v", released, err)
 	}

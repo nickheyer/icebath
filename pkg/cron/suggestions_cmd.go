@@ -175,7 +175,7 @@ func HandleSuggestionsCommand(ctx context.Context, args string, origin map[strin
 	parts := pystr.SplitWhitespace(pystr.Strip(args), -1)
 	sub := ""
 	if len(parts) > 0 {
-		sub = strings.ToLower(parts[0])
+		sub = pystr.Lower(parts[0])
 	}
 	rest := ""
 	if len(parts) > 1 {

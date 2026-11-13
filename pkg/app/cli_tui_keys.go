@@ -35,7 +35,7 @@ func (c *CLI) connectionModal() *connectionModalState {
 func (c *CLI) agentTurnRunning() bool {
 	c.uiMu.Lock()
 	defer c.uiMu.Unlock()
-	return c.agentRunning && c.agent != nil
+	return c.agentRunning && c.agentRef() != nil
 }
 
 // Toggles voice recording while voice mode is on, the heavy work done off the loop
@@ -231,7 +231,7 @@ func (c *CLI) tuiHandleCtrlC(e *ptEvent) {
 		}
 		c.lastCtrlCTime = now
 		fmt.Fprintln(console().Out, "\n"+c.t("cli.tui.interrupting_again_hint", nil))
-		requestHardInterrupt(c.agent)
+		requestHardInterrupt(c.agentRef())
 		return
 	}
 	c.tuiClearOrExit(e)
@@ -254,7 +254,7 @@ func (c *CLI) tuiHandleCtrlQ(e *ptEvent) {
 	}
 	if running && e.app.buffer.text() == "" && len(c.attachedImages) == 0 {
 		fmt.Fprintln(console().Out, "\n"+c.t("cli.tui.interrupting", nil))
-		requestHardInterrupt(c.agent)
+		requestHardInterrupt(c.agentRef())
 		return
 	}
 	c.tuiClearOrExit(e)
@@ -896,8 +896,8 @@ func (c *CLI) tuiEnterWhileBusy(text string, images []string, payload any, mode 
 			effective = "queue"
 		} else {
 			var accepted any = false
-			if c.agent != nil {
-				accepted = c.agent.Steer(text)
+			if a := c.agentRef(); a != nil {
+				accepted = a.Steer(text)
 			}
 			if gatewayCorrectionVoiceStopped(accepted) {
 				return
@@ -920,8 +920,8 @@ func (c *CLI) tuiEnterWhileBusy(text string, images []string, payload any, mode 
 		}
 		cprint("  " + c.t("cli.tui.queued_next_turn", map[string]any{"preview": preview80(preview)}))
 	case effective == "interrupt":
-		if len(images) == 0 && text != "" && c.agent != nil {
-			redirected = c.agent.Redirect(text)
+		if a := c.agentRef(); len(images) == 0 && text != "" && a != nil {
+			redirected = a.Redirect(text)
 		}
 		if gatewayCorrectionVoiceStopped(redirected) {
 			return

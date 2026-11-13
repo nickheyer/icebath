@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -43,6 +45,37 @@ func catalogInstallFixture(t *testing.T) (context.Context, string) {
 		tools.LiveResetForTests()
 	})
 	return context.Background(), root
+}
+
+// A fresh runner targets the calling home with its profile label, and declared env comes from plugin facts only
+func TestCatalogRunnerConstructionAndDeclaredEnv(t *testing.T) {
+	root := isolateHome(t)
+	r := OpenCatalogRunner(context.Background(), nil, nil)
+	if r.installer != (HostInstaller{}) || r.home != home.Dir(context.Background()) || r.label != "default" || r.opID != "" ||
+		r.facts == nil || r.work == nil || r.approvedEnv == nil || len(r.facts)+len(r.work)+len(r.approvedEnv) != 0 {
+		t.Fatalf("default runner %+v under %s", r, root)
+	}
+	profile := root + "/profiles/work"
+	if err := os.MkdirAll(profile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if named := newCatalogRunner(home.WithOverride(context.Background(), profile), nil, HostInstaller{}); named.home != profile || named.label != "work" {
+		t.Fatalf("profile runner home %q label %q", named.home, named.label)
+	}
+	entry := &plugins.PluginCatalogEntry{Name: "p", Capabilities: plugins.CatalogCapabilities{RequiresEnv: []string{"P_KEY"}}}
+	if got := catalogDeclaredEnv(entry); !reflect.DeepEqual(got, []string{"P_KEY"}) {
+		t.Fatalf("plugin declared %v", got)
+	}
+	if got := catalogDeclaredEnv(map[string]any{"name": "s"}); len(got) != 0 {
+		t.Fatalf("skill declared %v", got)
+	}
+	r.facts["p"] = entry
+	env := pyjson.NewObject()
+	env.Set("P_KEY", "v")
+	env.Set("OTHER", "x")
+	if msg := r.checkAnswer(&tools.ConnTarget{Name: "p", Kind: "plugin"}, env); msg != "'p' does not declare OTHER" {
+		t.Fatalf("check %q", msg)
+	}
 }
 
 func TestCatalogClawHubInstallIsReadBackThroughItsCardID(t *testing.T) {

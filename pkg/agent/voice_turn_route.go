@@ -311,6 +311,11 @@ func SessionRuntimeView(a *AIAgent) SessionRuntime {
 	if st == nil {
 		return a
 	}
+	return newSessionRuntimeView(a, st)
+}
+
+// View of an agent mid voice turn holding the route fields its snapshot captured and the session's own effort
+func newSessionRuntimeView(a *AIAgent, st *voiceRouteState) *sessionRuntimeView {
 	own := map[string]any{}
 	for _, name := range []string{"model", "provider", "requested_provider", "base_url", "api_mode"} {
 		if value, ok := st.snapshot[name]; ok {

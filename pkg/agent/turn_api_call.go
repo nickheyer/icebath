@@ -235,7 +235,7 @@ func applyNousModelSwitch(ctx context.Context, a *AIAgent) (string, bool) {
 	if !ok || a.model != requested {
 		return "", false
 	}
-	a.model = backing
+	a.model, a.modelNone = backing, false
 	a.nousModelSwitch = &[2]string{requested, backing}
 	conversationLoopLog().Info(fmt.Sprintf("Nous gateway asked to switch %s -> %s; applied for this session", requested, backing))
 	provider.ApplyModelSwitchConfig(agentPoolEnv(ctx), a.baseURL, requested, backing)

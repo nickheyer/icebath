@@ -1383,34 +1383,59 @@ func isSecretFileArg(env *Env, arg string) bool {
 	return isUnderIcebathHome(env, path)
 }
 
-// Boolean config value at a path with a fallback, tolerant of a nil tree
+// Boolean config value at a path, the fallback when the env resolves no tree
 func cfgBool(env *Env, path string, fallback bool) bool {
-	if env == nil || env.Config == nil {
-		return fallback
+	if tree := homeConfigTree(env); tree != nil {
+		return tree.Bool(path, fallback)
 	}
-	return env.Config.Bool(path, fallback)
+	return fallback
 }
 
-// Integer config value at a path with a fallback, tolerant of a nil tree
+// Integer config value at a path, the fallback when the env resolves no tree
 func cfgInt(env *Env, path string, fallback int) int {
-	if env == nil || env.Config == nil {
-		return fallback
+	if tree := homeConfigTree(env); tree != nil {
+		return tree.Int(path, fallback)
 	}
-	return env.Config.Int(path, fallback)
+	return fallback
 }
 
-// String config value at a path with a fallback, tolerant of a nil tree
+// String config value at a path, the fallback when the env resolves no tree
 func cfgString(env *Env, path, fallback string) string {
-	if env == nil || env.Config == nil {
-		return fallback
+	if tree := homeConfigTree(env); tree != nil {
+		return tree.String(path, fallback)
 	}
-	return env.Config.String(path, fallback)
+	return fallback
 }
 
-// Config tree of the env or the defaults when none is attached
-func cfgTree(env *Env) config.Tree {
-	if env == nil || env.Config == nil {
-		return config.Defaults()
+// Attached tree, else the readonly config of the home the env names, nil without either
+func homeConfigTree(env *Env) config.Tree {
+	if env == nil || (env.Config == nil && strings.TrimSpace(env.Home) == "") {
+		return nil
 	}
-	return env.Config
+	tree, err := liveConfigTree(env)
+	if err != nil {
+		return nil
+	}
+	return tree
+}
+
+// Tree attached to the env, else the readonly config of its home loaded at call time
+func liveConfigTree(env *Env) (config.Tree, error) {
+	if env != nil && env.Config != nil {
+		return env.Config, nil
+	}
+	h := envHome(env)
+	lookup := config.NewSecrets(h).Lookup()
+	if env != nil && env.Secrets != nil {
+		lookup = env.Secrets.Lookup()
+	}
+	return config.LoadReadonly(home.WithOverride(context.Background(), h), h, lookup)
+}
+
+// Config tree every tool reads, the defaults when the env resolves none
+func cfgTree(env *Env) config.Tree {
+	if tree := homeConfigTree(env); tree != nil {
+		return tree
+	}
+	return config.Defaults()
 }

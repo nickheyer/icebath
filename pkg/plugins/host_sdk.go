@@ -3,48 +3,10 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Python modules plugin code imports inside the host, each embedded under hostchild/sdk or hostchild/icebath_cli
-var PluginSDKModules = []string{
-	"agent.provider_base", "agent.provider_media", "agent.image_gen_provider", "agent.video_gen_provider",
-	"agent.web_search_provider", "agent.browser_provider", "agent.terminal_env_provider", "agent.secret_sources",
-	"agent.secret_sources.base", "agent.vault_store", "agent.vault_backends", "agent.vault_backends.base", "agent.tts_provider", "agent.transcription_provider", "agent.delegation_provider", "agent.plugin_llm", "agent.subagent_lifecycle",
-	"agent.context_engine", "agent.context_references", "agent.memory_provider", "agent.secret_scope", "agent.redact",
-	"agent.compression_marker", "agent.context_compressor", "agent.process_bootstrap", "agent.proxy_bypass",
-	"agent.thread_scoped_output", "agent.codex_headers", "agent.jiter_preload", "icebath_bootstrap", "utils", "providers", "providers.base",
-	"plugins.plugin_utils", "plugins.plugin_storage", "plugins.plugin_loader", "tools.lazy_deps", "tools.computer_use", "tools.computer_use.backend", "cron", "cron.scheduler_provider", "icebath_constants", "tools.environments.local", "icebath_cli.plugins",
-	"icebath_cli.config", "icebath_cli.auth", "icebath_cli.version_info", "icebath_cli.urllib_security",
-	"icebath_cli.chat_catalog", "icebath_cli.env_loader",
-}
-
-// Directory of the embedded plugin SDK the host child puts on its import path
-func pluginSDKPythonPath(ctx context.Context) (string, error) {
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	root, err := materializeHostChild()
-	if err != nil {
-		return "", err
-	}
-	sdk := filepath.Join(root, "sdk")
-	for _, module := range PluginSDKModules {
-		found := false
-		for _, dir := range []string{sdk, root} {
-			rel := filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(module, ".", "/")))
-			found = found || isFile(rel+".py") || isFile(filepath.Join(rel, "__init__.py"))
-		}
-		if !found {
-			return "", fmt.Errorf("plugin SDK module %s is missing from %s", module, root)
-		}
-	}
-	return sdk, nil
-}
 
 type hostSDKOp func(ctx context.Context, h *PluginHost, args []any, kwargs map[string]any) (any, error)
 

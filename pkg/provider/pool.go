@@ -424,7 +424,7 @@ func (p *Pool) syncAnthropicEntryFromCredentialsFile(entry PooledCredential, hel
 
 // Adopts a token pair rotated by another pool instance for anthropic, xai and plugin providers
 func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledCredential {
-	if p.provider != "anthropic" && p.provider != "xai-oauth" && pluginRefreshHook(p.provider) == nil {
+	if p.provider != "anthropic" && p.provider != "xai-oauth" && pluginRefreshHook(p.env.ctx(), p.provider) == nil {
 		return entry
 	}
 	isAnthropic, isXAI := p.provider == "anthropic", p.provider == "xai-oauth"
@@ -692,7 +692,7 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 		}
 		return PooledCredential{}, false
 	}
-	if !singleUseRefreshProviders[p.provider] && pluginRefreshHook(p.provider) == nil {
+	if !singleUseRefreshProviders[p.provider] && pluginRefreshHook(p.env.ctx(), p.provider) == nil {
 		return p.refreshEntryImpl(entry, force, failedKey, held)
 	}
 	unlock, err := p.env.Store.Lock(p.singleUseRefreshLockTimeout())
@@ -845,9 +845,9 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 	case tokensSingletonProviders[p.provider].refresh != nil:
 		entry = p.syncEntryFromAuthStore(entry, held)
 		updated, err = p.postTokensRefresh(entry)
-	case pluginRefreshHook(p.provider) != nil:
+	case pluginRefreshHook(p.env.ctx(), p.provider) != nil:
 		var rotated map[string]any
-		rotated, err = pluginRefreshHook(p.provider)(entry)
+		rotated, err = pluginRefreshHook(p.env.ctx(), p.provider)(entry)
 		if err == nil && len(rotated) == 0 {
 			err = errors.New("provider refresh_credential returned no rotated fields")
 		}
@@ -982,7 +982,7 @@ func (p *Pool) recoverFailedRefresh(entry PooledCredential, cause error, held bo
 			p.markDeadRefreshGrant(entry, cause, held)
 			return PooledCredential{}, false
 		}
-	case pluginRefreshHook(p.provider) != nil:
+	case pluginRefreshHook(p.env.ctx(), p.provider) != nil:
 		if result, ok, handled := RecoverFailedPluginRefresh(p, entry, cause, held); handled {
 			return result, ok
 		}
@@ -1155,7 +1155,7 @@ func (p *Pool) entryNeedsRefresh(entry PooledCredential) bool {
 	if entry.AuthType != AuthTypeOAuth {
 		return false
 	}
-	if p.provider == "anthropic" || pluginRefreshHook(p.provider) != nil {
+	if p.provider == "anthropic" || pluginRefreshHook(p.env.ctx(), p.provider) != nil {
 		return PluginRowIsExpiring(entry)
 	}
 	switch p.provider {

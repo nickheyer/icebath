@@ -9,6 +9,7 @@ import (
 )
 
 func TestEnvForProfileHomeRehomesAndSharesSessionValues(t *testing.T) {
+	isolateSessionContext(t, false)
 	launch, routed := t.TempDir(), filepath.Join(t.TempDir(), "profiles", "coder")
 	if err := os.MkdirAll(routed, 0o755); err != nil {
 		t.Fatal(err)
@@ -18,6 +19,7 @@ func TestEnvForProfileHomeRehomesAndSharesSessionValues(t *testing.T) {
 	}
 	t.Setenv("ICEBATH_HOME", launch)
 	base := &Env{Home: launch, Values: &sync.Map{}}
+	restoreSessionContextLatch(t)
 	SetSessionVars(base, SessionVars{SessionKey: "agent:main:cli", Profile: "default"})
 	t.Cleanup(func() { ClearSessionVars(base) })
 	ctx := WithProfileTerminalScope(context.Background(), routed, nil)

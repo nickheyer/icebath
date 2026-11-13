@@ -186,6 +186,9 @@ func auxCallableIdentity(v any) (uintptr, bool) {
 	return (*[2]uintptr)(unsafe.Pointer(&v))[1], true
 }
 
+// CallableKeyIdentity is the closure identity of a callable credential, false for a static key
+func CallableKeyIdentity(v any) (uintptr, bool) { return auxCallableIdentity(v) }
+
 // Secret safe cache key slot of a runtime field, callables keyed by identity and string keys by digest
 func auxRuntimeCacheDiscriminator(field string, value any) (string, []any) {
 	if field == "api_key" {

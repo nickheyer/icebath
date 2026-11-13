@@ -374,6 +374,9 @@ func TestStepLabelsProgressLineShowsLabel(t *testing.T) {
 	if line := cuteLine(ctx, "browser_exec", map[string]any{"code": code}, 1.2, nil); !strings.Contains(line, "Searching Amazon for paper towels") || strings.Contains(line, "new_tab") {
 		t.Fatalf("line %q", line)
 	}
+	if line := cuteLine(ctx, "browser_exec", map[string]any{"code": "new_tab('https://amazon.com')\nwait_for_load()"}, 1.2, nil); !strings.Contains(line, "new_tab('https://amazon.com') wait_for_load()") {
+		t.Fatalf("unlabelled line %q", line)
+	}
 }
 
 func TestCliCompletionLinePrefersUserSummaryOverBlockedText(t *testing.T) {

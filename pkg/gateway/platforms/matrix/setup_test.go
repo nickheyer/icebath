@@ -4,18 +4,21 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
+	IsGatewayKnownCommand = func(ctx context.Context, name string) bool {
+		return commands.IsGatewayKnownCommand(ctx, commands.Default, name)
+	}
 	os.Exit(m.Run())
 }
 
@@ -72,23 +75,9 @@ func patchSetupIO(t *testing.T, prompts []string, yesNo []bool, existing map[str
 	return io
 }
 
-// Replaces the explicit matrix dependency sync, recording each call
-func stubSync(t *testing.T) *[][]any {
-	t.Helper()
-	calls := &[][]any{}
-	saved := setupSyncVenv
-	t.Cleanup(func() { setupSyncVenv = saved })
-	setupSyncVenv = func(_ context.Context, o pm.SyncVenvOptions) error {
-		*calls = append(*calls, []any{append([]string(nil), o.Extras...), o.Explicit})
-		return nil
-	}
-	return calls
-}
-
 func TestMatrixHomeChannelClearBlankRemovesExistingHomeRoom(t *testing.T) {
 	io := patchSetupIO(t, []string{"https://matrix.example.org", "syt_test_token_value", "@bot:matrix.example.org", "", ""}, []bool{false},
 		map[string]string{"MATRIX_HOME_ROOM": "!oldRoomId:matrix.example.org"})
-	stubSync(t)
 	if err := InteractiveSetup(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -101,14 +90,15 @@ func TestMatrixHomeChannelClearBlankRemovesExistingHomeRoom(t *testing.T) {
 	}
 }
 
-func TestInteractiveSetupExplicitlySyncsMatrix(t *testing.T) {
-	patchSetupIO(t, []string{"https://matrix.example.test", "test-token", "@bot:example.test", "@owner:example.test", "!home:example.test"}, nil, map[string]string{})
+func TestInteractiveSetupPreparesNoDependencyEnvironment(t *testing.T) {
+	io := patchSetupIO(t, []string{"https://matrix.example.test", "test-token", "@bot:example.test", "@owner:example.test", "!home:example.test"}, nil, map[string]string{})
 	gateway.WizardConfig.SaveEnvValue = func(context.Context, string, string) error { return nil }
-	calls := stubSync(t)
 	if err := InteractiveSetup(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(*calls, [][]any{{[]string{"matrix"}, true}}) {
-		t.Fatalf("calls %v", *calls)
+	for _, line := range append(io.infos, io.errors...) {
+		if strings.Contains(line, "dependencies") {
+			t.Fatalf("wizard line %q", line)
+		}
 	}
 }

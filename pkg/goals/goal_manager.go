@@ -27,6 +27,11 @@ type GoalDecision struct {
 	Message            string
 }
 
+// Decision of one turn from its status, continuation, verdict, reason and user message
+func goalDecision(status any, shouldContinue bool, prompt *string, verdict, reason, message string) GoalDecision {
+	return GoalDecision{Status: status, ShouldContinue: shouldContinue, ContinuationPrompt: prompt, Verdict: verdict, Reason: reason, Message: message}
+}
+
 // Decision fields as an ordered JSON object
 func (d GoalDecision) ToDict() *pyjson.Object {
 	var prompt any
@@ -204,7 +209,7 @@ func (m *GoalManager) pauseState(reason string) {
 // Pauses the goal with a reason and returns the paused decision
 func (m *GoalManager) pauseDecision(pausedReason, verdict, reason, message string) GoalDecision {
 	m.pauseState(pausedReason)
-	return GoalDecision{Status: "paused", Verdict: verdict, Reason: reason, Message: message}
+	return goalDecision("paused", false, nil, verdict, reason, message)
 }
 
 // Starts a fresh active goal, a zero turn budget taking the manager default, a ValueError for empty text
@@ -467,10 +472,11 @@ func (m *GoalManager) checkGates() (*GoalDecision, error) {
 		}
 		prompt := mustGoalFormat(continuationPromptGateFailedTemplate, map[string]any{"goal": state.Goal, "command": gate.Command, "exit_code": exitCode,
 			"attempt": gate.Attempts, "max_retries": gate.MaxRetries, "output": output})
-		return &GoalDecision{Status: "active", ShouldContinue: true, ContinuationPrompt: &prompt, Verdict: "gate_failed",
-			Reason: fmt.Sprintf("gate failed (exit %d): $ %s", exitCode, gate.Command),
-			Message: fmt.Sprintf("✗ Quality gate failed (%d/%d turns, attempt %d/%d): $ %s", state.TurnsUsed, state.MaxTurns, gate.Attempts,
-				gate.MaxRetries, gate.Command)}, nil
+		decision := goalDecision("active", true, &prompt, "gate_failed",
+			fmt.Sprintf("gate failed (exit %d): $ %s", exitCode, gate.Command),
+			fmt.Sprintf("✗ Quality gate failed (%d/%d turns, attempt %d/%d): $ %s", state.TurnsUsed, state.MaxTurns, gate.Attempts,
+				gate.MaxRetries, gate.Command))
+		return &decision, nil
 	}
 	m.save()
 	return nil, nil
@@ -601,7 +607,7 @@ func (m *GoalManager) waitingDecision(state *GoalState) GoalDecision {
 		target = fmt.Sprintf("%ds remaining", max(0, int64(state.WaitingUntil-goalTime())))
 	}
 	reason := textOr(state.WaitingReason, target)
-	return GoalDecision{Status: "active", Verdict: "waiting", Reason: reason, Message: fmt.Sprintf("⏳ Goal parked — waiting on %s: %s", target, reason)}
+	return goalDecision("active", false, nil, "waiting", reason, fmt.Sprintf("⏳ Goal parked — waiting on %s: %s", target, reason))
 }
 
 // Sets the barrier a judge wait verdict names and parks, nil when this host cannot observe the barrier lifting
@@ -647,7 +653,8 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		}
 		target = pyrepr.Str(seconds) + "s"
 	}
-	return &GoalDecision{Status: "active", Verdict: "wait", Reason: reason, Message: fmt.Sprintf("⏳ Goal parked (judge) — waiting on %s: %s", target, reason)}, nil
+	decision := goalDecision("active", false, nil, "wait", reason, fmt.Sprintf("⏳ Goal parked (judge) — waiting on %s: %s", target, reason))
+	return &decision, nil
 }
 
 // Pauses the goal because its turn budget is used up
@@ -664,7 +671,7 @@ func (m *GoalManager) EvaluateAfterTurn(lastResponse string, backgroundProcesses
 		if state != nil {
 			status = state.Status
 		}
-		return GoalDecision{Status: status, Verdict: "inactive", Reason: "no active goal"}, nil
+		return goalDecision(status, false, nil, "inactive", "no active goal", ""), nil
 	}
 	if m.IsWaiting() {
 		return m.waitingDecision(state), nil
@@ -725,7 +732,7 @@ func (m *GoalManager) EvaluateAfterTurn(lastResponse string, backgroundProcesses
 	if verdict == "done" {
 		state.Status = "done"
 		m.save()
-		return GoalDecision{Status: "done", Verdict: "done", Reason: reason, Message: "✓ Goal achieved: " + reason}, nil
+		return goalDecision("done", false, nil, "done", reason, "✓ Goal achieved: "+reason), nil
 	}
 	transportFailures, parseFailures := state.ConsecutiveTransportFailures, state.ConsecutiveParseFailures
 	if transportFailures >= DefaultMaxConsecutiveTransportFailures {
@@ -742,8 +749,8 @@ func (m *GoalManager) EvaluateAfterTurn(lastResponse string, backgroundProcesses
 		return m.budgetPause(state, "continue", reason, ""), nil
 	}
 	m.save()
-	return GoalDecision{Status: "active", ShouldContinue: true, ContinuationPrompt: m.NextContinuationPrompt(), Verdict: "continue", Reason: reason,
-		Message: fmt.Sprintf("↻ Continuing toward goal (%d/%d): %s", state.TurnsUsed, state.MaxTurns, reason)}, nil
+	return goalDecision("active", true, m.NextContinuationPrompt(), "continue", reason,
+		fmt.Sprintf("↻ Continuing toward goal (%d/%d): %s", state.TurnsUsed, state.MaxTurns, reason)), nil
 }
 
 // User role message that continues an active goal, the contract first and subgoals folded in, nil when not active

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -23,11 +25,47 @@ func resolveProfileDir(name string) (string, error) {
 
 // Context bound to the profile home and secret scope, the scoped dir empty when it is the process profile
 func configProfileScope(ctx context.Context, profile string) (context.Context, string, error) {
-	sctx, scoped, err := provider.ConfigProfileScope(ctx, profile)
-	if err != nil {
-		return ctx, "", asHTTPError(err)
+	processHome := home.Process()
+	profileDir := ""
+	if isCurrentProfile(profile) {
+		if home.Override(ctx) != "" {
+			profileDir = home.Dir(ctx)
+		}
+	} else {
+		dir, err := resolveProfileDir(pystr.Strip(profile))
+		if err != nil {
+			return ctx, "", err
+		}
+		profileDir = dir
 	}
-	return sctx, scoped, nil
+	scoped := ""
+	if profileDir != "" {
+		resolvedDir, err := pypath.Resolve(profileDir)
+		if err != nil {
+			return ctx, "", err
+		}
+		resolvedProcess, err := pypath.Resolve(processHome)
+		if err != nil {
+			return ctx, "", err
+		}
+		if resolvedDir != resolvedProcess {
+			scoped = profileDir
+		}
+	}
+	var secrets map[string]string
+	if scoped != "" {
+		provider.ActivateMultiProfileHosting()
+		provider.HydrateProfileSecretSources(scoped)
+		secrets = provider.BuildProfileSecretScope(scoped)
+	} else {
+		secrets = provider.LaunchSecretScopeCtx(ctx, processHome)
+	}
+	profileHome := processHome
+	if profileDir != "" {
+		ctx = home.WithOverride(ctx, profileDir)
+		profileHome = profileDir
+	}
+	return provider.WithSecretScope(ctx, secrets, profileHome), scoped, nil
 }
 
 var skillsProfileMu sync.Mutex

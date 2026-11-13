@@ -63,3 +63,6 @@ func KillGroup(pgid int, signal string) error {
 
 // ForceKillProcessTree is the Windows tree kill and never runs on POSIX
 func ForceKillProcessTree(int) { panic("process tree kill runs only on Windows") }
+
+// Windows tree kill, nothing to end on POSIX
+func TaskkillTree(int) error { return nil }

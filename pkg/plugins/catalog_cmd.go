@@ -387,14 +387,12 @@ func RefuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEnt
 
 // Options of a catalog entry install beyond the entry itself
 type CatalogInstallOptions struct {
-	Force             bool
-	Ref               string
-	AllowRemoved      bool
-	ScanDecision      func(scan any) bool
-	PythonDeps        bool
-	AssumeDepsConsent bool
-	BeforeSwap        func(manifest map[string]any, tree string) ([]string, error)
-	InspectedSha      string
+	Force        bool
+	Ref          string
+	AllowRemoved bool
+	ScanDecision func(scan any) bool
+	BeforeSwap   func(manifest map[string]any, tree string) ([]string, error)
+	InspectedSha string
 }
 
 // Installs the entry at its catalog pin, or the explicit ref, recording catalog provenance on the install record
@@ -412,8 +410,8 @@ func installCatalogEntry(ctx context.Context, entry *PluginCatalogEntry, opts Ca
 		ref = entry.Sha
 	}
 	return installPluginCore(ctx, entry.InstallIdentifier(), installCoreOptions{
-		Force: opts.Force, Ref: ref, ScanDecision: opts.ScanDecision, ReviewedPin: entry.Sha, NoPythonDeps: !opts.PythonDeps,
-		AssumeDepsConsent: opts.AssumeDepsConsent, AllowRemoved: opts.AllowRemoved, BeforeSwap: opts.BeforeSwap,
+		Force: opts.Force, Ref: ref, ScanDecision: opts.ScanDecision, ReviewedPin: entry.Sha,
+		AllowRemoved: opts.AllowRemoved, BeforeSwap: opts.BeforeSwap,
 		AppTitle: entry.Title, InspectedSha: opts.InspectedSha,
 		Catalog: map[string]any{"name": entry.Name, "repo": entry.Repo, "tier": entry.Tier, "pin": entry.Sha},
 	})
@@ -858,7 +856,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 	if err := stashLocalFiles(target, modified, backup); err != nil {
 		return nil, err
 	}
-	if _, err := updatePlugin(ctx, target, updatePluginOptions{CatalogEntry: entry, Interactive: interactive,
+	if _, err := updatePlugin(ctx, target, updatePluginOptions{CatalogEntry: entry,
 		CarryUserFiles: func(staged string) ([]string, error) { return carryUserFiles(target, staged, local, gitTree) }}); err != nil {
 		return nil, err
 	}
@@ -1202,15 +1200,8 @@ func CmdInfo(ctx context.Context, name string, out io.Writer) error {
 }
 
 // Catalog admission validation of a plugin directory, the CI gate, exiting 0 or 1
-func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out, errOut io.Writer) error {
-	var probe *validationProbe
-	if installDeps {
-		var err error
-		if probe, err = prepareValidationProbe(ctx, path); err != nil {
-			fmt.Fprintf(errOut, "dependency preparation failed: %v\n", err)
-		}
-	}
-	report, err := validatePluginDir(ctx, path, probe)
+func CmdValidate(ctx context.Context, path string, asJSON bool, out, errOut io.Writer) error {
+	report, err := validatePluginDir(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -1256,44 +1247,6 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 		console.Print("[red bold]Validation failed.[/red bold]")
 	}
 	return &CommandExit{Code: report.ExitCode()}
-}
-
-// Package manager calls of the install deps probe, swapped by tests for a committed environment double
-var (
-	pmSyncVenv              = pm.SyncVenv
-	pmRepoRoot              = pm.RepoRoot
-	pmProjectPython         = pm.ProjectPython
-	pmSelectedVenv          = pm.SelectedVenv
-	pmVenvCommand           = pm.VenvCommand
-	pmActivationEnvironment = pm.ActivationEnvironment
-)
-
-// Syncs the plugin's declared deps and returns the committed environment interpreter the probe imports through
-func prepareValidationProbe(ctx context.Context, path string) (*validationProbe, error) {
-	if err := pmSyncVenv(ctx, pm.SyncVenvOptions{Plugins: &pm.Candidates{Dirs: []string{path}}}); err != nil {
-		return nil, err
-	}
-	root := pmRepoRoot()
-	python, err := pmProjectPython(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	if st, err := os.Stat(python); err != nil || !st.Mode().IsRegular() {
-		return nil, nil
-	}
-	venv, err := pmSelectedVenv(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	command, err := pmVenvCommand(ctx, root, venv, nil)
-	if err != nil {
-		return nil, err
-	}
-	env, err := pmActivationEnvironment(ctx, root)
-	if err != nil {
-		return nil, err
-	}
-	return &validationProbe{Command: command, Env: env}, nil
 }
 
 // Catalog entries merged with local install state for the dashboard, matched by catalog name first

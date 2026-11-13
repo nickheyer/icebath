@@ -20,16 +20,24 @@ var dockerVolumeSpecRE = regexp.MustCompile(`^(?P<host>.+):(?P<container>/[^:]+?
 // Container paths a host visible MEDIA output mount may use
 var dockerMediaOutputContainerPaths = map[string]bool{"/output": true, "/outputs": true}
 
-// Runner over an explicit config, the launching profile's standalone opt out still applied to it
+// Runner over an explicit config with the standalone opt out applied, else over the loaded runner config
 func NewGatewayRunner(ctx context.Context, config *gateway.GatewayConfig) (*GatewayRunner, error) {
 	r := allocGatewayRunner()
-	r.config = config
-	decision, err := gateway.StandaloneLauncherDecision(ctx, r.config)
-	if err != nil {
-		return nil, err
-	}
-	if decision != nil {
-		gateway.LogMultiplexDecision(ctx, *decision)
+	if config == nil {
+		loaded, err := loadGatewayConfigForRunner(ctx)
+		if err != nil {
+			return nil, err
+		}
+		r.config = loaded
+	} else {
+		r.config = config
+		decision, err := gateway.StandaloneLauncherDecision(ctx, r.config)
+		if err != nil {
+			return nil, err
+		}
+		if decision != nil {
+			gateway.LogMultiplexDecision(ctx, *decision)
+		}
 	}
 	if err := r.initGatewayRunner(ctx); err != nil {
 		return nil, err

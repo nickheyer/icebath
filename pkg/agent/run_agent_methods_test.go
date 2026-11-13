@@ -299,9 +299,9 @@ func TestRuntimeHelpersSmall(t *testing.T) {
 		t.Fatal("bad env float falls back")
 	}
 	a := &AIAgent{model: "m", provider: "p", baseURL: "u", apiKey: "k", apiMode: "chat_completions", sessionID: "s"}
-	want := map[string]string{"model": "m", "provider": "p", "base_url": "u", "api_key": "k", "api_mode": "chat_completions", "auth_mode": "", "session_id": "s"}
-	if !reflect.DeepEqual(a.currentMainRuntime(), want) {
-		t.Fatalf("runtime %v", a.currentMainRuntime())
+	want := map[string]any{"model": "m", "provider": "p", "base_url": "u", "api_key": "k", "api_mode": "chat_completions", "auth_mode": "", "session_id": "s"}
+	if !reflect.DeepEqual(a.currentMainRuntime(context.Background()), want) {
+		t.Fatalf("runtime %v", a.currentMainRuntime(context.Background()))
 	}
 	b := &AIAgent{apiMode: "codex_responses", baseURLHostname: "chatgpt.com", baseURLLower: "https://chatgpt.com/backend-api/codex"}
 	if !b.isCodexBackend() || (&AIAgent{apiMode: "codex_responses", baseURLHostname: "api.openai.com"}).isCodexBackend() {

@@ -19,12 +19,12 @@ function json(path, value) {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'node union with spaces-'))
   roots.push(root)
-  json(join(root, 'package.json'), { name: 'fixture', private: true, dependencies: { 'root-only': 'file:vendor/root-only' }, workspaces: ['ui-tui', 'web', 'apps/desktop'], engines: { node: '>=22', npm: '>=10' } })
-  for (const name of ['tui-only', 'web-only', 'root-only']) {
+  json(join(root, 'package.json'), { name: 'fixture', private: true, dependencies: { 'root-only': 'file:vendor/root-only' }, workspaces: ['apps/shared', 'web', 'apps/desktop'], engines: { node: '>=22', npm: '>=10' } })
+  for (const name of ['shared-only', 'web-only', 'root-only']) {
     json(join(root, 'vendor', name, 'package.json'), { name, version: '1.0.0', main: 'index.cjs' })
     writeFileSync(join(root, 'vendor', name, 'index.cjs'), `module.exports = '${name}'`)
   }
-  json(join(root, 'ui-tui/package.json'), { name: 'tui', version: '1.0.0', dependencies: { 'tui-only': 'file:../vendor/tui-only' } })
+  json(join(root, 'apps/shared/package.json'), { name: 'shared', version: '1.0.0', dependencies: { 'shared-only': 'file:../../vendor/shared-only' } })
   json(join(root, 'web/package.json'), { name: 'web', version: '1.0.0', dependencies: { 'web-only': 'file:../vendor/web-only' } })
   json(join(root, 'apps/desktop/package.json'), { name: 'desktop', version: '1.0.0', scripts: { postinstall: 'node -e "require(\'fs\').writeFileSync(\'electron-provisioned\',\'yes\')"' } })
   const [node, npm] = npmCommand()
@@ -106,15 +106,15 @@ test('one locked preparation retains the requested union without provisioning de
   const { prepareNodeDependencies } = await import('../scripts/build/node-deps.mjs')
   const source = fixture()
   const lock = readFileSync(join(source, 'package-lock.json'))
-  await prepareNodeDependencies({ source, workspaces: ['ui-tui', 'web', 'ui-tui'], env: { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') } })
-  for (const [workspace, name] of [['ui-tui', 'tui-only'], ['web', 'web-only']]) {
+  await prepareNodeDependencies({ source, workspaces: ['apps/shared', 'web', 'apps/shared'], env: { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') } })
+  for (const [workspace, name] of [['apps/shared', 'shared-only'], ['web', 'web-only']]) {
     expect(createRequire(join(source, workspace, 'package.json'))(name)).toBe(name)
   }
   expect(createRequire(join(source, 'package.json'))('root-only')).toBe('root-only')
   expect(existsSync(join(source, 'node_modules/desktop'))).toBe(false)
   expect(existsSync(join(source, 'apps/desktop/electron-provisioned'))).toBe(false)
   expect(readFileSync(join(source, 'package-lock.json'))).toEqual(lock)
-  execFileSync(process.execPath, [join(repo, 'scripts/build/node-deps.mjs'), '--source', source, '--workspace', 'ui-tui', '--workspace', 'web'], { cwd: tmpdir(), env: { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') }, stdio: 'pipe' })
+  execFileSync(process.execPath, [join(repo, 'scripts/build/node-deps.mjs'), '--source', source, '--workspace', 'apps/shared', '--workspace', 'web'], { cwd: tmpdir(), env: { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') }, stdio: 'pipe' })
   expect(createRequire(join(source, 'web/package.json'))('web-only')).toBe('web-only')
 }, 30000)
 
@@ -138,7 +138,7 @@ test('web-only selection excludes siblings and rejects stale locks without rewri
   const env = { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') }
   rmSync(join(source, 'apps/desktop'), { recursive: true })
   prepareNodeDependencies({ source, workspaces: ['web'], env })
-  expect(existsSync(join(source, 'node_modules/tui-only'))).toBe(false)
+  expect(existsSync(join(source, 'node_modules/shared-only'))).toBe(false)
   expect(existsSync(join(source, 'apps/desktop/electron-provisioned'))).toBe(false)
   const lock = readFileSync(join(source, 'package-lock.json'))
   json(join(source, 'web/package.json'), { name: 'web', version: '1.0.0', dependencies: { 'web-only': '9.0.0' } })
@@ -152,22 +152,22 @@ test('a restored completed install retains postinstall outputs only for matching
   const { prepareNodeDependencies } = await import('../scripts/build/node-deps.mjs')
   const source = fixture()
   const env = { ...process.env, npm_config_offline: 'true', npm_config_cache: join(source, '.npm-cache') }
-  prepareNodeDependencies({ source, workspaces: ['ui-tui', 'web'], env, reuse: true })
+  prepareNodeDependencies({ source, workspaces: ['apps/shared', 'web'], env, reuse: true })
   const artifact = 'node_modules/postinstall-output'
   writeFileSync(join(source, artifact), 'built')
   const restored = mkdtempSync(join(tmpdir(), 'restored node union-'))
   roots.push(restored)
   cpSync(source, restored, { recursive: true, verbatimSymlinks: true })
-  prepareNodeDependencies({ source: restored, workspaces: ['web', 'ui-tui'], env, reuse: true })
+  prepareNodeDependencies({ source: restored, workspaces: ['web', 'apps/shared'], env, reuse: true })
   expect(readFileSync(join(restored, artifact), 'utf8')).toBe('built')
-  const cli = [join(repo, 'scripts/build/node-deps.mjs'), '--source', restored, '--workspace', 'web', '--workspace', 'ui-tui', '--reuse']
+  const cli = [join(repo, 'scripts/build/node-deps.mjs'), '--source', restored, '--workspace', 'web', '--workspace', 'apps/shared', '--reuse']
   execFileSync(process.execPath, cli, { cwd: tmpdir(), env, stdio: 'pipe' })
   expect(readFileSync(join(restored, artifact), 'utf8')).toBe('built')
   expect(createRequire(join(restored, 'web/package.json'))('web-only')).toBe('web-only')
 
   prepareNodeDependencies({ source: restored, workspaces: ['web'], env, reuse: true })
   expect(existsSync(join(restored, artifact))).toBe(false)
-  expect(existsSync(join(restored, 'node_modules/tui-only'))).toBe(false)
+  expect(existsSync(join(restored, 'node_modules/shared-only'))).toBe(false)
   writeFileSync(join(restored, artifact), 'built again')
   // Even an invalid manifest must reach npm, not hide behind a warm lockfile cache.
   json(join(restored, 'web/package.json'), { name: 'web', version: '1.0.0', dependencies: { 'web-only': '9.0.0' } })

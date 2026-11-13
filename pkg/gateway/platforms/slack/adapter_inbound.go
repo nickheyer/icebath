@@ -971,7 +971,7 @@ func (a *SlackAdapter) normalizeChangedMessage(event map[string]any) map[string]
 	originalTS := strOrEmpty(updated["ts"])
 	if originalTS != "" {
 		a.mu.Lock()
-		_, routed := a.processedMessageTS[originalTS]
+		routed := a.processedMessageTS.Has(originalTS)
 		a.mu.Unlock()
 		if routed {
 			return nil
@@ -1126,14 +1126,14 @@ func (a *SlackAdapter) trackReactingMessage(teamID, ts string) {
 func (a *SlackAdapter) handleSlackMessage(ctx context.Context, event, payload map[string]any) (err error) {
 	ts := strOrEmpty(orEmptyMap(event)["ts"])
 	a.mu.Lock()
-	_, wasClaimed := a.processedMessageTS[ts]
+	wasClaimed := a.processedMessageTS.Has(ts)
 	a.mu.Unlock()
 	wasClaimed = ts != "" && wasClaimed
 	release := func() {
 		a.mu.Lock()
-		_, claimed := a.processedMessageTS[ts]
+		claimed := a.processedMessageTS.Has(ts)
 		if ts != "" && !wasClaimed && claimed {
-			delete(a.processedMessageTS, ts)
+			a.processedMessageTS.Delete(ts)
 			a.mu.Unlock()
 			slog.Warn(fmt.Sprintf("[%s] handler failed after claiming ts=%s; claim released so a retry or edit can re-drive the turn", a.Name(), ts))
 			return
@@ -1340,7 +1340,7 @@ func (a *SlackAdapter) handleSlackMessageImpl(ctx context.Context, event, payloa
 		isOneToOneDM || isMentioned || isCommandText || forceProcess, threadTS != nil && threadTSValue == ts, isThreadReply && !isDM)
 	msgEvent := a.buildMessageEvent(ctx, event, text, originalText, commandProbeText, isCommandText, channelID, teamID, ts, userID,
 		threadTS, isDM, mediaURLs, mediaTypes, inlined, channelContext, replyExpected)
-	if (isOneToOneDM || isMentioned) && a.ReactionsEnabled() {
+	if (isOneToOneDM || isMentioned) && a.ReactionsEnabled(ctx) {
 		a.trackReactingMessage(teamID, ts)
 	}
 	if contextChannel := agentContext["context_channel_id"]; contextChannel != "" && contextChannel != channelID && !isCommandText {

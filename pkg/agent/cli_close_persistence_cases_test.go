@@ -141,8 +141,8 @@ func TestCliCloseHandsStagedUserMarkerToTurnStart(t *testing.T) {
 	db := closeCaseDB(t, sessionID, "cli")
 	prefix := []map[string]any{{"role": "user", "content": "old prompt"}, {"role": "assistant", "content": "old answer"}}
 	a := closeCaseAgent(db, sessionID, prefix)
-	if _, err := a.flushMessagesToSessionDBWithHistory(prefix, []map[string]any{}); err != nil {
-		t.Fatal(err)
+	if outcome := a.flushMessagesToSessionDBWithHistory(prefix, []map[string]any{}); outcome == state.FlushFailed {
+		t.Fatalf("flush outcome %v", outcome)
 	}
 	staged := map[string]any{"role": "user", "content": "new prompt"}
 	cliHistory := append(append([]map[string]any{}, prefix...), staged)
@@ -219,8 +219,8 @@ func TestCloseStampsReachTheTurnRowCopiedBeforeTheClose(t *testing.T) {
 	db := closeCaseDB(t, sessionID, "cli")
 	prefix := []map[string]any{{"role": "user", "content": "old prompt"}, {"role": "assistant", "content": "old answer"}}
 	a := closeCaseAgent(db, sessionID, prefix)
-	if _, err := a.flushMessagesToSessionDBWithHistory(prefix, []map[string]any{}); err != nil {
-		t.Fatal(err)
+	if outcome := a.flushMessagesToSessionDBWithHistory(prefix, []map[string]any{}); outcome == state.FlushFailed {
+		t.Fatalf("flush outcome %v", outcome)
 	}
 	staged := map[string]any{"role": "user", "content": "new prompt"}
 	cliHistory := append(append([]map[string]any{}, prefix...), staged)

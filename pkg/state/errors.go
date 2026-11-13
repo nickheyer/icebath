@@ -468,3 +468,15 @@ func ClassifyPersistenceError(v any) string {
 	}
 	return "unknown"
 }
+
+// Outcome of a transcript flush, the None, True and False a session flush returns
+type FlushOutcome int
+
+const (
+	// Persistence is off for this agent or it has no session store
+	FlushDisabled FlushOutcome = iota
+	// Every unflushed row was written
+	FlushPersisted
+	// The write failed and its cause was classified and logged
+	FlushFailed
+)

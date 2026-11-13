@@ -8,6 +8,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Cap on tracked leases, idle entries evicting oldest first while live leases never do
@@ -53,6 +55,12 @@ type TurnLeaseToken struct {
 	generation int
 	released   bool
 	lease      *sessionLease
+}
+
+// Debug text of the handle with its session, routing key, generation and released flag
+func (t *TurnLeaseToken) String() string {
+	return fmt.Sprintf("TurnLeaseToken(session_id=%s, owner_key=%s, generation=%d, released=%s)",
+		pyrepr.Repr(t.sessionID), pyrepr.Repr(t.ownerKey), t.generation, pyrepr.Repr(t.released))
 }
 
 // Lock of one resolved session id with its holder and pending acquire count

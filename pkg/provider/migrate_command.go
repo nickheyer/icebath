@@ -93,7 +93,7 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "    %s Migration guide: %s\n", cliui.Color("→", cliui.Cyan), XAIMigrationGuideURL)
 	fmt.Fprintln(w)
-	configPath := filepath.Join(h, "config.yaml")
+	configPath := migrateResolveConfigPath(h)
 	if !apply {
 		fmt.Fprintln(w, cliui.Color("Dry-run mode — no changes written.", cliui.Dim))
 		fmt.Fprintln(w, cliui.Color(fmt.Sprintf("Re-run with `icebath migrate xai --apply` to rewrite %s in-place (backup created automatically).", configPath), cliui.Dim))
@@ -118,6 +118,11 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, cliui.Color("Run `icebath doctor` to confirm no retired xAI models remain.", cliui.Dim))
 	return 0, nil
+}
+
+// Location of the active config.yaml on disk under the given home
+func migrateResolveConfigPath(h string) string {
+	return filepath.Join(h, "config.yaml")
 }
 
 // String list of a namespace value, a Go or decoded list

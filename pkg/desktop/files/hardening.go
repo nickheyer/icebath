@@ -75,7 +75,7 @@ func RejectUnsafePathSyntax(filePath any, purpose string) (string, error) {
 	if !ok {
 		return "", ipcPathError("invalid-path", purpose+" failed: file path is required.")
 	}
-	raw := strings.TrimSpace(s)
+	raw := jsTrim(s)
 	if raw == "" {
 		return "", ipcPathError("invalid-path", purpose+" failed: file path is required.")
 	}
@@ -130,7 +130,7 @@ func ResolveRequestedPathForIpc(filePath any, purpose, baseDir string) (string, 
 		return resolvePath(resolved), nil
 	}
 	base := baseDir
-	if strings.TrimSpace(base) == "" {
+	if jsTrim(base) == "" {
 		base, _ = os.Getwd()
 	}
 	safeBase, err := RejectUnsafePathSyntax(base, purpose)

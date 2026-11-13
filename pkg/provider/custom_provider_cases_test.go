@@ -241,10 +241,10 @@ func TestNormalizeCustomProviderEntry(t *testing.T) {
 			t.Fatalf("mapped %v", mapped)
 		}
 		stored, entry := FindProviderEntry(doc, "2070")
-		if stored != "2070" || !reflect.DeepEqual(entry, map[string]any{"base_url": "http://x"}) {
+		if stored != config.PyKeyString(2070) || !reflect.DeepEqual(entry, map[string]any{"base_url": "http://x"}) {
 			t.Fatalf("stored %q entry %v", stored, entry)
 		}
-		if stored, entry := FindProviderEntry(doc, 2070); stored != "2070" || entry == nil {
+		if stored, entry := FindProviderEntry(doc, 2070); stored != config.PyKeyString(2070) || entry == nil {
 			t.Fatalf("numeric lookup stored %q entry %v", stored, entry)
 		}
 	})

@@ -186,7 +186,6 @@ func TestSetupSummaryLocalBrowserUnavailableWithoutChromium(t *testing.T) {
 	if err := config.SaveConfig(w.ctx, w.home, cfg, config.SaveOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	swapSeam(t, &provider.BrowserHarnessCLI, func(*tools.Env) []string { return []string{"/usr/local/bin/browser-harness"} })
 	swapSeam(t, &provider.ChromiumExecutable, func(*tools.Env, bool) string { return "" })
 	swapSeam(t, &setupVisionBackends, func(context.Context) ([]string, error) { return nil, nil })
 	if err := printSetupSummary(w.ctx, loadHomeConfig(t, w.ctx), w.tmp); err != nil {

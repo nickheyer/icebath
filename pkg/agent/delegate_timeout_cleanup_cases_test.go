@@ -34,7 +34,9 @@ func TestTimeoutDoesNotCloseChildWhileWorkerIsUnwinding(t *testing.T) {
 	livenessKnobs(t, capSeconds(0.5))
 	child := interruptibleChild()
 	child.env, child.delegateRole, child.delegateDepth, child.model = env, "leaf", 1, "test-model"
-	child.sessionCostStatus, child.apiCallCount, child.iterationBudget = "unknown", 1, NewIterationBudget(50)
+	child.sessionCostStatus = "unknown"
+	child.iterationBudget.Store(NewIterationBudget(50))
+	child.apiCallCount.Store(1)
 	unwinding, allowFinish, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	probe := &unwindCloseProbe{finished: finished, closed: make(chan struct{})}
 	child.memoryManager = memory.NewMemoryManager(context.Background(), nil, nil)

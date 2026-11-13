@@ -90,3 +90,34 @@ func (h *inputHistory) append(line string) {
 	defer f.Close()
 	_, _ = f.WriteString("\n# " + ts + "\n" + encoded + "\n")
 }
+
+// Prompt recall of the composer, the shared history file, the recall index and the draft kept while recalling
+type composerHistory struct {
+	file  *inputHistory
+	idx   *int
+	draft string
+}
+
+// Recall state over a history file, read once when the composer mounts
+func newComposerHistory(file *inputHistory) *composerHistory {
+	file.load()
+	return &composerHistory{file: file}
+}
+
+// Entries the composer recalls, the live cache appends grow
+func (c *composerHistory) entries() []string { return c.file.load() }
+
+// Records a submitted prompt in the history file
+func (c *composerHistory) push(line string) { c.file.append(line) }
+
+// Recalled entry index, nil while the draft is live
+func (c *composerHistory) index() *int { return c.idx }
+
+// Moves the recall index, nil returning to the live draft
+func (c *composerHistory) setIndex(idx *int) { c.idx = idx }
+
+// Draft saved when recall started
+func (c *composerHistory) savedDraft() string { return c.draft }
+
+// Saves the draft recall returns to
+func (c *composerHistory) saveDraft(text string) { c.draft = text }

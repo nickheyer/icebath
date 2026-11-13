@@ -270,3 +270,22 @@ func TestResolveGuardSettings(t *testing.T) {
 		t.Fatalf("shipped defaults resolve to %v %v", enabled, threshold)
 	}
 }
+
+func TestEmptyAttemptsAreTheAgentsOwnStreakHistory(t *testing.T) {
+	a := guardAgent()
+	a.recordEmptyAttempt(context.Background(), "stop", zeroResponse(), false)
+	attempts := a.emptyAttempts()
+	if len(*attempts) != 1 || !(*attempts)[0].zeroOutput || !(*attempts)[0].usagePresent || (*attempts)[0].model != a.model {
+		t.Fatalf("attempts %v", *attempts)
+	}
+	a.emptyContentRetries++
+	a.recordEmptyAttempt(context.Background(), "length", guardUsageResponse(10, 4), true)
+	if len(a.emptyAttemptHistory) != 2 || (*attempts)[1].finishReason != "length" || (*attempts)[1].zeroOutput {
+		t.Fatalf("second attempt %v", a.emptyAttemptHistory)
+	}
+	a.emptyContentRetries = 0
+	a.recordEmptyAttempt(context.Background(), "stop", guardResponse{}, false)
+	if len(*attempts) != 1 || (*attempts)[0].usagePresent {
+		t.Fatalf("new streak %v", *attempts)
+	}
+}

@@ -14,13 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
@@ -53,13 +51,12 @@ var (
 
 // One hooks.outbound entry parsed and validated, the matcher regex compiled for the tool events
 type OutboundWebhookTarget struct {
-	URL      string
-	Events   []string
-	Name     string
-	Secret   string
-	Matcher  string
-	Timeout  int
-	compiled *regexp2.Regexp
+	toolMatcher
+	URL     string
+	Events  []string
+	Name    string
+	Secret  string
+	Timeout int
 }
 
 // Label is the configured name, the url when there is none
@@ -72,34 +69,9 @@ func (t *OutboundWebhookTarget) Label() string {
 
 // NewOutboundWebhookTarget builds a target the way the dataclass does, the matcher stripped and compiled or kept literal
 func NewOutboundWebhookTarget(url string, events []string, name, secret, matcher string, timeout int) *OutboundWebhookTarget {
-	t := &OutboundWebhookTarget{URL: url, Events: events, Name: name, Secret: secret, Matcher: strings.TrimSpace(matcher), Timeout: timeout}
-	if t.Matcher != "" {
-		re, err := pyre.CompileFullmatch(t.Matcher)
-		if err != nil {
-			logWarn(fmt.Sprintf("outbound webhook matcher %s is invalid (%v) — treating as literal equality", pyrepr.StrRepr(t.Matcher), err))
-		}
-		t.compiled = re
-	}
+	t := &OutboundWebhookTarget{toolMatcher: toolMatcher{Matcher: matcher}, URL: url, Events: events, Name: name, Secret: secret, Timeout: timeout}
+	t.postInit("outbound webhook")
 	return t
-}
-
-// MatchesTool reports whether the tool name passes the matcher, every name without one and never a missing name
-func (t *OutboundWebhookTarget) MatchesTool(toolName any) bool {
-	if t.Matcher == "" {
-		return true
-	}
-	if toolName == nil {
-		return false
-	}
-	name, isStr := toolName.(string)
-	if t.compiled == nil {
-		return isStr && name == t.Matcher
-	}
-	if !isStr {
-		return false
-	}
-	ok, _ := t.compiled.MatchString(name)
-	return ok
 }
 
 // RegisterOutboundWebhooksFromConfig wires every configured target once per home and event, the targets newly wired
@@ -193,14 +165,7 @@ func FlushOutboundWebhooks(timeout time.Duration) bool {
 
 // ReRegisterOutboundWebhooks drops the current home's wired keys and registers the saved config again after a force reload
 func ReRegisterOutboundWebhooks(ctx context.Context) error {
-	h := shellHomeKey(ctx)
-	outboundRegisteredMu.Lock()
-	for k := range outboundRegistered {
-		if k.home == h {
-			delete(outboundRegistered, k)
-		}
-	}
-	outboundRegisteredMu.Unlock()
+	forgetHomeRegistrations(ctx, outboundRegistered, &outboundRegisteredMu, func(k outboundWebhookKey) string { return k.home })
 	cfg, err := loadConfig(home.Dir(ctx))
 	if err != nil {
 		return err
@@ -366,11 +331,24 @@ func makeOutboundWebhookCallback(event string, target *OutboundWebhookTarget) Ho
 		if config.SafeWorkerEnabled() {
 			return nil, nil
 		}
-		if shellHookToolEvents[event] && !target.MatchesTool(kwargs["tool_name"]) {
-			return nil, nil
+		if shellHookToolEvents[event] {
+			matches, err := target.MatchesTool(kwargs["tool_name"])
+			if err != nil {
+				return nil, err
+			}
+			if !matches {
+				return nil, nil
+			}
 		}
 		deliveryID := strings.ReplaceAll(uuid.New().String(), "-", "")
-		body, err := serializeOutboundWebhookPayload(ctx, event, kwargs, deliveryID)
+		body, err := func() (body []byte, err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					body, err = nil, fmt.Errorf("%v", r)
+				}
+			}()
+			return serializeOutboundWebhookPayload(ctx, event, kwargs, deliveryID)
+		}()
 		if err != nil {
 			logWarn(fmt.Sprintf("outbound webhook payload serialization failed (event=%s target=%s)", event, target.Label()), "error", err)
 			return nil, nil

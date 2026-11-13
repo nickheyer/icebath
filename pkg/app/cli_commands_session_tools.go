@@ -55,9 +55,9 @@ func (c *CLI) handleStopCommand() {
 		c.stopBackgroundWork()
 		return
 	}
-	if c.agent != nil {
+	if a := c.agentRef(); a != nil {
 		cp("  " + c.t("cli.tui.interrupting", nil))
-		requestHardInterrupt(c.agent)
+		requestHardInterrupt(a)
 	}
 	go c.stopBackgroundWork()
 }
@@ -239,6 +239,7 @@ func (c *CLI) handleJourneyCommand(cmdOriginal string) {
 		args = parts[1:]
 	}
 	tree := commands.NewCLI()
+	tree.DisableHelp("journey")
 	var runErr error
 	ran := false
 	handler := func(cmd *cobra.Command, posArgs []string) error {
@@ -266,7 +267,13 @@ func (c *CLI) handleJourneyCommand(cmdOriginal string) {
 	for _, path := range []string{"journey", "journey list", "journey delete", "journey edit"} {
 		tree.Bind(path, handler)
 	}
-	if execErr := tree.Execute(append([]string{"journey"}, args...)); execErr != nil && !ran {
+	var help bytes.Buffer
+	tree.Root.SetOut(&help)
+	execErr := tree.Execute(append([]string{"journey"}, args...))
+	if help.Len() > 0 {
+		fmt.Fprint(os.Stdout, strings.ReplaceAll(help.String(), "icebath journey", "/journey"))
+	}
+	if execErr != nil && !ran {
 		var ae *commands.ArgparseError
 		if errors.As(execErr, &ae) {
 			fmt.Fprintln(os.Stderr, strings.ReplaceAll(ae.Stderr(), "icebath journey", "/journey"))

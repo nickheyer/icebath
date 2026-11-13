@@ -14,32 +14,21 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm/specprobe"
 )
 
-// Anchors maps each extra to the imports that prove it installed
+// Anchors maps each extra of the Python tool runtimes to the imports that prove it installed
 var Anchors = map[string][]string{
-	"anthropic": {"anthropic"}, "bedrock": {"boto3"}, "vertex": {"google.auth"}, "azure-identity": {"azure.identity"},
-	"exa": {"exa_py"}, "firecrawl": {"firecrawl"}, "parallel-web": {"parallel"}, "ddgs": {"ddgs"},
-	"otlp": {"opentelemetry.sdk"}, "mistral": {"mistralai"}, "edge-tts": {"edge_tts"}, "neutts": {"neutts"},
-	"kittentts": {"kittentts", "soundfile"}, "piper": {"piper"}, "tts-premium": {"elevenlabs"},
-	"voice": {"faster_whisper"}, "stt-whisper": {"faster_whisper"}, "audio-io": {"sounddevice", "numpy"},
+	"neutts": {"neutts"}, "kittentts": {"kittentts", "soundfile"},
+	"voice": {"faster_whisper"}, "stt-whisper": {"faster_whisper"},
 	"silk": {"pilk"}, "wake": {"pyopen_wakeword"}, "wake-openwakeword": {"pyopen_wakeword"},
-	"wake-sherpa": {"sherpa_onnx"}, "wake-porcupine": {"pvporcupine"}, "fal": {"fal_client"},
-	"messaging": {"telegram"}, "telegram": {"telegram"}, "discord": {"discord"}, "slack": {"slack_bolt"},
-	"matrix": {"mautrix", "asyncpg", "aiosqlite", "markdown", "aiohttp_socks"}, "dingtalk": {"dingtalk_stream"},
-	"feishu": {"lark_oapi"}, "wecom": {"defusedxml"}, "keychain": {"keyring"}, "teams": {"microsoft_teams.apps"},
-	"modal": {"modal"}, "daytona": {"daytona"}, "vercel": {"vercel"},
-	"google":      {"googleapiclient", "google.auth", "google_auth_oauthlib.flow", "google_auth_httplib2"},
-	"google-chat": {"google.cloud.pubsub_v1"}, "google-meet": {"playwright.sync_api", "websockets"},
-	"youtube": {"youtube_transcript_api"}, "acp": {"acp"}, "web": {"fastapi"}, "doc-extract": {"anydoc"},
+	"wake-porcupine": {"pvporcupine"},
+	"google":         {"googleapiclient", "google.auth", "google_auth_oauthlib.flow", "google_auth_httplib2"},
+	"google-meet":    {"playwright.sync_api", "websockets"}, "youtube": {"youtube_transcript_api"},
 	"documents":     {"docx", "openpyxl", "pptx", "reportlab", "pypdf"},
-	"documents-pdf": {"pdfplumber", "pypdfium2"}, "computer-use": {"mcp"}, "trace-upload": {"huggingface_hub"},
-	"vision": {"PIL"},
+	"documents-pdf": {"pdfplumber", "pypdfium2"},
 }
 
 // Imports proving an extra, the extra's own name with underscores when the table lacks it
@@ -50,24 +39,26 @@ func anchors(extra string) []string {
 	return []string{strings.ReplaceAll(extra, "-", "_")}
 }
 
-// Reports whether the selected environment's interpreter finds an anchor, asked of a child hosting that interpreter
+// Reports whether the selected environment holds an anchor module, read from its package folders and PYTHONPATH
 var anchorImportable = func(ctx context.Context, anchor string) bool {
-	root := RepoRoot()
-	venv, err := SelectedVenv(ctx, root)
+	venv, err := SelectedVenv(ctx, RepoRoot())
 	if err != nil {
 		return false
 	}
-	command, err := VenvCommand(ctx, root, venv, nil)
-	if err != nil || !isRegularFile(command[0]) {
+	site, err := SitePackages(venv)
+	if err != nil {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	found, err := specprobe.FindSpecs(ctx, command[0], root, EnvList(pyEnviron()), []string{anchor})
-	return err == nil && found[0]
+	roots := moduleRoots(site)
+	for _, dir := range filepath.SplitList(pyEnviron()["PYTHONPATH"]) {
+		if dir != "" {
+			roots = append(roots, dir)
+		}
+	}
+	return moduleInstalled(roots, anchor)
 }
 
-// AnchorImportable reports whether the selected environment's interpreter finds the module through importlib find_spec
+// AnchorImportable reports whether the selected environment holds the module
 func AnchorImportable(ctx context.Context, anchor string) bool { return anchorImportable(ctx, anchor) }
 
 // Reports every anchor of an extra importable and its platform gate admitting this machine
@@ -484,8 +475,11 @@ func sameNotes(a, b map[string]string) bool {
 	return true
 }
 
-// Declared extras install without may drop, neither all nor anything all pulls in
+// Declared extras install without may drop, neither all nor anything all pulls in, none for a binary install
 func DroppableExtras(projectRoot string) ([]string, error) {
+	if runtimeOnlyProject(projectRoot) {
+		return nil, nil
+	}
 	data, err := loadPyproject(projectRoot)
 	if err != nil {
 		return nil, err
@@ -568,7 +562,7 @@ func LegacySelection(ctx context.Context, projectRoot string) ([]string, error) 
 	}
 	carried := []string{}
 	for _, extra := range sortedKeys(Anchors) {
-		if extra == "messaging" || extra == "voice" || extra == "wake" || refused[extra] {
+		if extra == "voice" || extra == "wake" || refused[extra] {
 			continue
 		}
 		held := false

@@ -201,6 +201,31 @@ func (r *WebRequest) Read() ([]byte, error) {
 	return body, nil
 }
 
+// Exactly n bytes of the raw body stream, or the shorter partial read when the stream ends first
+func (r *WebRequest) ReadExactly(ctx context.Context, n int) ([]byte, error) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		r.body.mu.Lock()
+		defer r.body.mu.Unlock()
+		buf := make([]byte, n)
+		got, err := io.ReadFull(r.body.r, buf)
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			err = nil
+		}
+		done <- result{buf[:got], err}
+	}()
+	select {
+	case res := <-done:
+		return res.data, res.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // Request path with every escape decoded except slash and percent, the yarl path_safe form
 func (r *WebRequest) PathSafe() string {
 	return pathSafe(r.RelURL.EscapedPath())

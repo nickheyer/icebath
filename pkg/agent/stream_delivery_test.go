@@ -155,7 +155,8 @@ func TestSupersededWriterIsFenced(t *testing.T) {
 }
 
 func TestStreamHookBasePayloadDefaultsTheSurface(t *testing.T) {
-	a := &AIAgent{currentTurnID: "t1", apiCallCount: 3, sessionID: "s", model: "m", provider: "p"}
+	a := &AIAgent{currentTurnID: "t1", sessionID: "s", model: "m", provider: "p"}
+	a.apiCallCount.Store(3)
 	p := a.streamHookBasePayload()
 	if p["surface"] != "cli" || p["iteration"] != 3 || p["turn_id"] != "t1" {
 		t.Fatalf("payload %v", p)
