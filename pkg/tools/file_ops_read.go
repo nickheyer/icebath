@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/unicode/norm"
 )
@@ -24,50 +23,6 @@ const (
 	utf16MaxBytes   = 10 * 1024 * 1024
 	utf16SampleSize = 512
 )
-
-// Python json.dumps of a str with ensure_ascii, surrogates and stray bytes written as their surrogate escapes
-func pyJSONDumpsASCII(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	hex4 := func(u int) {
-		const digits = "0123456789abcdef"
-		b.WriteString(`\u`)
-		b.WriteByte(digits[(u>>12)&0xf])
-		b.WriteByte(digits[(u>>8)&0xf])
-		b.WriteByte(digits[(u>>4)&0xf])
-		b.WriteByte(digits[u&0xf])
-	}
-	for i := 0; i < len(s); {
-		r, size := pystr.DecodeRune(s[i:])
-		i += size
-		switch {
-		case r == '"':
-			b.WriteString(`\"`)
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r == '\n':
-			b.WriteString(`\n`)
-		case r == '\r':
-			b.WriteString(`\r`)
-		case r == '\t':
-			b.WriteString(`\t`)
-		case r == '\b':
-			b.WriteString(`\b`)
-		case r == '\f':
-			b.WriteString(`\f`)
-		case r >= ' ' && r <= '~':
-			b.WriteRune(r)
-		case r > 0xffff:
-			v := r - 0x10000
-			hex4(0xd800 + int(v>>10))
-			hex4(0xdc00 + int(v&0x3ff))
-		default:
-			hex4(int(r))
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
 
 // UTF-16 encoding a sample implies by its BOM or zero byte parity, empty when it is not UTF-16
 func sniffUTF16(sample []byte) string {
@@ -160,20 +115,13 @@ func (s *shellFileOps) tryReadUTF16(path string, offset, limit int, fileSize int
 	if hasBinaryExtension(path) || fileSize > utf16MaxBytes {
 		return nil
 	}
-	var content, encoding string
-	var totalLines int
-	if s.nativeReadEnabled() {
-		page, total, enc, ok := s.utf16PageNative(path, offset, limit)
-		if !ok {
-			return nil
-		}
-		content, totalLines, encoding = page, total, enc
-	} else {
-		page, total, enc, ok := s.utf16PageShell(path, offset, limit)
-		if !ok {
-			return nil
-		}
-		content, totalLines, encoding = page, total, enc
+	data, failed := s.readExactBytes(path)
+	if failed != nil || len(data) > utf16MaxBytes {
+		return nil
+	}
+	content, totalLines, encoding, ok := utf16Page(data, offset, limit)
+	if !ok {
+		return nil
 	}
 	endLine := offset + limit - 1
 	truncated := totalLines > endLine
@@ -188,98 +136,6 @@ func (s *shellFileOps) tryReadUTF16(path string, offset, limit int, fileSize int
 		FileSize: fileSize, Truncated: truncated, Hint: hint,
 		TruncatedLines: s.longLineFlag(content),
 	}
-}
-
-// Host side UTF-16 page through the same steps the backend snippet runs
-func (s *shellFileOps) utf16PageNative(path string, offset, limit int) (string, int, string, bool) {
-	full := s.nativePath(path)
-	st, err := os.Stat(full)
-	if err != nil || st.Size() > utf16MaxBytes {
-		return "", 0, "", false
-	}
-	data, err := os.ReadFile(full)
-	if err != nil {
-		return "", 0, "", false
-	}
-	return utf16Page(data, offset, limit)
-}
-
-// UTF-16 page computed by a Python snippet on the backend
-func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, int, string, bool) {
-	snippet := "import sys, json, os\n" +
-		"p = " + pyJSONDumpsASCII(path) + "\n" +
-		"offset = " + strconv.Itoa(offset) + "\n" +
-		"limit = " + strconv.Itoa(limit) + "\n" +
-		"MAX = " + strconv.Itoa(utf16MaxBytes) + "\n" +
-		"SAMPLE = " + strconv.Itoa(utf16SampleSize) + "\n" +
-		"try:\n" +
-		"    size = os.path.getsize(p)\n" +
-		"    if size > MAX:\n" +
-		"        print('ICEBATH_UTF16:NO'); sys.exit(0)\n" +
-		"    with open(p, 'rb') as f:\n" +
-		"        data = f.read()\n" +
-		"    sample = data[:SAMPLE]\n" +
-		"    enc = None\n" +
-		"    if sample[:2] == b'\\xfe\\xff':\n" +
-		"        enc = 'utf-16-be'\n" +
-		"    elif sample[:2] == b'\\xff\\xfe':\n" +
-		"        enc = 'utf-16-le'\n" +
-		"    else:\n" +
-		"        odd = sum(1 for i in range(1, len(sample), 2) if sample[i] == 0)\n" +
-		"        even = sum(1 for i in range(0, len(sample), 2) if sample[i] == 0)\n" +
-		"        if even == 0 and odd >= 2:\n" +
-		"            enc = 'utf-16-le'\n" +
-		"        elif odd == 0 and even >= 2:\n" +
-		"            enc = 'utf-16-be'\n" +
-		"    if enc is None:\n" +
-		"        print('ICEBATH_UTF16:NO'); sys.exit(0)\n" +
-		"    text = data.decode(enc, 'replace')\n" +
-		"    if text[:1] == '\\ufeff':\n" +
-		"        text = text[1:]\n" +
-		"    text = text.replace('\\r\\n', '\\n')\n" +
-		"    lines = text.split('\\n')\n" +
-		"    total = len(lines)\n" +
-		"    sel = lines[offset - 1: offset - 1 + limit]\n" +
-		"    out = {'total_lines': total, 'encoding': enc,\n" +
-		"           'content': '\\n'.join(sel)}\n" +
-		"    print('ICEBATH_UTF16:OK')\n" +
-		"    print(json.dumps(out, ensure_ascii=True))\n" +
-		"except Exception:\n" +
-		"    print('ICEBATH_UTF16:NO'); sys.exit(0)\n"
-	result := s.execPythonSnippet(snippet, "")
-	if result.ExitCode != 0 && strings.Contains(result.Stdout, "python3") {
-		result = s.execPythonSnippet(snippet, "python")
-	}
-	stdout := stripTerminalFenceLeaks(result.Stdout)
-	marker := strings.Index(stdout, "ICEBATH_UTF16:OK")
-	if result.ExitCode != 0 || marker < 0 {
-		return "", 0, "", false
-	}
-	payload := pyStrip(stdout[marker+len("ICEBATH_UTF16:OK"):])
-	if i := strings.Index(payload, "\n"); i >= 0 {
-		payload = payload[:i]
-	}
-	decoded, err := pyjson.DecodeWTF8([]byte(payload))
-	data, _ := decoded.(map[string]any)
-	if err != nil {
-		return "", 0, "", false
-	}
-	content, ok := data["content"].(string)
-	if !ok {
-		return "", 0, "", false
-	}
-	total, ok := pyIntValue(data["total_lines"])
-	if !ok {
-		return "", 0, "", false
-	}
-	encoding := "utf-16"
-	if raw, present := data["encoding"]; present {
-		encoding = "None"
-		if raw != nil {
-			encoding = pyJSONStr(raw)
-		}
-	}
-	return content, total, encoding, true
 }
 
 // True pointer when any page line exceeds tool_output.max_line_length characters, nil otherwise

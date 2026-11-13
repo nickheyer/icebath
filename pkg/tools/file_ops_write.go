@@ -12,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Deletes one file, refusing directories, natively on a local POSIX host else through a backend snippet
+// Deletes one file or symlink, refusing directories, natively on a local POSIX host else through the backend shell
 func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 	path = s.expandPath(path)
 	if denied := writeDeniedError(s.env, path, "Delete", true); denied != "" {
@@ -21,28 +21,12 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 	var output string
 	var exitCode int
 	if s.nativeReadEnabled() {
-		output, exitCode = nativeDeleteEntry(path, s.nativePath(purePosixPathStr(path)))
+		output, exitCode = nativeDeleteEntry(path, s.nativePath(cleanPosixPath(path)))
 	} else {
-		snippet := "import shutil, pathlib, sys\n" +
-			"p = pathlib.Path(" + pyJSONDumpsASCII(path) + ")\n" +
-			"recursive = False\n" +
-			"try:\n" +
-			"    if p.is_dir() and not p.is_symlink():\n" +
-			"        if recursive:\n" +
-			"            shutil.rmtree(p)\n" +
-			"        else:\n" +
-			"            print('is a directory: ' + str(p), file=sys.stderr); sys.exit(2)\n" +
-			"    else:\n" +
-			"        p.unlink()\n" +
-			"except FileNotFoundError:\n" +
-			"    pass\n" +
-			"except Exception as exc:\n" +
-			"    print(str(exc), file=sys.stderr); sys.exit(1)\n"
-		result := s.execPythonSnippet(snippet, "")
-		if result.ExitCode != 0 && strings.Contains(result.Stdout, "python3") {
-			result = s.execPythonSnippet(snippet, "python")
-		}
-		output, exitCode = result.Stdout, result.ExitCode
+		arg := s.escapeShellArg(path, true)
+		result := s.exec("if [ -d "+arg+" ] && [ ! -L "+arg+" ]; then echo "+shQuote("is a directory: "+cleanPosixPath(path))+"; exit 2; fi; "+
+			"rm -f -- "+arg+" 2>&1", "", 0)
+		output, exitCode = stripTerminalFenceLeaks(result.Stdout), result.ExitCode
 	}
 	if exitCode != 0 {
 		msg := pyStrip(output)
@@ -54,9 +38,9 @@ func (s *shellFileOps) DeleteFile(path string) *WriteResult {
 	return &WriteResult{}
 }
 
-// Host side run of the delete snippet with the same output text and exit status
+// Host side delete with the directory refusal and missing entry success of the shell form
 func nativeDeleteEntry(path, full string) (string, int) {
-	shown := purePosixPathStr(path)
+	shown := cleanPosixPath(path)
 	if st, err := os.Stat(full); err == nil && st.IsDir() {
 		if lst, lerr := os.Lstat(full); lerr != nil || lst.Mode()&os.ModeSymlink == 0 {
 			return "is a directory: " + shown + "\n", 2
@@ -66,22 +50,18 @@ func nativeDeleteEntry(path, full string) (string, int) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", 0
 		}
-		return pyErrnoStr(err, shown) + "\n", 1
+		return pathErrorText(err, shown) + "\n", 1
 	}
 	return "", 0
 }
 
-// Python OSError str of an errno with the strerror text and the quoted filename
-func pyErrnoStr(err error, filename string) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return fmt.Sprintf("[Errno %d] %s: %s", int(errno), nativeStrerror(errno), pyReprStr(filename))
-	}
-	return err.Error()
+// Filename followed by the system error text of an errno
+func pathErrorText(err error, filename string) string {
+	return filename + ": " + nativeStrerror(err)
 }
 
-// str of a pathlib PurePosixPath, empty and dot components dropped and two leading slashes kept
-func purePosixPathStr(p string) string {
+// POSIX path with empty and dot components dropped and two leading slashes kept
+func cleanPosixPath(p string) string {
 	if p == "" {
 		return "."
 	}

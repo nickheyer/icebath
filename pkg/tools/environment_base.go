@@ -2071,20 +2071,78 @@ func RunIn(ctx context.Context, e Environment, argv []string, childEnv map[strin
 	return &RunInResult{Stdout: []byte(stdout.String()), Stderr: []byte(stderr.String()), ReturnCode: exitCodeOf(cmd, err)}, nil
 }
 
-// Python relay run inside the sandbox bridging stdio to a loopback port
-const tcpRelayScript = "import os,socket,sys,threading\n" +
-	"s=socket.create_connection((sys.argv[1],int(sys.argv[2])))\n" +
-	"def up():\n" +
-	"  while True:\n" +
-	"    d=os.read(0,65536)\n" +
-	"    if not d: break\n" +
-	"    s.sendall(d)\n" +
-	"  s.shutdown(socket.SHUT_WR)\n" +
-	"threading.Thread(target=up,daemon=True).start()\n" +
-	"while True:\n" +
-	"  d=s.recv(65536)\n" +
-	"  if not d: break\n" +
-	"  os.write(1,d)\n"
+// Sandbox program bridging its stdin and stdout to one TCP port
+type tcpRelay int
+
+const (
+	relayNone tcpRelay = iota
+	relayBash
+	relaySocat
+	relayNC
+)
+
+// Copies stdin to the socket in the background and the socket to stdout until the target closes
+const bashTCPRelay = `exec 3<>"/dev/tcp/$1/$2" || exit 1; cat <&0 >&3 & cat <&3; rc=$?; kill $! 2>/dev/null; exit $rc`
+
+// Prints the first relay the sandbox can run, a refused connect proving bash network redirections
+const tcpRelayProbe = `out=$( (exec 3<>/dev/tcp/127.0.0.1/1) 2>&1 ) && { echo bash; exit 0; }
+case "$out" in *connect:*|*socket:*) echo bash; exit 0;; esac
+command -v socat >/dev/null 2>&1 && { echo socat; exit 0; }
+command -v nc >/dev/null 2>&1 && { echo nc; exit 0; }
+echo none`
+
+// Silence after the client finished sending that ends a relay unable to pass the half close on
+const relayDrainIdle = 30 * time.Second
+
+var errNoTCPRelay = errors.New("sandbox port forwarding needs bash with /dev/tcp, socat, or nc inside the sandbox")
+
+// Relay chosen per environment by its one probe
+var tcpRelays sync.Map
+
+// Relay the environment runs, probed on first use and remembered for the environment
+func sandboxTCPRelay(e Environment, user string) (tcpRelay, error) {
+	if r, ok := tcpRelays.Load(e); ok {
+		if r.(tcpRelay) == relayNone {
+			return relayNone, errNoTCPRelay
+		}
+		return r.(tcpRelay), nil
+	}
+	res, err := RunIn(context.Background(), e, []string{"bash", "-c", tcpRelayProbe}, nil, user, 30*time.Second, nil)
+	if err != nil {
+		return relayNone, fmt.Errorf("probe the %s sandbox for a TCP relay: %w", e.EnvType(), err)
+	}
+	lines := strings.Fields(string(res.Stdout))
+	answer := ""
+	if len(lines) > 0 {
+		answer = lines[len(lines)-1]
+	}
+	relay := map[string]tcpRelay{"bash": relayBash, "socat": relaySocat, "nc": relayNC, "none": relayNone}
+	r, known := relay[answer]
+	if !known {
+		return relayNone, fmt.Errorf("probe the %s sandbox for a TCP relay: exit %d: %s", e.EnvType(), res.ReturnCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	tcpRelays.Store(e, r)
+	if r == relayNone {
+		return relayNone, errNoTCPRelay
+	}
+	return r, nil
+}
+
+// Argv running the relay to host and port inside the sandbox
+func (r tcpRelay) argv(host string, port int) []string {
+	p := strconv.Itoa(port)
+	switch r {
+	case relayBash:
+		return []string{"bash", "-c", bashTCPRelay, "icebath-relay", host, p}
+	case relaySocat:
+		return []string{"socat", "-t", "86400", "-", "TCP:" + net.JoinHostPort(host, p)}
+	default:
+		return []string{"nc", host, p}
+	}
+}
+
+// Whether the relay shuts down its write side to the target when its stdin ends
+func (r tcpRelay) halfCloses() bool { return r == relaySocat }
 
 // Open forwards keyed by environment, host and port
 var portForwards = struct {
@@ -2105,6 +2163,7 @@ type PortForward struct {
 	RemotePort int
 	User       string
 	LocalPort  int
+	relay      tcpRelay
 	listener   net.Listener
 	closed     atomic.Bool
 	failures   atomic.Int64
@@ -2113,14 +2172,18 @@ type PortForward struct {
 // Failures counts connections that never reached the target
 func (f *PortForward) Failures() int { return int(f.failures.Load()) }
 
-// NewPortForward starts the listener and its accept loop
+// NewPortForward picks the sandbox relay then starts the listener and its accept loop
 func NewPortForward(e Environment, remoteHost string, remotePort int, user string) (*PortForward, error) {
+	relay, err := sandboxTCPRelay(e, user)
+	if err != nil {
+		return nil, err
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	f := &PortForward{Env: e, RemoteHost: remoteHost, RemotePort: remotePort, User: user, LocalPort: port, listener: ln}
+	f := &PortForward{Env: e, RemoteHost: remoteHost, RemotePort: remotePort, User: user, LocalPort: port, relay: relay, listener: ln}
 	go f.acceptLoop()
 	return f, nil
 }
@@ -2136,12 +2199,9 @@ func (f *PortForward) acceptLoop() {
 	}
 }
 
-// Stream opener the port forward relays through, swapped in tests for a host side relay
-var openStreamFn = OpenStream
-
 // Relays one connection through an exec stream running the sandbox side relay
 func (f *PortForward) serve(conn net.Conn) {
-	p, err := openStreamFn(f.Env, []string{"python3", "-c", tcpRelayScript, f.RemoteHost, strconv.Itoa(f.RemotePort)}, nil, f.User, nil)
+	p, err := OpenStream(f.Env, f.relay.argv(f.RemoteHost, f.RemotePort), nil, f.User, nil)
 	if err != nil {
 		conn.Close()
 		f.failures.Add(1)
@@ -2149,8 +2209,16 @@ func (f *PortForward) serve(conn net.Conn) {
 	}
 	var requestMu sync.Mutex
 	var request []byte
+	var lastReply atomic.Int64
+	var drained atomic.Bool
 	go func() {
-		defer p.Stdin.Close()
+		defer func() {
+			p.Stdin.Close()
+			if !f.relay.halfCloses() {
+				lastReply.Store(time.Now().UnixNano())
+				go drainRelay(p, &lastReply, &drained)
+			}
+		}()
 		buf := make([]byte, 65536)
 		for {
 			n, err := conn.Read(buf)
@@ -2174,6 +2242,7 @@ func (f *PortForward) serve(conn net.Conn) {
 	for {
 		n, err := p.Stdout.Read(buf)
 		if n > 0 {
+			lastReply.Store(time.Now().UnixNano())
 			if reply == nil {
 				reply = append([]byte{}, buf[:n]...)
 			}
@@ -2189,10 +2258,27 @@ func (f *PortForward) serve(conn net.Conn) {
 	requestMu.Lock()
 	req := request
 	requestMu.Unlock()
-	if (reply == nil && streamExitedNonzero(p)) || staleBrowserPath(req, reply) {
+	if (reply == nil && !drained.Load() && streamExitedNonzero(p)) || staleBrowserPath(req, reply) {
 		f.failures.Add(1)
 	}
 	p.Kill()
+}
+
+// Kills a relay whose target stays silent for the drain window after the client finished sending
+func drainRelay(p *StreamProcess, lastReply *atomic.Int64, drained *atomic.Bool) {
+	for {
+		idle := time.Since(time.Unix(0, lastReply.Load()))
+		if idle >= relayDrainIdle {
+			drained.Store(true)
+			p.Kill()
+			return
+		}
+		select {
+		case <-p.done:
+			return
+		case <-time.After(relayDrainIdle - idle):
+		}
+	}
 }
 
 // Reports a relaunched Chromium answering a cached devtools browser path with 404
@@ -2234,6 +2320,9 @@ func ForwardFailures(e Environment, remotePort int, remoteHost string) int {
 func ForwardPort(e Environment, remotePort int, remoteHost, user string) (int, error) {
 	if remoteHost == "" {
 		remoteHost = "127.0.0.1"
+	}
+	if _, err := sandboxTCPRelay(e, user); err != nil {
+		return 0, err
 	}
 	key := portForwardKey{e, remoteHost, remotePort}
 	portForwards.Lock()

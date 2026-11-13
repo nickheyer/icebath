@@ -2,15 +2,15 @@ import type { GatewayWsUrlResult } from '@icebath/shared'
 import type { HermesSkin } from '@icebath/shared/skin'
 import type { TranslucencyState } from '@icebath/shared/translucency'
 
-import type { ChallengeOutcome } from '../electron/challenge-window'
-import type { ScreenshotApi } from '../electron/command-screenshot-types'
-import type { HudModifierApi } from '../electron/hud-modifier-types'
-import type { MachineProfile } from '../electron/machine-profile'
-import type { HermesNotification } from '../electron/notification-types'
-import type { KeepAwakeMode } from '../electron/power-save'
-import type { UpdateHoldWire } from '../electron/update-hold-types'
-import type { UpdateRunReport } from '../electron/updater/update-metrics'
-import type { WindowSizeMode } from '../electron/window-size-types'
+import type { ChallengeOutcome } from '@/host/types'
+import type { ScreenshotApi } from '@/host/command-screenshot-types'
+import type { HudModifierApi } from '@/host/hud-modifier-types'
+import type { MachineProfile } from '@/host/types'
+import type { HermesNotification } from '@/host/notification-types'
+import type { KeepAwakeMode } from '@/host/power-save'
+import type { UpdateHoldWire } from '@/host/update-hold-types'
+import type { UpdateRunReport } from '@/host/types'
+import type { WindowSizeMode } from '@/host/window-size-types'
 
 import type { UiPreferencesBridge } from './lib/ui-preferences/sync'
 import type { WakeIndicatorState } from './lib/wake-indicator'
@@ -1553,7 +1553,7 @@ export interface DesktopBootProgress {
 }
 
 /** What holds the install while the boot is blocked: one definition, shared with the main process. */
-export type { UpdateHoldWire } from '../electron/update-hold-types'
+export type { UpdateHoldWire } from '@/host/update-hold-types'
 
 // First-launch install ("bootstrap") event types -- emitted by
 // electron/bootstrap-runner.ts and observed by the renderer install overlay.

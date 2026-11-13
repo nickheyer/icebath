@@ -1,4 +1,4 @@
-import type { UiPreferencesSnapshot, UiPreferencesWrite } from '../../../electron/ui-preferences'
+import type { UiPreferencesSnapshot, UiPreferencesWrite } from '@/host/types'
 import { markProvisionalPreference, onPersistenceEvent, previousValueOf, provisionalPreferenceKeys } from '../storage'
 
 import { isSharedPreferenceKey } from './keys'

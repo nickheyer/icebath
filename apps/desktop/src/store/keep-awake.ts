@@ -20,7 +20,7 @@ import { translateNow } from '@/i18n'
 import { persistString, storedBoolean, storedString } from '@/lib/storage'
 import { notify } from '@/store/notifications'
 
-import { DEFAULT_KEEP_AWAKE_MODE, type KeepAwakeMode, parseKeepAwakeMode } from '../../electron/power-save'
+import { DEFAULT_KEEP_AWAKE_MODE, type KeepAwakeMode, parseKeepAwakeMode } from '@/host/power-save'
 
 export type { KeepAwakeMode }
 

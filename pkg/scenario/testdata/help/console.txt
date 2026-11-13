@@ -1,7 +1,0 @@
-usage: icebath console [-h]
-
-Open a curated Icebath command REPL. This is not a raw shell and does not expose the full Icebath
-CLI.
-
-options:
-  -h, --help  show this help message and exit

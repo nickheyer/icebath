@@ -20,8 +20,8 @@ import { failDesktopBoot } from '@/store/boot'
 import { $connection } from '@/store/session'
 import { windowProfileOverride } from '@/store/windows'
 
-import { resolveGatewayVersion } from '../../electron/gateway-version'
-import { tagRegistrySessionResponse } from '../../electron/profile-session-routing'
+import { resolveGatewayVersion } from '@/host/gateway-version'
+import { tagRegistrySessionResponse } from '@/host/profile-session-routing'
 
 /**
  * Install a capability-limited Desktop bridge when the real renderer is served

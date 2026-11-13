@@ -197,7 +197,7 @@ func (s *shellFileOps) runRgNative(argv []string, fetchLimit, timeout int, merge
 		panic(err)
 	}
 	if chdirErr := popenChdirError(cwd); chdirErr != nil {
-		return &ExecuteResult{Stdout: "rg: " + pyErrnoStr(chdirErr, cwd), ExitCode: 2}
+		return &ExecuteResult{Stdout: "rg: " + pathErrorText(chdirErr, cwd), ExitCode: 2}
 	}
 	spawnFailure := func(err error, files ...*os.File) *ExecuteResult {
 		for _, f := range files {
@@ -205,7 +205,7 @@ func (s *shellFileOps) runRgNative(argv []string, fetchLimit, timeout int, merge
 				f.Close()
 			}
 		}
-		return &ExecuteResult{Stdout: "rg: " + pyErrnoStr(err, args[0]), ExitCode: 2}
+		return &ExecuteResult{Stdout: "rg: " + pathErrorText(err, args[0]), ExitCode: 2}
 	}
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {

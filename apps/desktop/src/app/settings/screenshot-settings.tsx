@@ -5,7 +5,7 @@ import { ErrorIcon } from '@/components/ui/error-state'
 import { Loader } from '@/components/ui/loader'
 import { useI18n } from '@/i18n'
 
-import type { ScreenshotStatus } from '../../../electron/command-screenshot-types'
+import type { ScreenshotStatus } from '@/host/command-screenshot-types'
 
 import { ListRow, ToggleRow } from './primitives'
 import { SETTING_IDS, settingElementId } from './settings-manifest'
