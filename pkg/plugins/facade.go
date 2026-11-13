@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
@@ -333,15 +332,13 @@ func pluginSelectionVersion(h string) (string, error) {
 
 // Proposed selection change and where a refusal is reported
 type admitSetOptions struct {
-	ExtraDirs      []string
 	Console        *Console
 	Action         string
 	ExpectedConfig string
-	Plugin         string
 	Settled        []string
 }
 
-// Admits proposed enabled and disabled sets through the one PM transaction, reporting a refusal
+// Saves proposed enabled and disabled sets when config.yaml is unchanged since they were read, reporting a refusal
 func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map[string]bool, opts admitSetOptions) error {
 	dir, err := pluginsDir(h)
 	if err != nil {
@@ -351,19 +348,11 @@ func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map
 	if action == "" {
 		action = "enable"
 	}
-	err = admitPluginSetChange(ctx, enabled, disabled, admitOptions{ActivePluginsDir: dir, ExtraDirs: opts.ExtraDirs,
-		ExpectedConfig: opts.ExpectedConfig, Plugin: opts.Plugin, Settled: opts.Settled})
-	var conflict *DependencyConflict
+	err = admitPluginSetChange(ctx, enabled, disabled, admitOptions{ActivePluginsDir: dir, ExpectedConfig: opts.ExpectedConfig, Settled: opts.Settled})
 	var refused *AdmissionRefused
-	switch {
-	case err == nil || opts.Console == nil:
-	case errors.As(err, &conflict):
-		opts.Console.Print("[red]✗[/red] " + pyrich.Escape(conflict.Error()))
-		opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
-	case errors.As(err, &refused):
+	if err != nil && opts.Console != nil && errors.As(err, &refused) {
 		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, refused.Error()))
-		opts.Console.Print("[dim]config.yaml and the active environment are unchanged. " +
-			"Run `icebath pm install` to resolve dependencies, then retry.[/dim]")
+		opts.Console.Print("[dim]config.yaml is unchanged.[/dim]")
 	}
 	return err
 }

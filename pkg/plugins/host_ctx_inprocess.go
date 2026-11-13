@@ -98,10 +98,7 @@ func init() {
 // Context key of the repr the child took of a Slack action id before it crossed
 type actionReprKey struct{}
 
-// Builder the child turns the Go acknowledgement into a slack_bolt ack with
-const slackAckBuilder = "slack_bolt.context.ack:Ack"
-
-// Slack action listener running a hosted callback(ack, body, action) with bolt's ack completing the Go acknowledgement
+// Slack action listener running a guest callback with the acknowledgement as a host callable and plain body and action
 func hostedSlackAction(f *HostedCallable) func(context.Context, func(map[string]any) error, map[string]any, map[string]any) error {
 	return func(ctx context.Context, ack func(map[string]any) error, body, action map[string]any) error {
 		complete := HostCallable(func(_ context.Context, args []any, _ map[string]any) (any, error) {
@@ -111,7 +108,7 @@ func hostedSlackAction(f *HostedCallable) func(context.Context, func(map[string]
 			}
 			return nil, ack(payload)
 		})
-		_, _, err := f.CallWith(ctx, []any{complete, body, action}, nil, HostedCallOptions{Build: []string{slackAckBuilder}})
+		_, err := f.Call(ctx, []any{complete, body, action}, nil)
 		return err
 	}
 }

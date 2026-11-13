@@ -570,3 +570,22 @@ func (h *host) SDK(ctx context.Context, op string, args []any, kwargs map[string
 	return h.peer.call(ctx, "sdk", map[string]any{"plugin": h.key, "op": op, "args": h.peer.encode(listOrEmpty(args)),
 		"kwargs": h.peer.encode(mapOrEmpty(kwargs))})
 }
+
+func (h *host) RegisterCLICommand(cmd CLICommand) (*Handle, error) {
+	if cmd.Run == nil {
+		return nil, fmt.Errorf("CLI command %q has no run function", cmd.Name)
+	}
+	run := h.peer.funcRef(cmd.Name, func(ctx context.Context, args []any, kwargs map[string]any) (any, error) {
+		var argv []string
+		if len(args) > 0 {
+			argv = stringsOf(args[0])
+		}
+		options, _ := kwargs["options"].(map[string]any)
+		output, code, err := cmd.Run(ctx, argv, mapOrEmpty(options))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"output": output, "code": int64(code)}, nil
+	})
+	return h.register("register_cli_command", nil, map[string]any{"name": cmd.Name, "help": cmd.Help, "run": run, "description": cmd.Description})
+}

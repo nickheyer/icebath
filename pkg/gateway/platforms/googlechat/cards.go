@@ -16,7 +16,7 @@ var (
 	boldItalRe  = regexp.MustCompile(`\*\*\*(.+?)\*\*\*`)
 	boldRe      = regexp.MustCompile(`\*\*(.+?)\*\*`)
 	linkRe      = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
-	invisibleRe = regexp.MustCompile("[​-‏⁠﻿︀-️\U000e0100-\U000e01ef]")
+	invisibleRe = regexp.MustCompile("[​-‏⁠\ufeff︀-️\U000e0100-\U000e01ef]")
 	spacesRe    = regexp.MustCompile(`  +`)
 )
 

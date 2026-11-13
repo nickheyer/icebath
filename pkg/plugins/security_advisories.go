@@ -19,16 +19,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// One package of an advisory with its compromised versions, an empty set flagging any installed version
+// One plugin of an advisory with its compromised versions, an empty set flagging any installed version
 type AdvisoryPackage struct {
 	Name     string
 	Versions map[string]bool
 }
 
-// One security advisory, its stable id, the compromised packages and the ordered remediation steps
+// One security advisory, its stable id, the compromised plugins and the ordered remediation steps
 type Advisory struct {
 	ID          string
 	Title       string
@@ -40,61 +39,27 @@ type Advisory struct {
 	Severity    string
 }
 
-// Advisory catalog, entries are appended and never removed
-var Advisories = []Advisory{
-	{
-		ID:    "shai-hulud-2026-05",
-		Title: "Mini Shai-Hulud worm — mistralai 2.4.6 compromised on PyPI",
-		Summary: "PyPI quarantined the mistralai package on 2026-05-12 after a " +
-			"malicious 2.4.6 release. The worm steals credentials from " +
-			"environment variables and credential files (~/.npmrc, ~/.pypirc, " +
-			"~/.aws/credentials, GitHub PATs, cloud SDK tokens) and exfils " +
-			"them to a hardcoded webhook. If you ran any Python process that " +
-			"imported mistralai 2.4.6 — including a Python plugin or tool " +
-			"runtime icebath ran from its managed environment — assume those credentials " +
-			"are exposed. PyPI has since removed 2.4.6 and the project ships " +
-			"clean releases again (2.4.7, 2.4.8); this advisory only fires if " +
-			"the compromised 2.4.6 is still installed in that environment.",
-		URL:         "https://socket.dev/blog/mini-shai-hulud-worm-pypi",
-		Compromised: []AdvisoryPackage{{Name: "mistralai", Versions: map[string]bool{"2.4.6": true}}},
-		Remediation: []string{
-			"Run: icebath pm update --uv  (re-resolves the managed Python environment past mistralai 2.4.6)",
-			"Rotate API keys in {icebath_home}/.env (OpenRouter, Anthropic, OpenAI, " +
-				"Nous, GitHub, AWS, Google, Mistral, etc.).",
-			"Audit ~/.npmrc, ~/.pypirc, ~/.aws/credentials, ~/.config/gh/hosts.yml, " +
-				"and any other credential files for tokens that may have been read.",
-			"Check GitHub for unexpected new SSH keys, deploy keys, or webhook " +
-				"additions on repos you have admin on.",
-			"After cleanup: icebath doctor --ack shai-hulud-2026-05  to dismiss " +
-				"this warning.",
-		},
-		Published: "2026-05-12",
-		Severity:  "critical",
-	},
-}
+// Advisory catalog of plugins icebath loads, entries are appended and never removed
+var Advisories = []Advisory{}
 
-// One package version match against an advisory
+// One plugin version match against an advisory
 type AdvisoryHit struct {
 	Advisory         Advisory
 	Package          string
 	InstalledVersion string
 }
 
-// Installed version of a distribution in the managed Python environment, false when absent or unreadable
-var advisoryInstalledVersion = func(ctx context.Context, pkgName string) (string, bool) {
-	venv, err := pm.SelectedVenv(ctx, pm.RepoRoot())
-	if err == nil {
-		var site string
-		if site, err = pm.SitePackages(venv); err == nil {
-			version, found := findDistributionVersion(pkgName, []string{site})
-			return version, found && version != ""
+// Version the installed plugin of a name declares in its manifest, false when no such plugin is installed
+var advisoryInstalledVersion = func(ctx context.Context, pluginName string) (string, bool) {
+	for _, m := range CollectDirectoryManifests(home.Dir(ctx)) {
+		if m.Source != "bundled" && (m.Name == pluginName || m.ID() == pluginName) {
+			return m.Version, true
 		}
 	}
-	slog.Debug(fmt.Sprintf("managed environment version of %s unreadable", pkgName), "error", err)
 	return "", false
 }
 
-// Every advisory package that is installed at a compromised version, or at any version for an empty set
+// Every advisory plugin that is installed at a compromised version, or at any version for an empty set
 func DetectCompromised(ctx context.Context, advisories []Advisory) []AdvisoryHit {
 	hits := []AdvisoryHit{}
 	for _, advisory := range advisories {
@@ -200,7 +165,7 @@ func AdvisoryShortBannerLines(hits []AdvisoryHit) []string {
 		lines = append(lines, fmt.Sprintf("  (%d additional advisor%s also active.)", len(hits)-1, suffix))
 	}
 	return append(lines,
-		fmt.Sprintf("  Detected: %s==%s", primary.Package, primary.InstalledVersion),
+		fmt.Sprintf("  Detected: %s %s", primary.Package, primary.InstalledVersion),
 		"  Run 'icebath doctor' for remediation steps.")
 }
 
@@ -244,7 +209,7 @@ func AdvisoryFullRemediationText(ctx context.Context, hit AdvisoryHit) ([]string
 	lines := []string{
 		fmt.Sprintf("=== %s ===", a.Title),
 		fmt.Sprintf("ID:        %s    Severity: %s    Published: %s", a.ID, a.Severity, a.Published),
-		fmt.Sprintf("Detected:  %s==%s", hit.Package, hit.InstalledVersion),
+		fmt.Sprintf("Detected:  %s %s", hit.Package, hit.InstalledVersion),
 		fmt.Sprintf("Reference: %s", a.URL),
 		"",
 		a.Summary,
@@ -389,7 +354,7 @@ func AdvisoryGatewayLogMessage(ctx context.Context, hits []AdvisoryHit) string {
 	}
 	if len(fresh) == 1 {
 		h := fresh[0]
-		return fmt.Sprintf("Security advisory [%s] active: %s==%s matches %s. See %s",
+		return fmt.Sprintf("Security advisory [%s] active: %s %s matches %s. See %s",
 			h.Advisory.ID, h.Package, h.InstalledVersion, h.Advisory.Title, h.Advisory.URL)
 	}
 	ids := make([]string, 0, len(fresh))

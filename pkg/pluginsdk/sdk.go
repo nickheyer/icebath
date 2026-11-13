@@ -122,6 +122,14 @@ type ToolCall struct {
 	UserTask  string
 }
 
+// One `icebath <name>` subcommand, run with its raw arguments and the top level options
+type CLICommand struct {
+	Name        string
+	Help        string
+	Description string
+	Run         func(ctx context.Context, argv []string, options map[string]any) (output string, code int, err error)
+}
+
 // One slash command
 type Command struct {
 	Name         string
@@ -370,6 +378,7 @@ type Host interface {
 	RegisterHook(name string, fn HookFunc, holdStream bool) (*Handle, error)
 	RegisterMiddleware(kind string, fn HookFunc) (*Handle, error)
 	RegisterCommand(cmd Command) (*Handle, error)
+	RegisterCLICommand(cmd CLICommand) (*Handle, error)
 	RegisterProvider(kind string, provider *Object) (*Handle, error)
 	RegisterLoginBackend(backend LoginBackend) (*Handle, error)
 	RegisterPlatform(platform Platform) (*Handle, error)

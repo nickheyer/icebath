@@ -50,10 +50,10 @@ var noGitRevisionDirs = map[string]bool{"dashboard": true, "desktop": true, "ski
 
 var noGitRevisionExtensions = map[string]bool{".mjs": true, ".cjs": true, ".jsx": true, ".tsx": true}
 
-var surfaceKeys = []string{"capabilities", "tools", "hooks", "python_dependencies", "desktop", "requires_auth", "oauth"}
+var surfaceKeys = []string{"capabilities", "tools", "hooks", "grants", "desktop", "requires_auth", "oauth"}
 
 var surfaceLabels = map[string]string{"capabilities": "host capabilities", "tools": "tools", "hooks": "hooks",
-	"python_dependencies": "Python dependencies", "desktop": "Desktop UI half",
+	"grants": "granted access", "desktop": "Desktop UI half",
 	"requires_auth": "your sign-in for", "oauth": "your OAuth sign-in for"}
 
 var presenceSurfaces = map[string]bool{"desktop": true}
@@ -723,7 +723,7 @@ func pluginSurface(manifest map[string]any, tree string) (map[string]map[string]
 	return map[string]map[string]bool{
 		"capabilities": toSet(declaredCapabilitiesFromManifest(manifest, name)),
 		"tools":        list("provides_tools"), "hooks": list("provides_hooks", "hooks"),
-		"python_dependencies": list("python_dependencies"), "requires_auth": list("requires_auth"),
+		"grants": grantSurface(manifest), "requires_auth": list("requires_auth"),
 		"oauth":   svc.OAuthSurface(manifest),
 		"desktop": desktopSurface(tree),
 	}, nil
@@ -899,7 +899,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 			}
 		}
 		if changed {
-			if err := admitAndSavePluginSets(ctx, h, enabled, disabled, admitSetOptions{Action: fmt.Sprintf("Rename plugin '%s' to '%s'", filepath.Base(target), installedName), Plugin: installedName}); err != nil {
+			if err := admitAndSavePluginSets(ctx, h, enabled, disabled, admitSetOptions{Action: fmt.Sprintf("Rename plugin '%s' to '%s'", filepath.Base(target), installedName)}); err != nil {
 				return nil, err
 			}
 		}

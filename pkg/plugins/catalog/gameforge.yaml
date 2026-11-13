@@ -13,7 +13,7 @@ description: >-
   UnrealEditor-Cmd, ffmpeg, xvfb-run or butler only when a call asks for them; blender
   action=script runs a bpy file the caller names. Network only when asked: fal.ai, Tripo or Meshy
   (FAL_KEY / TRIPO_API_KEY / MESHY_API_KEY, prompt and image sent), ElevenLabs (ELEVENLABS_API_KEY, SFX prompt),
-  Edge TTS (dialogue text), Godot export templates from GitHub
+  Edge TTS when edge-tts is installed (dialogue text), Godot export templates from GitHub
   (~1 GB, target=godot_templates), itch.io via butler (target=itch with an explicit itch_target).
   Writes only inside the game project directory, plus a temporary browser profile. No telemetry.
 maintainer: DECRUX9812

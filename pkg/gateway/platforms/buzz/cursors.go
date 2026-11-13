@@ -146,7 +146,7 @@ func loadCursors(ctx context.Context, identity, relay string) map[string]savedCu
 		}
 		return out
 	}
-	decoded, err := decodeJSON(bytes.TrimPrefix(raw, []byte("﻿")))
+	decoded, err := decodeJSON(bytes.TrimPrefix(raw, []byte("\ufeff")))
 	if err != nil {
 		slog.Debug("Buzz: could not read channel cursors", "error", err)
 		return out

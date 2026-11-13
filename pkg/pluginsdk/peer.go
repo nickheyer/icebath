@@ -627,6 +627,9 @@ func (p *peer) decode(v any) any {
 		if id, ok := integer(x["__parent_event__"]); ok {
 			return &Event{peer: p, id: id}
 		}
+		if id, ok := integer(x["__child_object__"]); ok {
+			return p.object(id)
+		}
 		if name, ok := x["__record__"].(string); ok {
 			fields, _ := p.decode(x["fields"]).(map[string]any)
 			return Record{Type: name, Fields: fields}

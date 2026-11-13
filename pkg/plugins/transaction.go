@@ -1,86 +1,118 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Recovers a shipped caller's publication row through the boot journal owner
-func RecoverPluginPublication(ctx context.Context, project string, row map[string]any, journal string) error {
-	return pm.RecoverPluginPublication(ctx, project, row, journal)
-}
-
-// Whether a plugin tree is part of the effective enabled selection, counting the tree being installed
-func activePluginTree(ctx context.Context, target string, installing bool) (bool, error) {
-	opts := pm.EnabledPluginsOptions{}
-	if installing {
-		opts.Installing = target
-	}
-	dirs, err := enabledPluginDirs(ctx, opts)
+// Whether a plugin tree is active in the home, its manifest named in plugins.enabled and not disabled or the memory provider
+func activePluginTree(h, target string) (bool, error) {
+	manifest, err := ReadManifestForInstall(target)
 	if err != nil {
 		return false, err
 	}
-	resolved := resolvePath(target)
-	for _, dir := range dirs {
-		if resolvePath(dir) == resolved {
-			return true, nil
-		}
+	names := map[string]bool{filepath.Base(target): true}
+	if name := scalarString(manifest["name"]); name != "" {
+		names[name] = true
 	}
-	return false, nil
+	cfg := loadConfigOrEmpty(h)
+	if intersects(names, disabledPlugins(cfg)) {
+		return false, nil
+	}
+	if enabled, present := enabledPlugins(cfg); present && intersects(names, enabled) {
+		return true, nil
+	}
+	return names[getCurrentMemoryProvider(h)], nil
 }
 
-// How a staged tree is published and whose consent it already carries
+// How a staged tree is published and the target digest it was prepared against
 type publishOptions struct {
 	TargetDigest *string
 }
 
-// Publishes a staged tree over its target and the metadata change through one PM sync
-func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newMetadata map[string]any, opts publishOptions) error {
-	_, statErr := os.Stat(target)
-	exists := statErr == nil
-	if isFilePath(filepath.Join(staged, "__init__.py")) {
-		manifest, err := ReadManifestForInstall(staged)
-		if err != nil {
-			return err
-		}
-		if !config.PyTruthy(manifest["entry"]) {
-			return &PluginOperationError{Msg: fmt.Sprintf("%s is Python source and was not installed; %s.", manifestText(manifest, "name", filepath.Base(target)), PluginFormsText),
-				FailureClass: "unsupported_form"}
-		}
-	}
-	absTarget, err := filepath.Abs(target)
+// Validates the staged tree's form, swaps it over its target and records the new install metadata under the metadata lock
+func publishPlugin(ctx context.Context, h, staged, target string, oldMetadata, newMetadata map[string]any, opts publishOptions) error {
+	manifest, err := ReadManifestForInstall(staged)
 	if err != nil {
 		return err
 	}
-	var digest any
-	if opts.TargetDigest != nil {
-		digest = *opts.TargetDigest
-	} else if exists {
-		if digest, err = pm.TreeDigest(target); err != nil {
+	form := &ValidationReport{}
+	checkLoadable(form, staged, manifest)
+	if !form.OK() {
+		return &PluginOperationError{Msg: fmt.Sprintf("%s was not installed: %s.", manifestText(manifest, "name", filepath.Base(target)), UnknownPluginFormText),
+			FailureClass: "unsupported_form"}
+	}
+	return withInstallMetadataLock(ctx, h, func(ctx context.Context) error {
+		current, err := readInstallMetadata(h)
+		if err != nil {
 			return err
 		}
-	}
-	return syncVenv(ctx, pm.SyncVenvOptions{Explicit: true, Plugins: &pm.StagedUpdate{Data: map[string]any{
-		"staged": resolvePath(staged), "target": absTarget, "old_metadata": oldMetadata,
-		"new_metadata": newMetadata, "target_digest": digest,
-	}}})
+		if !jsonEqual(current, oldMetadata) {
+			return &PluginOperationError{Msg: "Plugin install metadata changed while preparing the install; retry."}
+		}
+		_, statErr := os.Lstat(target)
+		exists := statErr == nil
+		if exists && opts.TargetDigest != nil {
+			digest, err := pm.TreeDigest(target)
+			if err != nil {
+				return err
+			}
+			if digest != *opts.TargetDigest {
+				return &PluginOperationError{Msg: "Plugin files changed while preparing the update; retry."}
+			}
+		}
+		backup := ""
+		if exists {
+			holder, err := os.MkdirTemp(filepath.Dir(target), ".replaced-")
+			if err != nil {
+				return err
+			}
+			backup = filepath.Join(holder, "plugin")
+			if err := os.Rename(target, backup); err != nil {
+				os.Remove(holder)
+				return err
+			}
+		}
+		restore := func() {
+			if backup != "" {
+				os.RemoveAll(target)
+				os.Rename(backup, target)
+				os.Remove(filepath.Dir(backup))
+			}
+		}
+		if err := os.Rename(staged, target); err != nil {
+			restore()
+			return err
+		}
+		if err := writeInstallMetadata(ctx, h, newMetadata); err != nil {
+			os.Rename(target, staged)
+			restore()
+			return err
+		}
+		if backup != "" {
+			os.RemoveAll(filepath.Dir(backup))
+		}
+		return nil
+	})
 }
 
-// Effective enabled plugin trees, swapped by tests that pin the selection the way hermes patches it
-var enabledPluginDirs = pm.EnabledPluginDirs
-
-// Venv publication of a staged plugin, swapped by tests that act inside the window before its lock
-var syncVenv = pm.SyncVenv
+// Whether two JSON documents hold the same values
+func jsonEqual(a, b map[string]any) bool {
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
 
 // File bytes, nil when the file cannot be read
 func bytesOrNil(path string) []byte {
@@ -315,5 +347,5 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 	if newTarget == target {
 		publish.TargetDigest = &before
 	}
-	return output, publishPlugin(ctx, staged, newTarget, metadata, newMetadata, publish)
+	return output, publishPlugin(ctx, h, staged, newTarget, metadata, newMetadata, publish)
 }

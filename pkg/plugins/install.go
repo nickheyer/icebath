@@ -517,7 +517,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 		NewConsole(os.Stdout).Print(fmt.Sprintf("[yellow]Local edits to %d tracked file(s) were not carried over; "+
 			"copies are under %s (re-apply by hand).[/yellow]", len(trackedEdits), backup))
 	}
-	if err := publishPlugin(ctx, tmpTarget, target, oldMetadata, newMetadata, publishOptions{}); err != nil {
+	if err := publishPlugin(ctx, h, tmpTarget, target, oldMetadata, newMetadata, publishOptions{}); err != nil {
 		return "", &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' was not published: %v", pluginName, err), FailureClass: publishFailureClass(err)}
 	}
 	return target, nil
@@ -527,7 +527,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 func publishFailureClass(err error) (class string) {
 	defer func() {
 		if recover() != nil {
-			class = "deps_failed"
+			class = "other"
 		}
 	}()
 	var opErr *PluginOperationError
@@ -544,14 +544,10 @@ func publishFailureClass(err error) (class string) {
 	if errno == syscall.EACCES || errno == syscall.EPERM || errors.Is(err, fs.ErrPermission) {
 		return "permission"
 	}
-	switch errno {
-	case syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE, syscall.ESHUTDOWN, syscall.ETIMEDOUT:
-		return "deps_failed"
-	}
 	if isOS {
 		return "filesystem_error"
 	}
-	return "deps_failed"
+	return "other"
 }
 
 // Shared metrics recorder of plugin installs, the module attribute the hermes cases replace
@@ -681,7 +677,7 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	if err := promptPluginEnvVars(ctx, h, installedManifest, console); err != nil {
 		return err
 	}
-	alreadyActive, err := activePluginTree(ctx, target, false)
+	alreadyActive, err := activePluginTree(h, target)
 	if err != nil {
 		return err
 	}

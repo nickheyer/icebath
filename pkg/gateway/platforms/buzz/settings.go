@@ -467,7 +467,7 @@ func (s *settings) credentialsData() map[string]any {
 		if err != nil {
 			continue
 		}
-		raw = bytes.TrimPrefix(raw, []byte("﻿"))
+		raw = bytes.TrimPrefix(raw, []byte("\ufeff"))
 		if !utf8.Valid(raw) {
 			continue
 		}

@@ -110,9 +110,6 @@ func UnknownPluginMessage(name string, downloadedOnly bool) string {
 	return unknownPluginMessage(name, downloadedOnly)
 }
 
-// Frozen old updater entry that stops for relaunch instead of writing a raw plugin selection
-func saveEnabledSet(ctx context.Context) error { return pm.StopForRelaunch(ctx) }
-
 // Drops the bundled basic dashboard auth plugin from plugins.disabled, true when the config changed
 func EnsureBasicAuthPluginEnabledInConfig(cfg map[string]any) bool {
 	pluginsCfg, _ := cfg["plugins"].(map[string]any)
@@ -194,12 +191,12 @@ func activateKey(ctx context.Context, h, key string, enable bool, console *Conso
 
 // Whether an update disabled the plugin and records it for retry
 func disabledByUpdate(h, key string, aliases map[string]bool) (bool, error) {
-	selection, err := pm.ReadHomeSelection(h)
+	selection, err := readUserConfig(h)
 	if err != nil {
 		return false, err
 	}
 	plugins, _ := selection["plugins"].(map[string]any)
-	record, ok := plugins[pm.DisabledByUpdateRecord].(map[string]any)
+	record, ok := plugins[disabledByUpdateKey].(map[string]any)
 	if !ok {
 		return false, nil
 	}
@@ -273,7 +270,7 @@ func setPluginEnabled(ctx context.Context, h, name string, enable bool, aliases 
 	if err != nil {
 		return err
 	}
-	selection, err := pm.ReadHomeSelection(h)
+	selection, err := readUserConfig(h)
 	if err != nil {
 		return err
 	}
@@ -289,12 +286,12 @@ func setPluginEnabled(ctx context.Context, h, name string, enable bool, aliases 
 		}
 	}
 	applyActivation(enabled, disabled, name, aliases, enable)
-	verb, plugin := "Disable", ""
+	verb := "Disable"
 	if enable {
-		verb, plugin = "Enable", name
+		verb = "Enable"
 	}
 	return admitAndSavePluginSets(ctx, h, enabled, disabled, admitSetOptions{Console: console,
-		Action: fmt.Sprintf("%s '%s'", verb, name), ExpectedConfig: expected, Plugin: plugin,
+		Action: fmt.Sprintf("%s '%s'", verb, name), ExpectedConfig: expected,
 		Settled: append([]string{name}, aliases...)})
 }
 

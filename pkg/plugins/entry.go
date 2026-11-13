@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugintree"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -129,7 +128,7 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 	}
 }
 
-// Every plugin the loader sees in load order, compiled-in and bundled first, then user plugins, then entry points
+// Every plugin the loader sees in load order, compiled-in and bundled override plugins first, then user plugins
 func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 	seen := &entrySet{byKey: map[string]PluginEntry{}}
 	for _, m := range bundledManifests() {
@@ -139,8 +138,6 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 	}
 	if dir := bundledOverrideDir(); dir != "" {
 		scanLevel(dir, "bundled", listingBundledSkip, "", 0, seen)
-	} else {
-		scanCompiledLevel(plugintree.Compiled(), ".", listingBundledSkip, "", 0, seen)
 	}
 	user, err := pluginsDir(h)
 	if err != nil {
