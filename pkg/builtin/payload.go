@@ -2,7 +2,7 @@ package builtin
 
 import (
 	"crypto/sha256"
-	_ "embed"
+	"embed"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -10,23 +10,17 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
-//go:embed payload.tar.zst
-var payloadArchive []byte
-
-// Embedded plugin projects served under payload like the tree they were packed from
-var payloadFS = tarzst.NewFS(payloadArchive, "payload")
-
-//go:embed payload_manifest.txt
-var payloadManifest string
+// Embedded plugin projects, one directory per project
+//
+//go:embed all:payload
+var payloadFS embed.FS
 
 // Bumped whenever the derived host layout written beside the payload changes shape
 const hostLayoutVersion = "2"
@@ -59,21 +53,34 @@ func (t *Tree) Host(rel string) string {
 	return filepath.Join(t.Root, "host", filepath.FromSlash(rel))
 }
 
-// Parsed payload manifest lines in path order
+var (
+	payloadEntriesOnce sync.Once
+	payloadEntryList   []payloadEntry
+	payloadEntryErr    error
+)
+
+// Every embedded payload file in path order with its digest and mode, scripts being executable
 func manifestEntries() ([]payloadEntry, error) {
-	var out []payloadEntry
-	for _, line := range strings.Split(strings.TrimRight(payloadManifest, "\n"), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 {
-			return nil, fmt.Errorf("builtin: malformed payload manifest line %q", line)
-		}
-		mode, err := strconv.ParseUint(fields[2], 8, 32)
-		if err != nil {
-			return nil, fmt.Errorf("builtin: malformed payload mode in %q", line)
-		}
-		out = append(out, payloadEntry{Path: fields[0], Sum: fields[1], Mode: fs.FileMode(mode)})
-	}
-	return out, nil
+	payloadEntriesOnce.Do(func() {
+		payloadEntryErr = fs.WalkDir(payloadFS, "payload", func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := payloadFS.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			mode := fs.FileMode(0o644)
+			if strings.HasPrefix(string(data[:min(len(data), 2)]), "#!") {
+				mode = 0o755
+			}
+			sum := sha256.Sum256(data)
+			payloadEntryList = append(payloadEntryList, payloadEntry{Path: strings.TrimPrefix(p, "payload/"), Sum: hex.EncodeToString(sum[:]), Mode: mode})
+			return nil
+		})
+		sort.Slice(payloadEntryList, func(i, j int) bool { return payloadEntryList[i].Path < payloadEntryList[j].Path })
+	})
+	return payloadEntryList, payloadEntryErr
 }
 
 // Embedded bytes of a payload file given relative to the references root
@@ -97,7 +104,11 @@ func payloadUnder(prefix string) []string {
 // Sixteen hex digits naming the payload, the host layout version and the running icebath version
 func payloadDigest() string {
 	sum := sha256.New()
-	fmt.Fprintf(sum, "%s\x00%s\x00%s", plugins.RunningVersion, hostLayoutVersion, payloadManifest)
+	fmt.Fprintf(sum, "%s\x00%s\x00", plugins.RunningVersion, hostLayoutVersion)
+	entries, _ := manifestEntries()
+	for _, e := range entries {
+		fmt.Fprintf(sum, "%s %s %04o\n", e.Path, e.Sum, e.Mode)
+	}
 	return hex.EncodeToString(sum.Sum(nil))[:16]
 }
 
