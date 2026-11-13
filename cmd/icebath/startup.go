@@ -52,7 +52,6 @@ func startProcess(ctx context.Context) {
 // Hidden child modes a re-executed binary dispatches once the hooks their Python imports install are wired
 func dispatchChildEntries(ctx context.Context) {
 	selfupdate.DispatchCustodyLauncher()
-	selfupdate.DispatchDesktopUpdateVerifyEntry(ctx, exit)
 	selfupdate.DispatchWindowsAppInstallerUpdateEntry(exit)
 	home.DispatchScratchPruneEntry(ctx)
 	relayhost.DispatchRelayHostEntry(ctx)

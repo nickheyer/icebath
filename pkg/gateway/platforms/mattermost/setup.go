@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Mattermost wizard of icebath gateway setup writing the server, token, allowlist and home channel to the home .env
@@ -57,7 +56,7 @@ func InteractiveSetup(ctx context.Context) error {
 	info("📬 Home Channel: where Icebath delivers cron job results and notifications.",
 		"   To get a channel ID: click channel name → View Info → copy the ID",
 		"   You can also set this later by typing /set-home in a Mattermost channel.")
-	if home := pystr.Strip(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); home != "" {
+	if home := strings.TrimSpace(cli.Prompt("Home channel ID (leave empty to set later with /set-home)", "", false)); home != "" {
 		if err := cfg.SaveEnvValue(ctx, "MATTERMOST_HOME_CHANNEL", home); err != nil {
 			return err
 		}

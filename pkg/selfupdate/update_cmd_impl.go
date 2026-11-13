@@ -370,9 +370,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if len(token) > 0 {
 		registerUpdateExitHook(resumeWindowsGatewaysHook, resume)
 	}
-	desktopDir := filepath.Join(root, "apps", "desktop")
-	_, packaged := desktopPackagedExecutable(desktopDir)
-	hadDesktopAppBeforeUpdate := packaged || desktopDistExists(desktopDir) || len(installedDesktopApps()) > 0
+	hadDesktopAppBeforeUpdate := desktopAppPresent(root)
 	releaseBinary, err := releaseBinaryInstall(ctx, root)
 	if err != nil {
 		return err

@@ -143,8 +143,8 @@ func executeCode(ctx context.Context, env *tools.Env, code, taskID string, enabl
 			"(process-identity probe wedged); the code was not run. Retry the call.")
 	}
 	if supervised, _ := probe.Value.(bool); supervised && tools.ContainsGatewayLifecycleCommand(code) {
-		if tools.ContainsHostInterpreterKill(code) {
-			return toolError(tools.HostInterpreterKillRejection)
+		if tools.ContainsGatewayImageKill(code) {
+			return toolError(tools.GatewayImageKillRejection)
 		}
 		return toolError("Blocked: cannot restart or stop the gateway from inside the " +
 			"gateway process. The gateway would kill this script before " +

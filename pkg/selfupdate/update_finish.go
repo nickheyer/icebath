@@ -25,7 +25,7 @@ var RunCLIHook func(argv []string) int
 
 // Steps of a historical finish, each the host behaviour unless a hermes test replaces it
 var (
-	finishBuildProducts    = BuildUpdateProducts
+	finishPrepareInstall   = PrepareUpdatedInstall
 	finishMaintenance      = RunPostUpdateMaintenance
 	finishRestartFleet     = restartGatewayFleetAfterUpdate
 	finishMergeResume      = resumeWindowsGatewaysAndMergeOutcome
@@ -271,9 +271,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 		desktopValue := request.GetOr("desktop", nil)
 		desktop := pyrepr.Truthy(desktopValue)
 		if desktopValue == nil {
-			desktopDir := filepath.Join(root, "apps", "desktop")
-			_, packaged := desktopPackagedExecutable(desktopDir)
-			desktop = packaged || desktopDistExists(desktopDir)
+			desktop = desktopAppPresent(root)
 		}
 		if _, err := ArmCompletion(ctx, root); err != nil {
 			if !pypath.IsOSError(err) {
@@ -282,7 +280,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			fmt.Fprintf(stdout, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
 		}
 		owed := [][2]string{}
-		if err := finishBuildProducts(ctx, root, desktop); err != nil {
+		if err := finishPrepareInstall(ctx, stdout, root); err != nil {
 			if isInterrupt(err) {
 				return err
 			}

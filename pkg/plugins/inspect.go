@@ -34,7 +34,7 @@ type inspectionSlot struct {
 	finishedAt time.Time
 }
 
-var agentPayloadFiles = []string{"__init__.py", filepath.Join("dashboard", "manifest.json")}
+var agentPayloadFiles = []string{filepath.Join("dashboard", "manifest.json")}
 
 // Manifest of a small regular file that parses to a mapping, empty otherwise
 func readInspectedManifest(path string, loads func(string) (any, error)) map[string]any {
@@ -92,8 +92,11 @@ func isDirectory(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// Whether a plugin.yaml folder ships a package, dashboard or manifest only language pack the agent loads
+// Whether a plugin.yaml folder ships a runtime entry, dashboard or manifest only language pack the agent loads
 func yamlShipsAgentPayload(root string, manifest map[string]any) bool {
+	if jsonTruthy(manifest["entry"]) {
+		return true
+	}
 	if slices.ContainsFunc(agentPayloadFiles, func(rel string) bool { return isRegularFile(filepath.Join(root, rel)) }) {
 		return true
 	}

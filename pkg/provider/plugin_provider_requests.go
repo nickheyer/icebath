@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -72,8 +71,6 @@ type ProviderRequestOptions struct {
 	Headers map[string]string
 	// Zero is the 30 second default and a negative value waits without a timeout
 	Timeout time.Duration
-	// Source files on the calling stack innermost first, nil reads the Go call stack
-	Caller []string
 }
 
 type pluginProviderSpec struct {
@@ -146,11 +143,10 @@ func pluginOriginIn(origin PluginOrigin, origins []PluginOrigin) bool {
 
 // Every plugins directory an installed plugin can live under, each as given and resolved
 func pluginProviderRequestRoots() []string {
-	bundled := os.Getenv("ICEBATH_BUNDLED_PLUGINS")
-	if bundled == "" {
-		bundled = filepath.Join(pm.RepoRoot(), "plugins")
+	bases := []string{home.PluginsDir(envHome(pkceEnvFn())), home.PluginsDir(home.Process()), home.PluginsDir(home.Root())}
+	if bundled := os.Getenv("ICEBATH_BUNDLED_PLUGINS"); bundled != "" {
+		bases = append(bases, bundled)
 	}
-	bases := []string{home.PluginsDir(envHome(pkceEnvFn())), home.PluginsDir(home.Process()), home.PluginsDir(home.Root()), bundled}
 	seen := map[string]bool{}
 	var roots []string
 	for _, base := range bases {
@@ -181,54 +177,6 @@ func pluginRequestPathForms(p string) []string {
 func pathUnder(path, root string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func isRegularFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && st.Mode().IsRegular()
-}
-
-// Plugin directory of the innermost calling file under a plugins root, empty when no caller is plugin code
-func callingPluginDir(callerFiles []string) string {
-	roots := pluginProviderRequestRoots()
-	for _, raw := range callerFiles {
-		for _, path := range pluginRequestPathForms(raw) {
-			root := ""
-			for _, r := range roots {
-				if pathUnder(path, r) {
-					root = r
-					break
-				}
-			}
-			if root == "" {
-				continue
-			}
-			for parent := filepath.Dir(path); parent != root && parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
-				if isRegularFile(filepath.Join(parent, "plugin.yaml")) || isRegularFile(filepath.Join(parent, "plugin.yml")) {
-					return parent
-				}
-			}
-			rel, _ := filepath.Rel(root, path)
-			return filepath.Join(root, strings.SplitN(rel, string(filepath.Separator), 2)[0])
-		}
-	}
-	return ""
-}
-
-// Source files of the Go call stack above the caller of the request function, innermost first
-func providerRequestStackFiles(skip int) []string {
-	pcs := make([]uintptr, 64)
-	frames := runtime.CallersFrames(pcs[:runtime.Callers(skip, pcs)])
-	var files []string
-	for {
-		frame, more := frames.Next()
-		if frame.File != "" {
-			files = append(files, frame.File)
-		}
-		if !more {
-			return files
-		}
-	}
 }
 
 // DeclaredAuthProviders lists the requires_auth providers of a manifest whose sign in the plugin uses
@@ -365,15 +313,10 @@ func providerRequestSend(req *http.Request, timeout time.Duration) (*ProviderRes
 	return &ProviderResponse{Status: resp.StatusCode, Headers: headers, Body: body}, nil
 }
 
-// CredentialedProviderRequest sends method and URL with the calling plugin's provider sign in attached by Icebath
-func CredentialedProviderRequest(provider, method, rawURL string, opts ProviderRequestOptions) (*ProviderResponse, error) {
-	caller := opts.Caller
-	if caller == nil {
-		caller = providerRequestStackFiles(3)
-	}
-	pluginDir := callingPluginDir(caller)
+// CredentialedProviderRequest sends method and URL for the plugin installed at pluginDir with its provider sign in attached by Icebath
+func CredentialedProviderRequest(pluginDir, provider, method, rawURL string, opts ProviderRequestOptions) (*ProviderResponse, error) {
 	if pluginDir == "" {
-		return nil, &ProviderRequestPermissionError{Message: "credentialed_provider_request must be called from an installed plugin's code"}
+		return nil, &ProviderRequestPermissionError{Message: "credentialed provider requests come only from an installed plugin"}
 	}
 	// The plugin's own oauth entry first so a core provider added later under the same id cannot take it over
 	origins, resolve, ok, err := pluginOAuthSpec(pluginDir, provider)

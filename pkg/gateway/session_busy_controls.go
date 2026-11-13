@@ -306,7 +306,7 @@ func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 			persistedYolo = entry.Yolo
 		}
 	}
-	tools.RestoreGatewayYolo(live.Route, persistedYolo, policy != nil && policy.Yolo())
+	tools.RestoreGatewayYolo(ctx, live.Route, persistedYolo, policy != nil && policy.Yolo())
 	persisted := persistedYolo != nil && *persistedYolo
 	enabled := tools.IsSessionYoloEnabled(live.Route) || persisted
 	if write {
@@ -322,7 +322,7 @@ func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 			pick := yoloWords[word]
 			choice = &pick
 		}
-		enabled = tools.ToggleSessionYolo(live.Route, choice, persisted, persist)
+		enabled = tools.ToggleSessionYolo(ctx, live.Route, choice, persisted, persist)
 	}
 	flag := "0"
 	if enabled {

@@ -826,7 +826,7 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 		}
 	}
 	ctx = WithActivityCallback(ctx, e.Host.TouchActivity)
-	if err := advance(func() { e.beginToolExecution(ref, in.displayIndex) }); err != nil {
+	if err := advance(func() { e.beginToolExecution(ctx, ref, in.displayIndex) }); err != nil {
 		return "", err
 	}
 	ctx = BoundToolProgress(ctx, e.Host.ToolProgressCallback(), ref.Name, ref.CallID)
@@ -900,8 +900,8 @@ func (e *Executor) runToolExecutionMiddleware(ctx context.Context, in managedInp
 }
 
 // Runs the user visible and checkpoint preflight on final tool arguments
-func (e *Executor) beginToolExecution(ref *ToolCallRef, displayIndex int) {
-	host := e.Host
+func (e *Executor) beginToolExecution(ctx context.Context, ref *ToolCallRef, displayIndex int) {
+	host := e.hostFor(ctx)
 	displayArgs := host.RedactToolArgsForDisplay(ref.Name, ref.Args)
 	if displayArgs == nil {
 		displayArgs = ref.Args
@@ -1272,8 +1272,8 @@ func (e *Executor) finalizeToolBatch(ctx context.Context, messages *[]*state.Mes
 	e.Host.ApplyPendingSteer(messages, numTools)
 }
 
-func (e *Executor) printToolCompleted(index int, duration float64, result string) {
-	host := e.Host
+func (e *Executor) printToolCompleted(ctx context.Context, index int, duration float64, result string) {
+	host := e.hostFor(ctx)
 	if host.VerboseLogging() {
 		host.Print(fmt.Sprintf("  ✅ Tool %d completed in %.2fs", index, duration))
 		host.Print(host.WrapVerbose("Result: ", result))
@@ -1548,7 +1548,7 @@ func (b *concurrentBatch) runningNames(done []chan struct{}, runnable []int) []s
 // Waits with periodic heartbeats and interrupt checks, true when the batch was abandoned
 func (b *concurrentBatch) awaitCompletion(ctx context.Context, done []chan struct{}, runnable []int, deadline time.Time, hasDeadline bool) (bool, error) {
 	e := b.exec
-	host := e.Host
+	host := e.hostFor(ctx)
 	start := time.Now()
 	for {
 		if keyboardInterruptRequested(ctx) {
@@ -1724,7 +1724,7 @@ func (e *Executor) unfinishedToolResult(ctx context.Context, ref *ToolCallRef, t
 
 // Appends every slot's result in original call order, false at the first failed flush
 func (e *Executor) appendBatchResults(ctx context.Context, messages *[]*state.Message, taskID string, b *concurrentBatch, budget BudgetConfig) bool {
-	host := e.Host
+	host := e.hostFor(ctx)
 	for i, pc := range b.parsed {
 		b.resultsMu.Lock()
 		r := b.results[i]
@@ -1755,7 +1755,7 @@ func (e *Executor) appendBatchResults(ctx context.Context, messages *[]*state.Me
 		if host.ShouldEmitQuietToolMessages() {
 			host.Print("  " + host.CuteToolMessage(ref.Name, ref.Args, duration, c.display))
 		} else if e.toolProgressEnabled() {
-			e.printToolCompleted(i+1, duration, MultimodalTextSummary(multimodalOrString(c.display)))
+			e.printToolCompleted(ctx, i+1, duration, MultimodalTextSummary(multimodalOrString(c.display)))
 		}
 		e.emitToolCompleteAndRisk(ref, c.display, c.risk, blocked)
 	}
@@ -1772,7 +1772,7 @@ func multimodalOrString(result string) any {
 
 // ExecuteToolCallsConcurrent runs calls concurrently and appends results in original order
 func (e *Executor) ExecuteToolCallsConcurrent(ctx context.Context, toolCalls []state.ToolCall, messages *[]*state.Message, taskID string, finalize bool) error {
-	host := e.Host
+	host := e.hostFor(ctx)
 	numTools := len(toolCalls)
 	budget := e.budget()
 	if host.Interrupted() {
@@ -1795,7 +1795,7 @@ func (e *Executor) ExecuteToolCallsConcurrent(ctx context.Context, toolCalls []s
 	batch := e.newConcurrentBatch(messages, taskID, parsed, timeout)
 	host.SetCurrentTool(namesStr)
 	host.TouchActivity(fmt.Sprintf("executing %d tools concurrently: %s", numTools, namesStr))
-	spinner := e.startQuietToolSpinner("", nil, true, fmt.Sprintf("⚡ running %d tools concurrently", numTools))
+	spinner := e.startQuietToolSpinner(ctx, "", nil, true, fmt.Sprintf("⚡ running %d tools concurrently", numTools))
 	runErr := func() error {
 		defer func() {
 			if spinner != nil {
@@ -1828,8 +1828,8 @@ func (e *Executor) ExecuteToolCallsConcurrent(ctx context.Context, toolCalls []s
 // Sequential dispatch
 
 // Starts the quiet mode spinner for one call or returns nil
-func (e *Executor) startQuietToolSpinner(name string, args map[string]any, gate bool, label string) Spinner {
-	host := e.Host
+func (e *Executor) startQuietToolSpinner(ctx context.Context, name string, args map[string]any, gate bool, label string) Spinner {
+	host := e.hostFor(ctx)
 	if !host.ShouldEmitQuietToolMessages() || (gate && !host.ShouldStartQuietSpinner()) {
 		return nil
 	}
@@ -1848,8 +1848,8 @@ func (e *Executor) startQuietToolSpinner(name string, args map[string]any, gate 
 }
 
 // Stops the spinner with the cute completion line or prints it when no spinner ran
-func (e *Executor) finishQuietToolSpinner(spinner Spinner, name string, args map[string]any, duration float64, result any) {
-	host := e.Host
+func (e *Executor) finishQuietToolSpinner(ctx context.Context, spinner Spinner, name string, args map[string]any, duration float64, result any) {
+	host := e.hostFor(ctx)
 	if spinner != nil || host.ShouldEmitQuietToolMessages() {
 		cute := host.CuteToolMessage(name, args, duration, result)
 		if spinner != nil {
@@ -1906,7 +1906,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		}
 	}
 	if name == "delegate_task" {
-		spinner := e.startQuietToolSpinner(name, args, true, delegateSpinnerLabel(args))
+		spinner := e.startQuietToolSpinner(ctx, name, args, true, delegateSpinnerLabel(args))
 		host.SetDelegateSpinner(spinner)
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
 			return host.DispatchDelegateTask(ctx, next)
@@ -1915,7 +1915,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 	}
 	if fn, ok := host.ContextEngineTool(name); ok {
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) { return fn(ctx, next, messages) },
-			spinner: e.startQuietToolSpinner(name, args, false, ""),
+			spinner: e.startQuietToolSpinner(ctx, name, args, false, ""),
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Context engine tool '%s' failed: %s", name, err.Error())})
 			},
@@ -1925,7 +1925,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
 			return mm.HandleToolCall(ctx, name, next, host.GatewaySessionKey()), nil
 		},
-			spinner: e.startQuietToolSpinner(name, args, true, ""),
+			spinner: e.startQuietToolSpinner(ctx, name, args, true, ""),
 			errorResult: func(err error) string {
 				return dumpsASCII(map[string]any{"error": fmt.Sprintf("Memory tool '%s' failed: %s", name, err.Error())})
 			},
@@ -1936,7 +1936,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 	}
 	var spinner Spinner
 	if host.QuietMode() {
-		spinner = e.startQuietToolSpinner(name, args, true, "")
+		spinner = e.startQuietToolSpinner(ctx, name, args, true, "")
 	}
 	return &sequentialDispatch{execute: execute, spinner: spinner, trace: trace,
 		errorResult: func(err error) string { return fmt.Sprintf("Error executing tool '%s': %s", name, err.Error()) },
@@ -2168,7 +2168,7 @@ func (e *Executor) runSequentialToolExecutionMiddleware(ctx context.Context, in 
 }
 
 func (e *Executor) skipRemainingSequential(ctx context.Context, messages *[]*state.Message, remaining []state.ToolCall, taskID, notice string, opts skipOptions) bool {
-	e.Host.VPrint(fmt.Sprintf("%s⚡ Interrupt: skipping %d %s", e.Host.LogPrefix(), len(remaining), notice), true)
+	e.hostFor(ctx).VPrint(fmt.Sprintf("%s⚡ Interrupt: skipping %d %s", e.Host.LogPrefix(), len(remaining), notice), true)
 	return e.appendSkippedToolResults(ctx, messages, remaining, taskID, opts)
 }
 
@@ -2209,13 +2209,13 @@ func (e *Executor) runSequentialCall(ctx context.Context, dispatch *sequentialDi
 	}
 	duration := time.Since(start).Seconds()
 	if dispatch.finishSpinner && dispatch.finishInFinally {
-		e.finishQuietToolSpinner(dispatch.spinner, ref.Name, ref.Args, duration, spinnerResult)
+		e.finishQuietToolSpinner(ctx, dispatch.spinner, ref.Name, ref.Args, duration, spinnerResult)
 	}
 	if raised != nil {
 		return nil, duration, raised
 	}
 	if dispatch.finishSpinner && !dispatch.finishInFinally {
-		e.finishQuietToolSpinner(dispatch.spinner, ref.Name, ref.Args, duration, spinnerResult)
+		e.finishQuietToolSpinner(ctx, dispatch.spinner, ref.Name, ref.Args, duration, spinnerResult)
 	}
 	return managed, duration, nil
 }
@@ -2255,7 +2255,7 @@ func (e *Executor) publishSequentialResult(ctx context.Context, messages *[]*sta
 	markTerminalBatchOutcome(ctx, isError || managed.Blocked)
 	e.emitToolCompleteAndRisk(ref, c.display, c.risk, managed.Blocked)
 	if e.toolProgressEnabled() {
-		e.printToolCompleted(index, duration, c.persisted)
+		e.printToolCompleted(ctx, index, duration, c.persisted)
 	}
 	return true
 }

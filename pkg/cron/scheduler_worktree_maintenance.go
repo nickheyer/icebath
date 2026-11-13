@@ -29,8 +29,8 @@ var worktreePruneStaleWorktrees = func(ctx context.Context, repo string) error {
 
 // Installs the worktree registry recorder and the cron store readers the worktree port consults
 func init() {
-	tools.WorktreeRecordRepo = func(ctx context.Context, repoRoot string) { RecordWorktreeRepo(ctx, home.Process(), repoRoot) }
-	tools.WorktreeCronStore.JobsFile = func() string { return openCronStore(home.Process(), nil).JobsFile() }
+	tools.WorktreeRecordRepo = func(ctx context.Context, repoRoot string) { RecordWorktreeRepo(ctx, home.Dir(ctx), repoRoot) }
+	tools.WorktreeCronStore.JobsFile = func(ctx context.Context) string { return openCronStore(home.Dir(ctx), nil).JobsFile() }
 	tools.WorktreeCronStore.ParseJobs = func(path string) (any, error) {
 		data, _, err := parseJobsFile(path)
 		return data, err

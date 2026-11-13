@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -28,8 +27,8 @@ var hostedRequestTimeoutSecs = 60.0
 
 var hostedExecutors = map[string]chan struct{}{}
 
-// Plugin host asgi round trip of one dashboard plugin request, the host method tests replace with a fake
-var hostASGIRequest = (*plugins.PluginHost).ASGIRequest
+// Runtime plugin round trip of one dashboard plugin request, a seam tests replace with a fake
+var hostDashboardRequest = plugins.ServeGuestDashboard
 
 // Backend file the in process router of name runs, the mounted compiled copy else the launch profile entry
 func inProcessAPIFile(ctx context.Context, app *FastAPI, name string) (string, error) {
@@ -100,64 +99,21 @@ func admittedForSensitiveRoute(req *Request) (bool, error) {
 	return false, err
 }
 
-// Response of a buffered plugin host asgi answer, every repeated header kept
-func hostedResponse(result map[string]any) (*Response, error) {
-	body, ok := result["body"].([]byte)
-	if !ok {
-		return nil, &TypeError{Msg: fmt.Sprintf("plugin host answer body is %T, not bytes", result["body"])}
+// Response of a buffered runtime plugin answer, every repeated header kept
+func hostedResponse(result *plugins.DashboardResponse) *Response {
+	body := result.Body
+	if body == nil {
+		body = []byte{}
 	}
-	status, err := hostedInt(result["status"])
-	if err != nil {
-		return nil, err
-	}
-	resp := NewResponse(body, status, "")
-	headers, ok := result["headers"].([]any)
-	if !ok {
-		return nil, &TypeError{Msg: fmt.Sprintf("plugin host answer headers are %T, not a list", result["headers"])}
-	}
-	for _, h := range headers {
-		pair, ok := h.([]any)
-		if !ok {
-			return nil, &TypeError{Msg: fmt.Sprintf("cannot unpack non-iterable %s object", pyTypeName(h))}
-		}
-		if len(pair) < 2 {
-			return nil, &TypeError{Msg: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(pair))}
-		}
-		if len(pair) > 2 {
-			return nil, &TypeError{Msg: "too many values to unpack (expected 2)"}
-		}
-		key, kok := pair[0].(string)
-		value, vok := pair[1].(string)
-		if !kok || !vok {
-			return nil, &TypeError{Msg: "plugin host answer header is not a pair of strings"}
-		}
-		switch strings.ToLower(key) {
+	resp := NewResponse(body, result.Status, "")
+	for _, pair := range result.Headers {
+		switch strings.ToLower(pair[0]) {
 		case "content-length", "transfer-encoding", "connection":
 			continue
 		}
-		resp.Header().Append(key, value)
+		resp.Header().Append(pair[0], pair[1])
 	}
-	return resp, nil
-}
-
-// Integer of a decoded wire status the way int() reads it
-func hostedInt(v any) (int, error) {
-	switch n := v.(type) {
-	case int64:
-		return int(n), nil
-	case int:
-		return n, nil
-	case float64:
-		return int(n), nil
-	case *big.Int:
-		return int(n.Int64()), nil
-	case bool:
-		if n {
-			return 1, nil
-		}
-		return 0, nil
-	}
-	return 0, &TypeError{Msg: fmt.Sprintf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyTypeName(v))}
+	return resp
 }
 
 // Request slots of the profile at homeDir, its own pool so a slow plugin queues behind its own requests only
@@ -179,14 +135,14 @@ func isHostTimeout(err error) bool {
 	return errors.As(err, &be) && be.Type == "TimeoutError"
 }
 
-// Runs one plugin host asgi round trip on the profile own slots, its answer or 504 after the hosted timeout
-func runHostedRequest(ctx context.Context, homeDir, name string, call func(ctx context.Context, timeout time.Duration) (map[string]any, error)) (ASGIResponse, error) {
+// Runs one runtime plugin round trip on the profile own slots, its answer or 504 after the hosted timeout
+func runHostedRequest(ctx context.Context, homeDir, name string, call func(ctx context.Context, timeout time.Duration) (*plugins.DashboardResponse, error)) (ASGIResponse, error) {
 	timeout := hostedRequestTimeoutSecs
 	limit := time.Duration(timeout * float64(time.Second))
 	deadline := time.Now().Add(limit)
 	slots := hostedExecutor(homeDir)
 	type outcome struct {
-		result map[string]any
+		result *plugins.DashboardResponse
 		err    error
 	}
 	done := make(chan outcome, 1)
@@ -202,7 +158,7 @@ func runHostedRequest(ctx context.Context, homeDir, name string, call func(ctx c
 	select {
 	case o := <-done:
 		if o.err == nil {
-			return hostedResponse(o.result)
+			return hostedResponse(o.result), nil
 		}
 		if !isHostTimeout(o.err) {
 			return nil, o.err
@@ -215,11 +171,11 @@ func runHostedRequest(ctx context.Context, homeDir, name string, call func(ctx c
 	if err != nil {
 		return nil, err
 	}
-	webServerLog().Warn(fmt.Sprintf("Plugin %s: its plugin host did not answer within %ss", name, secs))
+	webServerLog().Warn(fmt.Sprintf("Plugin %s: its runtime plugin did not answer within %ss", name, secs))
 	return MustJSONResponse(map[string]any{"detail": fmt.Sprintf("plugin %s did not answer within %ss", pyrepr.Repr(name), secs)}, 504), nil
 }
 
-// Serves a secondary profile plugin api request through its own plugin host, nil when the in process router answers
+// Serves a secondary profile plugin api request through its own runtime plugin, nil when the in process router answers
 func forwardSecondaryPluginRequest(ctx context.Context, req *Request, name string) (ASGIResponse, error) {
 	plugin, err := secondaryHostedPlugin(ctx, req.App(), name)
 	if err != nil {
@@ -229,8 +185,8 @@ func forwardSecondaryPluginRequest(ctx context.Context, req *Request, name strin
 	if plugin == nil || !secondary {
 		return nil, nil
 	}
-	apiFile, _ := plugin.GetOr("_api_file", nil).(string)
-	if !pyTruthy(plugin.GetOr("_api_file", nil)) {
+	pluginDir := guestPluginDir(plugin)
+	if !pyTruthy(plugin.GetOr("_api_file", nil)) || pluginDir == "" {
 		return MustJSONResponse(map[string]any{"detail": "Not Found"}, 404), nil
 	}
 	rest := strings.SplitN(getRoutePath(req.Scope), "/", 5)
@@ -259,14 +215,9 @@ func forwardSecondaryPluginRequest(ctx context.Context, req *Request, name strin
 	if err != nil {
 		return nil, err
 	}
-	dir := pyrepr.Str(plugin.GetOr("_dir", nil))
-	method := req.Method()
-	call := func(jctx context.Context, timeout time.Duration) (map[string]any, error) {
-		host, err := plugins.GetPluginManager(jctx).PluginHost()
-		if err != nil {
-			return nil, err
-		}
-		return hostASGIRequest(host, jctx, name, dir, apiFile, method, path, query, headers, body, timeout, authenticated)
+	forward := plugins.DashboardRequest{Method: req.Method(), Path: path, Query: query, Headers: headers, Body: body, Authenticated: authenticated}
+	call := func(jctx context.Context, timeout time.Duration) (*plugins.DashboardResponse, error) {
+		return hostDashboardRequest(jctx, pluginDir, forward, timeout)
 	}
 	resp, err := runHostedRequest(ctx, homeDir, name, call)
 	if err != nil {
@@ -274,13 +225,13 @@ func forwardSecondaryPluginRequest(ctx context.Context, req *Request, name strin
 		if errors.As(err, &cancelled) || errors.Is(err, context.Canceled) {
 			return nil, err
 		}
-		webServerLog().Warn(fmt.Sprintf("Plugin %s: its profile's plugin host could not serve %s: %s", name, path, pyExcStr(err)))
-		return MustJSONResponse(map[string]any{"detail": fmt.Sprintf("plugin %s could not run in this profile's plugin host", pyrepr.Repr(name))}, 502), nil
+		webServerLog().Warn(fmt.Sprintf("Plugin %s: its profile's runtime plugin could not serve %s: %s", name, path, pyExcStr(err)))
+		return MustJSONResponse(map[string]any{"detail": fmt.Sprintf("plugin %s could not run in this profile", pyrepr.Repr(name))}, 502), nil
 	}
 	return resp, nil
 }
 
-// Answers a secondary profile socket to a plugin its host serves, false when the in process router takes it
+// Answers a secondary profile socket to a runtime plugin route as an unmatched route, false when the in process router takes it
 func refuseSecondaryPluginSocket(ctx context.Context, scope *Scope, receive Receive, send Send, name string) (bool, error) {
 	plugin, err := secondaryHostedPlugin(ctx, scope.App, name)
 	if err != nil || plugin == nil {
@@ -296,15 +247,10 @@ func refuseSecondaryPluginSocket(ctx context.Context, scope *Scope, receive Rece
 	if !admitted {
 		return true, send(ctx, Message{Type: "websocket.close", Code: 1008})
 	}
-	detail := fmt.Sprintf("plugin %s runs in this profile's plugin host, which does not carry websockets yet", pyrepr.Repr(name))
 	homeDir, _ := secondaryProfileHome(ctx)
-	webServerLog().Info(fmt.Sprintf("Plugin %s: refused a websocket for %s: %s", name, homeDir, detail))
+	webServerLog().Info(fmt.Sprintf("Plugin %s: no websocket route for %s", name, homeDir))
 	if _, ok := scope.Extensions["websocket.http.response"]; ok {
-		return true, socket.SendDenialResponse(ctx, MustJSONResponse(map[string]any{"detail": detail}, 501))
+		return true, socket.SendDenialResponse(ctx, MustJSONResponse(map[string]any{"detail": "Not Found"}, 404))
 	}
-	reason := []rune(detail)
-	if len(reason) > 120 {
-		reason = reason[:120]
-	}
-	return true, send(ctx, Message{Type: "websocket.close", Code: 1008, Reason: string(reason)})
+	return true, send(ctx, Message{Type: "websocket.close", Code: 1008, Reason: "Not Found"})
 }

@@ -45,12 +45,6 @@ func HostedProviderName(obj any) (string, bool) {
 	return pyrepr.Str(name), true
 }
 
-// Prepares a provider's dependency union for the plugin installer, the readiness status dropped
-func PrepareMemoryProviderDependenciesForPlugin(ctx context.Context, env *tools.Env, name string) error {
-	_, _, err := PrepareMemoryProviderDependencies(ctx, env, name)
-	return err
-}
-
 // Curator subcommands with their help, in the hermes argparse order
 var curatorSubcommandHelp = [][2]string{
 	{"status", "Show curator status and skill stats"},

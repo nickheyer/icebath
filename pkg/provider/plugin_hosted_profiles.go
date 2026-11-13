@@ -7,28 +7,26 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// Imports one home plugin dir in the plugin host and returns every profile it registers
-func loadExternalProviderPlugin(ctx context.Context, dir, source, homeKey string) ([]Profile, error) {
-	hosted, err := plugins.LoadProviderPluginProfiles(ctx, dir, userModuleName(dir, homeKey))
+// Loads one home guest plugin dir and returns every profile it registers
+func loadExternalProviderPlugin(ctx context.Context, dir string) ([]Profile, error) {
+	hosted, err := plugins.LoadProviderPluginProfiles(ctx, dir)
 	return profilesFromHosted(ctx, hosted), err
 }
 
-// Runs one hosted profile method or callable field in the plugin host, replaced in tests
+// Runs one hosted profile method or callable field in its guest
 var hostedProfileCallFn = func(ctx context.Context, h *plugins.HostedProfile, attr string, args []any, kwargs map[string]any) (any, error) {
 	return h.Call(ctx, attr, args, kwargs)
 }
 
-// Builds a create_client profile's live client in the plugin host, replaced in tests
+// Builds a create_client profile's live client in its guest
 var hostedProfileCreateClientFn = func(ctx context.Context, h *plugins.HostedProfile, clientKwargs map[string]any) (hostedClientObject, error) {
 	obj, err := h.CreateClient(ctx, nil, clientKwargs)
 	if err != nil {
@@ -37,7 +35,7 @@ var hostedProfileCreateClientFn = func(ctx context.Context, h *plugins.HostedPro
 	return obj, nil
 }
 
-// Profiles whose data comes from the host extraction and whose overridden methods run in the plugin host
+// Profiles whose data comes from the guest registration and whose methods run in the guest
 func profilesFromHosted(ctx context.Context, hosted []*plugins.HostedProfile) []Profile {
 	if ctx == nil {
 		ctx = context.Background()
@@ -81,7 +79,7 @@ func profileFromHosted(ctx context.Context, h *plugins.HostedProfile) Profile {
 	for _, attr := range attrs {
 		hc.install(&p, attr)
 	}
-	if h.InProcess != "" {
+	if h.CreatesClient() {
 		p.CreateClientHook = func(ctx context.Context, clientKwargs map[string]any) (Client, error) {
 			obj, err := hostedProfileCreateClientFn(ctx, h, clientKwargs)
 			if err != nil {
@@ -581,13 +579,7 @@ func hostedUsageSnapshot(m map[string]any) *AccountUsageSnapshot {
 func hostedCostResult(m map[string]any) CostResult {
 	out := CostResult{Status: hostedStr(m["status"]), Source: hostedStr(m["source"]), Label: hostedStr(m["label"]),
 		PricingVersion: hostedStr(m["pricing_version"]), Notes: hostedStrs(m["notes"])}
-	switch amount := m["amount_usd"].(type) {
-	case nil:
-	case *plugins.Opaque:
-		if mm := decimalRepr.FindStringSubmatch(amount.Text); mm != nil {
-			out.AmountUSD, _ = new(big.Rat).SetString(mm[1])
-		}
-	default:
+	if amount := m["amount_usd"]; amount != nil {
 		out.AmountUSD, _ = new(big.Rat).SetString(pyStr(amount))
 	}
 	if t, ok := hostedDatetime(m["fetched_at"]); ok {
@@ -596,49 +588,14 @@ func hostedCostResult(m map[string]any) CostResult {
 	return out
 }
 
-var decimalRepr = regexp.MustCompile(`^Decimal\('([^']*)'\)$`)
-
-var datetimeRepr = regexp.MustCompile(`^datetime\.datetime\((\d+), (\d+), (\d+)(?:, (\d+))?(?:, (\d+))?(?:, (\d+))?(?:, (\d+))?(?:, tzinfo=(.*))?\)$`)
-
-var zoneinfoRepr = regexp.MustCompile(`ZoneInfo\(key='([^']+)'\)`)
-
-var timedeltaRepr = regexp.MustCompile(`datetime\.timedelta\((?:days=(-?\d+))?(?:, )?(?:seconds=(\d+))?`)
-
-// Time of a datetime crossing the host as its repr, a naive datetime read as local time
+// Time of an RFC 3339 timestamp a guest sent
 func hostedDatetime(v any) (time.Time, bool) {
-	o, ok := v.(*plugins.Opaque)
+	s, ok := v.(string)
 	if !ok {
-		if s, isStr := v.(string); isStr {
-			if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-				return t, true
-			}
-		}
 		return time.Time{}, false
 	}
-	m := datetimeRepr.FindStringSubmatch(o.Text)
-	if m == nil {
-		return time.Time{}, false
-	}
-	n := make([]int, 7)
-	for i := range n {
-		n[i], _ = strconv.Atoi(m[i+1])
-	}
-	loc := time.Local
-	if tz := m[8]; tz != "" {
-		loc = time.UTC
-		if z := zoneinfoRepr.FindStringSubmatch(tz); z != nil {
-			zone, err := time.LoadLocation(z[1])
-			if err != nil {
-				return time.Time{}, false
-			}
-			loc = zone
-		} else if d := timedeltaRepr.FindStringSubmatch(tz); d != nil && (d[1] != "" || d[2] != "") {
-			days, _ := strconv.Atoi(d[1])
-			secs, _ := strconv.Atoi(d[2])
-			loc = time.FixedZone("", days*86400+secs)
-		}
-	}
-	return time.Date(n[0], time.Month(n[1]), n[2], n[3], n[4], n[5], n[6]*1000, loc), true
+	t, err := time.Parse(time.RFC3339Nano, s)
+	return t, err == nil
 }
 
 func hostedStr(v any) string {
@@ -751,7 +708,7 @@ func hostedReasoningArg(r *Reasoning) any {
 	return reasoningConfigMap(r)
 }
 
-// Live SDK client object of the plugin host, its attributes and method calls crossing the host boundary
+// Live client object of a guest, its attributes and method calls crossing the plugin wire
 type hostedClientObject interface {
 	Get(ctx context.Context, name string) (any, error)
 	Call(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error)
@@ -815,25 +772,9 @@ func (c *hostedSDKClient) prepare(ctx context.Context, req *Request, stream bool
 	return &ccPrepared{build: build, wire: wire, settings: settings, estTokens: EstimateRequestContextTokens(ctx, wire)}, kwargs, nil
 }
 
-// Runs client.chat.completions.create in the plugin host
+// Runs the chat completion create method of the guest client, a completion map or a chunk iterator coming back
 func (c *hostedSDKClient) create(ctx context.Context, kwargs map[string]any) (any, error) {
-	chat, err := c.obj.Get(ctx, "chat")
-	if err != nil {
-		return nil, err
-	}
-	chatObj, ok := chat.(hostedClientObject)
-	if !ok {
-		return nil, fmt.Errorf("provider: hosted client attribute chat is %T, not a live object", chat)
-	}
-	completions, err := chatObj.Get(ctx, "completions")
-	if err != nil {
-		return nil, err
-	}
-	compObj, ok := completions.(hostedClientObject)
-	if !ok {
-		return nil, fmt.Errorf("provider: hosted client attribute chat.completions is %T, not a live object", completions)
-	}
-	return compObj.Call(ctx, "create", nil, kwargs)
+	return c.obj.Call(ctx, "create", nil, kwargs)
 }
 
 func (c *hostedSDKClient) Complete(ctx context.Context, req *Request) (*Response, error) {

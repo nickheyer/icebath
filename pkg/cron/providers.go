@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
-	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -17,10 +14,7 @@ import (
 )
 
 const (
-	cronUserNamespace    = "_icebath_user_cron"
-	cronSchedulerBaseRef = "cron.scheduler_provider:CronScheduler"
-	cronSchedulerCapture = "register_cron_scheduler"
-	chronosDescription   = "Chronos \u2014 NAS-mediated managed cron provider for scale-to-zero hosted agents. Delegates the \"wake me at time T\" trigger to Nous infrastructure so an idle gateway can scale to zero and still fire cron jobs. The agent computes each job's next-fire time and asks NAS to arm a one-shot; NAS calls the agent back at fire time over an authenticated webhook. Inert unless cron.provider=chronos."
+	chronosDescription = "Chronos \u2014 NAS-mediated managed cron provider for scale-to-zero hosted agents. Delegates the \"wake me at time T\" trigger to Nous infrastructure so an idle gateway can scale to zero and still fire cron jobs. The agent computes each job's next-fire time and asks NAS to arm a one-shot; NAS calls the agent back at fire time over an authenticated webhook. Inert unless cron.provider=chronos."
 )
 
 // Bundled cron provider shipped inside the binary, the in process load its register(ctx) performs
@@ -49,40 +43,17 @@ type CronProviderInfo struct {
 	Available   bool
 }
 
-// Whether the first 8192 characters of __init__.py mention the cron scheduler contract
-func isCronProviderDir(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "__init__.py"))
-	if err != nil {
-		return false
-	}
-	source := strings.ToValidUTF8(strings.TrimPrefix(string(raw), "\ufeff"), "\ufffd")
-	if utf8.RuneCountInString(source) > 8192 {
-		source = string([]rune(source)[:8192])
-	}
-	return strings.Contains(source, cronSchedulerCapture) || strings.Contains(source, "CronScheduler")
-}
-
-// User installed plugin dirs of the profile that look like cron providers
-func userCronProviderDirs(ctx context.Context) ([]string, error) {
+// User installed guest plugin dirs of the profile that provide a cron scheduler
+func userCronProviderDirs(ctx context.Context) []string {
 	userDir, ok := plugins.UserPluginsDir(ctx)
 	if !ok {
-		return nil, nil
+		return nil
 	}
-	children, err := plugins.IterPluginDirs(userDir)
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, child := range children {
-		if isCronProviderDir(child) {
-			out = append(out, child)
-		}
-	}
-	return out, nil
+	return plugins.GuestProviderDirs(userDir, "cron_scheduler")
 }
 
 // Bundled then user providers by name, a bundled name winning a collision
-func iterCronProviderDirs(ctx context.Context) ([]cronProviderDir, error) {
+func iterCronProviderDirs(ctx context.Context) []cronProviderDir {
 	var dirs []cronProviderDir
 	seen := map[string]bool{}
 	for i := range bundledCronProviders {
@@ -90,16 +61,12 @@ func iterCronProviderDirs(ctx context.Context) ([]cronProviderDir, error) {
 		dirs = append(dirs, cronProviderDir{name: b.name, bundled: b})
 		seen[b.name] = true
 	}
-	user, err := userCronProviderDirs(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, child := range user {
+	for _, child := range userCronProviderDirs(ctx) {
 		if name := filepath.Base(child); !seen[name] {
 			dirs = append(dirs, cronProviderDir{name: name, dir: child})
 		}
 	}
-	return dirs, nil
+	return dirs
 }
 
 // Provider of a name, bundled first then a user plugin dir that holds a cron provider
@@ -109,8 +76,8 @@ func findCronProviderDir(ctx context.Context, name string) (cronProviderDir, boo
 			return cronProviderDir{name: name, bundled: &bundledCronProviders[i]}, true
 		}
 	}
-	if userDir, ok := plugins.UserPluginsDir(ctx); ok {
-		if user := filepath.Join(userDir, name); isDir(user) && isCronProviderDir(user) {
+	for _, user := range userCronProviderDirs(ctx) {
+		if filepath.Base(user) == name {
 			return cronProviderDir{name: name, dir: user}, true
 		}
 	}
@@ -123,12 +90,9 @@ func providerContext(s *Store) context.Context {
 }
 
 // Every discovered provider with its description and whether it loads and reports available
-func DiscoverCronSchedulers(s *Store) ([]CronProviderInfo, error) {
+func DiscoverCronSchedulers(s *Store) []CronProviderInfo {
 	ctx := providerContext(s)
-	dirs, err := iterCronProviderDirs(ctx)
-	if err != nil {
-		return nil, err
-	}
+	dirs := iterCronProviderDirs(ctx)
 	out := make([]CronProviderInfo, 0, len(dirs))
 	for _, d := range dirs {
 		description := ""
@@ -140,7 +104,7 @@ func DiscoverCronSchedulers(s *Store) ([]CronProviderInfo, error) {
 		out = append(out, CronProviderInfo{Name: d.name, Description: description,
 			Available: plugins.ProbeAvailability(func() (any, error) { return loadCronProviderFromDir(ctx, s, d) })})
 	}
-	return out, nil
+	return out
 }
 
 // Provider instance by name, nil when it is not found or fails to load, a seam the tests record through
@@ -161,16 +125,12 @@ var loadCronScheduler = func(s *Store, name string) (CronScheduler, error) {
 	return instance, nil
 }
 
-// Bundled providers load in process, a user provider directory in the plugin host behind the hosted wrapper
+// Bundled providers load in process, a user provider directory in its guest behind the hosted wrapper
 func loadCronProviderFromDir(ctx context.Context, s *Store, d cronProviderDir) (CronScheduler, error) {
 	if d.bundled != nil {
 		return d.bundled.load(s), nil
 	}
-	host, err := plugins.GetPluginManager(ctx).PluginHost()
-	if err != nil {
-		return nil, err
-	}
-	obj, err := host.LoadInstance(ctx, d.dir, cronUserNamespace+"."+d.name, cronSchedulerBaseRef, cronSchedulerCapture, nil, nil)
+	obj, err := plugins.LoadGuestCronScheduler(ctx, d.dir)
 	if err != nil || obj == nil {
 		return nil, err
 	}

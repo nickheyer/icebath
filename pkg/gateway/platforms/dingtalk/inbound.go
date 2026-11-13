@@ -1,423 +1,360 @@
 package dingtalk
 
 import (
-	"fmt"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"path"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-var DingTalkTypeMapping = map[string]string{"picture": "image", "voice": "audio"}
-
-var ExtMap = map[string]string{
+// File extension to MIME type of DingTalk file and image messages
+var extMIME = map[string]string{
 	"pdf": "application/pdf", "doc": "application/msword", "xls": "application/vnd.ms-excel",
 	"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 	"xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-	"png":  "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
-	"md": "text/markdown", "txt": "text/plain", "csv": "text/csv", "zip": "application/zip", "mp4": "video/mp4",
+	"ppt":  "application/vnd.ms-powerpoint",
+	"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+	"png":  "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp",
+	"md": "text/markdown", "txt": "text/plain", "csv": "text/csv", "zip": "application/zip", "rar": "application/vnd.rar",
+	"mp4": "video/mp4", "mov": "video/quicktime", "mp3": "audio/mpeg", "wav": "audio/wav", "amr": "audio/amr",
 }
 
-type richMedia struct {
+// One inbound chatbot message decoded from the stream callback data
+type chatbotMessage struct {
+	raw               map[string]any
+	MessageID         string
+	ConversationID    string
+	ConversationType  string
+	ConversationTitle string
+	SenderID          string
+	SenderNick        string
+	SenderStaffID     string
+	RobotCode         string
+	MsgType           string
+	SessionWebhook    string
+	WebhookExpiresAt  int64
+	CreateAt          int64
+	IsInAtList        bool
+}
+
+// One downloadable attachment of a message with the kind it reaches the agent as
+type attachment struct {
+	code     string
+	kind     string
 	mime     string
-	promoted gateway.MessageType
+	fileName string
 }
 
-var richMediaByType = map[string]richMedia{
-	"image": {"image", gateway.MessageTypePhoto},
-	"video": {"video", gateway.MessageTypeVideo},
-	"file":  {"application/octet-stream", gateway.MessageTypeDocument},
-}
-
-type TextContent struct{ Content string }
-
-type ImageContent struct{ DownloadCode string }
-
-type RichTextContent struct{ RichTextList any }
-
-// Inbound ChatbotMessage fields the parsers read, with SDK attribute shapes kept as any where they vary
-type ChatbotMessage struct {
-	Text            any
-	RichTextContent any
-	RichText        any
-	MessageType     string
-	Extensions      map[string]any
-	ImageContent    *ImageContent
-}
-
-// Container and key of one download code the adapter resolves to a URL in place
-type DownloadCodeRef struct {
-	Container any
-	Key       string
-}
-
-func asDict(v any) (map[string]any, bool) {
-	d, ok := v.(map[string]any)
-	return d, ok
-}
-
-// Top level json.loads object as a payload dict so the URL lookup reads it like any other dict
-func loadedDict(v any) any {
-	obj, ok := v.(*pyjson.Object)
-	if !ok {
-		return v
+// Message decoded from callback data, an error when the data is not a JSON object
+func parseChatbotMessage(data string) (*chatbotMessage, error) {
+	dec := json.NewDecoder(strings.NewReader(data))
+	dec.UseNumber()
+	var raw map[string]any
+	if err := dec.Decode(&raw); err != nil {
+		return nil, err
 	}
-	out := make(map[string]any, obj.Len())
-	for _, k := range obj.Keys {
-		out[k], _ = obj.Get(k)
+	if raw == nil {
+		return nil, errors.New("callback data is not a JSON object")
 	}
-	return out
+	m := &chatbotMessage{raw: raw}
+	m.MessageID = str(raw["msgId"])
+	m.ConversationID = str(raw["conversationId"])
+	m.ConversationType = str(raw["conversationType"])
+	m.ConversationTitle = str(raw["conversationTitle"])
+	m.SenderID = str(raw["senderId"])
+	m.SenderNick = str(raw["senderNick"])
+	m.SenderStaffID = str(raw["senderStaffId"])
+	m.RobotCode = str(raw["robotCode"])
+	m.MsgType = str(raw["msgtype"])
+	m.SessionWebhook = firstNonEmpty(str(raw["sessionWebhook"]), str(raw["session_webhook"]))
+	m.WebhookExpiresAt = num(raw["sessionWebhookExpiredTime"])
+	m.CreateAt = num(raw["createAt"])
+	m.IsInAtList = truthy(raw["isInAtList"])
+	return m, nil
 }
 
-func dictGet(d map[string]any, key string, def any) any {
-	if v, ok := d[key]; ok {
-		return v
+// Whether the message arrived in a group conversation
+func (m *chatbotMessage) isGroup() bool { return m.ConversationType == "2" }
+
+// Chat the message belongs to, the conversation or the sender when no conversation is given
+func (m *chatbotMessage) chatID() string { return firstNonEmpty(m.ConversationID, m.SenderID) }
+
+// Creation time of the message, now when the platform gave none
+func (m *chatbotMessage) timestamp() time.Time {
+	if m.CreateAt > 0 {
+		return time.UnixMilli(m.CreateAt)
 	}
-	return def
+	return time.Now()
 }
 
-func or(vals ...any) any {
-	for _, v := range vals[:len(vals)-1] {
-		if pyrepr.Truthy(v) {
-			return v
+// Content object of the message, empty when absent or not an object
+func (m *chatbotMessage) content() map[string]any { return obj(m.raw["content"]) }
+
+// Rich text items of a rich text message
+func (m *chatbotMessage) richItems() []map[string]any {
+	if m.MsgType != "richText" {
+		return nil
+	}
+	list, _ := m.content()["richText"].([]any)
+	var items []map[string]any
+	for _, it := range list {
+		if item, ok := it.(map[string]any); ok {
+			items = append(items, item)
 		}
 	}
-	return vals[len(vals)-1]
+	return items
 }
 
-func strip(v any) (string, error) {
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'strip'", pyrepr.TypeName(v))
-	}
-	return pystr.Strip(s), nil
-}
-
-func join(items []any) (string, error) {
-	parts := make([]string, len(items))
-	for i, it := range items {
-		s, ok := it.(string)
-		if !ok {
-			return "", fmt.Errorf("TypeError: sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(it))
-		}
-		parts[i] = s
-	}
-	return strings.Join(parts, " "), nil
-}
-
-func extensions(m *ChatbotMessage) map[string]any {
-	if len(m.Extensions) == 0 {
-		return map[string]any{}
-	}
-	return m.Extensions
-}
-
-// Extension content when it is a dict, otherwise nil
-func extContent(m *ChatbotMessage) map[string]any {
-	d, _ := asDict(dictGet(extensions(m), "content", map[string]any{}))
-	return d
-}
-
-// Rich text item list from the current rich_text_content shape or the legacy rich_text field
-func richList(m *ChatbotMessage) ([]any, bool) {
-	richText := or(m.RichTextContent, m.RichText)
-	if !pyrepr.Truthy(richText) {
-		return nil, false
-	}
-	list := richText
-	if rc, ok := richText.(*RichTextContent); ok && pyrepr.Truthy(rc.RichTextList) {
-		list = rc.RichTextList
-	}
-	out, ok := list.([]any)
-	return out, ok
-}
-
-func urlOf(raw any) any {
-	if d, ok := asDict(raw); ok {
-		return or(dictGet(d, "url", ""), dictGet(d, "docUrl", ""))
-	}
-	return ""
-}
-
-// Card title and document URL from the card extension, else the raw extension text
-func cardText(m *ChatbotMessage) (string, error) {
-	ext := extensions(m)
+// Plain text of the message, rich text joined, then a per type fallback, mentions left in place
+func (m *chatbotMessage) text() string {
 	content := ""
-	if card, ok := asDict(dictGet(ext, "card", map[string]any{})); ok {
-		title, rawContent := dictGet(card, "title", ""), dictGet(card, "content", "")
-		docURL := urlOf(rawContent)
-		if s, isStr := rawContent.(string); isStr && pystr.Strip(s) != "" {
-			if parsed, err := pyjson.Loads(pystr.Strip(s)); err == nil {
-				docURL = urlOf(loadedDict(parsed))
-			} else {
-				docURL = rawContent
+	if m.MsgType == "text" {
+		content = strings.TrimSpace(str(obj(m.raw["text"])["content"]))
+	}
+	if content == "" {
+		var parts []string
+		for _, item := range m.richItems() {
+			if t := firstNonEmpty(str(item["text"]), str(item["content"])); t != "" {
+				parts = append(parts, t)
 			}
 		}
-		var parts []any
-		if pyrepr.Truthy(title) {
-			parts = append(parts, "[文档] "+pyrepr.Str(title))
-		}
-		if pyrepr.Truthy(docURL) {
-			parts = append(parts, docURL)
-		}
-		var err error
-		if content, err = join(parts); err != nil {
-			return "", err
-		}
+		content = strings.TrimSpace(strings.Join(parts, " "))
 	}
 	if content != "" {
-		return content, nil
+		return content
 	}
-	if extText, ok := asDict(dictGet(ext, "text", map[string]any{})); ok {
-		return strip(or(dictGet(extText, "content", ""), ""))
+	switch m.MsgType {
+	case "audio":
+		return strings.TrimSpace(str(m.content()["recognition"]))
+	case "file":
+		if name := str(m.content()["fileName"]); name != "" {
+			return "[文件] " + name
+		}
+	case "card":
+		return m.cardText()
+	case "interactiveCard":
+		return m.interactiveCardText()
 	}
-	return "", nil
+	return ""
 }
 
-// Interactive card title and action URL from the content extension
-func interactiveCardText(m *ChatbotMessage) (string, error) {
-	ec := extContent(m)
-	if ec == nil {
-		ec = map[string]any{}
+// Document card title and URL, else the raw text the card carried
+func (m *chatbotMessage) cardText() string {
+	card := obj(m.raw["card"])
+	title := str(card["title"])
+	docURL := urlOf(card["content"])
+	if s, ok := card["content"].(string); ok && strings.TrimSpace(s) != "" {
+		var parsed any
+		if json.Unmarshal([]byte(strings.TrimSpace(s)), &parsed) == nil {
+			docURL = urlOf(parsed)
+		} else {
+			docURL = s
+		}
 	}
-	docURL, title := dictGet(ec, "biz_custom_action_url", ""), dictGet(ec, "title", "")
-	if !pyrepr.Truthy(docURL) && !pyrepr.Truthy(title) {
-		return "", nil
+	var parts []string
+	if title != "" {
+		parts = append(parts, "[文档] "+title)
 	}
-	head := "[文档卡片]"
-	if pyrepr.Truthy(title) {
-		head = "[文档卡片] " + pyrepr.Str(title)
-	}
-	parts := []any{head}
-	if pyrepr.Truthy(docURL) {
+	if docURL != "" {
 		parts = append(parts, docURL)
 	}
-	return join(parts)
+	if len(parts) > 0 {
+		return strings.Join(parts, " ")
+	}
+	return strings.TrimSpace(str(obj(m.raw["text"])["content"]))
 }
 
-func extField(m *ChatbotMessage, field string) any {
-	if ec := extContent(m); len(ec) > 0 {
-		return dictGet(ec, field, "")
+// Interactive document card title and action URL
+func (m *chatbotMessage) interactiveCardText() string {
+	c := m.content()
+	docURL, title := str(c["biz_custom_action_url"]), str(c["title"])
+	if docURL == "" && title == "" {
+		return ""
 	}
-	return ""
+	head := "[文档卡片]"
+	if title != "" {
+		head += " " + title
+	}
+	if docURL != "" {
+		return head + " " + docURL
+	}
+	return head
 }
 
-var emptyTextFallbacks = map[string]func(*ChatbotMessage) (string, error){
-	"audio": func(m *ChatbotMessage) (string, error) { return strip(or(extField(m, "recognition"), "")) },
-	"file": func(m *ChatbotMessage) (string, error) {
-		if name := extField(m, "fileName"); pyrepr.Truthy(name) {
-			return "[文件] " + pyrepr.Str(name), nil
-		}
-		return "", nil
-	},
-	"card":            cardText,
-	"interactiveCard": interactiveCardText,
-}
-
-func richItemText(item any) any {
-	if d, ok := asDict(item); ok {
-		return or(dictGet(d, "text", nil), dictGet(d, "content", nil), "")
-	}
-	return ""
-}
-
-// Plain text of a message from either SDK shape, falling back by message type when no text is present
-func ExtractText(m *ChatbotMessage) (string, error) {
-	text := or(m.Text, "")
-	var raw any
-	if tc, ok := text.(*TextContent); ok {
-		raw = tc.Content
-	} else if d, ok := asDict(text); ok {
-		raw = dictGet(d, "content", "")
-	} else {
-		raw = pyrepr.Str(text)
-	}
-	content, err := strip(raw)
-	if err != nil {
-		return "", err
-	}
-	if content == "" {
-		if list, ok := richList(m); ok {
-			var parts []any
-			for _, it := range list {
-				if t := richItemText(it); pyrepr.Truthy(t) {
-					parts = append(parts, t)
-				}
-			}
-			joined, err := join(parts)
-			if err != nil {
-				return "", err
-			}
-			content = pystr.Strip(joined)
-		}
-	}
-	if content == "" {
-		if fallback := emptyTextFallbacks[m.MessageType]; fallback != nil {
-			return fallback(m)
-		}
-	}
-	return content, nil
-}
-
-func codeString(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyrepr.Str(v)
-}
-
-func hashableKey(v any) (string, bool, error) {
-	switch v.(type) {
-	case map[string]any, []any:
-		return "", false, fmt.Errorf("TypeError: unhashable type: '%s'", pyrepr.TypeName(v))
-	}
-	s, ok := v.(string)
-	return s, ok, nil
-}
-
-// Extension used for the MIME lookup of a file name, raising like Python on a truthy non string name
-func fileNameExt(fname any) (string, error) {
-	if !pyrepr.Truthy(fname) {
-		return "", nil
-	}
-	if s, ok := fname.(string); ok {
-		if !strings.Contains(s, ".") {
-			return "", nil
-		}
-		return pystr.Lower(s[strings.LastIndex(s, ".")+1:]), nil
-	}
-	contains := false
-	switch c := fname.(type) {
-	case []any:
-		for _, e := range c {
-			contains = contains || pyrepr.Equal(e, ".")
-		}
-	default:
-		d, ok := asDict(fname)
-		if !ok {
-			return "", fmt.Errorf("TypeError: argument of type '%s' is not iterable", pyrepr.TypeName(fname))
-		}
-		_, contains = d["."]
-	}
-	if contains {
-		return "", fmt.Errorf("AttributeError: '%s' object has no attribute 'rsplit'", pyrepr.TypeName(fname))
-	}
-	return "", nil
-}
-
-// Message type, download codes or URLs and MIME types of the media a message carries
-func ExtractMedia(m *ChatbotMessage) (gateway.MessageType, []string, []string, error) {
+// Message type and the attachments to download, voice recognition text standing in for the audio
+func (m *chatbotMessage) attachments() (gateway.MessageType, []attachment) {
 	msgType := gateway.MessageTypeText
-	mediaURLs, mediaTypes := []string{}, []string{}
-	if m.ImageContent != nil && m.ImageContent.DownloadCode != "" {
-		mediaURLs = append(mediaURLs, m.ImageContent.DownloadCode)
-		mediaTypes = append(mediaTypes, "image")
-		msgType = gateway.MessageTypePhoto
-	}
-	list, _ := richList(m)
-	for _, raw := range list {
-		item, ok := asDict(raw)
-		if !ok {
-			continue
+	var out []attachment
+	add := func(a attachment, promoted gateway.MessageType) {
+		if a.code == "" {
+			return
 		}
-		dlCode := or(item["downloadCode"], item["download_code"], "")
-		if !pyrepr.Truthy(dlCode) {
-			continue
-		}
-		itemType, isStr, err := hashableKey(dictGet(item, "type", ""))
-		if err != nil {
-			return "", nil, nil, err
-		}
-		mapped := "file"
-		if v, ok := DingTalkTypeMapping[itemType]; ok && isStr {
-			mapped = v
-		}
-		var media richMedia
-		if mapped == "audio" {
-			media = richMedia{"audio", gateway.MessageTypeAudio}
-			if isStr && itemType == "voice" {
-				media.promoted = gateway.MessageTypeVoice
-			}
-		} else {
-			media = richMediaByType[mapped]
-		}
-		mediaURLs = append(mediaURLs, codeString(dlCode))
-		mediaTypes = append(mediaTypes, media.mime)
+		out = append(out, a)
 		if msgType == gateway.MessageTypeText {
-			msgType = media.promoted
+			msgType = promoted
 		}
 	}
-	switch m.MessageType {
+	c := m.content()
+	code := firstNonEmpty(str(c["downloadCode"]), str(c["download_code"]), str(c["pictureDownloadCode"]))
+	switch m.MsgType {
 	case "picture":
-		if len(mediaURLs) == 0 {
-			msgType = gateway.MessageTypePhoto
-		}
+		add(attachment{code: code, kind: "image", mime: "image/jpeg"}, gateway.MessageTypePhoto)
+		msgType = gateway.MessageTypePhoto
 	case "richText":
-		if msgType == gateway.MessageTypeText {
-			for _, t := range mediaTypes {
-				if strings.Contains(t, "image") {
-					msgType = gateway.MessageTypePhoto
-					break
-				}
+		for _, item := range m.richItems() {
+			itemCode := firstNonEmpty(str(item["downloadCode"]), str(item["download_code"]), str(item["pictureDownloadCode"]))
+			name := str(item["fileName"])
+			switch str(item["type"]) {
+			case "picture", "image":
+				add(attachment{code: itemCode, kind: "image", mime: "image/jpeg", fileName: name}, gateway.MessageTypePhoto)
+			case "video":
+				add(attachment{code: itemCode, kind: "video", mime: "video/mp4", fileName: name}, gateway.MessageTypeVideo)
+			case "voice":
+				add(attachment{code: itemCode, kind: "audio", fileName: name}, gateway.MessageTypeVoice)
+			case "audio":
+				add(attachment{code: itemCode, kind: "audio", fileName: name}, gateway.MessageTypeAudio)
+			default:
+				add(attachment{code: itemCode, kind: "document", mime: mimeForName(name), fileName: name}, gateway.MessageTypeDocument)
 			}
 		}
 	case "audio":
-		if msgType == gateway.MessageTypeText {
-			msgType = gateway.MessageTypeVoice
+		if strings.TrimSpace(str(c["recognition"])) == "" {
+			add(attachment{code: code, kind: "audio"}, gateway.MessageTypeVoice)
 		}
+		msgType = gateway.MessageTypeVoice
+	case "video":
+		add(attachment{code: code, kind: "video", mime: "video/mp4"}, gateway.MessageTypeVideo)
 	case "file", "image":
-		ec := extContent(m)
-		if ec == nil {
-			ec = map[string]any{}
-		}
-		if dlCode := or(ec["downloadCode"], ""); pyrepr.Truthy(dlCode) {
-			ext, err := fileNameExt(dictGet(ec, "fileName", ""))
-			if err != nil {
-				return "", nil, nil, err
-			}
-			mime, ok := ExtMap[ext]
-			if !ok {
-				mime = "application/octet-stream"
-			}
-			mediaURLs = append(mediaURLs, codeString(dlCode))
-			mediaTypes = append(mediaTypes, mime)
-			if msgType == gateway.MessageTypeText {
-				msgType = gateway.MessageTypeDocument
-				if m.MessageType == "image" || strings.HasPrefix(mime, "image/") {
-					msgType = gateway.MessageTypePhoto
-				}
-			}
+		name := str(c["fileName"])
+		mime := mimeForName(name)
+		if m.MsgType == "image" || strings.HasPrefix(mime, "image/") {
+			add(attachment{code: str(c["downloadCode"]), kind: "image", mime: mime, fileName: name}, gateway.MessageTypePhoto)
+		} else {
+			add(attachment{code: str(c["downloadCode"]), kind: "document", mime: mime, fileName: name}, gateway.MessageTypeDocument)
 		}
 	}
-	return msgType, mediaURLs, mediaTypes, nil
+	return msgType, out
 }
 
-// Container and key pairs whose download code the adapter resolves to a URL
-func CollectDownloadCodes(m *ChatbotMessage) []DownloadCodeRef {
-	var codes []DownloadCodeRef
-	if m.ImageContent != nil && m.ImageContent.DownloadCode != "" {
-		codes = append(codes, DownloadCodeRef{m.ImageContent, "download_code"})
+// MIME type of a file name by its extension, octet stream when unknown
+func mimeForName(name string) string {
+	if mime, ok := extMIME[strings.ToLower(strings.TrimPrefix(path.Ext(name), "."))]; ok {
+		return mime
 	}
-	if rc, ok := m.RichTextContent.(*RichTextContent); ok && rc != nil {
-		list, _ := or(rc.RichTextList, []any{}).([]any)
-		for _, raw := range list {
-			item, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			for _, key := range []string{"downloadCode", "pictureDownloadCode", "download_code"} {
-				if pyrepr.Truthy(item[key]) {
-					codes = append(codes, DownloadCodeRef{item, key})
-				}
-			}
+	return "application/octet-stream"
+}
+
+// Document URL of a card content object
+func urlOf(v any) string {
+	o := obj(v)
+	return firstNonEmpty(str(o["url"]), str(o["docUrl"]))
+}
+
+// Object value, empty when the value is not an object
+func obj(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return map[string]any{}
+}
+
+// Text of a decoded JSON scalar, empty for null and containers
+func str(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case json.Number:
+		return x.String()
+	case bool:
+		return strconv.FormatBool(x)
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	}
+	return ""
+}
+
+// Integer of a decoded JSON number or numeric string, zero otherwise
+func num(v any) int64 {
+	switch x := v.(type) {
+	case json.Number:
+		if n, err := x.Int64(); err == nil {
+			return n
+		}
+		if f, err := x.Float64(); err == nil {
+			return int64(f)
+		}
+	case float64:
+		return int64(x)
+	case string:
+		if n, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64); err == nil {
+			return n
 		}
 	}
-	if m.MessageType == "file" || m.MessageType == "image" {
-		if ec := extContent(m); len(ec) > 0 && pyrepr.Truthy(ec["downloadCode"]) {
-			codes = append(codes, DownloadCodeRef{ec, "downloadCode"})
+	return 0
+}
+
+// Truthiness of a decoded JSON flag
+func truthy(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case string:
+		return x == "true" || x == "1"
+	case json.Number:
+		return x.String() != "0"
+	}
+	return false
+}
+
+// First non empty string
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
 		}
 	}
-	return codes
+	return ""
+}
+
+// Extension for downloaded bytes from magic numbers, the MIME type, then the file name
+func sniffExt(data []byte, mime, fileName string) string {
+	switch {
+	case bytes.HasPrefix(data, []byte("#!AMR-WB\n")), bytes.HasPrefix(data, []byte("#!AMR\n")):
+		return ".amr"
+	case bytes.HasPrefix(data, []byte("\x89PNG")):
+		return ".png"
+	case bytes.HasPrefix(data, []byte("\xff\xd8\xff")):
+		return ".jpg"
+	case bytes.HasPrefix(data, []byte("GIF8")):
+		return ".gif"
+	case len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WEBP":
+		return ".webp"
+	case len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WAVE":
+		return ".wav"
+	case bytes.HasPrefix(data, []byte("OggS")):
+		return ".ogg"
+	case bytes.HasPrefix(data, []byte("ID3")), len(data) >= 2 && data[0] == 0xFF && data[1]&0xE0 == 0xE0:
+		return ".mp3"
+	case len(data) >= 8 && string(data[4:8]) == "ftyp":
+		if len(data) >= 12 && (string(data[8:12]) == "M4A " || string(data[8:12]) == "m4a ") {
+			return ".m4a"
+		}
+		return ".mp4"
+	}
+	if ext := path.Ext(fileName); ext != "" {
+		return strings.ToLower(ext)
+	}
+	return mimeExt[mime]
+}
+
+// Canonical extension of the MIME types DingTalk attachments arrive as
+var mimeExt = map[string]string{
+	"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp", "image/bmp": ".bmp",
+	"video/mp4": ".mp4", "video/quicktime": ".mov", "audio/mpeg": ".mp3", "audio/wav": ".wav", "audio/amr": ".amr",
+	"audio/ogg": ".ogg", "application/pdf": ".pdf", "application/zip": ".zip", "text/plain": ".txt",
 }

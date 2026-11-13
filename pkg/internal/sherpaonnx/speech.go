@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/fetch"
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
 )
 
 const releaseBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v" + Version + "/sherpa-onnx-v" + Version + "-"
@@ -87,13 +85,13 @@ func libraryArchive(goos, goarch string, gpu bool) (fetch.Asset, bool) {
 // Whether the engine publishes a library for this platform
 func Supported() bool {
 	_, ok := libraryArchive(runtime.GOOS, runtime.GOARCH, false)
-	return ok && pyctypes.Supported
+	return ok && fetch.NativeSupported
 }
 
 // Directory of the pinned native library package for this platform, fetched into the icebath cache on first use
 func LibraryDir(ctx context.Context, gpu bool) (string, error) {
 	asset, ok := libraryArchive(runtime.GOOS, runtime.GOARCH, gpu)
-	if !ok || !pyctypes.Supported {
+	if !ok || !fetch.NativeSupported {
 		return "", &PlatformError{GPU: gpu}
 	}
 	tree, err := fetch.Tree(ctx, asset)
@@ -101,14 +99,6 @@ func LibraryDir(ctx context.Context, gpu bool) (string, error) {
 		return "", err
 	}
 	return filepath.Join(tree, strings.TrimSuffix(asset.Name, ".tar.bz2")), nil
-}
-
-// Sends the notices the tokenizer prints to the process log
-type logWriter struct{}
-
-func (logWriter) Write(p []byte) (int, error) {
-	slog.Warn(strings.TrimSpace(string(p)), "logger", "speech.engine")
-	return len(p), nil
 }
 
 // Module over the native library of this platform, one device kind per process
@@ -125,7 +115,7 @@ func Load(ctx context.Context, gpu bool) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
-	module, err := Import(dir, Environment{Stdout: logWriter{}})
+	module, err := open(dir)
 	if err != nil {
 		return nil, fmt.Errorf("the local speech engine library failed to load: %w", err)
 	}
@@ -180,12 +170,10 @@ func (m *Module) speechAPI() (*speechAPI, error) {
 			{&api.vadFront, "SherpaOnnxVoiceActivityDetectorFront"}, {&api.vadPop, "SherpaOnnxVoiceActivityDetectorPop"},
 			{&api.vadFlush, "SherpaOnnxVoiceActivityDetectorFlush"}, {&api.destroySpeechSegment, "SherpaOnnxDestroySpeechSegment"},
 		} {
-			addr, err := m.lib.Symbol(entry.name)
-			if err != nil {
-				m.speechErr = fmt.Errorf("the local speech engine library lacks %s: %w", entry.name, err)
+			if err := m.lib.Bind(entry.fptr, entry.name); err != nil {
+				m.speechErr = fmt.Errorf("the local speech engine library is incomplete: %w", err)
 				return
 			}
-			pyctypes.RegisterFunc(entry.fptr, addr)
 		}
 		m.speech = api
 	})
@@ -201,18 +189,16 @@ func (m *Module) provider() string {
 }
 
 // NUL terminated copies of strings that stay alive as long as the arena does
-type cStrings struct{ held [][]byte }
+type cStrings struct{ held []*byte }
 
 func (c *cStrings) ptr(s string) *byte {
 	if s == "" {
 		return nil
 	}
-	buf := pyctypes.CString(s)
+	buf := fetch.CString(s)
 	c.held = append(c.held, buf)
-	return &buf[0]
+	return buf
 }
-
-func pointerAt[T any](addr uintptr) *T { return (*T)(*(*unsafe.Pointer)(unsafe.Pointer(&addr))) }
 
 // Copies n float samples out of library memory
 func copySamples(addr uintptr, n int32) []float32 {
@@ -316,7 +302,7 @@ func goString(p *byte) string {
 	if p == nil {
 		return ""
 	}
-	return pyctypes.GoString(uintptr(unsafe.Pointer(p)))
+	return fetch.GoString(uintptr(unsafe.Pointer(p)))
 }
 
 // Silero voice activity model and the pauses that end a stretch of speech

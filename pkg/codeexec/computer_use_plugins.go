@@ -3,11 +3,8 @@ package codeexec
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -18,7 +15,6 @@ import (
 
 const (
 	defaultComputerUseBackend = "cua"
-	cuUserNamespace           = "_icebath_user_computer_use"
 	cuaProviderDescription    = "cua-driver (built-in) \u2014 background computer use on macOS, Windows and Linux; does not steal the cursor or focus. Default when computer_use.backend is unset."
 )
 
@@ -51,19 +47,6 @@ func cuProviderContext(env *tools.Env) context.Context {
 	return home.WithOverride(context.Background(), envHome(env))
 }
 
-// Whether the first 8192 characters of __init__.py mention the computer use provider contract
-func isComputerUseDir(path string) bool {
-	raw, err := os.ReadFile(filepath.Join(path, "__init__.py"))
-	if err != nil {
-		return false
-	}
-	source := strings.ToValidUTF8(strings.TrimPrefix(string(raw), "\ufeff"), "\ufffd")
-	if utf8.RuneCountInString(source) > 8192 {
-		source = string([]rune(source)[:8192])
-	}
-	return strings.Contains(source, "register_computer_use_provider") || strings.Contains(source, "ComputerUseProvider")
-}
-
 // Bundled then user providers by name, a bundled name winning a collision
 func iterComputerUseProviderDirs(env *tools.Env) ([]cuProviderDir, error) {
 	var dirs []cuProviderDir
@@ -77,12 +60,8 @@ func iterComputerUseProviderDirs(env *tools.Env) ([]cuProviderDir, error) {
 	if !ok {
 		return dirs, nil
 	}
-	children, err := plugins.IterPluginDirs(userDir)
-	if err != nil {
-		return nil, err
-	}
-	for _, child := range children {
-		if name := filepath.Base(child); !seen[name] && isComputerUseDir(child) {
+	for _, child := range plugins.GuestProviderDirs(userDir, "computer_use") {
+		if name := filepath.Base(child); !seen[name] {
 			dirs = append(dirs, cuProviderDir{name: name, dir: child})
 		}
 	}
@@ -138,22 +117,13 @@ func loadComputerUseProvider(env *tools.Env, name string) (ComputerUseProvider, 
 	return instance, nil
 }
 
-// Bundled providers load in process, user code in the plugin host unless plugins.isolation is host
+// Bundled providers load in process, a user provider in the guest its plugin directory declares
 func loadComputerUseProviderFromDir(env *tools.Env, d cuProviderDir) (ComputerUseProvider, error) {
 	if d.bundled != nil {
 		return d.bundled.load(env), nil
 	}
-	if st, err := os.Stat(filepath.Join(d.dir, "__init__.py")); err != nil || st.IsDir() {
-		return nil, nil
-	}
 	ctx := cuProviderContext(env)
-	module := cuUserNamespace + "." + d.name
-	what := fmt.Sprintf("plugin %s (loaded as %s)", pyrepr.Repr(d.name), module)
-	if refusal := plugins.InProcessImportRefusal(ctx, what, "user", nil); refusal != "" {
-		slog.Warn(refusal)
-		return nil, nil
-	}
-	obj, err := plugins.LoadComputerUseProviderInHost(ctx, d.dir, module)
+	obj, err := plugins.LoadGuestComputerUseProvider(ctx, d.dir)
 	if err != nil || obj == nil {
 		return nil, err
 	}

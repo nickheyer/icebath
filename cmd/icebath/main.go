@@ -54,9 +54,6 @@ func main() {
 	if len(argv) > 0 && argv[0] == "pm" {
 		exit(runCLI(argv))
 	}
-	if code, ok := runBuildHelperVerb(argv); ok {
-		exit(code)
-	}
 	ensureBinLaunchers()
 	loadDotenv()
 	forceIPv4 := applyEarlyConfig()

@@ -298,8 +298,8 @@ func gatewayLifecycleBlock(ctx context.Context, env *Env, command string, e Envi
 			"error")
 	}
 	if unsafe {
-		if LifecycleScanRootWithinBudget(command) && ContainsHostInterpreterKill(command) {
-			return blockedJSON(HostInterpreterKillRejection, "error")
+		if LifecycleScanRootWithinBudget(command) && ContainsGatewayImageKill(command) {
+			return blockedJSON(GatewayImageKillRejection, "error")
 		}
 		return blockedJSON(
 			"Blocked: command or referenced script cannot restart, stop, or "+

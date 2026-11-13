@@ -61,8 +61,8 @@ type pluginAPIRoute struct {
 	apiPath   string
 }
 
-// Forward route of a plugin api served by the plugin host of the requesting profile
-func mountHostedPluginAPI(plugin *pyjson.Object) *pluginAPIRoute {
+// Forward route of a plugin api served by the runtime plugin of the requesting profile
+func mountGuestPluginAPI(plugin *pyjson.Object) *pluginAPIRoute {
 	name := pyrepr.Str(plugin.GetOr("name", nil))
 	ep := &Endpoint{
 		Name:   "forward",
@@ -72,11 +72,8 @@ func mountHostedPluginAPI(plugin *pyjson.Object) *pluginAPIRoute {
 			if err != nil {
 				return nil, err
 			}
-			target, err := hostedPluginForRequest(sctx, name)
-			if err != nil {
-				return nil, err
-			}
-			if target == nil {
+			pluginDir := guestPluginForRequest(sctx, name)
+			if pluginDir == "" {
 				return MustJSONResponse(map[string]any{"detail": fmt.Sprintf("plugin %s is not enabled in this profile", pyrepr.Repr(name))}, 404), nil
 			}
 			req := c.Request
@@ -95,26 +92,19 @@ func mountHostedPluginAPI(plugin *pyjson.Object) *pluginAPIRoute {
 			if err != nil {
 				return nil, err
 			}
-			method, path := req.Method(), "/"+c.Str("path")
-			return runHostedRequest(sctx, target.host.Home(), name, func(jctx context.Context, timeout time.Duration) (map[string]any, error) {
-				return hostASGIRequest(target.host, jctx, name, target.dir, target.apiFile, method, path, query, headers, body, timeout, authenticated)
+			forward := plugins.DashboardRequest{Method: req.Method(), Path: "/" + c.Str("path"), Query: query, Headers: headers, Body: body, Authenticated: authenticated}
+			return runHostedRequest(sctx, home.Dir(sctx), name, func(jctx context.Context, timeout time.Duration) (*plugins.DashboardResponse, error) {
+				return hostDashboardRequest(jctx, pluginDir, forward, timeout)
 			})
 		},
 	}
 	route := &pluginAPIRoute{APIRoute: NewAPIRoute("/api/plugins/"+name+"/{path:path}", pluginAPIMethods, ep)}
-	webServerLog().Info(fmt.Sprintf("Mounted plugin API routes via the plugin host: /api/plugins/%s/", name))
+	webServerLog().Info(fmt.Sprintf("Mounted plugin API routes served by the runtime plugin: /api/plugins/%s/", name))
 	return route
 }
 
-// Plugin host with the dashboard dir and api file serving a plugin in the active profile
-type hostedTarget struct {
-	host    *plugins.PluginHost
-	dir     string
-	apiFile string
-}
-
-// Host target of name in the active profile, nil when that profile has no enabled copy read from disk
-func hostedPluginForRequest(ctx context.Context, name string) (*hostedTarget, error) {
+// Plugin directory of the runtime plugin serving name in the active profile, empty when that profile has no enabled copy on disk
+func guestPluginForRequest(ctx context.Context, name string) string {
 	for _, plugin := range discoverDashboardPlugins(nil) {
 		if n, ok := plugin.GetOr("name", nil).(string); !ok || n != name || !pyTruthy(plugin.GetOr("_api_file", nil)) {
 			continue
@@ -126,15 +116,22 @@ func hostedPluginForRequest(ctx context.Context, name string) (*hostedTarget, er
 			continue
 		}
 		if pluginAPIMountSkipReason(plugin, plugins.EnabledPluginSet(ctx), plugins.DisabledPluginSet(ctx)) != "" {
-			return nil, nil
+			return ""
 		}
-		host, err := plugins.GetPluginManager(ctx).PluginHost()
-		if err != nil {
-			return nil, err
+		if pluginDir := guestPluginDir(plugin); pluginDir != "" {
+			return pluginDir
 		}
-		return &hostedTarget{host: host, dir: pyrepr.Str(plugin.GetOr("_dir", nil)), apiFile: pyrepr.Str(plugin.GetOr("_api_file", nil))}, nil
 	}
-	return nil, nil
+	return ""
+}
+
+// Plugin directory above a dashboard entry when it holds a runtime plugin, empty otherwise
+func guestPluginDir(plugin *pyjson.Object) string {
+	pluginDir := filepath.Dir(pyrepr.Str(plugin.GetOr("_dir", nil)))
+	if plugins.GuestManifest(pluginDir) == nil {
+		return ""
+	}
+	return pluginDir
 }
 
 // Route of a compiled in dashboard api handler bound to the request profile scope
@@ -226,7 +223,7 @@ func serveCompiledPluginAPI(ctx context.Context, handler http.Handler, req *Requ
 }
 
 // Route serving the plugin api when its trust gates pass, nil when it must not be mounted
-func onePluginAPIRoute(ctx context.Context, app *FastAPI, plugin *pyjson.Object, enabled, disabled map[string]bool) (*pluginAPIRoute, error) {
+func onePluginAPIRoute(app *FastAPI, plugin *pyjson.Object, enabled, disabled map[string]bool) (*pluginAPIRoute, error) {
 	apiFileName, _ := plugin.GetOr("_api_file", nil).(string)
 	if !pyTruthy(plugin.GetOr("_api_file", nil)) {
 		return nil, nil
@@ -239,13 +236,9 @@ func onePluginAPIRoute(ctx context.Context, app *FastAPI, plugin *pyjson.Object,
 		webServerLog().Debug(fmt.Sprintf("Plugin %s: skipping API mount (%s)", name, skip))
 		return nil, nil
 	}
-	source := plugin.GetOr("source", nil)
-	if source != "bundled" && source != "project" && plugins.IsolationMode(ctx, nil) == plugins.IsolationHost {
-		return mountHostedPluginAPI(plugin), nil
-	}
-	if source == "project" {
-		webServerLog().Warn(fmt.Sprintf("Plugin %s: ignoring backend api=%s (project plugins may "+
-			"not auto-import Python code; move the plugin to "+
+	if plugin.GetOr("source", nil) == "project" {
+		webServerLog().Warn(fmt.Sprintf("Plugin %s: ignoring backend api=%s (project plugins "+
+			"do not serve dashboard routes; move the plugin to "+
 			"~/.icebath/plugins/ if you trust it)", name, apiFileName))
 		return nil, nil
 	}
@@ -254,7 +247,7 @@ func onePluginAPIRoute(ctx context.Context, app *FastAPI, plugin *pyjson.Object,
 	resolved, errA := pypath.Resolve(apiPath)
 	root, errB := pypath.Resolve(dashboardDir)
 	if _, inside := pypath.PathRelativeTo(resolved, root); errA != nil || errB != nil || !inside {
-		webServerLog().Warn(fmt.Sprintf("Plugin %s: refusing to import api file outside its "+
+		webServerLog().Warn(fmt.Sprintf("Plugin %s: refusing an api path outside its "+
 			"dashboard directory (%s)", name, apiPath))
 		return nil, nil
 	}
@@ -267,19 +260,17 @@ func onePluginAPIRoute(ctx context.Context, app *FastAPI, plugin *pyjson.Object,
 		webServerLog().Info(fmt.Sprintf("Mounted plugin API routes: /api/plugins/%s/", name))
 		return route, nil
 	}
-	if _, err := pypath.PathlibStat(apiPath); err != nil {
-		if !pypath.PathlibIgnoredError(err) {
-			return nil, err
-		}
-		webServerLog().Warn(fmt.Sprintf("Plugin %s declares api=%s but file not found", name, apiFileName))
+	if guestPluginDir(plugin) == "" {
+		webServerLog().Warn(fmt.Sprintf("Plugin %s declares api=%s but is neither compiled in nor a runtime plugin; %s",
+			name, apiFileName, plugins.PluginFormsText))
 		return nil, nil
 	}
-	return mountHostedPluginAPI(plugin), nil
+	return mountGuestPluginAPI(plugin), nil
 }
 
 // Mounts one plugin api on the app when its trust gates pass, true when routes were added
-func mountOnePluginAPI(ctx context.Context, app *FastAPI, plugin *pyjson.Object, enabled, disabled map[string]bool) (bool, error) {
-	route, err := onePluginAPIRoute(ctx, app, plugin, enabled, disabled)
+func mountOnePluginAPI(app *FastAPI, plugin *pyjson.Object, enabled, disabled map[string]bool) (bool, error) {
+	route, err := onePluginAPIRoute(app, plugin, enabled, disabled)
 	if err != nil || route == nil {
 		return false, err
 	}
@@ -293,7 +284,7 @@ func mountPluginAPIRoutes(app *FastAPI) {
 	enabled, disabled := plugins.EnabledPluginSet(ctx), plugins.DisabledPluginSet(ctx)
 	for _, plugin := range getDashboardPlugins(ctx, false) {
 		pluginAPIMountMu.Lock()
-		_, err := mountOnePluginAPI(ctx, app, plugin, enabled, disabled)
+		_, err := mountOnePluginAPI(app, plugin, enabled, disabled)
 		pluginAPIMountMu.Unlock()
 		if err != nil {
 			panic(err)
@@ -341,7 +332,7 @@ func tryHotMountPluginAPI(ctx context.Context, app *FastAPI, name string) (bool,
 	if plugin == nil {
 		return false, nil
 	}
-	route, err := onePluginAPIRoute(lctx, app, plugin, enabled, disabled)
+	route, err := onePluginAPIRoute(app, plugin, enabled, disabled)
 	if err != nil || route == nil {
 		return false, err
 	}

@@ -3,11 +3,10 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 // What the gateway dashboard mount needs to serve the Webapp, its bundle, credential home and own public URL
@@ -46,14 +45,6 @@ func WebappDialOrigin(bindHost string, port int) string {
 	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
-// Built Webapp bundle of a checkout, the packaged one when this install ships it
-func webappDistDir(projectRoot string) string {
-	if packaged := WebappRendererBuild.PackagedDist(); packaged != "" {
-		return packaged
-	}
-	return filepath.Join(projectRoot, "apps", "desktop", "dist-webapp")
-}
-
 // Listener host, port, Webapp mount and the reason a webapp block asking for the Webapp cannot be used
 func WebappListenerPlan(ctx context.Context, h string) (string, int, *WebappMount, string) {
 	settings := WebappSettingsOf(ctx, h)
@@ -61,5 +52,9 @@ func WebappListenerPlan(ctx context.Context, h string) (string, int, *WebappMoun
 	if !settings.Enabled {
 		return host, port, nil, settings.Reason
 	}
-	return host, port, &WebappMount{Dist: webappDistDir(pm.RepoRoot()), Home: h, PublicURL: settings.PublicURL}, ""
+	dist, err := webbundle.Dir(ctx, webbundle.Webapp, nil)
+	if err != nil {
+		return host, port, nil, err.Error()
+	}
+	return host, port, &WebappMount{Dist: dist, Home: h, PublicURL: settings.PublicURL}, ""
 }

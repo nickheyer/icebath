@@ -4,29 +4,22 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
 
-const (
-	hostExtractTimeout   = 60 * time.Second
-	hostProfileCacheVers = 2
-)
-
-// Model provider profile whose overridden methods and callable fields run in the plugin host
+// Model provider profile a guest plugin registered, its methods and callable fields running in the guest
 type HostedProfile struct {
 	Name      string
 	Type      string
 	Fields    map[string]any
 	Calls     map[string]HostedProfileCall
 	PluginDir string
-	Module    string
-	// Why hermes would import this profile in process, its create_client then serving a live host client
-	InProcess string
+	inst      *guestInstance
+	creates   bool
 }
 
-// One overridden method or callable field of a hosted profile
+// One method or callable field of a hosted profile
 type HostedProfileCall struct {
 	Async bool
 	Sig   []wireParam
@@ -34,96 +27,123 @@ type HostedProfileCall struct {
 }
 
 func (p *HostedProfile) String() string {
-	return fmt.Sprintf("<plugin-host profile %s>", config.PyRepr(p.Name))
+	return fmt.Sprintf("<plugin profile %s>", config.PyRepr(p.Name))
 }
 
-// Runs one overridden method or callable field in the plugin host of the active profile
-func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwargs map[string]any) (any, error) {
-	m := GetPluginManager(ctx)
-	if m == nil {
-		return nil, &PluginHostUnavailable{Reason: "plugins.isolation is no longer 'host'; restart Icebath"}
+// Whether the profile builds its own client with create_client
+func (p *HostedProfile) CreatesClient() bool { return p.creates }
+
+// Parameters of one profile call, the guest loaded again first when the guest that registered the profile exited
+func (p *HostedProfile) params(ctx context.Context, attr string, args []any, kwargs map[string]any) (map[string]any, error) {
+	if _, _, err := p.inst.current(ctx); err != nil {
+		return nil, err
 	}
-	host, err := m.pluginHost()
+	h := p.inst.host
+	return map[string]any{"plugin_key": p.inst.key(), "profile": p.Name, "attr": attr,
+		"args": h.encodeArgs(nonNilArgs(args)), "kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, nil
+}
+
+// Runs one method or callable field of the profile in its guest
+func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwargs map[string]any) (any, error) {
+	params, err := p.params(ctx, attr, args, kwargs)
 	if err != nil {
 		return nil, err
 	}
-	return host.ProfileCall(ctx, p.PluginDir, p.Module, p.Name, attr, args, kwargs)
+	return p.inst.host.call(ctx, "profile_call", params, nil, 0, nil)
+}
+
+// Runs create_client in the guest and returns the client it built as a hosted object rebuilt after a guest restart
+func (p *HostedProfile) CreateClient(ctx context.Context, args []any, kwargs map[string]any) (*HostedObject, error) {
+	h := p.inst.host
+	build := func(ctx context.Context) (map[string]any, error) {
+		params, err := p.params(ctx, "create_client", args, kwargs)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := h.callIn(ctx, hostedRawRefBase, "profile_call", params, nil, 0, nil)
+		if err != nil {
+			return nil, err
+		}
+		ref, _ := raw.(map[string]any)
+		if _, ok := ref["__object__"]; !ok {
+			return nil, fmt.Errorf("profile %s create_client returned %T, not a client object", config.PyRepr(p.Name), raw)
+		}
+		return h.stampGeneration(ref), nil
+	}
+	ref, err := build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.objectProxy(ref, hostedClientBase, build), nil
 }
 
 var hostedProfilesMu sync.Mutex
 var hostedProfiles = map[string][]*HostedProfile{}
 
-// Hosted profile proxies of a model provider plugin plus the reason each profile that must load in process cannot be hosted
-func LoadHostedProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, map[string]string, error) {
-	all, err := loadProviderProfiles(ctx, pluginDir, moduleName)
-	if err != nil {
-		return nil, nil, err
-	}
-	inProcess := map[string]string{}
-	hosted := []*HostedProfile{}
-	for _, profile := range all {
-		if profile.InProcess != "" {
-			inProcess[profile.Name] = profile.InProcess
-			continue
-		}
-		hosted = append(hosted, profile)
-	}
-	hostedProfilesMu.Lock()
-	hostedProfiles[pluginDir] = hosted
-	hostedProfilesMu.Unlock()
-	return hosted, inProcess, nil
-}
-
-// Every profile a model provider plugin registers in extraction order, in process ones carrying their reason
-func loadProviderProfiles(ctx context.Context, pluginDir, moduleName string) ([]*HostedProfile, error) {
-	payload, err := cachedProfileExtraction(ctx, pluginDir, moduleName)
+// Every profile a model provider guest plugin directory registers, in registration order
+func LoadProviderPluginProfiles(ctx context.Context, pluginDir string) ([]*HostedProfile, error) {
+	mf, err := requireGuestManifest(pluginDir)
 	if err != nil {
 		return nil, err
 	}
-	if e := payload["error"]; config.PyTruthy(e) {
-		return nil, &PluginHostUnavailable{Reason: config.PyStr(e)}
+	inst, err := GetPluginManager(ctx).guestProviderLoad(mf, "model_provider", nil, false, nil)
+	if err != nil {
+		return nil, err
 	}
-	return hostedProfilesFrom(pluginDir, moduleName, payload["profiles"])
-}
-
-// Profile proxies of extraction entries, the in process reason kept on each profile that has one
-func hostedProfilesFrom(pluginDir, moduleName string, entries any) ([]*HostedProfile, error) {
-	out := []*HostedProfile{}
-	for _, raw := range listOrEmpty(entries) {
-		entry, _ := raw.(map[string]any)
-		if entry == nil {
-			continue
+	items, _, err := inst.current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profiles := []*HostedProfile{}
+	for _, item := range items {
+		ref, _ := item["value"].(map[string]any)
+		if _, isObject := ref["__object__"]; !isObject {
+			return nil, fmt.Errorf("plugin '%s' registered a model provider that is not a profile object", mf.Name)
 		}
-		profile, err := hostedProfileFrom(pluginDir, moduleName, entry)
+		profile, err := hostedProfileFrom(pluginDir, inst, ref, mapOrEmpty(item["attrs"]))
 		if err != nil {
 			return nil, err
 		}
-		if reason := entry["in_process"]; config.PyTruthy(reason) {
-			profile.InProcess = config.PyStr(reason)
-		}
-		out = append(out, profile)
+		profiles = append(profiles, profile)
 	}
-	return out, nil
+	hostedProfilesMu.Lock()
+	hostedProfiles[pluginDir] = profiles
+	hostedProfilesMu.Unlock()
+	return profiles, nil
 }
 
-func hostedProfileFrom(pluginDir, moduleName string, entry map[string]any) (*HostedProfile, error) {
-	p := &HostedProfile{Name: config.PyStr(entry["name"]), Type: wireStr(entry["type"]), Fields: map[string]any{},
-		Calls: map[string]HostedProfileCall{}, PluginDir: pluginDir, Module: moduleName}
-	for key, value := range mapOrEmpty(entry["fields"]) {
+// Profile of one captured profile object, callable attributes kept as calls and every other attribute as a field
+func hostedProfileFrom(pluginDir string, inst *guestInstance, ref, attrs map[string]any) (*HostedProfile, error) {
+	p := &HostedProfile{Type: wireStr(ref["type"]), Fields: map[string]any{}, Calls: map[string]HostedProfileCall{}, PluginDir: pluginDir, inst: inst}
+	for key, value := range attrs {
+		if wire, ok := value.(map[string]any); ok {
+			if _, callable := wire["__callable__"]; callable {
+				p.Calls[key] = HostedProfileCall{Async: config.PyTruthy(wire["async"]), Sig: signatureFrom(wire["sig"]), Field: true}
+				continue
+			}
+		}
 		decoded, err := wireDecode(value, nil)
 		if err != nil {
 			return nil, err
 		}
 		p.Fields[key] = decoded
 	}
-	for attr, raw := range mapOrEmpty(entry["calls"]) {
+	for name, raw := range mapOrEmpty(ref["methods"]) {
+		if name == "create_client" {
+			p.creates = true
+			continue
+		}
 		meta := mapOrEmpty(raw)
-		p.Calls[attr] = HostedProfileCall{Async: config.PyTruthy(meta["async"]), Sig: signatureFrom(meta["sig"]), Field: config.PyTruthy(meta["field"])}
+		p.Calls[name] = HostedProfileCall{Async: config.PyTruthy(meta["async"]), Sig: signatureFrom(meta["sig"])}
+	}
+	p.Name = config.PyStr(p.Fields["name"])
+	if p.Name == "" {
+		return nil, fmt.Errorf("a model provider profile of %s has no name attribute", pluginDir)
 	}
 	return p, nil
 }
 
-// Reports whether a profile value is a hosted proxy whose code runs in the plugin host
+// Reports whether a profile value is a hosted proxy whose code runs in a guest
 func IsHostedProfile(profile any) bool {
 	_, ok := profile.(*HostedProfile)
 	return ok
@@ -145,9 +165,4 @@ func hostedAmbientEnvNames() []string {
 		}
 	}
 	return sortedKeys(names)
-}
-
-// Extraction payload cached under the home by the plugin fingerprint and module name
-func cachedProfileExtraction(ctx context.Context, pluginDir, moduleName string) (map[string]any, error) {
-	return nil, errPythonSource()
 }

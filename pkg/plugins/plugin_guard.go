@@ -11,15 +11,13 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 // Skills guard engine applied to plugin install and update with plugin sized exemptions
 
-const PluginScannerVersion = "plugin-guard-v12"
+const PluginScannerVersion = "plugin-guard-v13"
 
 var excludedDirs = map[string]bool{
 	".git": true, "__pycache__": true, "node_modules": true, ".venv": true, "venv": true,
@@ -50,8 +48,6 @@ var severityRemap = map[string]string{"binary_file": "high", "hermes_env_access"
 var jsCapabilityRemap = map[string]string{"dns_exfil": "high", "ssh_backdoor": "high"}
 
 var docProseDemotions = map[string]string{"agent_config_mod": "high", "hardcoded_secret": "high"}
-
-var mainGuardDemotions = map[string]string{"hardcoded_secret": "high"}
 
 const (
 	maxPluginFileCount    = 400
@@ -95,49 +91,6 @@ func walkPlugin(pluginDir string) []walkEntry {
 
 func finding(patternID, severity, category, file, match, description string) skills.Finding {
 	return skills.Finding{PatternID: patternID, Severity: severity, Category: category, File: file, Line: 0, Match: match, Description: description}
-}
-
-// Whether an if test is the conventional module self test guard comparing __name__ with "__main__"
-func isMainGuard(n *pyast.Node) bool {
-	test := n.Child("test")
-	ops, comps := test.Children("ops"), test.Children("comparators")
-	if !test.Is("Compare") || len(ops) != 1 || !ops[0].Is("Eq") || len(comps) != 1 {
-		return false
-	}
-	isName := func(e *pyast.Node) bool { id, _ := e.Str("id"); return e.Is("Name") && id == "__name__" }
-	isMain := func(e *pyast.Node) bool {
-		v, ok := e.Get("value").(string)
-		return e.Is("Constant") && ok && v == "__main__"
-	}
-	left, right := test.Child("left"), comps[0]
-	return isName(left) && isMain(right) || isName(right) && isMain(left)
-}
-
-// Lines executed only by a module self test guard, none for unreadable, non UTF-8 or invalid Python
-func mainGuardBodyLines(filePath string) map[int]bool {
-	out := map[int]bool{}
-	data, err := os.ReadFile(filePath)
-	if err != nil || !utf8.Valid(data) {
-		return out
-	}
-	tree, err := pyast.Parse(strings.TrimPrefix(string(data), "\ufeff"))
-	if err != nil {
-		if le, ok := err.(*pyast.LimitError); ok {
-			panic(le)
-		}
-		return out
-	}
-	for _, n := range pyast.Walk(tree) {
-		if !n.Is("If") || !isMainGuard(n) {
-			continue
-		}
-		for _, st := range n.Children("body") {
-			for l := st.Lineno; l <= st.EndLineno; l++ {
-				out[l] = true
-			}
-		}
-	}
-	return out
 }
 
 var severityRankTable = map[string]int{"low": 0, "medium": 1, "high": 2, "critical": 3}
@@ -261,10 +214,6 @@ func isDefensiveDocumentation(f skills.Finding, relPath string) bool {
 func filterFindings(findings []skills.Finding, relPath, filePath string) []skills.Finding {
 	ext := relExt(relPath)
 	isCode := codeFileExtensions[ext]
-	mainGuardLines := map[int]bool{}
-	if strings.ToLower(filepath.Ext(filePath)) == ".py" {
-		mainGuardLines = mainGuardBodyLines(filePath)
-	}
 	isJS := ext == ".js" || ext == ".ts"
 	isCI := IsCIWorkflow(relPath)
 	docProse := IsDocProse(relPath) || isCI
@@ -303,9 +252,6 @@ func filterFindings(findings []skills.Finding, relPath, filePath string) []skill
 			if IsQuotedInjectionPhrase(f, line) {
 				f.Severity = atMost(f.Severity, "medium")
 			}
-		}
-		if v, ok := mainGuardDemotions[f.PatternID]; ok && f.Severity == "critical" && mainGuardLines[f.Line] {
-			f.Severity = v
 		}
 		out = append(out, f)
 	}

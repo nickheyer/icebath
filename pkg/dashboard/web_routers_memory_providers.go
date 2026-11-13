@@ -24,9 +24,6 @@ import (
 
 var memoryProviderNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-// Dependency sync of a provider, the memory setup function hermes tests patch
-var prepareMemoryProviderDependencies = memory.PrepareMemoryProviderDependencies
-
 // 404 for a provider name nothing answers to
 func unknownMemoryProvider(name string) error {
 	return NewHTTPException(404, "Unknown memory provider: "+name)
@@ -88,19 +85,6 @@ func setupCommandResult(kind, name, status, command string, completed *setupComp
 	}
 	return pyjson.ObjectOf("kind", kind, "name", name, "status", status, "command", command,
 		"returncode", returncode, "stdout", stdout, "stderr", trimSetupOutput(stderr, 4000))
-}
-
-// Syncs the Python dependencies of a provider through pm, one result row when anything was prepared or failed
-func installMemoryProviderPythonDependencies(ctx context.Context, name string) []any {
-	command := "icebath pm install"
-	_, status, err := prepareMemoryProviderDependencies(ctx, memoryToolsEnv(ctx), name)
-	if err != nil {
-		return []any{setupCommandResult("pip", name, "failed", command, nil, memoryExcStr(err))}
-	}
-	if status != "" {
-		return []any{setupCommandResult("pip", name, status, command, nil, "")}
-	}
-	return []any{}
 }
 
 // Runs a setup command and appends its result row, the returncode or false when it could not run
@@ -177,9 +161,9 @@ func installMemoryProviderSetup(ctx context.Context, name string) (*pyjson.Objec
 	if loaded == nil && len(manifest) == 0 {
 		return nil, unknownMemoryProvider(name)
 	}
-	results := installMemoryProviderPythonDependencies(ctx, name)
+	results := []any{}
 	external := []any{}
-	setup, _, err := memoryProviderSetupManifest(ctx, name)
+	setup, err := memoryProviderSetupManifest(ctx, name)
 	if err != nil {
 		results = append(results, setupCommandResult("setup", name, "failed", "", nil, memoryExcStr(err)))
 	} else {

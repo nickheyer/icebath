@@ -329,9 +329,7 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 		request["receipt"] = pyjson.Clone(current.Data)
 	}
 	if source, present := request["source"]; present {
-		if err := rebuildSourceCheckout(ctx, w, pyrepr.Str(source)); err != nil {
-			return err
-		}
+		announceCheckoutRebuild(w, pyrepr.Str(source))
 	}
 	var expectedSHA string
 	if pyrepr.Truthy(request["expected_sha"]) {

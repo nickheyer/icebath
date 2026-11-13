@@ -33,7 +33,7 @@ const (
 	hostExitWaitTimeout = 500 * time.Millisecond
 )
 
-// One host process for one manager, running the Python code of that profile plugins
+// Host end of one guest plugin, a WebAssembly instance or an external program speaking the plugin wire
 type PluginHost struct {
 	manager     *Manager
 	home        string
@@ -86,7 +86,7 @@ func (p *hostProcess) poll() (int, bool) {
 }
 
 func newPluginHost(m *Manager) (*PluginHost, error) {
-	h := &PluginHost{manager: m, home: m.home, contexts: map[string]*Context{}, handles: map[int64]*Registration{},
+	h := &PluginHost{manager: m, home: m.home, envOverride: m.guestEnv, contexts: map[string]*Context{}, handles: map[int64]*Registration{},
 		info: map[string]any{}, restartWait: time.Sleep, parents: map[int64]parentCallableSlot{}}
 	h.baseCtx = h.buildBaseContext()
 	return h, nil
@@ -432,62 +432,21 @@ func (h *PluginHost) Shutdown() {
 	}
 }
 
-// Public method names of the plugin context the child mirrors so attribute probes answer alike
-func hostCtxMethods() []string {
-	names := map[string]bool{"manifest": true, "plugin_id": true, "profile_name": true, "on_unload": true, "spawn_task": true,
-		"apost_message": true, "post_message": true}
-	for name := range hostCtxDispatch {
-		names[name] = true
-	}
-	for name := range HostUnsupportedCtxMethods {
-		names[name] = true
-	}
-	for name := range HostSkippedCtxMethods {
-		names[name] = true
-	}
-	for name := range HostRemoteFacades {
-		names[name] = true
-	}
-	return sortedKeys(names)
-}
-
-// Unsupported registrars the parent serves for a plugin loaded under in process isolation, none under host isolation
-func hostInProcessCtxMethods(ctx context.Context) map[string]bool {
-	served := map[string]bool{}
-	if IsolationMode(ctx, nil) != IsolationInProcess {
-		return served
-	}
-	for name := range HostInProcessObjectBases {
-		served[name] = true
-	}
-	for name := range hostInProcessServed {
-		served[name] = true
-	}
-	return served
-}
-
-// Imports a plugin in the child and replays its registrations onto the plugin context
-func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, moduleName string, entrypoint, predeclared bool) (string, error) {
+// Runs the register function of a guest plugin and replays its registrations onto the plugin context
+func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context) error {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
 	key := mf.ID()
-	served := hostInProcessCtxMethods(ctx)
-	if h.guest != nil {
-		served = guestServedCtxMethods()
-	}
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
-	pctx.hostInProcess = served
+	pctx.hostInProcess = guestServedCtxMethods()
 	h.loading = key
 	h.stateMu.Unlock()
-	params := map[string]any{
-		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": nilIfEmpty(moduleName),
-		"entrypoint": entrypoint, "predeclared": predeclared, "profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
-		"ctx_methods": anyList(hostCtxMethods()), "in_process_ctx_methods": anyList(sortedKeys(served)),
-	}
-	result, err := ch.Call(ctx, "load", params, 0)
+	params := map[string]any{"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path,
+		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf)}
+	_, err = ch.Call(ctx, "load", params, 0)
 	h.stateMu.Lock()
 	h.loading = ""
 	if err != nil {
@@ -495,35 +454,28 @@ func (h *PluginHost) Load(ctx context.Context, mf *Manifest, pctx *Context, modu
 	}
 	h.stateMu.Unlock()
 	if err != nil {
-		return "", h.unavailableAsExit(err)
+		return h.unavailableAsExit(err)
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return replyModuleFile(result), err
+	return err
 }
 
-// Module file the child reported for an imported plugin, empty for a module without one
-func replyModuleFile(result any) string {
-	reply, _ := result.(map[string]any)
-	return wireStr(reply["file"])
-}
-
-// Imports a deferred platform plugin tools.py in the child and runs its register_tools(ctx)
-func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context, moduleName string) (string, error) {
+// Runs the client tool registration of a deferred platform guest ahead of its adapter
+func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context) (string, error) {
 	ch, err := h.ensureStarted(ctx)
 	if err != nil {
 		return "", err
 	}
 	key := mf.ID()
-	served := hostInProcessCtxMethods(ctx)
+	served := guestServedCtxMethods()
 	h.stateMu.Lock()
 	h.contexts[key] = pctx
 	pctx.hostInProcess = served
 	h.loading = key
 	h.stateMu.Unlock()
 	params := map[string]any{
-		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path, "module_name": moduleName,
-		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf), "ctx_methods": anyList(hostCtxMethods()),
-		"in_process_ctx_methods": anyList(sortedKeys(served)),
+		"plugin_key": key, "plugin_id": pctx.PluginID(), "name": mf.Name, "path": mf.Path,
+		"profile_name": pctx.ProfileName(h.baseCtx), "manifest": hostManifestInfo(mf),
 	}
 	result, err := ch.Call(ctx, "load_tools", params, 0)
 	h.stateMu.Lock()
@@ -533,11 +485,11 @@ func (h *PluginHost) LoadTools(ctx context.Context, mf *Manifest, pctx *Context,
 		return "", h.unavailableAsExit(err)
 	}
 	if reply, _ := result.(map[string]any); reply != nil && reply["register_tools"] == false {
-		logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.",
+		logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but never called pluginsdk.RegisterTools; those tools will not be available in CLI/TUI sessions.",
 			key, pyListRepr(mf.ProvidesTools)))
 	}
 	_, err = pctx.OnUnload(func() error { return h.unload(key) })
-	return replyModuleFile(result), err
+	return filepath.Join(mf.Path, mf.Entry[0]), err
 }
 
 func pyListRepr(items []string) string { return config.PyRepr(anyList(items)) }
@@ -547,6 +499,7 @@ func hostManifestInfo(mf *Manifest) map[string]any {
 		"source": mf.Source, "path": mf.Path, "key": mf.Key, "kind": mf.Kind, "data_namespace": mf.DataNamespace}
 }
 
+// Wire null for an empty string
 func nilIfEmpty(s string) any {
 	if s == "" {
 		return nil
@@ -554,127 +507,69 @@ func nilIfEmpty(s string) any {
 	return s
 }
 
-// Loads a category plugin in the child and returns a proxy that reloads it after a host restart
-func (h *PluginHost) LoadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context)) (*HostedObject, error) {
-	return h.loadInstance(ctx, pluginDir, moduleName, baseRef, capture, pctx, beforeReload, nil)
-}
-
-// Category plugin load whose extra params ask the child for the in process loader path
-func (h *PluginHost) loadInstance(ctx context.Context, pluginDir, moduleName, baseRef, capture string, pctx *Context, beforeReload func(context.Context), extra map[string]any) (*HostedObject, error) {
-	name := filepath.Base(pluginDir)
-	load := func(ctx context.Context) (map[string]any, error) {
-		pluginID := name
-		if pctx != nil {
-			pluginID = pctx.PluginID()
-		}
-		params := map[string]any{
-			"plugin_id": pluginID, "name": name, "path": pluginDir, "module_name": moduleName,
-			"base": baseRef, "capture": capture, "forward": pctx != nil,
-			"manifest": map[string]any{"name": name, "path": pluginDir, "source": "user"},
-		}
-		for k, v := range extra {
-			params[k] = v
-		}
-		return h.instanceRef(ctx, capture+":"+name, "load_instance", params, pctx)
-	}
-	return h.reloadableInstance(ctx, capture, name, baseRef, load, beforeReload)
-}
-
-// Proxy over the object load answers, reloading it into a restarted child after beforeReload
-func (h *PluginHost) reloadableInstance(ctx context.Context, capture, name, baseRef string, load func(context.Context) (map[string]any, error), beforeReload func(context.Context)) (*HostedObject, error) {
-	ref, err := load(ctx)
-	if err != nil || ref == nil {
+// Settings schema the guest declared with pluginsdk.DeclareConfigSchema, nil when it declared none
+func (h *PluginHost) ConfigSchema(ctx context.Context) (map[string]any, error) {
+	if _, err := h.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
-	reload := func(ctx context.Context) (map[string]any, error) {
-		if h.restartRefused(fmt.Sprintf("%s plugin %s", capture, name)) {
-			return nil, &PluginHostUnavailable{Reason: h.exitReason()}
-		}
-		if beforeReload != nil {
-			beforeReload(ctx)
-		}
-		fresh, err := load(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if fresh == nil {
-			return nil, &PluginHostUnavailable{Reason: fmt.Sprintf("plugin %s no longer loads in the plugin host", config.PyRepr(name))}
-		}
-		return fresh, nil
-	}
-	return h.objectProxy(ref, baseRef, reload), nil
-}
-
-// Object ref one instance loading request answers, pctx serving the registrations it forwards
-func (h *PluginHost) instanceRef(ctx context.Context, key, method string, params map[string]any, pctx *Context) (map[string]any, error) {
-	ch, err := h.ensureStarted(ctx)
+	raw, err := h.call(ctx, "config_schema", map[string]any{}, nil, 0, nil)
 	if err != nil {
 		return nil, err
 	}
-	h.stateMu.Lock()
-	if pctx != nil {
-		h.contexts[key] = pctx
-	}
-	h.loading = key
-	h.stateMu.Unlock()
-	params["plugin_key"] = key
-	if _, ok := params["ctx_methods"]; !ok {
-		params["ctx_methods"] = anyList(hostCtxMethods())
-	}
-	raw, err := ch.Call(ctx, method, params, 0)
-	h.stateMu.Lock()
-	h.loading = ""
-	h.stateMu.Unlock()
-	if err != nil {
-		return nil, h.unavailableAsExit(err)
-	}
-	ref, _ := raw.(map[string]any)
-	if ref != nil {
-		h.mu.Lock()
-		ref["generation"] = int64(h.generation)
-		h.mu.Unlock()
-	}
-	return ref, nil
+	schema, _ := raw.(map[string]any)
+	return schema, nil
 }
 
-// Runs a user memory provider config_schema.py in the child and returns its CONFIG_SCHEMA
-func (h *PluginHost) ConfigSchema(ctx context.Context, path string) (any, error) {
+// Dashboard request forwarded to a guest plugin, its path relative to the plugin route prefix
+type DashboardRequest struct {
+	Method        string
+	Path          string
+	Query         string
+	Headers       [][2]string
+	Body          []byte
+	Authenticated bool
+}
+
+// Answer of a guest plugin to one dashboard request
+type DashboardResponse struct {
+	Status  int
+	Headers [][2]string
+	Body    []byte
+}
+
+// Forwards one dashboard request to the API handler the plugin loaded under key registered
+func (h *PluginHost) ServeDashboard(ctx context.Context, key string, req DashboardRequest, timeout time.Duration) (*DashboardResponse, error) {
 	if _, err := h.ensureStarted(ctx); err != nil {
 		return nil, err
 	}
-	return h.call(ctx, "config_schema", map[string]any{"path": path}, nil, 0, nil)
-}
-
-// Runs a model provider profile overridden method or callable field in the child
-func (h *PluginHost) ProfileCall(ctx context.Context, pluginDir, moduleName, profile, attr string, args []any, kwargs map[string]any) (any, error) {
-	if _, err := h.ensureStarted(ctx); err != nil {
-		return nil, err
-	}
-	return h.call(ctx, "profile_call", map[string]any{"path": pluginDir, "module_name": moduleName, "profile": profile,
-		"attr": attr, "args": h.encodeArgs(nonNilArgs(args)), "kwargs": h.encodeArgs(nonNilKwargs(kwargs))}, nil, 0, nil)
-}
-
-// Serves one dashboard plugin API request with the plugin router in the child, a TimeoutError after timeout
-func (h *PluginHost) ASGIRequest(ctx context.Context, pluginName, dashboardDir, apiFile, method, path, query string,
-	headers [][2]string, body []byte, timeout time.Duration, authenticated bool) (map[string]any, error) {
-	if _, err := h.ensureStarted(ctx); err != nil {
-		return nil, err
-	}
-	pairs := make([]any, len(headers))
-	for i, hd := range headers {
+	pairs := make([]any, len(req.Headers))
+	for i, hd := range req.Headers {
 		pairs[i] = []any{hd[0], hd[1]}
 	}
+	body := req.Body
 	if body == nil {
 		body = []byte{}
 	}
-	raw, err := h.call(ctx, "asgi", map[string]any{"plugin": pluginName, "dashboard_dir": dashboardDir, "api_file": apiFile,
-		"method": method, "path": path, "query": query, "authenticated": authenticated, "headers": pairs,
-		"body": wireEncode(body, nil)}, nil, timeout, nil)
+	raw, err := h.call(ctx, "http", map[string]any{"plugin": key, "method": req.Method, "path": req.Path, "query": req.Query,
+		"authenticated": req.Authenticated, "headers": pairs, "body": wireEncode(body, nil)}, nil, timeout, nil)
 	if err != nil {
 		return nil, err
 	}
 	reply, _ := raw.(map[string]any)
-	return reply, nil
+	status, ok := wireInt(reply["status"])
+	if !ok {
+		return nil, fmt.Errorf("plugin answered a dashboard request without a status")
+	}
+	resp := &DashboardResponse{Status: int(status)}
+	resp.Body, _ = reply["body"].([]byte)
+	for _, raw := range listOrEmpty(reply["headers"]) {
+		pair := listOrEmpty(raw)
+		if len(pair) != 2 {
+			return nil, fmt.Errorf("plugin answered a dashboard header that is not a name and value pair")
+		}
+		resp.Headers = append(resp.Headers, [2]string{wireStr(pair[0]), wireStr(pair[1])})
+	}
+	return resp, nil
 }
 
 // Drops a plugin from the child, logging each on_unload callback failure the child reports
@@ -701,21 +596,6 @@ func (h *PluginHost) unload(key string) error {
 		logWarn(fmt.Sprintf("Plugin '%s' on_unload callback failed in the plugin host: %s", key, wireStr(e)))
 	}
 	return nil
-}
-
-// Drops a module and its submodules from a running child, failing when it does not answer in time
-func (h *PluginHost) evictModules(moduleName string) error {
-	h.mu.Lock()
-	ch := h.channel
-	h.mu.Unlock()
-	if ch == nil {
-		return nil
-	}
-	if _, closed := ch.ClosedReason(); closed {
-		return nil
-	}
-	_, err := ch.Call(h.baseCtx, "evict_modules", map[string]any{"module_name": moduleName}, hostShutdownGrace)
-	return err
 }
 
 func (h *PluginHost) unavailableAsExit(err error) error {
@@ -830,8 +710,6 @@ func (h *PluginHost) handle(ctx context.Context, method string, params map[strin
 	case "release_parent":
 		h.releaseParentCallables(listOrEmpty(params["ids"]))
 		return nil, nil
-	case "collect_source":
-		return h.serveCollectSource(ctx, params)
 	case "io":
 		result, err := h.serveIO(ctx, params)
 		if err != nil {
@@ -1236,22 +1114,10 @@ func (o *HostedObject) HasMethod(name string) bool {
 // Async flag of a declared method
 func (o *HostedObject) MethodIsAsync(name string) bool { return o.methods[name].Async }
 
-// Whether the provider class replaces a base method, every declared method under host isolation
-func (o *HostedObject) OverridesBase(ctx context.Context, method string) (bool, error) {
-	if !strings.Contains(o.Base, ":") || IsolationMode(ctx, nil) == IsolationHost {
-		_, declared := o.methods[method]
-		return declared, nil
-	}
-	ref, generation, err := o.addr(ctx)
-	if err != nil {
-		return false, err
-	}
-	raw, err := o.host.call(ctx, "obj_overrides", map[string]any{"ref": ref, "base": o.Base, "method": method}, &generation, 0, nil)
-	if err != nil {
-		return false, err
-	}
-	overrides, _ := raw.(bool)
-	return overrides, nil
+// Whether the provider implements a method of its base, a guest object declaring only the methods it implements
+func (o *HostedObject) OverridesBase(_ context.Context, method string) (bool, error) {
+	_, declared := o.methods[method]
+	return declared, nil
 }
 
 // Calls one method of the plugin object in the child, a dotted name reading its attribute path first as Python does
@@ -1326,7 +1192,7 @@ func (o *HostedObject) remoteGet(ctx context.Context, name string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if nested, ok := value.(*HostedObject); ok && (o.Base == hostedClientBase || o.Base == hostedModuleBase) {
+	if nested, ok := value.(*HostedObject); ok && o.Base == hostedClientBase {
 		nested.slot.reload = o.attributeReload(name)
 	}
 	if m, ok := value.(map[string]any); ok && len(m) == 1 {

@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 const (
@@ -218,35 +219,24 @@ func webappPublicURL(v any) (string, bool) {
 	return "", false
 }
 
-// Marker an update writes into a bundle it could not rebuild
-const WebappStaleMarker = ".icebath-stale"
+// Prefix of every reason the mounted Webapp bundle cannot be served, none of which a gateway restart fixes
+const WebappNotBuilt = "The Webapp is not built"
 
-// Reasons the Webapp is not served, unbuilt or not rebuilt for this version
-const (
-	WebappNotBuilt   = "The Webapp is not built"
-	WebappNotRebuilt = WebappNotBuilt + " for this version of Icebath: icebath update could not rebuild it. " +
-		"Run icebath webapp to rebuild it."
-)
-
-// True when the bundle in dist carries the out of date marker
-func WebappBundleStale(dist string) bool {
-	info, err := os.Stat(filepath.Join(dist, WebappStaleMarker))
-	return err == nil && info.Mode().IsRegular()
-}
-
-// Not rebuilt reason while the bundle is marked out of date, empty otherwise
-func BundleStaleReason(dist string) string {
-	if WebappBundleStale(dist) {
-		return WebappNotRebuilt
-	}
-	return ""
-}
-
-// Why the Webapp cannot be served from dist, empty once a current bundle is built
+// Why the mounted Webapp bundle cannot be served, empty while its index is present or once it is restored in place
 func BundleMissingReason(dist string) string {
 	index := filepath.Join(dist, "index.html")
-	if info, err := os.Stat(index); err == nil && info.Mode().IsRegular() {
-		return BundleStaleReason(dist)
+	present := func() bool {
+		info, err := os.Stat(index)
+		return err == nil && info.Mode().IsRegular()
 	}
-	return fmt.Sprintf("%s (%s is missing). Run icebath webapp to build it.", WebappNotBuilt, index)
+	if present() {
+		return ""
+	}
+	if _, err := webbundle.Dir(context.Background(), webbundle.Webapp, nil); err != nil {
+		return fmt.Sprintf("%s (%s is missing): %s.", WebappNotBuilt, index, err)
+	}
+	if present() {
+		return ""
+	}
+	return fmt.Sprintf("%s (%s is missing). Restart the gateway to serve the current bundle: %s.", WebappNotBuilt, index, webappRestartCommand)
 }

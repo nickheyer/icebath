@@ -83,7 +83,7 @@ func discardTree(h, tree string) error {
 		return err
 	}
 	if err := os.Rename(tree, filepath.Join(holder, "plugin")); err != nil {
-		for _, name := range []string{"plugin.yaml", "plugin.yml", "plugin.json", "__init__.py"} {
+		for _, name := range []string{"plugin.yaml", "plugin.yml", "plugin.json"} {
 			if err := os.Remove(filepath.Join(tree, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return err
 			}

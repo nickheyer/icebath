@@ -1,993 +1,614 @@
 package yuanbao
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
-	"math/big"
-	"sort"
-	"sync"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
-	bizPkg             = "yuanbao_openclaw_proxy"
-	IcebathInstanceID  = 17
-	WSHeartbeatRunning = 1
-	WSHeartbeatFinish  = 2
-	seqMax             = 1<<32 - 1
-	WTVarint           = 0
-	WT64Bit            = 1
-	WTLen              = 2
-	WT32Bit            = 5
+	bizModule        = "yuanbao_openclaw_proxy"
+	connModule       = "conn_access"
+	instanceID       = "17"
+	heartbeatRunning = 1
+	heartbeatFinish  = 2
+	cmdTypeRequest   = 0
+	cmdTypeResponse  = 1
+	cmdTypePush      = 2
+	cmdTypePushAck   = 3
+	cmdAuthBind      = "auth-bind"
+	cmdPing          = "ping"
+	cmdKickout       = "kickout"
+	codeAlreadyAuth  = 41101
 )
 
-var (
-	PBMsgTypes  = map[string]string{}
-	CmdType     = map[string]int64{"Request": 0, "Response": 1, "Push": 2, "PushAck": 3}
-	Cmd         = map[string]string{"AuthBind": "auth-bind", "Ping": "ping", "Kickout": "kickout", "UpdateMeta": "update-meta"}
-	Module      = map[string]string{"ConnAccess": "conn_access"}
-	BizServices = map[string]string{"InboundMessagePush": bizPkg + ".InboundMessagePush"}
-	fixedSize   = map[int64]int{WT64Bit: 8, WT32Bit: 4}
+const (
+	wireVarint  = 0
+	wireFixed64 = 1
+	wireBytes   = 2
+	wireFixed32 = 5
 )
 
-func init() {
-	for _, n := range []string{"ConnMsg", "AuthBindReq", "AuthBindRsp", "PingReq", "PingRsp", "KickoutMsg", "DirectedPush", "PushMsg"} {
-		PBMsgTypes[n] = "trpc.yuanbao.conn_common." + n
+var seqCounter atomic.Uint32
+
+// Next frame sequence number, wrapping at the uint32 range
+func nextSeq() uint32 { return seqCounter.Add(1) - 1 }
+
+// Protobuf encoder that omits zero values the way proto3 does
+type pbWriter struct{ buf []byte }
+
+func (w *pbWriter) key(num, wire int) {
+	w.buf = binary.AppendUvarint(w.buf, uint64(num)<<3|uint64(wire))
+}
+
+func (w *pbWriter) uint(num int, v uint64) {
+	if v != 0 {
+		w.key(num, wireVarint)
+		w.buf = binary.AppendUvarint(w.buf, v)
 	}
-	for _, m := range []string{"SendC2CMessage", "SendGroupMessage", "QueryGroupInfo", "GetGroupMemberList", "SendPrivateHeartbeat", "SendGroupHeartbeat"} {
-		for _, k := range []string{"Req", "Rsp"} {
-			BizServices[m+k] = bizPkg + "." + m + k
+}
+
+func (w *pbWriter) bool(num int, v bool) {
+	if v {
+		w.uint(num, 1)
+	}
+}
+
+func (w *pbWriter) str(num int, s string) {
+	if s != "" {
+		w.raw(num, []byte(s))
+	}
+}
+
+func (w *pbWriter) bytes(num int, b []byte) {
+	if len(b) > 0 {
+		w.raw(num, b)
+	}
+}
+
+// Length delimited field written even when empty
+func (w *pbWriter) raw(num int, b []byte) {
+	w.key(num, wireBytes)
+	w.buf = binary.AppendUvarint(w.buf, uint64(len(b)))
+	w.buf = append(w.buf, b...)
+}
+
+// One wire value of a parsed field
+type pbValue struct {
+	wire int
+	num  uint64
+	data []byte
+}
+
+// Parsed protobuf message keyed by field number with values in wire order
+type pbFields map[int][]pbValue
+
+// Fields of a protobuf message, an error for a truncated or unknown encoding
+func parsePB(data []byte) (pbFields, error) {
+	out := pbFields{}
+	for pos := 0; pos < len(data); {
+		tag, n := binary.Uvarint(data[pos:])
+		if n <= 0 {
+			return nil, errors.New("malformed protobuf field tag")
 		}
-	}
-}
-
-var (
-	seqMu      sync.Mutex
-	seqCounter int64
-)
-
-// NextSeqNo returns the next uint32 sequence number, wrapping to zero, safe across goroutines
-func NextSeqNo() int64 {
-	seqMu.Lock()
-	defer seqMu.Unlock()
-	val := seqCounter
-	seqCounter = (seqCounter + 1) & seqMax
-	return val
-}
-
-var mask64 = new(big.Int).SetUint64(^uint64(0))
-
-// EncodeVarint writes a protobuf varint, negatives as 64 bit two's complement
-func EncodeVarint(value *big.Int) []byte {
-	v := new(big.Int).Set(value)
-	if v.Sign() < 0 {
-		v.And(v, mask64)
-	}
-	var out []byte
-	for {
-		bits := byte(new(big.Int).And(v, big.NewInt(0x7F)).Int64())
-		v.Rsh(v, 7)
-		if v.Sign() == 0 {
-			return append(out, bits)
-		}
-		out = append(out, bits|0x80)
-	}
-}
-
-func varint64(n int64) []byte { return EncodeVarint(big.NewInt(n)) }
-
-// DecodeVarint reads a varint at pos as int64 or *big.Int and returns the new position
-func DecodeVarint(data []byte, pos int) (any, int, error) {
-	result, shift := new(big.Int), uint(0)
-	for pos < len(data) {
-		b := data[pos]
-		pos++
-		result.Or(result, new(big.Int).Lsh(big.NewInt(int64(b&0x7F)), shift))
-		shift += 7
-		if b&0x80 == 0 {
-			break
-		}
-		if shift >= 64 {
-			return nil, pos, fmt.Errorf("varint too long")
-		}
-	}
-	return pyint.Value(result), pos, nil
-}
-
-// EncodeField prefixes a value with its field tag
-func EncodeField(fieldNumber int64, wireType int64, value []byte) []byte {
-	return append(varint64(fieldNumber<<3|wireType), value...)
-}
-
-// EncodeMessage length prefixes bytes or a nested message
-func EncodeMessage(b []byte) []byte { return append(varint64(int64(len(b))), b...) }
-
-// EncodeString length prefixes the UTF-8 bytes of a string
-func EncodeString(s string) ([]byte, error) {
-	if err := pystr.StrictUTF8EncodeError(s); err != nil {
-		return nil, err
-	}
-	return EncodeMessage([]byte(s)), nil
-}
-
-// Field is one parsed field, Value an int64 or *big.Int for varints and bytes otherwise
-type Field struct {
-	Number   any
-	WireType int64
-	Value    any
-}
-
-func asInt64(v any) (int64, bool) {
-	n, ok := v.(int64)
-	return n, ok
-}
-
-// ParseFields splits a protobuf message into its fields in wire order
-func ParseFields(data []byte) ([]Field, error) {
-	var fields []Field
-	pos := 0
-	for pos < len(data) {
-		tagAny, next, err := DecodeVarint(data, pos)
-		if err != nil {
-			return nil, err
-		}
-		pos = next
-		tag, _ := pyint.Instance(tagAny)
-		wireType := new(big.Int).And(tag, big.NewInt(7)).Int64()
-		number := pyint.Value(new(big.Int).Rsh(tag, 3))
-		var val any
-		if wireType == WTVarint {
-			val, pos, err = DecodeVarint(data, pos)
-			if err != nil {
-				return nil, err
+		pos += n
+		v := pbValue{wire: int(tag & 7)}
+		switch v.wire {
+		case wireVarint:
+			x, n := binary.Uvarint(data[pos:])
+			if n <= 0 {
+				return nil, errors.New("malformed protobuf varint")
 			}
-		} else {
-			var length int
-			if wireType == WTLen {
-				lv, next, err := DecodeVarint(data, pos)
-				if err != nil {
-					return nil, err
-				}
-				pos = next
-				l, ok := asInt64(lv)
-				if !ok || l > int64(len(data)) {
-					l = int64(len(data))
-				}
-				length = int(l)
-			} else if n, ok := fixedSize[wireType]; ok {
-				length = n
-			} else {
-				return nil, fmt.Errorf("unknown wire type %d at pos %d", wireType, pos-1)
+			v.num, pos = x, pos+n
+		case wireBytes:
+			l, n := binary.Uvarint(data[pos:])
+			if n <= 0 || l > uint64(len(data)-pos-n) {
+				return nil, errors.New("truncated protobuf length delimited field")
 			}
-			end := min(pos+length, len(data))
-			val = append([]byte{}, data[min(pos, len(data)):end]...)
-			pos += length
+			pos += n
+			v.data, pos = data[pos:pos+int(l)], pos+int(l)
+		case wireFixed64, wireFixed32:
+			size := 8
+			if v.wire == wireFixed32 {
+				size = 4
+			}
+			if len(data)-pos < size {
+				return nil, errors.New("truncated protobuf fixed field")
+			}
+			v.data, pos = data[pos:pos+size], pos+size
+		default:
+			return nil, fmt.Errorf("unknown protobuf wire type %d", v.wire)
 		}
-		fields = append(fields, Field{number, wireType, val})
+		num := int(tag >> 3)
+		out[num] = append(out[num], v)
 	}
-	return fields, nil
+	return out, nil
 }
 
-type fieldEntry struct {
-	wireType int64
-	value    any
-}
-
-// FieldDict maps a field number to its entries in wire order, repeated fields holding several
-type FieldDict map[string][]fieldEntry
-
-func fieldKey(n any) string { return pyrepr.Str(n) }
-
-// FieldsToDict groups parsed fields by field number
-func FieldsToDict(fields []Field) FieldDict {
-	d := FieldDict{}
-	for _, f := range fields {
-		k := fieldKey(f.Number)
-		d[k] = append(d[k], fieldEntry{f.WireType, f.Value})
+func (f pbFields) last(num, wire int) (pbValue, bool) {
+	vs := f[num]
+	for i := len(vs) - 1; i >= 0; i-- {
+		if vs[i].wire == wire {
+			return vs[i], true
+		}
 	}
-	return d
+	return pbValue{}, false
 }
 
-func parseDict(data []byte) (FieldDict, error) {
-	fields, err := ParseFields(data)
-	if err != nil {
-		return nil, err
-	}
-	return FieldsToDict(fields), nil
-}
-
-func (d FieldDict) first(fn int64, wt int64) any {
-	entries := d[fieldKey(int64(fn))]
-	if len(entries) > 0 && entries[0].wireType == wt {
-		return entries[0].value
-	}
-	return nil
-}
-
-// GetString decodes the first length delimited field with replacement, empty when absent
-func (d FieldDict) GetString(fn int64) string {
-	if b, ok := d.first(fn, WTLen).([]byte); ok {
-		return pystr.DecodeUTF8Replace(b)
+func (f pbFields) str(num int) string {
+	if v, ok := f.last(num, wireBytes); ok {
+		return strings.ToValidUTF8(string(v.data), "�")
 	}
 	return ""
 }
 
-// GetVarint returns the first varint field as int64 or *big.Int, zero when absent
-func (d FieldDict) GetVarint(fn int64) any {
-	if v := d.first(fn, WTVarint); v != nil {
-		return v
+func (f pbFields) bytesOf(num int) []byte {
+	if v, ok := f.last(num, wireBytes); ok {
+		return v.data
 	}
-	return int64(0)
+	return nil
 }
 
-// GetBytes returns the first length delimited field, empty when absent
-func (d FieldDict) GetBytes(fn int64) []byte {
-	if b, ok := d.first(fn, WTLen).([]byte); ok {
-		return b
+func (f pbFields) uint(num int) uint64 {
+	if v, ok := f.last(num, wireVarint); ok {
+		return v.num
 	}
-	return []byte{}
+	return 0
 }
 
-// GetRepeatedBytes returns every length delimited entry of a field
-func (d FieldDict) GetRepeatedBytes(fn int64) [][]byte {
+func (f pbFields) int32(num int) int32 { return int32(f.uint(num)) }
+
+func (f pbFields) repeated(num int) [][]byte {
 	var out [][]byte
-	for _, e := range d[fieldKey(int64(fn))] {
-		if e.wireType == WTLen {
-			out = append(out, e.value.([]byte))
+	for _, v := range f[num] {
+		if v.wire == wireBytes {
+			out = append(out, v.data)
 		}
 	}
 	return out
 }
 
-func (d FieldDict) parseRepeated(fn int64) ([]FieldDict, error) {
-	var out []FieldDict
-	for _, b := range d.GetRepeatedBytes(fn) {
-		fd, err := parseDict(b)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, fd)
-	}
-	return out, nil
+// Envelope header of every websocket frame
+type connHead struct {
+	CmdType uint32
+	Cmd     string
+	SeqNo   uint32
+	MsgID   string
+	Module  string
+	NeedAck bool
+	Status  int32
 }
 
-// Sticky error protobuf writer
-type pbuf struct {
-	b   []byte
-	err error
+func (h connHead) encode() []byte {
+	w := pbWriter{}
+	w.uint(1, uint64(h.CmdType))
+	w.str(2, h.Cmd)
+	w.uint(3, uint64(h.SeqNo))
+	w.str(4, h.MsgID)
+	w.str(5, h.Module)
+	w.bool(6, h.NeedAck)
+	w.uint(10, uint64(int64(h.Status)))
+	return w.buf
 }
 
-func (p *pbuf) s(fn int64, s string) {
-	if p.err != nil {
-		return
-	}
-	enc, err := EncodeString(s)
+// Frame bytes of a header and its payload
+func encodeConnMsg(h connHead, data []byte) []byte {
+	w := pbWriter{}
+	w.raw(1, h.encode())
+	w.bytes(2, data)
+	return w.buf
+}
+
+// Header and payload of one websocket frame
+func decodeConnMsg(frame []byte) (connHead, []byte, error) {
+	f, err := parsePB(frame)
 	if err != nil {
-		p.err = err
-		return
+		return connHead{}, nil, err
 	}
-	p.b = append(p.b, EncodeField(fn, WTLen, enc)...)
-}
-
-func (p *pbuf) v(fn int64, n *big.Int) {
-	if p.err == nil {
-		p.b = append(p.b, EncodeField(fn, WTVarint, EncodeVarint(n))...)
-	}
-}
-
-func (p *pbuf) m(fn int64, b []byte) {
-	if p.err == nil {
-		p.b = append(p.b, EncodeField(fn, WTLen, EncodeMessage(b))...)
-	}
-}
-
-func (p *pbuf) fail(err error) {
-	if p.err == nil {
-		p.err = err
-	}
-}
-
-type part struct {
-	fn   int64
-	kind byte
-	val  any
-}
-
-func typeErr(op string, v any) error {
-	return fmt.Errorf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), op)
-}
-
-func intOf(v any) (*big.Int, error) {
-	if n, ok := pyint.Instance(v); ok {
-		return n, nil
-	}
-	return nil, fmt.Errorf("'<' not supported between instances of '%s' and 'int'", pyrepr.TypeName(v))
-}
-
-// Encodes the parts whose value is set, S always and n whenever not None
-func encodeParts(parts []part) ([]byte, error) {
-	p := &pbuf{}
-	for _, pt := range parts {
-		if !(pt.kind == 'S' || (pt.kind == 'n' && pt.val != nil) || (pt.kind != 'n' && truthyNum(pt.val))) {
-			continue
-		}
-		switch pt.kind {
-		case 'S', 's':
-			s, ok := pt.val.(string)
-			if !ok {
-				p.fail(typeErr("encode", pt.val))
-				continue
-			}
-			p.s(pt.fn, s)
-		case 'v', 'n':
-			n, err := intOf(pt.val)
-			if err != nil {
-				p.fail(err)
-				continue
-			}
-			p.v(pt.fn, n)
-		case 'm':
-			p.m(pt.fn, pt.val.([]byte))
-		case 'b':
-			body, ok := pt.val.([]any)
-			if !ok {
-				p.fail(fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(pt.val)))
-				continue
-			}
-			for _, el := range body {
-				enc, err := EncodeMsgBodyElement(el)
-				if err != nil {
-					p.fail(err)
-					break
-				}
-				p.m(pt.fn, enc)
-			}
-		case 't':
-			s, ok := pt.val.(string)
-			if !ok {
-				p.fail(typeErr("encode", pt.val))
-				continue
-			}
-			inner := &pbuf{}
-			inner.s(1, s)
-			p.fail(inner.err)
-			p.m(pt.fn, inner.b)
-		}
-	}
-	return p.b, p.err
-}
-
-type specField struct {
-	fn   int64
-	key  string
-	kind byte
-}
-
-// Dict view over a decoded JSON object or a Go map, ok false for any other value
-func asDict(v any) (map[string]any, bool) {
-	switch d := v.(type) {
-	case *pyjson.Object:
-		return d.Vals, true
-	case map[string]any:
-		return d, true
-	}
-	return nil, false
-}
-
-// Keys of a dict in iteration order, Go maps in sorted order
-func dictKeys(v any) []string {
-	if o, ok := v.(*pyjson.Object); ok {
-		return o.Keys
-	}
-	m, _ := v.(map[string]any)
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func encodeSpec(objValue any, spec []specField) ([]byte, error) {
-	obj, ok := asDict(objValue)
-	if !ok {
-		return nil, typeErr("get", objValue)
-	}
-	p := &pbuf{}
-	for _, f := range spec {
-		v, present := obj[f.key]
-		if !present {
-			v = int64(0)
-			if f.kind == 's' || f.kind == 'r' {
-				v = ""
-			}
-		}
-		if !truthyNum(v) {
-			continue
-		}
-		switch f.kind {
-		case 's':
-			p.s(f.fn, pyrepr.Str(v))
-		case 'r':
-			s, ok := v.(string)
-			if !ok {
-				p.fail(typeErr("encode", v))
-				continue
-			}
-			p.s(f.fn, s)
-		default:
-			n, err := pyint.Of(v)
-			if err != nil {
-				p.fail(err)
-				continue
-			}
-			p.v(f.fn, n)
-		}
-	}
-	return p.b, p.err
-}
-
-// Python truth value with arbitrary precision ints counted as numbers
-func truthyNum(v any) bool {
-	if n, ok := v.(*big.Int); ok {
-		return n.Sign() != 0
-	}
-	return pyrepr.Truthy(v)
-}
-
-func decodeSpec(fd FieldDict, spec []specField) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, f := range spec {
-		var v any
-		if f.kind == 's' || f.kind == 'r' {
-			v = fd.GetString(f.fn)
-		} else {
-			v = fd.GetVarint(f.fn)
-		}
-		if truthyNum(v) {
-			out.Set(f.key, v)
-		}
-	}
-	return out
-}
-
-func encodeHead(cmdType int64, cmd string, seqNo int64, msgID, module string, needAck bool, status *big.Int) ([]byte, error) {
-	ack := int64(0)
-	if needAck {
-		ack = 1
-	}
-	return encodeParts([]part{{1, 'v', cmdType}, {2, 's', cmd}, {3, 'v', seqNo}, {4, 's', msgID}, {5, 's', module},
-		{6, 'v', ack}, {10, 'v', new(big.Int).And(status, mask64)}})
-}
-
-func decodeHead(data []byte) (*pyjson.Object, error) {
-	fd, err := parseDict(data)
+	hf, err := parsePB(f.bytesOf(1))
 	if err != nil {
-		return nil, err
+		return connHead{}, nil, err
 	}
-	head := pyjson.NewObject()
-	head.Set("cmd_type", fd.GetVarint(1))
-	head.Set("cmd", fd.GetString(2))
-	head.Set("seq_no", fd.GetVarint(3))
-	head.Set("msg_id", fd.GetString(4))
-	head.Set("module", fd.GetString(5))
-	head.Set("need_ack", truthyNum(fd.GetVarint(6)))
-	head.Set("status", fd.GetVarint(10))
-	return head, nil
+	h := connHead{CmdType: uint32(hf.uint(1)), Cmd: hf.str(2), SeqNo: uint32(hf.uint(3)), MsgID: hf.str(4),
+		Module: hf.str(5), NeedAck: hf.uint(6) != 0, Status: hf.int32(10)}
+	return h, f.bytesOf(2), nil
 }
 
-// EncodeConnMsgFull encodes a ConnMsg with every head field and the optional payload
-func EncodeConnMsgFull(cmdType int64, cmd string, seqNo int64, msgID, module string, data []byte, needAck bool) ([]byte, error) {
-	head, err := encodeHead(cmdType, cmd, seqNo, msgID, module, needAck, big.NewInt(0))
-	if err != nil {
-		return nil, err
-	}
-	p := &pbuf{}
-	p.m(1, head)
-	if len(data) > 0 {
-		p.m(2, data)
-	}
-	return p.b, nil
+// Request frame stamped with a fresh sequence number
+func connRequest(cmdType uint32, cmd, msgID, module string, data []byte) []byte {
+	return encodeConnMsg(connHead{CmdType: cmdType, Cmd: cmd, SeqNo: nextSeq(), MsgID: msgID, Module: module}, data)
 }
 
-// EncodeConnMsg encodes a ConnMsg carrying only cmd_type, seq_no and the payload
-func EncodeConnMsg(msgType, seqNo int64, data []byte) []byte {
-	out, _ := EncodeConnMsgFull(msgType, "", seqNo, "", "", data, false)
-	return out
-}
-
-// DecodeConnMsg decodes a ConnMsg into msg_type, seq_no, data and the full head
-func DecodeConnMsg(data []byte) (*pyjson.Object, error) {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil, err
-	}
-	head, err := decodeHead(fd.GetBytes(1))
-	if err != nil {
-		return nil, err
-	}
-	out := pyjson.NewObject()
-	out.Set("msg_type", head.Vals["cmd_type"])
-	out.Set("seq_no", head.Vals["seq_no"])
-	out.Set("data", fd.GetBytes(2))
-	out.Set("head", head)
-	return out, nil
-}
-
-func connRequest(cmdType int64, cmd, msgID, module string, data []byte) ([]byte, error) {
-	return EncodeConnMsgFull(cmdType, cmd, NextSeqNo(), msgID, module, data, false)
-}
-
-// EncodeBizMsg wraps an encoded business payload as a request ConnMsg
-func EncodeBizMsg(service, method, reqID string, body []byte) ([]byte, error) {
-	return connRequest(CmdType["Request"], method, reqID, service, body)
-}
-
-// DecodeBizMsg decodes a ConnMsg into service, method, req_id, body, is_response and head
-func DecodeBizMsg(data []byte) (*pyjson.Object, error) {
-	result, err := DecodeConnMsg(data)
-	if err != nil {
-		return nil, err
-	}
-	head := result.Vals["head"].(*pyjson.Object)
-	out := pyjson.NewObject()
-	out.Set("service", head.Vals["module"])
-	out.Set("method", head.Vals["cmd"])
-	out.Set("req_id", head.Vals["msg_id"])
-	out.Set("body", result.Vals["data"])
-	out.Set("is_response", pyjson.Equal(head.Vals["cmd_type"], CmdType["Response"]))
-	out.Set("head", head)
-	return out, nil
-}
-
-// Biz request whose req_id is the msg_id, else prefix_seq with seq taken before the conn seq_no
-func bizRequest(method, prefix string, body []byte, msgID string) ([]byte, error) {
+// Business request frame and its request id, drawn from prefix and the sequence when msgID is empty
+func bizRequest(method, prefix, msgID string, body []byte) ([]byte, string) {
 	if msgID == "" {
-		msgID = fmt.Sprintf("%s_%d", prefix, NextSeqNo())
+		msgID = prefix + "_" + strconv.FormatUint(uint64(nextSeq()), 10)
 	}
-	return EncodeBizMsg(bizPkg, method, msgID, body)
+	return connRequest(cmdTypeRequest, method, msgID, bizModule, body), msgID
 }
 
-var (
-	msgContentSpec = []specField{{1, "text", 's'}, {2, "uuid", 's'}, {4, "data", 's'}, {5, "desc", 's'}, {6, "ext", 's'},
-		{7, "sound", 's'}, {10, "url", 's'}, {12, "file_name", 's'}, {3, "image_format", 'i'}, {9, "index", 'i'}, {11, "file_size", 'i'}}
-	imageInfoSpec         = []specField{{1, "type", 'i'}, {2, "size", 'i'}, {3, "width", 'i'}, {4, "height", 'i'}, {5, "url", 'r'}}
-	mapEntrySpec          = []specField{{1, "key", 's'}, {2, "value", 's'}}
-	forwardMultimediaSpec = []specField{{1, "type", 's'}, {2, "url", 's'}, {4, "file_name", 's'}, {5, "file_size", 'i'}, {15, "media_id", 's'}}
-)
+// One key value entry of a message content ext map in wire order
+type extEntry struct{ Key, Value string }
 
-func encodeMsgContent(contentValue any) ([]byte, error) {
-	buf, err := encodeSpec(contentValue, msgContentSpec)
-	if err != nil {
-		return nil, err
-	}
-	content, _ := asDict(contentValue)
-	p := &pbuf{b: buf}
-	if imgs := content["image_info_array"]; pyrepr.Truthy(imgs) {
-		list, ok := imgs.([]any)
-		if !ok {
-			return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(imgs))
-		}
-		for _, img := range list {
-			enc, err := encodeSpec(img, imageInfoSpec)
-			if err != nil {
-				return nil, err
-			}
-			p.m(8, enc)
-		}
-	}
-	if extMap, ok := asDict(content["ext_map"]); ok {
-		for _, k := range dictKeys(content["ext_map"]) {
-			entry := map[string]any{"key": k, "value": pyrepr.Str(extMap[k])}
-			enc, err := encodeSpec(entry, mapEntrySpec)
-			if err != nil {
-				return nil, err
-			}
-			p.m(999, enc)
-		}
-	}
-	return p.b, p.err
+// Image variant of a TIMImageElem
+type imageInfo struct {
+	Type, Size, Width, Height uint32
+	URL                       string
 }
 
-func decodeMsgContent(data []byte) (*pyjson.Object, error) {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil, err
-	}
-	content := decodeSpec(fd, msgContentSpec)
-	rep, err := fd.parseRepeated(8)
-	if err != nil {
-		return nil, err
-	}
-	imgs := []any{}
-	for _, d := range rep {
-		if img := decodeSpec(d, imageInfoSpec); img.Len() > 0 {
-			imgs = append(imgs, img)
-		}
-	}
-	entries, err := fd.parseRepeated(999)
-	if err != nil {
-		return nil, err
-	}
-	extMap := pyjson.NewObject()
-	for _, e := range entries {
-		if k := e.GetString(1); k != "" {
-			extMap.Set(k, e.GetString(2))
-		}
-	}
-	if len(imgs) > 0 {
-		content.Set("image_info_array", imgs)
-	}
-	if extMap.Len() > 0 {
-		content.Set("ext_map", extMap)
-	}
-	return content, nil
+// Content fields of a TIM message element
+type msgContent struct {
+	Text, UUID, Data, URL, FileName string
+	ImageFormat, Index, FileSize    uint32
+	Images                          []imageInfo
+	ExtMap                          []extEntry
 }
 
-// EncodeMsgBodyElement encodes a msg_type and msg_content element
-func EncodeMsgBodyElement(elementValue any) ([]byte, error) {
-	element, ok := asDict(elementValue)
-	if !ok {
-		return nil, typeErr("get", elementValue)
+// One TIM message element
+type msgElem struct {
+	Type    string
+	Content msgContent
+}
+
+func (c msgContent) encode() []byte {
+	w := pbWriter{}
+	w.str(1, c.Text)
+	w.str(2, c.UUID)
+	w.uint(3, uint64(c.ImageFormat))
+	w.str(4, c.Data)
+	for _, img := range c.Images {
+		iw := pbWriter{}
+		iw.uint(1, uint64(img.Type))
+		iw.uint(2, uint64(img.Size))
+		iw.uint(3, uint64(img.Width))
+		iw.uint(4, uint64(img.Height))
+		iw.str(5, img.URL)
+		w.raw(8, iw.buf)
 	}
-	content, present := element["msg_content"]
-	if !present {
-		content = map[string]any{}
+	w.uint(9, uint64(c.Index))
+	w.str(10, c.URL)
+	w.uint(11, uint64(c.FileSize))
+	w.str(12, c.FileName)
+	for _, e := range c.ExtMap {
+		ew := pbWriter{}
+		ew.str(1, e.Key)
+		ew.str(2, e.Value)
+		w.raw(999, ew.buf)
 	}
-	var contentBytes []byte
-	if pyrepr.Truthy(content) {
-		enc, err := encodeMsgContent(content)
+	return w.buf
+}
+
+func decodeMsgContent(data []byte) (msgContent, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return msgContent{}, err
+	}
+	c := msgContent{Text: f.str(1), UUID: f.str(2), ImageFormat: uint32(f.uint(3)), Data: f.str(4), Index: uint32(f.uint(9)),
+		URL: f.str(10), FileSize: uint32(f.uint(11)), FileName: f.str(12)}
+	for _, raw := range f.repeated(8) {
+		inf, err := parsePB(raw)
+		if err != nil {
+			return msgContent{}, err
+		}
+		img := imageInfo{Type: uint32(inf.uint(1)), Size: uint32(inf.uint(2)), Width: uint32(inf.uint(3)),
+			Height: uint32(inf.uint(4)), URL: inf.str(5)}
+		if img != (imageInfo{}) {
+			c.Images = append(c.Images, img)
+		}
+	}
+	for _, raw := range f.repeated(999) {
+		ef, err := parsePB(raw)
+		if err != nil {
+			return msgContent{}, err
+		}
+		if k := ef.str(1); k != "" {
+			c.ExtMap = append(c.ExtMap, extEntry{k, ef.str(2)})
+		}
+	}
+	return c, nil
+}
+
+func (e msgElem) encode() []byte {
+	w := pbWriter{}
+	w.str(1, e.Type)
+	w.bytes(2, e.Content.encode())
+	return w.buf
+}
+
+func decodeMsgElem(data []byte) (msgElem, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return msgElem{}, err
+	}
+	e := msgElem{Type: f.str(1)}
+	if raw := f.bytesOf(2); len(raw) > 0 {
+		if e.Content, err = decodeMsgContent(raw); err != nil {
+			return msgElem{}, err
+		}
+	}
+	return e, nil
+}
+
+// Recalled message reference of a recall callback
+type recallRef struct {
+	MsgSeq uint64
+	MsgID  string
+}
+
+// Inbound message push or callback delivered by the Yuanbao gateway
+type inboundPush struct {
+	CallbackCommand, FromAccount, SenderNickname, GroupCode, GroupName string
+	MsgID, CloudCustomData, BotOwnerID                                 string
+	MsgSeq                                                             uint64
+	MsgBody                                                            []msgElem
+	RecallList                                                         []recallRef
+}
+
+// Whether the push names a callback, a sender or a message body
+func (p *inboundPush) valid() bool {
+	return p.CallbackCommand != "" || p.FromAccount != "" || len(p.MsgBody) > 0
+}
+
+// InboundMessagePush payload, an error for a malformed encoding
+func decodeInboundPush(data []byte) (*inboundPush, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return nil, err
+	}
+	p := &inboundPush{CallbackCommand: f.str(1), FromAccount: f.str(2), SenderNickname: f.str(4), GroupCode: f.str(6),
+		GroupName: f.str(7), MsgSeq: f.uint(8), MsgID: f.str(12), CloudCustomData: f.str(14), BotOwnerID: f.str(16)}
+	if p.MsgID == "" {
+		p.MsgID = f.str(11)
+	}
+	for _, raw := range f.repeated(13) {
+		e, err := decodeMsgElem(raw)
 		if err != nil {
 			return nil, err
 		}
-		contentBytes = enc
+		p.MsgBody = append(p.MsgBody, e)
 	}
-	msgType, present := element["msg_type"]
-	if !present {
-		msgType = ""
+	for _, raw := range f.repeated(17) {
+		rf, err := parsePB(raw)
+		if err != nil {
+			return nil, err
+		}
+		p.RecallList = append(p.RecallList, recallRef{MsgSeq: rf.uint(1), MsgID: rf.str(2)})
 	}
-	return encodeParts([]part{{1, 's', msgType}, {2, 'm', contentBytes}})
+	return p, nil
 }
 
-// DecodeMsgBodyElement decodes a body element into msg_type and msg_content
-func DecodeMsgBodyElement(data []byte) (*pyjson.Object, error) {
-	fd, err := parseDict(data)
+// Media item of a forwarded chat record
+type forwardMedia struct{ Type, URL, FileName, MediaID string }
+
+// Content item of a forwarded chat record, type 1 text, 2 media, 3 nested forward
+type forwardContent struct {
+	Type  uint64
+	Text  string
+	Media []forwardMedia
+}
+
+// One message of a forwarded chat record
+type forwardMsg struct {
+	Sender, PlainText string
+	Contents          []forwardContent
+}
+
+// WeChat chat record forward carried base64 encoded in a custom element ext map
+type forwardData struct {
+	SubType uint64
+	Msgs    []forwardMsg
+}
+
+// ForwardMsgData payload, an error for a malformed encoding
+func decodeForwardData(data []byte) (*forwardData, error) {
+	f, err := parsePB(data)
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
-	out.Set("msg_type", fd.GetString(1))
-	content := pyjson.NewObject()
-	if b := fd.GetBytes(2); len(b) > 0 {
-		if content, err = decodeMsgContent(b); err != nil {
+	out := &forwardData{SubType: f.uint(1)}
+	for _, raw := range f.repeated(5) {
+		mf, err := parsePB(raw)
+		if err != nil {
 			return nil, err
 		}
+		m := forwardMsg{Sender: mf.str(1), PlainText: mf.str(3)}
+		for _, craw := range mf.repeated(4) {
+			cf, err := parsePB(craw)
+			if err != nil {
+				return nil, err
+			}
+			c := forwardContent{Type: cf.uint(1), Text: cf.str(2)}
+			for _, mraw := range cf.repeated(3) {
+				df, err := parsePB(mraw)
+				if err != nil {
+					return nil, err
+				}
+				c.Media = append(c.Media, forwardMedia{Type: df.str(1), URL: df.str(2), FileName: df.str(4), MediaID: df.str(15)})
+			}
+			m.Contents = append(m.Contents, c)
+		}
+		out.Msgs = append(out.Msgs, m)
 	}
-	out.Set("msg_content", content)
 	return out, nil
 }
 
-type pushField struct {
-	fn  int64
-	key string
-	get func(FieldDict, int64) (any, error)
+// Repeated message body field of a send request
+func encodeBody(w *pbWriter, num int, body []msgElem) {
+	for _, e := range body {
+		w.bytes(num, e.encode())
+	}
 }
 
-func getStr(fd FieldDict, fn int64) (any, error) { return fd.GetString(fn), nil }
-func getVar(fd FieldDict, fn int64) (any, error) { return fd.GetVarint(fn), nil }
+// SendC2CMessageReq frame and request id, group code marking a DM that started in a group
+func encodeSendC2C(toAccount, fromAccount, groupCode string, body []msgElem) ([]byte, string) {
+	reqID := "c2c_" + strconv.FormatUint(uint64(nextSeq()), 10)
+	w := pbWriter{}
+	w.str(1, reqID)
+	w.str(2, toAccount)
+	w.str(3, fromAccount)
+	encodeBody(&w, 5, body)
+	w.str(6, groupCode)
+	return bizRequest("send_c2c_message", "c2c", reqID, w.buf)
+}
 
-var inboundPushSpec = []pushField{
-	{1, "callback_command", getStr}, {2, "from_account", getStr}, {3, "to_account", getStr},
-	{4, "sender_nickname", getStr}, {5, "group_id", getStr}, {6, "group_code", getStr},
-	{7, "group_name", getStr}, {8, "msg_seq", getVar}, {9, "msg_random", getVar},
-	{10, "msg_time", getVar}, {11, "msg_key", getStr}, {12, "msg_id", getStr},
-	{13, "msg_body", func(fd FieldDict, fn int64) (any, error) {
-		out := []any{}
-		for _, b := range fd.GetRepeatedBytes(fn) {
-			el, err := DecodeMsgBodyElement(b)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, el)
-		}
-		return out, nil
-	}},
-	{14, "cloud_custom_data", getStr}, {15, "event_time", getVar}, {16, "bot_owner_id", getStr},
-	{17, "recall_msg_seq_list", func(fd FieldDict, fn int64) (any, error) {
-		rep, err := fd.parseRepeated(fn)
-		if err != nil || len(rep) == 0 {
-			return nil, err
-		}
-		out := []any{}
-		for _, d := range rep {
-			item := pyjson.NewObject()
-			item.Set("msg_seq", d.GetVarint(1))
-			item.Set("msg_id", d.GetString(2))
-			out = append(out, item)
-		}
-		return out, nil
-	}},
-	{18, "claw_msg_type", getVar}, {19, "private_from_group_code", getStr},
-	{20, "trace_id", func(fd FieldDict, fn int64) (any, error) {
-		b := fd.GetBytes(fn)
-		if len(b) == 0 {
-			return "", nil
-		}
-		inner, err := parseDict(b)
+// SendGroupMessageReq frame and request id, refMsgID quoting the replied message
+func encodeSendGroup(groupCode, fromAccount, refMsgID string, body []msgElem) ([]byte, string) {
+	reqID := "grp_" + strconv.FormatUint(uint64(nextSeq()), 10)
+	w := pbWriter{}
+	w.str(1, reqID)
+	w.str(2, groupCode)
+	w.str(3, fromAccount)
+	encodeBody(&w, 6, body)
+	w.str(7, refMsgID)
+	return bizRequest("send_group_message", "grp", reqID, w.buf)
+}
+
+// AuthBindReq frame with the auth info, device info and route env
+func encodeAuthBind(uid, source, token, msgID, appVersion, osName, botVersion, routeEnv string) []byte {
+	auth := pbWriter{}
+	auth.str(1, uid)
+	auth.str(2, source)
+	auth.str(3, token)
+	dev := pbWriter{}
+	dev.str(1, appVersion)
+	dev.str(2, osName)
+	dev.str(10, instanceID)
+	dev.str(24, botVersion)
+	req := pbWriter{}
+	req.str(1, "ybBot")
+	req.bytes(2, auth.buf)
+	req.bytes(3, dev.buf)
+	req.str(5, routeEnv)
+	return connRequest(cmdTypeRequest, cmdAuthBind, msgID, connModule, req.buf)
+}
+
+// Empty PingReq frame
+func encodePing(msgID string) []byte {
+	return connRequest(cmdTypeRequest, cmdPing, msgID, connModule, nil)
+}
+
+// Push acknowledgement echoing the cmd, msg id and module of the push
+func encodePushAck(h connHead) []byte {
+	return connRequest(cmdTypePushAck, h.Cmd, h.MsgID, h.Module, nil)
+}
+
+// SendPrivateHeartbeatReq frame with a RUNNING or FINISH state
+func encodePrivateHeartbeat(fromAccount, toAccount string, state uint64) []byte {
+	w := pbWriter{}
+	w.str(1, fromAccount)
+	w.str(2, toAccount)
+	w.uint(3, state)
+	frame, _ := bizRequest("send_private_heartbeat", "hb_priv", "", w.buf)
+	return frame
+}
+
+// SendGroupHeartbeatReq frame stamped with the current time in milliseconds
+func encodeGroupHeartbeat(fromAccount, groupCode string, state uint64) []byte {
+	w := pbWriter{}
+	w.str(1, fromAccount)
+	w.str(3, groupCode)
+	w.uint(4, uint64(time.Now().UnixMilli()))
+	w.uint(5, state)
+	frame, _ := bizRequest("send_group_heartbeat", "hb_grp", "", w.buf)
+	return frame
+}
+
+// QueryGroupInfoReq frame and request id
+func encodeQueryGroupInfo(groupCode string) ([]byte, string) {
+	w := pbWriter{}
+	w.str(1, groupCode)
+	return bizRequest("query_group_info", "qgi", "", w.buf)
+}
+
+// GetGroupMemberListReq frame and request id
+func encodeGetGroupMemberList(groupCode string) ([]byte, string) {
+	w := pbWriter{}
+	w.str(1, groupCode)
+	return bizRequest("get_group_member_list", "gml", "", w.buf)
+}
+
+// Code and message every business response opens with
+type rspStatus struct {
+	Code    int32
+	Message string
+}
+
+// Status fields of a send or heartbeat response
+func decodeRspStatus(data []byte) (rspStatus, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return rspStatus{}, err
+	}
+	return rspStatus{Code: f.int32(1), Message: f.str(2)}, nil
+}
+
+// AuthBindRsp status and connect id
+func decodeAuthBindRsp(data []byte) (rspStatus, string, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return rspStatus{}, "", err
+	}
+	return rspStatus{Code: f.int32(1), Message: f.str(2)}, f.str(3), nil
+}
+
+// Group profile of a QueryGroupInfoRsp
+type groupInfo struct {
+	Name, OwnerID, OwnerNickname string
+	MemberCount                  int64
+}
+
+// QueryGroupInfoRsp status and group profile
+func decodeQueryGroupInfoRsp(data []byte) (rspStatus, groupInfo, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return rspStatus{}, groupInfo{}, err
+	}
+	gf, err := parsePB(f.bytesOf(3))
+	if err != nil {
+		return rspStatus{}, groupInfo{}, err
+	}
+	return rspStatus{Code: f.int32(1), Message: f.str(2)},
+		groupInfo{Name: gf.str(1), OwnerID: gf.str(2), OwnerNickname: gf.str(3), MemberCount: int64(gf.int32(4))}, nil
+}
+
+// One member of a GetGroupMemberListRsp, user type 1 user, 2 Yuanbao AI, 3 bot
+type groupMember struct {
+	UserID, Nickname string
+	UserType         int64
+}
+
+// GetGroupMemberListRsp status and members
+func decodeGroupMemberListRsp(data []byte) (rspStatus, []groupMember, error) {
+	f, err := parsePB(data)
+	if err != nil {
+		return rspStatus{}, nil, err
+	}
+	var members []groupMember
+	for _, raw := range f.repeated(3) {
+		mf, err := parsePB(raw)
 		if err != nil {
-			return nil, err
+			return rspStatus{}, nil, err
 		}
-		return inner.GetString(1), nil
-	}},
+		members = append(members, groupMember{UserID: mf.str(1), Nickname: mf.str(2), UserType: int64(mf.int32(3))})
+	}
+	return rspStatus{Code: f.int32(1), Message: f.str(2)}, members, nil
 }
 
-// DecodeInboundPush parses an InboundMessagePush payload dropping empty values except msg_body and msg_seq, nil on failure
-func DecodeInboundPush(data []byte) *pyjson.Object {
-	fd, err := parseDict(data)
+// Kickout notice the gateway pushes before dropping the connection
+type kickoutMsg struct {
+	Status          int32
+	Reason          string
+	OtherDeviceName string
+}
+
+func decodeKickout(data []byte) (kickoutMsg, error) {
+	f, err := parsePB(data)
 	if err != nil {
-		return nil
+		return kickoutMsg{}, err
 	}
-	out := pyjson.NewObject()
-	for _, f := range inboundPushSpec {
-		v, err := f.get(fd, f.fn)
-		if err != nil {
-			return nil
-		}
-		if truthyNum(v) || f.key == "msg_body" || f.key == "msg_seq" {
-			out.Set(f.key, v)
-		}
-	}
-	return out
-}
-
-func decodeForwardMsgContent(data []byte) (*pyjson.Object, error) {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil, err
-	}
-	content := pyjson.NewObject()
-	content.Set("type", fd.GetVarint(1))
-	if s := fd.GetString(2); s != "" {
-		content.Set("text", s)
-	}
-	if len(fd.GetRepeatedBytes(3)) > 0 {
-		rep, err := fd.parseRepeated(3)
-		if err != nil {
-			return nil, err
-		}
-		media := []any{}
-		for _, d := range rep {
-			media = append(media, decodeSpec(d, forwardMultimediaSpec))
-		}
-		content.Set("multimedia", media)
-	}
-	return content, nil
-}
-
-// DecodeForwardMsgData parses ForwardMsgData bytes into sub_type, times, nick_name and msg, nil on failure
-func DecodeForwardMsgData(data []byte) *pyjson.Object {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil
-	}
-	rep, err := fd.parseRepeated(5)
-	if err != nil {
-		return nil
-	}
-	msgs := []any{}
-	for _, d := range rep {
-		contents := []any{}
-		for _, b := range d.GetRepeatedBytes(4) {
-			c, err := decodeForwardMsgContent(b)
-			if err != nil {
-				return nil
-			}
-			contents = append(contents, c)
-		}
-		m := pyjson.NewObject()
-		m.Set("sender", d.GetString(1))
-		m.Set("time", d.GetVarint(2))
-		m.Set("plainText", d.GetString(3))
-		m.Set("msgContent", contents)
-		msgs = append(msgs, m)
-	}
-	out := pyjson.NewObject()
-	out.Set("sub_type", fd.GetVarint(1))
-	out.Set("begin_time", fd.GetVarint(2))
-	out.Set("end_time", fd.GetVarint(3))
-	out.Set("nick_name", fd.GetString(4))
-	out.Set("msg", msgs)
-	return out
-}
-
-func optInt(v *int64) any {
-	if v == nil {
-		return nil
-	}
-	return *v
-}
-
-// EncodeSendC2CMessage builds a SendC2CMessageReq ConnMsg, msg_id doubling as req_id when set
-func EncodeSendC2CMessage(toAccount string, msgBody []any, fromAccount, msgID string, msgRandom int64, msgSeq *int64, groupCode, traceID string) ([]byte, error) {
-	body, err := encodeParts([]part{{1, 's', msgID}, {2, 'S', toAccount}, {3, 's', fromAccount}, {4, 'v', msgRandom},
-		{5, 'b', msgBody}, {6, 's', groupCode}, {7, 'n', optInt(msgSeq)}, {8, 't', traceID}})
-	if err != nil {
-		return nil, err
-	}
-	return bizRequest("send_c2c_message", "c2c", body, msgID)
-}
-
-// EncodeSendGroupMessage builds a SendGroupMessageReq ConnMsg, ref_msg_id naming the quoted message
-func EncodeSendGroupMessage(groupCode string, msgBody []any, fromAccount, msgID, toAccount, random string, msgSeq *int64, refMsgID, traceID string) ([]byte, error) {
-	body, err := encodeParts([]part{{1, 's', msgID}, {2, 'S', groupCode}, {3, 's', fromAccount}, {4, 's', toAccount}, {5, 's', random},
-		{6, 'b', msgBody}, {7, 's', refMsgID}, {8, 'n', optInt(msgSeq)}, {9, 't', traceID}})
-	if err != nil {
-		return nil, err
-	}
-	return bizRequest("send_group_message", "grp", body, msgID)
-}
-
-// EncodeAuthBind builds the auth-bind request with auth info, device info and the route env
-func EncodeAuthBind(bizID, uid, source, token, msgID, appVersion, operationSystem, botVersion, routeEnv string) ([]byte, error) {
-	dev, err := encodeParts([]part{{1, 's', appVersion}, {2, 's', operationSystem}, {10, 'S', fmt.Sprint(IcebathInstanceID)}, {24, 's', botVersion}})
-	if err != nil {
-		return nil, err
-	}
-	auth := &pbuf{}
-	auth.s(1, uid)
-	auth.s(2, source)
-	auth.s(3, token)
-	if auth.err != nil {
-		return nil, auth.err
-	}
-	req, err := encodeParts([]part{{1, 'S', bizID}, {2, 'm', auth.b}, {3, 'm', dev}, {5, 's', routeEnv}})
-	if err != nil {
-		return nil, err
-	}
-	return connRequest(CmdType["Request"], Cmd["AuthBind"], msgID, Module["ConnAccess"], req)
-}
-
-// EncodePing builds the empty ping request
-func EncodePing(msgID string) ([]byte, error) {
-	return connRequest(CmdType["Request"], Cmd["Ping"], msgID, Module["ConnAccess"], nil)
-}
-
-// EncodePushAck echoes the cmd, msg_id and module of the original push head
-func EncodePushAck(originalHead any) ([]byte, error) {
-	head, ok := asDict(originalHead)
-	if !ok {
-		return nil, typeErr("get", originalHead)
-	}
-	fields := make([]string, 3)
-	for i, k := range []string{"cmd", "msg_id", "module"} {
-		v, present := head[k]
-		if !present {
-			v = ""
-		}
-		s, ok := v.(string)
-		if !ok && pyrepr.Truthy(v) {
-			return nil, typeErr("encode", v)
-		}
-		fields[i] = s
-	}
-	return connRequest(CmdType["PushAck"], fields[0], fields[1], fields[2], nil)
-}
-
-// EncodeSendPrivateHeartbeat builds a SendPrivateHeartbeatReq ConnMsg
-func EncodeSendPrivateHeartbeat(fromAccount, toAccount string, heartbeat int64) ([]byte, error) {
-	p := &pbuf{}
-	p.s(1, fromAccount)
-	p.s(2, toAccount)
-	p.v(3, big.NewInt(heartbeat))
-	if p.err != nil {
-		return nil, p.err
-	}
-	return bizRequest("send_private_heartbeat", "hb_priv", p.b, "")
-}
-
-// Swappable clock for the group heartbeat send_time
-var nowMillis = func() int64 { return time.Now().UnixMilli() }
-
-// EncodeSendGroupHeartbeat builds a SendGroupHeartbeatReq ConnMsg, a zero send_time meaning now in ms
-func EncodeSendGroupHeartbeat(fromAccount, groupCode string, heartbeat, sendTime int64) ([]byte, error) {
-	ts := sendTime
-	if ts == 0 {
-		ts = nowMillis()
-	}
-	p := &pbuf{}
-	p.s(1, fromAccount)
-	p.s(2, "")
-	p.s(3, groupCode)
-	p.v(4, big.NewInt(ts))
-	p.v(5, big.NewInt(heartbeat))
-	if p.err != nil {
-		return nil, p.err
-	}
-	return bizRequest("send_group_heartbeat", "hb_grp", p.b, "")
-}
-
-// EncodeQueryGroupInfo builds a QueryGroupInfoReq ConnMsg
-func EncodeQueryGroupInfo(groupCode string) ([]byte, error) {
-	p := &pbuf{}
-	p.s(1, groupCode)
-	if p.err != nil {
-		return nil, p.err
-	}
-	return bizRequest("query_group_info", "qgi", p.b, "")
-}
-
-// DecodeQueryGroupInfoRsp parses code, message and the group info fields, nil on failure
-func DecodeQueryGroupInfoRsp(data []byte) *pyjson.Object {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil
-	}
-	result := pyjson.NewObject()
-	result.Set("code", fd.GetVarint(1))
-	if s := fd.GetString(2); s != "" {
-		result.Set("message", s)
-	}
-	gi := FieldDict{}
-	if entries := fd[fieldKey(int64(3))]; len(entries) > 0 {
-		if b, ok := entries[0].value.([]byte); ok && len(b) > 0 {
-			if gi, err = parseDict(b); err != nil {
-				return nil
-			}
-		}
-	}
-	result.Set("group_name", gi.GetString(1))
-	result.Set("owner_id", gi.GetString(2))
-	result.Set("owner_nickname", gi.GetString(3))
-	result.Set("member_count", gi.GetVarint(4))
-	return result
-}
-
-// EncodeGetGroupMemberList builds a GetGroupMemberListReq ConnMsg, offset omitted when zero
-func EncodeGetGroupMemberList(groupCode string, offset, limit int64) ([]byte, error) {
-	p := &pbuf{}
-	p.s(1, groupCode)
-	if offset != 0 {
-		p.v(2, big.NewInt(offset))
-	}
-	p.v(3, big.NewInt(limit))
-	if p.err != nil {
-		return nil, p.err
-	}
-	return bizRequest("get_group_member_list", "gml", p.b, "")
-}
-
-// DecodeGetGroupMemberListRsp parses code, message, members without empty fields except role, next_offset and is_complete
-func DecodeGetGroupMemberListRsp(data []byte) *pyjson.Object {
-	fd, err := parseDict(data)
-	if err != nil {
-		return nil
-	}
-	rep, err := fd.parseRepeated(3)
-	if err != nil {
-		return nil
-	}
-	members := []any{}
-	for _, m := range rep {
-		mem := pyjson.NewObject()
-		for _, kv := range []struct {
-			k string
-			v any
-		}{{"user_id", m.GetString(1)}, {"nickname", m.GetString(2)}, {"role", m.GetVarint(3)}, {"join_time", m.GetVarint(4)}, {"name_card", m.GetString(5)}} {
-			if truthyNum(kv.v) || kv.k == "role" {
-				mem.Set(kv.k, kv.v)
-			}
-		}
-		members = append(members, mem)
-	}
-	out := pyjson.NewObject()
-	out.Set("code", fd.GetVarint(1))
-	out.Set("message", fd.GetString(2))
-	out.Set("members", members)
-	out.Set("next_offset", fd.GetVarint(4))
-	out.Set("is_complete", truthyNum(fd.GetVarint(5)))
-	return out
+	return kickoutMsg{Status: f.int32(1), Reason: f.str(2), OtherDeviceName: f.str(3)}, nil
 }

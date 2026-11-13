@@ -240,7 +240,7 @@ func (c *CLI) newSessionID(now time.Time, branchOf, title string) (string, error
 			if err := store.SetSessionYolo(c.ctx, child, true); err != nil {
 				return "", err
 			}
-			tools.EnableSessionYolo(child)
+			tools.EnableSessionYolo(c.ctx, child)
 		}
 		return child, nil
 	}

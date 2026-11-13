@@ -3,55 +3,83 @@ package install
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Release dir the desktop app unpacks into, the one `icebath desktop` launches from
+// Stable and canary release tags a binary may carry
+var releaseTagRE = regexp.MustCompile(`^v\d+\.\d+\.\d+(\+canary\.\d{8}T\d{6}Z)?$`)
+
+const (
+	// Executable of the Wails desktop app
+	desktopExecutable = "icebath-desktop"
+	// Bundle the macOS desktop artifact carries
+	desktopAppBundle = "Icebath.app"
+)
+
+// File name of the desktop executable on goos
+func DesktopExecutableName(goos string) string {
+	if goos == "windows" {
+		return desktopExecutable + ".exe"
+	}
+	return desktopExecutable
+}
+
+// Release asset of the desktop app, the bare executable on Linux and Windows and the gzipped app bundle on macOS
+func DesktopAssetName(goos, goarch string) string {
+	name := desktopExecutable + "-" + goos + "-" + goarch
+	switch goos {
+	case "windows":
+		return name + ".exe"
+	case "darwin":
+		return name + ".tar.gz"
+	}
+	return name
+}
+
+// Directory the release desktop app installs into under an install tree
 func DesktopReleaseDir(installRoot string) string {
-	return filepath.Join(installRoot, "apps", "desktop", "release")
+	return filepath.Join(installRoot, "desktop")
 }
 
-// Unpacked app dir name of a platform, x64 bare and every other arch suffixed
-func DesktopPlatformDir(goos, goarch string) string {
-	switch goos {
-	case "windows":
-		if goarch == "arm64" {
-			return "win-arm64-unpacked"
-		}
-		return "win-unpacked"
-	case "darwin":
-		if goarch == "arm64" {
-			return "mac-arm64"
-		}
-		return "mac"
-	}
-	if goarch == "arm64" {
-		return "linux-arm64-unpacked"
-	}
-	return "linux-unpacked"
-}
-
-// Desktop executable candidates under a release dir for goos
+// Desktop executable a release dir holds on goos, inside the app bundle on macOS
 func desktopCandidates(release, goos string) []string {
-	switch goos {
-	case "windows":
-		return []string{filepath.Join(release, "win-unpacked", "Icebath.exe"), filepath.Join(release, "win-arm64-unpacked", "Icebath.exe")}
-	case "darwin":
-		return []string{filepath.Join(release, "mac", "Icebath.app", "Contents", "MacOS", "Icebath"), filepath.Join(release, "mac-arm64", "Icebath.app", "Contents", "MacOS", "Icebath")}
+	return []string{DesktopExecutableIn(release, goos)}
+}
+
+// Desktop executable the release layout puts in dir on goos, inside the app bundle on macOS
+func DesktopExecutableIn(dir, goos string) string {
+	if goos == "darwin" {
+		return filepath.Join(dir, desktopAppBundle, "Contents", "MacOS", desktopExecutable)
 	}
-	return []string{filepath.Join(release, "linux-unpacked", "icebath"), filepath.Join(release, "linux-arm64-unpacked", "icebath")}
+	return filepath.Join(dir, DesktopExecutableName(goos))
+}
+
+// Release tag the running binary was stamped with or installed at, empty for a development build
+func RunningReleaseTag() string {
+	if v := updaterecord.BuildVersion(); releaseTagRE.MatchString(v) {
+		return v
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && stableTagRE.MatchString(info.Main.Version) {
+		return info.Main.Version
+	}
+	return ""
 }
 
 // Installed desktop executable of a tree, empty when none exists
 func ResolveDesktopExe(installRoot string) string {
 	for _, p := range desktopCandidates(DesktopReleaseDir(installRoot), runtime.GOOS) {
-		if _, err := os.Stat(p); err == nil {
+		if isFile(p) {
 			return p
 		}
 	}
@@ -90,32 +118,27 @@ func IsInstalled(installRoot string) bool {
 	return ResolveDesktopExe(installRoot) != ""
 }
 
-// Reports an install already carrying a desktop app on any platform layout
+// Reports an install already carrying the desktop app
 func DesktopProductPresent(installRoot string) bool {
-	release := DesktopReleaseDir(installRoot)
-	for _, d := range []string{"linux-unpacked", "linux-arm64-unpacked", "mac", "mac-arm64", "win-unpacked", "win-ia32-unpacked", "win-arm64-unpacked"} {
-		if st, err := os.Stat(filepath.Join(release, d)); err == nil && st.IsDir() {
-			return true
-		}
-	}
-	return false
+	return ResolveDesktopExe(installRoot) != ""
 }
 
-// Command that starts the desktop detached with null stdio, through LaunchServices for a macOS bundle
-func desktopLaunchCommand(exe, installRoot string) *exec.Cmd {
+// Command that starts a desktop executable detached with null stdio, through LaunchServices for a macOS bundle
+func DesktopLaunchCommand(exe string, args []string) *exec.Cmd {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "darwin" {
 		if app := appBundleForExe(exe); app != "" {
-			cmd = exec.Command("/usr/bin/open", app)
+			openArgs := []string{app}
+			if len(args) > 0 {
+				openArgs = append([]string{"-n", app, "--args"}, args...)
+			}
+			cmd = exec.Command("/usr/bin/open", openArgs...)
 			cmd.Dir = Home()
 		}
 	}
 	if cmd == nil {
-		cmd = exec.Command(exe)
+		cmd = exec.Command(exe, args...)
 		cmd.Dir = filepath.Dir(exe)
-		if cmd.Dir == "" {
-			cmd.Dir = installRoot
-		}
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	detachCommand(cmd)
@@ -126,9 +149,9 @@ func desktopLaunchCommand(exe, installRoot string) *exec.Cmd {
 func SpawnInstalledDesktop(installRoot string) error {
 	exe := ResolveDesktopExe(installRoot)
 	if exe == "" {
-		return fmt.Errorf("no built Icebath desktop app")
+		return fmt.Errorf("no Icebath desktop app is installed under %s", DesktopReleaseDir(installRoot))
 	}
-	cmd := desktopLaunchCommand(exe, installRoot)
+	cmd := DesktopLaunchCommand(exe, nil)
 	prepareDetachedSpawn()
 	if err := cmd.Start(); err != nil {
 		return err
@@ -140,9 +163,9 @@ func SpawnInstalledDesktop(installRoot string) error {
 func LaunchDesktop(installRoot string) error {
 	exe := ResolveDesktopExe(installRoot)
 	if exe == "" {
-		return fmt.Errorf("Couldn't find a built Icebath desktop at %s. The desktop build step may have been skipped or failed. Run `icebath desktop` from a terminal to build and launch it.", DesktopReleaseDir(installRoot))
+		return fmt.Errorf("Couldn't find the Icebath desktop app under %s. Run `icebath desktop` from a terminal to install and launch it.", DesktopReleaseDir(installRoot))
 	}
-	cmd := desktopLaunchCommand(exe, installRoot)
+	cmd := DesktopLaunchCommand(exe, nil)
 	prepareDetachedSpawn()
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to launch %s: %v", exe, err)
@@ -163,7 +186,87 @@ func OpenMacOSAppDetached(app string) error {
 	return cmd.Process.Release()
 }
 
-// Downloads the desktop app of the installed binary's release and swaps it into the release dir
+// Start menu and Desktop shortcuts the desktop install creates, none outside Windows
+func DesktopShortcutPaths() []string { return shortcutPaths() }
+
+// Icebath source checkout holding the running binary or the working directory, empty when neither lies in one
+func SourceCheckoutRoot() string {
+	var starts []string
+	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		starts = append(starts, filepath.Dir(exe))
+	}
+	if wd, err := os.Getwd(); err == nil {
+		starts = append(starts, wd)
+	}
+	for _, dir := range starts {
+		for {
+			if isIcebathCheckout(dir) {
+				return dir
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return ""
+}
+
+// Reports a directory whose go.mod declares the icebath module
+func isIcebathCheckout(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return false
+	}
+	first, _, _ := strings.Cut(string(raw), "\n")
+	fields := strings.Fields(first)
+	return len(fields) == 2 && fields[0] == "module" && fields[1] == "github.com/nickheyer/icebath"
+}
+
+// Desktop executable make desktop leaves in a checkout, empty when it was not built
+func CheckoutDesktopExe(checkout string) string {
+	exe := filepath.Join(checkout, "apps", "desktop", DesktopExecutableName(runtime.GOOS))
+	if isFile(exe) {
+		return exe
+	}
+	return ""
+}
+
+// Installs the desktop artifact of tag, the newest stable release when tag is empty, and returns its executable
+func InstallDesktop(ctx context.Context, tag string, out io.Writer) (string, error) {
+	installRoot := InstallRootOf(Home())
+	r, err := NewRunner(Options{NonInteractive: true, Dir: installRoot}, func(e Event) {
+		if e.Type == EventLog {
+			fmt.Fprintln(out, e.Line)
+		}
+	})
+	if err != nil {
+		return "", err
+	}
+	r.stage = "desktop"
+	repo, err := ParseRepo(r.opts.RepoURL)
+	if err != nil {
+		return "", err
+	}
+	var target *ReleaseTarget
+	if tag == "" {
+		if target, err = LatestDesktopRelease(ctx, repo, "stable"); err != nil {
+			return "", err
+		}
+	} else {
+		target = targetForTag(ctx, repo, tag)
+	}
+	if err := r.installDesktopRelease(ctx, target); err != nil {
+		return "", err
+	}
+	return ResolveDesktopExe(installRoot), nil
+}
+
+// Downloads the desktop app of the installed binary's release and places it in the release dir
 func (r *Runner) installDesktop(ctx context.Context) error {
 	tag := InstalledRelease(ctx, InstallBinaryPath(r.installDir)).Tag
 	if tag == "" {
@@ -179,7 +282,7 @@ func (r *Runner) installDesktop(ctx context.Context) error {
 	return r.installDesktopRelease(ctx, targetForTag(ctx, repo, tag))
 }
 
-// Fetches, verifies and unpacks one release's desktop app over the installed one
+// Fetches and verifies one release's desktop app and swaps it over the installed one
 func (r *Runner) installDesktopRelease(ctx context.Context, t *ReleaseTarget) error {
 	goos, goarch := hostKey()
 	name := DesktopAssetName(goos, goarch)
@@ -188,20 +291,17 @@ func (r *Runner) installDesktopRelease(ctx context.Context, t *ReleaseTarget) er
 		return fail("desktop app download failed: "+err.Error(), "products_build_failed")
 	}
 	release := DesktopReleaseDir(r.installDir)
-	archive := filepath.Join(r.home, "bootstrap-cache", name)
-	if err := r.download(ctx, fmt.Sprintf("Downloading the Icebath desktop app %s", t.Tag), t.AssetURL(name), archive, sum); err != nil {
+	staged := filepath.Join(release, "."+name+".download")
+	if err := r.download(ctx, fmt.Sprintf("Downloading the Icebath desktop app %s", t.Tag), t.AssetURL(name), staged, sum); err != nil {
+		os.Remove(staged)
 		return err
 	}
-	defer os.Remove(archive)
-	platformDir := DesktopPlatformDir(goos, goarch)
-	staged := filepath.Join(release, "."+platformDir+".new")
-	old := filepath.Join(release, "."+platformDir+".old")
-	os.RemoveAll(old)
-	if err := pm.Extract(archive, staged); err != nil {
-		os.RemoveAll(staged)
-		return fail(fmt.Sprintf("could not unpack %s: %v", name, err), "products_build_failed")
+	if goos == "darwin" {
+		err = placeDesktopBundle(staged, release)
+	} else {
+		err = placeDesktopExecutable(staged, filepath.Join(release, DesktopExecutableName(goos)))
 	}
-	if err := SwapInNewBundle(staged, filepath.Join(release, platformDir), old); err != nil {
+	if err != nil {
 		return fail(err.Error(), "products_build_failed")
 	}
 	exe := ResolveDesktopExe(r.installDir)
@@ -213,8 +313,37 @@ func (r *Runner) installDesktopRelease(ctx context.Context, t *ReleaseTarget) er
 	return nil
 }
 
+// Marks a downloaded desktop executable runnable and renames it over the installed one
+func placeDesktopExecutable(staged, dest string) error {
+	if err := os.Chmod(staged, 0o755); err != nil {
+		os.Remove(staged)
+		return fmt.Errorf("cannot mark %s executable: %v", staged, err)
+	}
+	if err := replaceFile(staged, dest); err != nil {
+		return fmt.Errorf("cannot place %s: %v", dest, err)
+	}
+	return nil
+}
+
+// Unpacks a downloaded app bundle archive and swaps its bundle over the installed one
+func placeDesktopBundle(archive, release string) error {
+	defer os.Remove(archive)
+	unpacked := filepath.Join(release, "."+desktopAppBundle+".new")
+	defer os.RemoveAll(unpacked)
+	if err := pm.Extract(archive, unpacked); err != nil {
+		return fmt.Errorf("could not unpack %s: %v", filepath.Base(archive), err)
+	}
+	bundle := filepath.Join(unpacked, desktopAppBundle)
+	if st, err := os.Stat(filepath.Join(bundle, "Contents", "MacOS", desktopExecutable)); err != nil || !st.Mode().IsRegular() {
+		return fmt.Errorf("%s holds no %s with Contents/MacOS/%s", filepath.Base(archive), desktopAppBundle, desktopExecutable)
+	}
+	target := filepath.Join(release, desktopAppBundle)
+	return SwapInNewBundle(bundle, target, filepath.Join(release, "."+desktopAppBundle+".old"))
+}
+
 // Moves a staged tree to target, parking the existing one at old and never leaving target missing on failure
 func SwapInNewBundle(tmp, target, old string) error {
+	os.RemoveAll(old)
 	movedOld := false
 	if _, err := os.Lstat(target); err == nil {
 		if err := os.Rename(target, old); err != nil {

@@ -257,7 +257,6 @@ icebath/
     contractgen/             writes the gateway contract under ui/shared from the Go contracts
     glyphgen/                writes the voxel glyph tables
     pin/                     updates the pinned versions in the toolchain lock
-    pypiwheels/              wraps release binaries as wheels for the pipx channel
     release/                 publishes channel records and release pointers
   third_party/
     anydoc/                  Rust shim and build recipe for the document converter module

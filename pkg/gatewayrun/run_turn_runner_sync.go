@@ -177,7 +177,7 @@ func (t *TurnRunner) runSyncScoped(ctx context.Context) (map[string]any, error) 
 		return nil, err
 	}
 	if policy != nil && policy.Yolo() && tc.sessionKey != "" {
-		tools.ApplyLaunchYolo(tc.sessionKey)
+		tools.ApplyLaunchYolo(ctx, tc.sessionKey)
 	}
 	platformKey := turnPlatformKey(policy, tc.source)
 	combinedEphemeral := t.combinedEphemeralPrompt(ctx)

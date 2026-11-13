@@ -27,9 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// The one whole line the desktop hand off scripts match for a build the update still owes
-const DesktopBuildOwed = "Desktop app build owed:"
-
 // Argument of the completion entry that runs the libatomic pre install of the new tree
 const completionInstallBeforeLock = "--install-before-lock"
 
@@ -443,23 +440,6 @@ func publishGatewaySuccess(w io.Writer, request map[string]any) {
 	}
 }
 
-// Names the owed desktop build when this run never reached the build stage
-func reportDesktopBuildOwed(w io.Writer, request map[string]any, record *pyjson.Object, reason string) {
-	if !pyrepr.Truthy(request["desktop"]) {
-		return
-	}
-	if record != nil {
-		if stages, ok := record.GetOr("stages", nil).([]any); ok {
-			for _, mark := range stages {
-				if obj, isObj := mark.(*pyjson.Object); isObj && obj.GetOr("name", nil) == "build" {
-					return
-				}
-			}
-		}
-	}
-	fmt.Fprintf(w, "  %s %s\n", DesktopBuildOwed, reason)
-}
-
 // Settles a committed run whose completion never answered as owed work, the result the caller adopts
 func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]any, reason string) (map[string]any, error) {
 	fmt.Fprintf(w, "  ⚠ Source update completion did not finish: %s\n", reason)
@@ -476,11 +456,6 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 			}
 			fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
 		}
-		record, err := runningRecord(ctx, request)
-		if err != nil {
-			return nil, err
-		}
-		reportDesktopBuildOwed(w, request, record, "the update completion did not finish")
 		updaterecord.ResumeRunRecord(ctx)
 		updaterecord.RecordFollowup(ctx, "completion", reason, "the next launch or `icebath update` finishes it")
 		parked := !recordOwedUserAction(ctx, request)
@@ -545,7 +520,6 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 			}
 			record = obj
 		}
-		reportDesktopBuildOwed(w, request, record, step+" did not finish")
 		if _, err := pyDictItem(record, "update_id"); err != nil {
 			return 0, err
 		}
@@ -720,14 +694,13 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 		Desktop: pyrepr.Truthy(values["desktop"]), AssumeYes: pyrepr.Truthy(values["assume_yes"]),
 		GatewayMode: pyrepr.Truthy(values["gateway_mode"]), PreUpdateSnapshotID: optionalText(values["snapshot_id"]),
 		PreUpdateVersion: optionalText(values["pre_update_version"]), CompletionMessage: optionalText(request["completion_message"]),
-		Announce: announce, Followups: &followups, BeforeBuild: func() { resumePausedBeforeBuild(ctx, w, request) },
+		Announce: announce, Followups: &followups, BeforeDependencies: func() { resumePausedBeforeDependencies(ctx, w, request) },
 		Stdout: w, Stderr: errw})
 	if err != nil {
 		if isInterrupt(err) {
 			return false, err
 		}
 		reason := pyReason(err)
-		reportDesktopBuildOwed(w, request, nil, "the source-update tail did not run")
 		updaterecord.RecordFollowup(ctx, "completion", reason, updaterecord.FollowupRetryDefault)
 		followups = append(followups, [2]string{"completion", reason})
 	} else {
@@ -791,21 +764,14 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 	return complete, nil
 }
 
-// Restarts the gateways the POSIX pause stopped before the product builds, a failure retried after the build
-func resumePausedBeforeBuild(ctx context.Context, w io.Writer, request map[string]any) {
+// Restarts the gateways the POSIX pause stopped before the dependency step, a failure retried after it
+func resumePausedBeforeDependencies(ctx context.Context, w io.Writer, request map[string]any) {
 	token, _ := request["windows_resume"].(map[string]any)
 	if len(token) == 0 || !pyrepr.Truthy(token["resume_needed"]) || token["platform"] != "posix" {
 		return
 	}
 	if err := completionResume(ctx, w, token); err != nil {
-		fmt.Fprintf(w, "  ⚠ Paused gateway restart incomplete (%s); retrying after the build\n", launchErrorText(err))
-	}
-}
-
-// Names the owed desktop build when the tail raised before the build stage of an open run
-func reportUnbuiltDesktop(ctx context.Context, w io.Writer, request map[string]any) {
-	if current := updaterecord.CurrentReceipt(ctx); current != nil {
-		reportDesktopBuildOwed(w, request, current.Data, "the source-update tail did not finish")
+		fmt.Fprintf(w, "  ⚠ Paused gateway restart incomplete (%s); retrying after the dependency step\n", launchErrorText(err))
 	}
 }
 
@@ -837,11 +803,9 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, reason, code)
 	case errors.As(err, &exit):
 		if exit.Code != 0 {
-			reportUnbuiltDesktop(ctx, w, request)
 			updaterecord.RecordFollowup(ctx, "completion", fmt.Sprintf("completion exited %d", exit.Code), updaterecord.FollowupRetryDefault)
 		}
 	default:
-		reportUnbuiltDesktop(ctx, w, request)
 		updaterecord.RecordFollowup(ctx, "completion", launchErrorClass(err)+": "+launchErrorText(err), updaterecord.FollowupRetryDefault)
 	}
 	if code != 0 {

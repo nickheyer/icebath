@@ -15,19 +15,26 @@ type host struct {
 	dir      string
 	profile  string
 	manifest map[string]any
+	// Registrar whose argument a provider load keeps instead of sending, empty for a plugin load
+	capture string
+	// Whether registrations other than the captured one still reach the host during a provider load
+	forward  bool
 	mu       sync.Mutex
 	loading  context.Context
 	unloads  []func() error
+	captured []any
 }
 
-// Registrar name and argument name of each provider kind
+// Registrar name of each provider kind
 var providerRegistrars = map[string]string{
 	"image_gen": "register_image_gen_provider", "video_gen": "register_video_gen_provider", "web_search": "register_web_search_provider",
 	"browser": "register_browser_provider", "terminal_environment": "register_terminal_environment_provider",
 	"secret_source": "register_secret_source", "tts": "register_tts_provider", "transcription": "register_transcription_provider",
 	"delegation": "register_delegation_provider", "context_engine": "register_context_engine",
-	"context_reference": "register_context_reference", "memory": "register_memory_provider", "login_backend": "register_login_backend",
+	"context_reference": "register_context_reference", "memory": "register_memory_provider",
 	"browser_page_backend": "register_browser_page_backend", "dashboard_auth": "register_dashboard_auth_provider",
+	"cron_scheduler": "register_cron_scheduler", "computer_use": "register_computer_use_provider",
+	"model_provider": "register_model_provider",
 }
 
 func (h *host) PluginID() string         { return h.id }
@@ -57,8 +64,31 @@ func (h *host) Facade(ctx context.Context, facade, method string, args []any, kw
 		"args": h.peer.encode(listOrEmpty(args)), "kwargs": h.peer.encode(mapOrEmpty(kwargs))})
 }
 
+// Keeps the argument of the captured registrar and reports whether a provider load swallows the registration
+func (h *host) intercept(method string, args []any, kwargs map[string]any) bool {
+	if h.capture == "" {
+		return false
+	}
+	if method != h.capture {
+		return !h.forward
+	}
+	var value any
+	if len(args) > 0 {
+		value = args[0]
+	} else {
+		value = kwargs
+	}
+	h.mu.Lock()
+	h.captured = append(h.captured, value)
+	h.mu.Unlock()
+	return true
+}
+
 // Runs one registrar and returns the handle of the registration it made, nil when the host returns none
 func (h *host) register(method string, args []any, kwargs map[string]any) (*Handle, error) {
+	if h.intercept(method, args, kwargs) {
+		return nil, nil
+	}
 	value, err := h.Call(h.registering(), method, args, kwargs)
 	if err != nil {
 		return nil, err
@@ -157,40 +187,11 @@ func (h *host) RegisterProvider(kind string, provider *Object) (*Handle, error) 
 	return h.register(method, []any{provider}, nil)
 }
 
-func (h *host) RegisterPlatform(platform Platform) (*Handle, error) {
-	if platform.Adapter == nil {
-		return nil, fmt.Errorf("platform %q has no adapter", platform.Name)
+func (h *host) RegisterLoginBackend(b LoginBackend) (*Handle, error) {
+	if b.Name == "" || b.Prefix == "" {
+		return nil, fmt.Errorf("login backend needs a name and a handle prefix")
 	}
-	factory := h.peer.funcRef(platform.Name+".adapter", func(ctx context.Context, args []any, _ map[string]any) (any, error) {
-		var config map[string]any
-		if len(args) > 0 {
-			config, _ = args[0].(map[string]any)
-		}
-		return platform.Adapter(ctx, mapOrEmpty(config))
-	})
-	check := platform.Check
-	if check == nil {
-		check = func(context.Context) bool { return true }
-	}
-	kwargs := map[string]any{}
-	for k, v := range platform.Extra {
-		kwargs[k] = v
-	}
-	kwargs["name"], kwargs["label"], kwargs["adapter_factory"] = platform.Name, platform.Label, factory
-	kwargs["check_fn"], kwargs["install_hint"] = h.checkRef(platform.Name+".check", check), platform.InstallHint
-	if len(platform.RequiredEnv) > 0 {
-		kwargs["required_env"] = platform.RequiredEnv
-	}
-	if platform.ValidateConfig != nil {
-		kwargs["validate_config"] = h.peer.funcRef(platform.Name+".validate", func(ctx context.Context, args []any, _ map[string]any) (any, error) {
-			var config map[string]any
-			if len(args) > 0 {
-				config, _ = args[0].(map[string]any)
-			}
-			return platform.ValidateConfig(ctx, mapOrEmpty(config))
-		})
-	}
-	return h.register("register_platform", nil, kwargs)
+	return h.register("register_login_backend", []any{loginBackendObject(b)}, nil)
 }
 
 func (h *host) RegisterSlackActionHandler(actionID any, fn SlackActionFunc) (*Handle, error) {
@@ -338,9 +339,42 @@ func (h *host) RegisterAuxiliaryTask(key string, task AuxiliaryTask) (*Handle, e
 }
 
 func (h *host) RegisterRedactionPatterns(patterns []string) (int, error) {
+	if h.intercept("register_redaction_patterns", []any{patterns}, nil) {
+		return 0, nil
+	}
 	value, err := h.Call(h.registering(), "register_redaction_patterns", []any{patterns}, nil)
 	n, _ := integer(value)
 	return int(n), err
+}
+
+// Keeps the dashboard API handler of this plugin for the host to forward requests to
+func (h *host) RegisterDashboardAPI(handler APIHandler) {
+	h.peer.mu.Lock()
+	defer h.peer.mu.Unlock()
+	if handler == nil {
+		delete(h.peer.apis, h.key)
+		return
+	}
+	h.peer.apis[h.key] = handler
+}
+
+func (h *host) RegisterGatewayHook(fn GatewayHookFunc) error {
+	if fn == nil {
+		return fmt.Errorf("gateway hook has no handler")
+	}
+	callback := h.peer.funcRef("gateway_hook", func(ctx context.Context, args []any, _ map[string]any) (any, error) {
+		eventType := ""
+		var hookContext map[string]any
+		if len(args) > 0 {
+			eventType = text(args[0])
+		}
+		if len(args) > 1 {
+			hookContext, _ = args[1].(map[string]any)
+		}
+		return fn(ctx, eventType, mapOrEmpty(hookContext))
+	})
+	_, err := h.register("register_gateway_hook", []any{callback}, nil)
+	return err
 }
 
 func (h *host) Subscribe(event string, fn HookFunc) error {
@@ -512,4 +546,27 @@ func number(v any) float64 {
 		return float64(x)
 	}
 	return 0
+}
+
+func (h *host) ProviderRequest(ctx context.Context, req ProviderRequest) (*HTTPResponse, error) {
+	kwargs := map[string]any{"json": req.JSON, "headers": req.Headers, "timeout": req.TimeoutSeconds}
+	value, err := h.Call(ctx, "credentialed_provider_request", []any{req.Provider, req.Method, req.URL}, kwargs)
+	if err != nil {
+		return nil, err
+	}
+	out, _ := value.(map[string]any)
+	status, _ := integer(out["status"])
+	resp := &HTTPResponse{Status: int(status), Headers: map[string]string{}}
+	resp.Body, _ = out["body"].([]byte)
+	headers, _ := out["headers"].(map[string]any)
+	for k, v := range headers {
+		resp.Headers[k] = text(v)
+	}
+	return resp, nil
+}
+
+// Runs one host utility by name, such as redact_sensitive_text, get_env_value or build_subprocess_env
+func (h *host) SDK(ctx context.Context, op string, args []any, kwargs map[string]any) (any, error) {
+	return h.peer.call(ctx, "sdk", map[string]any{"plugin": h.key, "op": op, "args": h.peer.encode(listOrEmpty(args)),
+		"kwargs": h.peer.encode(mapOrEmpty(kwargs))})
 }

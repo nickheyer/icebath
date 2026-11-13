@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -136,12 +137,15 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 		return "", "Interpreter is not executable: " + resolved, nil
 	}
 	for _, name := range names {
-		if !tools.InterpreterImageMatch(name) || strings.HasPrefix(name, "pythonw") {
+		if !cronPythonImageRe.MatchString(name) || strings.HasPrefix(name, "pythonw") {
 			return "", "Interpreter must be a Python executable (python, python3, python3.12, ...): " + resolved, nil
 		}
 	}
 	return resolved, "", nil
 }
+
+// Lower cased file name of a Python interpreter executable
+var cronPythonImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\n?$`)
 
 // First python3 or python on PATH, the interpreter Python scripts run on
 func cronHostPython() (string, error) {

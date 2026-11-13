@@ -236,7 +236,7 @@ var runReviewInThread = func(ctx context.Context, a *AIAgent, messagesSnapshot [
 		return
 	}
 	st := &reviewForkState{reviewUsage: map[string]any{}}
-	silent := tools.ThreadScopedSilence(ctx)
+	silent := tools.SilenceOutput(ctx)
 	defer func() {
 		trackReviewFork(a, st.reviewAgent, false)
 		finishBackgroundReviewRun(a, run)

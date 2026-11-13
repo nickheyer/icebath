@@ -374,7 +374,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return "", nil, "", err
 	} else if !looks {
-		logWarn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
+		logWarn(fmt.Sprintf("%s has no plugin.yaml or plugin.json; may not be a valid plugin", filepath.Base(target)))
 	}
 	copyExampleFiles(target, NewConsole(os.Stdout))
 	installed, err := readManifest(target)
@@ -675,7 +675,7 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return err
 	} else if !looks {
-		console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] %s doesn't contain plugin.yaml, plugin.json, or __init__.py. "+
+		console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] %s doesn't contain plugin.yaml or plugin.json. "+
 			"It may not be a valid Icebath plugin.", installedName))
 	}
 	if err := promptPluginEnvVars(ctx, h, installedManifest, console); err != nil {
@@ -746,7 +746,7 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	return nil
 }
 
-// Makes a memory provider live after preparing its dependencies, or says how to
+// Makes a memory provider live, or says how to
 func selectMemoryProvider(ctx context.Context, h, name string, console *Console, selectNow bool) error {
 	if !selectNow {
 		console.Print(fmt.Sprintf("[dim]Memory provider installed but not active. Run `icebath memory setup` "+
@@ -757,17 +757,8 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 	if svc == nil || svc.MemoryProviderDir == nil {
 		return &ServiceMissingError{Name: "MemoryProviderDir"}
 	}
-	if svc.PrepareMemoryProviderDependencies == nil {
-		return &ServiceMissingError{Name: "PrepareMemoryProviderDependencies"}
-	}
 	if _, ok := svc.MemoryProviderDir(h, name); !ok {
 		console.Print(fmt.Sprintf("[red]✗[/red] %s does not resolve as a memory provider; memory.provider is unchanged.", name))
-		return nil
-	}
-	if err := svc.PrepareMemoryProviderDependencies(ctx, name); err != nil {
-		logDebug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
-		console.Print(fmt.Sprintf("[red]✗[/red] Could not prepare %s's dependencies: %v", name, err))
-		console.Print("[dim]memory.provider is unchanged; run `icebath memory setup` after resolving it.[/dim]")
 		return nil
 	}
 	expected, err := pluginSelectionVersion(h)

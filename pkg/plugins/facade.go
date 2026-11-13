@@ -252,7 +252,7 @@ func readManifest(pluginDir string) (map[string]any, error) {
 	return manifest, nil
 }
 
-// Whether a dir has a native or portable manifest or a package init file
+// Whether a dir has a native or portable manifest
 func looksLikePluginDir(target string) (bool, error) {
 	native, err := nativeManifestFile(target)
 	if err != nil {
@@ -261,12 +261,8 @@ func looksLikePluginDir(target string) (bool, error) {
 	if native != "" {
 		return true, nil
 	}
-	for _, name := range []string{"plugin.json", "__init__.py"} {
-		if _, err := os.Stat(filepath.Join(target, name)); err == nil {
-			return true, nil
-		}
-	}
-	return false, nil
+	_, err = os.Stat(filepath.Join(target, "plugin.json"))
+	return err == nil, nil
 }
 
 // Copies each example file to its real name without overwriting an existing file

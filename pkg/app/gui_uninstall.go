@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -55,7 +58,7 @@ func guiUserHome() string {
 	return h
 }
 
-// Electron userData of the desktop app on this platform
+// User data directory of the desktop app on this platform
 func desktopUserdataDir() string {
 	h := guiUserHome()
 	switch guiSysPlatform() {
@@ -67,11 +70,9 @@ func desktopUserdataDir() string {
 	return filepath.Join(guiEnvDir("XDG_CONFIG_HOME", filepath.Join(h, ".config")), "Icebath")
 }
 
-// Desktop build artifacts inside the checkout plus the build stamp
-func sourceBuiltGUIArtifacts(h string) []string {
-	desktop := filepath.Join(h, "icebath-agent", "apps", "desktop")
-	return []string{filepath.Join(desktop, "dist"), filepath.Join(desktop, "release"), filepath.Join(desktop, "node_modules"),
-		filepath.Join(h, "desktop-build-stamp.json")}
+// Desktop app the install placed under the home and the shortcuts it created
+func installedGUIArtifacts(h string) []string {
+	return append([]string{install.DesktopReleaseDir(install.InstallRootOf(h))}, install.DesktopShortcutPaths()...)
 }
 
 // Record of the installed app copies the update keeps current, under the default root
@@ -134,7 +135,7 @@ func agentIsInstalled(h string) bool {
 
 // Whether any desktop GUI artifact or install record exists
 func guiIsInstalled(h string) bool {
-	paths := append(append(sourceBuiltGUIArtifacts(h), packagedGUIAppPaths()...), desktopUserdataDir(), desktopInstallRecordPath())
+	paths := append(append(installedGUIArtifacts(h), packagedGUIAppPaths()...), desktopUserdataDir(), desktopInstallRecordPath())
 	for _, p := range paths {
 		if guiExists(p) {
 			return true
@@ -159,7 +160,7 @@ func guiInstallSummary(h string) *pyjson.Object {
 	userdata := desktopUserdataDir()
 	steward, allowed := selfupdate.ClassifyInstall(filepath.Join(h, "icebath-agent"))
 	return pyjson.ObjectOf("hermes_home", h, "agent_installed", agentIsInstalled(h), "gui_installed", guiIsInstalled(h),
-		"source_built_artifacts", guiExistingList(sourceBuiltGUIArtifacts(h)), "packaged_app_paths", guiExistingList(packagedGUIAppPaths()),
+		"source_built_artifacts", guiExistingList(installedGUIArtifacts(h)), "packaged_app_paths", guiExistingList(packagedGUIAppPaths()),
 		"userdata_dir", userdata, "userdata_exists", guiExists(userdata), "platform", guiSysPlatform(),
 		"steward", steward, "code_removal_allowed", allowed)
 }
@@ -221,14 +222,14 @@ func uninstallGUI(w io.Writer, h string, removeUserdata bool) []string {
 		}
 		return found
 	}
-	guiLog(w, "→", cliui.Cyan, "Removing built GUI artifacts (renderer, release, node_modules)...")
-	removeExisting(append(sourceBuiltGUIArtifacts(h), desktopInstallRecordPath()))
+	guiLog(w, "→", cliui.Cyan, "Removing the installed desktop app and its shortcuts...")
+	removeExisting(append(installedGUIArtifacts(h), desktopInstallRecordPath()))
 	guiLog(w, "→", cliui.Cyan, "Removing installed desktop app...")
 	if !removeExisting(packagedGUIAppPaths()) {
 		guiLog(w, "→", cliui.Cyan, "No packaged desktop app found in standard locations")
 	}
 	if userdata := desktopUserdataDir(); removeUserdata && guiExists(userdata) {
-		guiLog(w, "→", cliui.Cyan, "Removing desktop app data (Electron userData)...")
+		guiLog(w, "→", cliui.Cyan, "Removing desktop app data...")
 		removeExisting([]string{userdata})
 	}
 	if len(removed) == 0 {
@@ -244,9 +245,6 @@ func uninstallGUI(w io.Writer, h string, removeUserdata bool) []string {
 				break
 			}
 		}
-		guiLog(w, "→", cliui.Cyan, "If you installed the desktop via a .deb / .rpm package, remove it with your package manager "+
-			"(e.g. 'sudo apt remove icebath' or 'sudo dnf remove icebath'). AppImage builds are a single "+
-			"file you can delete from wherever you saved it.")
 	}
 	return removed
 }
@@ -334,4 +332,27 @@ func RunGUIUninstall(ctx context.Context, ns map[string]any, w io.Writer) (int, 
 	fmt.Fprintln(w, "or 'icebath uninstall' to remove the agent too.")
 	fmt.Fprintln(w)
 	return 0, nil
+}
+
+// Reindexes the menu caches with each tool that exists and names the ones that ran
+func refreshDesktopDatabases(applicationsDir string) []string {
+	run := func(argv ...string) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		path, err := exec.LookPath(argv[0])
+		return err == nil && exec.CommandContext(ctx, path, argv[1:]...).Run() == nil
+	}
+	var ran []string
+	if run("update-desktop-database", applicationsDir) {
+		ran = append(ran, "update-desktop-database")
+	}
+	for _, tool := range []string{"kbuildsycoca6", "kbuildsycoca5"} {
+		if _, err := exec.LookPath(tool); err == nil {
+			if run(tool, "--noincremental") {
+				ran = append(ran, tool)
+			}
+			break
+		}
+	}
+	return ran
 }

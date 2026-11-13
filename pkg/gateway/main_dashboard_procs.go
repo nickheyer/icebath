@@ -19,10 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-const (
-	preBuildHint         = "  Pre-build first:  npm install --workspace web && npm run build -w web"
-	dashboardSystemdUnit = "icebath-dashboard.service"
-)
+const dashboardSystemdUnit = "icebath-dashboard.service"
 
 // Host facts of the dashboard restart and status paths, swapped by tests
 var (

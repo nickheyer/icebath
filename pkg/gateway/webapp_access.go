@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 // Remote access cannot be set up as asked, its message the user facing reason
@@ -341,13 +342,12 @@ func webappPortFree(host string, port int) bool {
 	return true
 }
 
-// Builds the Webapp bundle the gateway serves, a build failure answered with how to see its output
-func WebappAccessBuildBundle(ctx context.Context) error {
-	_, err := WebappRendererBuild.Prepare(ctx, pm.RepoRoot(), false, false, false)
-	if err != nil && WebappRendererBuild.ExceptionName(err) == "WebappBuildError" {
-		return &WebappAccessError{strings.TrimRight(err.Error(), ".") + ". Run icebath webapp --build-only to see the full output, then start again."}
+// Refuses Web Access while the Webapp bundle the gateway would serve cannot be found or fetched
+func WebappAccessRequireBundle(ctx context.Context) error {
+	if _, err := webbundle.Dir(ctx, webbundle.Webapp, nil); err != nil {
+		return &WebappAccessError{err.Error()}
 	}
-	return err
+	return nil
 }
 
 // Registers Nous sign in for the callback on Web Access own portal client unless it already carries it

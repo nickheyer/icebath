@@ -1,32 +1,20 @@
 package sherpaonnx
 
 import (
-	"errors"
+	"context"
 	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypinyin"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tokenizers/sentencepiece"
 )
 
-// What text2token reaches outside the package, the pypinyin dictionaries of the runtime environment and the stream print writes to
-type Environment struct {
-	Stdout         io.Writer
-	ImportPypinyin func() (*pypinyin.Module, error)
-}
-
-// The keyword arguments of text2token, TokensType cjkchar when empty
+// How phrases become model tokens, with the BPE model or phone lexicon the type needs
 type Text2TokenOptions struct {
 	TokensType string
-	BPEModel   *string
-	Lexicon    *string
-	OutputIDs  bool
+	BPEModel   string
+	Lexicon    string
 }
 
 func isFile(path string) bool {
@@ -34,17 +22,13 @@ func isFile(path string) bool {
 	return err == nil && info.Mode().IsRegular()
 }
 
-// Lines of a UTF-8 text file read with universal newlines
+// Lines of a UTF-8 text file with any line ending
 func readLines(path string) ([]string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	text, err := pycodecs.Decode(raw, "utf-8")
-	if err != nil {
-		return nil, err
-	}
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	text := strings.ReplaceAll(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\r", "\n")
 	lines := strings.Split(text, "\n")
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
@@ -63,174 +47,117 @@ func allCJK(s string) bool {
 	return s != ""
 }
 
-func strList(items []string) string {
-	list := make([]any, len(items))
-	for i, item := range items {
-		list[i] = item
-	}
-	return pyrepr.Repr(list)
-}
-
-// Pinyin of a text, whole syllables for fpinyin and initial plus toned final for ppinyin
-func toPinyin(py *pypinyin.Module, txt, outType string) ([]string, error) {
-	readings, err := py.Pinyin(txt)
+// Token table of a tokens.txt file, one symbol and id per line
+func readTokenTable(path string) (map[string]bool, error) {
+	lines, err := readLines(path)
 	if err != nil {
 		return nil, err
 	}
-	res := []string{}
-	for _, reading := range readings {
-		x := reading[0]
-		if outType != "ppinyin" {
-			res = append(res, x)
-			continue
+	table := map[string]bool{}
+	for i, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return nil, fmt.Errorf("%s line %d is not a token and its id", path, i+1)
 		}
-		initial, final := pypinyin.ToInitialsNotStrict(x), pypinyin.ToFinalsToneNotStrict(x)
-		if initial == "" && final == "" {
-			res = append(res, x)
-			continue
+		if table[fields[0]] {
+			return nil, fmt.Errorf("%s lists the token %s twice", path, fields[0])
 		}
-		if initial != "" {
-			res = append(res, initial)
-		}
-		if final != "" {
-			res = append(res, final)
-		}
+		table[fields[0]] = true
 	}
-	return res, nil
+	return table, nil
 }
 
-// Encodes texts into token lists for a tokens.txt vocabulary, dropping every text with a token the vocabulary lacks
-func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) ([][]any, error) {
+// Encodes each phrase into model tokens, nil for a phrase holding a word or token the model lacks
+func Text2Token(ctx context.Context, texts []string, tokens string, o Text2TokenOptions) ([][]string, error) {
 	tokensType := o.TokensType
 	if tokensType == "" {
 		tokensType = "cjkchar"
 	}
-	var py *pypinyin.Module
+	var py *pinyinDict
 	if strings.Contains(tokensType, "pinyin") {
-		if m.env.ImportPypinyin == nil {
-			return nil, errors.New("token type " + tokensType + " needs pinyin dictionaries and the module was loaded without a source for them")
-		}
 		var err error
-		if py, err = m.env.ImportPypinyin(); err != nil {
+		if py, err = loadPinyin(ctx); err != nil {
 			return nil, err
 		}
 	}
-	if !isFile(tokens) {
-		return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + tokens}
-	}
-	tokensTable := map[string]any{}
-	lines, err := readLines(tokens)
+	table, err := readTokenTable(tokens)
 	if err != nil {
 		return nil, err
 	}
-	for _, line := range lines {
-		toks := pystr.SplitWhitespace(pystr.Strip(line), -1)
-		if len(toks) != 2 {
-			return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
-		}
-		if _, dup := tokensTable[toks[0]]; dup {
-			return nil, &PyError{Class: "AssertionError", Msg: "Duplicate token: " + strList(toks) + " "}
-		}
-		id, ok := pyint.Parse(toks[1])
-		if !ok {
-			return nil, &PyError{Class: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(toks[1])}
-		}
-		if id.IsInt64() {
-			tokensTable[toks[0]] = int(id.Int64())
-		} else {
-			tokensTable[toks[0]] = id
-		}
-	}
 	var sp *sentencepiece.Processor
 	if strings.Contains(tokensType, "bpe") {
-		if o.BPEModel == nil {
-			return nil, &PyError{Class: "TypeError", Msg: "argument should be a str or an os.PathLike object where __fspath__ returns a str, not 'NoneType'"}
+		if !isFile(o.BPEModel) {
+			return nil, fmt.Errorf("BPE model %s is missing", o.BPEModel)
 		}
-		if !isFile(*o.BPEModel) {
-			return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + *o.BPEModel}
-		}
-		if sp, err = sentencepiece.Load(*o.BPEModel); err != nil {
+		if sp, err = sentencepiece.Load(o.BPEModel); err != nil {
 			return nil, err
 		}
 	}
-	phoneTable := map[string][]string{}
+	phones := map[string][]string{}
 	if tokensType == "phone+ppinyin" {
-		if o.Lexicon == nil {
-			return nil, &PyError{Class: "AssertionError", Msg: "File not exists, None"}
+		if !isFile(o.Lexicon) {
+			return nil, fmt.Errorf("phone lexicon %s is missing", o.Lexicon)
 		}
-		if *o.Lexicon == "" || !isFile(*o.Lexicon) {
-			return nil, &PyError{Class: "AssertionError", Msg: "File not exists, " + *o.Lexicon}
-		}
-		lexicon, err := readLines(*o.Lexicon)
+		lines, err := readLines(o.Lexicon)
 		if err != nil {
 			return nil, err
 		}
-		for _, line := range lexicon {
-			toks := pystr.SplitWhitespace(pystr.Strip(line), -1)
-			if len(toks) < 2 {
-				return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
+		for i, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				return nil, fmt.Errorf("%s line %d has a word without phones", o.Lexicon, i+1)
 			}
-			phoneTable[toks[0]] = toks[1:]
+			phones[fields[0]] = fields[1:]
 		}
 	}
-	textsList := [][]string{}
+	var encoded [][]string
 	switch tokensType {
 	case "cjkchar":
 		for _, text := range texts {
-			chars := []string{}
-			for _, r := range strings.Join(pystr.SplitWhitespace(text, -1), "") {
+			var chars []string
+			for _, r := range strings.Join(strings.Fields(text), "") {
 				chars = append(chars, string(r))
 			}
-			textsList = append(textsList, chars)
+			encoded = append(encoded, chars)
 		}
 	case "bpe":
-		if textsList, err = sp.EncodeBatchAsPieces(texts); err != nil {
+		if encoded, err = sp.EncodeBatchAsPieces(texts); err != nil {
 			return nil, err
 		}
 	case "ppinyin", "fpinyin":
-		for _, txt := range texts {
-			list, err := toPinyin(py, txt, tokensType)
-			if err != nil {
-				return nil, err
-			}
-			textsList = append(textsList, list)
+		for _, text := range texts {
+			encoded = append(encoded, py.syllables(text, tokensType == "ppinyin"))
 		}
 	case "phone+ppinyin":
 		for _, text := range texts {
-			textList := []string{}
-			skipText := false
-			for _, w := range pystr.SplitWhitespace(pystr.Strip(text), -1) {
-				if phones, ok := phoneTable[w]; ok {
-					textList = append(textList, phones...)
+			var list []string
+			skip := false
+			for _, w := range strings.Fields(text) {
+				if p, ok := phones[w]; ok {
+					list = append(list, p...)
 					continue
 				}
 				if !allCJK(w) {
-					fmt.Fprintf(m.env.Stdout, "Word %s not in lexicon and it is not a CJK character, skipping text: %s.\n", w, text)
-					skipText = true
+					slog.Warn("wake phrase word is neither in the phone lexicon nor Chinese, the phrase is skipped", "word", w, "phrase", text)
+					skip = true
 					break
 				}
-				list, err := toPinyin(py, w, "ppinyin")
-				if err != nil {
-					return nil, err
-				}
-				textList = append(textList, list...)
+				list = append(list, py.syllables(w, true)...)
 			}
-			if !skipText {
-				textsList = append(textsList, textList)
+			if skip {
+				list = nil
 			}
+			encoded = append(encoded, list)
 		}
-	default:
-		if tokensType != "cjkchar+bpe" {
-			return nil, &PyError{Class: "AssertionError", Msg: "Supported tokens_type are cjkchar, bpe, cjkchar+bpe, ppinyin, fpinyin, phone+ppinyin given " + tokensType}
-		}
+	case "cjkchar+bpe":
 		for _, text := range texts {
-			textList := []string{}
+			var list []string
 			flush := func(segment string) error {
-				if pystr.Strip(segment) == "" {
+				if strings.TrimSpace(segment) == "" {
 					return nil
 				}
 				pieces, err := sp.EncodeAsPieces(segment)
-				textList = append(textList, pieces...)
+				list = append(list, pieces...)
 				return err
 			}
 			start := 0
@@ -241,35 +168,25 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 				if err := flush(text[start:i]); err != nil {
 					return nil, err
 				}
-				textList = append(textList, string(r))
+				list = append(list, string(r))
 				start = i + len(string(r))
 			}
 			if err := flush(text[start:]); err != nil {
 				return nil, err
 			}
-			textsList = append(textsList, textList)
+			encoded = append(encoded, list)
 		}
+	default:
+		return nil, fmt.Errorf("token type %s is not one of cjkchar, bpe, cjkchar+bpe, ppinyin, fpinyin, phone+ppinyin", tokensType)
 	}
-	result := [][]any{}
-	for _, text := range textsList {
-		textList := []any{}
-		containOOV := false
-		for _, txt := range text {
-			id, ok := tokensTable[txt]
-			if !ok {
-				fmt.Fprintf(m.env.Stdout, "Can't find token %s in token table, check your tokens.txt see if %s in it. skipping text : %s.\n", txt, txt, strList(text))
-				containOOV = true
+	for i, list := range encoded {
+		for _, t := range list {
+			if !table[t] {
+				slog.Warn("wake phrase holds a token the keyword model lacks, the phrase is skipped", "token", t, "tokens", strings.Join(list, " "))
+				encoded[i] = nil
 				break
 			}
-			if o.OutputIDs {
-				textList = append(textList, id)
-			} else {
-				textList = append(textList, txt)
-			}
-		}
-		if !containOOV {
-			result = append(result, textList)
 		}
 	}
-	return result, nil
+	return encoded, nil
 }

@@ -43,7 +43,6 @@ var queryTokenAPIPaths = map[string]bool{"/api/files/download": true}
 var (
 	webStateMu           sync.RWMutex
 	projectRoot          string
-	webDist              string
 	gatewayHealthURL     string
 	gatewayHealthURLSet  bool
 	gatewayHealthTimeout = 1.0
@@ -66,16 +65,11 @@ func webServerLog() *slog.Logger {
 	return slog.Default().With("logger", "hermes_cli.web_server")
 }
 
-// Module level values of the web server read at import, the project root, web dist and gateway health probe
+// Module level values of the web server read at import, the project root and gateway health probe
 func importWebServerState() {
 	webStateMu.Lock()
 	defer webStateMu.Unlock()
 	projectRoot = pm.RepoRoot()
-	if v, ok := os.LookupEnv("ICEBATH_WEB_DIST"); ok {
-		webDist = v
-	} else {
-		webDist = webbundle.Dist(projectRoot)
-	}
 	gatewayHealthURL, gatewayHealthURLSet = os.LookupEnv("GATEWAY_HEALTH_URL")
 	gatewayHealthTimeout = parseGatewayHealthTimeout()
 }
@@ -116,11 +110,10 @@ func ProjectRoot() string {
 	return projectRoot
 }
 
-// Built web UI directory the web server resolved at import
+// Dashboard bundle directory resolved on first use, empty while no bundle can be found
 func WebDist() string {
-	webStateMu.RLock()
-	defer webStateMu.RUnlock()
-	return webDist
+	dir, _ := webbundle.Dir(context.Background(), webbundle.Dashboard, nil)
+	return dir
 }
 
 // Gateway health URL from GATEWAY_HEALTH_URL and whether it is set

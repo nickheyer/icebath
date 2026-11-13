@@ -666,7 +666,7 @@ func (c *CLI) chatSettleTurn(turn *chatTurn) {
 		}
 	}
 	if a := c.agentRef(); a != nil && a.SessionID() != "" && a.SessionID() != c.sessionID {
-		tools.TransferSessionYolo(c.sessionID, a.SessionID())
+		tools.TransferSessionYolo(c.ctx, c.sessionID, a.SessionID())
 		c.sessionID = a.SessionID()
 		c.writeTerminalBreadcrumb()
 		c.pendingTitle = ""

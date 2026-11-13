@@ -30,14 +30,14 @@ const sourceCompletionProg = "icebath source-completion"
 const sourceCompletionMarker = "pkg/selfupdate/source_completion.go"
 
 const sourceCompletionDescription = "The tail every source install and update shares. A fresh install (``scripts/install.sh`` / " +
-	"``scripts/install.ps1``) and a finished update must land in the same state: launchers published, product builds " +
-	"current, and the post-build maintenance (skills sync, config migration) applied. One implementation, two callers -- " +
+	"``scripts/install.ps1``) and a finished update must land in the same state: launchers published, feature dependencies " +
+	"current, and the post-update maintenance (skills sync, config migration) applied. One implementation, two callers -- " +
 	"an install and an update cannot drift apart. ``main()`` is the installer entry. It is handed the bootstrap interpreter " +
 	"the installer happens to have (uv, PM and no application dependencies), so it re-executes itself in PM's selected " +
 	"interpreter before touching any product."
 
 var (
-	sourceCompletionBuildProducts = BuildUpdateProducts
+	sourceCompletionPrepare       = PrepareUpdatedInstall
 	sourceCompletionMaintenance   = RunPostUpdateMaintenance
 	exposePMGitPlatform           = runtime.GOOS
 	exposePMGitStoreRoot          = pm.StoreRoot
@@ -64,7 +64,7 @@ type SourceCompletion struct {
 	CompletionMessage                     *string
 	Announce                              string
 	Followups                             *[][2]string
-	BeforeBuild                           func()
+	BeforeDependencies                           func()
 	Stdout, Stderr                        io.Writer
 }
 
@@ -76,7 +76,7 @@ func failureReason(err error) string {
 	return strings.TrimPrefix(reflect.TypeOf(err).String(), "*")
 }
 
-// Publishes commands, builds the products, then runs post build maintenance under the shared update lock
+// Publishes commands, updates feature dependencies, then runs post update maintenance under the shared update lock
 func CompleteSourceCheckout(ctx context.Context, root string, o SourceCompletion) (bool, error) {
 	lock := updaterecord.NewUpdateLock("", root, true)
 	acquired, err := lock.Acquire(ctx)
@@ -104,10 +104,10 @@ func completeSourceLocked(ctx context.Context, root string, o SourceCompletion) 
 		}
 	}
 	step("launchers", func() error { return publishLaunchers(ctx, root) })
-	if o.BeforeBuild != nil {
-		o.BeforeBuild()
+	if o.BeforeDependencies != nil {
+		o.BeforeDependencies()
 	}
-	step("build", func() error { return sourceCompletionBuildProducts(ctx, root, o.Desktop) })
+	step("build", func() error { return sourceCompletionPrepare(ctx, o.Stdout, root) })
 	if o.Announce != "" {
 		fmt.Fprintln(o.Stdout, o.Announce)
 	}
@@ -182,11 +182,11 @@ func sourceCompletionBootstrapCommand(root string, argv []string) ([]string, err
 
 // Parsed arguments of the source completion entry
 type sourceCompletionArgs struct {
-	source                             string
-	desktop, interactive, finishUpdate bool
+	source                    string
+	interactive, finishUpdate bool
 }
 
-var sourceCompletionLongOptions = []string{"--help", "--source", "--desktop", "--interactive", "--finish-update"}
+var sourceCompletionLongOptions = []string{"--help", "--source", "--interactive", "--finish-update"}
 
 // Option an argument names exactly, by an equals split or by a unique long prefix, with its explicit value
 func sourceCompletionMatch(arg string) (string, *string, bool) {
@@ -239,7 +239,6 @@ func sourceCompletionUsage(t pm.ArgparseColors) string {
 	parts := []string{
 		fmt.Sprintf("[%s-h%s]", t.SummaryShort, t.Reset),
 		fmt.Sprintf("%s--source%s %sSOURCE%s", t.SummaryLong, t.Reset, t.SummaryLabel, t.Reset),
-		fmt.Sprintf("[%s--desktop%s]", t.SummaryLong, t.Reset),
 		fmt.Sprintf("[%s--interactive%s]", t.SummaryLong, t.Reset),
 		fmt.Sprintf("[%s--finish-update%s]", t.SummaryLong, t.Reset),
 	}
@@ -293,9 +292,8 @@ func sourceCompletionHelp(t pm.ArgparseColors) string {
 	}{
 		{fmt.Sprintf("%s-h%s, %s--help%s", t.ShortOption, t.Reset, t.LongOption, t.Reset), len("-h, --help"), "show this help message and exit"},
 		{fmt.Sprintf("%s--source%s %sSOURCE%s", t.LongOption, t.Reset, t.Label, t.Reset), len("--source SOURCE"), ""},
-		{fmt.Sprintf("%s--desktop%s", t.LongOption, t.Reset), len("--desktop"), "Also build the packaged desktop app."},
 		{fmt.Sprintf("%s--interactive%s", t.LongOption, t.Reset), len("--interactive"), "Allow prompts; installers pass no flag and stay unattended."},
-		{fmt.Sprintf("%s--finish-update%s", t.LongOption, t.Reset), len("--finish-update"), "Complete a source UPDATE tail instead of an install: the same launchers/products/maintenance with update wording."},
+		{fmt.Sprintf("%s--finish-update%s", t.LongOption, t.Reset), len("--finish-update"), "Complete a source UPDATE tail instead of an install: the same launchers/dependencies/maintenance with update wording."},
 	}
 	var b strings.Builder
 	b.WriteString(sourceCompletionUsage(t))
@@ -375,8 +373,6 @@ func parseSourceCompletionArgs(argv []string, stdout, stderr io.Writer) (sourceC
 		case "-h", "--help":
 			io.WriteString(stdout, sourceCompletionHelp(pm.ArgparseThemeFor(stdout)))
 			return sourceCompletionArgs{}, 0, false
-		case "--desktop":
-			args.desktop = true
 		case "--interactive":
 			args.interactive = true
 		case "--finish-update":
@@ -440,14 +436,14 @@ func SourceCompletionMain(ctx context.Context, argv []string, stdout, stderr io.
 		var done bool
 		if args.finishUpdate {
 			var owed [][2]string
-			if _, err := CompleteSourceCheckout(ctx, root, SourceCompletion{Desktop: args.desktop, AssumeYes: true,
+			if _, err := CompleteSourceCheckout(ctx, root, SourceCompletion{Desktop: desktopAppPresent(root), AssumeYes: true,
 				Announce: "\n✓ Code updated!", Followups: &owed, Stdout: stdout, Stderr: stderr}); err != nil {
 				return uncaught(err)
 			}
 			done = len(owed) == 0
 		} else {
 			message := "✓ Install complete!"
-			if done, err = CompleteSourceCheckout(ctx, root, SourceCompletion{Desktop: args.desktop, AssumeYes: !args.interactive,
+			if done, err = CompleteSourceCheckout(ctx, root, SourceCompletion{Desktop: desktopAppPresent(root), AssumeYes: !args.interactive,
 				CompletionMessage: &message, Stdout: stdout, Stderr: stderr}); err != nil {
 				return uncaught(err)
 			}
@@ -458,9 +454,6 @@ func SourceCompletionMain(ctx context.Context, argv []string, stdout, stderr io.
 		return 1
 	}
 	var passthrough []string
-	if args.desktop {
-		passthrough = append(passthrough, "--desktop")
-	}
 	if args.finishUpdate {
 		passthrough = append(passthrough, "--finish-update")
 	}

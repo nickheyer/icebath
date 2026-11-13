@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 const (
@@ -56,16 +57,9 @@ const (
 // Hostnames the dashboard treats as loopback binds
 var loopbackHostValues = map[string]bool{"localhost": true, "127.0.0.1": true, "::1": true}
 
-// Webapp renderer build steps of the self update package, assigned by the command wiring
-var WebappRendererBuild struct {
-	Prepare       func(ctx context.Context, projectRoot string, force, skipBuild, explicit bool) (string, error)
-	PackagedDist  func() string
-	ExceptionName func(err error) string
-}
-
 // Steps of the webapp command
 type webappLauncherSteps struct {
-	build            func(ctx context.Context, ns map[string]any) error
+	bundle           func(ctx context.Context, progress io.Writer) (string, error)
 	ensure           func(ctx context.Context, h string) error
 	control          func(h, verb string, params map[string]any) (map[string]any, error)
 	open             func(target string) bool
@@ -81,7 +75,7 @@ var wl webappLauncherSteps
 
 func init() {
 	wl = webappLauncherSteps{
-		build:            webappBuild,
+		bundle:           webappBundle,
 		ensure:           webappEnsure,
 		control:          webappControl,
 		open:             webappOpen,
@@ -124,11 +118,9 @@ func deletedProfileRefusal(h string) string {
 	return profiles.MissingProfileError(filepath.Base(profile)).Error()
 }
 
-// Builds the Webapp renderer the namespace asks for
-func webappBuild(ctx context.Context, ns map[string]any) error {
-	force := dashArgBool(ns, "force_build")
-	_, err := WebappRendererBuild.Prepare(ctx, pm.RepoRoot(), force, dashArgBool(ns, "skip_build"), force || dashArgBool(ns, "build_only"))
-	return err
+// Webapp bundle the gateway serves, fetched for a release build when this machine has none yet
+func webappBundle(ctx context.Context, progress io.Writer) (string, error) {
+	return webbundle.Dir(ctx, webbundle.Webapp, progress)
 }
 
 // Starts the gateway for a home, unreachable when it cannot be attached
@@ -485,7 +477,7 @@ func webappStatus(ctx context.Context, w io.Writer, target string) int {
 	return 0
 }
 
-// Whether fixing the unavailable reason takes a gateway restart, never for a missing or stale bundle
+// Whether fixing the unavailable reason takes a gateway restart, never for a mounted bundle missing its index
 func webappRestartApplies(reason any) bool {
 	return !strings.HasPrefix(pyrepr.Str(reason), WebappNotBuilt)
 }
@@ -603,7 +595,7 @@ func webappExplainRefusedLaunch(w io.Writer, target string, response map[string]
 	return 1
 }
 
-// Opens the browser hosted Desktop the gateway serves, building the bundle and starting the gateway when needed
+// Opens the browser hosted Desktop the gateway serves, fetching the bundle and starting the gateway when needed
 func CmdWebapp(ctx context.Context, h string, ns map[string]any, explicitProfile string, w, errW io.Writer) (int, error) {
 	if refusal := deletedProfileRefusal(h); refusal != "" {
 		fmt.Fprintf(errW, "Error: %s\n", refusal)
@@ -619,8 +611,7 @@ func CmdWebapp(ctx context.Context, h string, ns map[string]any, explicitProfile
 	if dashArgBool(ns, "sign_out") {
 		return webappSignOut(ctx, w, target)
 	}
-	buildOnly := dashArgBool(ns, "build_only")
-	if !buildOnly && !WebappSettingsOf(ctx, target).Enabled {
+	if !WebappSettingsOf(ctx, target).Enabled {
 		message := webappStillServed(target)
 		if message == "" {
 			message = webappOffMessage(ctx, target, "run icebath webapp again")
@@ -628,20 +619,9 @@ func CmdWebapp(ctx context.Context, h string, ns map[string]any, explicitProfile
 		fmt.Fprintln(w, message)
 		return 1, nil
 	}
-	if err := wl.build(ctx, ns); err != nil {
-		if WebappRendererBuild.ExceptionName(err) != "WebappBuildError" {
-			return 0, err
-		}
-		fmt.Fprintf(w, "✗ %s\n", err.Error())
-		if WebappRendererBuild.PackagedDist() == "" {
-			fmt.Fprintln(w, "  Build it explicitly:")
-			fmt.Fprintln(w, "    icebath webapp --build-only")
-		}
+	if _, err := wl.bundle(ctx, w); err != nil {
+		fmt.Fprintf(w, "✗ %s\n", err)
 		return 1, nil
-	}
-	if buildOnly {
-		fmt.Fprintln(w, "Webapp bundle ready.")
-		return 0, nil
 	}
 	response, err := func() (map[string]any, error) {
 		if err := wl.ensure(ctx, target); err != nil {

@@ -93,3 +93,12 @@ func PortableMCPServers(h string) (map[string]map[string]any, error) {
 	ctx := home.WithOverride(context.Background(), h)
 	return ensurePluginsDiscovered(ctx, false).GetPortableMCPServers(), nil
 }
+
+// Whether a provider directory sits directly in the bundled memory plugins directory of the override tree
+func bundledMemoryProviderDir(pluginDir string) bool {
+	override := bundledOverrideDir()
+	if override == "" {
+		return false
+	}
+	return filepath.Dir(resolveExisting(pluginDir)) == resolveExisting(filepath.Join(override, "memory"))
+}

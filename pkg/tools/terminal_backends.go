@@ -128,18 +128,6 @@ func IsSupportedVercelRuntime(runtime string) bool {
 	return false
 }
 
-// HostedBackend marks a provider whose environments live in a plugin host outside this process
-type HostedBackend interface {
-	RunsInPluginHost() bool
-}
-
-// Error refusing to run commands in a backend whose environments the plugin host cannot hand over
-func HostedBackendRefusal(envType string) error {
-	return fmt.Errorf("terminal.backend is %s, a plugin that runs in the plugin host (plugins.isolation: host), "+
-		"and the host cannot hand its environment to Icebath, so commands cannot run in it. Set "+
-		"plugins.isolation: in_process to use this backend.", envType)
-}
-
 // StampSandboxHome records the provider declared home on this environment
 func (b *baseEnv) StampSandboxHome(home string) {
 	b.mu.Lock()
@@ -224,9 +212,6 @@ func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string
 	provider := GetTerminalBackend(envType)
 	if provider == nil {
 		return nil, unknownBackendError(ctx, envType)
-	}
-	if hosted, ok := provider.(HostedBackend); ok && hosted.RunsInPluginHost() {
-		return nil, HostedBackendRefusal(envType)
 	}
 	cc := map[string]any{}
 	for k, v := range containerConfig {

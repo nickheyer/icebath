@@ -2,11 +2,10 @@ package irc
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // IRC wizard of icebath gateway setup writing the server, identity, auth and access settings to the home .env
@@ -24,7 +23,7 @@ func InteractiveSetup(ctx context.Context) error {
 			s.PrintWarning(what + " is required — skipping IRC setup")
 			return false, nil
 		}
-		return true, s.SaveEnvValue(ctx, env, pystr.Strip(value))
+		return true, s.SaveEnvValue(ctx, env, strings.TrimSpace(value))
 	}
 	s.PrintHeader("IRC")
 	existingServer, err := get("IRC_SERVER")
@@ -35,31 +34,28 @@ func InteractiveSetup(ctx context.Context) error {
 	if err != nil || declined {
 		return err
 	}
-	info("Connect Icebath to an IRC network. Uses Python stdlib — no extra packages needed.",
+	info("Connect Icebath to an IRC network over TLS or plain TCP.",
 		"   Works with Libera.Chat, OFTC, your own ZNC/InspIRCd, etc.")
 	gateway.WizardPrintln("")
 	if ok, err := required("IRC server hostname (e.g. irc.libera.chat)", "IRC_SERVER", existingServer, "Server"); err != nil || !ok {
 		return err
 	}
 	useTLS := s.PromptYesNo("Use TLS (recommended)?", true)
-	tls, defaultPort := "false", "6667"
-	if useTLS {
-		tls, defaultPort = "true", "6697"
-	}
-	if err := s.SaveEnvValue(ctx, "IRC_USE_TLS", tls); err != nil {
+	if err := s.SaveEnvValue(ctx, "IRC_USE_TLS", strconv.FormatBool(useTLS)); err != nil {
 		return err
 	}
+	portHint := strconv.Itoa(defaultPort(useTLS))
 	currentPort, err := get("IRC_PORT")
 	if err != nil {
 		return err
 	}
-	if port := s.Prompt("Port (default "+defaultPort+")", currentPort, false); port != "" {
-		if n, ok := pyint.Parse(port); ok {
-			if err := s.SaveEnvValue(ctx, "IRC_PORT", n.String()); err != nil {
+	if port := s.Prompt("Port (default "+portHint+")", currentPort, false); port != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(port)); err == nil && n > 0 && n < 65536 {
+			if err := s.SaveEnvValue(ctx, "IRC_PORT", strconv.Itoa(n)); err != nil {
 				return err
 			}
 		} else {
-			s.PrintWarning("Invalid port — using default " + defaultPort)
+			s.PrintWarning("Invalid port — using default " + portHint)
 		}
 	} else if again, err := get("IRC_PORT"); err != nil {
 		return err

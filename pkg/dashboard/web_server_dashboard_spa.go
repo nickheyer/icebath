@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
 const immutableAssetCacheControl = "public, max-age=31536000, immutable"
@@ -82,23 +83,27 @@ func mountSPA(application *FastAPI) {
 		}
 		return "dashboard"
 	}
+	missingBundle := func(dist string) string {
+		if surfaceOf() == "webapp" {
+			return gateway.BundleMissingReason(dist)
+		}
+		if _, err := webbundle.Dir(context.Background(), webbundle.Dashboard, nil); err != nil {
+			return err.Error()
+		}
+		return "The dashboard bundle at " + dist + " has no index.html"
+	}
 	serveIndex := func(ctx context.Context, req *Request, prefix string) (any, error) {
-		raw, err := os.ReadFile(filepath.Join(webDist(), "index.html"))
+		dist := webDist()
+		if dist == "" {
+			return JSONResponse(pyjson.ObjectOf("error", missingBundle(dist)), 404)
+		}
+		raw, err := os.ReadFile(filepath.Join(dist, "index.html"))
 		if err != nil {
-			missing := "Frontend not built. Run: cd web && npm run build"
-			if surfaceOf() == "webapp" {
-				missing = "The Webapp is not built. Run: icebath webapp"
-			}
-			return JSONResponse(pyjson.ObjectOf("error", missing), 404)
+			return JSONResponse(pyjson.ObjectOf("error", missingBundle(dist)), 404)
 		}
 		html, err := pycodecs.Decode(raw, "utf-8-sig")
 		if err != nil {
 			return nil, err
-		}
-		if surfaceOf() == "webapp" {
-			if stale := gateway.BundleStaleReason(webDist()); stale != "" {
-				return JSONResponse(pyjson.ObjectOf("error", stale), 503, noStoreHeaders...)
-			}
 		}
 		chatJS := "false"
 		if dashboardEmbeddedChatEnabled {
@@ -150,7 +155,7 @@ func mountSPA(application *FastAPI) {
 		Handle: func(ctx context.Context, c *Call) (any, error) {
 			dist := webDist()
 			cssPath := filepath.Join(dist, "assets", c.Str("filename")+".css")
-			if !isRegularFile(cssPath) || !resolvedUnder(cssPath, dist) {
+			if dist == "" || !isRegularFile(cssPath) || !resolvedUnder(cssPath, dist) {
 				return JSONResponse(pyjson.ObjectOf("error", "not found"), 404)
 			}
 			prefix := gateway.NormalisePrefix(c.Request.Headers().Get("x-forwarded-prefix"))
@@ -174,7 +179,15 @@ func mountSPA(application *FastAPI) {
 	})
 	var assetFiles sync.Map
 	serveAssets := func(ctx context.Context, scope *Scope, receive Receive, send Send) error {
-		directory := filepath.Join(webDist(), "assets")
+		dist := webDist()
+		if dist == "" {
+			resp, err := JSONResponse(pyjson.ObjectOf("error", missingBundle(dist)), 404)
+			if err != nil {
+				return err
+			}
+			return resp.Serve(ctx, scope, receive, send)
+		}
+		directory := filepath.Join(dist, "assets")
 		files, _ := assetFiles.LoadOrStore(directory, &StaticFiles{Directory: directory,
 			Override: func(ctx context.Context, s *StaticFiles, path string, scope *Scope) (ASGIResponse, error) {
 				resp, err := s.GetResponse(ctx, path, scope)
@@ -197,6 +210,9 @@ func mountSPA(application *FastAPI) {
 				return JSONResponse(pyjson.ObjectOf("detail", "No such API endpoint: /"+fullPath), 404)
 			}
 			dist := webDist()
+			if dist == "" {
+				return serveIndex(ctx, c.Request, prefix)
+			}
 			filePath := filepath.Join(dist, fullPath)
 			index := filepath.Join(dist, "index.html")
 			if !PolicyOf(application.State).HTMLToken && isRegularFile(filePath) && isRegularFile(index) {
@@ -210,7 +226,11 @@ func mountSPA(application *FastAPI) {
 				return NewFileResponse(filePath, 200, "", nil, "attachment"), nil
 			}
 			if IsStaticAssetPath(fullPath) {
-				if font := PublicFontFile(dist, WebDist(), fullPath); font != "" {
+				fontRoot := WebDist()
+				if fontRoot == "" {
+					fontRoot = dist
+				}
+				if font := PublicFontFile(dist, fontRoot, fullPath); font != "" {
 					return NewFileResponse(font, 200, "", nil, "attachment"), nil
 				}
 				return JSONResponse(pyjson.ObjectOf("error", "not found"), 404)

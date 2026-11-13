@@ -22,6 +22,9 @@ const (
 // Sentence naming every form icebath loads a plugin in
 const PluginFormsText = "icebath loads plugins built in, as WebAssembly modules (runtime: wasm) or as external programs (runtime: program)"
 
+// Refusal of a manifest that names neither a runtime entry nor any declared files icebath loads
+const UnknownPluginFormText = "unknown plugin form: the manifest declares no runtime entry, plugin.json, desktop half or language pack; " + PluginFormsText
+
 const (
 	guestDefaultMemoryMB    = 256
 	guestDefaultCallSeconds = 120.0
@@ -155,7 +158,7 @@ func (m *Manager) loadGuest(ctx context.Context, mf *Manifest, pctx *Context) (s
 	if err != nil {
 		return "", err
 	}
-	if _, err := host.Load(ctx, mf, pctx, "", false, false); err != nil {
+	if err := host.Load(ctx, mf, pctx); err != nil {
 		host.Shutdown()
 		return "", err
 	}
@@ -210,4 +213,40 @@ func guestEntryPath(spec *guestSpec) (string, error) {
 // Directory the compiled code of WebAssembly plugins is cached under
 func guestCacheDir() string {
 	return filepath.Join(home.CacheDir(home.Root()), "plugin-wasm")
+}
+
+// Form a listed plugin takes, the way icebath loads it
+func pluginFormText(source, key, dir string, manifest map[string]any) string {
+	if source == "bundled" {
+		if _, compiled := bundledPlugin(key); compiled {
+			return "compiled into icebath"
+		}
+	}
+	if dir == "" {
+		return "manifest only"
+	}
+	if !isFile(filepath.Join(dir, "plugin.yaml")) && !isFile(filepath.Join(dir, "plugin.yml")) && isFile(filepath.Join(dir, "plugin.json")) {
+		return "portable agent plugin (skills and MCP servers)"
+	}
+	mf := manifestFromData(manifest, dir, source, "")
+	switch manifestRuntime(mf) {
+	case RuntimeWasm:
+		return "WebAssembly module (" + strings.Join(mf.Entry, " ") + ")"
+	case RuntimeProgram:
+		return "external program (" + strings.Join(mf.Entry, " ") + ")"
+	case "":
+	default:
+		return "unknown runtime " + manifestRuntime(mf) + "; " + PluginFormsText
+	}
+	var parts []string
+	if len(mf.ProvidesLocales) > 0 {
+		parts = append(parts, "language pack")
+	}
+	if isFile(filepath.Join(dir, "desktop", "plugin.js")) {
+		parts = append(parts, "desktop half")
+	}
+	if len(parts) == 0 {
+		return UnknownPluginFormText
+	}
+	return strings.Join(parts, " and ")
 }

@@ -1,23 +1,39 @@
 package plugins
 
-import "context"
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+)
 
-// Imports a gateway hook handler.py in the plugin host of the home in ctx, returning its handle attribute or why it was skipped
-func LoadGatewayHook(ctx context.Context, hookName, handlerPath string) (any, string, error) {
-	host, err := GetPluginManager(ctx).pluginHost()
+// Handler of one gateway hook directory, called with the event type and its context
+type GatewayHookHandler func(ctx context.Context, eventType string, hookContext map[string]any) (any, error)
+
+// Loads the handler the guest a gateway hook directory declares in HOOK.yaml registers, or why the directory was skipped
+func LoadGatewayHook(ctx context.Context, hookName, hookDir string) (GatewayHookHandler, string, error) {
+	mf := guestManifestFile(filepath.Join(hookDir, "HOOK.yaml"), hookDir)
+	if mf == nil {
+		return nil, "HOOK.yaml declares no runtime: wasm or runtime: program entry", nil
+	}
+	inst, err := GetPluginManager(ctx).guestProviderLoad(mf, "gateway_hook", nil, false, nil)
 	if err != nil {
 		return nil, "", err
 	}
-	if _, err := host.ensureStarted(ctx); err != nil {
-		return nil, "", err
-	}
-	raw, err := host.call(ctx, "load_hook", map[string]any{"hook_name": hookName, "path": handlerPath}, nil, 0, nil)
+	first, err := inst.callable(ctx)
 	if err != nil {
 		return nil, "", err
 	}
-	reply, _ := raw.(map[string]any)
-	if skip, ok := reply["skip"].(string); ok {
-		return nil, skip, nil
+	if first == nil {
+		return nil, fmt.Sprintf("hook %s registers no handler with RegisterGatewayHook", hookName), nil
 	}
-	return reply["handle"], "", nil
+	return func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
+		fn, err := inst.callable(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if fn == nil {
+			return nil, fmt.Errorf("hook %s no longer registers a handler", hookName)
+		}
+		return fn.Call(ctx, []any{eventType, hookContext}, nil)
+	}, "", nil
 }

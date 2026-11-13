@@ -54,7 +54,8 @@ var HostInProcessObjectBases = map[string]string{
 }
 
 // Provider bases a category loader hands back as hosted objects though no ctx registration names them
-var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend"}
+var HostResultObjectBases = []string{"tools.computer_use.backend:ComputerUseProvider", "tools.computer_use.backend:ComputerUseBackend",
+	"agent.terminal_env_provider:TerminalEnvironment"}
 
 // Hooks whose payload reaches hosted callbacks only as opaque values
 var HostDegradedHooks = map[string]string{

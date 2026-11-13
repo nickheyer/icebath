@@ -1229,16 +1229,8 @@ func CmdValidate(ctx context.Context, path string, asJSON bool, out, errOut io.W
 	for _, warning := range report.Warnings {
 		console.Print(fmt.Sprintf("[yellow]⚠ %s[/yellow]", warning))
 	}
-	if report.Isolation != nil {
-		iso := report.Isolation
-		mark := "[dim]◇[/dim]"
-		if iso.HostReady() {
-			mark = "[green]◆[/green]"
-		}
-		console.Print(fmt.Sprintf("%s Isolation [dim]— %s[/dim]", mark, iso.Summary()))
-		for _, note := range iso.Notes {
-			console.Print(fmt.Sprintf("  [dim]· %s[/dim]", note))
-		}
+	if report.Form != "" {
+		console.Print(fmt.Sprintf("[dim]◇[/dim] Form [dim]— %s[/dim]", report.Form))
 	}
 	console.Print("")
 	if report.OK() {

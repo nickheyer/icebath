@@ -657,7 +657,7 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 	}()
 	slog.Info(fmt.Sprintf("prepared compaction: pass started session=%s origin=%s window=%d-%d turns=%d",
 		window.SessionID, origin, window.CompressStart, window.CompressEnd, len(turns)))
-	passCtx := tools.ThreadScopedSilence(ctx)
+	passCtx := tools.SilenceOutput(ctx)
 	passCtx = provider.AuxInterruptProtection(passCtx, true, nil, &token.cancelled)
 	passCtx = provider.AuxProgressHook(passCtx, token.touch)
 	passCtx = provider.PromptReadingHook(passCtx, token.read)

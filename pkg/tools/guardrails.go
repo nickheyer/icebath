@@ -2050,7 +2050,8 @@ func InvalidToolNameErrorContent(name string, validToolNames map[string]bool) st
 }
 
 // ValidateToolCalls repairs names, normalizes args, and applies the strike rules for one assistant turn
-func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, finishReason string) ToolValidationVerdict {
+func ValidateToolCalls(ctx context.Context, host TurnValidationHost, toolCalls []state.ToolCall, finishReason string) ToolValidationVerdict {
+	host = validationHostFor(ctx, host)
 	validNames := host.ValidToolNames()
 	retries := host.Retries()
 	taken := map[string]bool{}

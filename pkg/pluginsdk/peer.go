@@ -19,19 +19,21 @@ type link interface {
 
 // Guest end of the plugin wire, holding every callback and object the host may address
 type peer struct {
-	link    link
-	mu      sync.Mutex
-	ids     int64
-	refs    int64
-	funcs   map[int64]Func
-	objects map[int64]*Object
-	hosts   map[string]*host
-	cancels map[string]context.CancelFunc
+	link     link
+	mu       sync.Mutex
+	ids      int64
+	refs     int64
+	funcs    map[int64]Func
+	objects  map[int64]*Object
+	hosts    map[string]*host
+	cancels  map[string]context.CancelFunc
+	apis     map[string]APIHandler
+	captures map[string][]any
 }
 
 func newPeer(l link) *peer {
 	return &peer{link: l, funcs: map[int64]Func{}, objects: map[int64]*Object{}, hosts: map[string]*host{},
-		cancels: map[string]context.CancelFunc{}}
+		cancels: map[string]context.CancelFunc{}, apis: map[string]APIHandler{}, captures: map[string][]any{}}
 }
 
 type servingKey struct{}
@@ -135,6 +137,15 @@ func errorFields(err error) map[string]any {
 	return map[string]any{"type": kind, "message": err.Error()}
 }
 
+// Object a request names by ref, a lookup failure when it was released
+func (p *peer) requireObject(ref any) (*Object, error) {
+	obj := p.object(ref)
+	if obj == nil {
+		return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", ref)}
+	}
+	return obj, nil
+}
+
 // Runs one host operation, a panic in plugin code answering as an error
 func (p *peer) dispatch(ctx context.Context, method string, params map[string]any) (result any, err error) {
 	defer func() {
@@ -146,7 +157,26 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 	case "hello":
 		return map[string]any{"protocol": ProtocolVersion, "library": "go", "form": p.link.form()}, nil
 	case "load":
-		return p.load(ctx, params)
+		return p.load(ctx, params, registered, "the plugin never called pluginsdk.Register")
+	case "load_tools":
+		if registeredTools == nil {
+			return map[string]any{"register_tools": false}, nil
+		}
+		if _, err := p.load(ctx, params, registeredTools, ""); err != nil {
+			return nil, err
+		}
+		return map[string]any{"register_tools": true}, nil
+	case "load_instance":
+		return p.loadInstance(ctx, params)
+	case "config_schema":
+		if declaredSchema == nil {
+			return nil, nil
+		}
+		return schemaFields(*declaredSchema), nil
+	case "profile_call":
+		return p.profileCall(ctx, params)
+	case "http":
+		return p.serveAPI(ctx, params)
 	case "invoke":
 		fn := p.function(params["ref"])
 		if fn == nil {
@@ -162,9 +192,9 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 		}
 		return value, nil
 	case "obj_invoke":
-		obj := p.object(params["ref"])
-		if obj == nil {
-			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", params["ref"])}
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
 		}
 		fn := obj.Methods[text(params["method"])]
 		if fn == nil {
@@ -172,18 +202,53 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 		}
 		return fn(ctx, p.decodeList(params["args"]), p.decodeMap(params["kwargs"]))
 	case "obj_getattr":
-		obj := p.object(params["ref"])
-		if obj == nil {
-			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", params["ref"])}
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
 		}
-		value, ok := obj.Attrs[text(params["name"])]
+		value, ok := obj.Attr(text(params["name"]))
 		if !ok {
 			return nil, &Error{Type: "AttributeError", Message: text(params["name"])}
 		}
 		return value, nil
-	case "obj_overrides":
-		obj := p.object(params["ref"])
-		return obj != nil && obj.Methods[text(params["method"])] != nil, nil
+	case "obj_setattr":
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
+		}
+		obj.SetAttr(text(params["name"]), p.decode(params["value"]))
+		return nil, nil
+	case "obj_next":
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
+		}
+		if obj.Next == nil {
+			return nil, &Error{Type: "TypeError", Message: fmt.Sprintf("%s object is not iterable", obj.Type)}
+		}
+		item, ok, err := obj.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return map[string]any{"done": true}, nil
+		}
+		return map[string]any{"done": false, "item": item}, nil
+	case "login_backend":
+		obj, err := p.requireObject(params["ref"])
+		if err != nil {
+			return nil, err
+		}
+		op := text(params["op"])
+		fn := obj.Methods[op]
+		if fn == nil {
+			return nil, &Error{Type: "AttributeError", Message: fmt.Sprintf("login backend has no %s operation", op)}
+		}
+		value, err := fn(ctx, nil, p.decodeMap(params))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"value": value}, nil
 	case "release":
 		p.mu.Lock()
 		for _, ref := range listOrEmpty(asList(params["refs"])) {
@@ -211,26 +276,178 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 	return nil, &Error{Type: "ValueError", Message: fmt.Sprintf("unknown plugin operation %q", method)}
 }
 
-// Runs the plugin register function on a host bound to the plugin the request names
-func (p *peer) load(ctx context.Context, params map[string]any) (any, error) {
-	if registered == nil {
-		return nil, &Error{Type: "PluginError", Message: "the plugin never called pluginsdk.Register"}
-	}
+// Host bound to the plugin a load request names
+func (p *peer) bind(ctx context.Context, params map[string]any) *host {
 	manifest, _ := params["manifest"].(map[string]any)
 	h := &host{peer: p, key: text(params["plugin_key"]), id: text(params["plugin_id"]), name: text(params["name"]),
 		dir: text(params["path"]), profile: text(params["profile_name"]), manifest: manifest, loading: ctx}
 	p.mu.Lock()
 	p.hosts[h.key] = h
 	p.mu.Unlock()
-	err := registered(h)
+	return h
+}
+
+// Runs a register function on the bound host, unloading the plugin again when it fails
+func (p *peer) run(h *host, fn RegisterFunc) error {
+	err := fn(h)
 	h.mu.Lock()
 	h.loading = nil
 	h.mu.Unlock()
 	if err != nil {
 		p.unload(h.key)
+	}
+	return err
+}
+
+// Runs one register function of the plugin on a host bound to the plugin the request names
+func (p *peer) load(ctx context.Context, params map[string]any, fn RegisterFunc, missing string) (any, error) {
+	if fn == nil {
+		return nil, &Error{Type: "PluginError", Message: missing}
+	}
+	if err := p.run(p.bind(ctx, params), fn); err != nil {
 		return nil, err
 	}
 	return map[string]any{"file": nil}, nil
+}
+
+// Runs the register function keeping every provider the captured registrar receives and answers them in order
+func (p *peer) loadInstance(ctx context.Context, params map[string]any) (any, error) {
+	if registered == nil {
+		return nil, &Error{Type: "PluginError", Message: "the plugin never called pluginsdk.Register"}
+	}
+	h := p.bind(ctx, params)
+	h.capture = text(params["capture"])
+	h.forward, _ = params["forward"].(bool)
+	if h.capture == "" {
+		p.unload(h.key)
+		return nil, &Error{Type: "ValueError", Message: "a provider load names the registrar it captures"}
+	}
+	if err := p.run(h, registered); err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	captured := append([]any(nil), h.captured...)
+	h.mu.Unlock()
+	p.mu.Lock()
+	p.captures[h.key] = captured
+	p.mu.Unlock()
+	out := make([]any, 0, len(captured))
+	for _, value := range captured {
+		item := map[string]any{"value": p.encode(value)}
+		if obj, ok := value.(*Object); ok && obj != nil {
+			item["attrs"] = p.encode(obj.attrs())
+		}
+		out = append(out, item)
+	}
+	return map[string]any{"captured": out}, nil
+}
+
+// Runs one method or callable attribute of a model provider profile the plugin registered
+func (p *peer) profileCall(ctx context.Context, params map[string]any) (any, error) {
+	name, attr := text(params["profile"]), text(params["attr"])
+	p.mu.Lock()
+	captured := p.captures[text(params["plugin_key"])]
+	p.mu.Unlock()
+	for _, value := range captured {
+		obj, ok := value.(*Object)
+		if !ok || obj == nil {
+			continue
+		}
+		if profile, _ := obj.Attr("name"); text(profile) != name {
+			continue
+		}
+		args, kwargs := p.decodeList(params["args"]), p.decodeMap(params["kwargs"])
+		if fn := obj.Methods[attr]; fn != nil {
+			return fn(ctx, args, kwargs)
+		}
+		if field, ok := obj.Attr(attr); ok {
+			if fn, ok := field.(Func); ok {
+				return fn(ctx, args, kwargs)
+			}
+		}
+		return nil, &Error{Type: "AttributeError", Message: fmt.Sprintf("profile %q has no callable %s", name, attr)}
+	}
+	return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("this plugin registered no model provider profile %q", name)}
+}
+
+// Answers one forwarded dashboard request with the handler the plugin registered
+func (p *peer) serveAPI(ctx context.Context, params map[string]any) (any, error) {
+	key := text(params["plugin"])
+	p.mu.Lock()
+	handler := p.apis[key]
+	p.mu.Unlock()
+	if handler == nil {
+		return map[string]any{"status": int64(404), "headers": []any{[]any{"content-type", "application/json"}},
+			"body": []byte(`{"detail":"Not Found"}`)}, nil
+	}
+	req := APIRequest{Method: text(params["method"]), Path: text(params["path"]), Query: text(params["query"])}
+	req.Authenticated, _ = params["authenticated"].(bool)
+	req.Body, _ = p.decode(params["body"]).([]byte)
+	for _, raw := range asList(params["headers"]) {
+		pair := asList(raw)
+		if len(pair) == 2 {
+			req.Headers = append(req.Headers, [2]string{text(pair[0]), text(pair[1])})
+		}
+	}
+	resp, err := handler(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		resp = &APIResponse{Status: 204}
+	}
+	status := resp.Status
+	if status == 0 {
+		status = 200
+	}
+	headers := make([]any, 0, len(resp.Headers))
+	for _, h := range resp.Headers {
+		headers = append(headers, []any{h[0], h[1]})
+	}
+	body := resp.Body
+	if body == nil {
+		body = []byte{}
+	}
+	return map[string]any{"status": int64(status), "headers": headers, "body": body}, nil
+}
+
+// Wire fields of a declared settings schema
+func schemaFields(s ConfigSchema) map[string]any {
+	fields := make([]any, 0, len(s.Fields))
+	for _, f := range s.Fields {
+		options := make([]any, 0, len(f.Options))
+		for _, o := range f.Options {
+			options = append(options, map[string]any{"value": o.Value, "label": o.Label, "description": o.Description})
+		}
+		kind := f.Kind
+		if kind == "" {
+			kind = "text"
+		}
+		scope := f.Scope
+		if scope == "" {
+			scope = "host"
+		}
+		field := map[string]any{"key": f.Key, "label": f.Label, "kind": kind, "default": f.Default, "description": f.Description,
+			"placeholder": f.Placeholder, "options": options, "aliases": stringsAny(f.Aliases), "env_fallbacks": stringsAny(f.EnvFallbacks),
+			"inline": f.Inline, "group": f.Group, "info": f.Info, "scope": scope}
+		if f.EnvKey != "" {
+			field["env_key"] = f.EnvKey
+		}
+		fields = append(fields, field)
+	}
+	storage := s.Storage
+	if storage == "" {
+		storage = "flat_json"
+	}
+	return map[string]any{"name": s.Name, "label": s.Label, "storage": storage, "docs_url": s.DocsURL, "fields": fields}
+}
+
+func stringsAny(items []string) []any {
+	out := make([]any, len(items))
+	for i, s := range items {
+		out[i] = s
+	}
+	return out
 }
 
 // Runs the unload callbacks of one plugin newest first and returns the text of each failure
@@ -238,6 +455,8 @@ func (p *peer) unload(key string) []any {
 	p.mu.Lock()
 	h := p.hosts[key]
 	delete(p.hosts, key)
+	delete(p.apis, key)
+	delete(p.captures, key)
 	p.mu.Unlock()
 	failures := []any{}
 	if h == nil {
@@ -294,10 +513,14 @@ func (p *peer) objectRef(o *Object) map[string]any {
 		methods[name] = map[string]any{"async": false, "sig": openSignature}
 	}
 	live := []any{}
-	for name := range o.Attrs {
+	for name := range o.attrs() {
 		live = append(live, name)
 	}
-	return map[string]any{"__object__": id, "type": o.Type, "methods": methods, "live": live}
+	ref := map[string]any{"__object__": id, "type": o.Type, "methods": methods, "live": live, "iterable": o.Next != nil}
+	if o.identity != nil {
+		ref["identity"] = o.identity
+	}
+	return ref
 }
 
 // Wire form of a value the plugin sends
@@ -319,9 +542,16 @@ func (p *peer) encode(v any) any {
 	case Record:
 		return map[string]any{"__record__": x.Type, "fields": p.encode(mapOrEmpty(x.Fields))}
 	case *Handle:
+		if x == nil {
+			return nil
+		}
 		return map[string]any{"__handle__": x.id, "kind": x.Kind, "key": x.Key}
 	case *HostFunc:
 		return map[string]any{"__parent_callable__": x.id}
+	case *HostObject:
+		return map[string]any{"__parent_object__": x.id, "type": x.Type}
+	case *Event:
+		return map[string]any{"__parent_event__": x.id}
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, item := range x {
@@ -390,6 +620,12 @@ func (p *peer) decode(v any) any {
 		}
 		if id, ok := integer(x["__parent_callable__"]); ok {
 			return &HostFunc{peer: p, id: id}
+		}
+		if id, ok := integer(x["__parent_object__"]); ok {
+			return &HostObject{peer: p, id: id, Type: text(x["type"])}
+		}
+		if id, ok := integer(x["__parent_event__"]); ok {
+			return &Event{peer: p, id: id}
 		}
 		if name, ok := x["__record__"].(string); ok {
 			fields, _ := p.decode(x["fields"]).(map[string]any)

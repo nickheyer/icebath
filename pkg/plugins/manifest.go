@@ -27,11 +27,11 @@ var validPluginKinds = map[string]bool{"standalone": true, "backend": true, "exc
 var knownManifestFields = map[string]bool{
 	"name": true, "version": true, "description": true, "author": true, "requires_env": true, "provides_tools": true,
 	"provides_hooks": true, "kind": true, "hooks": true, "label": true, "optional_env": true, "platforms": true,
-	"external_dependencies": true, "pip_dependencies": true, "provides_browser_providers": true,
+	"external_dependencies": true, "provides_browser_providers": true,
 	"provides_web_providers": true, "manifest_version": true, "api_version": true, "requires_plugins": true,
-	"python_dependencies": true, "config_schema": true, "license": true, "homepage": true, "tags": true,
+	"config_schema": true, "license": true, "homepage": true, "tags": true,
 	"capabilities": true, "emits": true, "listens": true, "hermes": true, "icebath": true, "depends": true,
-	"requires_hermes": true, "requires_icebath": true, "python_runtime": true, "provides_locales": true,
+	"requires_hermes": true, "requires_icebath": true, "provides_locales": true, "provides": true,
 	"requires_auth": true, "oauth": true, "config_keys": true, "update_url": true,
 	"entry": true, "skills": true, "commands": true, "mcp_servers": true, "settings": true, "provides_middleware": true,
 	"runtime": true, "grants": true, "limits": true,
@@ -67,8 +67,7 @@ type Manifest struct {
 	ManifestVersion   int
 	APIVersion        *int
 	RequiresPlugins   []PluginDependency
-	PythonDeps        []string
-	PythonRuntime     string
+	Provides          []string
 	ConfigSchema      map[string]map[string]any
 	License           string
 	Homepage          string
@@ -122,13 +121,7 @@ func (m *Manifest) ID() string {
 func (m *Manifest) HasEntry() bool { return len(m.Entry) > 0 }
 
 // Reports whether the plugin loads from declared files alone with no code to run
-func (m *Manifest) ManifestOnly() bool {
-	if m.HasEntry() {
-		return false
-	}
-	_, err := os.Stat(filepath.Join(m.Path, "__init__.py"))
-	return err != nil
-}
+func (m *Manifest) ManifestOnly() bool { return !m.HasEntry() }
 
 // Canonical lowercase hyphenated language id
 func normalizeLanguageID(v any) string {
@@ -352,7 +345,6 @@ type manifestV2Fields struct {
 	manifestVersion int
 	apiVersion      *int
 	requiresPlugins []PluginDependency
-	pythonDeps      []string
 	configSchema    map[string]map[string]any
 	license         string
 	homepage        string
@@ -386,14 +378,6 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 			continue
 		}
 		out.requiresPlugins = append(out.requiresPlugins, dep)
-	}
-	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
-		s, ok := item.(string)
-		if !ok || pyStrip(s) == "" {
-			logWarn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, config.PyRepr(item)))
-			continue
-		}
-		out.pythonDeps = append(out.pythonDeps, pyStrip(s))
 	}
 	out.configSchema = configSchemaEntries(key, manifestFieldOfType(data, key, "config_schema", func(v any) bool { return asMap(v) != nil }, "a mapping"))
 	for _, t := range manifestFieldList(data, key, "tags", "a list") {
@@ -514,21 +498,37 @@ func parseProvidesLocales(raw any, key string) ([]string, map[string]map[string]
 	return ids, meta
 }
 
-// Kind implied by provider markers in an init file, empty when none match
-func detectKindFromSource(src string) string {
-	for _, marker := range []string{"register_memory_provider", "MemoryProvider", "register_cron_scheduler", "CronScheduler", "register_computer_use_provider", "ComputerUseProvider"} {
-		if strings.Contains(src, marker) {
+// Provider kinds a manifest declares in provides, unknown kinds warned and dropped
+func parseProvides(raw any, key string) []string {
+	var out []string
+	for _, item := range stringList(raw) {
+		kind := strings.ToLower(strings.TrimSpace(item))
+		if _, known := guestProviderRegistrars[kind]; !known {
+			logWarn(fmt.Sprintf("Plugin %s: unknown provides entry '%s' (known: %s); ignoring", key, item, strings.Join(sortedKeys(guestProviderRegistrars), ", ")))
+			continue
+		}
+		out = appendUnique(out, kind)
+	}
+	return out
+}
+
+// Kind implied by the provider kinds a manifest declares, empty when none decides it
+func kindFromProvides(provides []string) string {
+	for _, p := range provides {
+		if exclusiveProviderKinds[p] {
 			return "exclusive"
 		}
 	}
-	if strings.Contains(src, "register_provider") && strings.Contains(src, "ProviderProfile") {
-		return "model-provider"
+	for _, p := range provides {
+		if p == "model_provider" {
+			return "model-provider"
+		}
 	}
 	return ""
 }
 
-// Normalized kind with undeclared provider plugins detected from their init file
-func manifestKind(data map[string]any, key, dir string) string {
+// Normalized kind, an undeclared one taken from the provider kinds the manifest supplies
+func manifestKind(data map[string]any, key string, provides []string) string {
 	kind := "standalone"
 	if raw, ok := data["kind"].(string); ok {
 		kind = strings.ToLower(strings.TrimSpace(raw))
@@ -538,10 +538,8 @@ func manifestKind(data map[string]any, key, dir string) string {
 		kind = "standalone"
 	}
 	if _, declared := data["kind"]; kind == "standalone" && !declared {
-		if b, err := os.ReadFile(filepath.Join(dir, "__init__.py")); err == nil {
-			if d := detectKindFromSource(string(b[:min(len(b), 8192)])); d != "" {
-				kind = d
-			}
+		if d := kindFromProvides(provides); d != "" {
+			kind = d
 		}
 	}
 	return kind
@@ -669,14 +667,14 @@ func manifestFromData(data map[string]any, dir, source, prefix string) *Manifest
 		m.ProvidesHooks = stringList(data["hooks"])
 	}
 	m.ProvidesMiddlewar = stringList(data["provides_middleware"])
-	m.Kind = manifestKind(data, key, dir)
+	m.Provides = parseProvides(data["provides"], key)
+	m.Kind = manifestKind(data, key, m.Provides)
 	m.ProvidesLocales, m.LocaleMetadata = parseProvidesLocales(data["provides_locales"], key)
 	m.RequiresIcebath = manifestRequires(data)
 	m.Capabilities = ParseDeclaredCapabilities(data["capabilities"], name)
 	v2 := parseManifestV2Fields(data, key)
-	m.ManifestVersion, m.APIVersion, m.RequiresPlugins, m.PythonDeps = v2.manifestVersion, v2.apiVersion, v2.requiresPlugins, v2.pythonDeps
+	m.ManifestVersion, m.APIVersion, m.RequiresPlugins = v2.manifestVersion, v2.apiVersion, v2.requiresPlugins
 	m.ConfigSchema, m.License, m.Homepage, m.Tags, m.ConfigKeys = v2.configSchema, v2.license, v2.homepage, v2.tags, v2.configKeys
-	m.PythonRuntime = strings.ToLower(strings.TrimSpace(scalarString(data["python_runtime"])))
 	m.Emits = stringList(data["emits"])
 	m.Listens = stringList(data["listens"])
 	m.UpdateURL = strings.TrimSpace(scalarString(data["update_url"]))

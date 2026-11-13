@@ -1,32 +1,10 @@
 package plugins
 
-import (
-	"context"
-	"path/filepath"
-	"strings"
-)
+import "context"
 
-const (
-	computerUseProviderBase    = "tools.computer_use.backend:ComputerUseProvider"
-	computerUseProviderCapture = "register_computer_use_provider"
-)
+const computerUseProviderBase = "tools.computer_use.backend:ComputerUseProvider"
 
-// Loads a user computer use provider dir in the plugin host, nil when it registers no provider
-func LoadComputerUseProviderInHost(ctx context.Context, providerDir, moduleName string) (*HostedObject, error) {
-	host, err := GetPluginManager(ctx).PluginHost()
-	if err != nil {
-		return nil, err
-	}
-	name := filepath.Base(providerDir)
-	var namespace any
-	if i := strings.LastIndex(moduleName, "."); i >= 0 {
-		namespace = moduleName[:i]
-	}
-	load := func(ctx context.Context) (map[string]any, error) {
-		return host.instanceRef(ctx, computerUseProviderCapture+":"+name, "load_computer_use_provider", map[string]any{
-			"name": name, "path": providerDir, "module_name": moduleName, "synthetic_namespace": namespace,
-			"ctx_methods": []any{},
-		}, nil)
-	}
-	return host.reloadableInstance(ctx, computerUseProviderCapture, name, computerUseProviderBase, load, nil)
+// Loads the computer use provider a guest plugin directory registers, nil when it registers none
+func LoadGuestComputerUseProvider(ctx context.Context, providerDir string) (*HostedObject, error) {
+	return LoadGuestProvider(ctx, providerDir, "computer_use", computerUseProviderBase, nil, false, nil)
 }

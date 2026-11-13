@@ -144,7 +144,7 @@ func shebangEscapesRunningEnv(shebang string) bool {
 		}
 		interp = rest[0]
 	}
-	running := lde.executable()
+	running := runningExecutable()
 	if running == "" {
 		return true
 	}
@@ -271,4 +271,16 @@ func relaunch(args []string, preserveInherited bool) {
 	if err := relaunchExecvp(newArgv[0], newArgv); err != nil {
 		panic(err)
 	}
+}
+
+// Absolute path of the running executable, empty when it cannot be found
+func runningExecutable() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if abs, err := filepath.Abs(exe); err == nil {
+		return abs
+	}
+	return exe
 }

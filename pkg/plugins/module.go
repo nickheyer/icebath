@@ -55,7 +55,6 @@ type Services struct {
 	MaskedSecretPrompt                func(prompt string) (string, error)
 	ServerAvailabilityReason          func(ctx context.Context, declaration AgentPluginServerDeclaration, appTitle string) (reason string, offerable bool, err error)
 	DefinesMemoryProvider             func(pluginDir string) bool
-	PrepareMemoryProviderDependencies func(ctx context.Context, name string) error
 	RequiresAuthNotice                func(manifest map[string]any) string
 	DeclaresModelProviderKind         func(pluginDir string) bool
 	PluginOAuthKey                    func(pluginDir string) string
@@ -80,6 +79,7 @@ type Services struct {
 	ParseServerLiveness               func(raw any) (ServerLiveness, error)
 	ParseCostPolicy                   func(costs, spendLimit, costUnit any, where string) error
 	DiscoverMemoryProviders           func(ctx context.Context) [][2]string
+	CredentialedProviderRequest       func(ctx context.Context, pluginDir, provider, method, url string, json any, headers map[string]string, timeout time.Duration) (*ProviderRequestAnswer, error)
 }
 
 // Host rendezvous record of a running dashboard or Desktop backend, Record carried back to the rendezvous

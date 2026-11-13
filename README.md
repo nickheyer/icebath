@@ -42,7 +42,6 @@ yay -S icebath-bin
 winget install nickheyer.icebath
 scoop bucket add nickheyer https://github.com/nickheyer/scoop-bucket && scoop install nickheyer/icebath
 choco install icebath
-pipx install icebath-cli
 nix profile add github:nickheyer/nixpkg#icebath
 mise use -g github:nickheyer/icebath
 docker run -it --rm -v "$PWD:/work" ghcr.io/nickheyer/icebath
