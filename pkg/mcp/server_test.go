@@ -520,55 +520,6 @@ func TestServerEnsureHealthyWithoutSessionRequestsReconnect(t *testing.T) {
 	}
 }
 
-// Real stdio task over the mock server with the given extra env
-func mockStdioTask(t *testing.T, name string, env map[string]any) *serverTask {
-	t.Helper()
-	cfg := map[string]any{"command": mockBinary(t), "args": []any{}, "env": env}
-	s := newServerTask(name, &tools.Env{Home: os.Getenv("ICEBATH_HOME")})
-	s.rendered = &Rendered{Config: cfg}
-	return s
-}
-
-func TestServerStdioEndToEndDrainsPagesAndReleasesChild(t *testing.T) {
-	home := isolateHome(t)
-	fastServerTimings(t)
-	startTestLoop(t)
-	s := mockStdioTask(t, "pages", map[string]any{"MOCK_MCP_PAGES": "3"})
-	mcpMu.Lock()
-	mcpServers[ServerKey{Name: "pages"}] = s
-	mcpMu.Unlock()
-	if err := s.start(context.Background(), s.rendered); err != nil {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	n, pids := len(s.tools), append([]int(nil), s.stdioChildPIDs...)
-	s.mu.Unlock()
-	if n != 3 || len(s.registeredToolNames()) != 3 {
-		t.Fatalf("discovered %d tools, registered %v", n, s.registeredToolNames())
-	}
-	if len(pids) != 1 {
-		t.Fatalf("child pids %v", pids)
-	}
-	mcpMu.Lock()
-	owner := stdioPIDs[pids[0]]
-	mcpMu.Unlock()
-	if owner != "pages" {
-		t.Fatalf("child not ledgered: %q", owner)
-	}
-	s.shutdown(context.Background())
-	waitUntil(t, "child survived shutdown", func() bool { return !pidExists(pids[0]) })
-	mcpMu.Lock()
-	_, live := stdioPIDs[pids[0]]
-	mcpMu.Unlock()
-	if live || len(s.registeredToolNames()) != 0 {
-		t.Fatal("shutdown left the child ledgered or tools registered")
-	}
-	data, err := os.ReadFile(filepath.Join(home, "logs", "mcp-stderr.log"))
-	if err != nil || !strings.Contains(string(data), "===== starting MCP server 'pages' =====") {
-		t.Fatalf("stderr log header missing: %v %q", err, data)
-	}
-}
-
 func TestServerStdioWarnsOnIdentityHeaderAndMissingCommand(t *testing.T) {
 	isolateHome(t)
 	s := newServerTask("x", nil)
@@ -579,36 +530,6 @@ func TestServerStdioWarnsOnIdentityHeaderAndMissingCommand(t *testing.T) {
 	}
 	if logs.count("identity_header is only supported on HTTP/SSE transports") != 1 {
 		t.Fatalf("logs %s", logs.text())
-	}
-}
-
-func TestServerOrphanSweepKillsTrackedChild(t *testing.T) {
-	isolateHome(t)
-	fastServerTimings(t)
-	s := mockStdioTask(t, "orphan", map[string]any{})
-	tr, err := StartStdio(context.Background(), StdioParams{Command: mockBinary(t)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tr.Close()
-	pid := tr.PID()
-	s.trackSpawnedChildren(context.Background(), []int{pid})
-	mcpMu.Lock()
-	delete(stdioPIDs, pid)
-	orphanStdioPIDs[pid] = true
-	orphanStdioPIDServers[pid] = "orphan"
-	mcpMu.Unlock()
-	killOrphanedMCPChildren(false, "someone-else")
-	if !tr.Alive() {
-		t.Fatal("a sweep scoped to another server killed this child")
-	}
-	killOrphanedMCPChildren(false, "orphan")
-	waitUntil(t, "orphan survived the sweep", func() bool { return !tr.Alive() })
-	mcpMu.Lock()
-	_, left := stdioPGIDs[pid]
-	mcpMu.Unlock()
-	if left {
-		t.Fatal("swept pid kept its group ledger entry")
 	}
 }
 

@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	impeccableReplayEnv       = "ICEBATH_TEST_IMPECCABLE_REPLAY"
-	impeccableReplayLogEnv    = "ICEBATH_TEST_IMPECCABLE_REPLAY_LOG"
-	impeccableEngineRecording = "testdata/recorded/impeccable-hermes-stop-engine.json"
+	impeccableReplayEnv    = "ICEBATH_TEST_IMPECCABLE_REPLAY"
+	impeccableReplayLogEnv = "ICEBATH_TEST_IMPECCABLE_REPLAY_LOG"
 )
 
 // Cache root the package cases materialize shared trees under, removed when the run ends
@@ -61,35 +60,9 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	impeccablePayloadRoot = filepath.Join(payloadTestDir, "impeccable")
-	checkout, err := os.ReadFile(filepath.Join("testdata", "impeccable.tar.zst"))
-	if err == nil {
-		err = tarzst.Extract(checkout, cache)
-	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	impeccableRepoRoot = filepath.Join(cache, "impeccable")
 	code := m.Run()
 	os.RemoveAll(cache)
 	os.Exit(code)
-}
-
-// Recorded engine calls and plugin results read from testdata
-func loadImpeccableRecording(t *testing.T) replayRecording {
-	t.Helper()
-	raw, err := os.ReadFile(impeccableEngineRecording)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rec replayRecording
-	if err := json.Unmarshal(raw, &rec); err != nil || len(rec.Calls) != 2 {
-		t.Fatalf("recording %d calls %v", len(rec.Calls), err)
-	}
-	if pinned := "impeccable-engine " + strings.TrimSpace(readTestFile(t, filepath.Join(impeccableRepoRoot, "ENGINE_VERSION"))); rec.Engine != pinned {
-		t.Fatalf("recorded with %q, the checkout pins %q", rec.Engine, pinned)
-	}
-	return rec
 }
 
 // Serves the recorded call taking these arguments, stdin and environment, logging its index or the refusal

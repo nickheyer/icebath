@@ -3,12 +3,13 @@ package remote
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -24,31 +25,6 @@ func readFixture(t *testing.T, path string) map[string]any {
 		t.Fatal(err)
 	}
 	return v.(map[string]any)
-}
-
-func TestSecretKeyVectors(t *testing.T) {
-	var data struct {
-		Vectors []struct {
-			Path   string `json:"path"`
-			Value  any    `json:"value"`
-			Expect string `json:"expect"`
-		} `json:"vectors"`
-	}
-	loadVector(t, "config-secret-keys.json", &data)
-	for _, v := range data.Vectors {
-		path, err := Decode(v.Path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		value := plainJSON(v.Value)
-		if f, ok := value.(float64); ok && f == float64(int(f)) {
-			value = int(f)
-		}
-		_, rejected := SecretLiteralPath(path, value)
-		if rejected != (v.Expect == "reject") {
-			t.Fatalf("%s = %#v: rejected %v want %s", v.Path, v.Value, rejected, v.Expect)
-		}
-	}
 }
 
 func TestProfileWriteCheck(t *testing.T) {

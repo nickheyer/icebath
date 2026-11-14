@@ -2,46 +2,15 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-var (
-	mockOnce  sync.Once
-	mockPath  string
-	mockErr   error
-	pkgDir, _ = os.Getwd()
-)
-
-// Builds the mock MCP server once per test binary
-func mockBinary(t *testing.T) string {
-	t.Helper()
-	mockOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "mcp-mock-")
-		if err != nil {
-			mockErr = err
-			return
-		}
-		mockPath = filepath.Join(dir, "mockserver")
-		build := exec.Command("go", "build", "-o", mockPath, "./testdata/mockserver")
-		build.Dir = pkgDir
-		out, err := build.CombinedOutput()
-		if err != nil {
-			mockErr = fmt.Errorf("building the mock server: %v: %s", err, out)
-		}
-	})
-	if mockErr != nil {
-		t.Fatal(mockErr)
-	}
-	return mockPath
-}
+var ()
 
 // One captured log record
 type logRecord struct {

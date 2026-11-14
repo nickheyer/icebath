@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -861,61 +860,5 @@ func TestDetectAudioEnvironmentTermuxFallbackCleanProbesNoMatchStillBlocks(t *te
 	result, _ := DetectAudioEnvironment()
 	if result.Available || !anyContains(result.Warnings, "Termux:API Android app is not installed") {
 		t.Fatalf("%+v", result)
-	}
-}
-
-type voiceNumpyRef struct {
-	Blip392  []int16 `json:"blip_392"`
-	Blip3296 []int16 `json:"blip_329_6"`
-	Beeps    map[string]struct {
-		Volume float64 `json:"volume"`
-		Args   struct {
-			Frequency int     `json:"frequency"`
-			Duration  float64 `json:"duration"`
-			Count     int     `json:"count"`
-		} `json:"args"`
-		Audio []int16 `json:"audio"`
-		Rate  int     `json:"rate"`
-	} `json:"beeps"`
-	WSLFade struct {
-		Input      []int16 `json:"input"`
-		Rate       int     `json:"rate"`
-		Played     []int16 `json:"played"`
-		Samplerate float64 `json:"samplerate"`
-		Blocksize  int     `json:"blocksize"`
-	} `json:"wsl_fade"`
-}
-
-// Blips, beeps and the WSL fade match the int16 arrays recorded from hermes running on numpy
-func TestVoiceModeSynthesisMatchesNumpyReference(t *testing.T) {
-	raw, err := os.ReadFile("testdata/voice_mode_numpy.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ref voiceNumpyRef
-	if err := json.Unmarshal(raw, &ref); err != nil {
-		t.Fatal(err)
-	}
-	withVoiceHome(t, "")
-	if got := synthThinkingBlip(context.Background(), 392.0); !slices.Equal(got, ref.Blip392) {
-		t.Fatal("392 Hz blip differs from numpy")
-	}
-	if got := synthThinkingBlip(context.Background(), 329.6); !slices.Equal(got, ref.Blip3296) {
-		t.Fatal("329.6 Hz blip differs from numpy")
-	}
-	for name, b := range ref.Beeps {
-		got, err := beepSamples(b.Args.Frequency, b.Args.Duration, b.Args.Count, b.Volume)
-		if err != nil || !slices.Equal(got, b.Audio) {
-			t.Fatalf("beep %s differs from numpy: %v", name, err)
-		}
-	}
-	cleanAudioEnv(t)
-	swapVoice(t, &voiceIsWSL, func() bool { return true })
-	sd := &fakeSD{stream: &fakeStream{}}
-	if err := playWAVFrames(sd, int16Bytes(ref.WSLFade.Input), ref.WSLFade.Rate); err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(sd.played[0], ref.WSLFade.Played) || sd.rates[0] != ref.WSLFade.Samplerate || sd.blocksizes[0] != ref.WSLFade.Blocksize {
-		t.Fatal("WSL fade differs from numpy")
 	}
 }

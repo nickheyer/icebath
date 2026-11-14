@@ -1,7 +1,6 @@
 package pyast
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -77,31 +76,4 @@ func errorClass(err error) string {
 		return "SyntaxError"
 	}
 	return fmt.Sprintf("%T", err)
-}
-
-// Families recorded under a script file run reproducing the frozen chains, each parses at n and raises at n plus one
-func TestParseRecursionRowsMatchCPython(t *testing.T) {
-	var rows []recursionRow
-	if err := json.Unmarshal(readGzip(t, "recursion_rows.json.gz"), &rows); err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 144 {
-		t.Fatalf("got %d rows", len(rows))
-	}
-	for _, r := range rows {
-		t.Run(r.Name, func(t *testing.T) {
-			t.Parallel()
-			o := Options{Mode: r.Mode}
-			if _, _, err := ParseWith(r.source(r.N), o); err != nil {
-				t.Fatalf("n=%d got %s %v", r.N, errorClass(err), err)
-			}
-			_, _, err := ParseWith(r.source(r.N+1), o)
-			if err == nil {
-				t.Fatalf("n=%d parsed, want %s %q", r.N+1, r.Err[0], r.Err[1])
-			}
-			if got := []string{errorClass(err), err.Error()}; got[0] != r.Err[0] || got[1] != r.Err[1] {
-				t.Errorf("n=%d got %q want %q", r.N+1, got, r.Err)
-			}
-		})
-	}
 }

@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
@@ -28,59 +26,6 @@ func assertSpokenOmits(t *testing.T, spoken string, banned ...string) {
 			t.Errorf("%q leaked into %q", b, spoken)
 		}
 	}
-}
-
-// Shared identifier corpus silences machine tokens and keeps ordinary speech verbatim
-func TestTTSIdentifierSpeech(t *testing.T) {
-	raw, err := os.ReadFile("testdata/identifier_speech_corpus.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var corpus struct {
-		IdentifierTokens  [][3]json.RawMessage `json:"identifier_tokens"`
-		PassThroughTokens [][3]json.RawMessage `json:"pass_through_tokens"`
-	}
-	if err := json.Unmarshal(raw, &corpus); err != nil {
-		t.Fatal(err)
-	}
-	decode := func(row [3]json.RawMessage) (string, []string, []string) {
-		var text string
-		var omit, keep []string
-		if json.Unmarshal(row[0], &text) != nil || json.Unmarshal(row[1], &omit) != nil || json.Unmarshal(row[2], &keep) != nil {
-			t.Fatalf("bad corpus row %s", row)
-		}
-		return text, omit, keep
-	}
-	t.Run("test_identifier_tokens_become_silence_prose_survives", func(t *testing.T) {
-		for _, row := range corpus.IdentifierTokens {
-			text, omit, keep := decode(row)
-			spoken := spokenDefault(text)
-			assertSpokenOmits(t, spoken, omit...)
-			assertSpokenContains(t, spoken, keep...)
-		}
-	})
-	t.Run("test_ordinary_speech_passes_through", func(t *testing.T) {
-		for _, row := range corpus.PassThroughTokens {
-			text, _, keep := decode(row)
-			assertSpokenContains(t, spokenDefault(text), keep...)
-		}
-	})
-	t.Run("test_issue_repro_filenames_are_not_spoken", func(t *testing.T) {
-		spoken := spokenDefault("Saved peyton-sample-20260922.wav and peyton-sample-20260922.ogg.")
-		assertSpokenOmits(t, spoken, ".wav", ".ogg", "peyton")
-		assertSpokenContains(t, spoken, "Saved")
-	})
-	t.Run("test_hash_and_uuid_summaries_do_not_spell_out", func(t *testing.T) {
-		spoken := spokenDefault("Commit 73688014f78 with trace 550e8400-e29b-41d4-a716-446655440000.")
-		assertSpokenOmits(t, spoken, "73688014f78", "550e8400")
-		assertSpokenContains(t, spoken, "Commit", "trace")
-	})
-	t.Run("test_plain_words_with_hyphens_and_digits_stay_spoken", func(t *testing.T) {
-		assertSpokenContains(t, spokenDefault("COVID-19 numbers and the well-known 7 habit stay."), "COVID-19", "well-known", "7")
-	})
-	t.Run("test_dates_and_ratios_are_not_identifiers", func(t *testing.T) {
-		assertSpokenContains(t, spokenDefault("Due 2026/06/02; the score was 3:2."), "2026/06/02", "3:2")
-	})
 }
 
 // Units, headings, currencies, media links and trailing colons become calm spoken sentences

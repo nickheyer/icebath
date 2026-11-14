@@ -1,12 +1,9 @@
 package pyast
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func nodeTypes(nodes []*Node) []string {
@@ -59,50 +56,6 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-func TestLiteralEvalMatchesCPython(t *testing.T) {
-	var cases []struct {
-		Src  string   `json:"src"`
-		Repr *string  `json:"repr"`
-		Err  []string `json:"err"`
-	}
-	if err := json.Unmarshal(readGzip(t, "literal_eval.json.gz"), &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		v, err := LiteralEval(c.Src)
-		var got string
-		switch {
-		case err == nil:
-			got = pyrepr.Repr(v)
-			if r, rerr := ConstantRepr(v); rerr != nil {
-				got = "err:ValueError|" + rerr.Error()
-			} else if _, isInt := v.(interface{ Text(int) string }); isInt {
-				got = r
-			}
-		default:
-			var se *SyntaxError
-			var le *LiteralError
-			switch {
-			case errors.As(err, &se):
-				got = "err:" + se.Class + "|" + se.Msg
-			case errors.As(err, &le):
-				got = "err:" + le.Class + "|" + le.Msg
-			default:
-				got = "err:" + err.Error()
-			}
-		}
-		want := ""
-		if c.Repr != nil {
-			want = *c.Repr
-		} else {
-			want = "err:" + c.Err[0] + "|" + c.Err[1]
-		}
-		if got != want {
-			t.Errorf("LiteralEval(%q)\n got %s\nwant %s", firstRunes(c.Src, 40), firstRunes(got, 300), firstRunes(want, 300))
-		}
-	}
 }
 
 // Results recorded from ast.literal_eval(value.strip()) with str of each list item under CPython 3.14

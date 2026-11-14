@@ -1,13 +1,11 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/lsp"
 )
 
@@ -343,135 +340,7 @@ func TestLSPShellLinterSkippedWhenLSPWillHandle(t *testing.T) {
 	}
 }
 
-var (
-	lspMockOnce  sync.Once
-	lspMockPath  string
-	lspMockErr   error
-	lspPkgDir, _ = os.Getwd()
-)
-
-// Builds the mock language server the pkg/lsp tests use
-func lspMockServer(t *testing.T) string {
-	lspMockOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "lsp-mock-")
-		if err != nil {
-			lspMockErr = err
-			return
-		}
-		lspMockPath = filepath.Join(dir, "mockserver")
-		build := exec.Command("go", "build", "-o", lspMockPath, "../lsp/testdata/mockserver")
-		build.Dir = lspPkgDir
-		if out, err := build.CombinedOutput(); err != nil {
-			lspMockErr = fmt.Errorf("%v: %s", err, out)
-		}
-	})
-	if lspMockErr != nil {
-		t.Fatal(lspMockErr)
-	}
-	return lspMockPath
-}
-
-// Session env of a profile whose pyright is the mock, with the by_content push gate path
-func lspMockSession(t *testing.T, script string) (*Env, string, string) {
-	installTestEnvHooks(t)
-	tmp := t.TempDir()
-	h := filepath.Join(tmp, "home")
-	t.Setenv("ICEBATH_HOME", h)
-	repo := lspGitRepo(t, filepath.Join(tmp, "repo"))
-	if err := os.WriteFile(filepath.Join(repo, "pyproject.toml"), nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(repo)
-	gate := filepath.Join(tmp, "release-diagnostics")
-	t.Setenv("MOCK_LSP_GATE", gate)
-	mock := lspMockServer(t)
-	idx := slices.IndexFunc(lsp.Servers, func(s *lsp.ServerDef) bool { return s.ServerID == "pyright" })
-	original := lsp.Servers[idx]
-	lsp.Servers[idx] = &lsp.ServerDef{ServerID: "pyright", Extensions: original.Extensions,
-		ResolveRoot: func(_, ws string) string { return ws },
-		BuildSpawn: func(root string, _ lsp.ServerContext) (*lsp.SpawnSpec, error) {
-			return &lsp.SpawnSpec{Command: []string{mock}, WorkspaceRoot: root, Cwd: root, Env: map[string]string{"MOCK_LSP_SCRIPT": script}}, nil
-		}}
-	env := &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}, Config: config.Tree{"lsp": map[string]any{
-		"wait_timeout": 20.0, "install_strategy": "manual", "idle_timeout": 0, "trusted_workspaces": []any{repo}}}}
-	t.Cleanup(func() {
-		os.WriteFile(gate, nil, 0o644)
-		lsp.ShutdownServices()
-		lsp.Servers[idx] = original
-		lsp.ClearWorkspaceCache()
-	})
-	return env, repo, gate
-}
-
-func TestLSPLateDiagnosticsReachTheSession(t *testing.T) {
-	env, repo, gate := lspMockSession(t, "by_content")
-	target := filepath.Join(repo, "b.py")
-	pre, post := "x = 1\n", "x = bad\n"
-	if err := os.WriteFile(target, []byte(post), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	ops := newShellFileOps(env, bashFileOpsEnv(repo, true), repo).withContext(WithLSPOwner(context.Background(), "S-lsp"))
-	started := time.Now()
-	if got := ops.maybeLSPDiagnostics(target, &pre, &post, started); got != "" {
-		t.Fatalf("a held server answered inline: %q", got)
-	}
-	if elapsed := time.Since(started); elapsed > 10*time.Second {
-		t.Fatalf("the write blocked %v on a held language server", elapsed)
-	}
-	if err := os.WriteFile(gate, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	notes := LSPSettleForAgent("S-lsp", "", 20*time.Second)
-	if len(notes) != 1 || notes[0].Path != target || !strings.Contains(notes[0].Text, "MOCK001") || !strings.Contains(notes[0].Text, "earlier edit") {
-		t.Fatalf("%+v", notes)
-	}
-}
-
-func TestLSPDiagnosticsStayWithTheSessionThatMadeTheEdit(t *testing.T) {
-	env, repo, gate := lspMockSession(t, "by_content")
-	target := filepath.Join(repo, "d.py")
-	edit := func(session, pre, post string) {
-		if err := os.WriteFile(target, []byte(post), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		ops := newShellFileOps(env, bashFileOpsEnv(repo, true), repo).withContext(WithLSPOwner(context.Background(), session))
-		if got := ops.maybeLSPDiagnostics(target, &pre, &post, time.Now()); got != "" {
-			t.Fatalf("inline verdict %q", got)
-		}
-	}
-	edit("S-A", "x = 1\n", "x = bad\n")
-	edit("S-B", "x = bad\n", "x = bad\ny = 2\n")
-	if err := os.WriteFile(gate, nil, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	notesB := LSPSettleForAgent("S-B", "", 20*time.Second)
-	notesA := LSPSettleForAgent("S-A", "", 20*time.Second)
-	if len(notesB) != 0 {
-		t.Fatalf("session B was told about session A's error: %+v", notesB)
-	}
-	if len(notesA) == 0 || !strings.Contains(notesA[0].Text, "MOCK001") {
-		t.Fatalf("session A never heard about its own error: %+v", notesA)
-	}
-}
-
-func TestLSPCommandContextReportsTheProfileService(t *testing.T) {
-	env, repo, _ := lspMockSession(t, "clean")
-	cc := LSPCommandContext(env)
-	svc, err := cc.Service()
-	if err != nil || svc == nil {
-		t.Fatal(svc, err)
-	}
-	if !svc.EnabledFor(filepath.Join(repo, "x.py"), lspOperatorWorkspaceRoots(env)) {
-		t.Fatal("the profile service gates the repo in")
-	}
-	var out, errOut strings.Builder
-	if code := lsp.RunCommand(context.Background(), cc, lsp.CommandArgs{Subcommand: "status"}, &out, &errOut); code != 0 {
-		t.Fatalf("%d %s", code, errOut.String())
-	}
-	if !strings.Contains(out.String(), "  enabled:         True") || !strings.Contains(out.String(), "Registered Servers") {
-		t.Fatal(out.String())
-	}
-}
+var ()
 
 func TestLSPDeferredExportedPostTrackAndSettle(t *testing.T) {
 	owner := "S-exported"

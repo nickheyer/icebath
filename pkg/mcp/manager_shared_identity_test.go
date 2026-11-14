@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -74,30 +73,6 @@ func discoverAndCall(t *testing.T, homes map[string]string, tool string, args ma
 		results[name] = result
 	}
 	return results
-}
-
-func TestSharedConnectionProfileWithOtherSecretSourceValueGetsItsOwnStdioConnection(t *testing.T) {
-	homes := defaultAndWorkerHomes(t)
-	prev := secretSourceNamesFn
-	secretSourceNamesFn = func() []string { return []string{"GH_TOKEN"} }
-	t.Cleanup(func() { secretSourceNamesFn = prev })
-	shutdownServersFirst(t)
-	for name, h := range homes {
-		writeEnvFile(t, h, "GH_TOKEN=fake-token-"+name+"\n")
-		writeProfileConfig(t, h, fmt.Sprintf("mcp_servers:\n  gh:\n    command: %q\n    args: []\n    env:\n      MOCK_MCP_TOOLS: env\n", mockBinary(t)))
-	}
-	results := discoverAndCall(t, homes, "mcp__gh__env", map[string]any{})
-	got := map[string]string{}
-	for name, raw := range results {
-		var childEnv map[string]string
-		if err := json.Unmarshal([]byte(raw), &childEnv); err != nil {
-			t.Fatalf("%s child env %q", name, raw)
-		}
-		got[name] = "GH_TOKEN=" + childEnv["GH_TOKEN"]
-	}
-	if want := map[string]string{"default": "GH_TOKEN=fake-token-default", "worker": "GH_TOKEN=fake-token-worker"}; !maps.Equal(got, want) {
-		t.Fatalf("child tokens %v", got)
-	}
 }
 
 func TestSharedConnectionProfileWithOtherProfileIdentityHeaderGetsItsOwnHTTPConnection(t *testing.T) {

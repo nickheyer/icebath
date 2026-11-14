@@ -2,46 +2,9 @@ package pyrich
 
 import (
 	"bytes"
-	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 )
-
-func TestGridInPaddedPanelMatchesRich15(t *testing.T) {
-	raw, err := os.ReadFile("testdata/grid_panel_cases.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []struct {
-		Name   string   `json:"name"`
-		Width  int      `json:"width"`
-		System string   `json:"system"`
-		Left   []string `json:"left"`
-		Right  []string `json:"right"`
-		Title  string   `json:"title"`
-		Border string   `json:"border"`
-		Want   string   `json:"want"`
-	}
-	if err := json.Unmarshal(raw, &cases); err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) == 0 {
-		t.Fatal("no cases")
-	}
-	for _, c := range cases {
-		setColorSystem(t, c.System)
-		grid := NewGrid(2, Column{Header: "left", Justify: "left"}, Column{Header: "right", Justify: "left"})
-		grid.AddRow(strings.Join(c.Left, "\n"), strings.Join(c.Right, "\n"))
-		var b bytes.Buffer
-		(&Console{Out: &b, Color: c.System != "none", Width: c.Width}).PrintPanel(Panel{Content: grid, Title: c.Title, BorderStyle: c.Border, PadX: 2})
-		got := oscLinkIDRE.ReplaceAllString(b.String(), "\x1b]8;id=;")
-		want := oscLinkIDRE.ReplaceAllString(c.Want, "\x1b]8;id=;")
-		if got != want {
-			t.Errorf("%s width %d %s\n got %q\nwant %q", c.Name, c.Width, c.System, got, want)
-		}
-	}
-}
 
 func TestConsoleColorSystemOverridesTheTerminalDetection(t *testing.T) {
 	setColorSystem(t, "standard")

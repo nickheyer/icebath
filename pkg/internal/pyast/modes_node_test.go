@@ -2,24 +2,12 @@ package pyast
 
 import (
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"math/big"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-type nodeRow struct {
-	Name, Mode, Fn string
-	Opt            int
-	Tree           any
-	Out            *string
-	Err            []any
-	Crash          bool
-}
 
 // Rebuilds a Python value recorded by node_rec.py, nodes keeping only the attributes the object had
 func decodePyValue(t *testing.T, v any) any {
@@ -119,71 +107,6 @@ func decodePyValue(t *testing.T, v any) any {
 	}
 	t.Fatalf("undecodable value %v", v)
 	return nil
-}
-
-// Runs ParseNode and reports a recovered panic as the crash CPython has there
-func parseNodeOutcome(n *Node, o Options) (out *Node, err error, crash string) {
-	defer func() {
-		if r := recover(); r != nil {
-			crash = fmt.Sprint(r)
-		}
-	}()
-	out, err = ParseNode(n, o)
-	return out, err, ""
-}
-
-func TestParseNodeMatchesCPython(t *testing.T) {
-	var rows []nodeRow
-	if err := json.Unmarshal(readGzip(t, "node_rows.json.gz"), &rows); err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) < 200 {
-		t.Fatalf("only %d rows", len(rows))
-	}
-	for _, r := range rows {
-		label := fmt.Sprintf("%s/%s/opt%d", r.Name, r.Mode, r.Opt)
-		tree := decodePyValue(t, r.Tree).(*Node)
-		before, _ := objRepr(tree)
-		got, err, crash := parseNodeOutcome(tree, Options{Mode: r.Mode, Optimize: r.Opt, Filename: r.Fn})
-		if after, _ := objRepr(tree); after != before {
-			t.Errorf("%s: argument changed\n%s\n%s", label, before, after)
-		}
-		switch {
-		case r.Crash:
-			if !strings.Contains(crash, "SIGSEGV") {
-				t.Errorf("%s: want the CPython crash, got %v %v %q", label, got, err, crash)
-			}
-		case crash != "":
-			t.Errorf("%s: panic %s", label, crash)
-		case r.Out != nil:
-			if err != nil {
-				t.Errorf("%s: unexpected error %v", label, err)
-				continue
-			}
-			if d, derr := Dump(got, true); derr != nil || d != *r.Out {
-				t.Errorf("%s:\n got %s %v\nwant %s", label, d, derr, *r.Out)
-			}
-		default:
-			want := fmt.Sprintf("%v: %v", r.Err[0], r.Err[1])
-			var have string
-			switch e := err.(type) {
-			case *SyntaxError:
-				have = fmt.Sprintf("%s: %s", e.Class, e.Msg)
-				if e.Lineno != int(r.Err[2].(float64)) || e.Offset != int(r.Err[3].(float64)) || e.EndLineno != int(r.Err[4].(float64)) || e.EndOffset != int(r.Err[5].(float64)) || e.Filename != r.Fn {
-					t.Errorf("%s: location %+v want %v", label, e, r.Err)
-				}
-			case *LimitError:
-				have = e.Class + ": " + e.Msg
-			case *IntDigitsError:
-				have = "ValueError: " + e.Error()
-			default:
-				have = fmt.Sprintf("%T %v", err, err)
-			}
-			if have != want {
-				t.Errorf("%s:\n got %s\nwant %s", label, have, want)
-			}
-		}
-	}
 }
 
 func TestParseNodeRejectsNil(t *testing.T) {

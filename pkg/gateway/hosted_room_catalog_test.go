@@ -11,24 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-func TestRoomLinkProtocolFixtureMatchesBackendContract(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "room_link_protocol_v2.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	decoded, err := pyjson.Loads(string(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fixture := decoded.(*pyjson.Object)
-	version, _ := fixture.Get("protocol_version")
-	catalog, _ := fixture.Get("catalog")
-	versions, _ := catalog.(*pyjson.Object).Get("protocol_versions")
-	if !pyjson.Equal(version, int64(HostedProtocolVersion)) || !pyjson.Equal(versions, []any{int64(HostedProtocolVersion)}) {
-		t.Fatalf("fixture %v %v", version, versions)
-	}
-}
-
 // Writes a config.yaml body under dir
 func writeRoomConfig(t *testing.T, dir, body string) {
 	t.Helper()

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -40,28 +39,8 @@ type bedrockServiceModel struct {
 }
 
 var (
-	bedrockModelOnce sync.Once
-	bedrockModel     *bedrockServiceModel
-	bedrockModelErr  error
+	bedrockModel *bedrockServiceModel
 )
-
-// Service model parsed once from the testdata extraction of service-2.json
-func bedrockServiceShapes(t testing.TB) *bedrockServiceModel {
-	bedrockModelOnce.Do(func() {
-		data, err := os.ReadFile("testdata/bedrock_runtime_converse_shapes.json")
-		if err != nil {
-			bedrockModelErr = err
-			return
-		}
-		m := &bedrockServiceModel{}
-		bedrockModelErr = json.Unmarshal(data, m)
-		bedrockModel = m
-	})
-	if bedrockModelErr != nil {
-		t.Fatalf("load bedrock service model: %v", bedrockModelErr)
-	}
-	return bedrockModel
-}
 
 // Rejection carries the AWS error code and message the fake answers with
 type bedrockRejection struct{ Code, Message string }
@@ -87,9 +66,6 @@ type bedrockToolUse struct {
 func (*bedrockText) bedrockBlock()      {}
 func (*bedrockReasoning) bedrockBlock() {}
 func (*bedrockToolUse) bedrockBlock()   {}
-
-// Text block streamed in pieces of twelve characters
-func bedrockTextBlock(text string) *bedrockText { return &bedrockText{Text: text, Chunk: 12} }
 
 // Replies the responder scripts for each call
 type bedrockReply interface{ bedrockReply() }
@@ -121,19 +97,6 @@ func (*bedrockHTTPError) bedrockReply()       {}
 func (*bedrockStreamException) bedrockReply() {}
 func (*bedrockDrop) bedrockReply()            {}
 
-// Turn with the service's default usage of 120 input and 30 output tokens
-func newBedrockTurn(blocks ...bedrockBlock) *bedrockTurn {
-	return &bedrockTurn{Blocks: blocks, InputTokens: 120, OutputTokens: 30}
-}
-
-// Exception frame after the first two events of the turn
-func newBedrockStreamException(turn *bedrockTurn, exception, message string) *bedrockStreamException {
-	return &bedrockStreamException{Turn: turn, Exception: exception, Message: message, After: 2}
-}
-
-// Connection drop after the first three events of the turn
-func newBedrockDrop(turn *bedrockTurn) *bedrockDrop { return &bedrockDrop{Turn: turn, After: 3} }
-
 // One recorded call with its verified auth scope, rejection and emitted blocks
 type bedrockFakeRecord struct {
 	Path     string
@@ -162,15 +125,6 @@ type bedrockFake struct {
 	reasonedTools map[string]bool
 	ids           int
 	srv           *httptest.Server
-}
-
-// Starts a fake on a loopback port, closed at test cleanup
-func newBedrockFake(t testing.TB, responder bedrockResponder) *bedrockFake {
-	bedrockServiceShapes(t)
-	f := &bedrockFake{t: t, responder: responder, signatures: map[string]string{}, reasonedTools: map[string]bool{}}
-	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
-	t.Cleanup(f.srv.Close)
-	return f
 }
 
 func (f *bedrockFake) endpoint() string { return f.srv.URL }
@@ -248,22 +202,6 @@ func (f *bedrockFake) materialize(turn *bedrockTurn) []map[string]any {
 		}
 	}
 	return out
-}
-
-// Responder answering the nth call with the nth reply, the last one repeating, funcs receiving the record
-func bedrockSeq(replies ...any) bedrockResponder {
-	var mu sync.Mutex
-	calls := 0
-	return func(rec *bedrockFakeRecord) bedrockReply {
-		mu.Lock()
-		calls++
-		r := replies[min(calls, len(replies))-1]
-		mu.Unlock()
-		if fn, ok := r.(func(*bedrockFakeRecord) bedrockReply); ok {
-			return fn(rec)
-		}
-		return r.(bedrockReply)
-	}
 }
 
 // Recomputes a SigV4 signature with the known secret of its access key and returns the credential scope

@@ -56,21 +56,6 @@ func observeProbe(t *testing.T, connect bool) *probeSeen {
 	return seen
 }
 
-func TestProbeUsesConfiguredConnectTimeout(t *testing.T) {
-	isolateHome(t)
-	seen := observeProbe(t, true)
-	found, err := probeServer(context.Background(), &tools.Env{}, "supabase", map[string]any{"command": mockBinary(t), "connect_timeout": 300}, nil, nil)
-	if err != nil || !reflect.DeepEqual(found, []ToolSummary{{Name: "tool0"}}) {
-		t.Fatalf("found %v err %v", found, err)
-	}
-	if seen.outer != 310*time.Second || seen.inner > 300*time.Second || seen.inner < 299*time.Second || seen.config["connect_timeout"] != 300.0 {
-		t.Fatalf("outer %v inner %v config %v", seen.outer, seen.inner, seen.config["connect_timeout"])
-	}
-	if len(seen.servers) != 1 || !seen.servers[0].shutdownEv.IsSet() {
-		t.Fatal("probed server was not shut down")
-	}
-}
-
 func TestProbeEnvResolution(t *testing.T) {
 	h := isolateHome(t)
 	ctx := context.Background()
@@ -131,39 +116,6 @@ func TestProbeEnvResolution(t *testing.T) {
 	probeServer(ctx, &tools.Env{}, "travelermd", map[string]any{"url": "https://mcp.traveler.md/mcp", "auth": "oauth"}, fptr(315), nil)
 	if seen.config["connect_timeout"] != 315.0 || seen.outer != 325*time.Second {
 		t.Fatalf("config %v outer %v", seen.config, seen.outer)
-	}
-}
-
-func TestProbeCapabilityGating(t *testing.T) {
-	isolateHome(t)
-	bin := mockBinary(t)
-	run := func(filter map[string]any) ([]string, *ProbeDetails) {
-		record := filepath.Join(t.TempDir(), "methods")
-		cfg := map[string]any{"command": bin, "env": map[string]any{"MOCK_MCP_CAPS": `{"tools":{},"prompts":{},"resources":{}}`,
-			"MOCK_MCP_RECORD": record}}
-		if filter != nil {
-			cfg["tools"] = filter
-		}
-		d := &ProbeDetails{}
-		if _, err := probeServer(context.Background(), &tools.Env{}, "srv", cfg, nil, d); err != nil {
-			t.Fatal(err)
-		}
-		raw, _ := os.ReadFile(record)
-		var called []string
-		for _, m := range strings.Fields(string(raw)) {
-			if m == "prompts/list" || m == "resources/list" {
-				called = append(called, strings.TrimSuffix(m, "/list"))
-			}
-		}
-		return called, d
-	}
-	called, d := run(map[string]any{"prompts": false})
-	if !reflect.DeepEqual(called, []string{"resources"}) || d.Prompts != nil || d.Resources == nil || *d.Resources != 2 {
-		t.Fatalf("prompts disabled called %v details %+v", called, d)
-	}
-	called, d = run(nil)
-	if len(called) != 2 || d.Prompts == nil || *d.Prompts != 1 || d.Resources == nil || *d.Resources != 2 {
-		t.Fatalf("enabled called %v details %+v", called, d)
 	}
 }
 

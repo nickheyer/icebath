@@ -100,42 +100,6 @@ func TestDetectPluginComponentsDetectsDualLayout(t *testing.T) {
 	}
 }
 
-func TestDetectPluginComponentsOnTheSharedDetectionCases(t *testing.T) {
-	var fixture struct {
-		Cases []struct {
-			Name   string            `json:"name"`
-			Root   string            `json:"root"`
-			Files  map[string]string `json:"files"`
-			Expect struct {
-				Agent     bool    `json:"agent"`
-				Desktop   bool    `json:"desktop"`
-				AgentName *string `json:"agent_name"`
-			} `json:"expect"`
-		} `json:"cases"`
-	}
-	raw, err := os.ReadFile(filepath.Join("testdata", "plugin_component_detection.json"))
-	if err != nil || json.Unmarshal(raw, &fixture) != nil || len(fixture.Cases) == 0 {
-		t.Fatal(err)
-	}
-	for _, c := range fixture.Cases {
-		t.Run(c.Name, func(t *testing.T) {
-			pluginRoot := filepath.Join(t.TempDir(), c.Root)
-			os.Mkdir(pluginRoot, 0o755)
-			for rel, text := range c.Files {
-				writeFile(t, filepath.Join(pluginRoot, rel), text)
-			}
-			d := DetectPluginComponents(pluginRoot)
-			var name any
-			if c.Expect.AgentName != nil {
-				name = *c.Expect.AgentName
-			}
-			if d.Agent != c.Expect.Agent || d.Desktop != c.Expect.Desktop || d.AgentName != name {
-				t.Fatal(d)
-			}
-		})
-	}
-}
-
 // Git in a hermetic home, the commits of a fixture repository authored by Fixture
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()

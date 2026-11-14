@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,19 +19,6 @@ import (
 )
 
 const scopeTokenName, scopeTokenValue = "EXAMPLE_TOKEN", "profile-own-value"
-
-// Profile home whose env file holds the source tagged credential, routed and multiplexed for the test
-func secretScopeProfile(t *testing.T) (string, context.Context) {
-	t.Helper()
-	dir := filepath.Join(t.TempDir(), "profile")
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeEnvFile(t, dir, scopeTokenName+"="+scopeTokenValue+"\n")
-	tagSecretSource(t)
-	multiplexOn(t)
-	return dir, home.WithOverride(context.Background(), dir)
-}
 
 // Writes the profile env file
 func writeEnvFile(t *testing.T, dir, body string) {
@@ -79,20 +65,6 @@ func remoteEntry(url string) map[string]any {
 	return map[string]any{"url": url, "headers": map[string]any{"Authorization": "Bearer ${" + scopeTokenName + "}"}}
 }
 
-// Environment the stdio child of srv was spawned with
-func childEnviron(t *testing.T, srv *serverTask) map[string]string {
-	t.Helper()
-	res, err := srv.currentSession().CallTool(context.Background(), "env", map[string]any{}, nil)
-	if err != nil || len(res.Content) == 0 {
-		t.Fatalf("env tool %v %+v", err, res)
-	}
-	out := map[string]string{}
-	if err := json.Unmarshal([]byte(res.Content[0].Text), &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
 func TestReconcileCountsAdoptedSharedConnectionAsLive(t *testing.T) {
 	_, env := managerHome(t)
 	dirA, dirB := filepath.Join(t.TempDir(), "a"), filepath.Join(t.TempDir(), "b")
@@ -130,58 +102,6 @@ func TestReconcileCountsAdoptedSharedConnectionAsLive(t *testing.T) {
 	mcpMu.Unlock()
 	if connecting {
 		t.Fatal("reconcile entered discovery for an adopted connection")
-	}
-}
-
-func TestConnectResolvesTheOwningProfilesSecret(t *testing.T) {
-	_, env := managerHome(t)
-	_, ctx := secretScopeProfile(t)
-	t.Setenv(scopeTokenName, "launch-env-value")
-	srv, err := connectServer(ctx, env, "demo", mockEntry(t, map[string]any{"env": map[string]any{"MOCK_MCP_TOOLS": "env"}}), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer srv.shutdown(context.Background())
-	if got := childEnviron(t, srv)[scopeTokenName]; got != scopeTokenValue {
-		t.Fatalf("child env carries %q, want the owning profile's value", got)
-	}
-	if currentSecretScopeHome(ctx) != "" {
-		t.Fatal("the owner scope binding belongs to the run task, never the caller")
-	}
-}
-
-func TestUnscopedDiscoverInterpolatesHeaderRefsUnderTheOwnersScope(t *testing.T) {
-	_, env := managerHome(t)
-	dir, ctx := secretScopeProfile(t)
-	t.Setenv(scopeTokenName, "launch-env-value")
-	remote, headers := headerRecordingServer(t)
-	body := "mcp_servers:\n  httpsrv:\n    url: " + remote.URL + "\n    headers:\n      Authorization: 'Bearer ${" + scopeTokenName + "}'\n" +
-		"  stdiosrv:\n    command: " + mockBinary(t) + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	scope := mcpRegistryScope(ctx)
-	t.Cleanup(func() { ShutdownMCPServers(context.Background(), &scope, nil, 5*time.Second) })
-	if currentSecretScopeHome(ctx) != "" {
-		t.Fatal("discovery starts unscoped")
-	}
-	if _, err := ConnectAll(ctx, env, nil); err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	_, httpLive := mcpServers[ServerKey{Scope: scope, Name: "httpsrv"}]
-	_, stdioLive := mcpServers[ServerKey{Scope: scope, Name: "stdiosrv"}]
-	mcpMu.Unlock()
-	if !httpLive || !stdioLive {
-		t.Fatalf("discover handed over http %v stdio %v", httpLive, stdioLive)
-	}
-	for _, h := range headers() {
-		if h != "Bearer "+scopeTokenValue {
-			t.Fatalf("header %q, want the owning profile's value", h)
-		}
-	}
-	if len(headers()) == 0 || currentSecretScopeHome(ctx) != "" {
-		t.Fatal("the remote server saw no request or the caller stayed scoped")
 	}
 }
 

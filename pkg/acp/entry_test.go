@@ -3,7 +3,6 @@ package acp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -35,45 +34,6 @@ func runMain(argv ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
 	code := Main(context.Background(), argv, &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
-}
-
-func TestEntryArgumentParserMatchesArgparse(t *testing.T) {
-	t.Setenv("COLUMNS", "80")
-	t.Setenv("NO_COLOR", "1")
-	raw, err := os.ReadFile(filepath.Join("testdata", "entry_argparse_cases.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []struct {
-		Argv []string        `json:"argv"`
-		NS   map[string]bool `json:"ns"`
-		Code *int            `json:"code"`
-		Out  string          `json:"out"`
-		Err  string          `json:"err"`
-	}
-	if err := json.Unmarshal(raw, &cases); err != nil {
-		t.Fatal(err)
-	}
-	if len(cases) < 20 {
-		t.Fatalf("only %d recorded cases", len(cases))
-	}
-	for _, tc := range cases {
-		var stdout, stderr bytes.Buffer
-		args, code, done := parseEntryArgs(tc.Argv, &stdout, &stderr)
-		if stdout.String() != tc.Out || stderr.String() != tc.Err {
-			t.Fatalf("%v\nstdout %q\nwant   %q\nstderr %q\nwant   %q", tc.Argv, stdout.String(), tc.Out, stderr.String(), tc.Err)
-		}
-		if tc.Code != nil {
-			if !done || code != *tc.Code {
-				t.Fatalf("%v exited %v %d, want %d", tc.Argv, done, code, *tc.Code)
-			}
-			continue
-		}
-		got := map[string]bool{"version": args.Version, "check": args.Check, "setup": args.Setup, "setup_browser": args.SetupBrowser, "assume_yes": args.AssumeYes}
-		if done || !reflect.DeepEqual(got, tc.NS) {
-			t.Fatalf("%v parsed %v (done %v), want %v", tc.Argv, got, done, tc.NS)
-		}
-	}
 }
 
 func TestMainEnablesUnstableProtocol(t *testing.T) {

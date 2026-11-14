@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,44 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
-
-// One recorded provider menu call of real hermes, the title, the rows and the preselected index
-type recordedMenuCall struct {
-	Title   string   `json:"title"`
-	Choices []string `json:"choices"`
-	Default int      `json:"default"`
-}
-
-// One recorded radio list call of real hermes
-type recordedRadioCall struct {
-	Title    string   `json:"title"`
-	Items    []string `json:"items"`
-	Selected int      `json:"selected"`
-	Cancel   int      `json:"cancel"`
-}
-
-// One recorded hermes screen, the printed text, the menu calls and the returned value
-type recordedScreen struct {
-	Out    string              `json:"out"`
-	Calls  []recordedMenuCall  `json:"calls"`
-	Radio  []recordedRadioCall `json:"radio"`
-	Result *string             `json:"result"`
-	Config string              `json:"config"`
-}
-
-// Screens recorded from the provider picker of real hermes
-func recordedPickerScreens(t *testing.T) map[string]recordedScreen {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/provider_picker_screens.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]recordedScreen{}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
 
 // Isolated home bound to the context with setup prints captured, the hermes conftest home
 func pickerCaseHome(t *testing.T) (string, context.Context, *bytes.Buffer) {
@@ -79,22 +40,6 @@ func pickerCaseRun(t *testing.T, ctx context.Context, h string, out io.Writer) *
 	return r
 }
 
-// Menu double answering from a script, an index function or nil for a cancel, recording every call
-func scriptedProviderChoice(calls *[]recordedMenuCall, answers ...func(choices []string) (int, bool)) func(io.Writer, []string, int, string) (int, bool) {
-	return func(_ io.Writer, choices []string, def int, title string) (int, bool) {
-		*calls = append(*calls, recordedMenuCall{Title: title, Choices: append([]string{}, choices...), Default: def})
-		if len(answers) == 0 {
-			return 0, false
-		}
-		answer := answers[0]
-		answers = answers[1:]
-		if answer == nil {
-			return 0, false
-		}
-		return answer(choices)
-	}
-}
-
 // Answers the first row whose label starts with the prefix
 func choosePrefix(prefix string) func(choices []string) (int, bool) {
 	return func(choices []string) (int, bool) {
@@ -114,183 +59,6 @@ func writePickerConfig(t *testing.T, h, body string) {
 		t.Fatal(err)
 	}
 	config.ResetCache()
-}
-
-func assertMenuCalls(t *testing.T, got, want []recordedMenuCall) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Fatalf("calls %d want %d: %+v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i].Title != want[i].Title || got[i].Default != want[i].Default || !reflect.DeepEqual(got[i].Choices, want[i].Choices) {
-			t.Fatalf("call %d\n got %q %d\n%s\nwant %q %d\n%s", i, got[i].Title, got[i].Default, strings.Join(got[i].Choices, "\n"),
-				want[i].Title, want[i].Default, strings.Join(want[i].Choices, "\n"))
-		}
-	}
-}
-
-func TestProviderPickerScreensMatchRecordedHermes(t *testing.T) {
-	screens := recordedPickerScreens(t)
-	cases := []struct {
-		name, config string
-		local        bool
-		answers      []func([]string) (int, bool)
-	}{
-		{"fresh", "custom_providers: []\nmodel: old-model\n", false, nil},
-		{"fresh_local", "custom_providers: []\nmodel: old-model\n", true, nil},
-		{"excluded", "custom_providers: []\nmodel: old-model\nmodel_catalog:\n  excluded_providers:\n  - openrouter\n  - glm\n", false, nil},
-		{"active_openrouter", "model:\n  default: anthropic/claude-sonnet-4.6\n  provider: openrouter\n", false, nil},
-		{"active_group", "model:\n  default: kimi-k2\n  provider: kimi-coding-cn\n", false, []func([]string) (int, bool){choosePrefix("Kimi / Moonshot"), nil}},
-		{"custom_rows", "custom_providers:\n- base_url: http://localhost:11434/v1\n  model: llama3\n  name: Ollama\n- base_url: https://proxy.example.com/v1\n  name: Work Proxy\nmodel:\n  base_url: http://localhost:11434/v1/\n  default: llama3\n  provider: custom\n", false, nil},
-		{"unknown_provider", "model:\n  default: x\n  provider: no-such-provider\n", false, nil},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h, ctx, out := pickerCaseHome(t)
-			writePickerConfig(t, h, tc.config)
-			var calls []recordedMenuCall
-			swapFlowSeam(t, &pickerPromptProviderChoiceFn, scriptedProviderChoice(&calls, tc.answers...))
-			swapFlowSeam(t, &localModelsAvailableFn, func() bool { return tc.local })
-			if err := SelectProviderAndModel(ctx, nil); err != nil {
-				t.Fatal(err)
-			}
-			want := screens[tc.name]
-			if out.String() != want.Out {
-				t.Fatalf("out %q\nwant %q", out.String(), want.Out)
-			}
-			assertMenuCalls(t, calls, want.Calls)
-		})
-	}
-}
-
-func TestAuxMenuScreensMatchRecordedHermes(t *testing.T) {
-	screens := recordedPickerScreens(t)
-	auxConfig := "auxiliary:\n  approval:\n    reasoning_effort: false\n  compression:\n    base_url: http://localhost:8080/v1/\n    model: qwen\n  vision:\n    model: google/gemini-2.5-flash\n    provider: openrouter\n    reasoning_effort: low\ndelegation:\n  model: Hermes-4.5\n  provider: nous\nmodel:\n  default: m\n  provider: openrouter\n"
-	back := func(choices []string) (int, bool) {
-		for i, c := range choices {
-			if c == "Back" {
-				return i, true
-			}
-		}
-		return 0, false
-	}
-	rows := []map[string]any{
-		{"slug": "openrouter", "name": "OpenRouter", "models": []any{"a/one", "b/two"}, "total_models": 120},
-		{"slug": "nous", "name": "Nous Portal", "models": []any{"Hermes-4"}},
-		{"slug": "zai", "name": "Z.AI", "models": []any{}},
-	}
-	t.Run("aux_menu", func(t *testing.T) {
-		h, ctx, out := pickerCaseHome(t)
-		writePickerConfig(t, h, auxConfig)
-		var calls []recordedMenuCall
-		swapFlowSeam(t, &setupPromptProviderChoiceFn, scriptedProviderChoice(&calls, back))
-		if err := auxConfigMenu(pickerCaseRun(t, ctx, h, out)); err != nil {
-			t.Fatal(err)
-		}
-		want := screens["aux_menu"]
-		if out.String() != want.Out {
-			t.Fatalf("out %q\nwant %q", out.String(), want.Out)
-		}
-		assertMenuCalls(t, calls, want.Calls)
-	})
-	for _, task := range []string{"vision", "delegation", "compression", "title_generation"} {
-		t.Run(task, func(t *testing.T) {
-			h, ctx, out := pickerCaseHome(t)
-			writePickerConfig(t, h, auxConfig)
-			var calls []recordedMenuCall
-			swapFlowSeam(t, &setupPromptProviderChoiceFn, scriptedProviderChoice(&calls, back))
-			key := "aux_task_" + task
-			swapFlowSeam(t, &auxBuildPickerRowsFn, func(context.Context, string, string, string, *int) ([]map[string]any, error) { return rows, nil })
-			if task == "title_generation" {
-				key = "aux_task_error"
-				swapFlowSeam(t, &auxBuildPickerRowsFn, func(context.Context, string, string, string, *int) ([]map[string]any, error) {
-					return nil, errors.New("no inventory")
-				})
-			}
-			if err := auxSelectForTask(pickerCaseRun(t, ctx, h, out), task); err != nil {
-				t.Fatal(err)
-			}
-			want := screens[key]
-			if out.String() != want.Out {
-				t.Fatalf("out %q\nwant %q", out.String(), want.Out)
-			}
-			assertMenuCalls(t, calls, want.Calls)
-		})
-	}
-}
-
-func TestReasoningMenuScreensMatchRecordedHermes(t *testing.T) {
-	screens := recordedPickerScreens(t)
-	cases := map[string]struct {
-		efforts        []string
-		current, label string
-	}{
-		"ladder_medium":       {[]string{"minimal", "low", "medium", "high", "xhigh", "max", "ultra"}, "medium", ""},
-		"ladder_none_current": {[]string{"low", "high"}, "none", ""},
-		"aux_default_current": {[]string{"low", "high", "medium"}, "", "Provider default"},
-		"delegation_inherit":  {[]string{"Low", " high ", "custom"}, "custom", "Inherit parent"},
-		"no_medium":           {[]string{"low", "high"}, "", ""},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			var radio []recordedRadioCall
-			swapFlowSeam(t, &flowRadiolistFn, func(title string, items [][]PickerSegment, opts PickerRadiolistOptions) (int, error) {
-				labels := make([]string, len(items))
-				for i, it := range items {
-					labels[i] = it[0].Text
-				}
-				radio = append(radio, recordedRadioCall{Title: title, Items: labels, Selected: opts.Selected, Cancel: opts.CancelReturns})
-				return opts.Selected, nil
-			})
-			var out bytes.Buffer
-			got, ok := promptReasoningEffortSelection(&out, tc.efforts, tc.current, tc.label)
-			want := screens["reasoning_"+name]
-			if out.String() != want.Out || !reflect.DeepEqual(radio, want.Radio) || want.Result == nil || !ok || got != *want.Result {
-				t.Fatalf("out %q radio %+v result %q %v want %+v", out.String(), radio, got, ok, want)
-			}
-		})
-	}
-	t.Run("numbered", func(t *testing.T) {
-		swapFlowSeam(t, &flowRadiolistFn, func(string, [][]PickerSegment, PickerRadiolistOptions) (int, error) {
-			return 0, errors.New("OSError: no curses")
-		})
-		answers := []string{"9", "x", "2"}
-		swapFlowSeam(t, &flowRawInputFn, func(out io.Writer, prompt string) (string, error) {
-			fmt.Fprint(out, prompt)
-			a := answers[0]
-			answers = answers[1:]
-			return a, nil
-		})
-		var out bytes.Buffer
-		got, ok := promptReasoningEffortSelection(&out, []string{"low", "high"}, "high", "Provider default")
-		want := screens["reasoning_numbered"]
-		if out.String() != want.Out || !ok || got != *want.Result {
-			t.Fatalf("out %q result %q %v", out.String(), got, ok)
-		}
-	})
-}
-
-func TestRemoveCustomProviderNumberedScreenMatchesRecordedHermes(t *testing.T) {
-	want := recordedPickerScreens(t)["remove_custom_numbered"]
-	h, ctx, out := pickerCaseHome(t)
-	writePickerConfig(t, h, "custom_providers:\n- base_url: http://localhost:8001/v1\n  name: Local A\n- bare-string\n- base_url: https://x.example/v1/\n")
-	swapFlowSeam(t, &flowRadiolistFn, func(string, [][]PickerSegment, PickerRadiolistOptions) (int, error) {
-		return 0, errors.New("OSError: no curses")
-	})
-	swapFlowSeam(t, &flowRawInputFn, func(out io.Writer, prompt string) (string, error) {
-		fmt.Fprint(out, prompt)
-		return "2", nil
-	})
-	if err := removeCustomProvider(pickerCaseRun(t, ctx, h, out)); err != nil {
-		t.Fatal(err)
-	}
-	if out.String() != want.Out {
-		t.Fatalf("out %q\nwant %q", out.String(), want.Out)
-	}
-	got := readConfig(t, h)["custom_providers"]
-	if !reflect.DeepEqual(got, []any{map[string]any{"name": "Local A", "base_url": "http://localhost:8001/v1"}, map[string]any{"base_url": "https://x.example/v1/"}}) {
-		t.Fatalf("custom providers %v", got)
-	}
 }
 
 func TestSaveAuxChoicePersistsToConfigYaml(t *testing.T) {

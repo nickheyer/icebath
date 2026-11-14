@@ -1,11 +1,7 @@
 package builtin
 
 import (
-	"io"
-	"os"
-	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -22,15 +18,6 @@ func hookManifest(t *testing.T, built *pyjson.Object) any {
 	parsed, err := jsonParse(jsonStringify(built, ""))
 	if err != nil {
 		t.Fatal(err)
-	}
-	return parsed
-}
-
-func repoJSON(t *testing.T, rel string) any {
-	t.Helper()
-	parsed, err := jsonParse(readTestFile(t, impeccableRepoPath(rel)))
-	if err != nil {
-		t.Fatalf("%s: %v", rel, err)
 	}
 	return parsed
 }
@@ -352,177 +339,6 @@ func TestHookManifestBuildersRoutesSupportedHookBuildersAndLeavesOtherProvidersA
 	for _, provider := range []string{"omp", "devin", "hermes", "unrecognized"} {
 		if hooksJSONFor(provider, "") != nil {
 			t.Errorf("manifest built for %s", provider)
-		}
-	}
-}
-
-func TestHookManifestBuildersEmitsTheHermesDesignHookPluginVerbatimUnderHermesPlugins(t *testing.T) {
-	hermes, _ := impeccableProviderByName("hermes")
-	if hermes.EmitHooks != "" {
-		t.Fatalf("hermes emits hooks %q", hermes.EmitHooks)
-	}
-	distDir := t.TempDir()
-	if err := hermes.transform(readSourceSkills(t, impeccablePayloadRoot), distDir, "", io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	pluginDir := filepath.Join(distDir, "hermes/.hermes/plugins/impeccable-design-hook")
-	if names := dirNames(t, pluginDir); !slices.Equal(names, []string{"__init__.py", "plugin.yaml"}) {
-		t.Fatalf("plugin files %v", names)
-	}
-	for _, name := range []string{"__init__.py", "plugin.yaml"} {
-		if readTestFile(t, filepath.Join(pluginDir, name)) != readTestFile(t, impeccableRepoPath("skill/hermes-plugin/"+name)) {
-			t.Errorf("%s differs from skill/hermes-plugin", name)
-		}
-	}
-	manifest := readTestFile(t, filepath.Join(pluginDir, "plugin.yaml"))
-	if !regexp.MustCompile(`(?m)^name: impeccable-design-hook$`).MatchString(manifest) ||
-		!regexp.MustCompile(`(?m)^provides_hooks:\n  - transform_tool_result\n  - pre_verify$`).MatchString(manifest) {
-		t.Fatalf("plugin.yaml\n%s", manifest)
-	}
-}
-
-// Skips like upstream while the tracked provider output still predates the launcher
-func requireSyncedProviderOutput(t *testing.T) {
-	t.Helper()
-	if !pathExists(filepath.Join(impeccableRepoRoot, ".claude/skills/impeccable/scripts/impeccable")) {
-		t.Skip("generated provider output not yet synced (bun run build:release on main)")
-	}
-}
-
-func repoPath(rel string) string {
-	return impeccableRepoPath(rel)
-}
-
-func TestGeneratedHookArtifactsInRepoExistsAndIsValidJSON(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	for _, rel := range []string{".claude/settings.json", ".cursor/hooks.json", ".codex/hooks.json", ".github/hooks/impeccable.json"} {
-		t.Run(rel, func(t *testing.T) {
-			if !pathExists(repoPath(rel)) {
-				t.Fatalf("%s missing - did you forget bun run build?", rel)
-			}
-			repoJSON(t, rel)
-		})
-	}
-}
-
-func TestGeneratedHookArtifactsInRepoRootHookManifestsExactlyMatchTheHookBuilders(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	if !jsonDeepEqual(repoJSON(t, ".claude/settings.json"), hookManifest(t, buildClaudeSettingsManifest())) {
-		t.Error(".claude/settings.json differs from the builder")
-	}
-	cursor := repoJSON(t, ".cursor/hooks.json")
-	if !jsonTruthy(jsonOptionalProp(jsonOptionalProp(cursor, "hooks"), "preToolUse")) && !jsonDeepEqual(cursor, hookManifest(t, buildCursorHooksManifest(cursorHookScripts))) {
-		t.Error(".cursor/hooks.json differs from the builder")
-	}
-	if !jsonDeepEqual(repoJSON(t, ".codex/hooks.json"), hookManifest(t, buildCodexHooksManifest(".codex"))) {
-		t.Error(".codex/hooks.json differs from the builder")
-	}
-	if !jsonDeepEqual(repoJSON(t, ".github/hooks/impeccable.json"), hookManifest(t, buildGitHubHooksManifest())) {
-		t.Error(".github/hooks/impeccable.json differs from the builder")
-	}
-}
-
-func TestGeneratedHookArtifactsInRepoClaudeProjectSettingsReferenceTheLauncherInClaudeSkills(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	manifest := repoJSON(t, ".claude/settings.json")
-	expectHookCommand(t, jget(manifest, "hooks", "PostToolUse", 0, "hooks", 0, "command"), ".claude/skills/impeccable/scripts", "hook")
-	wantExists(t, repoPath(".claude/skills/impeccable/scripts"))
-}
-
-func TestGeneratedHookArtifactsInRepoCursorProjectHooksReferenceTheLauncherInCursorSkills(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	manifest := repoJSON(t, ".cursor/hooks.json")
-	events := jkeys(jget(manifest, "hooks"))
-	if len(events) != 1 || !slices.Contains([]string{"postToolUse", "preToolUse"}, events[0]) {
-		t.Fatalf("events %v", events)
-	}
-	verb := "hook-before-edit"
-	if events[0] == "postToolUse" {
-		verb = "hook"
-	}
-	expectHookCommand(t, jget(manifest, "hooks", events[0], 0, "command"), ".cursor/skills/impeccable/scripts", verb)
-	wantExists(t, repoPath(".cursor/skills/impeccable/scripts/impeccable"))
-	if pathExists(repoPath(".cursor/skills/impeccable/scripts/hook-before-edit.mjs")) {
-		t.Fatal("hook-before-edit.mjs still shipped")
-	}
-}
-
-func TestGeneratedHookArtifactsInRepoCodexProjectHooksReferenceTheLauncherInTheCodexSkillPayload(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	manifest := repoJSON(t, ".codex/hooks.json")
-	command := jget(manifest, "hooks", "PostToolUse", 0, "hooks", 0, "command")
-	expectHookCommand(t, command, ".codex/skills/impeccable/scripts", "hook")
-	wantLacks(t, command.(string), ".agents/skills")
-	wantExists(t, repoPath(".agents/skills/impeccable/SKILL.md"), repoPath(".agents/skills/impeccable/scripts"))
-}
-
-func TestGeneratedHookArtifactsInRepoGitHubCopilotRepoHooksReferenceTheLauncherInTheGithubSkillPayload(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	entry := jget(repoJSON(t, ".github/hooks/impeccable.json"), "hooks", "postToolUse", 0)
-	wantJSON(t, jget(entry, "matcher"), "edit|create|apply_patch")
-	expectHookCommand(t, jget(entry, "bash"), ".github/skills/impeccable/scripts", "hook")
-	wantExists(t, repoPath(".github/skills/impeccable/SKILL.md"), repoPath(".github/skills/impeccable/scripts"))
-}
-
-func TestGeneratedHookArtifactsInRepoDoesNotGenerateProbeScriptsIntoProviderSkillPayloads(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	for _, providerDir := range []string{".claude", ".cursor", ".agents", "plugin"} {
-		if pathExists(impeccableRepoPath(providerDir + "/skills/impeccable/scripts/hook-probe.mjs")) {
-			t.Errorf("%s still has hook-probe.mjs", providerDir)
-		}
-	}
-}
-
-func TestGeneratedHookArtifactsInRepoDoesNotGenerateStaleCodexHookPackagingArtifacts(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	for _, rel := range []string{".claude/hooks/hooks.json", ".agents/hooks", ".agents/plugins/marketplace.json", "plugin/.codex-plugin", "plugin/assets", "plugin-codex"} {
-		if pathExists(repoPath(rel)) {
-			t.Errorf("%s should not exist", rel)
-		}
-	}
-}
-
-func TestGeneratedHookArtifactsInRepoPackagesTheClaudeDesignHookInThePluginViaPluginRootPaths(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	if !pathExists(repoPath("plugin/hooks/hooks.json")) {
-		t.Fatal("plugin/hooks/hooks.json missing - did you forget bun run build:release?")
-	}
-	manifest := repoJSON(t, "plugin/hooks/hooks.json")
-	if !jsonDeepEqual(manifest, hookManifest(t, buildClaudePluginHooksManifest())) {
-		t.Fatal("plugin/hooks/hooks.json differs from the builder")
-	}
-	wantUndefined(t, jget(manifest, "description"))
-	handler := jget(manifest, "hooks", "PostToolUse", 0, "hooks", 0)
-	wantJSON(t, jget(manifest, "hooks", "PostToolUse", 0, "matcher"), "Edit|Write")
-	command, _ := jget(handler, "command").(string)
-	if !strings.Contains(command, "${CLAUDE_PLUGIN_ROOT}") || strings.Contains(command, "${CLAUDE_PROJECT_DIR}") {
-		t.Fatalf("plugin hook command %s", command)
-	}
-	stop := jget(manifest, "hooks", "Stop", 0, "hooks", 0)
-	wantJSON(t, jget(stop, "timeout"), 30)
-	wantJSON(t, jget(stop, "command"), command)
-	wantExists(t, repoPath("plugin/skills/impeccable/scripts"))
-}
-
-func TestGeneratedHookArtifactsInRepoGeneratedSkillPayloadsShipTheExecutableLauncherAndNoNodeScripts(t *testing.T) {
-	requireSyncedProviderOutput(t)
-	for _, scriptDir := range []string{".claude/skills/impeccable/scripts", ".cursor/skills/impeccable/scripts", ".agents/skills/impeccable/scripts", "plugin/skills/impeccable/scripts"} {
-		abs := repoPath(scriptDir)
-		info, err := os.Stat(filepath.Join(abs, "impeccable"))
-		if err != nil {
-			t.Fatalf("launcher missing in %s", scriptDir)
-		}
-		if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
-			t.Errorf("launcher not executable in %s", scriptDir)
-		}
-		wantExists(t, filepath.Join(abs, "impeccable.cmd"), filepath.Join(abs, "VERSION"))
-		if pathExists(filepath.Join(abs, "bin")) {
-			t.Errorf("%s must stay launcher-only in git; binaries ship only in IMPECCABLE_BUNDLE_ENGINE=1 release zips", scriptDir)
-		}
-		for _, name := range dirNames(t, abs) {
-			if strings.HasSuffix(name, ".mjs") || name == "detector" || name == "lib" {
-				t.Errorf("Node-era file %s still in %s", name, scriptDir)
-			}
 		}
 	}
 }

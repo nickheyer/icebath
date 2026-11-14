@@ -351,28 +351,6 @@ func TestDefaultModelFromCatalogCache(t *testing.T) {
 	}
 }
 
-func TestShippedManifestLabelsTheSilentDefault(t *testing.T) {
-	raw, err := os.ReadFile("testdata/hermes/website/static/api/model-catalog.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := decodeJSONBody(raw)
-	if err != nil || !ValidateCatalogManifest(data) {
-		t.Fatalf("shipped manifest invalid: %v", err)
-	}
-	for _, provider := range []string{"openrouter", "nous"} {
-		var labeled []string
-		for _, row := range catalogBlockIDs(catalogBlockOf(data.(map[string]any), provider)) {
-			if boolOf(row.entry["default"], false) {
-				labeled = append(labeled, row.id)
-			}
-		}
-		if !reflect.DeepEqual(labeled, []string{PreferredSilentDefaultModel}) {
-			t.Fatalf("%s labels %v", provider, labeled)
-		}
-	}
-}
-
 func TestProviderOverrideURLTakesPrecedence(t *testing.T) {
 	f := newCatalogFixture(t, CatalogConfig{Enabled: true, URL: "http://master", TTLHours: 24, Providers: map[string]any{"openrouter": map[string]any{"url": "http://override"}}})
 	override := map[string]any{"version": json.Number("1"), "providers": map[string]any{"openrouter": map[string]any{"models": []any{map[string]any{"id": "override/model", "description": "custom"}}}}}

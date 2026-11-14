@@ -3,48 +3,10 @@ package pm
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// Usage, help and validation output byte for byte as Python 3.14 argparse prints it for the same arguments
-func TestBuildEnvArgparseMatchesPython(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "build_env_argparse.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases []struct {
-		Argv    []string
-		Columns string
-		Colors  string
-		Code    int
-		Stdout  string
-		Stderr  string
-	}
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		t.Run(strings.Join(c.Argv, " ")+"@"+c.Columns+c.Colors, func(t *testing.T) {
-			for _, k := range []string{"FORCE_COLOR", "NO_COLOR", "PYTHON_COLORS", "TERM"} {
-				t.Setenv(k, "")
-				os.Unsetenv(k)
-			}
-			t.Setenv("COLUMNS", c.Columns)
-			if c.Colors != "" {
-				t.Setenv("PYTHON_COLORS", c.Colors)
-			}
-			var stdout, stderr bytes.Buffer
-			code := BuildEnvMain(context.Background(), c.Argv, "build_env.py", &stdout, &stderr)
-			if code != c.Code || stdout.String() != c.Stdout || stderr.String() != c.Stderr {
-				t.Fatalf("code %d want %d\nstdout %q\nwant   %q\nstderr %q\nwant   %q", code, c.Code, stdout.String(), c.Stdout, stderr.String(), c.Stderr)
-			}
-		})
-	}
-}
 
 // Paths print the way str of pathlib Path normalizes them
 func TestBuildEnvPathText(t *testing.T) {

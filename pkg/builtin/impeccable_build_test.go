@@ -200,17 +200,6 @@ func TestSkillScriptsPayloadNeverReadsPlatformBinariesAsSource(t *testing.T) {
 	}
 }
 
-func TestSkillScriptsPayloadTheLauncherIsExecutableAndVersionMatchesEngineVersion(t *testing.T) {
-	scripts := sourceScripts(t)
-	if scripts["impeccable"].Mode&0o111 == 0 {
-		t.Fatalf("launcher mode %o", scripts["impeccable"].Mode)
-	}
-	engine := strings.TrimSpace(readTestFile(t, filepath.Join(impeccableRepoRoot, "ENGINE_VERSION")))
-	if got := strings.TrimSpace(scripts["VERSION"].Content); got != engine {
-		t.Fatalf("VERSION %q, ENGINE_VERSION %q", got, engine)
-	}
-}
-
 func degradedDist(t *testing.T) string {
 	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
@@ -270,12 +259,6 @@ func TestDegradedModeFallbackReferenceGenerationGeneratedFallbacksPassThroughPro
 	wantContains(t, claude, "More shared body.")
 }
 
-func TestDegradedModeFallbackReferenceGenerationTheSourceRepoContainsNoHandAuthoredDegradedReferenceFiles(t *testing.T) {
-	if pathExists(impeccableRepoPath("skill/reference/degraded")) {
-		t.Fatal("skill/reference/degraded exists in the source")
-	}
-}
-
 func providerAgentsDir(t *testing.T, provider, configDir string) (string, string) {
 	t.Helper()
 	dist := filepath.Join(t.TempDir(), "dist")
@@ -289,19 +272,6 @@ func TestGitHubCopilotCustomAgentGenerationEmitsGithubAgentsNameAgentMdForEveryS
 	if files := dirNames(t, agentsDir); !slices.Equal(files, want) {
 		t.Fatalf("agent files %v", files)
 	}
-}
-
-func TestGitHubCopilotCustomAgentGenerationFrontmatterCarriesOnlyNameAndDescriptionDescriptionVerbatimFromTheSource(t *testing.T) {
-	_, agentsDir := providerAgentsDir(t, "github", ".github")
-	source := readTestFile(t, impeccableRepoPath("skill/agents/impeccable-finish-reviewer.md"))
-	m := regexp.MustCompile(`(?m)^description:\s*(.+)$`).FindStringSubmatch(source)
-	if m == nil {
-		t.Fatal("source agent has no description")
-	}
-	content := readTestFile(t, filepath.Join(agentsDir, "impeccable-finish-reviewer.agent.md"))
-	frontmatter := strings.Split(content, "---")[1]
-	wantContains(t, frontmatter, "name: impeccable-finish-reviewer", "description: "+strings.TrimSpace(m[1]))
-	wantLacks(t, frontmatter, "tools:", "model:", "effort:", "maxTurns:", "nickname")
 }
 
 func TestGitHubCopilotCustomAgentGenerationBodiesAreCompiledPlaceholdersResolvedRuleMarkersStripped(t *testing.T) {

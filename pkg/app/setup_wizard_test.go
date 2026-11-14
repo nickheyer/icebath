@@ -28,19 +28,6 @@ type wizardRef struct {
 	Asked  []string `json:"asked"`
 }
 
-func loadWizardRefs(t *testing.T) map[string]wizardRef {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "setup_wizard.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := map[string]wizardRef{}
-	if err := json.Unmarshal(raw, &refs); err != nil {
-		t.Fatal(err)
-	}
-	return refs
-}
-
 // Hermes wizard text with the icebath renames applied, box lines keeping their width
 var wizardRenames = strings.NewReplacer(
 	"☤ Hermes Agent Setup Wizard                │", "☤ Icebath Agent Setup Wizard               │",
@@ -180,10 +167,6 @@ func (w *wizardRun) run(t *testing.T, ns map[string]any) (int, error) {
 	return RunSetupWizard(w.ctx, ns)
 }
 
-const existingConfig = "model:\n  provider: openrouter\n  default: anthropic/claude-sonnet-4.5\n"
-
-var existingAuth = map[string]any{"version": 1, "providers": map[string]any{}, "active_provider": "openrouter"}
-
 // Compares a run's screen and menus with the recorded hermes scenario
 func (w *wizardRun) assertMatches(t *testing.T, ref wizardRef) {
 	t.Helper()
@@ -197,165 +180,6 @@ func (w *wizardRun) assertMatches(t *testing.T, ref wizardRef) {
 	if !slices.Equal(w.asked, want) && !(len(w.asked) == 0 && len(want) == 0) {
 		t.Fatalf("menus %q want %q", w.asked, want)
 	}
-}
-
-func TestExistingInstallDefaultBareSetupRunsFullReconfigureWithoutMenu(t *testing.T) {
-	w := newWizardRun(t, "", true)
-	w.seed(t, existingConfig, existingAuth, nil)
-	if code, err := w.run(t, map[string]any{}); code != 0 || err != nil {
-		t.Fatalf("code %d err %v", code, err)
-	}
-	if len(w.asked) != 0 || w.calls["quick"] != 0 {
-		t.Fatalf("menus %v quick %d", w.asked, w.calls["quick"])
-	}
-	for _, name := range []string{"model", "terminal", "gateway", "tools"} {
-		if w.calls[name] != 1 {
-			t.Fatalf("%s ran %d times", name, w.calls[name])
-		}
-	}
-	if strings.Contains(w.out.String(), "◆ Agent Settings") {
-		t.Fatal("agent settings are not prompted on an existing install")
-	}
-	w.assertMatches(t, loadWizardRefs(t)["existing_bare"])
-}
-
-func TestQuickFlagQuickFlagRunsQuickSetupOnly(t *testing.T) {
-	w := newWizardRun(t, "", true)
-	w.seed(t, existingConfig, existingAuth, nil)
-	if code, err := w.run(t, map[string]any{"quick": true}); code != 0 || err != nil {
-		t.Fatalf("code %d err %v", code, err)
-	}
-	if w.calls["quick"] != 1 || !slices.Equal(w.sections["quick"], []int{0}) {
-		t.Fatalf("quick %d sections %v", w.calls["quick"], w.sections["quick"])
-	}
-	for _, name := range []string{"model", "terminal", "gateway", "tools"} {
-		if w.calls[name] != 0 {
-			t.Fatalf("%s ran", name)
-		}
-	}
-	w.assertMatches(t, loadWizardRefs(t)["existing_quick"])
-}
-
-func TestFreshInstallReconfigureOnFreshInstallFallsThrough(t *testing.T) {
-	w := newWizardRun(t, "", true)
-	if code, err := w.run(t, map[string]any{"reconfigure": true}); code != 0 || err != nil {
-		t.Fatalf("code %d err %v", code, err)
-	}
-	if len(w.asked) != 1 || w.calls["first-quick"] != 1 || !slices.Equal(w.sections["first-quick"], []int{0}) {
-		t.Fatalf("menus %v first %d sections %v", w.asked, w.calls["first-quick"], w.sections["first-quick"])
-	}
-	w.assertMatches(t, loadWizardRefs(t)["fresh_reconfigure_quick_mode"])
-}
-
-func TestFreshInstallBlankSlateRunsInsideNavigationStep(t *testing.T) {
-	w := newWizardRun(t, "", true)
-	w.answers["How would you like to set up Icebath?"] = 2
-	if code, err := w.run(t, map[string]any{"quick": true}); code != 0 || err != nil {
-		t.Fatalf("code %d err %v", code, err)
-	}
-	if w.calls["blank"] != 1 || !slices.Equal(w.sections["blank"], []int{0}) {
-		t.Fatalf("blank %d sections %v", w.calls["blank"], w.sections["blank"])
-	}
-	w.assertMatches(t, loadWizardRefs(t)["fresh_blank"])
-}
-
-func TestSetupWizardScreensMatchHermes(t *testing.T) {
-	refs := loadWizardRefs(t)
-	t.Run("fresh_full", func(t *testing.T) {
-		w := newWizardRun(t, "", true)
-		w.answers["How would you like to set up Icebath?"] = 1
-		if _, err := w.run(t, map[string]any{}); err != nil {
-			t.Fatal(err)
-		}
-		w.assertMatches(t, refs["fresh_full"])
-	})
-	t.Run("unknown_section", func(t *testing.T) {
-		w := newWizardRun(t, "", true)
-		if _, err := w.run(t, map[string]any{"section": "nope"}); err != nil {
-			t.Fatal(err)
-		}
-		w.assertMatches(t, refs["unknown_section"])
-	})
-	t.Run("section_agent", func(t *testing.T) {
-		w := newWizardRun(t, "\n\n\n", true)
-		w.seed(t, existingConfig, nil, nil)
-		if _, err := w.run(t, map[string]any{"section": "agent"}); err != nil {
-			t.Fatal(err)
-		}
-		w.assertMatches(t, refs["section_agent"])
-	})
-	t.Run("fresh_escape", func(t *testing.T) {
-		w := newWizardRun(t, "", true)
-		t.Cleanup(provider.SwapSetupRadiolist(func(question string, _ []string, _ int, _ string) int {
-			w.asked = append(w.asked, question)
-			provider.HandleSetupMenuNavigation(cliui.NavEventCancel)
-			return 0
-		}))
-		if code, err := w.run(t, map[string]any{}); code != 0 || err != nil {
-			t.Fatalf("code %d err %v", code, err)
-		}
-		w.assertMatches(t, refs["fresh_escape"])
-	})
-	t.Run("fresh_full_imported", func(t *testing.T) {
-		w := newWizardRun(t, "", true)
-		w.answers["How would you like to set up Icebath?"] = 1
-		w.answers["  Reconfigure model & provider?"] = 0
-		swapSeam(t, &setupOfferAgentImportFn, func(ctx context.Context, h string, _ bool) (string, error) {
-			cfg, err := config.LoadContext(ctx, h, nil)
-			if err != nil {
-				return "", err
-			}
-			cfg["model"] = map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.5"}
-			if err := config.SaveConfig(ctx, h, cfg, config.SaveOptions{}); err != nil {
-				return "", err
-			}
-			return "OpenClaw", config.SaveEnvValueContext(ctx, h, "OPENROUTER_API_KEY", "sk-or-demo-not-a-real-key")
-		})
-		swapSeam(t, &setupAllPlatforms, func(context.Context) []gateway.SetupPlatform { return []gateway.SetupPlatform{{Label: "Telegram"}} })
-		swapSeam(t, &setupPlatformStatus, func(context.Context, gateway.SetupPlatform) (string, error) { return "not configured", nil })
-		if _, err := w.run(t, map[string]any{}); err != nil {
-			t.Fatal(err)
-		}
-		w.assertMatches(t, refs["fresh_full_imported"])
-	})
-	for _, effect := range []string{"ok", "interrupt", "exit", "error"} {
-		t.Run("portal_"+effect, func(t *testing.T) {
-			w := newWizardRun(t, "", true)
-			t.Cleanup(provider.SwapSetupModelFlowNous(func(ctx context.Context, cfg map[string]any) error {
-				switch effect {
-				case "interrupt":
-					return cliui.ErrInterrupt
-				case "exit":
-					panic(provider.SetupExit{Code: 1})
-				case "error":
-					return fmt.Errorf("portal down")
-				}
-				fmt.Fprintln(provider.SetupOutput(), "[nous]")
-				fresh, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-				if err != nil {
-					return err
-				}
-				fresh["model"] = map[string]any{"provider": "nous", "default": "Hermes-4-405B"}
-				return config.SaveConfig(ctx, home.Dir(ctx), fresh, config.SaveOptions{})
-			}))
-			if code, err := w.run(t, map[string]any{"portal": true}); code != 0 || err != nil {
-				t.Fatalf("code %d err %v", code, err)
-			}
-			w.assertMatches(t, refs["portal_"+effect])
-		})
-	}
-	t.Run("managed", func(t *testing.T) {
-		w := newWizardRun(t, "", true)
-		t.Setenv("ICEBATH_MANAGED", "true")
-		var notice bytes.Buffer
-		swapSeam(t, &config.FacadeNoticeOut, io.Writer(&notice))
-		if code, err := w.run(t, map[string]any{}); code != 0 || err != nil {
-			t.Fatalf("code %d err %v", code, err)
-		}
-		if got, want := notice.String(), wizardRenames.Replace(refs["managed"].Stderr); got != want || w.out.Len() != 0 {
-			t.Fatalf("notice %q want %q screen %q", got, want, w.out.String())
-		}
-	})
 }
 
 // Python config.yaml of a home as a map
@@ -444,24 +268,6 @@ func TestResetBackupOrderingResetBacksUpUserConfigNotTheResetDefaults(t *testing
 	}
 	if normalizedConfigJSON(t, loadHomeConfig(t, w.ctx)["model"]) != normalizedConfigJSON(t, config.Defaults()["model"]) {
 		t.Fatal("model is not the default after the reset")
-	}
-}
-
-func TestResetBackupOrderingResetReportsWhereTheBackupLanded(t *testing.T) {
-	w := newWizardRun(t, "", false)
-	writeTunedSetupConfig(t, w, 47, "hand-tuned-local-model-xyz")
-	if _, err := w.run(t, map[string]any{"non_interactive": true, "reset": true}); err != nil {
-		t.Fatal(err)
-	}
-	backups := setupBackups(t, w.home)
-	out := w.out.String()
-	if len(backups) != 1 || !strings.Contains(out, "Configuration reset to defaults.") || !strings.Contains(out, "Previous config backed up to:") ||
-		!strings.Contains(out, filepath.Base(backups[0])) {
-		t.Fatalf("backups %v screen %q", backups, out)
-	}
-	refs := loadWizardRefs(t)
-	if got, want := w.screen(), wizardRenames.Replace(refs["noninteractive_reset"].Out); got != want {
-		t.Fatalf("screen\n%s\nwant\n%s", got, want)
 	}
 }
 

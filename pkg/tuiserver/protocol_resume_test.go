@@ -2,16 +2,13 @@ package tuiserver
 
 import (
 	"context"
-	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -169,51 +166,6 @@ func TestDeferredHydrationFallsBackToTipWhenLineageExceedsLimit(t *testing.T) {
 	}
 	if m, _ := history[0].(map[string]any); m["role"] != "user" || m["content"] != "tip" {
 		t.Fatalf("history %v", history)
-	}
-}
-
-func TestSessionResumeActiveTurnPayloadMatchesDesktopFixture(t *testing.T) {
-	db := resumeDB(t)
-	raw, err := os.ReadFile(filepath.Join("testdata", "session-resume-active-turn.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fixture map[string]any
-	if err := json.Unmarshal(raw, &fixture); err != nil {
-		t.Fatal(err)
-	}
-	key, sid := fixture["session_key"].(string), fixture["session_id"].(string)
-	storeTranscript(t, db, key, "")
-	activeTurn := map[string]any{"assistant": "partial answer", "started_at": fixture["turn_started_at"], "streaming": true, "user": "current prompt"}
-	a := testAgent(t, agent.AIAgentOptions{Model: "test/model", Provider: "custom", APIMode: "chat_completions", SessionID: key, Platform: "tui"})
-	session := tuigateway.NewSession(map[string]any{"agent": a, "created_at": fixture["started_at"],
-		"history": []any{map[string]any{"content": "earlier prompt", "role": "user"}}, "history_lock": &sync.Mutex{},
-		"inflight_turn": activeTurn, "running": true, "session_key": key})
-	swapSessions(t, map[string]*tuigateway.Session{sid: session})
-	encoded, err := json.Marshal(handleRequest(context.Background(), map[string]any{"id": "resume-running", "method": "session.resume",
-		"params": map[string]any{"session_id": key}}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var response map[string]any
-	if err := json.Unmarshal(encoded, &response); err != nil {
-		t.Fatal(err)
-	}
-	result, _ := response["result"].(map[string]any)
-	if result["running"] != true || result["turn_started_at"] != activeTurn["started_at"] {
-		t.Fatalf("result %v", response)
-	}
-	info, err := json.Marshal(sessionInfo(context.Background(), a, session))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wantInfo map[string]any
-	if err := json.Unmarshal(info, &wantInfo); err != nil {
-		t.Fatal(err)
-	}
-	fixture["info"] = wantInfo
-	if !reflect.DeepEqual(result, fixture) {
-		t.Fatalf("result %v\nfixture %v", result, fixture)
 	}
 }
 

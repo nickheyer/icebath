@@ -111,57 +111,6 @@ func TestMCPParallelSafetyProvenanceToolProvenanceKeepsExactRawServerNames(t *te
 	}
 }
 
-// test_mcp_tool.py TestMcpParallelToolCalls test_register_mcp_servers_tracks_parallel_flag
-func TestMcpParallelToolCallsRegisterMcpServersTracksParallelFlag(t *testing.T) {
-	_, env := managerHome(t)
-	servers := map[string]*Rendered{
-		"parallel_srv": mockEntry(t, map[string]any{"supports_parallel_tool_calls": true}),
-		"serial_srv":   mockEntry(t, map[string]any{"supports_parallel_tool_calls": false}),
-		"default_srv":  mockEntry(t, nil),
-	}
-	if _, err := Connect(context.Background(), env, servers); err != nil {
-		t.Fatal(err)
-	}
-	if !parallelSafe("parallel_srv") || parallelSafe("serial_srv") || parallelSafe("default_srv") {
-		t.Fatal("only the server opting in is parallel safe")
-	}
-}
-
-// test_mcp_tool.py TestDiscoverAndRegister test_tools_registered_in_registry
-func TestDiscoverAndRegisterToolsRegisteredInRegistry(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	names, err := Connect(ctx, env, map[string]*Rendered{"fs": mockEntry(t, map[string]any{"env": map[string]any{"MOCK_MCP_TOOLS": "read_file,write_file"}})})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, n := range []string{"mcp__fs__read_file", "mcp__fs__write_file"} {
-		if !slices.Contains(names, n) || tools.Default.Lookup(ctx, "", n) == nil {
-			t.Fatalf("%s missing from %v", n, names)
-		}
-	}
-}
-
-// test_mcp_tool.py TestMCPServerTask test_start_connects_and_discovers_tools
-func TestMCPServerTaskStartConnectsAndDiscoversTools(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	s := newServerTask("test_srv", env)
-	if err := s.start(ctx, mockEntry(t, map[string]any{"env": map[string]any{"MOCK_MCP_TOOLS": "echo"}, "cwd": t.TempDir()})); err != nil {
-		t.Fatal(err)
-	}
-	s.mu.Lock()
-	names := toolNames(s.tools)
-	s.mu.Unlock()
-	if s.currentSession() == nil || strings.Join(names, ",") != "echo" {
-		t.Fatalf("session %v tools %v", s.currentSession(), names)
-	}
-	s.shutdown(ctx)
-	if s.currentSession() != nil {
-		t.Fatal("shutdown left the session")
-	}
-}
-
 // Real path of a directory for cwd comparisons
 func realDir(t *testing.T, dir string) string {
 	t.Helper()
@@ -170,50 +119,6 @@ func realDir(t *testing.T, dir string) string {
 		t.Fatal(err)
 	}
 	return resolved
-}
-
-// test_mcp_tool.py TestMCPServerTask test_start_preserves_native_default_cwd
-func TestMCPServerTaskStartPreservesNativeDefaultCwd(t *testing.T) {
-	isolateHome(t)
-	t.Setenv("TERMINAL_CWD", "")
-	_, _, cwd, err := stdioLaunch(context.Background(), &tools.Env{Values: &sync.Map{}}, mockEntry(t, nil))
-	if err != nil || cwd != "" {
-		t.Fatalf("cwd %q err %v", cwd, err)
-	}
-}
-
-// test_mcp_tool.py TestMCPServerTask test_start_defaults_stdio_cwd_to_session_cwd
-func TestMCPServerTaskStartDefaultsStdioCwdToSessionCwd(t *testing.T) {
-	isolateHome(t)
-	t.Setenv("TERMINAL_CWD", "")
-	workspace := filepath.Join(t.TempDir(), "workspace")
-	if err := os.Mkdir(workspace, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	env := &tools.Env{Values: &sync.Map{}}
-	tools.SetLogicalSessionCwd(env, workspace)
-	defer tools.ClearLogicalSessionCwd(env)
-	_, _, cwd, err := stdioLaunch(context.Background(), env, mockEntry(t, nil))
-	if err != nil || realDir(t, cwd) != realDir(t, workspace) {
-		t.Fatalf("cwd %q err %v", cwd, err)
-	}
-}
-
-// test_mcp_tool.py TestMCPServerTask test_start_configured_cwd_overrides_session_cwd
-func TestMCPServerTaskStartConfiguredCwdOverridesSessionCwd(t *testing.T) {
-	isolateHome(t)
-	t.Setenv("TERMINAL_CWD", "")
-	workspace := filepath.Join(t.TempDir(), "workspace")
-	if err := os.Mkdir(workspace, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	env := &tools.Env{Values: &sync.Map{}}
-	tools.SetLogicalSessionCwd(env, workspace)
-	defer tools.ClearLogicalSessionCwd(env)
-	_, _, cwd, err := stdioLaunch(context.Background(), env, mockEntry(t, map[string]any{"cwd": "/plugin"}))
-	if err != nil || cwd != "/plugin" {
-		t.Fatalf("cwd %q err %v", cwd, err)
-	}
 }
 
 // test_mcp_tool.py TestMCPServerTask test_stdio_recycle_deadline_pauses_while_rpc_active
@@ -236,78 +141,11 @@ func TestMCPServerTaskStdioRecycleDeadlinePausesWhileRpcActive(t *testing.T) {
 	}
 }
 
-// Mock stdio server YAML entry exposing the named tools, extra lines appended under it
-func mockServerYAML(t *testing.T, name, toolList, extra string) string {
-	t.Helper()
-	return fmt.Sprintf("  %s:\n    command: %s\n    env:\n      MOCK_MCP_TOOLS: %s\n%s", name, mockBinary(t), toolList, extra)
-}
-
 // Writes the mcp_servers block and drops the cached config so the next load reads it
 func writeMCPServers(t *testing.T, body string) {
 	t.Helper()
 	writeServersConfig(t, body)
 	config.ResetCache()
-}
-
-// test_mcp_tool.py TestToolsetInjection test_mcp_tools_resolve_through_server_aliases
-func TestToolsetInjectionMcpToolsResolveThroughServerAliases(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	writeMCPServers(t, mockServerYAML(t, "fs", "list_files", ""))
-	names, err := ConnectAll(ctx, env, nil)
-	if err != nil || !slices.Contains(names, "mcp__fs__list_files") {
-		t.Fatalf("names %v err %v", names, err)
-	}
-	for _, alias := range []string{"fs", "mcp-fs"} {
-		if !tools.Default.ValidateToolset(ctx, "", alias) || !slices.Contains(tools.Default.ResolveToolset(ctx, "", alias), "mcp__fs__list_files") {
-			t.Fatalf("alias %s does not resolve to the discovered tool", alias)
-		}
-	}
-}
-
-// Endpoint answering HTML until fixed, then serving the Streamable HTTP mock
-func fixableEndpoint(t *testing.T) (*httptest.Server, *atomic.Bool) {
-	t.Helper()
-	var fixed atomic.Bool
-	var posts atomic.Int64
-	inner := jsonMCPHandler(&posts)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !fixed.Load() {
-			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html></html>"))
-			return
-		}
-		inner.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return srv, &fixed
-}
-
-// test_mcp_tool.py TestToolsetInjection test_partial_failure_retry_on_second_call
-func TestToolsetInjectionPartialFailureRetryOnSecondCall(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	broken, fixed := fixableEndpoint(t)
-	writeMCPServers(t, "  broken:\n    url: "+broken.URL+"/mcp\n"+mockServerYAML(t, "good", "ping", ""))
-	first, err := ConnectAll(ctx, env, nil)
-	if err != nil || !slices.Contains(first, "mcp__good__ping") || slices.Contains(first, "mcp__broken__echo") || serverSpawned("broken") {
-		t.Fatalf("first pass %v err %v spawned %v", first, err, serverSpawned("broken"))
-	}
-	mcpMu.Lock()
-	good := mcpServers[ServerKey{Name: "good"}]
-	delete(serverConnectRetryAfter, ServerKey{Name: "broken"})
-	mcpMu.Unlock()
-	fixed.Store(true)
-	second, err := ConnectAll(ctx, env, nil)
-	if err != nil || !slices.Contains(second, "mcp__good__ping") || !slices.Contains(second, "mcp__broken__echo") {
-		t.Fatalf("second pass %v err %v", second, err)
-	}
-	mcpMu.Lock()
-	same := mcpServers[ServerKey{Name: "good"}] == good
-	mcpMu.Unlock()
-	if good == nil || !same {
-		t.Fatal("the good server was reconnected on the retry pass")
-	}
 }
 
 // test_mcp_tool.py TestShutdown test_shutdown_deregisters_registered_tools

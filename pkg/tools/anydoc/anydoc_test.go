@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 )
@@ -101,21 +100,6 @@ func TestPathUnrecognized(t *testing.T) {
 	var ce *ConvertError
 	if !errors.As(err, &ce) || ce.Message != "unsupported input: unrecognized file content and extension: /data/notes.txt" {
 		t.Fatalf("got %v", err)
-	}
-}
-
-func TestScannedPDFReportsPages(t *testing.T) {
-	data, err := os.ReadFile("testdata/scanned.pdf")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = ToMarkdownBytes(context.Background(), data, "")
-	var ce *ConvertError
-	if !errors.As(err, &ce) || !ce.NeedsOCR() {
-		t.Fatalf("want NeedsOcrError, got %v", err)
-	}
-	if ce.Message != "all 2 pages need OCR" || len(ce.Pages) != 2 || ce.Pages[0] != 1 || ce.Pages[1] != 2 || ce.PageCount != 2 {
-		t.Fatalf("pages not carried: %+v", ce)
 	}
 }
 

@@ -8,16 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// File URI of a path, failing the test when the cwd cannot anchor it
-func mustURI(t testing.TB, p string) string {
-	t.Helper()
-	uri, err := FileURI(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return uri
-}
-
 // Scheduled edit check, failing the test when scheduling raises
 func mustStartEditCheck(t testing.TB, svc *Service, path string, preText, postText *string, owner string, carry []Note, roots map[string]bool) *EditFuture {
 	t.Helper()

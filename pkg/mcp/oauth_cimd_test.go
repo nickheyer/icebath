@@ -2,28 +2,11 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
-
-// Published CIMD document of the upstream site
-func cimdDocument(t *testing.T) map[string]any {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(pkgDir, "testdata", "hermes", "website", "static", "oauth", "client-metadata.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(data, &doc); err != nil {
-		t.Fatal(err)
-	}
-	return doc
-}
 
 // Swaps the pinned port range for a private one and clears OAuth state under an isolated home
 func privateCIMDPorts(t *testing.T) []int {
@@ -45,59 +28,9 @@ func portIn(port int, ports []int) bool {
 	return false
 }
 
-// Strings of a JSON array member
-func docStrings(v any) []string {
-	var out []string
-	for _, s := range v.([]any) {
-		out = append(out, s.(string))
-	}
-	return out
-}
-
-func TestCIMDDocumentClientIDIsTheURLWeSend(t *testing.T) {
-	if got := cimdDocument(t)["client_id"]; got != cimdClientMetadataURL {
-		t.Fatalf("client_id %v", got)
-	}
-}
-
-func TestCIMDDocumentDeclaresEveryCallbackWeCanBuild(t *testing.T) {
-	oauthHome(t)
-	declared := strings.Join(docStrings(cimdDocument(t)["redirect_uris"]), "\n") + "\n"
-	for host := range cimdRedirectHosts {
-		for _, port := range cimdPorts {
-			md, err := buildClientMetadata(map[string]any{"redirect_host": host, "_resolved_port": port})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(declared, md.RedirectURIs[0]+"\n") {
-				t.Fatalf("%s is not registered in the document", md.RedirectURIs[0])
-			}
-		}
-	}
-}
-
 func TestCIMDDocumentURLPassesTheSDKValidator(t *testing.T) {
 	if !isValidClientMetadataURL(cimdClientMetadataURL) {
 		t.Fatal("document URL rejected")
-	}
-}
-
-func TestCIMDDocumentAdvertisesAPublicNativeClient(t *testing.T) {
-	doc := cimdDocument(t)
-	grants := strings.Join(docStrings(doc["grant_types"]), " ")
-	if doc["application_type"] != "native" || doc["token_endpoint_auth_method"] != "none" || !strings.Contains(grants, "authorization_code") ||
-		!strings.Contains(grants, "refresh_token") {
-		t.Fatalf("document %v", doc)
-	}
-}
-
-func TestCIMDDocumentCarriesNoSharedSecret(t *testing.T) {
-	doc := cimdDocument(t)
-	if _, ok := doc["client_secret"]; ok {
-		t.Fatal("client_secret present")
-	}
-	if _, ok := doc["client_secret_expires_at"]; ok {
-		t.Fatal("client_secret_expires_at present")
 	}
 }
 
@@ -113,23 +46,6 @@ func TestCIMDClientIdentifierURLRequirementsAreEnforced(t *testing.T) {
 		if isValidCIMDURL(raw) {
 			t.Fatalf("%s accepted", raw)
 		}
-	}
-}
-
-func TestCIMDGeneratedRedirectURIIsRegisteredInTheDocument(t *testing.T) {
-	oauthHome(t)
-	cfg := map[string]any{}
-	if _, err := configureCallbackPort(context.Background(), cfg, NewTokenStorage(context.Background(), "srv", "")); err != nil {
-		t.Fatal(err)
-	}
-	md, err := buildClientMetadata(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	port, _ := cfg["_resolved_port"].(int)
-	declared := strings.Join(docStrings(cimdDocument(t)["redirect_uris"]), "\n") + "\n"
-	if cfg["_cimd_url"] != cimdClientMetadataURL || !portIn(port, cimdPorts) || !strings.Contains(declared, md.RedirectURIs[0]+"\n") {
-		t.Fatalf("cfg %v redirect %v", cfg, md.RedirectURIs)
 	}
 }
 

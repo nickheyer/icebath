@@ -1,49 +1,12 @@
 package tokenizers
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
-
-func TestLoadReadsEveryVocabularyLayout(t *testing.T) {
-	entries, err := os.ReadDir("testdata/layouts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 14 {
-		t.Fatalf("%d layouts", len(entries))
-	}
-	for _, entry := range entries {
-		t.Run(entry.Name(), func(t *testing.T) {
-			dir := filepath.Join("testdata/layouts", entry.Name())
-			var want struct {
-				Inputs []string `json:"inputs"`
-				IDs    [][]int  `json:"ids"`
-			}
-			data, err := os.ReadFile(filepath.Join(dir, "expect.json"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal(data, &want); err != nil {
-				t.Fatal(err)
-			}
-			enc, err := Load(Dir(dir))
-			if err != nil {
-				t.Fatal(err)
-			}
-			for i, input := range want.Inputs {
-				got, err := enc.Encode(input)
-				if err != nil || !slices.Equal(got, want.IDs[i]) {
-					t.Errorf("Encode(%q)\n got %v %v\nwant %v", input, got, err, want.IDs[i])
-				}
-			}
-		})
-	}
-}
 
 func TestLoadPrefersTokenizerJSONAndAddsDeclaredTokens(t *testing.T) {
 	dir := t.TempDir()

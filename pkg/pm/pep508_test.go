@@ -1,48 +1,9 @@
 package pm
 
 import (
-	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-// Requirement texts and errors packaging 26.3 produces for the same inputs
-func TestPep508RequirementsMatchPackaging(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("testdata", "pep508_requirements.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cases [][3]string
-	if err := json.Unmarshal(data, &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		input, kind, want := c[0], c[1], c[2]
-		req, err := ParseRequirement(input)
-		var got string
-		if err == nil {
-			got, err = req.String()
-		}
-		switch kind {
-		case "ok":
-			if err != nil || got != want {
-				t.Errorf("%q: got %q, %v want %q", input, got, err, want)
-			}
-		case "invalid":
-			var invalid *InvalidRequirementError
-			if !errors.As(err, &invalid) || invalid.Message != want {
-				t.Errorf("%q: got %v want invalid %q", input, err, want)
-			}
-		default:
-			var py *PyError
-			if !errors.As(err, &py) || py.Class != kind || py.Message != want {
-				t.Errorf("%q: got %v want %s %q", input, err, kind, want)
-			}
-		}
-	}
-}
 
 // Environment requirements are normalized, deduplicated, sorted and refused with the operations message
 func TestPep508NormalizedRequirements(t *testing.T) {

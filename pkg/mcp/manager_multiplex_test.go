@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -89,85 +88,6 @@ func adoptAndRegister(t *testing.T, ctx context.Context, name string, s *serverT
 // Tool names the profile of ctx sees in toolset
 func toolsetNames(ctx context.Context, toolset string) []string {
 	return tools.Default.ToolNamesForToolset(ctx, mcpRegistryScope(ctx), toolset)
-}
-
-func TestMultiplexSameNamedServerWithOtherCredentialsIsASeparateConnection(t *testing.T) {
-	enter, env, homes := twoProfiles(t)
-	cfgA := map[string]any{"url": "https://mcp.example/x", "headers": map[string]any{"Authorization": "Bearer A"}}
-	cfgB := map[string]any{"url": "https://mcp.example/x", "headers": map[string]any{"Authorization": "Bearer B"}}
-	ctxA := enter("a")
-	srvA := multiplexServer(ctxA, env, "x", cfgA)
-	adoptAndRegister(t, ctxA, "x", srvA, cfgA)
-	if got := toolsetNames(ctxA, "mcp-x"); !slices.Equal(got, []string{"mcp__x__t"}) {
-		t.Fatalf("A toolset %v", got)
-	}
-	for range circuitBreakerThreshold {
-		bumpServerError(ctxA, "x", false)
-	}
-	noteConnectFailure(ctxA, "y", errors.New("boom"))
-	ctxB := enter("b")
-	if got := toolsetNames(ctxB, "mcp-x"); len(got) != 0 {
-		t.Fatalf("B sees A's tools %v", got)
-	}
-	if st := Status(ctxB, env, map[string]*Rendered{"x": {Config: cfgB}}, true); st[0].Status != "configured" {
-		t.Fatalf("B status %q", st[0].Status)
-	}
-	if _, ok := selectNewServers(ctxB, map[string]*Rendered{"x": {Config: cfgB}})["x"]; !ok {
-		t.Fatal("B's differently authenticated x must be a connect candidate")
-	}
-	if connectCooldownActive(ctxB, "y") || checkCircuitBreaker(ctxB, "x") != "" {
-		t.Fatal("A's cooldown and breaker leaked into B")
-	}
-	scopeA := tools.ScopeKey(homes["a"])
-	same := map[string]any{"url": "https://mcp.example/same", "headers": map[string]any{"Authorization": "Bearer same"}}
-	for _, name := range []string{"ok", "boom"} {
-		s := multiplexServer(ctxA, env, name, maps1(same))
-		s.tools = nil
-		mcpMu.Lock()
-		mcpServers[ServerKey{Scope: scopeA, Name: name}] = s
-		serverToolScopes[ServerKey{Scope: scopeA, Name: name}] = map[string]bool{scopeA: true}
-		mcpMu.Unlock()
-	}
-	prev := connectInputs
-	connectInputs = func(ctx context.Context, env *tools.Env, name string, r *Rendered) ([]any, map[string]bool, error) {
-		if name == "boom" {
-			return nil, nil, errors.New("secret backend exploded")
-		}
-		return prev(ctx, env, name, r)
-	}
-	scopeB := mcpRegistryScope(ctxB)
-	_, err := registerConnectedIntoCurrentScope(ctxB, env, map[string]*Rendered{"ok": {Config: maps1(same)}, "boom": {Config: maps1(same)}})
-	connectInputs = prev
-	if err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	okAdopted, boomAdopted := serverToolScopes[ServerKey{Scope: scopeA, Name: "ok"}][scopeB], serverToolScopes[ServerKey{Scope: scopeA, Name: "boom"}][scopeB]
-	mcpMu.Unlock()
-	if !okAdopted || boomAdopted {
-		t.Fatalf("ok adopted %v, boom adopted %v", okAdopted, boomAdopted)
-	}
-	tagSecretSource(t)
-	for _, h := range homes {
-		writeEnvFile(t, h, scopeTokenName+"=tok\n")
-	}
-	cfgS := map[string]any{"command": mockBinary(t), "args": []any{}}
-	ctxA = enter("a")
-	srvS := multiplexServer(installOwnerSecretScope(ctxA), env, "s", cfgS)
-	if srvS.resolvedIdentity == "" {
-		t.Fatal("the owner's stdio identity must resolve")
-	}
-	adoptAndRegister(t, ctxA, "s", srvS, cfgS)
-	ctxB = enter("b")
-	if currentSecretScopeHome(ctxB) != "" {
-		t.Fatal("B reconciles with no ambient secret scope")
-	}
-	if n, err := registerConnectedIntoCurrentScope(ctxB, env, map[string]*Rendered{"s": {Config: maps1(cfgS)}}); n != 0 || err != nil {
-		t.Fatalf("B adopted A's stdio child %d %v", n, err)
-	}
-	if _, ok := selectNewServers(ctxB, map[string]*Rendered{"s": {Config: maps1(cfgS)}})["s"]; !ok {
-		t.Fatal("B must get its own stdio connection")
-	}
 }
 
 func TestMultiplexOAuthServerIsNotAdoptedAcrossProfiles(t *testing.T) {

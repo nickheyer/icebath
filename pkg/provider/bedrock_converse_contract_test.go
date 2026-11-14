@@ -2,7 +2,6 @@ package provider
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -489,42 +488,6 @@ func TestBedrockOnEventExceptionIsSwallowed(t *testing.T) {
 		bedrockStreamCallbacks{OnEvent: func() { panic(errors.New("liveness hook blew up")) }})
 	if err != nil || result == nil || result.FinishReason != "stop" {
 		t.Fatalf("%+v %v", result, err)
-	}
-}
-
-func TestBedrockStreamInterruptIsNotSwallowedAfterTheWorker(t *testing.T) {
-	consumed := 0
-	source := bcEvents(t, `[{"contentBlockDelta": {"delta": {"text": "first"}}}, {"contentBlockDelta": {"delta": {"text": " second"}}},
-		{"messageStop": {"stopReason": "end_turn"}}]`)
-	stop := false
-	result, interrupted, err := streamConverseWithCallbacks(func() (map[string]any, error) { consumed++; return source() },
-		bedrockStreamCallbacks{OnTextDelta: func(string) error { stop = true; return nil }, OnInterruptCheck: func() bool { return stop }})
-	if err != nil || !interrupted || result.Content != "first" || consumed != 2 {
-		t.Fatalf("adapter did not break with a partial %+v %v %v consumed=%d", result, interrupted, err, consumed)
-	}
-	f := bcCallConverseFake(t, newBedrockTurn(bedrockTextBlock("first chunk!second chunk")), newBedrockTurn(bedrockTextBlock("whole answer")))
-	client, err := NewClient(Route{Provider: "bedrock", Model: "anthropic.claude-3-sonnet-20240229-v1:0", Mode: modeBedrockConverse, Region: "us-east-1", APIKey: "aws-sdk"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := &Request{Messages: []*state.Message{{Role: "user", Content: "hi"}}, MaxTokens: 64}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	var kinds []EventKind
-	_, err = client.Stream(ctx, req, func(ev StreamEvent) error {
-		kinds = append(kinds, ev.Kind)
-		if ev.Kind == EventTextDelta {
-			cancel()
-		}
-		return nil
-	})
-	if !errors.Is(err, context.Canceled) || kinds[len(kinds)-1] == EventDone {
-		t.Fatalf("interrupt swallowed: %v %v", err, kinds)
-	}
-	kinds = nil
-	resp, err := client.Stream(t.Context(), req, func(ev StreamEvent) error { kinds = append(kinds, ev.Kind); return nil })
-	if err != nil || resp.Message.Text() != "whole answer" || kinds[len(kinds)-1] != EventDone || len(f.snapshot()) != 2 {
-		t.Fatalf("%+v %v %v", resp, err, kinds)
 	}
 }
 

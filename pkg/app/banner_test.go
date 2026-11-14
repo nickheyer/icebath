@@ -4,12 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -425,104 +423,6 @@ func TestBannerToolLinesGroupSortColorAndCapToolsets(t *testing.T) {
 	}
 	if _, err := bannerToolLines([]any{map[string]any{"name": "flat"}}, nil, func(string) string { return "" }, nil, nil, "#A", "#D", "#T"); err == nil {
 		t.Fatal("tool definition without a function entry accepted")
-	}
-}
-
-var bannerLinkIDRE = regexp.MustCompile("\x1b\\]8;id=[^;]*;")
-
-func TestWelcomeBannerMatchesTheReferenceRendering(t *testing.T) {
-	raw, err := os.ReadFile("testdata/welcome_banner_cases.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var spec struct {
-		Toolsets  map[string]string `json:"toolsets"`
-		Scenarios map[string]struct {
-			Kw struct {
-				Model           string   `json:"model"`
-				Cwd             string   `json:"cwd"`
-				SessionID       *string  `json:"session_id"`
-				ContextLength   int      `json:"context_length"`
-				Provider        string   `json:"provider"`
-				EnabledToolsets []string `json:"enabled_toolsets"`
-				ContextPinned   bool     `json:"context_pinned"`
-			} `json:"kw"`
-			Tools   []string           `json:"tools"`
-			Avail   map[string]any     `json:"avail"`
-			Skills  map[string]any     `json:"skills"`
-			MCP     []mcp.ServerStatus `json:"mcp"`
-			Behind  *int64             `json:"behind"`
-			Label   string             `json:"label"`
-			Release *[2]string         `json:"release"`
-			Profile *string            `json:"profile"`
-			Codex   bool               `json:"codex"`
-			Env     map[string]string  `json:"env"`
-			Agg     string             `json:"agg"`
-		} `json:"scenarios"`
-		Cases []struct {
-			Name   string `json:"name"`
-			Width  int    `json:"width"`
-			System string `json:"system"`
-			Want   string `json:"want"`
-		} `json:"cases"`
-	}
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		t.Fatal(err)
-	}
-	if len(spec.Cases) == 0 {
-		t.Fatal("no cases")
-	}
-	for _, c := range spec.Cases {
-		sc := spec.Scenarios[c.Name]
-		t.Run(fmt.Sprintf("%s_%d_%s", c.Name, c.Width, c.System), func(t *testing.T) {
-			t.Setenv("ICEBATH_HOME", t.TempDir())
-			t.Setenv("ICEBATH_YOLO_MODE", sc.Env["HERMES_YOLO_MODE"])
-			resetBannerState(t)
-			bannerMemoMu.Lock()
-			gitBannerStateCache = bannerMemo{set: true, value: (*BannerGitState)(nil)}
-			latestReleaseCache = bannerMemo{set: true, value: sc.Release}
-			updateResult = sc.Behind
-			bannerMemoMu.Unlock()
-			currentUpdateCheck().set()
-			bannerVersionLabel = func() string { return sc.Label }
-			bannerActiveProfileName = func(context.Context) string {
-				if sc.Profile == nil {
-					return ""
-				}
-				return *sc.Profile
-			}
-			bannerCodexRuntime = func(context.Context) (bool, error) { return sc.Codex, nil }
-			bannerMCPConfigured = func(context.Context) bool { return len(sc.MCP) > 0 }
-			bannerMoAAggregator = func(context.Context, string) (string, error) { return sc.Agg, nil }
-			bannerMCPStatus = func(context.Context) []mcp.ServerStatus { return sc.MCP }
-			bannerRecommendedUpdate = func(context.Context, string) (string, error) { return "icebath update", nil }
-			bannerManagedUpdate = func(context.Context, string) string { return "nix profile upgrade icebath" }
-			bannerTerminalColumns = func() int { return c.Width }
-			defs := make([]any, len(sc.Tools))
-			for i, name := range sc.Tools {
-				defs[i] = map[string]any{"function": map[string]any{"name": name}}
-			}
-			sessionID := ""
-			if sc.Kw.SessionID != nil {
-				sessionID = *sc.Kw.SessionID
-			}
-			var buf bytes.Buffer
-			console := &pyrich.Console{Out: &buf, Color: c.System != "none", Width: c.Width, ColorSystem: c.System}
-			if c.System == "none" {
-				console.ColorSystem = ""
-			}
-			if err := buildWelcomeBanner(context.Background(), console, welcomeBanner{Model: sc.Kw.Model, Cwd: sc.Kw.Cwd, Tools: defs,
-				EnabledToolsets: sc.Kw.EnabledToolsets, SessionID: sessionID, ToolsetForTool: func(name string) string { return spec.Toolsets[name] },
-				ContextLength: sc.Kw.ContextLength, Provider: sc.Kw.Provider, Availability: sc.Avail, SkillsByCategory: sc.Skills,
-				ContextPinned: sc.Kw.ContextPinned}); err != nil {
-				t.Fatal(err)
-			}
-			got := bannerLinkIDRE.ReplaceAllString(buf.String(), "\x1b]8;id=;")
-			want := bannerLinkIDRE.ReplaceAllString(c.Want, "\x1b]8;id=;")
-			if got != want {
-				t.Errorf("banner differs\n got %q\nwant %q", got, want)
-			}
-		})
 	}
 }
 

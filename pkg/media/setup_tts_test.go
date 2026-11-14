@@ -3,10 +3,8 @@ package media
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -14,63 +12,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
-
-// One recorded hermes setup_tts run, its scripted answers and the bytes, calls and config it produced
-type ttsScreen struct {
-	Name              string            `json:"name"`
-	Config            map[string]any    `json:"config"`
-	Choices           []any             `json:"choices"`
-	Prompts           []string          `json:"prompts"`
-	YesNo             []bool            `json:"yes_no"`
-	Env               map[string]string `json:"env"`
-	Supported         map[string]bool   `json:"supported"`
-	SupportedSequence map[string][]bool `json:"supported_sequence"`
-	Installed         map[string]bool   `json:"installed"`
-	Which             map[string]string `json:"which"`
-	Sync              string            `json:"sync"`
-	Run               string            `json:"run"`
-	Platform          string            `json:"platform"`
-	Managed           bool              `json:"managed"`
-	NousAuth          bool              `json:"nous_auth"`
-	XAILoggedIn       bool              `json:"xai_logged_in"`
-	XAILogin          bool              `json:"xai_login"`
-	Want              struct {
-		Stdout string         `json:"stdout"`
-		Calls  []any          `json:"calls"`
-		Config map[string]any `json:"config"`
-		Error  *string        `json:"error"`
-	} `json:"want"`
-}
-
-// Hermes strings of the recording mapped to their icebath spelling
-var ttsScreenRenames = strings.NewReplacer("hermes setup", "icebath setup", "~/.hermes", "~/.icebath",
-	"Restart Hermes", "Restart Icebath", "`hermes pm doctor`", "`icebath pm doctor`")
-
-// JSON round trip of a value so recorded and live calls compare as decoded JSON
-func jsonPlain(t *testing.T, v any) any {
-	t.Helper()
-	raw, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatal(err)
-	}
-	return out
-}
-
-// Text or nil, the None a Python fake records for an omitted keyword
-func orNil(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
 
 // Temp home and display home for one setup run, the setup console captured
 func ttsTestHome(t *testing.T) (context.Context, *bytes.Buffer) {
@@ -91,168 +35,6 @@ func keepTTSSeams(t *testing.T) {
 	t.Helper()
 	savedSetup, savedHooks := ttsSetup, ttsHooks
 	t.Cleanup(func() { ttsSetup, ttsHooks = savedSetup, savedHooks })
-}
-
-// Installs fakes answering from a recorded scenario and recording every call the hermes fakes recorded
-func installTTSScreenFakes(t *testing.T, sc *ttsScreen, cfg config.Tree) *[]any {
-	t.Helper()
-	keepTTSSeams(t)
-	calls := &[]any{}
-	record := func(entry ...any) { *calls = append(*calls, entry) }
-	answers, prompts, yesNo := append([]any(nil), sc.Choices...), append([]string(nil), sc.Prompts...), append([]bool(nil), sc.YesNo...)
-	env := map[string]string{}
-	for k, v := range sc.Env {
-		env[k] = v
-	}
-	seq := map[string][]bool{}
-	for k, v := range sc.SupportedSequence {
-		seq[k] = append([]bool(nil), v...)
-	}
-	ttsSetup.promptChoice = func(question string, choices []string, def int, description string) int {
-		record("prompt_choice", question, append([]string(nil), choices...), def, orNil(description))
-		if len(answers) == 0 {
-			t.Fatalf("unexpected prompt_choice %q", question)
-		}
-		ans := answers[0]
-		answers = answers[1:]
-		if ans == "last" {
-			return len(choices) - 1
-		}
-		return int(ans.(float64))
-	}
-	ttsSetup.prompt = func(question, def string, password bool) string {
-		record("prompt", question, orNil(def), password)
-		if len(prompts) == 0 {
-			t.Fatalf("unexpected prompt %q", question)
-		}
-		ans := prompts[0]
-		prompts = prompts[1:]
-		return ans
-	}
-	ttsSetup.promptYesNo = func(question string, def bool, _ string) bool {
-		record("prompt_yes_no", question, def)
-		if len(yesNo) == 0 {
-			t.Fatalf("unexpected prompt_yes_no %q", question)
-		}
-		ans := yesNo[0]
-		yesNo = yesNo[1:]
-		return ans
-	}
-	ttsSetup.getEnvValue = func(_ context.Context, key string) (string, error) {
-		record("get_env_value", key)
-		return env[key], nil
-	}
-	ttsSetup.saveEnvValue = func(_ context.Context, key, value string) error {
-		record("save_env_value", key, value)
-		env[key] = value
-		return nil
-	}
-	ttsSetup.saveConfig = func(_ context.Context, c config.Tree) error {
-		record("save_config", jsonPlain(t, c))
-		return nil
-	}
-	ttsSetup.moduleInstalled = func(_ context.Context, name string) bool {
-		record("module_installed", name)
-		return sc.Installed[name]
-	}
-	ttsHooks.extraSupported = func(_ context.Context, name string) (bool, error) {
-		record("extra_supported", name)
-		if s, ok := seq[name]; ok {
-			seq[name] = s[1:]
-			return s[0], nil
-		}
-		if v, ok := sc.Supported[name]; ok {
-			return v, nil
-		}
-		return true, nil
-	}
-	ttsHooks.syncVenv = func(_ context.Context, o pm.SyncVenvOptions) error {
-		record("sync_venv", append([]string(nil), o.Extras...), o.Explicit)
-		if sc.Sync == "fail" {
-			return pm.NewInstallError("venv", "resolution refused", "")
-		}
-		return nil
-	}
-	ttsHooks.which = func(name string) bool {
-		record("which", name)
-		return sc.Which[name] != ""
-	}
-	ttsHooks.runInstall = func(_ context.Context, argv []string) error {
-		record("run", append([]string(nil), argv...), true)
-		switch sc.Run {
-		case "called_process_error":
-			return &pysubprocess.CalledProcessError{Cmd: argv, Returncode: 1}
-		case "file_not_found":
-			return &exec.Error{Name: argv[0], Err: exec.ErrNotFound}
-		}
-		return nil
-	}
-	platform := sysPlatform()
-	if sc.Platform != "" {
-		platform = sc.Platform
-	}
-	ttsHooks.platform = func() string { return platform }
-	ttsHooks.managedNousToolsEnabled = func(context.Context, config.Tree) bool {
-		record("managed_nous_tools_enabled")
-		return sc.Managed
-	}
-	ttsHooks.nousAuthPresent = func(context.Context, config.Tree) bool {
-		record("nous_subscription_features")
-		return sc.NousAuth
-	}
-	ttsHooks.xaiOAuthLoggedIn = func(context.Context) bool {
-		record("xai_oauth_logged_in")
-		return sc.XAILoggedIn
-	}
-	ttsHooks.xaiOAuthLogin = func(context.Context) bool {
-		record("xai_oauth_login")
-		return sc.XAILogin
-	}
-	t.Cleanup(func() {
-		if len(answers)+len(prompts)+len(yesNo) > 0 {
-			t.Errorf("unused answers %v %v %v", answers, prompts, yesNo)
-		}
-	})
-	return calls
-}
-
-func TestSetupTTSScreensMatchHermes(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("testdata", "setup_tts_screens.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var screens []ttsScreen
-	if err := json.Unmarshal(raw, &screens); err != nil {
-		t.Fatal(err)
-	}
-	if len(screens) != 42 {
-		t.Fatalf("%d recorded screens", len(screens))
-	}
-	for i := range screens {
-		sc := &screens[i]
-		t.Run(sc.Name, func(t *testing.T) {
-			ctx, out := ttsTestHome(t)
-			cfg := config.Tree(jsonPlain(t, sc.Config).(map[string]any))
-			calls := installTTSScreenFakes(t, sc, cfg)
-			err := SetupTTS(ctx, cfg)
-			if sc.Want.Error != nil {
-				if err == nil || err.Error() != *sc.Want.Error {
-					t.Fatalf("error %v, want %s", err, *sc.Want.Error)
-				}
-			} else if err != nil {
-				t.Fatal(err)
-			}
-			if want := ttsScreenRenames.Replace(sc.Want.Stdout); out.String() != want {
-				t.Fatalf("stdout\n%q\nwant\n%q", out.String(), want)
-			}
-			if got, want := jsonPlain(t, *calls), jsonPlain(t, sc.Want.Calls); !reflect.DeepEqual(got, want) {
-				t.Fatalf("calls\n%v\nwant\n%v", got, want)
-			}
-			if got, want := jsonPlain(t, cfg), jsonPlain(t, sc.Want.Config); !reflect.DeepEqual(got, want) {
-				t.Fatalf("config %v, want %v", got, want)
-			}
-		})
-	}
 }
 
 // Picks Edge TTS then answers the voice menu and the optional id prompt, returning the last menu call

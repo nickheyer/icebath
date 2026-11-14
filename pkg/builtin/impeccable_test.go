@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,43 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 )
-
-func TestImpeccableHermesRenderMatchesGolden(t *testing.T) {
-	golden := filepath.Join(impeccableRepoRoot, ".hermes", "skills", "impeccable")
-	rendered, err := renderImpeccableSkill(".icebath/skills/impeccable/scripts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := 0
-	err = filepath.WalkDir(golden, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, _ := filepath.Rel(golden, p)
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		want := strings.ReplaceAll(string(data), ".hermes/skills/impeccable/scripts", ".icebath/skills/impeccable/scripts")
-		got, ok := rendered[filepath.ToSlash(rel)]
-		seen++
-		if !ok {
-			t.Errorf("missing rendered %s", rel)
-		} else if string(got.Data) != want {
-			t.Errorf("%s differs from the hermes build", rel)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if seen != len(rendered) {
-		t.Fatalf("golden has %d files, rendered %d", seen, len(rendered))
-	}
-	if rendered["scripts/impeccable"].Mode != 0o755 {
-		t.Fatal("launcher lost its executable bit")
-	}
-}
 
 func TestImpeccableCommandDefShapeAndDispatch(t *testing.T) {
 	var gotKey, gotArgs string

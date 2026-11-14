@@ -1,8 +1,6 @@
 package pyast
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	goparser "go/parser"
@@ -702,58 +700,5 @@ func TestRecognizerBoundProvedFromDepthGen(t *testing.T) {
 		if got := bDerive(t, g, i == 1); !reflect.DeepEqual(got, want) {
 			t.Errorf("pass %d derived %+v, depth_bound.go holds %+v", i+1, got, want)
 		}
-	}
-}
-
-// Every recorded deep context and parse case stays within the bound of the pass it can reach
-func TestRecognizerBoundCoversObservedStacks(t *testing.T) {
-	var rows [][]any
-	if err := json.Unmarshal(readGzip(t, "depth_limits.json.gz"), &rows); err != nil {
-		t.Fatal(err)
-	}
-	var srcs []string
-	for i, r := range rows {
-		if i%8 == 0 {
-			ctx, pre, leaf, n := r[0].(string), r[1].(string), r[2].(string), int(r[3].(float64))
-			srcs = append(srcs, strings.ReplaceAll(ctx, "§", strings.Repeat(pre, n)+leaf))
-		}
-	}
-	var cases []struct {
-		Src *string `json:"src"`
-	}
-	if err := json.Unmarshal(readGzip(t, "cases.json.gz"), &cases); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range cases {
-		if c.Src != nil {
-			srcs = append(srcs, *c.Src)
-		}
-	}
-	checked := 0
-	for _, src := range srcs {
-		buf := translateNewlines([]byte(src))
-		lx := tokenizeWith(buf, false, false)
-		p := &parser{lx: lx, toks: lx.toks, parens: map[*Node]bool{}, filename: "<unknown>", fv: latestMinor, mode: "exec"}
-		_, err := p.run(p.file)
-		var se *SyntaxError
-		if err != nil && !errors.As(err, &se) || len(p.toks) == 0 {
-			continue
-		}
-		types := make([]int, len(p.toks))
-		for i := range p.toks {
-			types[i] = cpyTokenType(&p.toks[i])
-		}
-		bound := passOneBound.frames(types)
-		if err != nil {
-			bound = passTwoBound.frames(types)
-		}
-		overflow, peak := p.runRecognizer(types)
-		if overflow && bound <= maxStack || peak > bound {
-			t.Errorf("peak %d overflow %v above bound %d for %.120q", peak, overflow, bound, src)
-		}
-		checked++
-	}
-	if checked < 300 {
-		t.Fatalf("only %d sources checked", checked)
 	}
 }

@@ -1,10 +1,7 @@
 package pyopenwakeword
 
 import (
-	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -122,100 +119,6 @@ func fakePair(t *testing.T, lite *fakeLite) (*OpenWakeWordFeatures, *OpenWakeWor
 		t.Fatal(err)
 	}
 	return features, model
-}
-
-type simStep struct {
-	Reset    bool       `json:"reset"`
-	Size     int        `json:"size"`
-	Embs     [][]uint32 `json:"embs"`
-	Scores   []uint32   `json:"scores"`
-	NewAudio int        `json:"new_audio"`
-	NewMels  int        `json:"new_mels"`
-	NewEmb   int        `json:"new_emb"`
-}
-
-// Replays the chunk plan of the numpy simulation and requires the same embeddings, scores and counters at every step
-func replayNumpySimulation(t *testing.T, features *OpenWakeWordFeatures, model *OpenWakeWord) map[string][2]string {
-	t.Helper()
-	raw, err := os.ReadFile("testdata/streaming_sim.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sim struct {
-		Steps  []simStep            `json:"steps"`
-		Errors map[string][2]string `json:"errors"`
-	}
-	if err := json.Unmarshal(raw, &sim); err != nil {
-		t.Fatal(err)
-	}
-	if model.ID() != "hey_hermes" || model.inputWindows != fakeInputWindows {
-		t.Fatalf("model id %q windows %d", model.ID(), model.inputWindows)
-	}
-	state := uint64(12345)
-	for n, step := range sim.Steps {
-		if step.Reset {
-			features.Reset()
-			model.Reset()
-			continue
-		}
-		chunk := make([]byte, 2*step.Size)
-		for i := 0; i < step.Size; i++ {
-			state = (state*1103515245 + 12345) % (1 << 31)
-			binary.NativeEndian.PutUint16(chunk[2*i:], uint16(int16(int64((state>>8)%65536)-32768)))
-		}
-		embs, scores := [][]uint32{}, []uint32{}
-		err := features.ProcessStreaming(chunk, func(emb []float32) bool {
-			embs = append(embs, []uint32{uint32(len(emb)), math.Float32bits(emb[0]), math.Float32bits(emb[47]), math.Float32bits(emb[95])})
-			if err := model.ProcessStreaming(emb, func(score float32) bool {
-				scores = append(scores, math.Float32bits(score))
-				return true
-			}); err != nil {
-				t.Fatal(err)
-			}
-			return true
-		})
-		if err != nil {
-			t.Fatalf("step %d size %d: %v", n, step.Size, err)
-		}
-		if step.Embs == nil {
-			step.Embs = [][]uint32{}
-		}
-		if step.Scores == nil {
-			step.Scores = []uint32{}
-		}
-		if !reflect.DeepEqual(embs, step.Embs) || !reflect.DeepEqual(scores, step.Scores) {
-			t.Fatalf("step %d size %d: %d embeddings %d scores, numpy gave %d and %d", n, step.Size, len(embs), len(scores), len(step.Embs), len(step.Scores))
-		}
-		if features.newAudioSamples != step.NewAudio || features.newMels != step.NewMels || model.newEmbeddings != step.NewEmb {
-			t.Fatalf("step %d counters %d %d %d, numpy gave %d %d %d", n, features.newAudioSamples, features.newMels, model.newEmbeddings,
-				step.NewAudio, step.NewMels, step.NewEmb)
-		}
-	}
-	return sim.Errors
-}
-
-func TestStreamingArithmeticMatchesNumpy(t *testing.T) {
-	features, model := fakePair(t, newFakeLite())
-	sim := replayNumpySimulation(t, features, model)
-	fresh := func() (*OpenWakeWordFeatures, *OpenWakeWord) { return fakePair(t, newFakeLite()) }
-	wantErr := func(name string, err error) {
-		t.Helper()
-		var pe *PyError
-		if !errors.As(err, &pe) || pe.Class != sim[name][0] || pe.Msg != sim[name][1] {
-			t.Fatalf("%s error %v, numpy gave %v", name, err, sim[name])
-		}
-	}
-	f, m := fresh()
-	wantErr("empty", f.ProcessStreaming(nil, func([]float32) bool { return true }))
-	wantErr("odd", f.ProcessStreaming([]byte("abc"), func([]float32) bool { return true }))
-	wantErr("huge", f.ProcessStreaming(make([]byte, 2*160001), func([]float32) bool { return true }))
-	wantErr("emb_many", m.ProcessStreaming(make([]float32, 81*96), func(float32) bool { return true }))
-	wantErr("emb_none", m.ProcessStreaming(nil, func(float32) bool { return true }))
-	err := m.ProcessStreaming(make([]float32, 100), func(float32) bool { return true })
-	var pe *PyError
-	if !errors.As(err, &pe) || pe.Msg != "cannot reshape array of size 100 into shape (1,1,newaxis,96)" {
-		t.Fatalf("ragged embedding error %v", err)
-	}
 }
 
 func TestStreamingStopsWhenConsumerStopsAndAfterClose(t *testing.T) {

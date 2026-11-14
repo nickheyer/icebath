@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -17,9 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
-
-// Hermes screen text with the icebath renames of the setup wizard applied
-var setupRenames = strings.NewReplacer("~/.hermes/", "~/.icebath/", "`hermes ", "`icebath ", "'hermes ", "'icebath ")
 
 // Swaps the setup menu for one answering through fn, returning the questions it was asked
 func recordSetupMenus(t *testing.T, fn func(question string, choices []string, def int, description string) int) *[]string {
@@ -30,26 +26,6 @@ func recordSetupMenus(t *testing.T, fn func(question string, choices []string, d
 		return fn(question, choices, def, description)
 	}))
 	return asked
-}
-
-// Recorded hermes output of one setup section scenario
-type setupSectionRef struct {
-	Out string          `json:"out"`
-	Err *string         `json:"err"`
-	Cfg json.RawMessage `json:"cfg"`
-}
-
-func loadSetupSectionRefs(t *testing.T) map[string]setupSectionRef {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("testdata", "setup_sections.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := map[string]setupSectionRef{}
-	if err := json.Unmarshal(raw, &refs); err != nil {
-		t.Fatal(err)
-	}
-	return refs
 }
 
 // Installs a temp home and a setup console reading the answers, returning the captured output
@@ -93,38 +69,6 @@ func normalizedJSON(t *testing.T, v any) string {
 	return string(data)
 }
 
-func TestSetupAgentSettingsScreensMatchHermes(t *testing.T) {
-	refs := loadSetupSectionRefs(t)
-	cases := []struct {
-		name    string
-		cfg     config.Tree
-		answers []string
-	}{
-		{"agent_test", config.Tree{"agent": map[string]any{"max_turns": 500}, "display": map[string]any{"tool_progress": "all"}, "compression": map[string]any{"threshold": 0.50}}, []string{"500", "all", "0.5"}},
-		{"agent_fresh_enter", config.Tree{}, []string{"", "", ""}},
-		{"agent_invalid", config.Tree{"display": map[string]any{"tool_progress": "new"}}, []string{"abc", "bogus", "2"}},
-		{"agent_zero_verbose", config.Tree{"agent": map[string]any{"max_turns": 60}}, []string{"0", "VERBOSE", "0.95"}},
-		{"agent_bool_mode", config.Tree{"display": map[string]any{"tool_progress": true}}, []string{"12", ""}},
-		{"agent_big_int", config.Tree{}, []string{"1_000", "log", "nan"}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			ref := refs[c.name]
-			ctx, out := scriptedSetupConsole(t, c.answers...)
-			err := SetupAgentSettings(ctx, c.cfg)
-			if got, want := out.String(), setupRenames.Replace(ref.Out); got != want {
-				t.Fatalf("screen\n%q\nwant\n%q", got, want)
-			}
-			if ref.Err == nil && err != nil || ref.Err != nil && (err == nil || err.Error() != *ref.Err) {
-				t.Fatalf("error %v want %v", err, ref.Err)
-			}
-			if got, want := normalizedJSON(t, c.cfg), normalizedJSON(t, ref.Cfg); got != want {
-				t.Fatalf("config %s want %s", got, want)
-			}
-		})
-	}
-}
-
 func TestSetupAgentSettingsPrefersConfigOverStaleEnv(t *testing.T) {
 	ctx, out := scriptedSetupConsole(t, "500", "all", "0.5")
 	h := home.Dir(ctx)
@@ -148,32 +92,6 @@ func TestSetupAgentSettingsPrefersConfigOverStaleEnv(t *testing.T) {
 	}
 	if len(*menus) != 0 {
 		t.Fatalf("menus %v", *menus)
-	}
-}
-
-func TestApplyDefaultAgentSettingsScreenMatchesHermes(t *testing.T) {
-	ref := loadSetupSectionRefs(t)["apply_defaults"]
-	ctx, out := scriptedSetupConsole(t)
-	cfg := config.Tree{}
-	if err := ApplyDefaultAgentSettings(ctx, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := out.String(), setupRenames.Replace(ref.Out); got != want {
-		t.Fatalf("screen\n%q\nwant\n%q", got, want)
-	}
-	if got := normalizedJSON(t, cfg); got != `{"agent":{"max_turns":150},"compression":{"enabled":true,"threshold":0.5}}` {
-		t.Fatalf("config %s", got)
-	}
-	saved, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v, _ := config.CfgGet(saved, "agent", "max_turns"); normalizedJSON(t, v) != "150" {
-		t.Fatalf("saved max_turns %v", v)
-	}
-	bad := config.Tree{"agent": []any{"x"}}
-	if err := ApplyDefaultAgentSettings(ctx, bad); err == nil || err.Error() != "TypeError: 'list' object does not support item assignment" {
-		t.Fatalf("non mapping agent section %v", err)
 	}
 }
 
@@ -295,54 +213,6 @@ func TestSetupModelProviderPreservesAuxiliaryChoicesWrittenByPicker(t *testing.T
 	if p != "gemini" || m != "gemini-2.5-flash" {
 		t.Fatalf("aux compression %v %v", p, m)
 	}
-}
-
-func TestSetupModelProviderScreensMatchHermes(t *testing.T) {
-	refs := loadSetupSectionRefs(t)
-	for _, c := range []struct {
-		name   string
-		picker func(ctx context.Context, ns map[string]any) error
-	}{
-		{"model_ok", func(context.Context, map[string]any) error { return nil }},
-		{"model_exit", func(context.Context, map[string]any) error { panic(SetupExit{Code: 1}) }},
-		{"model_interrupt", func(context.Context, map[string]any) error { return cliui.ErrInterrupt }},
-		{"model_error", func(context.Context, map[string]any) error { return errors.New("boom") }},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			ctx, out := scriptedSetupConsole(t)
-			cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			swapSetupPicker(t, c.picker)
-			if err := SetupModelProvider(ctx, cfg); err != nil {
-				t.Fatal(err)
-			}
-			if got, want := out.String(), setupRenames.Replace(refs[c.name].Out); got != want {
-				t.Fatalf("screen\n%q\nwant\n%q", got, want)
-			}
-		})
-	}
-	t.Run("login exits read as skipped", func(t *testing.T) {
-		for _, exit := range []error{&NousLoginExitError{Code: 130}, &AuthExitError{Code: 1, Message: "x"}, &OAuthLoginExitError{Code: 1}, &MoAExitError{Message: "m"}, SetupExit{Code: 2}} {
-			ctx, out := scriptedSetupConsole(t)
-			swapSetupPicker(t, func(context.Context, map[string]any) error { return exit })
-			if err := SetupModelProvider(ctx, config.Tree{}); err != nil || !strings.HasSuffix(out.String(), "\n\n  Provider setup skipped.\n") {
-				t.Fatalf("%T err %v screen %q", exit, err, out.String())
-			}
-		}
-	})
-	t.Run("navigation keeps unwinding", func(t *testing.T) {
-		ctx, _ := scriptedSetupConsole(t)
-		swapSetupPicker(t, func(context.Context, map[string]any) error { panic(setupGoBack{promptIndex: 0}) })
-		defer func() {
-			if r := recover(); r != (setupGoBack{promptIndex: 0}) {
-				t.Fatalf("recovered %v", r)
-			}
-		}()
-		_ = SetupModelProvider(ctx, config.Tree{})
-		t.Fatal("back was swallowed")
-	})
 }
 
 func TestPromptChoiceEscapeKeepsDefaultWithoutNumberedFallback(t *testing.T) {

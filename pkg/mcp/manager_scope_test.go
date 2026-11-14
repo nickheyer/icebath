@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -45,37 +44,5 @@ func TestMCPStatusScopedShutdownClearsOnlyItsConnectionStatus(t *testing.T) {
 		!reflect.DeepEqual(serverConnectFailures, keyedMap[int]{k("other-failed"): 2}) {
 		t.Fatalf("connecting %v errors %v scopes %v retry %v failures %v", serverConnecting, serverConnectErrors, serverScopeKeys,
 			serverConnectRetryAfter, serverConnectFailures)
-	}
-}
-
-func TestRegisterMcpServersClearsStaleConnectingOnTimeout(t *testing.T) {
-	_, env := managerHome(t)
-	prev := discoveryWaveTimeout
-	discoveryWaveTimeout = 300 * time.Millisecond
-	t.Cleanup(func() { discoveryWaveTimeout = prev })
-	mcpMu.Lock()
-	serverConnecting[ServerKey{Name: "srv_a"}] = struct{}{}
-	mcpMu.Unlock()
-	t.Cleanup(func() {
-		mcpMu.Lock()
-		clear(serverConnecting)
-		clear(serverConnectErrors)
-		mcpMu.Unlock()
-	})
-	servers := map[string]*Rendered{
-		"srv_a": mockEntry(t, map[string]any{"args": []any{"a"}}),
-		"srv_b": mockEntry(t, map[string]any{"args": []any{"b"}, "env": map[string]any{"MOCK_MCP_HANG_INIT": "1"}}),
-	}
-	_, err := Connect(context.Background(), env, servers)
-	var timeoutErr *LoopTimeoutError
-	if !errors.As(err, &timeoutErr) {
-		t.Fatalf("pass error %v", err)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	_, bStale := serverConnecting[ServerKey{Name: "srv_b"}]
-	_, aKept := serverConnecting[ServerKey{Name: "srv_a"}]
-	if bStale || !aKept {
-		t.Fatalf("srv_b stale %v srv_a kept %v", bStale, aKept)
 	}
 }

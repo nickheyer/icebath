@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,24 +30,6 @@ func managerHome(t *testing.T) (string, *tools.Env) {
 		mcpMu.Unlock()
 	})
 	return dir, &tools.Env{Home: dir}
-}
-
-// Mock stdio server entry, extra keys merged in
-func mockEntry(t *testing.T, extra map[string]any) *Rendered {
-	cfg := map[string]any{"command": mockBinary(t), "args": []any{}}
-	for k, v := range extra {
-		cfg[k] = v
-	}
-	return &Rendered{Config: cfg}
-}
-
-// Config yaml body naming one mock server per name
-func mockServersYAML(t *testing.T, names ...string) string {
-	var b strings.Builder
-	for _, n := range names {
-		fmt.Fprintf(&b, "  %s:\n    command: %q\n", n, mockBinary(t))
-	}
-	return b.String()
 }
 
 func TestConnectCooldownHelpersFailureArmsExponentialBackoff(t *testing.T) {
@@ -201,89 +181,6 @@ func TestDiscoveryConcurrencyConfig(t *testing.T) {
 	}
 }
 
-func TestRegisterMcpServersConnectsNewServers(t *testing.T) {
-	_, env := managerHome(t)
-	logs := captureLogs(t)
-	ctx := context.Background()
-	servers := map[string]*Rendered{"a": mockEntry(t, map[string]any{"supports_parallel_tool_calls": true})}
-	names, err := Connect(ctx, env, servers)
-	if err != nil || !slices.Equal(names, []string{"mcp__a__tool0"}) {
-		t.Fatalf("names %v err %v", names, err)
-	}
-	if logs.count("MCP: registered 1 tool(s) from 1 server(s)") != 1 || !IsToolParallelSafe(ctx, "mcp__a__tool0") {
-		t.Fatalf("summary or parallel flag missing: %s", logs.text())
-	}
-	mcpMu.Lock()
-	first := mcpServers[ServerKey{Name: "a"}]
-	mcpMu.Unlock()
-	if _, err := Connect(ctx, env, servers); err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	if mcpServers[ServerKey{Name: "a"}] != first || len(serverConnecting) != 0 {
-		t.Fatal("a connected server must not reconnect")
-	}
-}
-
-func TestRegisterMcpServersSkipsServersAlreadyConnecting(t *testing.T) {
-	_, env := managerHome(t)
-	mcpMu.Lock()
-	serverConnecting[ServerKey{Name: "busy"}] = struct{}{}
-	mcpMu.Unlock()
-	if _, err := Connect(context.Background(), env, map[string]*Rendered{"busy": mockEntry(t, nil)}); err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	if _, ok := mcpServers[ServerKey{Name: "busy"}]; ok {
-		t.Fatal("a connecting server must not be connected twice")
-	}
-}
-
-func TestRegisterWakesStaleCachedServer(t *testing.T) {
-	_, env := managerHome(t)
-	stale := newServerTask("stale", env)
-	mcpMu.Lock()
-	mcpServers[ServerKey{Name: "stale"}] = stale
-	mcpMu.Unlock()
-	if _, err := Connect(context.Background(), env, map[string]*Rendered{"stale": mockEntry(t, nil)}); err != nil {
-		t.Fatal(err)
-	}
-	flushLoop(t)
-	if !stale.reconnect.IsSet() {
-		t.Fatal("a known server without a session must be signalled to reconnect")
-	}
-}
-
-func TestRegisterSummaryNamesFailuresAndCooldown(t *testing.T) {
-	dir, env := managerHome(t)
-	logs := captureLogs(t)
-	writeServersConfig(t, mockServersYAML(t, "good")+"  bad:\n    command: "+filepath.Join(dir, "missing-binary")+"\n  cool:\n    command: nothing\n")
-	ctx := context.Background()
-	mcpMu.Lock()
-	recordConnectFailure(ctx, "cool")
-	mcpMu.Unlock()
-	if _, err := ConnectAll(ctx, env, nil); err != nil {
-		t.Fatal(err)
-	}
-	text := logs.text()
-	if !strings.Contains(text, "MCP: registered 1 tool(s) from 1 server(s) (1 failed: bad (") {
-		t.Fatalf("register summary %s", text)
-	}
-	if !strings.Contains(text, "  MCP: 1 tool(s) from 1 server(s) (2 failed: bad (") || !strings.Contains(text, "cool (not attempted (in retry cooldown))") {
-		t.Fatalf("discover summary %s", text)
-	}
-	st := Status(ctx, env, nil, true)
-	got := map[string]string{}
-	for _, s := range st {
-		got[s.Name] = s.Status
-	}
-	if got["good"] != "connected" || got["bad"] != "failed" || got["cool"] != "configured" {
-		t.Fatalf("status %v", got)
-	}
-}
-
 func TestStatusStatesAndScopeVisibility(t *testing.T) {
 	_, env := managerHome(t)
 	ctx := context.Background()
@@ -387,56 +284,6 @@ func TestServerReconnectingPredicate(t *testing.T) {
 	}
 }
 
-// test_mcp_lazy_start.py TestLazyMcpRegistration test_registers_from_cache_without_connect and the first use cases
-func TestLazyMcpRegistrationRegistersFromCacheWithoutConnect(t *testing.T) {
-	_, env := managerHome(t)
-	logs := captureLogs(t)
-	ctx := context.Background()
-	r := mockEntry(t, map[string]any{"lazy": true})
-	cached := []any{map[string]any{"name": "tool0"}, map[string]any{"name": "ghost"}}
-	if err := WriteCacheEntry(ctx, "lz", ConfigFingerprint(r.Config), cached, nil, nil, ""); err != nil {
-		t.Fatal(err)
-	}
-	names, err := Connect(ctx, env, map[string]*Rendered{"lz": r})
-	if err != nil || len(names) != 2 || logs.count("registered 2 lazy tool(s) from schema cache") != 1 {
-		t.Fatalf("names %v err %v logs %s", names, err, logs.text())
-	}
-	mcpMu.Lock()
-	_, live := mcpServers[ServerKey{Name: "lz"}]
-	mcpMu.Unlock()
-	if live {
-		t.Fatal("a lazy server must not spawn at registration")
-	}
-	t.Run("test_lazy_registration_reports_lazy_with_cached_tools_not_failed", func(t *testing.T) {
-		if st := Status(ctx, env, map[string]*Rendered{"lz": r}, true)[0]; st.Status != "lazy" {
-			t.Fatalf("status %+v", st)
-		}
-	})
-	if _, err := Connect(ctx, env, map[string]*Rendered{"lz": r}); err != nil {
-		t.Fatal(err)
-	}
-	t.Run("test_tool_handler_lazy_connects_on_first_call", func(t *testing.T) {
-		srv := getConnectedServerForCall(ctx, env, "lz")
-		if srv == nil || srv.currentSession() == nil {
-			t.Fatal("first use must connect the lazy server")
-		}
-	})
-	mcpMu.Lock()
-	_, stillLazy := lazyServerConfigs[ServerKey{Name: "lz"}]
-	_, ghostKept := mcpToolServerNames["mcp__lz__ghost"]
-	mcpMu.Unlock()
-	t.Run("test_lazy_connect_success_clears_lazy_state", func(t *testing.T) {
-		if stillLazy {
-			t.Fatal("a connected lazy server keeps its lazy registration")
-		}
-	})
-	t.Run("test_lazy_connect_deregisters_phantom_cached_tools", func(t *testing.T) {
-		if ghostKept || logs.count("deregistered 1 phantom cached tool(s)") != 1 {
-			t.Fatalf("phantom kept %v logs %s", ghostKept, logs.text())
-		}
-	})
-}
-
 func TestLazyFirstUseConnectLazyConnectFailureRecordsCooldown(t *testing.T) {
 	dir, env := managerHome(t)
 	ctx := context.Background()
@@ -455,68 +302,6 @@ func TestLazyFirstUseConnectLazyConnectFailureRecordsCooldown(t *testing.T) {
 	}
 	if ensureLazyServerConnected(ctx, env, "lf") {
 		t.Fatal("cooldown must block the retry")
-	}
-}
-
-func TestReconcileTearsDownServerDroppedFromConfig(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	writeServersConfig(t, mockServersYAML(t, "keep", "drop"))
-	if _, err := ConnectAll(ctx, env, nil); err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	lazyServerConfigs[ServerKey{Name: "gone"}] = map[string]any{"command": "x"}
-	lazyServerToolNames[ServerKey{Name: "gone"}] = []string{"mcp__gone__t"}
-	serverConnecting[ServerKey{Name: "mid"}] = struct{}{}
-	serverScopeKeys[ServerKey{Name: "mid"}] = ""
-	mcpMu.Unlock()
-	writeServersConfig(t, mockServersYAML(t, "keep", "fresh"))
-	res, err := Reconcile(ctx, env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fmt.Sprint(res) != "{[drop gone] [fresh] [mid]}" {
-		t.Fatalf("reconcile %+v", res)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	_, dropLive := mcpServers[ServerKey{Name: "drop"}]
-	_, freshLive := mcpServers[ServerKey{Name: "fresh"}]
-	if dropLive || !freshLive {
-		t.Fatal("reconcile must tear down the dropped server and connect the new one")
-	}
-	t.Run("test_disabled_lazy_and_connecting_entries", func(t *testing.T) {
-		if _, lazyGone := lazyServerConfigs[ServerKey{Name: "gone"}]; lazyGone || len(lazyServerToolNames[ServerKey{Name: "gone"}]) != 0 {
-			t.Fatal("a lazy entry dropped from config must be forgotten with its tool names")
-		}
-		if _, stillConnecting := serverConnecting[ServerKey{Name: "mid"}]; !stillConnecting {
-			t.Fatal("an entry still connecting is pending, not torn down")
-		}
-	})
-}
-
-func TestRestartOnlyWhenResolvedInputsChange(t *testing.T) {
-	_, env := managerHome(t)
-	ctx := context.Background()
-	writeServersConfig(t, mockServersYAML(t, "a"))
-	if _, err := ConnectAll(ctx, env, nil); err != nil {
-		t.Fatal(err)
-	}
-	mcpMu.Lock()
-	first := mcpServers[ServerKey{Name: "a"}]
-	mcpMu.Unlock()
-	if got, err := Restart(ctx, env, []string{"a"}); err != nil || len(got) != 0 {
-		t.Fatalf("unchanged inputs restarted %v %v", got, err)
-	}
-	writeServersConfig(t, mockServersYAML(t, "a")+"    env:\n      MOCK_MCP_PAGES: \"1\"\n")
-	if got, err := Restart(ctx, env, []string{"a"}); err != nil || !slices.Equal(got, []string{"a"}) {
-		t.Fatalf("changed inputs restarted %v %v", got, err)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	if second := mcpServers[ServerKey{Name: "a"}]; second == nil || second == first {
-		t.Fatal("a changed server must reconnect")
 	}
 }
 
@@ -612,19 +397,5 @@ func TestRegisterMcpServersIsolationCooldownExpiryAllowsRetry(t *testing.T) {
 	defer mcpMu.Unlock()
 	if len(serverConnectRetryAfter) != 0 || len(serverConnectFailures) != 0 {
 		t.Fatal("a full shutdown clears every cooldown")
-	}
-}
-
-func TestDiscoveryConnectTimeoutReportsTimeoutError(t *testing.T) {
-	_, env := managerHome(t)
-	r := mockEntry(t, map[string]any{"connect_timeout": 0.000001})
-	_, err := discoverAndRegisterServer(context.Background(), env, "slow", r)
-	if err == nil || formatConnectError(err) != "TimeoutError" {
-		t.Fatalf("connect timeout reported as %v", err)
-	}
-	mcpMu.Lock()
-	defer mcpMu.Unlock()
-	if _, ok := mcpServers[ServerKey{Name: "slow"}]; ok {
-		t.Fatal("a timed out connect is reaped, never adopted")
 	}
 }

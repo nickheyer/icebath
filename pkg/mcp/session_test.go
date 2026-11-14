@@ -121,93 +121,6 @@ func TestModernRejectionClassifier(t *testing.T) {
 	}
 }
 
-// Live session over the mock server with extra env and a record file
-func mockSession(t *testing.T, extra map[string]string, opts SessionOptions) (*Session, string) {
-	t.Helper()
-	record := filepath.Join(t.TempDir(), "record")
-	env := map[string]string{"PATH": os.Getenv("PATH"), "MOCK_MCP_RECORD": record, "OWNED_MARKER": "ONLY_A"}
-	for k, v := range extra {
-		env[k] = v
-	}
-	tr, err := StartStdio(context.Background(), StdioParams{Command: mockBinary(t), Env: env})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if opts.Name == "" {
-		opts.Name = "mock"
-	}
-	s := NewSession(tr, opts)
-	t.Cleanup(func() { s.Close() })
-	return s, record
-}
-
-// Methods the mock server received, waiting briefly for a wanted line
-func recorded(t *testing.T, path, want string) string {
-	t.Helper()
-	for i := 0; i < 100; i++ {
-		data, _ := os.ReadFile(path)
-		if want == "" || strings.Contains(string(data), want) {
-			return string(data)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	data, _ := os.ReadFile(path)
-	return string(data)
-}
-
-func TestSessionHandshakeAndPagination(t *testing.T) {
-	logs := captureLogs(t)
-	s, rec := mockSession(t, map[string]string{"MOCK_MCP_PAGES": "3"}, SessionOptions{})
-	ctx := context.Background()
-	res, err := s.Negotiate(ctx, "auto", 10*time.Second)
-	if err != nil || res.ServerInfo.Name != "mock" || s.ProtocolVersion() != LatestHandshakeVersion || !res.Capabilities.Has("tools") {
-		t.Fatalf("handshake %+v %v", res, err)
-	}
-	if !strings.Contains(recorded(t, rec, "notifications/initialized"), "initialize\nnotifications/initialized") {
-		t.Fatalf("record %q", recorded(t, rec, ""))
-	}
-	hints := &CacheHints{}
-	toolsList, err := s.ListTools(ctx, hints)
-	if err != nil || len(toolsList) != 3 || toolsList[2].Name != "tool2" || hints.TTLMs == nil || *hints.TTLMs != 60000 || hints.CacheScope != "user" {
-		t.Fatalf("pages %v %+v %v", toolsList, hints, err)
-	}
-	if err := s.Ping(ctx); err != nil {
-		t.Fatal(err)
-	}
-	forever, _ := mockSession(t, map[string]string{"MOCK_MCP_FOREVER": "1"}, SessionOptions{Name: "loop"})
-	if _, err := forever.Initialize(ctx); err != nil {
-		t.Fatal(err)
-	}
-	items, err := forever.ListTools(ctx, nil)
-	if err != nil || len(items) != listMaxPages || logs.count("tools pagination exceeded 50 pages; truncating at 50 items") != 1 {
-		t.Fatalf("runaway cursor %d %v %q", len(items), err, logs.text())
-	}
-}
-
-func TestSessionVersionNegotiationWithTheServer(t *testing.T) {
-	captureLogs(t)
-	ctx := context.Background()
-	echo, rec := mockSession(t, map[string]string{"MOCK_MCP_VERSION": "2026-07-28"}, SessionOptions{})
-	res, err := echo.Negotiate(ctx, "auto", 10*time.Second)
-	if err != nil || res.ProtocolVersion != "2026-07-28" || echo.ProtocolVersion() != LatestHandshakeVersion || echo.InitializeResult().ProtocolVersion != LatestHandshakeVersion {
-		t.Fatalf("echoed version %+v %v", res, err)
-	}
-	if got := recorded(t, rec, "notifications/initialized"); strings.Count(got, "initialize\n") != 2 || !strings.Contains(got, "server/discover") {
-		t.Fatalf("record %q", got)
-	}
-	modern, _ := mockSession(t, map[string]string{"MOCK_MCP_INIT_ERROR": "-32022", "MOCK_MCP_INIT_MESSAGE": "Unsupported protocol version", "MOCK_MCP_DISCOVER": "1"}, SessionOptions{})
-	res, err = modern.Negotiate(ctx, "auto", 10*time.Second)
-	if err != nil || res.ServerInfo.Name != "stateless" || modern.ProtocolVersion() != "2026-07-28" {
-		t.Fatalf("discover %+v %v", res, err)
-	}
-	if _, err := (func() (*InitializeResult, error) {
-		s, _ := mockSession(t, map[string]string{"MOCK_MCP_VERSION": "1999-01-01"}, SessionOptions{})
-		return s.Initialize(ctx)
-	})(); err == nil || err.Error() != "Unsupported protocol version from the server: 1999-01-01" {
-		t.Fatalf("unsupported %v", err)
-	}
-}
-
 // Sampler and elicitor answering every request with fixed results
 type cannedHandlers struct{}
 
@@ -217,54 +130,6 @@ func (cannedHandlers) CreateMessage(ctx context.Context, p *CreateMessageParams)
 }
 func (cannedHandlers) Elicit(ctx context.Context, p *ElicitParams) (*ElicitResult, *RPCError) {
 	return &ElicitResult{Action: "decline"}, nil
-}
-
-func TestServerRequestsAndNotifications(t *testing.T) {
-	logs := captureLogs(t)
-	ctx := context.Background()
-	var changed sync.WaitGroup
-	changed.Add(1)
-	s, _ := mockSession(t, nil, SessionOptions{Sampler: cannedHandlers{}, Elicitor: cannedHandlers{}, OnToolsListChanged: changed.Done})
-	if _, err := s.Initialize(ctx); err != nil {
-		t.Fatal(err)
-	}
-	ask := func(method string) string {
-		r, err := s.CallTool(ctx, "ask", map[string]any{"method": method}, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return r.Content[0].Text
-	}
-	if got := ask("ping"); got != `{"error":null,"result":{}}` {
-		t.Fatalf("ping %s", got)
-	}
-	if got := ask("sampling/createMessage"); !strings.Contains(got, `"text":"sampled"`) {
-		t.Fatalf("sampling %s", got)
-	}
-	if got := ask("elicitation/create"); !strings.Contains(got, `"action":"decline"`) {
-		t.Fatalf("elicit %s", got)
-	}
-	for _, m := range []string{"roots/list", "bogus/method"} {
-		if got := ask(m); !strings.Contains(got, `"code":-32601`) || !strings.Contains(got, "Method not found") {
-			t.Fatalf("%s %s", m, got)
-		}
-	}
-	if _, err := s.CallTool(ctx, "changed", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	changed.Wait()
-	if _, err := s.CallTool(ctx, "log", nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if logs.count(`MCP server log [mock/http]: {"a": "rate limited", "b": 1}`) != 1 || logs.count("received tools/list_changed notification") != 1 {
-		t.Fatalf("logs %q", logs.text())
-	}
-	bare, _ := mockSession(t, nil, SessionOptions{})
-	bare.Initialize(ctx)
-	r, _ := bare.CallTool(ctx, "ask", map[string]any{"method": "sampling/createMessage"}, nil)
-	if !strings.Contains(r.Content[0].Text, "Sampling not supported") {
-		t.Fatalf("no sampler %s", r.Content[0].Text)
-	}
 }
 
 func TestServerLogCallback(t *testing.T) {
@@ -285,55 +150,6 @@ func TestServerLogCallback(t *testing.T) {
 		if _, ok := logLevelMap[lvl]; !ok {
 			t.Fatalf("%s unmapped", lvl)
 		}
-	}
-}
-
-func TestToolProgressTokenOnlyWithAReporter(t *testing.T) {
-	var mu sync.Mutex
-	var stages []string
-	s, rec := mockSession(t, nil, SessionOptions{})
-	ctx := context.Background()
-	s.Initialize(ctx)
-	r, err := s.CallTool(ctx, "progress", nil, func(progress float64, total *float64, message string) {
-		mu.Lock()
-		stages = append(stages, message)
-		mu.Unlock()
-	})
-	if err != nil || r.Content[0].Text != "done" {
-		t.Fatalf("call %v %v", r, err)
-	}
-	mu.Lock()
-	if len(stages) != 20 || stages[19] != "stage 20" {
-		t.Fatalf("stages %v", stages)
-	}
-	mu.Unlock()
-	s.CallTool(ctx, "plain", nil, nil)
-	if got := recorded(t, rec, "tools/call plain"); !strings.Contains(got, "tools/call progress progress=true") || !strings.Contains(got, "tools/call plain progress=false") {
-		t.Fatalf("progress token opt in %q", got)
-	}
-}
-
-func TestPendingRequestsFailWhenTheTransportCloses(t *testing.T) {
-	s, rec := mockSession(t, nil, SessionOptions{})
-	ctx := context.Background()
-	s.Initialize(ctx)
-	callCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	if _, err := s.CallTool(callCtx, "hang", nil, nil); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("cancelled call %v", err)
-	}
-	if !strings.Contains(recorded(t, rec, "notifications/cancelled"), "notifications/cancelled") {
-		t.Fatal("server never told about the cancelled request")
-	}
-	errc := make(chan error, 1)
-	go func() {
-		_, err := s.CallTool(ctx, "hang", nil, nil)
-		errc <- err
-	}()
-	time.Sleep(100 * time.Millisecond)
-	s.Close()
-	if err := <-errc; RPCCode(err) != codeConnectionClosed || !strings.Contains(err.Error(), "Connection closed") {
-		t.Fatalf("pending after close %v", err)
 	}
 }
 

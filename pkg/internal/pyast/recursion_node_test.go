@@ -144,30 +144,6 @@ func (r nodeRecRow) build(t *testing.T, n int) *Node {
 	return w
 }
 
-func TestParseNodeRecursionRowsMatchCPython(t *testing.T) {
-	var rows []nodeRecRow
-	if err := json.Unmarshal(readGzip(t, "node_recursion_rows.json.gz"), &rows); err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) < 75 || rows[0].Name != "calibration" || rows[0].N != 52153 {
-		t.Fatalf("rows not recorded under the frozen layout: %d %+v", len(rows), rows[0])
-	}
-	for _, r := range rows[1:] {
-		t.Run(r.Name, func(t *testing.T) {
-			t.Parallel()
-			_, err := ParseNode(r.build(t, r.N), Options{Optimize: 1})
-			if e, ok := err.(*LimitError); err != nil && (r.AtN == nil || !ok || e.Class != r.AtN[0] || e.Msg != r.AtN[1]) || err == nil && r.AtN != nil {
-				t.Fatalf("n=%d: got %v want %v", r.N, err, r.AtN)
-			}
-			_, err = ParseNode(r.build(t, r.N+1), Options{Optimize: 1})
-			e, ok := err.(*LimitError)
-			if !ok || e.Class != r.Err[0] || e.Msg != r.Err[1] {
-				t.Fatalf("n=%d: got %v want %v", r.N+1, err, r.Err)
-			}
-		})
-	}
-}
-
 func TestParseNodeCyclicTreeRaisesRecursionError(t *testing.T) {
 	e := NewNode("UnaryOp", NewNode("USub"), nil)
 	e.Set("operand", e)

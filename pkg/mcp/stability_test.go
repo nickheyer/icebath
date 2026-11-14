@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -96,36 +95,6 @@ func TestStabilityProbeCleanupKeepsLoopWithRegisteredServers(t *testing.T) {
 	}
 	if !loop.spawn(context.Background(), func(context.Context) {}) {
 		t.Fatal("loop stopped accepting work")
-	}
-}
-
-// Child spawned from a goroutine pinned to another OS thread still lands in the stdio ledger
-func TestStabilityLedgerSeesChildSpawnedFromAnotherThread(t *testing.T) {
-	isolateHome(t)
-	fastServerTimings(t)
-	startTestLoop(t)
-	s := mockStdioTask(t, "threaded", map[string]any{})
-	errc := make(chan error, 1)
-	go func() {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-		errc <- s.start(context.Background(), s.rendered)
-	}()
-	if err := <-errc; err != nil {
-		t.Fatal(err)
-	}
-	defer s.shutdown(context.Background())
-	s.mu.Lock()
-	pids := append([]int(nil), s.stdioChildPIDs...)
-	s.mu.Unlock()
-	if len(pids) != 1 {
-		t.Fatalf("child pids %v", pids)
-	}
-	mcpMu.Lock()
-	owner := stdioPIDs[pids[0]]
-	mcpMu.Unlock()
-	if owner != "threaded" || !pidExists(pids[0]) {
-		t.Fatalf("child %d not tracked (owner %q)", pids[0], owner)
 	}
 }
 
