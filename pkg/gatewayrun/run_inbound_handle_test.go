@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
@@ -55,7 +56,7 @@ func makeDispatchRunner(t *testing.T, server *fakellm.Server) (*GatewayRunner, *
 // test_gateway_command_dispatch_minimal.py test_idle_queue_sends_payload_as_next_turn
 func TestIdleQueueSendsPayloadAsNextTurn(t *testing.T) {
 	for _, commandText := range []string{"/queue do this next", "/q do this next"} {
-		t.Run(commandText, func(t *testing.T) {
+		hermetic.Run(t, commandText, func(t *testing.T) {
 			server, err := fakellm.New([]any{fakellm.Text{Text: "queued turn done"}}, fakellm.Options{})
 			if err != nil {
 				t.Fatal(err)

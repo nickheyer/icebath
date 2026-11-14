@@ -91,6 +91,7 @@ func injectRegistryAdapters(t *testing.T, build func(gateway.Platform) gateway.P
 // Runner of the parallel connect cases with Telegram and Discord enabled under a temp home
 func parallelConnectRunner(t *testing.T) *GatewayRunner {
 	t.Helper()
+	withoutPlatformPlugins(t)
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
 	ctx := context.Background()

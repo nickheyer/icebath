@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Adapter stand in holding Python attributes by name
@@ -68,7 +69,7 @@ func TestCredentialFingerprintDistinctFeishuAppIDsDistinctFp(t *testing.T) {
 
 func TestCredentialFingerprintReadsAppStyleIDsTeamsWecom(t *testing.T) {
 	for _, attr := range []string{"_client_id", "_bot_id"} {
-		t.Run(attr, func(t *testing.T) {
+		hermetic.Run(t, attr, func(t *testing.T) {
 			a := adapterCredentialFingerprint(attrFake{attr: "app-1"})
 			b := adapterCredentialFingerprint(attrFake{attr: "app-1"})
 			c := adapterCredentialFingerprint(attrFake{attr: "app-2"})

@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -21,7 +22,7 @@ func TestInflightHeartbeatOnTheLogicalOwnerBlocksAnother(t *testing.T) {
 		},
 	}
 	for name, payload := range envelopes {
-		t.Run(name, func(t *testing.T) {
+		hermetic.Run(t, name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("ICEBATH_HOME", dir)
 			ctx := context.Background()

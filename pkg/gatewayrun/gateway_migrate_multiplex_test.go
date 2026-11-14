@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
@@ -426,7 +427,7 @@ func TestUpdateHookRefusesToCrossServiceUserOrHomeBoundary(t *testing.T) {
 		{unit("systemd", false), 1000, "external", "outside"},
 	}
 	for _, c := range cases {
-		t.Run(c.expected+c.service.Kind, func(t *testing.T) {
+		hermetic.Run(t, c.expected+c.service.Kind, func(t *testing.T) {
 			f := newMigrateFleet(t)
 			f.services["default"] = []ServiceUnit{unit("systemd", false)}
 			f.services["ops"] = []ServiceUnit{c.service}

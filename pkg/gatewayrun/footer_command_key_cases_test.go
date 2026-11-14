@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 func TestFooterWritesGlobalFromChatAndCliKeyLocally(t *testing.T) {
@@ -18,7 +19,7 @@ func TestFooterWritesGlobalFromChatAndCliKeyLocally(t *testing.T) {
 		{gateway.PlatformTelegram, []string{"display", "runtime_footer", "enabled"}},
 		{gateway.PlatformLocal, []string{"display", "platforms", "cli", "runtime_footer", "enabled"}},
 	} {
-		t.Run(string(tc.platform), func(t *testing.T) {
+		hermetic.Run(t, string(tc.platform), func(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
 			configPath := filepath.Join(h, "config.yaml")

@@ -101,6 +101,7 @@ func Bootstrap(ctx context.Context, args BootstrapArgs, emit func(Event)) (strin
 	if err != nil {
 		return failed("", "resolve install options failed: "+err.Error())
 	}
+	r.childrenToSink = true
 	send(LogEvent("", "[bootstrap] release source "+r.opts.RepoURL, Stdout))
 	manifest := InstallManifest(includeDesktop)
 	send(ManifestEvent(manifest.Stages, manifest.ProtocolVersion))

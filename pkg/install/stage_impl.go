@@ -347,12 +347,31 @@ func (r *Runner) stageRuntimes(ctx context.Context) error {
 	}
 	r.logInfo("Installing dependencies (hash-verified)")
 	cmd := exec.CommandContext(ctx, InstallBinaryPath(r.installDir), args...)
-	cmd.Dir, cmd.Stdout, cmd.Stderr = r.installDir, r.stdout, r.stderr
+	cmd.Dir = r.installDir
 	cmd.Env = append(os.Environ(), "ICEBATH_HOME="+r.home)
-	if err := cmd.Run(); err != nil {
+	if err := r.runChild(cmd); err != nil {
 		return fail("pm install failed", "deps_install_failed")
 	}
 	r.logSuccess("dependencies installed")
+	return nil
+}
+
+// Runs a child on the terminal streams, or line by line through the sink when the run has no terminal
+func (r *Runner) runChild(cmd *exec.Cmd) error {
+	if !r.childrenToSink {
+		cmd.Stdout, cmd.Stderr = r.stdout, r.stderr
+		return cmd.Run()
+	}
+	code, abandoned, err := streamLines(cmd, DrainGrace, r.line)
+	if err != nil {
+		return err
+	}
+	if abandoned {
+		r.line(Stderr, abandonedDrainNote(cmd.Path, DrainGrace))
+	}
+	if code != 0 {
+		return fmt.Errorf("%s exited %d", cmd.Path, code)
+	}
 	return nil
 }
 

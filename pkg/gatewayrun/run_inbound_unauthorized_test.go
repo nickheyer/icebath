@@ -81,6 +81,7 @@ func captureWarnings(t *testing.T) *logBuffer {
 
 // Telegram platform entry the bundled telegram plugin registers with its allowlist env
 func registerBundledTelegramEntry(t *testing.T) {
+	withoutPlatformPlugins(t)
 	ctx := context.Background()
 	if err := gateway.Registry.Register(ctx, &gateway.PlatformEntry{Name: "telegram", Label: "Telegram",
 		AllowedUsersEnv: "TELEGRAM_ALLOWED_USERS", AllowAllEnv: "TELEGRAM_ALLOW_ALL_USERS"}, ""); err != nil {

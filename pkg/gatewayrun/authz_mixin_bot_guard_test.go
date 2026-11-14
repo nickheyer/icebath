@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 const (
@@ -44,6 +45,7 @@ func guardRunner(t *testing.T, clock *guardClock, settings *gateway.BotLoopGuard
 // Telegram and Discord entries as their bundled plugins register them on discovery
 func registerGuardPlatformEntries(t *testing.T) {
 	t.Helper()
+	withoutPlatformPlugins(t)
 	ctx := context.Background()
 	entries := []*gateway.PlatformEntry{
 		{Name: "telegram", Label: "Telegram", AllowedUsersEnv: "TELEGRAM_ALLOWED_USERS", AllowAllEnv: "TELEGRAM_ALLOW_ALL_USERS",
@@ -156,7 +158,7 @@ func TestAdmittedBotTrafficIsCutAtTheBudget(t *testing.T) {
 		{"plain ALLOW_BOTS dm without a chat allowlist", []string{guardBotA}, "123", "dm", false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		hermetic.Run(t, tc.name, func(t *testing.T) {
 			r := guardRunner(t, &guardClock{1_000_000}, guardSettings())
 			incidentConfig(t)
 			if !tc.groupAllowlist {

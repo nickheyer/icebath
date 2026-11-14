@@ -184,6 +184,7 @@ func TestBootstrapInstallsAReleaseEndToEnd(t *testing.T) {
 		t.Fatalf("install root %q", installRoot)
 	}
 	var seq []string
+	pmInstallLines := 0
 	for _, e := range events {
 		switch e.Type {
 		case EventManifest:
@@ -192,11 +193,18 @@ func TestBootstrapInstallsAReleaseEndToEnd(t *testing.T) {
 			seq = append(seq, e.Name+":"+string(e.State))
 		case EventComplete, EventFailed:
 			seq = append(seq, string(e.Type))
+		case EventLog:
+			if e.Line == "icebath fixture "+tag+" [pm install]" && e.Stream == Stdout && e.Stage != nil && *e.Stage == "runtimes" {
+				pmInstallLines++
+			}
 		}
 	}
-	want := "manifest prerequisites:running prerequisites:succeeded repository:running repository:succeeded config:running config:succeeded products:running products:succeeded setup:running setup:skipped gateway:running gateway:skipped complete:running complete:succeeded complete"
+	want := "manifest prerequisites:running prerequisites:succeeded repository:running repository:succeeded config:running config:succeeded products:running products:succeeded runtimes:running runtimes:succeeded setup:running setup:skipped gateway:running gateway:skipped complete:running complete:succeeded complete"
 	if strings.Join(seq, " ") != want {
 		t.Fatalf("event sequence\n got %s\nwant %s", strings.Join(seq, " "), want)
+	}
+	if pmInstallLines != 1 {
+		t.Fatalf("pm install output reached the UI as %d runtimes log events, want 1", pmInstallLines)
 	}
 	for _, p := range []string{
 		InstallBinaryPath(installRoot),

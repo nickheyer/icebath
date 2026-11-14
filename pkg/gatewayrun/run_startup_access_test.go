@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 func TestAllowlistWarningRequiresAnEnabledMessagingPlatform(t *testing.T) {
@@ -23,7 +24,7 @@ func TestAllowlistWarningRequiresAnEnabledMessagingPlatform(t *testing.T) {
 		{"telegram_disabled", map[gateway.Platform]*gateway.PlatformConfig{gateway.PlatformTelegram: {Enabled: false}}, false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		hermetic.Run(t, tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("ICEBATH_HOME", dir)
 			for _, name := range append(append(builtinAllowedUsersVars(), builtinAllowAllVars()...), "GATEWAY_ALLOW_ALL_USERS") {

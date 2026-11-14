@@ -8,6 +8,7 @@ import (
 )
 
 func TestFactoryBindsEveryAdapterToRunner(t *testing.T) {
+	withoutPlatformPlugins(t)
 	ctx := context.Background()
 	r := allocGatewayRunner()
 	r.config = gateway.DefaultGatewayConfig(ctx)

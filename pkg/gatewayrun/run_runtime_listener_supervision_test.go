@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Stands a listener server in for the dashboard builder for one case
@@ -94,7 +95,7 @@ func TestRuntimeWaitObservesListenerExit(t *testing.T) {
 		if listenerFailure {
 			name = "listener_failure"
 		}
-		t.Run(name, func(t *testing.T) {
+		hermetic.Run(t, name, func(t *testing.T) {
 			h := shortGatewayHome(t)
 			fakeGatewayListener(t)
 			ctx := context.Background()

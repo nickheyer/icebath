@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -21,7 +22,7 @@ import (
 func TestPrimaryAdapterBusyOriginUsesRoutedPrivacy(t *testing.T) {
 	for _, mode := range []string{"steer", "interrupt"} {
 		for _, secondaryPrivacy := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s-%t", mode, secondaryPrivacy), func(t *testing.T) {
+			hermetic.Run(t, fmt.Sprintf("%s-%t", mode, secondaryPrivacy), func(t *testing.T) {
 				primaryAdapterBusyOriginUsesRoutedPrivacy(t, mode, secondaryPrivacy)
 			})
 		}

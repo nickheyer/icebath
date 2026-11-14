@@ -78,6 +78,7 @@ func TestRevokeWhatsappSoleEntryDeniesLiveAdapterWithoutRestart(t *testing.T) {
 		t.Setenv(name, "")
 	}
 	t.Setenv("WHATSAPP_ALLOWED_USERS", "15551234567")
+	withoutPlatformPlugins(t)
 	ctx := context.Background()
 	entry := &gateway.PlatformEntry{Name: "whatsapp", Label: "WhatsApp", AllowedUsersEnv: "WHATSAPP_ALLOWED_USERS", AllowAllEnv: "WHATSAPP_ALLOW_ALL_USERS"}
 	if err := gateway.Registry.Register(ctx, entry, ""); err != nil {

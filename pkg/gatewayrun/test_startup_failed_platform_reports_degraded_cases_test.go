@@ -64,6 +64,7 @@ func (a *healthyAdapter) fail(ctx context.Context, code string) error {
 // Runner of the degraded cases with the product room server bound, adapters from the registry, bluebubbles adapterless
 func degradedRunner(t *testing.T, platforms map[gateway.Platform]*gateway.PlatformConfig, build map[gateway.Platform]func() gateway.PlatformAdapter) *GatewayRunner {
 	t.Helper()
+	withoutPlatformPlugins(t)
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
 	ctx := context.Background()

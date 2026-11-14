@@ -345,10 +345,10 @@ func TestParkedSelfProbeSkipsDisabledOrDeletedEntry(t *testing.T) {
 	isolateHome(t)
 	fastServerTimings(t)
 	startTestLoop(t)
-	writeServersConfig(t, "  off:\n    command: fake\n    enabled: false\n")
+	writeServersConfig(t, "  srv:\n    command: fake\n    enabled: false\n")
 	maxInitialConnectRetries = 0
 	parkedRetryInterval = 10 * time.Millisecond
-	s, calls := runnerTask(t, "off", nil, func(s *serverTask, ctx context.Context, call int) (string, error) {
+	s, calls := runnerTask(t, "srv", nil, func(s *serverTask, ctx context.Context, call int) (string, error) {
 		if call == 1 {
 			return "", errors.New("connection refused")
 		}
@@ -377,7 +377,7 @@ func TestParkedSelfProbeSkipsDisabledOrDeletedEntry(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("self-probe rebuilt a deleted server: %d calls", calls.Load())
 	}
-	writeServersConfig(t, "  off:\n    command: fake\n")
+	writeServersConfig(t, "  srv:\n    command: fake\n")
 	waitUntil(t, "the re-enabled entry was never probed again", func() bool { return calls.Load() == 2 })
 	s.shutdown(context.Background())
 }

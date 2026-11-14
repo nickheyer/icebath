@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Loopback provider whose main requests all wait for one release, each arrival signalled
@@ -153,7 +154,7 @@ func expectsReply(b *bool) bool {
 // test_busy_redirect_anchor.py test_successful_redirect_moves_the_turn_reply_anchor_to_the_redirecting_message
 func TestSuccessfulRedirectMovesTheTurnReplyAnchorToTheRedirectingMessage(t *testing.T) {
 	for _, route := range []string{"busy_interrupt", "priority"} {
-		t.Run(route, func(t *testing.T) {
+		hermetic.Run(t, route, func(t *testing.T) {
 			ctx := context.Background()
 			g := startGatedTurn(t, nil)
 			redirecting := anchorEvent("What day is tomorrow?", "B", nil)
@@ -229,7 +230,7 @@ func TestRefusedOrForeignRedirectLeavesTheAnchorOnTheOpeningMessage(t *testing.T
 // test_busy_redirect_anchor.py test_a_turn_that_takes_in_an_addressed_message_keeps_the_silence_fallback
 func TestATurnThatTakesInAnAddressedMessageKeepsTheSilenceFallback(t *testing.T) {
 	for _, route := range []string{"busy_interrupt", "priority_interrupt", "busy_steer", "priority_steer", "slash_steer"} {
-		t.Run(route, func(t *testing.T) {
+		hermetic.Run(t, route, func(t *testing.T) {
 			ctx := context.Background()
 			notExpected, expected := false, true
 			g := startGatedTurn(t, &notExpected)

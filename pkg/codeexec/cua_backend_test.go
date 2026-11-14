@@ -11,12 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-func init() {
-	if BotDesktopEnv == nil {
-		BotDesktopEnv = func(_ *tools.Env, base map[string]string) map[string]string { return base }
-	}
-}
-
 // Replaces *target with value for the duration of the test
 func cuSwap[T any](t *testing.T, target *T, value T) {
 	t.Helper()

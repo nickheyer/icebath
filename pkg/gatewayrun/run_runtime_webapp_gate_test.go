@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // Mounted dashboard behind the sign in gate, optionally declaring its own public URL
@@ -104,7 +105,7 @@ func TestOnTheLanWithoutACurrentRegistrationTheLauncherOpensTheLoopbackAddress(t
 		"lan_address_changed":       {"http://" + lanTestAddress + ":9555/auth/callback", "192.168.1.77"},
 		"registered_for_public_url": {"https://webapp.example.net/auth/callback", lanTestAddress},
 	} {
-		t.Run(name, func(t *testing.T) {
+		hermetic.Run(t, name, func(t *testing.T) {
 			r, _ := lanWebapp(t, row[0], row[1], "")
 			if got := launchResult(t, r, nil)["url"]; got != "http://127.0.0.1:9555/" {
 				t.Fatalf("launcher opens %v", got)
@@ -129,7 +130,7 @@ func TestBehindItsOwnPublicUrlTheLauncherOpensThatUrlToSignIn(t *testing.T) {
 		{"https://webapp.example.net", nil, "https://webapp.example.net/"},
 		{"https://example.net:8443/hermes", map[string]any{"profile": "work"}, "https://example.net:8443/hermes/?profile=work"},
 	} {
-		t.Run(row.opened, func(t *testing.T) {
+		hermetic.Run(t, row.opened, func(t *testing.T) {
 			r, _ := lanWebapp(t, "", lanTestAddress, row.publicURL)
 			result := launchResult(t, r, row.params)
 			want := map[string]any{"url": row.opened, "private": false, "expires_in_seconds": nil, "sign_in": true}

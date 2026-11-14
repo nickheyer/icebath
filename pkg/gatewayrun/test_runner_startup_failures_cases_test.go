@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // test_runner_startup_failures.py test_is_global_startup_conflict_matches_lock_code_families
@@ -45,6 +46,20 @@ func caseRuntimeStatus(t *testing.T, home string) *pyjson.Object {
 		t.Fatal("no runtime status written")
 	}
 	return state
+}
+
+// Leaves no platform plugin loadable for the case, so the only platform entries are the ones the case registers
+func withoutPlatformPlugins(t *testing.T) {
+	t.Helper()
+	previous := plugins.InstalledServices()
+	unloadable := *previous
+	unloadable.Platforms = nil
+	plugins.ResetPluginManagersForTests()
+	plugins.InstallServices(&unloadable)
+	t.Cleanup(func() {
+		plugins.ResetPluginManagersForTests()
+		plugins.InstallServices(previous)
+	})
 }
 
 // test_runner_startup_failures.py test_runner_degrades_gracefully_when_all_adapters_missing

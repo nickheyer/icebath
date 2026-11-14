@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -128,9 +129,10 @@ func (a *contractFailedEditAdapter) EditMessage(context.Context, string, string,
 func installRunnerPluginServices(t *testing.T, r *GatewayRunner) {
 	t.Helper()
 	previous := plugins.InstalledServices()
-	s := &plugins.Services{BoundSessionKey: func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) }}
-	gateway.InstallPluginServices(s)
-	plugins.InstallServices(s)
+	s := *previous
+	s.BoundSessionKey = func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) }
+	gateway.InstallPluginServices(&s)
+	plugins.InstallServices(&s)
 	gateway.SetGatewayRunnerRef(r)
 	t.Cleanup(func() {
 		plugins.InstallServices(previous)
@@ -195,7 +197,7 @@ func TestPostThenEditTargetsTheCallingSession(t *testing.T) {
 			return a, a.contractAdapter
 		}, false},
 	} {
-		t.Run(c.name, func(t *testing.T) {
+		hermetic.Run(t, c.name, func(t *testing.T) {
 			adapter, recorder := c.make()
 			_, pctx, sessionKey := pluginPostRunner(t, adapter)
 			handle := pctx.PostMessage(inSessionContext(sessionKey), "step 1/2")
@@ -410,7 +412,7 @@ func TestFloodRefusedFinalArmsTheRunnerFloodWorker(t *testing.T) {
 func routedSlackRunner(t *testing.T, betaServed bool) (*GatewayRunner, *contractAdapter) {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	root := filepath.Join(tmp, ".icebath")
 	t.Setenv("ICEBATH_HOME", root)
 	r := injectionRunner(t)
@@ -465,7 +467,7 @@ func TestParkedRouteRefusalRepliesInTheSenderThreadThroughTheRunner(t *testing.T
 // The real runner as the cron manual run reads it, a shared bot satellite granted only its routed targets
 func TestCronGatewayRunnerGrantsASharedBotSatelliteOnlyItsRoutedTargets(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)
+	t.Cleanup(home.PatchUserHome(tmp))
 	root := filepath.Join(tmp, ".icebath")
 	t.Setenv("ICEBATH_HOME", root)
 	ctx := context.Background()

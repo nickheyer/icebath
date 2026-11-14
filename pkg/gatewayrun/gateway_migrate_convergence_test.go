@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
@@ -176,7 +177,7 @@ func TestOptOutReadsEffectiveConfigManagedFalseWinsAndStringFalseIsFalse(t *test
 
 func TestInterruptionAfterTheDefaultUnitExistsIsStillInterruptedNotAlreadyMultiplexed(t *testing.T) {
 	for _, preinstalled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "fresh", true: "preinstalled"}[preinstalled], func(t *testing.T) {
+		hermetic.Run(t, map[bool]string{false: "fresh", true: "preinstalled"}[preinstalled], func(t *testing.T) {
 			f := newMigrateFleet(t)
 			if preinstalled {
 				f.services["default"] = []ServiceUnit{unit("systemd", false)}
@@ -217,7 +218,7 @@ func TestInterruptionAfterTheDefaultUnitExistsIsStillInterruptedNotAlreadyMultip
 
 func TestFailureAnywhereInTheDestructivePhaseRestoresTheRemovedSecondaries(t *testing.T) {
 	for _, failing := range [][2]string{{"ops", "stop"}, {"coder", "uninstall"}, {"default", "flag"}} {
-		t.Run(failing[0]+"_"+failing[1], func(t *testing.T) {
+		hermetic.Run(t, failing[0]+"_"+failing[1], func(t *testing.T) {
 			f := newMigrateFleet(t)
 			name, verb := failing[0], failing[1]
 			realOp := migrateServiceOp

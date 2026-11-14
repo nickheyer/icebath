@@ -20,6 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -50,7 +51,7 @@ func TestAgentBudgetLineMatchesEnforcedLimit(t *testing.T) {
 		{map[string]any{}, "90"},
 		{map[string]any{"max_turns": "unlimited"}, "unlimited"},
 	} {
-		t.Run(tc.expected, func(t *testing.T) {
+		hermetic.Run(t, tc.expected, func(t *testing.T) {
 			t.Setenv("ICEBATH_HOME", t.TempDir())
 			t.Setenv("ICEBATH_MAX_ITERATIONS", "90")
 			gateway.BridgeMaxTurnsToEnv(tc.maxTurns)
@@ -90,7 +91,7 @@ var registerSessionResetPolicy sync.Once
 
 func TestStartupWarnsOnTimedSessionResetUnlessPluginEnabled(t *testing.T) {
 	for _, pluginEnabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "disabled", true: "enabled"}[pluginEnabled], func(t *testing.T) {
+		hermetic.Run(t, map[bool]string{false: "disabled", true: "enabled"}[pluginEnabled], func(t *testing.T) {
 			home := filepath.Join(t.TempDir(), "home")
 			os.MkdirAll(home, 0o755)
 			t.Setenv("ICEBATH_HOME", home)
@@ -149,13 +150,14 @@ func TestLaunchProfileWebhooksRegisterSignedUnderMultiplex(t *testing.T) {
 		"    - {url: \""+server.URL+"/plain\", events: [on_session_end]}\n"), 0o644)
 	t.Setenv("ICEBATH_HOME", launchHome)
 	os.Unsetenv("MY_HOOK_SECRET")
+	previous := plugins.InstalledServices()
 	plugins.InstallServices(&plugins.Services{GetSecret: provider.GetSecret})
 	plugins.ResetPluginManagersForTests()
 	plugins.ResetOutboundWebhooksForTests()
 	t.Cleanup(func() {
 		plugins.ResetOutboundWebhooksForTests()
 		plugins.ResetPluginManagersForTests()
-		plugins.InstallServices(nil)
+		plugins.InstallServices(previous)
 	})
 	logs := captureWarnings(t)
 	provider.SetMultiplexActive(true)
@@ -195,13 +197,14 @@ func TestRegistrationFailureIsAWarningNotDebug(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("hooks:\n  outbound:\n"+
 		"    - {url: \"http://127.0.0.1:9/hook\", events: [on_session_end], secret_env: MY_HOOK_SECRET}\n"), 0o644)
+	previous := plugins.InstalledServices()
 	plugins.InstallServices(&plugins.Services{GetSecret: func(context.Context, string) (string, bool, error) {
 		return "", false, errors.New("config exploded")
 	}})
 	plugins.ResetOutboundWebhooksForTests()
 	t.Cleanup(func() {
 		plugins.ResetOutboundWebhooksForTests()
-		plugins.InstallServices(nil)
+		plugins.InstallServices(previous)
 	})
 	logs := captureWarnings(t)
 	registerLaunchProfileConfigHooks(context.Background())

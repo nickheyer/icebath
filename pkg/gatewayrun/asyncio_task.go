@@ -96,11 +96,17 @@ type gatewayTask struct {
 
 type gatewayTaskKey struct{}
 
+// Observer of each started task, a package var so the test harness joins the tasks a case leaves running
+var gatewayTaskStarted func(*gatewayTask)
+
 // Starts fn on its own goroutine under a cancellable child of ctx
 func spawnGatewayTask(ctx context.Context, name string, fn func(ctx context.Context) (any, error)) *gatewayTask {
 	taskCtx, cancel := context.WithCancel(ctx)
 	task := &gatewayTask{gatewayFuture: newGatewayFuture(), name: name, cancel: cancel}
 	taskCtx = context.WithValue(taskCtx, gatewayTaskKey{}, task)
+	if observe := gatewayTaskStarted; observe != nil {
+		observe(task)
+	}
 	go func() {
 		defer cancel()
 		result, err := runTaskBody(taskCtx, name, fn)

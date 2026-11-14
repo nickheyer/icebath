@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 // One listener start the runtime asked for
@@ -130,7 +131,7 @@ func TestAWebappListenerThatCannotStartStillLeavesNativeClientsAListener(t *test
 			"(0.0.0.0), but no auth providers are registered."},
 		"lifespan_failure": &gateway.PyError{Kind: "RuntimeError", Msg: "gateway API lifespan startup failed"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		hermetic.Run(t, name, func(t *testing.T) {
 			r, calls, _, err := startStubbedRuntimeAPI(t, "webapp:\n  enabled: true\n  host: 0.0.0.0\n", false, refusal)
 			if err != nil {
 				t.Fatal(err)
@@ -193,7 +194,7 @@ func TestTheWebappListenerIsDualStackOnlyOnTheIpv6Wildcard(t *testing.T) {
 		host      string
 		dualStack bool
 	}{{"::", true}, {"::1", false}, {"127.0.0.1", false}} {
-		t.Run(row.host, func(t *testing.T) {
+		hermetic.Run(t, row.host, func(t *testing.T) {
 			var asked []bool
 			prevSocket, prevBuild := listenerSocketFn, BuildGatewayListener
 			t.Cleanup(func() { listenerSocketFn, BuildGatewayListener = prevSocket, prevBuild })

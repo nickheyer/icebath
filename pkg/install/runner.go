@@ -54,18 +54,19 @@ func fail(reason, class string) error { return &StageError{Reason: reason, Class
 
 // Runs install stages in process, reporting every line and transition through the sink
 type Runner struct {
-	opts       Options
-	sink       func(Event)
-	color      bool
-	quiet      bool
-	home       string
-	installDir string
-	stage      string
-	skipped    bool
-	stdout     io.Writer
-	stderr     io.Writer
-	lastErr    error
-	mu         sync.Mutex
+	opts           Options
+	sink           func(Event)
+	color          bool
+	quiet          bool
+	childrenToSink bool
+	home           string
+	installDir     string
+	stage          string
+	skipped        bool
+	stdout         io.Writer
+	stderr         io.Writer
+	lastErr        error
+	mu             sync.Mutex
 }
 
 // Runner for the options, the home and install dir resolved and exported like install.sh does

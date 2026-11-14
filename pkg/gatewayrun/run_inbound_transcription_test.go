@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/media"
 )
 
@@ -92,7 +93,7 @@ func clipNameTranscript(path string) map[string]any {
 }
 
 func TestEnrichMessageWithTranscriptionEmptyContent(t *testing.T) {
-	t.Run("test_enrich_message_with_transcription_returns_tuple_for_empty_content_placeholder", func(t *testing.T) {
+	hermetic.Run(t, "test_enrich_message_with_transcription_returns_tuple_for_empty_content_placeholder", func(t *testing.T) {
 		installMockSTT(t, func(string) map[string]any {
 			return map[string]any{"success": true, "transcript": "hello from a captionless voice note", "provider": "local_command"}
 		})

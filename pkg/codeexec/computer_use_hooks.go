@@ -2,8 +2,10 @@ package codeexec
 
 import (
 	"context"
+	"errors"
 	"runtime"
 
+	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -14,23 +16,55 @@ const (
 	botDesktopRefused  = "refused"
 )
 
-// Wiring hooks the process assigns from the pkg/browser bot desktop runtime, nil until wired
+// Bot desktop runtime calls of the computer use tool, package vars so tests substitute them
 var (
-	BotDesktopEnv              func(env *tools.Env, base map[string]string) map[string]string
-	BotDesktopToolPlacement    func(env *tools.Env) (string, error)
-	BotDesktopPlacementWhere   func(env *tools.Env) string
-	BotDesktopPublishedEnv     func(env *tools.Env) map[string]string
-	BotDesktopSandboxEnv       func(env *tools.Env, create bool) (tools.Environment, error)
-	BotDesktopProfileName      func(env *tools.Env) string
-	BotDesktopTouchActivity    func(env *tools.Env)
-	BotDesktopCuaMCPInvocation func(ctx context.Context, sandbox tools.Environment, profile string, published map[string]string) (string, []string, error)
+	BotDesktopEnv              = botdesktop.DesktopEnv
+	BotDesktopToolPlacement    = botdesktop.ToolPlacement
+	BotDesktopPlacementWhere   = botDesktopPlacementWhere
+	BotDesktopPublishedEnv     = botdesktop.MustPublishedEnv
+	BotDesktopSandboxEnv       = botdesktop.TerminalEnvironment
+	BotDesktopProfileName      = botdesktop.ProfileName
+	BotDesktopTouchActivity    = botdesktop.TouchActivity
+	BotDesktopCuaMCPInvocation = func(ctx context.Context, sandbox tools.Environment, profile string, published map[string]string) (string, []string, error) {
+		return botdesktop.CuaMCPInvocation(sandbox, profile, published)
+	}
 	// Admitted lease epoch, an error carrying the HumanHasControl text while a human holds the screen
-	BotDesktopAssertAgentMayAct    func(env *tools.Env) (int, error)
-	BotDesktopLeaseEpoch           func(env *tools.Env) int
-	BotDesktopEnsureStartedForTool func(env *tools.Env)
+	BotDesktopAssertAgentMayAct = botDesktopAssertAgentMayAct
+	BotDesktopLeaseEpoch        = func(env *tools.Env) int {
+		return botdesktop.LeaseGet(botdesktop.ProfileKey(env)).EpochInt()
+	}
+	BotDesktopEnsureStartedForTool = botdesktop.EnsureStartedForTool
 	// Desktop pane package installer of tools/bot_desktop/install.py answering the installer exit code
-	BotDesktopInstallPackages func(env *tools.Env, askPassword func() (string, error), onLine func(string)) (int, error)
+	BotDesktopInstallPackages = botDesktopInstallPackages
 )
+
+// Placement where of the bot desktop, a resolve failure raising like the Python resolve()
+func botDesktopPlacementWhere(env *tools.Env) string {
+	p, err := botdesktop.Resolve(env)
+	if err != nil {
+		panic(err)
+	}
+	return p.Where
+}
+
+// Lease epoch an agent action is admitted under, HumanHasControl while a human holds the screen
+func botDesktopAssertAgentMayAct(env *tools.Env) (int, error) {
+	lease, err := botdesktop.LeaseAssertAgentMayAct(botdesktop.ProfileKey(env))
+	if err != nil {
+		return 0, err
+	}
+	return lease.EpochInt(), nil
+}
+
+// Desktop package install with the busy refusal mapped onto the error the screen CLI reads
+func botDesktopInstallPackages(env *tools.Env, askPassword func() (string, error), onLine func(string)) (int, error) {
+	rc, err := botdesktop.InstallPackages(env, askPassword, onLine)
+	var busy *botdesktop.InstallBusy
+	if errors.As(err, &busy) {
+		return rc, &BotDesktopInstallBusy{Msg: busy.Msg}
+	}
+	return rc, err
+}
 
 // Installer exit code of an unprivileged host without sudo, the root command streamed through onLine
 const BotDesktopInstallNoSudo = -2

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
@@ -266,7 +267,7 @@ func TestStopReachesAChatWhoseIDContainsAColon(t *testing.T) {
 
 func TestChatScopeFallbackInterruptsOnlyTheCallersChat(t *testing.T) {
 	for _, otherChatID := range []string{"C-other", "C90"} {
-		t.Run(otherChatID, func(t *testing.T) {
+		hermetic.Run(t, otherChatID, func(t *testing.T) {
 			sameChat := stopKey(t, slackStopSource("channel", "C9", kstr("170.100"), "U-alice", "T1"), false, "")
 			foreign := stopKey(t, slackStopSource("channel", otherChatID, kstr("170.100"), "U-alice", "T1"), false, "")
 			stopSource := slackStopSource("thread", "C9", kstr("170.100"), "U-alice", "T1")

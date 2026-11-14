@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
-	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
 	"github.com/nickheyer/icebath/pkg/codeexec"
@@ -35,10 +34,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pluginservices"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -377,20 +376,6 @@ func installProcessWiring() {
 	}
 	telegram.InlineCommands = telegramInlineCommands{}
 	telegram.SendTelegramREST = messagetools.SendTelegram
-	codeexec.BotDesktopEnv = botdesktop.DesktopEnv
-	codeexec.BotDesktopToolPlacement = botdesktop.ToolPlacement
-	codeexec.BotDesktopPlacementWhere = botDesktopPlacementWhere
-	codeexec.BotDesktopPublishedEnv = botdesktop.MustPublishedEnv
-	codeexec.BotDesktopSandboxEnv = botdesktop.TerminalEnvironment
-	codeexec.BotDesktopProfileName = botdesktop.ProfileName
-	codeexec.BotDesktopTouchActivity = botdesktop.TouchActivity
-	codeexec.BotDesktopCuaMCPInvocation = func(ctx context.Context, sandbox tools.Environment, profile string, published map[string]string) (string, []string, error) {
-		return botdesktop.CuaMCPInvocation(sandbox, profile, published)
-	}
-	codeexec.BotDesktopAssertAgentMayAct = botDesktopAssertAgentMayAct
-	codeexec.BotDesktopLeaseEpoch = func(env *tools.Env) int { return botdesktop.LeaseGet(botdesktop.ProfileKey(env)).EpochInt() }
-	codeexec.BotDesktopEnsureStartedForTool = botdesktop.EnsureStartedForTool
-	codeexec.BotDesktopInstallPackages = botDesktopInstallPackages
 	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
 	tools.MediaDeliveryPathValidator = mediaDeliveryPathValidator
@@ -507,27 +492,15 @@ func pluginServices() *plugins.Services {
 			}
 			return nil
 		},
-		CallMCPTool:              mcp.CallToolForPlugin,
-		RedeemSideQuestion:       agent.RedeemSideQuestion,
-		BoundSessionKey:          func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
-		ResolveBuiltinCommand:    func(name string) bool { return commands.Resolve(name) != nil },
-		DispatchTool:             tools.DispatchForPlugin,
-		RegisterContextReference: agent.RegisterContextReference,
-		DashboardAuth:            gateway.DashboardAuthRegistryService(),
-		Platforms:                gateway.PlatformRegistryService(),
-		ProviderRegistries: map[string]plugins.ScopedRegistry{
-			"image_gen_provider":            media.ImageGenScopedRegistry(),
-			"video_gen_provider":            media.VideoGenScopedRegistry(),
-			"tts_provider":                  media.TTSScopedRegistry(),
-			"transcription_provider":        media.TranscriptionScopedRegistry(),
-			"web_search_provider":           agent.WebSearchScopedRegistry(),
-			"browser_provider":              browser.BrowserProviderRegistry.Scoped(),
-			"browser_page_backend":          browser.BrowserPageBackendScopedRegistry(),
-			"terminal_environment_provider": agent.TerminalEnvScopedRegistry(),
-			"secret_source":                 provider.SecretSourceScopedRegistry(),
-			"delegation_provider":           agent.DelegationScopedRegistry(),
-			"login_backend":                 browser.LoginBackendScopedRegistry(),
-		},
+		CallMCPTool:                mcp.CallToolForPlugin,
+		RedeemSideQuestion:         agent.RedeemSideQuestion,
+		BoundSessionKey:            func(ctx context.Context) string { return tools.BoundSessionKey(tools.ToolEnvFrom(ctx)) },
+		ResolveBuiltinCommand:      func(name string) bool { return commands.Resolve(name) != nil },
+		DispatchTool:               tools.DispatchForPlugin,
+		RegisterContextReference:   agent.RegisterContextReference,
+		DashboardAuth:              gateway.DashboardAuthRegistryService(),
+		Platforms:                  gateway.PlatformRegistryService(),
+		ProviderRegistries:         pluginservices.ProviderRegistries(),
 		BuiltinAuxTaskKeys:         provider.BuiltinAuxTaskKeys,
 		RegisterRedactionPatterns:  tools.RegisterRedactionPatterns,
 		PluginSDK:                  pluginSDK,
@@ -660,34 +633,6 @@ func runAtExit() {
 	for _, s := range []*os.File{os.Stdout, os.Stderr} {
 		s.Sync()
 	}
-}
-
-// Placement where of the bot desktop, a resolve failure raising like the Python resolve()
-func botDesktopPlacementWhere(env *tools.Env) string {
-	p, err := botdesktop.Resolve(env)
-	if err != nil {
-		panic(err)
-	}
-	return p.Where
-}
-
-// Lease epoch an agent action is admitted under, HumanHasControl while a human holds the screen
-func botDesktopAssertAgentMayAct(env *tools.Env) (int, error) {
-	lease, err := botdesktop.LeaseAssertAgentMayAct(botdesktop.ProfileKey(env))
-	if err != nil {
-		return 0, err
-	}
-	return lease.EpochInt(), nil
-}
-
-// Desktop package install with the busy refusal mapped onto the codeexec error the screen CLI reads
-func botDesktopInstallPackages(env *tools.Env, askPassword func() (string, error), onLine func(string)) (int, error) {
-	rc, err := botdesktop.InstallPackages(env, askPassword, onLine)
-	var busy *botdesktop.InstallBusy
-	if errors.As(err, &busy) {
-		return rc, &codeexec.BotDesktopInstallBusy{Msg: busy.Msg}
-	}
-	return rc, err
 }
 
 // Validated media delivery path of a candidate, empty when the gateway refuses it and raising on a resolve failure

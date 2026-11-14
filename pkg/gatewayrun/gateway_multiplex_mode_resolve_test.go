@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 type modeFleet struct {
@@ -131,7 +132,7 @@ func TestStandaloneNamedProfileLeavesNothingToMultiplex(t *testing.T) {
 
 func TestStandaloneLauncherNeverMultiplexesOtherProfiles(t *testing.T) {
 	for _, flag := range []string{"", "  multiplex_profiles: true\n", "  multiplex_profiles: false\n"} {
-		t.Run(strings.TrimSpace(flag), func(t *testing.T) {
+		hermetic.Run(t, strings.TrimSpace(flag), func(t *testing.T) {
 			f := newModeFleet(t)
 			solo := filepath.Join(f.root, "profiles/coder")
 			fleetWrite(t, filepath.Join(solo, "config.yaml"), "gateway:\n  standalone: true\n"+flag)

@@ -3,11 +3,12 @@ package gatewayrun
 import (
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func TestGatewayTurnRoutePool(t *testing.T) {
-	t.Run("test_resolve_turn_includes_pool", func(t *testing.T) {
+	hermetic.Run(t, "test_resolve_turn_includes_pool", func(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", t.TempDir())
 		pool := provider.NewPool(provider.PoolEnv{}, "openai-codex", nil)
 		r := &GatewayRunner{}
