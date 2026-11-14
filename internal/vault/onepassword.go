@@ -20,7 +20,7 @@ var onePasswordEnvKeep = []string{"PATH", "HOME", "USERPROFILE", "APPDATA", "LOC
 type onePassword struct {
 	vault        *Vault
 	opts         OnePasswordOptions
-	serviceToken string
+	serviceToken func() string
 	mu           sync.Mutex
 	itemVaults   map[string]string
 }
@@ -31,8 +31,11 @@ func (v *Vault) newOnePassword(ctx context.Context, opts OnePasswordOptions) *on
 	if tokenEnv == "" {
 		tokenEnv = "OP_SERVICE_ACCOUNT_TOKEN"
 	}
-	return &onePassword{vault: v, opts: opts, serviceToken: v.secrets(ctx, tokenEnv), itemVaults: map[string]string{}}
+	return &onePassword{vault: v, opts: opts, serviceToken: seal(v.secrets(ctx, tokenEnv)), itemVaults: map[string]string{}}
 }
+
+// Service account token of the profile, empty when it has none
+func (b *onePassword) service() string { return unseal(b.serviceToken) }
 
 // Vault id the latest listing reported for an item and whether it listed the item
 func (b *onePassword) itemVault(id string) (string, bool) {
@@ -59,7 +62,7 @@ func (*onePassword) Owns(handle string) bool { return strings.HasPrefix(handle, 
 
 // Reports whether a service account token is configured or this session holds an unlock
 func (b *onePassword) Unlocked(ctx context.Context) bool {
-	return b.serviceToken != "" || b.vault.hasSession(ctx, onePasswordName)
+	return b.service() != "" || b.vault.hasSession(ctx, onePasswordName)
 }
 
 // Path of the 1Password CLI, or the remedy when it is missing
@@ -83,8 +86,8 @@ func (b *onePassword) env(ctx context.Context, sessionToken string) map[string]s
 		env["OP_ACCOUNT"] = b.opts.Account
 	}
 	switch {
-	case b.serviceToken != "":
-		env["OP_SERVICE_ACCOUNT_TOKEN"] = b.serviceToken
+	case b.service() != "":
+		env["OP_SERVICE_ACCOUNT_TOKEN"] = b.service()
 	case sessionToken != "" && b.opts.Account != "":
 		env["OP_SESSION_"+b.opts.Account] = sessionToken
 	case sessionToken != "":
@@ -115,7 +118,7 @@ func (b *onePassword) Unlock(ctx context.Context, masterPassword string) error {
 	}
 	token := trimSpace(res.stdout)
 	if !res.ok || token == "" {
-		detail := head(scrubOp(res.stderr), 200)
+		detail := head(scrubOp(withoutSecrets(res.stderr, masterPassword)), 200)
 		if detail == "" {
 			detail = "no session token"
 		}
@@ -130,7 +133,7 @@ func (b *onePassword) Unlock(ctx context.Context, masterPassword string) error {
 // Output of one op call under the service account or this session's token, a lost session locking the backend
 func (b *onePassword) run(ctx context.Context, args ...string) (string, error) {
 	token := ""
-	if b.serviceToken == "" {
+	if b.service() == "" {
 		var err error
 		if token, err = b.vault.managerToken(ctx, onePasswordName, true); err != nil {
 			return "", err
@@ -148,9 +151,9 @@ func (b *onePassword) run(ctx context.Context, args ...string) (string, error) {
 		return "", err
 	}
 	if !res.ok {
-		detail := scrubOp(res.stderr)
+		detail := scrubOp(withoutSecrets(res.stderr, token, b.service()))
 		lower := lowerFull(detail)
-		if b.serviceToken == "" && (strings.Contains(lower, "session") || strings.Contains(lower, "sign in") || strings.Contains(lower, "not signed in")) {
+		if b.service() == "" && (strings.Contains(lower, "session") || strings.Contains(lower, "sign in") || strings.Contains(lower, "not signed in")) {
 			if err := b.vault.Lock(ctx, onePasswordName); err != nil {
 				return "", err
 			}

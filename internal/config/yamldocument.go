@@ -118,6 +118,7 @@ func (d *YAMLDocument) render(style yamlStyle) ([]byte, error) {
 	if d.doc == nil && d.root == nil {
 		return []byte(d.raw), nil
 	}
+	_, style.v12 = version12Directive(d.src)
 	out, err := spliceDocument(d.raw, d.src, d.doc, d.root, style)
 	if err != nil {
 		return nil, err

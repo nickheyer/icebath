@@ -7,29 +7,34 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"io"
 	"strings"
 
 	"github.com/nickheyer/icebath/internal/fileutil"
 )
 
 // Error of a model config merge against a row that does not exist
-var ErrSessionNotFound = errors.New("session not found")
+var ErrSessionNotFound = errors.New("Session not found")
 
-// One member of a JSON object in its stored order
+// One member of a model_config object, a nil Value in a patch removing the key
+type ConfigMember struct {
+	Key   string
+	Value any
+}
+
+// One member of a stored JSON object in its stored order
 type configMember struct {
 	key   string
 	value json.RawMessage
 }
 
-// Members of model_config text in order, empty for anything that is not a JSON object
+// Members of model_config text in order, a repeated key keeping its first place, empty for anything but one JSON object
 func configMembers(text string) []configMember {
 	t := bytes.TrimSpace([]byte(text))
 	if len(t) == 0 || t[0] != '{' {
 		return nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(t))
-	dec.UseNumber()
 	if _, err := dec.Token(); err != nil {
 		return nil
 	}
@@ -44,61 +49,54 @@ func configMembers(text string) []configMember {
 		if err := dec.Decode(&raw); err != nil {
 			return nil
 		}
-		replaced := false
-		for i := range out {
-			if out[i].key == key {
-				out[i].value, replaced = raw, true
-			}
-		}
-		if !replaced {
-			out = append(out, configMember{key, raw})
-		}
+		out = setConfigMember(out, key, raw)
 	}
 	if _, err := dec.Token(); err != nil {
+		return nil
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil
 	}
 	return out
 }
 
-// JSON text of a patch value, raw JSON kept in its order and other values encoded with sorted keys
+// Members with key set to value, an existing key keeping its place and a new one appended
+func setConfigMember(members []configMember, key string, value json.RawMessage) []configMember {
+	for i := range members {
+		if members[i].key == key {
+			members[i].value = value
+			return members
+		}
+	}
+	return append(members, configMember{key, value})
+}
+
+// JSON text of a member value, raw JSON and struct fields in their own order and map keys sorted
 func patchValueJSON(v any) (string, error) {
 	if raw, ok := v.(json.RawMessage); ok {
-		return pythonJSONText(raw)
+		return spacedJSON(raw)
 	}
-	enc, err := fileutil.EncodeJSON(v, fileutil.JSONStyle{Sorted: true, ASCII: true})
+	enc, err := fileutil.EncodeJSON(v, fileutil.JSONStyle{ASCII: true})
 	return string(enc), err
 }
 
-// Members with patch applied, nil values deleting keys and new keys appended in sorted order
-func applyConfigPatch(members []configMember, patch map[string]any) ([]configMember, error) {
-	keys := make([]string, 0, len(patch))
-	for k := range patch {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		v := patch[k]
-		idx := -1
-		for i := range members {
-			if members[i].key == k {
-				idx = i
-			}
-		}
-		if v == nil {
-			if idx >= 0 {
-				members = append(members[:idx], members[idx+1:]...)
+// Members with patch applied in its order, nil values deleting keys and new keys appended
+func applyConfigPatch(members []configMember, patch []ConfigMember) ([]configMember, error) {
+	for _, p := range patch {
+		if p.Value == nil {
+			for i := range members {
+				if members[i].key == p.Key {
+					members = append(members[:i], members[i+1:]...)
+					break
+				}
 			}
 			continue
 		}
-		text, err := patchValueJSON(v)
+		text, err := patchValueJSON(p.Value)
 		if err != nil {
 			return nil, err
 		}
-		if idx >= 0 {
-			members[idx].value = json.RawMessage(text)
-		} else {
-			members = append(members, configMember{k, json.RawMessage(text)})
-		}
+		members = setConfigMember(members, p.Key, json.RawMessage(text))
 	}
 	return members, nil
 }
@@ -111,11 +109,12 @@ func encodeConfigMembers(members []configMember) (string, error) {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if err := writePythonString(&b, m.key); err != nil {
+		key, err := asciiJSONString(m.key)
+		if err != nil {
 			return "", err
 		}
-		b.WriteString(": ")
-		text, err := pythonJSONText(m.value)
+		b.WriteString(key + ": ")
+		text, err := spacedJSON(m.value)
 		if err != nil {
 			return "", err
 		}
@@ -126,7 +125,7 @@ func encodeConfigMembers(members []configMember) (string, error) {
 }
 
 // Merged model_config of the row on c, NULL when the merge leaves it empty, false when the row is missing
-func mergeModelConfigJSON(ctx context.Context, c Conn, sessionID string, patch map[string]any) (sql.NullString, bool, error) {
+func mergeModelConfigJSON(ctx context.Context, c Conn, sessionID string, patch []ConfigMember) (sql.NullString, bool, error) {
 	var raw sql.NullString
 	err := c.QueryRowContext(ctx, "SELECT model_config FROM sessions WHERE id = ?", sessionID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -143,8 +142,8 @@ func mergeModelConfigJSON(ctx context.Context, c Conn, sessionID string, patch m
 	return sql.NullString{String: text, Valid: err == nil}, true, err
 }
 
-// Exported merge for authorities inside their own transaction, ErrSessionNotFound when the row is missing
-func MergeModelConfigIn(ctx context.Context, c Conn, sessionID string, patch map[string]any) (sql.NullString, error) {
+// Merge for authorities inside their own transaction, ErrSessionNotFound naming the id when the row is missing
+func mergeModelConfigIn(ctx context.Context, c Conn, sessionID string, patch []ConfigMember) (sql.NullString, error) {
 	merged, ok, err := mergeModelConfigJSON(ctx, c, sessionID, patch)
 	if err == nil && !ok {
 		return merged, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
@@ -153,7 +152,7 @@ func MergeModelConfigIn(ctx context.Context, c Conn, sessionID string, patch map
 }
 
 // Merges patch into model_config and runs query with args from the merge in one write, nothing for a missing row
-func (s *Store) writeModelConfigPatch(ctx context.Context, sessionID string, patch map[string]any, query string, args func(merged sql.NullString) []any) error {
+func (s *Store) writeModelConfigPatch(ctx context.Context, sessionID string, patch []ConfigMember, query string, args func(merged sql.NullString) []any) error {
 	return s.Write(ctx, WritePatience, func(c Conn) error {
 		merged, ok, err := mergeModelConfigJSON(ctx, c, sessionID, patch)
 		if err != nil || !ok {
@@ -164,8 +163,8 @@ func (s *Store) writeModelConfigPatch(ctx context.Context, sessionID string, pat
 	})
 }
 
-// Merges patch into model_config atomically, a nil value removing its key, nothing for an empty patch or id
-func (s *Store) PatchSessionModelConfig(ctx context.Context, sessionID string, patch map[string]any) error {
+// Merges patch into model_config atomically in its order, a nil value removing its key
+func (s *Store) PatchSessionModelConfig(ctx context.Context, sessionID string, patch []ConfigMember) error {
 	if sessionID == "" || len(patch) == 0 {
 		return nil
 	}
@@ -173,51 +172,53 @@ func (s *Store) PatchSessionModelConfig(ctx context.Context, sessionID string, p
 		func(merged sql.NullString) []any { return []any{merged, sessionID} })
 }
 
-// JSON object text with members in the given order
-func orderedJSON(pairs ...any) (json.RawMessage, error) {
-	members := make([]configMember, 0, len(pairs)/2)
-	for i := 0; i+1 < len(pairs); i += 2 {
-		text, err := patchValueJSON(pairs[i+1])
+// JSON object text of members in the given order, nil values written as null
+func objectJSON(members ...ConfigMember) (json.RawMessage, error) {
+	var stored []configMember
+	for _, m := range members {
+		text, err := patchValueJSON(m.Value)
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, configMember{pairs[i].(string), json.RawMessage(text)})
+		stored = setConfigMember(stored, m.Key, json.RawMessage(text))
 	}
-	text, err := encodeConfigMembers(members)
+	text, err := encodeConfigMembers(stored)
 	return json.RawMessage(text), err
 }
 
 // Sets the model after a mid-session switch, the whole route in both resume shapes when the provider is known
 func (s *Store) UpdateSessionModel(ctx context.Context, sessionID, model, provider, baseURL, apiMode string) error {
 	s.tokenBarrier(ctx, false)
-	patch := map[string]any{"browser_model_lock": nil}
+	patch := []ConfigMember{{Key: "browser_model_lock"}}
 	if model != "" {
-		patch["model"] = model
+		patch = append(patch, ConfigMember{"model", model})
 	}
 	if provider != "" {
-		route, err := orderedJSON("provider", provider, "base_url", emptyNull(baseURL), "api_mode", emptyNull(apiMode))
+		route, err := objectJSON(ConfigMember{"provider", provider}, ConfigMember{"base_url", emptyNull(baseURL)}, ConfigMember{"api_mode", emptyNull(apiMode)})
 		if err != nil {
 			return err
 		}
-		patch["provider"], patch["base_url"], patch["api_mode"], patch["gateway_runtime"] = provider, emptyNull(baseURL), emptyNull(apiMode), route
+		patch = append(patch, ConfigMember{"provider", provider}, ConfigMember{"base_url", emptyNull(baseURL)},
+			ConfigMember{"api_mode", emptyNull(apiMode)}, ConfigMember{"gateway_runtime", route})
 	}
 	return s.writeModelConfigPatch(ctx, sessionID, patch, "UPDATE sessions SET model = ?, model_config = ? WHERE id = ?",
 		func(merged sql.NullString) []any { return []any{model, merged, sessionID} })
 }
 
 // Persists a Browser or API client runtime lock into model_config, the lineage markers surviving
-func (s *Store) UpdateSessionRuntimeLock(ctx context.Context, sessionID string, model, provider *string, modelOptions map[string]any, routeSource string, confirmed bool) error {
+func (s *Store) UpdateSessionRuntimeLock(ctx context.Context, sessionID string, model, provider *string, modelOptions json.RawMessage, routeSource string, confirmed bool) error {
 	options := modelOptions
-	if options == nil {
-		options = map[string]any{}
+	if !jsonTruthy(options) {
+		options = json.RawMessage("{}")
 	}
-	lock, err := orderedJSON("provider", derefText(provider), "model", derefText(model), "model_options", options,
-		"route_source", routeSource, "confirmed", confirmed, "updated_at", nowEpoch())
+	lock, err := objectJSON(ConfigMember{"provider", derefText(provider)}, ConfigMember{"model", derefText(model)},
+		ConfigMember{"model_options", options}, ConfigMember{"route_source", routeSource},
+		ConfigMember{"confirmed", confirmed}, ConfigMember{"updated_at", nowEpoch()})
 	if err != nil {
 		return err
 	}
 	modelArg := nullable(model)
-	return s.writeModelConfigPatch(ctx, sessionID, map[string]any{"browser_model_lock": lock}, `UPDATE sessions SET
+	return s.writeModelConfigPatch(ctx, sessionID, []ConfigMember{{"browser_model_lock", lock}}, `UPDATE sessions SET
                    model_config = ?,
                    model = COALESCE(?, model)
                    WHERE id = ?`, func(merged sql.NullString) []any { return []any{merged, modelArg, sessionID} })
@@ -236,13 +237,13 @@ func (s *Store) SetSessionYolo(ctx context.Context, sessionID string, enabled bo
 	if sessionID == "" {
 		return nil
 	}
-	return s.writeModelConfigPatch(ctx, sessionID, map[string]any{"yolo_mode": enabled}, "UPDATE sessions SET model_config = ? WHERE id = ?",
+	return s.writeModelConfigPatch(ctx, sessionID, []ConfigMember{{"yolo_mode", enabled}}, "UPDATE sessions SET model_config = ? WHERE id = ?",
 		func(merged sql.NullString) []any { return []any{merged, sessionID} })
 }
 
 // Reports the persisted YOLO flag, false on any parse failure so a resume never enables the bypass
 func SessionYoloEnabled(modelConfig sql.Null[string]) bool {
-	return jsonTruthy(parseModelConfigRaw(modelConfig.V)["yolo_mode"])
+	return jsonTruthy(ParseModelConfig(modelConfig.V)["yolo_mode"])
 }
 
 // Raw JSON of one model_config key of a session, false when the row or key is absent
@@ -251,7 +252,7 @@ func (s *Store) GetSessionModelConfigValue(ctx context.Context, sessionID, key s
 	if err != nil || !ok {
 		return nil, false, err
 	}
-	v, ok := parseModelConfigRaw(row.ModelConfig.V)[key]
+	v, ok := ParseModelConfig(row.ModelConfig.V)[key]
 	return v, ok, nil
 }
 
@@ -260,7 +261,7 @@ func (s *Store) UpdateConversationModelConfigValue(ctx context.Context, sessionI
 	written, ok := "", false
 	err := s.Write(ctx, WritePatience, func(c Conn) error {
 		written, ok = "", false
-		tip, err := compressionTipOn(ctx, c, sessionID)
+		tip, err := CompressionTipIn(ctx, c, sessionID)
 		if err != nil {
 			return err
 		}
@@ -280,7 +281,7 @@ func (s *Store) UpdateConversationModelConfigValue(ctx context.Context, sessionI
 				current, present = m.value, true
 			}
 		}
-		if members, err = applyConfigPatch(members, map[string]any{key: update(current, present)}); err != nil {
+		if members, err = applyConfigPatch(members, []ConfigMember{{key, update(current, present)}}); err != nil {
 			return err
 		}
 		text, err := encodeConfigMembers(members)
@@ -301,7 +302,7 @@ func (s *Store) SessionIDsWithModelConfigKey(ctx context.Context, key string) ([
 	var ids []string
 	err := s.Read(ctx, func(c Conn) error {
 		var err error
-		ids, err = queryStrings(ctx, c, "SELECT id FROM sessions WHERE "+jsonExtractSQL("model_config", "$."+key)+" IS NOT NULL ORDER BY started_at DESC")
+		ids, err = queryStrings(ctx, c, "SELECT id FROM sessions WHERE "+JSONExtractSQL("model_config", "$."+key)+" IS NOT NULL ORDER BY started_at DESC")
 		return err
 	})
 	return ids, err

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/internal/fileutil"
 	"github.com/nickheyer/icebath/internal/home"
@@ -14,25 +15,27 @@ import (
 const CronRequestPrefix = "cron:"
 
 // Session id a pre-unified cron run was named by
-var legacyCronRunID = regexp.MustCompile(`^cron_(.+)_\d{8}_\d{6}\n?$`)
+var legacyCronRunID = regexp.MustCompile(`^cron_(.+)_\p{Nd}{8}_\p{Nd}{6}\n?$`)
 
 // Admission request id of one cron fire, executionID being its ledger row id
 func CronRequestID(jobID, executionID string) string {
 	return CronRequestPrefix + jobID + ":" + executionID
 }
 
-// Half open bounds of every key starting with prefix, its final character bumped for an index range scan
-func PrefixRange(prefix string) (string, string) {
-	r := []rune(prefix)
-	if len(r) == 0 {
-		return prefix, prefix
+// Half open bounds of every key starting with prefix, false when no key can bound it from above
+func PrefixRange(prefix string) (string, string, bool) {
+	last, size := utf8.DecodeLastRuneInString(prefix)
+	if size == 0 || !utf8.ValidString(prefix) || !utf8.ValidRune(last+1) {
+		return "", "", false
 	}
-	r[len(r)-1]++
-	return prefix, string(r)
+	return prefix, prefix[:len(prefix)-size] + string(last+1), true
 }
 
 // Half open bounds of the cron request ids of jobID
-func CronRequestRange(jobID string) (string, string) { return PrefixRange(CronRequestID(jobID, "")) }
+func CronRequestRange(jobID string) (string, string) {
+	prefix := CronRequestID(jobID, "")
+	return prefix, prefix[:len(prefix)-1] + ";"
+}
 
 // Job and execution of a cron request id, a policy named jobID splitting an ambiguous one, false otherwise
 func CronRunFromRequest(requestID, jobID string) (string, string, bool) {

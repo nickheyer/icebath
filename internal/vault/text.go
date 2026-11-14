@@ -5,11 +5,10 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
-)
 
-// Multi letter uppercase forms that end in ASCII letters, the only ones able to change a base32 or algorithm match
-var upperExpansions = strings.NewReplacer("ß", "SS", "ﬀ", "FF", "ﬁ", "FI", "ﬂ", "FL",
-	"ﬃ", "FFI", "ﬄ", "FFL", "ﬅ", "ST", "ﬆ", "ST")
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+)
 
 // Reports whether r is whitespace, the Unicode White_Space set plus the ASCII separators 0x1c through 0x1f
 func isSpace(r rune) bool {
@@ -23,11 +22,11 @@ func isSpace(r rune) bool {
 // Text without leading and trailing whitespace
 func trimSpace(s string) string { return strings.TrimFunc(s, isSpace) }
 
-// Lowercase with the unconditional multi rune mapping of dotted capital I applied
-func lowerFull(s string) string { return strings.ToLower(strings.ReplaceAll(s, "İ", "i̇")) }
+// Lowercase by the full Unicode mapping, final sigma and the two rune form of dotted capital I included
+func lowerFull(s string) string { return cases.Lower(language.Und).String(s) }
 
-// Uppercase with the ligature and sharp s expansions applied
-func upperFull(s string) string { return strings.ToUpper(upperExpansions.Replace(s)) }
+// Uppercase by the full Unicode mapping, sharp s and ligatures expanding to several letters
+func upperFull(s string) string { return cases.Upper(language.Und).String(s) }
 
 // First n runes of s
 func head(s string, n int) string {

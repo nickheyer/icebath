@@ -17,7 +17,7 @@ const (
 	DeleteReasonGhostPrune = "ghost_prune"
 )
 
-// Committed delete or deliberate archive the on_session_delete observers receive
+// Committed delete or deliberate archive the on_session_delete observer receives
 type SessionDeleted struct {
 	// Session the caller asked for, the first removed id standing in for a bulk sweep
 	SessionID string
@@ -28,11 +28,23 @@ type SessionDeleted struct {
 	DeletedIDs []string
 	// Transcript directory the caller swept, empty when it named none
 	SessionsDir string
-	// Home the store lives in, the profile whose plugins the event reaches
-	Home string
 }
 
-// Hands a committed delete to the observer under the store's own home, never failing the delete
+// Sets the one observer every store of this engine hands committed deletes and deliberate archives to
+func (e *Engine) OnSessionDelete(observe func(ctx context.Context, ev SessionDeleted)) {
+	e.mu.Lock()
+	e.sessionDeleted = observe
+	e.mu.Unlock()
+}
+
+// Observer set on the engine, nil when nothing observes deletes
+func (e *Engine) deleteObserver() func(ctx context.Context, ev SessionDeleted) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.sessionDeleted
+}
+
+// Hands a committed delete to the observer under the home of the store, a failing observer never failing the delete
 func (s *Store) emitSessionDeleted(ctx context.Context, deletedIDs []string, reason, primary, sessionsDir string) {
 	seen := map[string]bool{}
 	var ids []string
@@ -46,13 +58,13 @@ func (s *Store) emitSessionDeleted(ctx context.Context, deletedIDs []string, rea
 		return
 	}
 	sort.Strings(ids)
-	observe := s.tables.state.options.OnSessionDelete
+	observe := s.eng.deleteObserver()
 	if observe == nil {
 		return
 	}
 	storeHome := filepath.Dir(absPath(s.path))
-	profile, _ := home.ProfileName(storeHome)
-	ev := SessionDeleted{SessionID: ids[0], Reason: reason, Profile: profile, SessionsDir: sessionsDir, Home: storeHome}
+	profile, owned := home.ProfileName(storeHome)
+	ev := SessionDeleted{SessionID: ids[0], Reason: reason, Profile: profile, SessionsDir: sessionsDir}
 	if containsString(ids, primary) {
 		ev.SessionID = primary
 	}
@@ -60,7 +72,7 @@ func (s *Store) emitSessionDeleted(ctx context.Context, deletedIDs []string, rea
 		ev.DeletedIDs = ids
 	}
 	dispatch := ctx
-	if current, err := s.eng.home.Home(ctx); profile != "" && (err != nil || resolvePath(current) != resolvePath(storeHome)) {
+	if current, err := s.eng.home.Home(ctx); owned && (err != nil || resolvePath(current) != resolvePath(storeHome)) {
 		dispatch = home.WithOverride(ctx, storeHome)
 	}
 	defer func() {

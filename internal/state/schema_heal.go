@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/internal/fileutil"
 	"github.com/nickheyer/icebath/internal/home"
@@ -205,7 +208,7 @@ func healSessionModelUsagePK(ctx context.Context, c Conn) error {
 	_, ferr := c.ExecContext(context.WithoutCancel(ctx), "PRAGMA foreign_keys=ON")
 	if err != nil {
 		if familyOf(err) != callFamily {
-			return errors.Join(err, ferr)
+			return withCleanup(err, ferr)
 		}
 		slog.Debug(fmt.Sprintf("session_model_usage PK heal skipped: %s", errText(err)))
 	}
@@ -312,7 +315,7 @@ func repairDuplicateTitles(ctx context.Context, c Conn) error {
 		}
 		all = append(all, t)
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	if err := rowsDone(rows); err != nil {
 		return err
 	}
 	sort.SliceStable(all, func(i, j int) bool {
@@ -381,6 +384,9 @@ func (s *Store) backfillGatewayMetadata(ctx context.Context, c Conn) error {
 	if err != nil {
 		return err
 	}
+	if !utf8.Valid(data) {
+		return errors.New("sessions.json is not UTF-8 text")
+	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	tok, err := dec.Token()
@@ -430,23 +436,25 @@ func backfillGatewayEntry(ctx context.Context, c Conn, key string, raw json.RawM
 	if json.Unmarshal(raw, &entry) != nil || entry == nil {
 		return nil
 	}
-	id, ok := jsonIDText(entry["session_id"])
-	if !ok {
-		return nil
+	id, ok, err := jsonIDText(entry["session_id"])
+	if err != nil || !ok {
+		return err
 	}
 	var origin map[string]json.RawMessage
 	originJSON := any(nil)
 	if r := bytes.TrimSpace(entry["origin"]); len(r) > 0 && r[0] == '{' && json.Unmarshal(r, &origin) == nil {
-		text, err := pythonJSONText(r)
+		text, err := spacedJSON(r)
 		if err != nil {
 			return err
 		}
 		originJSON = text
 	}
 	sessionKey := any(key)
-	if v, err := jsonBindValue(entry["session_key"]); err != nil {
-		return err
-	} else if jsonTruthy(entry["session_key"]) {
+	if jsonTruthy(entry["session_key"]) {
+		v, err := jsonBindValue(entry["session_key"])
+		if err != nil {
+			return err
+		}
 		sessionKey = v
 	}
 	args := []any{sessionKey}
@@ -454,12 +462,9 @@ func backfillGatewayEntry(ctx context.Context, c Conn, key string, raw json.RawM
 		src  map[string]json.RawMessage
 		name string
 	}{{origin, "chat_id"}, {entry, "chat_type"}, {origin, "thread_id"}, {entry, "display_name"}} {
-		var v any
-		if field.src != nil {
-			var err error
-			if v, err = jsonBindValue(field.src[field.name]); err != nil {
-				return err
-			}
+		v, err := jsonBindValue(field.src[field.name])
+		if err != nil {
+			return err
 		}
 		args = append(args, v)
 	}
@@ -467,8 +472,8 @@ func backfillGatewayEntry(ctx context.Context, c Conn, key string, raw json.RawM
 	if jsonTruthy(entry["expiry_finalized"]) || jsonTruthy(entry["memory_flushed"]) {
 		finalized = 1
 	}
-	args = []any{args[0], args[1], args[2], args[3], args[4], originJSON, finalized, id}
-	_, err := c.ExecContext(ctx, `UPDATE sessions
+	args = append(args, originJSON, finalized, id)
+	_, err = c.ExecContext(ctx, `UPDATE sessions
                    SET session_key = COALESCE(session_key, ?),
                        chat_id = COALESCE(chat_id, ?),
                        chat_type = COALESCE(chat_type, ?),
@@ -484,25 +489,39 @@ func backfillGatewayEntry(ctx context.Context, c Conn, key string, raw json.RawM
 }
 
 // Text of a truthy JSON session id as the reference stringifies it, false for a falsy or container value
-func jsonIDText(raw json.RawMessage) (string, bool) {
+func jsonIDText(raw json.RawMessage) (string, bool, error) {
 	if !jsonTruthy(raw) {
-		return "", false
+		return "", false, nil
 	}
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
-	if dec.Decode(&v) != nil {
-		return "", false
+	if err := dec.Decode(&v); err != nil {
+		return "", false, err
 	}
 	switch t := v.(type) {
 	case string:
-		return t, true
-	case json.Number:
-		return t.String(), true
+		return t, true, nil
 	case bool:
-		return "True", true
+		return "True", true, nil
+	case json.Number:
+		if !strings.ContainsAny(t.String(), ".eE") {
+			return t.String(), true, nil
+		}
+		f, err := t.Float64()
+		if math.IsInf(f, 1) {
+			return "inf", true, nil
+		}
+		if math.IsInf(f, -1) {
+			return "-inf", true, nil
+		}
+		if err != nil {
+			return "", false, err
+		}
+		text, err := fileutil.EncodeJSON(f, fileutil.JSONStyle{})
+		return string(text), err == nil, err
 	}
-	return "", false
+	return "", false, nil
 }
 
 // Bindable value of a JSON scalar, nil for absent or null, an error for a container SQLite cannot bind
@@ -520,10 +539,14 @@ func jsonBindValue(raw json.RawMessage) (any, error) {
 	case nil, string, bool:
 		return t, nil
 	case json.Number:
-		if i, err := t.Int64(); err == nil {
-			return i, nil
+		if !strings.ContainsAny(t.String(), ".eE") {
+			return t.Int64()
 		}
-		return t.Float64()
+		f, err := t.Float64()
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return nil, err
+		}
+		return f, nil
 	}
 	return nil, fmt.Errorf("sessions.json value %s cannot be bound", raw)
 }
@@ -551,77 +574,9 @@ func jsonTruthy(raw json.RawMessage) bool {
 		return true
 	}
 	var n json.Number
-	if json.Unmarshal(r, &n) == nil {
+	if r[0] != '"' && json.Unmarshal(r, &n) == nil {
 		f, err := n.Float64()
 		return err != nil || f != 0
 	}
 	return true
-}
-
-// JSON text re-encoded with spaced separators and escaped non-ASCII text, key order and number literals kept
-func pythonJSONText(raw json.RawMessage) (string, error) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var b strings.Builder
-	if err := writePythonJSON(dec, &b); err != nil {
-		return "", err
-	}
-	return b.String(), nil
-}
-
-// Writes the next JSON value of dec in the spaced layout
-func writePythonJSON(dec *json.Decoder, b *strings.Builder) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	switch t := tok.(type) {
-	case json.Delim:
-		closer, object := byte(']'), t == '{'
-		if object {
-			closer = '}'
-		}
-		b.WriteByte(byte(t))
-		for first := true; dec.More(); first = false {
-			if !first {
-				b.WriteString(", ")
-			}
-			if object {
-				key, err := dec.Token()
-				if err != nil {
-					return err
-				}
-				if err := writePythonString(b, fmt.Sprint(key)); err != nil {
-					return err
-				}
-				b.WriteString(": ")
-			}
-			if err := writePythonJSON(dec, b); err != nil {
-				return err
-			}
-		}
-		if _, err := dec.Token(); err != nil {
-			return err
-		}
-		b.WriteByte(closer)
-	case string:
-		return writePythonString(b, t)
-	case json.Number:
-		b.WriteString(t.String())
-	case bool:
-		b.WriteString(fmt.Sprint(t))
-	case nil:
-		b.WriteString("null")
-	}
-	return nil
-}
-
-// Writes s as an ASCII escaped JSON string
-func writePythonString(b *strings.Builder, s string) error {
-	enc, err := fileutil.EncodeJSON(s, fileutil.JSONStyle{ASCII: true})
-	if err != nil {
-		return err
-	}
-	b.Write(enc)
-	return nil
 }

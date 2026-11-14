@@ -83,7 +83,7 @@ func (b *bitwarden) Unlock(ctx context.Context, masterPassword string) error {
 	}
 	token := trimSpace(res.stdout)
 	if !res.ok || token == "" {
-		detail := head(trimSpace(scrubBw(res.stderr)), 200)
+		detail := head(trimSpace(scrubBw(withoutSecrets(res.stderr, masterPassword))), 200)
 		if strings.Contains(lowerFull(detail), "not logged in") {
 			detail = "not logged in — run `bw login` once in a terminal first"
 		}
@@ -117,7 +117,7 @@ func (b *bitwarden) run(ctx context.Context, args ...string) (string, error) {
 		return "", err
 	}
 	if !res.ok {
-		detail := scrubBw(res.stderr)
+		detail := scrubBw(withoutSecrets(res.stderr, token))
 		lower := lowerFull(detail)
 		if strings.Contains(lower, "locked") || strings.Contains(lower, "session") {
 			if err := b.vault.Lock(ctx, bitwardenName); err != nil {

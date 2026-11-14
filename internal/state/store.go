@@ -179,7 +179,7 @@ func (s *Store) openWriter(ctx context.Context) error {
 		}
 		slog.Error(fmt.Sprintf("state.db schema is malformed (%s) — attempting automatic repair (a backup copy is made first).", errText(err)))
 		s.closeWriterQuietly()
-		repaired, rerr := s.tables.repairSchema(ctx, s.eng, s.path)
+		repaired, rerr := s.tables.repairSchema(ctx, s)
 		if rerr != nil || !repaired {
 			return err
 		}

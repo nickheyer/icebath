@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,9 +20,6 @@ import (
 
 // How long a TERMed process gets before KILL
 const reapGrace = 3 * time.Second
-
-// Tolerance an epoch start comparison allows when no boot relative start was recorded
-const epochSlack = 2.0
 
 // Suffix the kernel appends to the cwd of a process whose directory was removed
 const deletedSuffix = " (deleted)"
@@ -45,16 +41,6 @@ type registration struct {
 	id    proc.Identity
 	known bool
 }
-
-// Answer of a probe for a recorded process that may be unable to decide
-type liveness int8
-
-// The recorded incarnation runs, is gone, or the probe could not tell
-const (
-	alive liveness = iota
-	dead
-	undecided
-)
 
 // Pids never signalled, this process with its ancestors and the launcher ancestors still running, all when the lineage is unknown
 func ownLineage(table proc.Table, from lineage) (map[int]bool, bool) {
@@ -226,27 +212,35 @@ func (r registration) matches(id proc.Identity) bool {
 	return r.id.PID == id.PID && r.id.PID > 0 && (!r.known || r.id.Start == id.Start)
 }
 
-// One registry icebath writes, its path and whether it is the spawn ledger or a background process checkpoint
-type registrySource struct {
-	path   string
-	ledger bool
-}
-
-// Live processes icebath registered for home in the spawn ledger and the process checkpoints, reused pids excluded
 func registeredLive(home string) (map[int]registration, error) {
 	root, err := RootOf(home)
 	if err != nil {
 		return nil, err
 	}
 	home = filepath.Clean(home)
-	sources := []registrySource{{SpawnLedger.In(root), true}, {ProcessesFile.In(home), false}}
-	if !samePath(home, root) {
-		sources = append(sources, registrySource{ProcessesFile.In(root), false})
-	}
 	out := map[int]registration{}
-	for _, src := range sources {
+	if entries, err := proc.ReadLedger(SpawnLedger.In(root)); err == nil {
+		for _, e := range entries {
+			if e.PID <= 0 {
+				continue
+			}
+			if e.Purpose == "mcp-helper" {
+				if dead, known := e.SpawnerDead(); known && dead {
+					continue
+				}
+			}
+			if e.StillRunning() {
+				out[e.PID] = registered(e.PID)
+			}
+		}
+	}
+	checkpoints := []string{ProcessesFile.In(home)}
+	if !samePath(home, root) {
+		checkpoints = append(checkpoints, ProcessesFile.In(root))
+	}
+	for _, path := range checkpoints {
 		var doc any
-		if fileutil.ReadJSON(src.path, &doc) != nil {
+		if fileutil.ReadJSON(path, &doc) != nil {
 			continue
 		}
 		list, _ := doc.([]any)
@@ -255,20 +249,22 @@ func registeredLive(home string) (map[int]registration, error) {
 			if !ok {
 				continue
 			}
-			if pid, ok := registeredPID(entry, src); ok {
-				reg := registration{id: proc.Identity{PID: pid}}
-				if id, err := proc.Identify(pid); err == nil {
-					reg = registration{id: id, known: true}
-				}
-				out[pid] = reg
+			if pid, ok := checkpointPID(entry); ok {
+				out[pid] = registered(pid)
 			}
 		}
 	}
 	return out, nil
 }
 
-// Pid of a registry entry whose host process still runs as recorded, false for sandbox pids and orphaned helpers
-func registeredPID(entry map[string]any, src registrySource) (int, bool) {
+func registered(pid int) registration {
+	if id, err := proc.Identify(pid); err == nil {
+		return registration{id: id, known: true}
+	}
+	return registration{id: proc.Identity{PID: pid}}
+}
+
+func checkpointPID(entry map[string]any) (int, bool) {
 	pid, ok := jsonInt(entry["pid"])
 	if !ok || pid <= 0 {
 		return 0, false
@@ -276,14 +272,8 @@ func registeredPID(entry map[string]any, src registrySource) (int, bool) {
 	if scope, has := entry["pid_scope"]; has && scope != "host" {
 		return 0, false
 	}
-	if entry["purpose"] == "mcp-helper" && spawnerDead(entry) == dead {
-		return 0, false
-	}
 	stamp := entry["host_start_time"]
-	switch {
-	case src.ledger:
-		return pid, incarnation(pid, entry["create_time"], entryBoot(entry, "boot_start")) != dead
-	case stamp == nil:
+	if stamp == nil {
 		return pid, proc.Exists(pid)
 	}
 	want, ok := stamp.(json.Number)
@@ -306,99 +296,4 @@ func jsonInt(v any) (int, bool) {
 	}
 	i, err := strconv.Atoi(string(n))
 	return i, err == nil
-}
-
-// Recorded start as a number, set false when absent and ok false when present but not a number
-func recordedNumber(v any) (value float64, set, ok bool) {
-	switch n := v.(type) {
-	case nil:
-		return 0, false, true
-	case float64:
-		return n, true, true
-	case json.Number:
-		f, err := n.Float64()
-		return f, true, err == nil
-	}
-	return 0, true, false
-}
-
-// Boot relative start under key for an entry of the running boot, minus one for an earlier boot, nil unknown
-func entryBoot(entry map[string]any, key string) any {
-	recorded, ok := entry["boot_id"].(string)
-	live, err := proc.BootID()
-	if !ok || err != nil {
-		return nil
-	}
-	if recorded == live {
-		return entry[key]
-	}
-	return float64(-1)
-}
-
-// Maps a probe failure to dead for a vanished process and undecided for anything else
-func probeFailure(err error) liveness {
-	if errors.Is(err, proc.ErrNotFound) {
-		return dead
-	}
-	return undecided
-}
-
-// Whether pid still runs as the process a recorded epoch and boot relative start describe, zombies counting as gone
-func incarnation(pid int, createTime, boot any) liveness {
-	if !proc.Exists(pid) {
-		return dead
-	}
-	same, decided := true, false
-	if b, set, ok := recordedNumber(boot); set {
-		if !ok {
-			return undecided
-		}
-		live, err := proc.SinceBoot(pid)
-		switch {
-		case err == nil:
-			same, decided = live == b, true
-		case !errors.Is(err, errors.ErrUnsupported):
-			return probeFailure(err)
-		}
-	}
-	if !decided {
-		if c, set, ok := recordedNumber(createTime); set {
-			if !ok {
-				return undecided
-			}
-			started, err := proc.Started(pid)
-			if err != nil {
-				return probeFailure(err)
-			}
-			same = math.Abs(started-c) < epochSlack
-		}
-	}
-	if !same {
-		return dead
-	}
-	if zombiesExist {
-		st, err := proc.StatusOf(pid)
-		if err != nil {
-			return probeFailure(err)
-		}
-		if st == proc.Zombie {
-			return dead
-		}
-	}
-	return alive
-}
-
-// Whether the spawner an entry records is provably gone, undecided when unrecorded or unprovable
-func spawnerDead(entry map[string]any) liveness {
-	pid, ok := jsonInt(entry["spawner_pid"])
-	if !ok || pid <= 0 {
-		return undecided
-	}
-	switch incarnation(pid, entry["spawner_create"], entryBoot(entry, "spawner_boot")) {
-	case alive:
-		return alive
-	case dead:
-		return dead
-	}
-	return undecided
 }

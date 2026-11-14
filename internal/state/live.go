@@ -96,6 +96,8 @@ type conn struct {
 	sc   *sql.Conn
 	key  string
 	live *liveRegistry
+	// Session table state of the store that set this connection up, nil until its layer setup ran
+	sessions *tableState
 }
 
 // Error of a driver whose connections no longer expose the SQLite handle the engine guards transactions through
@@ -116,14 +118,31 @@ func (e *Engine) connect(ctx context.Context, dsn, trackPath string) (*conn, err
 	sc, err := db.Conn(ctx)
 	if err == nil {
 		if err = sc.Raw(func(dc any) error { _, _, herr := driverHandle(dc); return herr }); err != nil {
-			err = errors.Join(err, sc.Close())
+			err = withCleanup(err, sc.Close())
 		}
 	}
 	if err != nil {
-		return nil, errors.Join(err, db.Close())
+		return nil, withCleanup(err, db.Close())
 	}
 	e.live.count[key]++
 	return &conn{db: db, sc: sc, key: key, live: &e.live}, nil
+}
+
+// Error with a failed cleanup step attached, the error itself when the cleanup succeeded
+func withCleanup(err, cleanup error) error {
+	if cleanup == nil {
+		return err
+	}
+	return errors.Join(err, cleanup)
+}
+
+// First error of a finished result set, its iteration error before its close error
+func rowsDone(rows *sql.Rows) error {
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	return rows.Close()
 }
 
 // Closes the connection and drops its tracking entry only once the descriptor is gone

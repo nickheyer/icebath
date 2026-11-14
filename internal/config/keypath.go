@@ -190,6 +190,23 @@ func putKey(m *yaml.Node, key string, value *yaml.Node) {
 // Empty mapping value tree
 func emptyMapping() *yaml.Node { return &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap} }
 
+// Write that would create a mapping beside an existing key holding a dot, which the runtime would never read
+type PhantomSiblingError struct {
+	Part     string
+	Key      string
+	Shadowed string
+}
+
+// The refusal naming the literal key and how to address it
+func (e *PhantomSiblingError) Error() string {
+	return fmt.Sprintf("Refusing to create nested key %s in %s: the mapping already contains a literal key %s that contains a dot. "+
+		"If you meant that key, escape its dots with a backslash (e.g. %s).",
+		quoted(e.Part), quoted(e.Key), quoted(e.Shadowed), strings.ReplaceAll(e.Shadowed, ".", "\\."))
+}
+
+// Matches ErrPhantomSibling
+func (e *PhantomSiblingError) Unwrap() error { return ErrPhantomSibling }
+
 // Sets the value at a dotted path, creating mappings on the way, indexing existing list positions, refusing phantom siblings
 func setNested(root *yaml.Node, dotted string, value *yaml.Node) error {
 	parts := SplitKeyPath(dotted)
@@ -201,7 +218,8 @@ func setNested(root *yaml.Node, dotted string, value *yaml.Node) error {
 		case yaml.SequenceNode:
 			idx, ok := listIndex(cur, remaining[0])
 			if !ok {
-				return fmt.Errorf("%w: segment %q of %q is not a position in the list", ErrNotNavigable, remaining[0], dotted)
+				return fmt.Errorf("%w: cannot navigate into list at key %s: segment %s is not a position in the list",
+					ErrNotNavigable, quoted(dotted), quoted(remaining[0]))
 			}
 			if leaf {
 				cur.Content[idx] = value
@@ -228,16 +246,14 @@ func setNested(root *yaml.Node, dotted string, value *yaml.Node) error {
 				return nil
 			}
 			if shadowed, ok := phantomSibling(cur, remaining[0]); ok {
-				return fmt.Errorf("%w: refusing to create nested key %q in %q because the mapping already contains the literal key %q, "+
-					"escape its dots with a backslash (e.g. %s) if that key was meant", ErrPhantomSibling, remaining[0], dotted, shadowed,
-					strings.ReplaceAll(shadowed, ".", "\\."))
+				return &PhantomSiblingError{Part: remaining[0], Key: dotted, Shadowed: shadowed}
 			}
 			next := emptyMapping()
 			putKey(cur, remaining[0], next)
 			cur = next
 			i++
 		default:
-			return fmt.Errorf("%w: %s at %q", ErrNotNavigable, kindName(cur), dotted)
+			return fmt.Errorf("%w: cannot navigate into %s at key %s", ErrNotNavigable, typeName(cur), quoted(dotted))
 		}
 	}
 	return nil

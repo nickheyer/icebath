@@ -4,7 +4,12 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // One sessions row with its prompt storage resolved and its lineage markers lifted out of model_config
@@ -25,10 +30,11 @@ type Session struct {
 	Model             sql.Null[string]
 	ModelConfig       sql.Null[string]
 	// Resolved prompt text, the content addressed copy before the legacy inline column
-	SystemPrompt                    sql.Null[string]
-	SystemPromptHash                sql.Null[string]
-	ParentSessionID                 sql.Null[string]
-	StartedAt                       float64
+	SystemPrompt     sql.Null[string]
+	SystemPromptHash sql.Null[string]
+	ParentSessionID  sql.Null[string]
+	// Start stamp in epoch seconds, absent when the cell holds no number
+	StartedAt                       sql.Null[float64]
 	EndedAt                         sql.Null[float64]
 	EndReason                       sql.Null[string]
 	MessageCount                    sql.Null[int64]
@@ -266,6 +272,8 @@ func scanRecords[T any](rows *sql.Rows, dest func(r *T, col string) any) ([]T, e
 		for i := range args {
 			if args[i] == nil || last[args[i]] != i {
 				args[i] = new(any)
+			} else {
+				args[i] = lenient{dst: args[i]}
 			}
 		}
 		if err := rows.Scan(args...); err != nil {
@@ -309,7 +317,7 @@ func (s *Session) liftMarkers() {
 	if s.ResetFrom != "" && s.BranchedFrom != "" {
 		return
 	}
-	cfg := parseModelConfigRaw(s.ModelConfig.V)
+	cfg := ParseModelConfig(s.ModelConfig.V)
 	if s.ResetFrom == "" {
 		s.ResetFrom = markerText(cfg["_reset_from"])
 	}
@@ -328,7 +336,7 @@ func markerText(raw json.RawMessage) string {
 }
 
 // Top level members of model_config JSON text, empty for text that is not a JSON object
-func parseModelConfigRaw(text string) map[string]json.RawMessage {
+func ParseModelConfig(text string) map[string]json.RawMessage {
 	t := bytes.TrimSpace([]byte(text))
 	if len(t) == 0 || t[0] != '{' {
 		return map[string]json.RawMessage{}
@@ -341,11 +349,11 @@ func parseModelConfigRaw(text string) map[string]json.RawMessage {
 }
 
 // Reports whether a unread watermark predates the row's activity, an untracked row reading as read
-func SessionUnread(lastReadAt, lastActive sql.Null[float64], startedAt float64) bool {
+func sessionUnread(lastReadAt, lastActive, startedAt sql.Null[float64]) bool {
 	if !lastReadAt.Valid {
 		return false
 	}
-	active := startedAt
+	active := startedAt.V
 	if lastActive.Valid && lastActive.V != 0 {
 		active = lastActive.V
 	}
@@ -358,4 +366,93 @@ func WorkspaceKey(gitRepoRoot, cwd sql.Null[string]) string {
 		return root
 	}
 	return strings.TrimSpace(cwd.V)
+}
+
+// Scan target that accepts any storage class, a cell its field cannot hold reading as absent
+type lenient struct{ dst any }
+
+// Stores the cell in the wrapped field, never failing on NULL or a mistyped cell
+func (l lenient) Scan(src any) error {
+	switch d := l.dst.(type) {
+	case *string:
+		*d, _ = cellText(src)
+	case *sql.Null[string]:
+		d.V, d.Valid = cellText(src)
+	case *sql.NullString:
+		d.String, d.Valid = cellText(src)
+	case *int64:
+		*d, _ = cellInt(src)
+	case *sql.Null[int64]:
+		d.V, d.Valid = cellInt(src)
+	case *float64:
+		*d, _ = cellFloat(src)
+	case *sql.Null[float64]:
+		d.V, d.Valid = cellFloat(src)
+	default:
+		return fmt.Errorf("session column has no lenient scan into %T", l.dst)
+	}
+	return nil
+}
+
+// Text of a cell, numbers in their shortest decimal form, false for NULL
+func cellText(src any) (string, bool) {
+	switch v := src.(type) {
+	case nil:
+		return "", false
+	case string:
+		return v, true
+	case []byte:
+		return string(v), true
+	case int64:
+		return strconv.FormatInt(v, 10), true
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64), true
+	case bool:
+		return strconv.Itoa(boolInt(v)), true
+	case time.Time:
+		return v.Format(time.RFC3339Nano), true
+	}
+	return fmt.Sprint(src), true
+}
+
+// Integer of a cell, a real truncated toward zero and numeric text parsed, false for NULL and anything else
+func cellInt(src any) (int64, bool) {
+	switch v := src.(type) {
+	case int64:
+		return v, true
+	case bool:
+		return int64(boolInt(v)), true
+	case float64:
+		if math.IsNaN(v) || v < math.MinInt64 || v >= math.MaxInt64 {
+			return 0, false
+		}
+		return int64(v), true
+	case string:
+		text := strings.TrimSpace(v)
+		if n, err := strconv.ParseInt(text, 10, 64); err == nil {
+			return n, true
+		}
+		if f, err := strconv.ParseFloat(text, 64); err == nil {
+			return cellInt(f)
+		}
+	case []byte:
+		return cellInt(string(v))
+	}
+	return 0, false
+}
+
+// Real of a cell, an integer widened and numeric text parsed, false for NULL and anything else
+func cellFloat(src any) (float64, bool) {
+	switch v := src.(type) {
+	case float64:
+		return v, true
+	case int64:
+		return float64(v), true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		return f, err == nil || errors.Is(err, strconv.ErrRange)
+	case []byte:
+		return cellFloat(string(v))
+	}
+	return 0, false
 }

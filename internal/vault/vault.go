@@ -84,8 +84,14 @@ type Vault struct {
 	plugins  *pluginRegistry
 }
 
-// Vault resolving homes through resolver, keeping keys in keychain and reading manager tokens through secrets
+// Vault resolving homes through resolver, a nil keychain meaning a fresh one and nil secrets a profile holding none
 func New(resolver *home.Resolver, keychain *Keychain, secrets SecretLookup) *Vault {
+	if keychain == nil {
+		keychain = NewKeychain()
+	}
+	if secrets == nil {
+		secrets = func(context.Context, string) string { return "" }
+	}
 	return &Vault{resolver: resolver, keychain: keychain, secrets: secrets, sessions: newSessions(), plugins: newPluginRegistry()}
 }
 

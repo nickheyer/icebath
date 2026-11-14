@@ -126,6 +126,21 @@ func (t ToolLoopGuardrails) MarshalYAML() (any, error) {
 	return encodeMapping(toolLoopGuardrailsFields(t), t.rest)
 }
 
+type ToolBudgetConfig struct {
+	MCPResultSizeChars int `yaml:"mcp_result_size_chars"`
+	rest               rest
+}
+
+type toolBudgetFields ToolBudgetConfig
+
+func (t *ToolBudgetConfig) UnmarshalYAML(n *yaml.Node) error {
+	return decodeMapping(n, (*toolBudgetFields)(t), &t.rest)
+}
+
+func (t ToolBudgetConfig) MarshalYAML() (any, error) {
+	return encodeMapping(toolBudgetFields(t), t.rest)
+}
+
 // Repeat counts that trigger a guardrail action
 type LoopThresholds struct {
 	ExactFailure         int `yaml:"exact_failure"`
@@ -224,5 +239,7 @@ func workspaceDocs() map[string]string {
 		"tool_loop_guardrails.loop_caps":                         "Per-turn hard ceilings for runaway-prone tools; counters reset every turn, always on regardless of the thresholds above. Dozens of searches or subagents in ONE turn is already pathological, hence low defaults. 0 = unlimited.",
 		"tool_loop_guardrails.loop_caps.max_web_searches":        "web_search calls per turn.",
 		"tool_loop_guardrails.loop_caps.max_subagents":           "Subagents spawned per turn.",
+		"tool_budget":                                            "Tool result persistence budget: results over a threshold are saved under cache/spillover and replaced by a preview and the file path.",
+		"tool_budget.mcp_result_size_chars":                      "Per-result threshold (chars) for mcp_ tools, capped at the general per-result threshold; MCP servers often return un-paginated payloads. 0 or a negative value uses the default 50000.",
 	}
 }

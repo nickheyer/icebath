@@ -400,7 +400,7 @@ func (s *Store) ensureFTSCJK(ctx context.Context, c Conn) (bool, error) {
 				return false, err
 			}
 			for _, kv := range [][2]string{{"fts_cjk_rebuild_high_water", fmt.Sprint(hw)}, {"fts_cjk_rebuild_progress", "0"}} {
-				if _, err := c.ExecContext(ctx, stateMetaUpsertSQL, kv[0], kv[1]); err != nil {
+				if err := SetMetaIn(ctx, c, kv[0], kv[1]); err != nil {
 					return false, err
 				}
 			}
@@ -460,7 +460,7 @@ func (s *Store) migrateBroadFTSUpdateTriggers(ctx context.Context, c Conn) (int,
 			toDrop = append(toDrop, name.String)
 		}
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	if err := rowsDone(rows); err != nil {
 		return 0, err
 	}
 	if len(toDrop) == 0 {
@@ -819,8 +819,7 @@ func (s *Store) stampSettledFTSLayout(ctx context.Context, c Conn) error {
 	if v, ok, err := metaValue(ctx, c, "fts_storage_version"); err != nil || (ok && v == version) {
 		return err
 	}
-	_, err = c.ExecContext(ctx, stateMetaUpsertSQL, "fts_storage_version", version)
-	return err
+	return SetMetaIn(ctx, c, "fts_storage_version", version)
 }
 
 // Name prefix of demoted v22 shadow tables awaiting chunked teardown

@@ -19,6 +19,7 @@ type yamlStyle struct {
 	width      int
 	roundTrip  bool
 	quoteWords bool
+	v12        bool
 }
 
 // Rules of the safe dumper, folding at eighty columns and writing null as null
@@ -220,7 +221,7 @@ func (w *yamlWriter) writeItem(v *yaml.Node, dash int) {
 // Single line flow form of a collection, items written under flow scalar rules
 func (w *yamlWriter) flowForm(n *yaml.Node) string {
 	n = resolveAlias(n)
-	sub := newYAMLWriter(yamlStyle{width: math.MaxInt32, roundTrip: w.style.roundTrip, quoteWords: w.style.quoteWords})
+	sub := newYAMLWriter(yamlStyle{width: math.MaxInt32, roundTrip: w.style.roundTrip, quoteWords: w.style.quoteWords, v12: w.style.v12})
 	open := func(s string) {
 		sub.write(s)
 		sub.whitespace = true
@@ -332,6 +333,9 @@ func (w *yamlWriter) str(text string, indent int, key, flow, root bool) bool {
 	if text != "" {
 		got, _ := resolvePlain(text)
 		implicit = got == tagStr && text != "="
+		if got12, _ := resolvePlain12(text); w.style.v12 && got12 != tagStr {
+			implicit = false
+		}
 	}
 	allowPlain := a.allowBlockPlain
 	if flow {

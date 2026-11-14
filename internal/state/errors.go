@@ -59,6 +59,12 @@ var (
 // Error a store returns once it was closed and may not reopen
 var ErrClosed = errors.New("state database is closed")
 
+type MissingHookError struct {
+	Name string
+}
+
+func (e *MissingHookError) Error() string { return "session store call has no " + e.Name }
+
 // Error a write callback wraps when a live compression lock refuses the write for a few seconds
 var ErrCompressionInProgress = errors.New("session is being compressed")
 

@@ -12,7 +12,7 @@ import (
 )
 
 // Bounded acquire of the one byte range lock Windows rebuilds serialize on, with no orphan break
-func (e *Engine) acquireRebuildLock(ctx context.Context, lockPath string, f *os.File, timeout time.Duration) (lockAcquire, *os.File) {
+func (e *Engine) acquireRebuildLock(ctx context.Context, what, lockPath string, f *os.File, timeout time.Duration) (lockAcquire, *os.File) {
 	deadline := time.Now().Add(timeout)
 	for {
 		err := fileutil.TryLockFile(f, fileutil.Range(0, 1))
@@ -20,20 +20,20 @@ func (e *Engine) acquireRebuildLock(ctx context.Context, lockPath string, f *os.
 			return lockHeld, f
 		}
 		if !errors.Is(err, fileutil.ErrLocked) {
-			slog.Warn(fmt.Sprintf("Could not acquire FTS rebuild lock %s (%v) — deferring on a non-contention error.", lockPath, err))
+			slog.Warn(fmt.Sprintf("Could not acquire %s %s (%v) — deferring on a non-contention error.", what, lockPath, err))
 			return lockFailed, f
 		}
 		if !time.Now().Before(deadline) {
 			return lockBusy, f
 		}
 		if sleepCtx(ctx, ftsRebuildLockPoll) != nil {
-			return lockBusy, f
+			return lockAbandoned, f
 		}
 	}
 }
 
 // Windows rebuild locks carry no holder record
-func readHolderRecordIfRecorded(*os.File) lockHolderRecord { return lockHolderRecord{} }
+func readHolderRecord(*os.File) lockHolderRecord { return lockHolderRecord{} }
 
 // Lets go of the byte range lock
 func releaseRebuildLock(f *os.File) { _ = fileutil.UnlockFile(f, fileutil.Range(0, 1)) }

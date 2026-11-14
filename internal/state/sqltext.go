@@ -1,6 +1,11 @@
 package state
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+
+	"github.com/nickheyer/icebath/internal/fileutil"
+)
 
 // Ids one IN list binds at most, below the bound parameter cap of every SQLite build
 const sqlInChunk = 900
@@ -36,4 +41,16 @@ func chunks[T any](values []T, size int) [][]T {
 // SQL expression yielding expr when it lies inside the trusted epoch window and NULL otherwise
 func sqlInWindow(expr string) string {
 	return "(SELECT _win.v FROM (SELECT " + expr + " AS v) _win WHERE _win.v BETWEEN " + epochMin + " AND " + epochMax + ")"
+}
+
+// Raw JSON re-encoded on one line with spaced separators and ASCII escapes, member order and number text kept
+func spacedJSON(raw json.RawMessage) (string, error) {
+	enc, err := fileutil.EncodeJSON(raw, fileutil.JSONStyle{ASCII: true})
+	return string(enc), err
+}
+
+// JSON string literal of s with every code point outside printable ASCII escaped
+func asciiJSONString(s string) (string, error) {
+	enc, err := fileutil.EncodeJSON(s, fileutil.JSONStyle{ASCII: true})
+	return string(enc), err
 }

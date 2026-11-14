@@ -160,7 +160,7 @@ func (s *Store) afterDelete(ctx context.Context, deleted bool, removed []string,
 		return err
 	}
 	for _, sid := range removed {
-		removeSessionFiles(sessionsDir, sid)
+		RemoveSessionFiles(sessionsDir, sid)
 	}
 	return nil
 }
@@ -210,8 +210,8 @@ func deleteDelegateChildren(ctx context.Context, c Conn, parentIDs []string) ([]
 	return ids, nil
 }
 
-// Removes a session's transcript snapshots and request dumps, a filesystem failure never blocking the delete
-func removeSessionFiles(sessionsDir, sessionID string) {
+// Removes the transcript snapshots and request dumps of a session, a filesystem failure never blocking the caller
+func RemoveSessionFiles(sessionsDir, sessionID string) {
 	if sessionsDir == "" {
 		return
 	}
@@ -322,7 +322,7 @@ func (s *Store) DeleteSessionIfEmpty(ctx context.Context, sessionID, sessionsDir
 		return deleted, err
 	}
 	if deleted {
-		removeSessionFiles(sessionsDir, sessionID)
+		RemoveSessionFiles(sessionsDir, sessionID)
 	}
 	return deleted, nil
 }
@@ -487,7 +487,7 @@ func (s *Store) expandCompressionLineage(ctx context.Context, c Conn, ids []stri
 		seen = append(seen, frontier...)
 	}
 	for _, sid := range append([]string{}, seen...) {
-		conv, err := localConversationIDs(ctx, c, sid)
+		conv, err := LocalConversationIDsIn(ctx, c, sid)
 		if err != nil {
 			return nil, err
 		}
@@ -543,16 +543,21 @@ func (s *Store) DeleteEmptySessions(ctx context.Context, sessionsDir string) (in
 	return len(removed), s.afterDelete(ctx, len(removed) > 0, removed, DeleteReasonEmptySweep, "", sessionsDir)
 }
 
-// Archives every lineage the prune selection matches, each judged through its tip, returning how many matched
-func (s *Store) ArchiveSessions(ctx context.Context, sel ArchiveSelection) (int, error) {
-	ids, err := s.archiveCandidates(ctx, sel)
+// Archives every lineage whose tip the prune filter matches, unarchived rows unless the filter says otherwise, returning the match count
+func (s *Store) ArchiveSessions(ctx context.Context, f PruneFilter) (int, error) {
+	if f.Archived == nil {
+		unarchived := false
+		f.Archived = &unarchived
+	}
+	f.LineageTipsOnly = true
+	rows, err := s.ListPruneCandidates(ctx, f)
 	if err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
-		if _, err := s.SetSessionArchived(ctx, id, true, true); err != nil {
+	for _, row := range rows {
+		if _, err := s.SetSessionArchived(ctx, row.ID, true, true); err != nil {
 			return 0, err
 		}
 	}
-	return len(ids), nil
+	return len(rows), nil
 }

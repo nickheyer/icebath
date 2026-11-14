@@ -29,9 +29,9 @@ type sessionKey struct {
 	backend string
 }
 
-// Session token and when a manager call last used it
+// Session token inside a closure no dump of process state shows, and when a manager call last used it
 type sessionToken struct {
-	value    string
+	value    func() string
 	lastUsed time.Time
 }
 
@@ -119,7 +119,7 @@ func (s *sessions) live(key sessionKey, touch bool) string {
 	if touch {
 		t.lastUsed = now
 	}
-	return t.value
+	return unseal(t.value)
 }
 
 // Lock generation of key, snapshotted before a manager unlock starts
@@ -137,7 +137,7 @@ func (s *sessions) commit(key sessionKey, value string, generation int, owner st
 		return false
 	}
 	now := time.Now()
-	s.tokens[key] = &sessionToken{value: value, lastUsed: now}
+	s.tokens[key] = &sessionToken{value: seal(value), lastUsed: now}
 	s.owners[key] = owner
 	s.arm(now)
 	return true
@@ -231,11 +231,19 @@ type (
 	unattendedKey struct{}
 )
 
-// Identifier and password a user typed into the save prompt
+// Identifier and password typed into the save prompt, the password inside a closure no printing path can open
 type Login struct {
 	Identifier string
-	Password   string
+	password   func() string
 }
+
+// Login of the identifier and the password typed for it
+func NewLogin(identifier, password string) Login {
+	return Login{Identifier: identifier, password: seal(password)}
+}
+
+// Typed secret released to be saved as a vault item, empty for the zero value
+func (l Login) Password() string { return unseal(l.password) }
 
 // Writes the identifier with a redaction marker in place of the password
 func (l Login) Format(f fmt.State, _ rune) {

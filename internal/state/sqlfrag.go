@@ -64,9 +64,6 @@ func IsRecoverableEndReason(reason string) bool { return containsString(recovera
 // Reports whether reason is a deliberate conversation boundary a compression rotation never heals
 func IsBoundaryEndReason(reason string) bool { return containsString(boundaryEndReasons, reason) }
 
-// Accidental end reasons recovery treats as resumable, in their canonical order
-func RecoverableEndReasons() []string { return append([]string{}, recoverableEndReasons...) }
-
 // Reports whether values holds v
 func containsString(values []string, v string) bool {
 	for _, x := range values {
@@ -90,7 +87,7 @@ func sqlLiteralList(values []string) string {
 }
 
 // Non throwing JSON marker lookup over a JSON text column
-func jsonExtractSQL(expression, path string) string {
+func JSONExtractSQL(expression, path string) string {
 	return "json_extract((CASE WHEN json_valid(" + expression + ") THEN " + expression + " ELSE json_object() END), " +
 		sqlLiteral(path) + ")"
 }
@@ -155,7 +152,7 @@ func previewRawSQL(sessionIDExpr string) string {
 
 // Branch child predicate over alias a, the stable marker or the legacy branched parent heuristic
 func branchChildSQL(a string) string {
-	return jsonExtractSQL(a+".model_config", "$._branched_from") + " IS NOT NULL" +
+	return JSONExtractSQL(a+".model_config", "$._branched_from") + " IS NOT NULL" +
 		" OR EXISTS (SELECT 1 FROM sessions p            WHERE p.id = " + a + ".parent_session_id" +
 		"            AND p.end_reason = 'branched'            AND " + a + ".started_at >= p.ended_at)"
 }
@@ -177,28 +174,28 @@ func legacyResetChildSQL(alias, reasonsSQL string) string {
 func nonContinuationChildSQL(child, parent string) string {
 	var b strings.Builder
 	for _, marker := range []string{"_branched_from", "_delegate_from", "_reset_from"} {
-		b.WriteString("  AND COALESCE(" + jsonExtractSQL(child+"model_config", "$."+marker) + ", '') != " + parent + "\n")
+		b.WriteString("  AND COALESCE(" + JSONExtractSQL(child+"model_config", "$."+marker) + ", '') != " + parent + "\n")
 	}
 	b.WriteString("  AND COALESCE(" + child + "source, '') != 'tool'\n")
 	return b.String()
 }
 
 // Reset child predicate over alias a, the stable marker or the same key fallback
-func resetChildSQL(a string) string {
-	return jsonExtractSQL(a+".model_config", "$._reset_from") + " IS NOT NULL OR " + legacyResetChildSQL(a, sqlLiteralList(resetEndReasons))
+func ResetChildSQL(a string) string {
+	return JSONExtractSQL(a+".model_config", "$._reset_from") + " IS NOT NULL OR " + legacyResetChildSQL(a, sqlLiteralList(resetEndReasons))
 }
 
 // Picker visible rows, roots plus branch and reset children
-var listableChildSQL = "(s.parent_session_id IS NULL OR " + branchChildSQL("s") + " OR " + resetChildSQL("s") + ")"
+var listableChildSQL = "(s.parent_session_id IS NULL OR " + branchChildSQL("s") + " OR " + ResetChildSQL("s") + ")"
 
 // Subagent runs over alias, neither branch, reset nor compression children
 func ephemeralChildSQL(alias string) string {
 	return "(" + alias + ".parent_session_id IS NOT NULL AND NOT (" + branchChildSQL(alias) + ")" +
-		" AND NOT (" + compressionChildSQL(alias) + ") AND NOT (" + resetChildSQL(alias) + "))"
+		" AND NOT (" + compressionChildSQL(alias) + ") AND NOT (" + ResetChildSQL(alias) + "))"
 }
 
 // Delegate marker lookup of a model config column
-func delegateFromSQL(col string) string { return jsonExtractSQL(col, "$._delegate_from") }
+func delegateFromSQL(col string) string { return JSONExtractSQL(col, "$._delegate_from") }
 
 // Window predicate a trusted epoch cell satisfies
 var sqlInWindowPredicate = "BETWEEN " + epochMin + " AND " + epochMax
@@ -212,7 +209,7 @@ func sqlFreshestOf(activity, sessionIDExpr, started string) string {
 }
 
 // Recency expression of a sessions row under alias
-func sqlSessionLastActive(alias string) string {
+func SessionLastActiveSQL(alias string) string {
 	return sqlFreshestOf(alias+".last_activity_at", alias+".id", alias+".started_at")
 }
 

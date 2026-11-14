@@ -206,8 +206,24 @@ type StableToolKey struct {
 
 // Stable key of an assistant row whose every tool call names an id, false for any other row
 func StableToolKeyOf(role, toolCallsJSON string, timestamp float64, toolCallID, toolName *string) (StableToolKey, bool) {
-	if role != "assistant" {
+	ids, ok := stableToolCallIDs(role, toolCallsJSON)
+	if !ok {
 		return StableToolKey{}, false
+	}
+	key := StableToolKey{Timestamp: timestamp, CallIDs: fmt.Sprintf("%q", ids)}
+	if toolCallID != nil {
+		key.ToolCallID, key.HasCallID = *toolCallID, true
+	}
+	if toolName != nil {
+		key.ToolName, key.HasName = *toolName, true
+	}
+	return key, true
+}
+
+// Effective call ids of an assistant row whose every tool call names one, false for any other row
+func stableToolCallIDs(role, toolCallsJSON string) ([]string, bool) {
+	if role != "assistant" {
+		return nil, false
 	}
 	if toolCallsJSON == "" {
 		toolCallsJSON = "[]"
@@ -218,30 +234,23 @@ func StableToolKeyOf(role, toolCallsJSON string, timestamp float64, toolCallID, 
 		if json.Unmarshal([]byte(toolCallsJSON), &probe) != nil {
 			slog.Warn("Failed to deserialize tool_calls, falling back to []")
 		}
-		return StableToolKey{}, false
+		return nil, false
 	}
 	if len(calls) == 0 {
-		return StableToolKey{}, false
+		return nil, false
 	}
 	ids := make([]string, len(calls))
 	for i, raw := range calls {
 		var fields map[string]json.RawMessage
 		if json.Unmarshal(bytes.TrimSpace(raw), &fields) != nil {
-			return StableToolKey{}, false
+			return nil, false
 		}
 		ids[i] = CoalesceToolCallID(jsonString(fields["call_id"]), jsonString(fields["id"]))
 		if ids[i] == "" {
-			return StableToolKey{}, false
+			return nil, false
 		}
 	}
-	key := StableToolKey{Timestamp: timestamp, CallIDs: fmt.Sprintf("%q", ids)}
-	if toolCallID != nil {
-		key.ToolCallID, key.HasCallID = *toolCallID, true
-	}
-	if toolName != nil {
-		key.ToolName, key.HasName = *toolName, true
-	}
-	return key, true
+	return ids, true
 }
 
 // Text of a JSON string value, empty for anything else

@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -14,8 +15,33 @@ type SessionOptions struct {
 	CJKFullText *bool
 	// Renews the startup watchdog lease before schema work that may run long, nil when no watchdog is armed
 	StartupProgress func(expected time.Duration, phase string)
-	// Receives every committed delete and deliberate archive, nil when nothing in the process observes them
-	OnSessionDelete func(ctx context.Context, ev SessionDeleted)
+	// Transcript logic the agent loop owns and the store runs where a read or rewind needs it
+	Transcript TranscriptHooks
+	// Gateway media policy the store calls when it retires and collects retained media
+	Media         MediaHooks
+	Automation    AutomationHooks
+	Gateway       GatewayHooks
+	LocalSessions LocalSessionHooks
+}
+
+type AutomationHooks struct {
+	Restate func(family, raw string) (status, encoded, cleared string, err error)
+}
+
+var ErrNoAutomationPolicy = errors.New("no automation state codec configured for the session store")
+
+// Agent owned transcript logic the store calls at the points a replay read and a rewind need it
+type TranscriptHooks struct {
+	// Repairs role alternation of a loaded transcript, returning the repaired list and the repairs made
+	RepairSequence func(messages []*Message) ([]*Message, int)
+	// Reports internal recovery scaffolding that never reaches the durable transcript
+	EphemeralScaffolding func(m *Message) bool
+	// Projects live content to the text only form the flush stores
+	DurableContent func(c Content) Content
+	// Text a retry re-sends for a live user payload, an error when it cannot be replayed losslessly
+	RetryableUserText func(c Content) (string, error)
+	// Visible text of content for a composer prefill
+	FlattenText func(c Content) string
 }
 
 // Reports whether the CJK bigram index may be served and kept in sync
@@ -32,6 +58,12 @@ func (o SessionOptions) progress(expected time.Duration, phase string) {
 type tableState struct {
 	options SessionOptions
 	fts     ftsFlags
+	// Local lineage indexes the listings reuse per connection
+	lineage lineageCache
+	// Column names of the messages table once read, guarded by columnsMu
+	columnsMu      sync.Mutex
+	messageColumns []string
+	tokens         tokenWriter
 }
 
 // Full-text availability and recovery bookkeeping of one store, guarded by its own mutex
@@ -100,6 +132,9 @@ func ftsGet[T any](f *ftsFlags, fn func(f *ftsFlags) T) T {
 // Registers the CJK tokenizer on the writer when enabled, and on each reader once the writer has it
 func setupSessionConn(ctx context.Context, s *Store, c Conn, writer bool) error {
 	st := s.tables.state
+	if r, lent := c.(*runner); lent {
+		r.c.sessions = st
+	}
 	if writer {
 		loaded := false
 		if st.options.cjkEnabled() {

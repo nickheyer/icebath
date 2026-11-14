@@ -19,16 +19,13 @@ import (
 // Meta key prefix of a deletion fence a retired session leaves behind
 const retiredSessionPrefix = "gateway.retired_session.v1."
 
-// Error of a create that would recreate a deleted session beside its tombstone
-var ErrSessionRetired = errors.New("session was deleted; its id cannot be reused")
-
 // Fields a session upsert writes, nil pointers leaving the column NULL
 type NewSession struct {
 	ID     string
 	Source string
 	Model  *string
-	// Serialized to JSON, nil or empty leaving the column NULL
-	ModelConfig      map[string]any
+	// Stored as one JSON object in this member order, empty leaving the column NULL
+	ModelConfig      []ConfigMember
 	SystemPrompt     *string
 	UserID           *string
 	SessionKey       *string
@@ -133,7 +130,7 @@ var (
 		}
 		fork := ""
 		for _, marker := range []string{"_delegate_from", "_branched_from"} {
-			fork += "\n                       AND COALESCE(" + jsonExtractSQL("model_config", "$."+marker) + ", '')" +
+			fork += "\n                       AND COALESCE(" + JSONExtractSQL("model_config", "$."+marker) + ", '')" +
 				"\n                           != parent_session_id"
 		}
 		return "UPDATE sessions\n                       SET " + strings.Join(cols, inheritSep) +
@@ -148,7 +145,7 @@ var (
 var profileDirName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
 // Profile owning this store from its path alone, empty outside the profile tree
-func (s *Store) ownProfileName() string {
+func (s *Store) OwnProfileName() string {
 	root, err := home.DefaultRoot()
 	if err != nil {
 		return ""
@@ -172,29 +169,37 @@ func nullable(v *string) any {
 	return *v
 }
 
-// JSON text of a model config, NULL for an empty one
-func modelConfigJSON(cfg map[string]any) (any, error) {
+// JSON text of a creation model config in member order, nil values written as null, NULL when empty
+func modelConfigJSON(cfg []ConfigMember) (any, error) {
 	if len(cfg) == 0 {
 		return nil, nil
 	}
-	enc, err := fileutil.EncodeJSON(cfg, fileutil.JSONStyle{Sorted: true, ASCII: true})
+	var members []configMember
+	for _, m := range cfg {
+		text, err := patchValueJSON(m.Value)
+		if err != nil {
+			return nil, err
+		}
+		members = setConfigMember(members, m.Key, json.RawMessage(text))
+	}
+	text, err := encodeConfigMembers(members)
 	if err != nil {
 		return nil, err
 	}
-	return string(enc), nil
+	return text, nil
 }
 
 // Seconds since the epoch the store stamps rows with
 func nowEpoch() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// Upserts a session row without overwriting what an earlier writer set, inside the caller's transaction
-func (s *Store) insertSessionRow(ctx context.Context, c Conn, n NewSession) error {
+// Upserts a session row without overwriting what an earlier writer set, inside a transaction the caller owns
+func (s *Store) InsertSessionRowIn(ctx context.Context, c Conn, n NewSession) error {
 	var exists, retired int
 	err := c.QueryRowContext(ctx, "SELECT 1 FROM sessions WHERE id=?", n.ID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = c.QueryRowContext(ctx, "SELECT 1 FROM state_meta WHERE key=?", retiredSessionPrefix+n.ID).Scan(&retired)
 		if err == nil {
-			return ErrSessionRetired
+			return runtimeErr(ReasonNotFound)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -205,7 +210,7 @@ func (s *Store) insertSessionRow(ctx context.Context, c Conn, n NewSession) erro
 	profile := nullable(n.ProfileName)
 	if n.ProfileName == nil || strings.TrimSpace(*n.ProfileName) == "" {
 		profile = nil
-		if own := s.ownProfileName(); own != "" {
+		if own := s.OwnProfileName(); own != "" {
 			profile = own
 		}
 	}
@@ -247,12 +252,7 @@ func inheritParentSessionMetadata(ctx context.Context, c Conn, sessionID string)
 
 // Creates or upserts a session row on the transcript budget
 func (s *Store) CreateSession(ctx context.Context, n NewSession) error {
-	return s.Write(ctx, TranscriptWritePatience, func(c Conn) error { return s.insertSessionRow(ctx, c, n) })
-}
-
-// Upserts a session row inside a transaction an authority already owns
-func (s *Store) InsertSessionRowIn(ctx context.Context, c Conn, n NewSession) error {
-	return s.insertSessionRow(ctx, c, n)
+	return s.Write(ctx, TranscriptWritePatience, func(c Conn) error { return s.InsertSessionRowIn(ctx, c, n) })
 }
 
 // Ensures a row exists, an empty source standing in as unknown
@@ -370,7 +370,7 @@ type SessionListRow struct {
 	ID           string
 	Source       string
 	Title        sql.Null[string]
-	StartedAt    float64
+	StartedAt    sql.Null[float64]
 	EndedAt      sql.Null[float64]
 	MessageCount sql.Null[int64]
 	Model        sql.Null[string]
@@ -384,7 +384,8 @@ func (s *Store) GetSessionListRow(ctx context.Context, sessionID string) (Sessio
 	found := false
 	err := s.Read(ctx, func(c Conn) error {
 		err := c.QueryRowContext(ctx, "SELECT id, source, title, started_at, ended_at, message_count, model, hidden, archived "+
-			"FROM sessions WHERE id = ?", sessionID).Scan(&r.ID, &r.Source, &r.Title, &r.StartedAt, &r.EndedAt, &r.MessageCount, &r.Model, &r.Hidden, &r.Archived)
+			"FROM sessions WHERE id = ?", sessionID).Scan(lenient{&r.ID}, lenient{&r.Source}, lenient{&r.Title}, lenient{&r.StartedAt}, lenient{&r.EndedAt},
+			lenient{&r.MessageCount}, lenient{&r.Model}, lenient{&r.Hidden}, lenient{&r.Archived})
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -579,7 +580,7 @@ func NormalizeActivityProvenance(p string) ActivityProvenance {
 
 // Activity text clamped to the shared description budget with an ellipsis
 func BoundActivityDescription(description string) string {
-	text := strings.TrimSpace(description)
+	text := strings.TrimFunc(description, previewSpace)
 	if utf8.RuneCountInString(text) <= activityDescriptionMax {
 		return text
 	}
@@ -672,7 +673,7 @@ func (s *Store) UpdateSessionToolNames(ctx context.Context, sessionID string, pi
 // JSON text of a tools pin, raw JSON re-encoded in the spaced layout with its order kept
 func pinJSON(pin any) (string, error) {
 	if raw, ok := pin.(json.RawMessage); ok {
-		return pythonJSONText(raw)
+		return spacedJSON(raw)
 	}
 	enc, err := fileutil.EncodeJSON(pin, fileutil.JSONStyle{ASCII: true})
 	if err != nil {

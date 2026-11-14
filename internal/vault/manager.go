@@ -191,3 +191,13 @@ func listedItems(text, tool string) ([][]member, error) {
 	}
 	return out, nil
 }
+
+// Text with every occurrence of each non-empty secret replaced by the redaction marker
+func withoutSecrets(text string, secrets ...string) string {
+	for _, secret := range secrets {
+		if secret != "" {
+			text = strings.ReplaceAll(text, secret, redacted)
+		}
+	}
+	return text
+}

@@ -166,7 +166,7 @@ func (s *Store) saveLocked(ctx context.Context, build stateBuilder, readErr erro
 		return nil, nil, err
 	}
 	if sys := home.ManagedSystem(h); sys != "" {
-		fmt.Fprintln(os.Stderr, ManagedInstallMessage("save configuration", sys))
+		s.notify(ctx, ManagedInstallMessage("save configuration", sys))
 		return nil, nil, nil
 	}
 	if err := s.refuseFailedRead(ctx, path, readErr); err != nil {
@@ -215,10 +215,8 @@ func (s *Store) saveLocked(ctx context.Context, build stateBuilder, readErr erro
 		}
 		normalized = stripDefaults(normalized, defaults, preserve)
 	}
-	if s.firstStamp != nil && s.worker == nil && mappingIndex(rawForPaths, "_config_version") < 0 && mappingIndex(normalized, "_config_version") >= 0 {
-		if err := s.firstStamp(ctx, h, rawForPaths, normalized); err != nil {
-			return nil, nil, err
-		}
+	if _, err := s.noteFirstStamp(ctx, h, rawForPaths, normalized); err != nil {
+		return nil, nil, err
 	}
 	if err := s.writeState(ctx, path, normalized, true, commentedSectionsForSave(normalized)); err != nil {
 		return nil, nil, err
@@ -248,7 +246,7 @@ func (s *Store) stripManagedForSave(ctx context.Context, input *yaml.Node) (*yam
 	}
 	if len(removed) > 0 {
 		slices.Sort(removed)
-		fmt.Fprintf(os.Stderr, "Note: %d managed setting(s) were not saved (managed by your administrator): %s\n", len(removed), strings.Join(removed, ", "))
+		s.notify(ctx, fmt.Sprintf("Note: %d managed setting(s) were not saved (managed by your administrator): %s", len(removed), strings.Join(removed, ", ")))
 	}
 	return stripped, nil
 }

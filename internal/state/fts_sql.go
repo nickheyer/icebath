@@ -45,7 +45,7 @@ func FTSTrigramSessionSQL(alias string) string {
 	if alias != "" {
 		q = alias + "."
 	}
-	return q + "source NOT IN (" + sqlLiteralList(ftsTrigramExcludedSources) + ") AND " + jsonExtractSQL(q+"model_config", "$._delegate_from") + " IS NULL"
+	return q + "source NOT IN (" + sqlLiteralList(ftsTrigramExcludedSources) + ") AND " + JSONExtractSQL(q+"model_config", "$._delegate_from") + " IS NULL"
 }
 
 // Rebuild gate every external content trigger shares, rows in the pending backfill window skipped

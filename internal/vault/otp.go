@@ -82,7 +82,7 @@ func normalizeOTPSecret(value string) (string, error) {
 	if seed == "" || strings.ContainsFunc(seed, func(r rune) bool { return !(r >= 'A' && r <= 'Z' || r >= '2' && r <= '7') }) {
 		return "", failure(ErrInvalid, "authenticator key must be a base32 secret or an otpauth:// URI")
 	}
-	if digits.Int64() == 6 && period.Int64() == 30 && algo == "SHA1" {
+	if digits.Int64() == 6 && period.IsInt64() && period.Int64() == 30 && algo == "SHA1" {
 		return seed, nil
 	}
 	return fmt.Sprintf("%s|%s|%s|%s", seed, digits, period, algo), nil

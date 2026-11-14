@@ -39,6 +39,7 @@ type Config struct {
 	MCP                            MCPConfig           `yaml:"mcp"`
 	ToolOutput                     ToolOutputConfig    `yaml:"tool_output"`
 	ToolLoopGuardrails             ToolLoopGuardrails  `yaml:"tool_loop_guardrails"`
+	ToolBudget                     ToolBudgetConfig    `yaml:"tool_budget"`
 	Compression                    CompressionConfig   `yaml:"compression"`
 	PromptCaching                  PromptCachingConfig `yaml:"prompt_caching"`
 	OpenRouter                     OpenRouterConfig    `yaml:"openrouter"`
@@ -283,6 +284,7 @@ func Default() *Config {
 		MCP:                            MCPConfig{AutoReloadOnConfigChange: true, DiscoveryConcurrency: 4},
 		ToolOutput:                     ToolOutputConfig{MaxBytes: 50000, MaxLines: 2000, MaxLineLength: 2000},
 		ToolLoopGuardrails:             defaultGuardrails(),
+		ToolBudget:                     ToolBudgetConfig{MCPResultSizeChars: 50000},
 		Compression:                    defaultCompression(),
 		PromptCaching:                  PromptCachingConfig{CacheTTL: new(Text("5m"))},
 		OpenRouter:                     OpenRouterConfig{ResponseCache: true, ResponseCacheTTL: 300, MinCodingScore: Float(0.65)},

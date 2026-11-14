@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json/jsontext"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -114,40 +113,50 @@ func refUnreadable(reason string) error {
 	return failure(ErrKeyRef, "vault.keyref is unreadable (%s); see `icebath vault key`", reason)
 }
 
-// Pointer saved beside the vault, nil when there is none
+// Pointer saved beside the vault, nil when there is none, path bytes outside UTF-8 read back as written
 func (s *Store) readRef() (*KeyRef, error) {
-	raw, err := os.ReadFile(s.keyRef)
-	if errors.Is(err, fs.ErrNotExist) {
+	var doc any
+	err := fileutil.ReadJSON(s.keyRef, &doc)
+	var pathErr *fs.PathError
+	var textErr *fileutil.UTF8Error
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		return nil, nil
-	}
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
-		return nil, refUnreadable(pe.Err.Error())
-	}
-	if err != nil {
-		return nil, refUnreadable(err.Error())
-	}
-	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	if !utf8.Valid(raw) {
+	case errors.As(err, &textErr):
 		return nil, refUnreadable("not UTF-8 text")
-	}
-	doc, err := parseValue(raw)
-	if err != nil {
+	case errors.As(err, &pathErr):
+		return nil, refUnreadable(pathErr.Err.Error())
+	case err != nil:
 		return nil, refUnreadable("invalid JSON")
 	}
-	ms, ok := objectMembers(doc)
-	storage, account := lookup(ms, "storage"), lookup(ms, "account")
-	if !ok || storage.Kind() != jsontext.KindString || valueText(storage) != "keychain" || !truthy(account) {
+	fields, _ := doc.(map[string]any)
+	if fields["storage"] != "keychain" || !truthyField(fields["account"]) {
 		return nil, failure(ErrKeyRef, "vault.keyref does not describe a keychain entry; see `icebath vault key`")
 	}
-	ref := KeyRef{Service: keychainService, Account: valueText(account)}
-	if service := lookup(ms, "service"); truthy(service) {
-		ref.Service = valueText(service)
+	ref := KeyRef{Account: fmt.Sprint(fields["account"])}
+	if service := fields["service"]; truthyField(service) {
+		ref.Service = fmt.Sprint(service)
 	}
-	if dir := lookup(ms, "vault_dir"); dir.Kind() == jsontext.KindString {
-		ref.VaultDir = valueText(dir)
-	}
+	ref.VaultDir, _ = fields["vault_dir"].(string)
 	return &ref, nil
+}
+
+// Reports whether a pointer member is true, a non-zero number, non-empty text or a non-empty container
+func truthyField(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t != ""
+	case json.Number:
+		f, err := t.Float64()
+		return err != nil || f != 0
+	case map[string]any:
+		return len(t) > 0
+	case []any:
+		return len(t) > 0
+	}
+	return false
 }
 
 // Keychain name the entry is filed under, the vault key default when the pointer gives none
@@ -181,10 +190,11 @@ func (s *Store) saveNewRef(ctx context.Context, ref KeyRef) error {
 	return err
 }
 
-// Keychain failure the key layer reports in place of a key it could not read or write
+// Keychain failure of the key layer, landed set once a write reached the store before the failure
 type keychainFailure struct {
-	msg string
-	err error
+	msg    string
+	err    error
+	landed bool
 }
 
 // Message naming what the keychain did
@@ -232,10 +242,10 @@ func (s *Store) storeKey(ctx context.Context, ref KeyRef, key []byte) error {
 	}
 	back, err := s.keychain.Get(ctx, ref.service(), ref.Account)
 	if err != nil && !errors.Is(err, ErrNotFound) {
-		return keychainFailed(err, "the OS keychain refused the key (%s)", err)
+		return &keychainFailure{msg: fmt.Sprintf("the OS keychain refused the key (%s)", err), err: err, landed: true}
 	}
 	if err != nil || back != string(key) {
-		return keychainFailed(nil, "the OS keychain did not return the key it was given")
+		return &keychainFailure{msg: "the OS keychain did not return the key it was given", landed: true}
 	}
 	return nil
 }
@@ -302,7 +312,7 @@ func (s *Store) key(ctx context.Context) ([]byte, error) {
 		if err != nil {
 			why = "the OS keychain is not reachable here: " + err.Error()
 		} else {
-			why = fmt.Sprintf("the keychain entry %s / %s is gone", quote(adopted.Service), quote(adopted.Account))
+			why = fmt.Sprintf("the keychain entry %s / %s is gone", quote(adopted.service()), quote(adopted.Account))
 		}
 		if len(key) > 0 {
 			return key, nil
@@ -342,6 +352,7 @@ func (s *Store) createKey(ctx context.Context) ([]byte, error) {
 			return nil, err
 		}
 		if err := s.storeKey(ctx, ref, key); err != nil {
+			s.discardFailedStore(ctx, ref, err)
 			slog.Warn(fmt.Sprintf("vault.key_storage is keychain, but %s; using %s instead", err, s.keyFile))
 		} else {
 			if err := s.saveNewRef(ctx, ref); err != nil {
@@ -357,6 +368,17 @@ func (s *Store) createKey(ctx context.Context) ([]byte, error) {
 		return nil, err
 	}
 	return key, nil
+}
+
+// Deletes the entry a failed store wrote or may have written, never asking a keychain that refused or was unreachable
+func (s *Store) discardFailedStore(ctx context.Context, ref KeyRef, err error) {
+	var failed *keychainFailure
+	if !errors.As(err, &failed) {
+		return
+	}
+	if failed.landed || !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrDenied) {
+		s.deleteKey(ctx, ref)
+	}
 }
 
 // Own entry for a vault moved or cloned from another directory, the entry it came from never deleted
@@ -408,7 +430,7 @@ func (s *Store) KeyLocation() (KeyLocation, error) {
 		return where, nil
 	}
 	if ref != nil {
-		return KeyLocation{Storage: "keychain", Service: ref.Service, Account: ref.Account, VaultDir: ref.VaultDir}, nil
+		return KeyLocation{Storage: "keychain", Service: ref.service(), Account: ref.Account, VaultDir: ref.VaultDir}, nil
 	}
 	return KeyLocation{Storage: "none", Path: s.keyFile}, nil
 }
@@ -491,13 +513,19 @@ func (s *Store) migrateToKeychain(ctx context.Context) (string, error) {
 		ref = *existing
 	}
 	moveErr := s.storeKey(ctx, ref, key)
+	var back []byte
 	if moveErr == nil {
-		back, err := s.loadKey(ctx, ref)
+		back, moveErr = s.loadKey(ctx, ref)
+	}
+	if moveErr == nil {
+		ok, err := s.decrypts(back)
 		if err != nil {
-			moveErr = err
-		} else if ok, err := s.decrypts(back); err != nil {
+			if fresh {
+				s.deleteKey(ctx, ref)
+			}
 			return "", err
-		} else if !ok {
+		}
+		if !ok {
 			moveErr = errors.New("the key read back from the keychain does not decrypt the vault")
 		}
 	}
@@ -613,7 +641,9 @@ func (s *Store) OwnCopiedKey(ctx context.Context, publishedHome string) (*KeyRef
 		if mine, err = newKeyRef(home.Vault.In(published)); err != nil {
 			return nil, err
 		}
-		err = s.storeKey(ctx, mine, key)
+		if err = s.storeKey(ctx, mine, key); err != nil {
+			s.discardFailedStore(ctx, mine, err)
+		}
 	}
 	if err != nil {
 		return nil, failure(ErrKeyStorage, "its key is in the OS keychain, which this session cannot use (%s). Clone from a session "+

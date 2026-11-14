@@ -22,7 +22,8 @@ func TranscriptLimit(configured *int64) int {
 type ResumeTooLargeError struct {
 	MessageCount int
 	Limit        int
-	Scope        string
+	// What was counted, the whole lineage or the tip segment alone
+	Scope string
 }
 
 // User facing refusal naming the uncapped export paths and the setting that raises the limit

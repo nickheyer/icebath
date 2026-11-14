@@ -370,7 +370,7 @@ func (g *Guard) flushLocked(change string) error {
 
 // Starts a supervisor in its own session and replays every registration and pin to it
 func (g *Guard) startLocked(young bool) error {
-	cmd := exec.Command("/bin/sh", "-c", supervisorScript, "icebath-supervisor", itoa(unix.Getpgrp()), runtime.GOOS)
+	cmd := exec.Command("/bin/sh", "-c", supervisorScript, supervisorName, itoa(unix.Getpgrp()), runtime.GOOS)
 	NewSession(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

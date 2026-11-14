@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,10 +24,9 @@ const (
 	messageUIDBackfillBudget = time.Second
 )
 
-// Upserts of a stale breadcrumb and of a meta value, and deletes of the rebuild markers and retired tool mark
+// Upsert of a stale breadcrumb, and deletes of the rebuild markers and of the retired tool mark
 const (
 	staleKeyUpsertSQL           = "INSERT INTO state_meta (key, value) VALUES (?, '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-	stateMetaUpsertSQL          = "INSERT INTO state_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 	clearRebuildMarkersSQL      = "DELETE FROM state_meta WHERE key IN ('fts_rebuild_high_water', 'fts_rebuild_progress')"
 	dropRetiredToolHighWaterSQL = "DELETE FROM state_meta WHERE key = 'fts_tool_full_content_high_water'"
 )
@@ -231,11 +232,11 @@ func (s *Store) runDataMigrations(ctx context.Context, c Conn, current int64, ft
 func migrateDelegateMarkers(ctx context.Context, c Conn) error {
 	for _, q := range []string{
 		"UPDATE sessions SET model_config = json_set(COALESCE(model_config, '{}'), '$._delegate_from', parent_session_id) " +
-			"WHERE parent_session_id IS NOT NULL AND " + jsonExtractSQL("model_config", "$._delegate_from") + " IS NULL " +
+			"WHERE parent_session_id IS NOT NULL AND " + JSONExtractSQL("model_config", "$._delegate_from") + " IS NULL " +
 			"AND " + ephemeralChildSQL("sessions"),
 		"UPDATE sessions SET model_config = json_set(COALESCE(model_config, '{}'), '$._delegate_from', '__orphaned__') " +
-			"WHERE parent_session_id IS NULL AND " + jsonExtractSQL("model_config", "$._delegate_from") + " IS NULL " +
-			"AND " + jsonExtractSQL("model_config", "$._branched_from") + " IS NULL " +
+			"WHERE parent_session_id IS NULL AND " + JSONExtractSQL("model_config", "$._delegate_from") + " IS NULL " +
+			"AND " + JSONExtractSQL("model_config", "$._branched_from") + " IS NULL " +
 			"AND title IS NULL AND message_count <= 25 AND EXISTS (SELECT 1 FROM messages m " +
 			"            WHERE m.session_id = sessions.id AND m.role = 'tool') " +
 			"AND NOT EXISTS (SELECT 1 FROM sessions ch " +
@@ -253,7 +254,10 @@ func migrateDelegateMarkers(ctx context.Context, c Conn) error {
 
 // v25 moves inline prompt snapshots into the content addressed table, pausing on contention for the next open to resume
 func dedupeLegacySystemPrompts(ctx context.Context, c Conn) error {
-	type pending struct{ id, prompt string }
+	type pending struct {
+		id     sql.NullString
+		prompt string
+	}
 	rows, err := c.QueryContext(ctx, "SELECT id, system_prompt FROM sessions WHERE system_prompt IS NOT NULL")
 	if err != nil {
 		if familyOf(err) == callFamily {
@@ -261,22 +265,22 @@ func dedupeLegacySystemPrompts(ctx context.Context, c Conn) error {
 		}
 		return err
 	}
-	var todo []pending
+	var inline []pending
 	for rows.Next() {
 		var p pending
 		if err := rows.Scan(&p.id, &p.prompt); err != nil {
 			rows.Close()
 			return err
 		}
-		todo = append(todo, p)
+		inline = append(inline, p)
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	if err := rowsDone(rows); err != nil {
 		if familyOf(err) == callFamily {
 			return nil
 		}
 		return err
 	}
-	for _, p := range todo {
+	for _, p := range inline {
 		hash, err := storeSystemPrompt(ctx, c, &p.prompt)
 		if err == nil {
 			_, err = c.ExecContext(ctx, "UPDATE sessions SET system_prompt_hash = ?, system_prompt = NULL WHERE id = ?", hash, p.id)
@@ -304,7 +308,7 @@ func advanceMessageUIDBackfill(ctx context.Context, c Conn) error {
 	}
 	var doneThrough int64
 	if ok {
-		if _, err := fmt.Sscan(cursorText, &doneThrough); err != nil {
+		if doneThrough, err = strconv.ParseInt(strings.TrimSpace(cursorText), 10, 64); err != nil {
 			return contentErr(err, "invalid %s value %q", messageUIDBackfillCursor, cursorText)
 		}
 	}

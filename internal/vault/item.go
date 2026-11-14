@@ -69,14 +69,21 @@ type secretField struct {
 	value string
 }
 
-// Decrypted secret fields behind a pointer so nested printing shows an address, every formatting path a marker
-type Secret struct {
-	s *secretFields
+// Closure handing back v, the only form a struct of this package keeps a secret in
+func seal[T any](v T) func() T { return func() T { return v } }
+
+// Value a closure made by seal holds, the zero value for a nil closure
+func unseal[T any](f func() T) T {
+	if f == nil {
+		var zero T
+		return zero
+	}
+	return f()
 }
 
-// Field list a Secret points at
-type secretFields struct {
-	list []secretField
+// Decrypted secret fields inside a closure no formatter, encoder or reflective walker can open
+type Secret struct {
+	read func() []secretField
 }
 
 // Secret holding the given values in order, a repeated name keeping its first position and last value
@@ -89,16 +96,11 @@ func secretOf(pairs ...secretField) Secret {
 		}
 		list = append(list, p)
 	}
-	return Secret{s: &secretFields{list: list}}
+	return Secret{read: seal(list)}
 }
 
 // Fields of the secret, none for the zero value
-func (s Secret) fields() []secretField {
-	if s.s == nil {
-		return nil
-	}
-	return s.s.list
-}
+func (s Secret) fields() []secretField { return unseal(s.read) }
 
 // Value of field released for a page fill or a redaction registration, empty when absent
 func (s Secret) Reveal(field string) string {
@@ -140,21 +142,22 @@ func (Secret) LogValue() slog.Value { return slog.StringValue(redacted) }
 // Redaction marker as a JSON string
 func (Secret) MarshalJSON() ([]byte, error) { return json.Marshal(redacted) }
 
-// Secret fields an item is added with, in the order the caller supplied them, every formatting path a marker
+// Secret fields an item is added with, in the order supplied, inside a closure no printing path can open
 type Payload struct {
-	p *payloadMembers
+	read func() []member
 }
 
-// Entries a Payload points at
-type payloadMembers struct {
-	list []member
-}
-
-// One string field of a payload or of a plugin secret, printed with its value redacted
+// One named string of a payload or plugin secret, its value inside a closure no printing path can open
 type Field struct {
 	Name  string
-	Value string
+	value func() string
 }
+
+// Field carrying value under name
+func NewField(name, value string) Field { return Field{Name: name, value: seal(value)} }
+
+// Value the field carries, empty for the zero field
+func (f Field) text() string { return unseal(f.value) }
 
 // Writes the name with a redaction marker in place of the value
 func (f Field) Format(s fmt.State, _ rune) { _, _ = io.WriteString(s, "{"+f.Name+" "+redacted+"}") }
@@ -173,9 +176,9 @@ func (f Field) MarshalJSON() ([]byte, error) {
 func NewPayload(fields ...Field) Payload {
 	var list []member
 	for _, f := range fields {
-		list = setMember(list, f.Name, stringValue(f.Value))
+		list = setMember(list, f.Name, stringValue(f.text()))
 	}
-	return Payload{p: &payloadMembers{list: list}}
+	return Payload{read: seal(list)}
 }
 
 // Payload of a JSON object sent over the local RPC channel, field order and value types kept
@@ -188,16 +191,11 @@ func ParsePayload(data []byte) (Payload, error) {
 	if !ok {
 		return Payload{}, failure(ErrInvalid, "secret payload must be a JSON object")
 	}
-	return Payload{p: &payloadMembers{list: list}}, nil
+	return Payload{read: seal(list)}, nil
 }
 
 // Copy of the payload entries
-func (p Payload) members() []member {
-	if p.p == nil {
-		return nil
-	}
-	return slices.Clone(p.p.list)
-}
+func (p Payload) members() []member { return slices.Clone(unseal(p.read)) }
 
 // Fields the payload holds
 func (p Payload) Len() int { return len(p.members()) }

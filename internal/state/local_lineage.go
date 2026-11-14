@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
+	"sync"
 )
 
 // Meta key prefix of a local creation receipt
@@ -52,7 +54,7 @@ func readLocalReceipt(ctx context.Context, c Conn, owner string) (localReceipt, 
 }
 
 // Creation id whose receipt lineage holds the physical segment, the segment itself otherwise
-func localLineageOwner(ctx context.Context, c Conn, sessionID string) (string, error) {
+func LocalLineageOwnerIn(ctx context.Context, c Conn, sessionID string) (string, error) {
 	var owner sql.NullString
 	err := c.QueryRowContext(ctx, "SELECT chat_id FROM sessions WHERE id=?", sessionID).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -82,8 +84,8 @@ func localLineageOwner(ctx context.Context, c Conn, sessionID string) (string, e
 }
 
 // Every row of the local conversation the session belongs to, its creation id first
-func localConversationIDs(ctx context.Context, c Conn, sessionID string) ([]string, error) {
-	owner, err := localLineageOwner(ctx, c, sessionID)
+func LocalConversationIDsIn(ctx context.Context, c Conn, sessionID string) ([]string, error) {
+	owner, err := LocalLineageOwnerIn(ctx, c, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func localConversationIDs(ctx context.Context, c Conn, sessionID string) ([]stri
 
 // The session alone outside a local lineage, else the whole conversation with the session first
 func ownedLineageIDs(ctx context.Context, c Conn, sessionID string) ([]string, error) {
-	ids, err := localConversationIDs(ctx, c, sessionID)
+	ids, err := LocalConversationIDsIn(ctx, c, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +163,7 @@ func localLineageIndex(ctx context.Context, c Conn) (map[string]bool, map[string
 			}
 			ended[id] = reason.String
 		}
-		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		if err := rowsDone(rows); err != nil {
 			return nil, nil, err
 		}
 		var starts []string
@@ -184,7 +186,7 @@ func (s *Store) excludeSupersededSegments(ctx context.Context, where *[]string, 
 	var heads map[string]localHead
 	err := s.Read(ctx, func(c Conn) error {
 		var err error
-		superseded, heads, err = localLineageIndex(ctx, c)
+		superseded, heads, err = s.cachedLineageIndex(ctx, c)
 		return err
 	})
 	if err != nil {
@@ -225,4 +227,110 @@ func annotateLocalLineages(rows []SessionListing, heads map[string]localHead) {
 		}
 		rows[i].LineageIDs = merged
 	}
+}
+
+// Connections whose lineage index a store remembers at most
+const lineageCacheSize = 8
+
+// Lineage index one connection computed, with the counters that tell when it went stale
+type lineageSnapshot struct {
+	changes, version int64
+	superseded       map[string]bool
+	heads            map[string]localHead
+}
+
+// Lineage indexes of the most recently used connections of one store, least recent first
+type lineageCache struct {
+	mu    sync.Mutex
+	saved map[*conn]lineageSnapshot
+	order []*conn
+}
+
+// Snapshot c stored at exactly these counters, moved to most recent, false when it has none
+func (l *lineageCache) get(c *conn, changes, version int64) (lineageSnapshot, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	snap, ok := l.saved[c]
+	if !ok || snap.changes != changes || snap.version != version {
+		return lineageSnapshot{}, false
+	}
+	l.touch(c)
+	return snap, true
+}
+
+// Moves c to the most recent end of the order (caller holds mu)
+func (l *lineageCache) touch(c *conn) {
+	l.order = append(slices.DeleteFunc(l.order, func(o *conn) bool { return o == c }), c)
+}
+
+// Stores the snapshot of c as most recent, forgetting the least recent connection past the bound
+func (l *lineageCache) put(c *conn, snap lineageSnapshot) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.saved == nil {
+		l.saved = map[*conn]lineageSnapshot{}
+	}
+	l.saved[c] = snap
+	l.touch(c)
+	if len(l.order) > lineageCacheSize {
+		delete(l.saved, l.order[0])
+		l.order = l.order[1:]
+	}
+}
+
+// Forgets what c stored
+func (l *lineageCache) drop(c *conn) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.saved, c)
+	l.order = slices.DeleteFunc(l.order, func(o *conn) bool { return o == c })
+}
+
+// Writes of this connection and commits of every other one, either moving when the lineage index may have
+func lineageVersion(ctx context.Context, c Conn) (int64, int64, error) {
+	var changes, version int64
+	if err := c.QueryRowContext(ctx, "SELECT total_changes()").Scan(&changes); err != nil {
+		return 0, 0, err
+	}
+	err := c.QueryRowContext(ctx, "PRAGMA main.data_version").Scan(&version)
+	return changes, version, err
+}
+
+// Lineage index of c, reused while neither counter moved and never kept from inside a transaction, read only for callers
+func (s *Store) cachedLineageIndex(ctx context.Context, c Conn) (map[string]bool, map[string]localHead, error) {
+	r, lent := c.(*runner)
+	if !lent {
+		return localLineageIndex(ctx, c)
+	}
+	cache := &s.tables.state.lineage
+	open, err := r.c.inTransaction()
+	if err != nil {
+		return nil, nil, err
+	}
+	if open {
+		cache.drop(r.c)
+		return localLineageIndex(ctx, c)
+	}
+	changes, version, err := lineageVersion(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	if snap, ok := cache.get(r.c, changes, version); ok {
+		return snap.superseded, snap.heads, nil
+	}
+	superseded, heads, err := localLineageIndex(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	after, afterVersion, err := lineageVersion(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	if open, err = r.c.inTransaction(); err != nil {
+		return nil, nil, err
+	}
+	if !open && after == changes && afterVersion == version {
+		cache.put(r.c, lineageSnapshot{changes: changes, version: version, superseded: superseded, heads: heads})
+	}
+	return superseded, heads, nil
 }

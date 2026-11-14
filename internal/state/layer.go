@@ -14,7 +14,7 @@ type layer struct {
 	// Probes table availability with reads only during a read-only open
 	probe func(ctx context.Context, s *Store, c Conn) error
 	// Repairs a malformed schema in place after taking a backup, reporting whether the file now opens
-	repairSchema func(ctx context.Context, e *Engine, path string) (bool, error)
+	repairSchema func(ctx context.Context, s *Store) (bool, error)
 	// Detaches the derived full-text indexes after full-text scoped write corruption, true when the write should run again
 	failOpen func(ctx context.Context, s *Store, err error, deadline time.Time, patience time.Duration) (bool, error)
 	// Runs bounded incremental full-text merges every thousand successful writes
@@ -34,6 +34,7 @@ func sessionTables(o SessionOptions) layer {
 		repairSchema: repairMalformedSchema,
 		failOpen:     enterFTSFailOpen,
 		merge:        tryIncrementalMergeFTS,
+		drain:        stopTokenWriter,
 		state:        &tableState{options: o},
 	}
 }

@@ -18,9 +18,6 @@ const profileVar = "HOME"
 // POSIX scratch directories take the secure directory policy
 const securesScratch = true
 
-// POSIX processes linger as zombies until their parent collects them
-const zombiesExist = true
-
 // Native home of the invoking account when this process is root under sudo, false otherwise
 func SudoInvokerDefaultHome() (string, bool) {
 	if os.Geteuid() != 0 {

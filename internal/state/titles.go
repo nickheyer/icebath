@@ -92,14 +92,14 @@ func (s *Store) setSessionTitle(ctx context.Context, sessionID, title, source st
 	var affected []string
 	err := s.Write(ctx, WritePatience, func(c Conn) error {
 		var err error
-		affected, err = s.SetSessionTitleIn(ctx, c, sessionID, title, source)
+		affected, err = s.setSessionTitleIn(ctx, c, sessionID, title, source)
 		return err
 	})
 	return len(affected) > 0, err
 }
 
 // Title rules inside an authority owned transaction, returning the ids whose title changed
-func (s *Store) SetSessionTitleIn(ctx context.Context, c Conn, sessionID, title, source string) ([]string, error) {
+func (s *Store) setSessionTitleIn(ctx context.Context, c Conn, sessionID, title, source string) ([]string, error) {
 	clean, has, err := SanitizeTitle(title)
 	if err != nil {
 		return nil, err
@@ -318,9 +318,4 @@ func (s *Store) GetNextTitleInLineage(ctx context.Context, baseTitle string) (st
 		return err
 	})
 	return next, err
-}
-
-// Next lineage title inside an authority owned transaction, counting siblings that transaction committed
-func LineageTitleIn(ctx context.Context, c Conn, baseTitle string) (string, error) {
-	return nextTitleInLineage(ctx, c, baseTitle)
 }

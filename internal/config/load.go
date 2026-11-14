@@ -209,7 +209,21 @@ func (s *Store) buildLoad(ctx context.Context, b Backend, h, path string, sig lo
 	s.cacheMu.Lock()
 	s.lastGood[path] = origin.user
 	s.cacheMu.Unlock()
+	s.noteConfigPolicy(h, origin)
 	return &loadEntry{sig: sig, cfg: cfg, origin: origin, env: env}, nil
+}
+
+// Reports the redaction switch a loaded config carries, the managed value over the user value over the default on
+func (s *Store) noteConfigPolicy(h string, o *loadOrigin) {
+	raw, set := "True", true
+	for _, layer := range []*yaml.Node{o.managed, o.user} {
+		if at := mappingIndex(childOf(layer, "security"), "redact_secrets"); at >= 0 {
+			value := childOf(layer, "security").Content[at]
+			raw, set = displayText(value), !isNull(value)
+			break
+		}
+	}
+	s.envs.notePolicy(s.homeKey(h), PolicyConfig, raw, set)
 }
 
 // Origin of a canonical user tree, expanded and overlaid with the managed layer

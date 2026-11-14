@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 )
 
@@ -21,14 +23,14 @@ const bumpGenerationSQL = `
 // Marks a session ended, the first end reason winning until a reopen
 func (s *Store) EndSession(ctx context.Context, sessionID, endReason string) error {
 	return s.Write(ctx, WritePatience, func(c Conn) error {
-		_, err := endAndBump(ctx, c, "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL",
+		_, err := EndAndBumpIn(ctx, c, "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND ended_at IS NULL",
 			[]any{nowEpoch(), endReason, sessionID}, sessionID, endReason)
 		return err
 	})
 }
 
 // Runs an end stamp and advances the peer's conversation generation only when the stamp was written
-func endAndBump(ctx context.Context, c Conn, query string, args []any, sessionID, reason string) (int64, error) {
+func EndAndBumpIn(ctx context.Context, c Conn, query string, args []any, sessionID, reason string) (int64, error) {
 	res, err := c.ExecContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
@@ -43,11 +45,6 @@ func endAndBump(ctx context.Context, c Conn, query string, args []any, sessionID
 		}
 	}
 	return changed, nil
-}
-
-// Exported form of the end stamp for owners that hold their own write transaction
-func EndAndBumpIn(ctx context.Context, c Conn, query string, args []any, sessionID, reason string) (int64, error) {
-	return endAndBump(ctx, c, query, args, sessionID, reason)
 }
 
 // Advances the routing peer's generation past a reset boundary inside the transaction writing it
@@ -75,7 +72,7 @@ func bumpConversationGeneration(ctx context.Context, c Conn, sessionID, endReaso
 func retireUndrainedQueueRows(ctx context.Context, c Conn, sessionID string) (int64, error) {
 	res, err := c.ExecContext(ctx, "UPDATE messages SET active = 0 "+
 		"WHERE session_id = ? AND role = 'user' AND active = 1 "+
-		"AND COALESCE("+jsonExtractSQL("display_metadata", "$."+QueuedPromptMetadataKey)+", 0) = 1", sessionID)
+		"AND COALESCE("+JSONExtractSQL("display_metadata", "$."+QueuedPromptMetadataKey)+", 0) = 1", sessionID)
 	if err != nil {
 		return 0, err
 	}
@@ -101,9 +98,9 @@ func (s *Store) ReopenSession(ctx context.Context, sessionID string) error {
 		}
 		if _, err := c.ExecContext(ctx, "UPDATE sessions AS child SET model_config = json_set("+
 			"COALESCE(child.model_config, '{}'), '$._reset_from', child.parent_session_id) "+
-			"WHERE child.parent_session_id = ? AND "+jsonExtractSQL("child.model_config", "$._reset_from")+" IS NULL "+
-			"AND "+jsonExtractSQL("child.model_config", "$._branched_from")+" IS NULL "+
-			"AND "+jsonExtractSQL("child.model_config", "$._delegate_from")+" IS NULL "+
+			"WHERE child.parent_session_id = ? AND "+JSONExtractSQL("child.model_config", "$._reset_from")+" IS NULL "+
+			"AND "+JSONExtractSQL("child.model_config", "$._branched_from")+" IS NULL "+
+			"AND "+JSONExtractSQL("child.model_config", "$._delegate_from")+" IS NULL "+
 			"AND COALESCE(child.source, '') != 'tool' "+
 			"AND child.started_at >= (SELECT p.started_at FROM sessions p WHERE p.id = child.parent_session_id) "+
 			"AND "+legacyResetChildSQL("child", bindMarks(len(resetEndReasons))),
@@ -127,10 +124,11 @@ func (s *Store) PromoteToSessionReset(ctx context.Context, sessionID, reason str
 		reason = "session_reset"
 	}
 	var changed int64
+	now := nowEpoch()
 	err := s.Write(ctx, WritePatience, func(c Conn) error {
 		var err error
-		changed, err = endAndBump(ctx, c, "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND (ended_at IS NULL "+
-			"OR end_reason IN ("+sqlLiteralList(recoverableEndReasons)+"))", []any{nowEpoch(), reason, sessionID}, sessionID, reason)
+		changed, err = EndAndBumpIn(ctx, c, "UPDATE sessions SET ended_at = ?, end_reason = ? WHERE id = ? AND (ended_at IS NULL "+
+			"OR end_reason IN ("+sqlLiteralList(recoverableEndReasons)+"))", []any{now, reason, sessionID}, sessionID, reason)
 		return err
 	})
 	return changed > 0, err
@@ -158,11 +156,6 @@ func (s *Store) setLineageColumn(ctx context.Context, column, sessionID string, 
 		return err
 	})
 	return len(ids) > 0, err
-}
-
-// Exported lineage column write for authorities that hold their own write transaction
-func SetLineageColumnIn(ctx context.Context, c Conn, column, sessionID string, value any) ([]string, error) {
-	return setLineageColumnIn(ctx, c, column, sessionID, value, "")
 }
 
 // Soft hides or unhides a lineage as a deliberate archive, a real archive flip firing the archive event after commit
@@ -221,11 +214,6 @@ func unarchiveAutoArchivedLineage(ctx context.Context, c Conn, sessionID string)
 	return n > 0, err
 }
 
-// Exported idle archive lift for writers that publish a tip inside their own transaction
-func UnarchiveAutoArchivedLineageIn(ctx context.Context, c Conn, sessionID string) (bool, error) {
-	return unarchiveAutoArchivedLineage(ctx, c, sessionID)
-}
-
 // Un-archives a session a recoverable accident archived and clears that accidental end stamp, true when un-archived
 func (s *Store) UnarchiveRecoverableSession(ctx context.Context, sessionID string) (bool, error) {
 	if sessionID == "" {
@@ -236,16 +224,10 @@ func (s *Store) UnarchiveRecoverableSession(ctx context.Context, sessionID strin
 		return false, err
 	}
 	tip := row
-	tipID, err := s.CompressionTip(ctx, sessionID)
-	if err != nil {
-		return false, err
-	}
-	if tipID != "" && tipID != sessionID {
-		if t, ok, err := s.GetSession(ctx, tipID); err != nil {
-			return false, err
-		} else if ok {
-			tip = t
-		}
+	if t, ok, err := s.recoverableTip(ctx, sessionID); err != nil {
+		slog.Debug(fmt.Sprintf("compression tip of %s unreadable, judging recoverability on the row itself: %s", sessionID, errText(err)))
+	} else if ok {
+		tip = t
 	}
 	if !IsRecoverableEndReason(tip.EndReason.V) {
 		return false, nil
@@ -257,6 +239,15 @@ func (s *Store) UnarchiveRecoverableSession(ctx context.Context, sessionID strin
 		return false, err
 	}
 	return true, nil
+}
+
+// Row of the live compression tip, false when the session is its own tip
+func (s *Store) recoverableTip(ctx context.Context, sessionID string) (Session, bool, error) {
+	tipID, err := s.CompressionTip(ctx, sessionID)
+	if err != nil || tipID == "" || tipID == sessionID {
+		return Session{}, false, err
+	}
+	return s.GetSession(ctx, tipID)
 }
 
 // Pins or unpins a lineage, a pin also unhiding it unless the row is the hidden canonical Bot Chat

@@ -63,12 +63,9 @@ func IsLegacyTemplateSoul(text string) bool {
 	})
 }
 
-// Ensures the home of ctx exists with its directory skeleton, its config.yaml and its default persona
+// Ensures the home of ctx exists with its directory skeleton and its default persona, writing no config file
 func (s *Store) EnsureHome(ctx context.Context) error {
 	return s.homes.EnsureHome(ctx, func(h string) error {
-		if err := s.seedConfig(ctx, h); err != nil {
-			return err
-		}
 		return ensureDefaultSoul(ctx, h)
 	})
 }

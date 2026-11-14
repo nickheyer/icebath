@@ -18,9 +18,6 @@ const profileVar = "USERPROFILE"
 // Windows scratch directories keep the ACL they inherit, a mode carrying no meaning there
 const securesScratch = false
 
-// Windows collects exited processes itself, so no zombie is ever listed
-const zombiesExist = false
-
 // Reports false, since sudo and a root uid exist only on POSIX
 func SudoInvokerDefaultHome() (string, bool) { return "", false }
 

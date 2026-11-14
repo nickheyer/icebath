@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"sync"
 
 	"github.com/nickheyer/icebath/internal/home"
@@ -26,10 +27,16 @@ type Engine struct {
 	repairs map[string]bool
 	// Cross-VM filesystem verdicts per resolved database directory
 	crossVM map[string]bool
+	// Observer of every committed session delete and deliberate archive in this process, nil when none is set
+	sessionDeleted func(ctx context.Context, ev SessionDeleted)
+	browse         browseScans
 }
 
 // Engine resolving homes through r, with no connection opened yet
-func New(r *home.Resolver) *Engine {
+func New(r *home.Resolver) (*Engine, error) {
+	if r == nil {
+		return nil, &MissingHookError{Name: "home resolver"}
+	}
 	return &Engine{
 		home:    r,
 		live:    liveRegistry{count: map[string]int{}},
@@ -40,7 +47,7 @@ func New(r *home.Resolver) *Engine {
 		logged:  map[string]bool{},
 		repairs: map[string]bool{},
 		crossVM: map[string]bool{},
-	}
+	}, nil
 }
 
 // Records the most recent store open failure, never cleared by a later success

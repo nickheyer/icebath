@@ -32,10 +32,11 @@ type Store struct {
 	keyStorage string
 }
 
-// Decrypted vault items with the version text kept only when newer than the one this build writes
+// Decrypted vault items, the version text when newer than this build writes, and whether items was no list
 type document struct {
-	items []jsontext.Value
-	newer string
+	items     []jsontext.Value
+	newer     string
+	misshapen bool
 }
 
 // Item vault of the profile home ctx resolves to
@@ -123,8 +124,11 @@ func (s *Store) read(ctx context.Context) (document, error) {
 		return document{}, shapeError()
 	}
 	var doc document
-	if items, ok := arrayItems(lookup(top, "items")); ok {
+	members := lookup(top, "items")
+	if items, ok := arrayItems(members); ok {
 		doc.items = items
+	} else if members != nil && members.Kind() != jsontext.KindNull {
+		doc.misshapen = true
 	}
 	if version := lookup(top, "version"); version.Kind() == jsontext.KindNumber {
 		if n, err := strconv.ParseFloat(string(version), 64); err != nil || n > 1 {
@@ -134,11 +138,14 @@ func (s *Store) read(ctx context.Context) (document, error) {
 	return doc, nil
 }
 
-// Encrypts and atomically publishes the version 1 document holding items, refusing one a newer build wrote
+// Encrypts and atomically publishes the version 1 document, refusing to replace a newer or misshapen one
 func (s *Store) write(ctx context.Context, doc document, items []jsontext.Value) error {
 	if doc.newer != "" {
 		return failure(ErrNewerFormat, "vault.json.enc was written in format version %s by a newer icebath and was left untouched; "+
 			"upgrade icebath to change its items", doc.newer)
+	}
+	if doc.misshapen {
+		return failure(ErrCorrupt, "vault file is corrupted (items is not a list); it was left untouched")
 	}
 	if err := s.ensureDir(ctx); err != nil {
 		return err

@@ -18,9 +18,9 @@ var chainStepSQL = `
                     JOIN sessions child ON child.parent_session_id = parent.id
                     WHERE parent.id = ?
                       AND parent.end_reason = 'compression'
-                      AND ` + jsonExtractSQL("child.model_config", "$._branched_from") + ` IS NULL
-                      AND ` + jsonExtractSQL("child.model_config", "$._delegate_from") + ` IS NULL
-                      AND NOT (` + resetChildSQL("child") + `)
+                      AND ` + JSONExtractSQL("child.model_config", "$._branched_from") + ` IS NULL
+                      AND ` + JSONExtractSQL("child.model_config", "$._delegate_from") + ` IS NULL
+                      AND NOT (` + ResetChildSQL("child") + `)
                       AND COALESCE(child.source, '') != 'tool'
                     ORDER BY
                       CASE
@@ -28,7 +28,7 @@ var chainStepSQL = `
                         WHEN child.ended_at IS NULL THEN 1
                         ELSE 2
                       END,
-                      ` + sqlSessionLastActive("child") + ` DESC,
+                      ` + SessionLastActiveSQL("child") + ` DESC,
                       child.started_at DESC,
                       child.id DESC
                     LIMIT 1
@@ -117,7 +117,7 @@ func (s *Store) CompressionTip(ctx context.Context, sessionID string) (string, e
 }
 
 // Compression tip read on a writer's own connection so no rotation publishes in between
-func compressionTipOn(ctx context.Context, c Conn, sessionID string) (string, error) {
+func CompressionTipIn(ctx context.Context, c Conn, sessionID string) (string, error) {
 	chain, err := walkCompressionChain(sessionID, func(id string) (string, error) { return chainStep(ctx, c, id) })
 	if err != nil {
 		return "", err
@@ -330,7 +330,7 @@ func (s *Store) sessionLineageRootToTip(ctx context.Context, sessionID string) (
 }
 
 // Reports a user facing branch that owns a copied transcript
-func (s *Store) IsExplicitBranchSession(ctx context.Context, sessionID string) (bool, error) {
+func (s *Store) isExplicitBranchSession(ctx context.Context, sessionID string) (bool, error) {
 	if sessionID == "" {
 		return false, nil
 	}
@@ -347,7 +347,7 @@ func (s *Store) IsExplicitBranchSession(ctx context.Context, sessionID string) (
 	if err != nil || !found {
 		return false, err
 	}
-	return jsonTruthy(parseModelConfigRaw(cfg.String)["_branched_from"]), nil
+	return jsonTruthy(ParseModelConfig(cfg.String)["_branched_from"]), nil
 }
 
 // Created source, parent and an unset ancestor probe of the creator stamp walk
@@ -463,9 +463,9 @@ func expandCompressionLineageIDs(ctx context.Context, c Conn, frontier []string)
 			ids = append(ids, id)
 		}
 	}
-	childFilter := jsonExtractSQL("child.model_config", "$._branched_from") + " IS NULL " +
-		"AND " + jsonExtractSQL("child.model_config", "$._delegate_from") + " IS NULL " +
-		"AND NOT (" + resetChildSQL("child") + ") " +
+	childFilter := JSONExtractSQL("child.model_config", "$._branched_from") + " IS NULL " +
+		"AND " + JSONExtractSQL("child.model_config", "$._delegate_from") + " IS NULL " +
+		"AND NOT (" + ResetChildSQL("child") + ") " +
 		"AND COALESCE(child.source, '') != 'tool'"
 	var out []string
 	for _, chunk := range chunks(ids, sqlInChunk/4) {

@@ -310,7 +310,7 @@ func (p *pluginLogin) ResolveSecret(ctx context.Context, handle string) (Secret,
 	}
 	copied := make([]secretField, len(fields))
 	for i, f := range fields {
-		copied[i] = secretField{f.Name, f.Value}
+		copied[i] = secretField{f.Name, f.text()}
 	}
 	return secretOf(copied...), nil
 }

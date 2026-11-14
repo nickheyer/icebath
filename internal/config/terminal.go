@@ -41,7 +41,7 @@ type TerminalConfig struct {
 	DaytonaImage                 string          `yaml:"daytona_image"`
 	VercelImage                  string          `yaml:"vercel_image"`
 	VercelRuntime                string          `yaml:"vercel_runtime"`
-	ContainerCPU                 float64         `yaml:"container_cpu" coerce:"strict"`
+	ContainerCPU                 Number          `yaml:"container_cpu" coerce:"strict"`
 	ContainerMemory              int             `yaml:"container_memory" coerce:"nofloat"`
 	ContainerDisk                int             `yaml:"container_disk" coerce:"nofloat"`
 	ContainerPersistent          bool            `yaml:"container_persistent" coerce:"strset"`
@@ -169,7 +169,7 @@ func defaultTerminal() TerminalConfig {
 		ModalImage:                   DefaultSandboxImage,
 		DaytonaImage:                 DefaultSandboxImage,
 		VercelImage:                  DefaultVercelImage,
-		ContainerCPU:                 1,
+		ContainerCPU:                 IntNumber(1),
 		ContainerMemory:              5120,
 		ContainerDisk:                51200,
 		ContainerPersistent:          true,

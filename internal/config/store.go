@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -26,12 +27,14 @@ type Store struct {
 	file         *fileBackend
 	backends     map[string]Backend
 	bootOnce     sync.Once
-	bootstrapEnv func(ctx context.Context)
+	bootstrapEnv func(ctx context.Context) error
 	env          func(ctx context.Context, name string) (string, bool)
 	parseEnvFile func(data []byte) (map[string]string, error)
-	firstStamp   func(ctx context.Context, home string, onDisk, toWrite *yaml.Node) error
 	onSave       func(ctx context.Context, before, after *YAMLDocument)
+	onNotice     func(ctx context.Context, text string)
 	worker       *workerSnapshot
+	envs         *envState
+	know         Knowledge
 	defOnce      sync.Once
 	defTree      *yaml.Node
 	defErr       error
@@ -46,6 +49,8 @@ type Store struct {
 	warned   map[string]bool
 	failures map[string]failureRecord
 	managed  managedCache
+	skinMu   sync.Mutex
+	skins    map[string]activeSkin
 }
 
 // Setting of a store given at construction
@@ -71,12 +76,26 @@ func OnSave(fn func(ctx context.Context, before, after *YAMLDocument)) Option {
 	return func(s *Store) { s.onSave = fn }
 }
 
+// Receiver of each message meant for the person at the terminal, one call per message in the order they arise
+func OnNotice(fn func(ctx context.Context, text string)) Option {
+	return func(s *Store) { s.onNotice = fn }
+}
+
+// Hands a message for the person at the terminal to the receiver, the log taking it when none is wired
+func (s *Store) notify(ctx context.Context, text string) {
+	if s.onNotice == nil {
+		slog.Warn(text)
+		return
+	}
+	s.onNotice(ctx, text)
+}
+
 // Store resolving homes through r
 func NewStore(r *home.Resolver, opts ...Option) *Store {
 	s := &Store{
 		homes:    r,
 		backends: map[string]Backend{},
-		env:      func(_ context.Context, name string) (string, bool) { return os.LookupEnv(name) },
+		envs:     newEnvState(),
 		loads:    map[string]*loadEntry{},
 		raws:     map[string]*rawEntry{},
 		effects:  map[string]*effectiveEntry{},
@@ -88,6 +107,12 @@ func NewStore(r *home.Resolver, opts ...Option) *Store {
 	s.file = &fileBackend{store: s}
 	for _, o := range opts {
 		o(s)
+	}
+	s.bindEnv()
+	for _, b := range s.backends {
+		if a, ok := b.(interface{ Attach(*Store) }); ok {
+			a.Attach(s)
+		}
 	}
 	return s
 }

@@ -73,25 +73,20 @@ type Classified struct {
 	Token   string
 }
 
-// One control a fill writes, its value behind a pointer so nested printing shows an address
+// One control a fill writes, its value inside a closure no printing path can open
 type Fill struct {
 	Index int
 	Token string
-	value *string
+	value func() string
 }
 
 // Fill of the control at index for token writing value
 func newFill(index int, token, value string) Fill {
-	return Fill{Index: index, Token: token, value: &value}
+	return Fill{Index: index, Token: token, value: seal(value)}
 }
 
 // Value the fill writes, empty for the zero fill
-func (f Fill) text() string {
-	if f.value == nil {
-		return ""
-	}
-	return *f.value
-}
+func (f Fill) text() string { return unseal(f.value) }
 
 // Writes the index and token with a redaction marker in place of the value
 func (f Fill) Format(s fmt.State, _ rune) {
@@ -111,11 +106,16 @@ func (f Fill) MarshalJSON() ([]byte, error) {
 // Error for an inspection report whose control carries a position that is not an integer
 var errControlNumber = errors.New("inspection reported a control position that is not an integer")
 
-// Controls of the inspection script output, entries that are not objects skipped, false when it is not a list
+// Controls of the inspection output, a string wrapped list unwrapped once, non-object entries skipped, false when no list
 func ParseControls(data []byte) ([]Control, bool, error) {
 	raw, err := parseValue(data)
 	if err != nil {
 		return nil, false, nil
+	}
+	if raw.Kind() == jsontext.KindString {
+		if raw, err = parseValue([]byte(valueText(raw))); err != nil {
+			return nil, false, nil
+		}
 	}
 	items, ok := arrayItems(raw)
 	if !ok {

@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -56,7 +55,7 @@ func parseSchemaColumns(ddl string) ([]declaredTable, error) {
 		}
 		names = append(names, n)
 	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+	if err := rowsDone(rows); err != nil {
 		return nil, err
 	}
 	out := make([]declaredTable, 0, len(names))

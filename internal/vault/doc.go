@@ -58,15 +58,16 @@ func objectMembers(v jsontext.Value) ([]member, bool) {
 	}
 	var out []member
 	for dec.PeekKind() == jsontext.KindString {
-		name, err := dec.ReadToken()
+		token, err := dec.ReadToken()
 		if err != nil {
 			return nil, false
 		}
+		name := token.String()
 		value, err := dec.ReadValue()
 		if err != nil {
 			return nil, false
 		}
-		out = setMember(out, name.String(), value.Clone())
+		out = setMember(out, name, value.Clone())
 	}
 	if _, err := dec.ReadToken(); err != nil {
 		return nil, false

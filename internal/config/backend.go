@@ -155,11 +155,11 @@ var backendKind = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 // Selected user layer store, the file one unless ICEBATH_CONFIG_BACKEND names a registered kind
 func (s *Store) backend(ctx context.Context) (Backend, error) {
-	s.bootOnce.Do(func() {
-		if s.bootstrapEnv != nil {
-			s.bootstrapEnv(ctx)
-		}
-	})
+	var bootErr error
+	s.bootOnce.Do(func() { bootErr = s.bootstrapEnv(ctx) })
+	if bootErr != nil {
+		return nil, bootErr
+	}
 	kind := strings.ToLower(strings.TrimSpace(os.Getenv(EnvConfigBackend)))
 	if kind == "" || kind == FileBackendKind {
 		return s.file, nil

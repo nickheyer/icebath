@@ -67,6 +67,7 @@ func firstInvalidByte(s string) int {
 
 // Document node of the single YAML document in text, nil when there is none, refusing more documents and duplicate keys
 func parseYAMLText(text string) (*yaml.Node, error) {
+	text, v12 := parserText(text)
 	dec := yaml.NewDecoder(strings.NewReader(text))
 	var doc yaml.Node
 	if err := dec.Decode(&doc); err != nil {
@@ -82,8 +83,11 @@ func parseYAMLText(text string) (*yaml.Node, error) {
 	case !errors.Is(err, io.EOF):
 		return nil, yamlErrorOf(err)
 	}
-	if err := refuseDuplicateKeys(&doc, map[*yaml.Node]bool{}); err != nil {
+	if err := refuseDuplicateKeys(&doc, map[*yaml.Node]bool{}, v12); err != nil {
 		return nil, err
+	}
+	if v12 {
+		pinCoreSchema(&doc, false, map[*yaml.Node]bool{})
 	}
 	if err := refuseUnconstructible(&doc, map[*yaml.Node]bool{}); err != nil {
 		return nil, err
@@ -213,8 +217,8 @@ func daysIn(year, month int) int {
 	return 31
 }
 
-// First key written twice in one mapping below n, keys compared by the value they construct
-func refuseDuplicateKeys(n *yaml.Node, seen map[*yaml.Node]bool) error {
+// First key written twice in one mapping below n, keys compared by the value they construct under the document version
+func refuseDuplicateKeys(n *yaml.Node, seen map[*yaml.Node]bool, v12 bool) error {
 	if n == nil || seen[n] || n.Kind == yaml.AliasNode {
 		return nil
 	}
@@ -232,7 +236,7 @@ func refuseDuplicateKeys(n *yaml.Node, seen map[*yaml.Node]bool) error {
 			if k.Kind != yaml.ScalarNode {
 				return &YAMLError{Line: k.Line, Problem: "found unhashable key"}
 			}
-			id := keyIdentity(k)
+			id := keyIdentity(k, v12)
 			if at, dup := first[id]; dup {
 				return &YAMLError{Line: k.Line, Problem: fmt.Sprintf("found duplicate key \"%s\" with value \"%s\" (original value: \"%s\")",
 					nodeText(k), nodeText(n.Content[i+1]), nodeText(n.Content[at+1]))}
@@ -241,16 +245,19 @@ func refuseDuplicateKeys(n *yaml.Node, seen map[*yaml.Node]bool) error {
 		}
 	}
 	for _, c := range n.Content {
-		if err := refuseDuplicateKeys(c, seen); err != nil {
+		if err := refuseDuplicateKeys(c, seen, v12); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Equality class of a key under YAML 1.1 construction, so true and 1 or 1 and 1.0 collide
-func keyIdentity(k *yaml.Node) string {
+// Equality class of a key as its document version constructs it, so true and 1 or 1 and 1.0 collide
+func keyIdentity(k *yaml.Node, v12 bool) string {
 	tag, text := scalarType(k)
+	if v12 && k.Style&fixedStyles == 0 {
+		tag, text = resolvePlain12(k.Value)
+	}
 	switch tag {
 	case tagBool:
 		v, _ := resolveTagged(tagBool, text)

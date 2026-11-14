@@ -9,8 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/nickheyer/icebath/internal/home"
 )
 
@@ -101,33 +99,7 @@ func parseFailureMessage(path string, err error, fallback fallbackKind) string {
 }
 
 // Type name a refusal prints for a top level that is not a mapping, such as list, str or int
-func rootKindName(n *YAMLDocument) string {
-	switch {
-	case n.root == nil || isNull(n.root):
-		return "NoneType"
-	case n.root.Kind == yaml.SequenceNode:
-		return "list"
-	case n.root.Kind == yaml.MappingNode:
-		return "dict"
-	}
-	tag, text := scalarKind(n.root)
-	switch tag {
-	case tagBool:
-		return "bool"
-	case tagInt:
-		return "int"
-	case tagFloat:
-		return "float"
-	case "!!binary":
-		return "bytes"
-	case "!!timestamp":
-		if m := timestampText.FindStringSubmatch(text); m != nil && m[4] == "" {
-			return "date"
-		}
-		return "datetime"
-	}
-	return "str"
-}
+func rootKindName(n *YAMLDocument) string { return typeName(n.root) }
 
 // Reports a top level neither a mapping nor a value read as unset, which the readers take as no settings
 func badRoot(d *YAMLDocument) bool { return !d.IsMapping() && isSet(d.root) }
@@ -162,7 +134,9 @@ func (s *Store) warnParseFailure(ctx context.Context, path string, err error, fa
 	}
 	details := errorDetails(err)
 	slog.Warn(msg + " Details: " + details)
-	fmt.Fprintf(os.Stderr, "%s%s\n    Details: %s\n", parseWarningPrefix, msg, details)
+	if s.onNotice != nil {
+		s.onNotice(ctx, fmt.Sprintf("%s%s\n    Details: %s", parseWarningPrefix, msg, details))
+	}
 }
 
 // Remembers the failure against a digest of the file so a byte identical fix is told apart

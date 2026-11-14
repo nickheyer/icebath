@@ -10,6 +10,9 @@ import (
 	"unicode"
 )
 
+// Page size the session listings and searches use when a caller names none
+const DefaultListLimit = 20
+
 // Sources human pickers never list, kanban workers, tool integrations and one-shot runs
 func InternalListingSources() []string { return []string{"kanban", "tool", "oneshot"} }
 
@@ -54,7 +57,7 @@ type SessionFilter struct {
 // Listing form of the rich session list
 type SessionListOptions struct {
 	SessionFilter
-	// Page size, zero meaning twenty
+	// Rows per page as SQLite reads a LIMIT, zero listing none and a negative value listing all
 	Limit  int
 	Offset int
 	// Lists compression continuations and subagent runs as rows of their own
@@ -205,9 +208,6 @@ func chainSearchWhere(where, idNeedle, searchNeedle string) (string, []any) {
 func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]SessionListing, error) {
 	s.tokenBarrier(ctx, true)
 	limit := o.Limit
-	if limit == 0 {
-		limit = 20
-	}
 	where, args := sessionFilterWhere(!o.IncludeChildren, o.SessionFilter)
 	if !o.IncludeHidden && !o.ArchivedOnly {
 		where = append(where, "s.hidden = 0")
@@ -256,9 +256,9 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
                     JOIN sessions parent ON parent.id = c.cur_id
                     JOIN sessions child ON child.parent_session_id = c.cur_id
                     WHERE parent.end_reason = 'compression'
-                      AND ` + jsonExtractSQL("child.model_config", "$._branched_from") + ` IS NULL
-                      AND ` + jsonExtractSQL("child.model_config", "$._delegate_from") + ` IS NULL
-                      AND NOT (` + resetChildSQL("child") + `)
+                      AND ` + JSONExtractSQL("child.model_config", "$._branched_from") + ` IS NULL
+                      AND ` + JSONExtractSQL("child.model_config", "$._delegate_from") + ` IS NULL
+                      AND NOT (` + ResetChildSQL("child") + `)
                       AND COALESCE(child.source, '') != 'tool'
                 ),
                 chain_max AS (
@@ -270,7 +270,7 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
                 ),
                 page AS (
                     SELECT s.id AS page_id,
-                        COALESCE(cm.effective_last_active, ` + sqlSessionLastActive("s") + `,
+                        COALESCE(cm.effective_last_active, ` + SessionLastActiveSQL("s") + `,
                                  ` + sqlInWindow("s.started_at") + `) AS effective_last_active
                     FROM sessions s
                     LEFT JOIN chain_max cm ON cm.root_id = s.id
@@ -278,7 +278,7 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
                     ORDER BY effective_last_active DESC, s.started_at DESC, s.id DESC
                     LIMIT ? OFFSET ?
                 )
-                ` + head + sqlSessionLastActive("s") + ` AS last_active,
+                ` + head + SessionLastActiveSQL("s") + ` AS last_active,
                     page.effective_last_active AS _effective_last_active
                 FROM page
                 JOIN sessions s ON s.id = page.page_id
@@ -288,7 +288,7 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
 		params = append(append(append(append([]any{}, args...), args...), idArgs...), limit, o.Offset)
 	} else {
 		query = `
-                ` + head + sqlSessionLastActive("s") + ` AS last_active
+                ` + head + SessionLastActiveSQL("s") + ` AS last_active
                 ` + fromSessions + `
                 ` + ws + `
                 ORDER BY s.started_at DESC
@@ -318,7 +318,7 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
 		}
 		pw = append(pw, "s.pinned = 1")
 		pinned, err := s.readListings(ctx, `
-                `+head+sqlSessionLastActive("s")+` AS last_active
+                `+head+SessionLastActiveSQL("s")+` AS last_active
                 `+fromSessions+`
                 `+whereSQL(pw, "")+`
                 ORDER BY s.started_at DESC
@@ -342,7 +342,7 @@ func (s *Store) ListSessionsRich(ctx context.Context, o SessionListOptions) ([]S
 		annotateLocalLineages(rows, heads)
 	}
 	for i := range rows {
-		rows[i].Unread = SessionUnread(rows[i].LastReadAt, rows[i].LastActive, rows[i].StartedAt)
+		rows[i].Unread = sessionUnread(rows[i].LastReadAt, rows[i].LastActive, rows[i].StartedAt)
 	}
 	return rows, nil
 }
@@ -438,7 +438,7 @@ func (s *Store) sessionRichRowsBatch(ctx context.Context, ids []string, compact 
 		rows, err := s.readListings(ctx, `
             SELECT `+cols+prompt+`,
                 `+previewRawSQL("s.id")+`,
-                `+sqlSessionLastActive("s")+` AS last_active
+                `+SessionLastActiveSQL("s")+` AS last_active
             FROM sessions s
             `+join+`
             WHERE s.id IN (`+bindMarks(len(chunk))+`)
@@ -618,7 +618,7 @@ func (s *Store) ListRecentSessionsBounded(ctx context.Context, o RecentBrowseOpt
 		return nil, err
 	}
 	for i := range rows {
-		rows[i].Unread = SessionUnread(rows[i].LastReadAt, rows[i].LastActive, rows[i].StartedAt)
+		rows[i].Unread = sessionUnread(rows[i].LastReadAt, rows[i].LastActive, rows[i].StartedAt)
 	}
 	return rows, nil
 }
@@ -648,7 +648,7 @@ type SessionSearchOptions struct {
 	WorkspaceKey string
 	// Drops empty launch stubs before paging
 	SkipLaunchStubs bool
-	// Page size, zero meaning twenty
+	// Rows per page as SQLite reads a LIMIT, zero listing none and a negative value listing all
 	Limit  int
 	Offset int
 }
@@ -656,9 +656,6 @@ type SessionSearchOptions struct {
 // Sessions most recently active first with a computed last_active
 func (s *Store) SearchSessions(ctx context.Context, o SessionSearchOptions) ([]SessionListing, error) {
 	limit := o.Limit
-	if limit == 0 {
-		limit = 20
-	}
 	var where []string
 	var args []any
 	if o.SkipLaunchStubs {
@@ -677,7 +674,7 @@ func (s *Store) SearchSessions(ctx context.Context, o SessionSearchOptions) ([]S
 		where, args = append(where, clause), append(args, bound...)
 	}
 	rows, err := s.readListings(ctx, "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "+
-		sqlSessionLastActive("s")+" AS last_active "+
+		SessionLastActiveSQL("s")+" AS last_active "+
 		"FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "+
 		whereSQL(where, " ")+" "+
 		"ORDER BY last_active DESC, s.started_at DESC, s.id DESC LIMIT ? OFFSET ?", append(args, limit, o.Offset))

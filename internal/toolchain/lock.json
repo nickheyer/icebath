@@ -1,0 +1,890 @@
+{
+  "mirror": {
+    "origin": "https://icebath-assets.icebath.app",
+    "prefix": "upstream/sha256/"
+  },
+  "packages": {
+    "bws": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "67ab9bc345e2ec3b5dfddd116f938fdab79538042623a6bcca5ca0c1b0c42d95",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-macos-universal-2.0.0.zip"
+        },
+        "darwin-x64": {
+          "sha256": "67ab9bc345e2ec3b5dfddd116f938fdab79538042623a6bcca5ca0c1b0c42d95",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-macos-universal-2.0.0.zip"
+        },
+        "linux-arm64": {
+          "sha256": "de61bfbacbcf6e3648ddc8dbd6ca8bb2245438ccf5f94d54129997528f5a752d",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-aarch64-unknown-linux-musl-2.0.0.zip"
+        },
+        "linux-arm64-musl": {
+          "sha256": "de61bfbacbcf6e3648ddc8dbd6ca8bb2245438ccf5f94d54129997528f5a752d",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-aarch64-unknown-linux-musl-2.0.0.zip"
+        },
+        "linux-x64": {
+          "sha256": "ea6eb18f1270388f12d15a35f919ccb3488d32a777433baefe883d561f46fc73",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-x86_64-unknown-linux-musl-2.0.0.zip"
+        },
+        "linux-x64-musl": {
+          "sha256": "ea6eb18f1270388f12d15a35f919ccb3488d32a777433baefe883d561f46fc73",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-x86_64-unknown-linux-musl-2.0.0.zip"
+        },
+        "win32-arm64": {
+          "sha256": "1a02fca3a855ba32d8f0c40813af8da705cf1e7cf9b932164959531e57eccbe0",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-aarch64-pc-windows-msvc-2.0.0.zip"
+        },
+        "win32-x64": {
+          "sha256": "4284944f3b0c7b97a4d4105c715cd814c744ceff0405481a213937955e31d866",
+          "url": "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.0.0/bws-x86_64-pc-windows-msvc-2.0.0.zip"
+        }
+      },
+      "version": "2.0.0"
+    },
+    "chromium": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "3dbf04e28a02079148e9c7417840a0c1d3903361eceeee7e7eb59ef77021bdb2",
+          "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/mac-arm64/chrome-mac-arm64.zip"
+        },
+        "darwin-x64": {
+          "sha256": "0de8f876af53a93f8832e54490ff7de41a9b6648211590280cb50289ed45f240",
+          "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/mac-x64/chrome-mac-x64.zip"
+        },
+        "linux-arm64": {
+          "sha256": "70b4620521b1ada360475e1059dfe9d549a6461a79b9342f85b7d47e44123077",
+          "url": "https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1208/chromium-linux-arm64.zip"
+        },
+        "linux-x64": {
+          "sha256": "b5e3195041af345a668d110f5daf5581961fa3608626ea588c97dd0fe81c4e38",
+          "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/linux64/chrome-linux64.zip"
+        },
+        "win32-arm64": {
+          "sha256": "08476e6fe550ccbc0d11d1ab030292fc4e32d4987400c77b2d1905a6bd13b4f6",
+          "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/win64/chrome-win64.zip"
+        },
+        "win32-x64": {
+          "sha256": "08476e6fe550ccbc0d11d1ab030292fc4e32d4987400c77b2d1905a6bd13b4f6",
+          "url": "https://cdn.playwright.dev/builds/cft/145.0.7632.6/win64/chrome-win64.zip"
+        }
+      },
+      "version": "1208+145.0.7632.6"
+    },
+    "cua-driver": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "f827a393c0dae24943ddb454d85abb6b592d8636e6a99f6c349f81f5f516975f",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-darwin-universal.tar.gz"
+        },
+        "darwin-x64": {
+          "sha256": "f827a393c0dae24943ddb454d85abb6b592d8636e6a99f6c349f81f5f516975f",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-darwin-universal.tar.gz"
+        },
+        "linux-arm64": {
+          "sha256": "6b3a308c6741dd8291aad22a308bd2ec8eb52eab64687be007ac86ceaf7e3307",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-linux-arm64-binary.tar.gz"
+        },
+        "linux-x64": {
+          "sha256": "cf29bfaad16737e31e72f38dad2a6424f24b21a4ac2edea885e83cb9d5034135",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-linux-x86_64-binary.tar.gz"
+        },
+        "win32-arm64": {
+          "sha256": "79caf7e4f55cdab08533abf7ead4038132aa070040669238d806d057f648cc5f",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-windows-arm64-binary.zip"
+        },
+        "win32-x64": {
+          "sha256": "d63f6a78e65afc06524048f5557fed36cdf01f0a8a680236e93c9a2fb3587f44",
+          "url": "https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.21.0/cua-driver-rs-0.21.0-windows-x86_64-binary.zip"
+        }
+      },
+      "version": "0.21.0"
+    },
+    "espeak-ng-data": {
+      "artifacts": {
+        "any": {
+          "sha256": "4135ccf82e1f40613491c0874d4945ae9e9c7840933d8e25a6f9e003d9ebf533",
+          "size": 7252012,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/espeak-ng-data.tar.bz2"
+        }
+      },
+      "version": "tts-models"
+    },
+    "ffmpeg": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "8287a1b2229e05eb41859f073e18e6c52c60a778f2f5e6881070fe51b79407fe",
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/arm64/1787073674_9.0.1/ffmpeg.zip"
+        },
+        "darwin-x64": {
+          "sha256": "5bdead62ff504ab9b447cc72b212c4fb481e3f7de5877d427a51bee8136dda40",
+          "url": "https://ffmpeg.martin-riedl.de/download/macos/amd64/1787081194_9.0.1/ffmpeg.zip"
+        },
+        "linux-arm64": {
+          "sha256": "e2dd447c8a47849c5812d87e54a47b20ae0f3603d38989440f4a5fe1af8755b1",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-linuxarm64-gpl-9.0.tar.xz"
+        },
+        "linux-arm64-bionic": {
+          "sha256": "07c8f7d6afb11396aab3a67564415658ad761b5a7d67a9bc598bc2c734651e0a",
+          "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_8.1.3_aarch64.deb"
+        },
+        "linux-x64": {
+          "sha256": "182c1b509720e939bb47bfb47dc29cc0c298640401128e3dce8627d10707eb5a",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-linux64-gpl-9.0.tar.xz"
+        },
+        "win32-arm64": {
+          "sha256": "7e6142ae4d04b35123eba48d91bb2c559ef43b49a6b3857f7324bbcf7266d18b",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-winarm64-gpl-9.0.zip"
+        },
+        "win32-x64": {
+          "sha256": "ec9db2cda1f5894ab95446076ad8bf49379db4b53c02e778ad3b49adf91fec83",
+          "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-n9.0.1-11-ge47273f4d9-win64-gpl-9.0.zip"
+        }
+      },
+      "version": "9.0.1"
+    },
+    "gh": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_arm64.zip"
+        },
+        "darwin-x64": {
+          "sha256": "63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_amd64.zip"
+        },
+        "linux-arm64": {
+          "sha256": "73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+        },
+        "linux-arm64-musl": {
+          "sha256": "73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+        },
+        "linux-x64": {
+          "sha256": "a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+        },
+        "linux-x64-musl": {
+          "sha256": "a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+        },
+        "win32-arm64": {
+          "sha256": "3e2d4a166da4ee5020c592737b65eec0e724946d5d5b962f5fe59d99116dc4bf",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_windows_arm64.zip"
+        },
+        "win32-x64": {
+          "sha256": "35d7fe05c4dd1411ffda1e73dfc7c6f44b75c936ca51fa6595c657fdc0350cec",
+          "url": "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_windows_amd64.zip"
+        }
+      },
+      "version": "2.97.0"
+    },
+    "git": {
+      "artifacts": {
+        "win32-arm64": {
+          "sha256": "0db54010054c01f35501cf69e1e32d3710138ecb934d188bd77093afed24300e",
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/PortableGit-2.53.0.3-arm64.7z.exe"
+        },
+        "win32-x64": {
+          "sha256": "b365da794b1d2225eb24d5f5e09ef7792cfd5fa26c3a3586210280c80dff3a2a",
+          "url": "https://github.com/git-for-windows/git/releases/download/v2.53.0.windows.3/PortableGit-2.53.0.3-64-bit.7z.exe"
+        }
+      },
+      "version": "2.53.0+3"
+    },
+    "iron-proxy": {
+      "artifacts": {
+        "darwin-arm64": [
+          {
+            "sha256": "6aa2d3d78ba87bdfacaef8f8465ffd289f8d23ab4d3f433e8c0b2b77f887632a",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_darwin_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "darwin-x64": [
+          {
+            "sha256": "9c278663d2e9c04fb3f6b1c18588fc2095974b42347c7885d10014835fc4b24a",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_darwin_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-arm64": [
+          {
+            "sha256": "1316cb4f20fcfba5042b06d07cd523ffa617de9de2999cd5f1f44474777c48ad",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-arm64-musl": [
+          {
+            "sha256": "1316cb4f20fcfba5042b06d07cd523ffa617de9de2999cd5f1f44474777c48ad",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_arm64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-x64": [
+          {
+            "sha256": "0ab2e031074a01410caecaa2769c0b38f69cbdf4b6333bce498fe73919f6f9f6",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ],
+        "linux-x64-musl": [
+          {
+            "sha256": "0ab2e031074a01410caecaa2769c0b38f69cbdf4b6333bce498fe73919f6f9f6",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/iron-proxy_0.39.0_linux_amd64.tar.gz"
+          },
+          {
+            "sha256": "8fb3193b53ca296e2f93ff0fd69d289340cffe9a36c0de22e47ea5cfea899b37",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt"
+          },
+          {
+            "sha256": "1ff70f0bd8699b2f1c2c3545e6aa9034d24267fc01d1b9aaa93d73e893cb610b",
+            "url": "https://github.com/paradigmxyz/iron-proxy/releases/download/v0.39.0/checksums.txt.asc"
+          },
+          {
+            "sha256": "ce685e36e7e7d184ffa82b35bd5cbe83db010ac38bc504a0e225333453992c56",
+            "url": "https://raw.githubusercontent.com/paradigmxyz/iron-proxy/be5f255d0d9d10d8573bd65f480dd48a07772bf1/public-key.asc"
+          }
+        ]
+      },
+      "version": "0.39.0"
+    },
+    "llamacpp-cpu": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "0f9c093f77b9c194f2f097df6204d9f5f8758968815e7db0374e98b0485ef9df",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-macos-arm64.tar.gz"
+        },
+        "darwin-x64": {
+          "sha256": "d664a72c4c716e6fb0b90d4b2bf1c8dc2e6cff083cdbee26294fcc4f8d89366d",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-macos-x64.tar.gz"
+        },
+        "linux-arm64": [
+          {
+            "sha256": "18709d3ae6152d486e8c4ef1f6768a15918a57a1ecf331315e0964d69b838525",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-arm64.tar.gz"
+          },
+          {
+            "sha256": "c1719335234ccdef7558e97b37b1f6baf069911ce2f26d2789336051a7c929cd",
+            "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_arm64.deb"
+          }
+        ],
+        "linux-x64": [
+          {
+            "sha256": "e4120fe6742ce204891496deb95fa49453bdb400ed85807474dbe470f98d45bd",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-x64.tar.gz"
+          },
+          {
+            "sha256": "8627999dd5f3d38473774ce7924a62af9a2840b2238bc52611e38257bc140b5d",
+            "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_amd64.deb"
+          }
+        ],
+        "win32-arm64": {
+          "sha256": "80bae6519b3f8bd1e637789cbd3f65ce2112e60b50fb7f934fa1ef34e31f1b54",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-cpu-arm64.zip"
+        },
+        "win32-x64": {
+          "sha256": "a9a407979a351add66016ffb558a53de8b6655fed1eec362591d66ea671fec81",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-cpu-x64.zip"
+        }
+      },
+      "version": "11671"
+    },
+    "llamacpp-cuda": {
+      "artifacts": {
+        "linux-arm64": [
+          {
+            "sha256": "8fc0aec7102cd409ffe5ede190d1033b7b8b99e59451b5341b5ff28d7b49bcf2",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-cuda-13.4-arm64.tar.gz"
+          },
+          {
+            "sha256": "6ab33295c35d08bfecee9b661d61b128d1315fe54cb8628a274400e198f84d00",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/cudart-llama-b11671-bin-ubuntu-cuda-13.4-arm64.tar.gz"
+          },
+          {
+            "sha256": "c1719335234ccdef7558e97b37b1f6baf069911ce2f26d2789336051a7c929cd",
+            "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_arm64.deb"
+          }
+        ],
+        "linux-x64": [
+          {
+            "sha256": "af2fc371cc8a6ce772df19854c51dbcaad1800ed17ebf02d021a3fed444ca994",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-cuda-13.4-x64.tar.gz"
+          },
+          {
+            "sha256": "b508877abc64d0773e3ecd2c5d43367fb9b3a864a2f21214cdb669a214f396eb",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/cudart-llama-b11671-bin-ubuntu-cuda-13.4-x64.tar.gz"
+          },
+          {
+            "sha256": "8627999dd5f3d38473774ce7924a62af9a2840b2238bc52611e38257bc140b5d",
+            "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_amd64.deb"
+          }
+        ],
+        "win32-arm64": [
+          {
+            "sha256": "565549012530e481632e441c7a88b7c170717e4d4cda13c448cc44b7bf89b13f",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-cuda-13.4-arm64.zip"
+          },
+          {
+            "sha256": "642dcde8805b3e3165ca710a5443b3b4044b27d96bd3ee3132473988c9bcb774",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/cudart-llama-bin-win-cuda-13.4-arm64.zip"
+          }
+        ],
+        "win32-x64": [
+          {
+            "sha256": "e1aef5883990f5ca4a71d9733f53538ddcb907bbb27e905bf39e148e0daa46eb",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-cuda-13.4-x64.zip"
+          },
+          {
+            "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/cudart-llama-bin-win-cuda-13.4-x64.zip"
+          }
+        ]
+      },
+      "version": "11671"
+    },
+    "llamacpp-hip": {
+      "artifacts": {
+        "linux-x64": [
+          {
+            "sha256": "e5f4edae147c7067ff46a804660547d291bdbab073e00fce0a07434255a43000",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-rocm-10.0-x64.tar.gz"
+          },
+          {
+            "sha256": "8627999dd5f3d38473774ce7924a62af9a2840b2238bc52611e38257bc140b5d",
+            "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_amd64.deb"
+          }
+        ],
+        "win32-x64": {
+          "sha256": "8fccdbf3081ba8140daaea20b6aaa31b9f16300487d274b32dc6ab94456e7300",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-rocm-10.0-x64.zip"
+        }
+      },
+      "version": "11671"
+    },
+    "llamacpp-metal": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "0f9c093f77b9c194f2f097df6204d9f5f8758968815e7db0374e98b0485ef9df",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-macos-arm64.tar.gz"
+        },
+        "darwin-x64": {
+          "sha256": "d664a72c4c716e6fb0b90d4b2bf1c8dc2e6cff083cdbee26294fcc4f8d89366d",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-macos-x64.tar.gz"
+        }
+      },
+      "version": "11671"
+    },
+    "llamacpp-vulkan": {
+      "artifacts": {
+        "linux-arm64": [
+          {
+            "sha256": "9d03bf6bbb5f5debb5901730bda5cfffa4a150bc42aa0eda48fd606a25f7de82",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-vulkan-arm64.tar.gz"
+          },
+          {
+            "sha256": "c1719335234ccdef7558e97b37b1f6baf069911ce2f26d2789336051a7c929cd",
+            "url": "https://ports.ubuntu.com/ubuntu-ports/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_arm64.deb"
+          }
+        ],
+        "linux-x64": [
+          {
+            "sha256": "fb449c1564dda0cdbfcc68d46bf9929b337e41fe76d5c512877cdec62c487cf3",
+            "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-ubuntu-vulkan-x64.tar.gz"
+          },
+          {
+            "sha256": "8627999dd5f3d38473774ce7924a62af9a2840b2238bc52611e38257bc140b5d",
+            "url": "https://archive.ubuntu.com/ubuntu/pool/main/g/gcc-12/libgomp1_12-20220319-1ubuntu1_amd64.deb"
+          }
+        ],
+        "win32-x64": {
+          "sha256": "53758a131e48b51b284a41cec997a89446286b90340dd30f33f7e2532d1b7195",
+          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11671/llama-b11671-bin-win-vulkan-x64.zip"
+        }
+      },
+      "version": "11671"
+    },
+    "msalruntime": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "35b156fdadae4f2324a57bfb1e9636added10f5ae9eceaeb804946cae6467631",
+          "url": "https://files.pythonhosted.org/packages/c3/4f/cef2ea4164b0d2313b02b8d95105cb2b75fb375a4f866eeba89e20cf5021/pymsalruntime-0.20.7-cp314-cp314-macosx_12_0_arm64.whl"
+        },
+        "darwin-x64": {
+          "sha256": "f1ee868b94e593c318e1e7ceb28227cbdafc3e8eda63ce20f0c8f343d77dbe1f",
+          "url": "https://files.pythonhosted.org/packages/0b/48/da3c7cf713c480738bd37858e73a4828e3d2f4b20e323957be49187bd07b/pymsalruntime-0.20.7-cp314-cp314-macosx_12_0_x86_64.whl"
+        },
+        "linux-x64@glibc2.24": {
+          "sha256": "d5cf5d6300075c2256be86187b801a982787f515b127cdc660b9f305428cef12",
+          "url": "https://files.pythonhosted.org/packages/55/75/28d4efe32e2f426b9c5e8eaf110a9b2a40455755ec717fe2a5c982cd635b/pymsalruntime-0.20.7-cp314-cp314-manylinux_2_24_x86_64.whl"
+        },
+        "linux-x64@glibc2.35": {
+          "sha256": "4e014a2dc2740b460b439cdd5e44d4a5dec04d16b7352fe516d74905b88f9fa5",
+          "url": "https://files.pythonhosted.org/packages/96/68/08fd3a53a9cdfd03ca112830d583413cef3b74f1e9a440288f416129fc7d/pymsalruntime-0.20.7-cp314-cp314-manylinux_2_35_x86_64.whl"
+        },
+        "win32-arm64": {
+          "sha256": "b70225c0a18d89bd7faef7bf74c4d73dd10c185ac005a6d72f1b07c7add79e86",
+          "url": "https://files.pythonhosted.org/packages/b5/41/35be1daa5b6768830f7a255a11d92b8a98334ec98a9938c2c0278f0894e5/pymsalruntime-0.20.7-cp314-cp314-win_arm64.whl"
+        },
+        "win32-x64": {
+          "sha256": "93d21bdc85ce42ed0fed0de059298f916e657eb13b37df3781a0e4f310c39128",
+          "url": "https://files.pythonhosted.org/packages/a4/f5/cc6ffe6959a6dbb7e77b03c6d38948364bac73ae6a3a744815008ce1839e/pymsalruntime-0.20.7-cp314-cp314-win_amd64.whl"
+        }
+      },
+      "version": "0.20.7"
+    },
+    "openwakeword": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "81f31adc31ba9e85b5c83f1b16f571f630ad867710f111443ecf42523f73fe08",
+          "size": 6746161,
+          "url": "https://files.pythonhosted.org/packages/1f/0a/45c9c7c1405f13e632d694ed1fac48e8c9f1421eed930a8cb1afc5eda17e/pyopen_wakeword-1.1.0-py3-none-macosx_15_0_universal2.whl"
+        },
+        "darwin-x64": {
+          "sha256": "81f31adc31ba9e85b5c83f1b16f571f630ad867710f111443ecf42523f73fe08",
+          "size": 6746161,
+          "url": "https://files.pythonhosted.org/packages/1f/0a/45c9c7c1405f13e632d694ed1fac48e8c9f1421eed930a8cb1afc5eda17e/pyopen_wakeword-1.1.0-py3-none-macosx_15_0_universal2.whl"
+        },
+        "linux-arm64@glibc2.35": {
+          "sha256": "32a865123ebcc270ce6408b675456c3aecd8a6f0ddfe6311680616c9c01f990a",
+          "size": 6628214,
+          "url": "https://files.pythonhosted.org/packages/8c/74/746a3b3f81e2c1c69fc736c9e630f983797e413f7f58c1eac59d66d6687d/pyopen_wakeword-1.1.0-py3-none-manylinux_2_35_aarch64.whl"
+        },
+        "linux-x64@glibc2.35": {
+          "sha256": "754347a59de2b3d378a0cbc404a8b41164036e74fa1c185f88056974e4bfb6b4",
+          "size": 7132152,
+          "url": "https://files.pythonhosted.org/packages/f0/d7/228edc51d9b35b9d46cf685509e79144262ffd8756a49243a27da3302059/pyopen_wakeword-1.1.0-py3-none-manylinux_2_35_x86_64.whl"
+        },
+        "win32-x64": {
+          "sha256": "93c4ba03b434fb4130282a254000e58e29cf3dc49b610ce7e998abc785a27a90",
+          "size": 6997274,
+          "url": "https://files.pythonhosted.org/packages/69/d1/d788a1edf7c200b73c3a8b0cc73ebd8b1013e352222fb8521415dbb7e2c8/pyopen_wakeword-1.1.0-py3-none-win_amd64.whl"
+        }
+      },
+      "version": "1.1.0"
+    },
+    "piper-voice-ar_JO-SA_dii-high": {"artifacts": {"any": {"sha256": "9098ae5b3785a5f0fd3edd1ba5f8bd4d212915bd5a1bcd08cc012a4c818103ba", "size": 66982233, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-SA_dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ar_JO-SA_miro-high": {"artifacts": {"any": {"sha256": "2933174b5ca4e4d12690c3970e1c4a3828e9edf3df85b4cff189c34b1519866a", "size": 66907333, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-SA_miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ar_JO-SA_miro_V2-high": {"artifacts": {"any": {"sha256": "2afdb963a8e314a31362faf197ce6c25eb659d9279061616645e2452d22054de", "size": 66977293, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-SA_miro_V2-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ar_JO-kareem-low": {"artifacts": {"any": {"sha256": "23f17a9ca4ee1f2fb73afe99f4ed90a1dd561e13b635aec9c94031ce20b09fc4", "size": 67117397, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ar_JO-kareem-medium": {"artifacts": {"any": {"sha256": "9ebbcea30e0fbd588f7b2cb45ee897d6aeb1bf5791cbc037a7b5a3f641e3dbce", "size": 67177830, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ca_ES-upc_ona-medium": {"artifacts": {"any": {"sha256": "b6c50f22e13cfc72ce51c496d22b987adf6704047f6d342968197b4b0b3127a5", "size": 67223188, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ca_ES-upc_ona-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ca_ES-upc_ona-x_low": {"artifacts": {"any": {"sha256": "dd22f292484adb78f2ded2acdc181f75576c86019c16965684b0a25887793a7a", "size": 26522253, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ca_ES-upc_ona-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ca_ES-upc_pau-x_low": {"artifacts": {"any": {"sha256": "9c06bc1c2fa9f132df02f413d5b3a93b37682edcb6d41be97b725775bf5e28ba", "size": 26520095, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ca_ES-upc_pau-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-cs_CZ-jirka-low": {"artifacts": {"any": {"sha256": "1814c62773ce1b29311b13e7094452d3b7e704e7784a3736510a153f863c3e83", "size": 67185771, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-cs_CZ-jirka-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-cs_CZ-jirka-medium": {"artifacts": {"any": {"sha256": "321aafd83dd89b3d5b2c36c5898e0710d4f472f3c191cb7f73901a89b7f8539f", "size": 67212775, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-cs_CZ-jirka-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-cy_GB-bu_tts-medium": {"artifacts": {"any": {"sha256": "09e5fd87e68ff28ffa9fbfd58a0e307acb6a45c572db1d4c06ed98f01ff5fe6a", "size": 80313215, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-cy_GB-bu_tts-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-cy_GB-gwryw_gogleddol-medium": {"artifacts": {"any": {"sha256": "f31f90afc4f28e9a768309f0b1c87272ef178936b32dd181aa1aa3a0eeddd187", "size": 67230234, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-cy_GB-gwryw_gogleddol-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-da_DK-talesyntese-medium": {"artifacts": {"any": {"sha256": "f2e2cbcdb2b21e76f93635b35105d07b37997ace434d7289d04b689a97c19bd0", "size": 67185257, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-da_DK-talesyntese-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-dii-high": {"artifacts": {"any": {"sha256": "64d46d39afb0f53a49871f5415259ffe474f443696148930b34a003612b69110", "size": 67200058, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-eva_k-x_low": {"artifacts": {"any": {"sha256": "daec8658456d8e5ec714972f2e5a71f8a84d58b974db396f4eaeace0df06455a", "size": 26521242, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-eva_k-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados-high": {"artifacts": {"any": {"sha256": "77a041d0f7a0a6a27bf6e260aa5de0d17ad0772d46a815e83f0594bd498291f6", "size": 115594308, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados-low": {"artifacts": {"any": {"sha256": "94210fcc318d62245b53dda4a28000a27dc2e1c6b38856fe9a42a9f7f3a4a5e0", "size": 67222575, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados-medium": {"artifacts": {"any": {"sha256": "3d2cc9b157b21cfbec6a0d66bca080860e287293d74d07e2c03d107f1af61c30", "size": 67214838, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados_turret-high": {"artifacts": {"any": {"sha256": "00d404363d5ea825d5e6bdb9e7776424c300b4bfcba5c73a33e7a8baee6f1fa0", "size": 115573536, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados_turret-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados_turret-low": {"artifacts": {"any": {"sha256": "446b4501810946f40d234a57a3239995c82d22aaa9a5ec01bad665857fa9e660", "size": 67206901, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados_turret-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-glados_turret-medium": {"artifacts": {"any": {"sha256": "9347baaf8411ad8fdd16e04a2049e301b898fc56583ffd58fd565c1f6eda0522", "size": 67197213, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-glados_turret-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-karlsson-low": {"artifacts": {"any": {"sha256": "5ba231af059746ac2052c9b7d7eaf116e07003dc6948066ab4f40951dca260af", "size": 67100500, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-karlsson-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-kerstin-low": {"artifacts": {"any": {"sha256": "4bfe121d5f690a3b87acecd7ae1e70b48f4589ce6ae9f45a1809e6eb19fad97b", "size": 67107768, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-kerstin-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-miro-high": {"artifacts": {"any": {"sha256": "8226bb45d3684286981a55b3e0937e373f37673036a7eee27fc51def2d8c926d", "size": 67160790, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-pavoque-low": {"artifacts": {"any": {"sha256": "5fcd4dad1c6c8362027d7359e54ddf482b7e6ac4af6751b5df0ea1899b698f54", "size": 67113377, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-pavoque-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-ramona-low": {"artifacts": {"any": {"sha256": "79f985c10f86c4d58205b519abc488aa65eb713d54665ff729880a02e2625a42", "size": 67084795, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-ramona-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-thorsten-high": {"artifacts": {"any": {"sha256": "dd4ed1b0d42c30a1a4862fc2b243e8044d52b8889c9ff3d1e99e92028888bc4a", "size": 115591546, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-thorsten-low": {"artifacts": {"any": {"sha256": "41fab35910fdcec4696b031951d8fd6c262e594cf77b35e1068fadbeb5a091a6", "size": 67101576, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-thorsten-medium": {"artifacts": {"any": {"sha256": "50487d9c95fdf2191f31d2588569381063ba1591dcd4c7d4bdd30f12b2191714", "size": 67214254, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-de_DE-thorsten_emotional-medium": {"artifacts": {"any": {"sha256": "4e55e6c7ba21700b6fb71e9544e1615bb348f74114799d23395826fdb33ee6f7", "size": 80215792, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-thorsten_emotional-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-el_GR-rapunzelina-low": {"artifacts": {"any": {"sha256": "bb868070a9ba0d7220b3d7c9291a998c2f60accdb73525bd63b8751b86dd4839", "size": 67105521, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-el_GR-rapunzelina-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-alan-low": {"artifacts": {"any": {"sha256": "1308e730b7a12c3b64b669d65daa0138fcb83b1a086edee92fa9fa68cb0290dd", "size": 67086942, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-alan-medium": {"artifacts": {"any": {"sha256": "a48d4017da0f77668b27bed63fe6e04dd64c6397e1fadad4f460efb0ef7c9012", "size": 67220121, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-alba-medium": {"artifacts": {"any": {"sha256": "fcd45962906933eec4431d3688f7d74aaac8713c87c6717f91fd3b23463aa1a1", "size": 67212349, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alba-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-aru-medium": {"artifacts": {"any": {"sha256": "15b6e7a545d899167a688a054b95730ec8cdfd35d27d00bab1dc5234c4a451a0", "size": 80309222, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-aru-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-cori-high": {"artifacts": {"any": {"sha256": "42922f07738fcde2e49eed4e959635692f73b933de35a6b7c1010162ff566292", "size": 115574061, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-cori-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-cori-medium": {"artifacts": {"any": {"sha256": "49c9a5361bbdd95d7ca9687c4de11e5908481f65e7c7c368960df79949fdac2b", "size": 67257412, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-cori-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-dii-high": {"artifacts": {"any": {"sha256": "1cc07423996e0aadb19ac62a08c2f2760362dafb3b5598d2f301ca789edacf86", "size": 67229442, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-jenny_dioco-medium": {"artifacts": {"any": {"sha256": "a0888024569bafbefc05a4b48ddf8419d8dbbf3205f4af37cf7c6f1a87cc20c5", "size": 67225842, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-jenny_dioco-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-miro-high": {"artifacts": {"any": {"sha256": "c42907615e1a95bb69a85674f9d7979eeb2352c40fe86a0ae84d5479149c03d1", "size": 67194499, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-northern_english_male-medium": {"artifacts": {"any": {"sha256": "2bb2c1e709f58c11f17c693b3b38f500e110e7f54f2651774ec48b8d41f12c55", "size": 67210490, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-northern_english_male-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-semaine-medium": {"artifacts": {"any": {"sha256": "b2a1e39062fce8f7fb14b7fa5fb93d89c58e3af2245270387f408099f5a2da9f", "size": 80241918, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-semaine-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-southern_english_female-low": {"artifacts": {"any": {"sha256": "448e7723c66531c62004864382044b29703a2616699833ec7fe1205de9f549ce", "size": 67073626, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-southern_english_female-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-southern_english_female-medium": {"artifacts": {"any": {"sha256": "cea2dcbe8a8e2a44a4bab6824e10dc38fcd5cf84458e8b3f3e5be1c5fb804512", "size": 80275090, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-southern_english_female-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-southern_english_female_medium": {"artifacts": {"any": {"sha256": "eb566fbfe1cb8995a6c32447bc5163370c34b3fd773ae1c00304144c577acc1a", "size": 80253832, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-southern_english_female_medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-southern_english_male-medium": {"artifacts": {"any": {"sha256": "f5525a6fd9a2fc0ab930ea70da6e3bcf207922a9f701acb0324ba2f59e4ca9ba", "size": 80299212, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-southern_english_male-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-sweetbbak-amy": {"artifacts": {"any": {"sha256": "cd56f8f50dad3119785409c1a6dc4f5558fb0833516503d0145eb7009a42e3ef", "size": 115595629, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-sweetbbak-amy.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_GB-vctk-medium": {"artifacts": {"any": {"sha256": "abafd35bdab0a72a3c6b947228ae3cccdf3624db83313c77d1abb5cbc75e1f64", "size": 80488085, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-vctk-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-amy-low": {"artifacts": {"any": {"sha256": "c70f5284a09a7fd4ed203b39b2ff51cac1432b422b852eb647b481dade3cf639", "size": 67095344, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-amy-medium": {"artifacts": {"any": {"sha256": "9a5d1fc497f85e8022b785bff5f8105203b1e33099ee6265203efc70b0cb0264", "size": 67223746, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-arctic-medium": {"artifacts": {"any": {"sha256": "caf83305b2fecc84491e9581f31ef2c81d4e1dacb8b76a4e481ad3fb6d4bf25c", "size": 80255511, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-arctic-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-bryce-medium": {"artifacts": {"any": {"sha256": "f35bb77ddecdf229798e850d1c77ded839d4179879be8b90da5f82e7beb538f2", "size": 67278133, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-bryce-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-danny-low": {"artifacts": {"any": {"sha256": "4e989aed6e2d11ed681f099df1e8fedca557f006205358814d6298a7f8f2e034", "size": 67107780, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-danny-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-glados": {"artifacts": {"any": {"sha256": "fa2b82a4984468081db8cebbaa7c0b1e008492ac2b4276d7f628d6141b6a2d1c", "size": 67208137, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-glados.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-glados-high": {"artifacts": {"any": {"sha256": "dcb52d4be94200d42b4d97ebb82ec398be27039f4719207283fa5e7d931b1cf3", "size": 115586982, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-glados-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-hfc_female-medium": {"artifacts": {"any": {"sha256": "3fffdceb0c65bd9415a085d09c3cb88cc82f9d74a6ca453f8ce7fc5eaee81ff8", "size": 67228166, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_female-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-hfc_male-medium": {"artifacts": {"any": {"sha256": "76388f84acfca8ba5c0ed1636a26ada14c598abd52e76f110d4756fe326fc5f2", "size": 67214049, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_male-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-joe-medium": {"artifacts": {"any": {"sha256": "261b903a1fb2ce621e2b5b14233cd41223c3b9f9590f896c11daee4df22d9bd3", "size": 67169394, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-joe-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-john-medium": {"artifacts": {"any": {"sha256": "d90362cfa48e429d3096f644785184446145b6e38216f2eaf4c0601b8aad5a36", "size": 67249181, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-john-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-kathleen-low": {"artifacts": {"any": {"sha256": "3dd0adaf077e19de32876608c3ac3d4a0a46a6f06310cc7a5633b3b47d762cde", "size": 67118360, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-kathleen-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-kristin-medium": {"artifacts": {"any": {"sha256": "c2206f572df2956c50b1ae3367eebce3853c663e890cba8048cd62b1e4dbe6c7", "size": 67259230, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-kristin-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-kusal-medium": {"artifacts": {"any": {"sha256": "e683c4a9a0c1ca28c81cbec77b51fe987cf70efa97edc3ace4c1783083012c33", "size": 67219292, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-kusal-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-l2arctic-medium": {"artifacts": {"any": {"sha256": "d6cde876d7a04502c5f2cb7e2f7413c0040629bc0ba6a5c07b32f27c02c96ed0", "size": 80314104, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-l2arctic-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-lessac-high": {"artifacts": {"any": {"sha256": "8619d204c7005866fe4f420181dfa79622af6a6222389f0b0818d2af31e0db0e", "size": 115545841, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-lessac-low": {"artifacts": {"any": {"sha256": "8fb427b8637334072ee5723d72fa418c45bfdd4b7deebeacdf2938662618c1cb", "size": 67097098, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-lessac-medium": {"artifacts": {"any": {"sha256": "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e", "size": 67230653, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-libritts-high": {"artifacts": {"any": {"sha256": "d9d35056703fd38ed38e95c202a50f603fefdc8a92a7b6332c4f1a41616eac72", "size": 131033598, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-libritts_r-medium": {"artifacts": {"any": {"sha256": "10dc268f3e371696d721486123e2705a9fc1faa113491979fde4d88dba1f1b1c", "size": 82038311, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-libritts_r-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-ljspeech-high": {"artifacts": {"any": {"sha256": "00c6408d2409050312193b0d40ae07fde28af7d3d45a56efcc55440db516b935", "size": 115817679, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-ljspeech-medium": {"artifacts": {"any": {"sha256": "3dfb4b759d8be032a4903a9538d128b0fda2a06ab1de6cbc2d93a97e2dd83dba", "size": 67169893, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-miro-high": {"artifacts": {"any": {"sha256": "31678890d09520c5d09a480e2e01aaf355d7d005f8179899aed8fe0cae2a3ca1", "size": 67198472, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-norman-medium": {"artifacts": {"any": {"sha256": "1f32065d480abe9abc7c7f91442125d0b34c1cc065d1e600466cac408eabf3b8", "size": 67203672, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-norman-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-reza_ibrahim-medium": {"artifacts": {"any": {"sha256": "025f5702bf39722782937aef5bc4ff9a1ef67fb0f1d0c0952c9c4ead25be19cc", "size": 67214755, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-reza_ibrahim-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-ryan-high": {"artifacts": {"any": {"sha256": "6a71edf4d308b9cb2eaeadc8d1f3c6bf96120ecb7fe52c29a2b6e139c59760ed", "size": 115630708, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-ryan-low": {"artifacts": {"any": {"sha256": "08d0522884652402b32d6995d9df776e85c7451a333fabe97e9e4635faf568ac", "size": 67100179, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-ryan-medium": {"artifacts": {"any": {"sha256": "c546af78b6395b4e7c4ce1ed899438b64426a362f5d4ec5fecd090ded9ad7505", "size": 67213100, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-en_US-sam-medium": {"artifacts": {"any": {"sha256": "7bcfcf73d7eb3dc7d2cba41ef4b1474d08819b581bafa9e9200821d607b74639", "size": 67249919, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-sam-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es-glados-medium": {"artifacts": {"any": {"sha256": "6d65dba9ca1bb59f2241b6f8f3f5f03b8a12544244b7caf405672bdb6c2d4d08", "size": 67204723, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es-glados-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_AR-daniela-high": {"artifacts": {"any": {"sha256": "71cbf6b7f646ab74f3c51336151abef41e6c54467ac929ffdb19ed706a07dd7b", "size": 115562134, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_AR-daniela-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_ES-carlfm-x_low": {"artifacts": {"any": {"sha256": "15585c5add2ab1915ce69e8c966c7c9fb0b6afb21f9b92f18110fda5a4787f99", "size": 26520563, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-carlfm-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_ES-davefx-medium": {"artifacts": {"any": {"sha256": "a3f6beb54a9cb893279f72978a22f807a4d9fc9c7848157b524d5cc7b7f58b22", "size": 67184952, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-davefx-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_ES-glados-medium": {"artifacts": {"any": {"sha256": "dfd13b3994a4ed8739eaeaa34a811bfc1dc1c71e9c8f95d890dc77395271f671", "size": 67214285, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-glados-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_ES-miro-high": {"artifacts": {"any": {"sha256": "15c7593c9e6eed29b48df983708672091c6ce3556485f351c2eb917cf3e5c2db", "size": 67162898, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_ES-sharvard-medium": {"artifacts": {"any": {"sha256": "b30a7a83df0518f0ee1c7039506648cade99f1f9b498fc49ed2ced2e2536bb5a", "size": 80318184, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-sharvard-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_MX-ald-medium": {"artifacts": {"any": {"sha256": "c60cf7bc853eb01a875fba0756523fecf9d9f46c763b19785d223fc981fb4fb6", "size": 67196497, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_MX-ald-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-es_MX-claude-high": {"artifacts": {"any": {"sha256": "ec33fb689c248fe64810aab564cba97babf0f506672cfd404928d46e751a4721", "size": 67207890, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_MX-claude-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-eu_ES-antton-medium": {"artifacts": {"any": {"sha256": "94ea0b459cc883913961f164f49a63d4d419394897ca6f9755f68eeeb1b06747", "size": 67216651, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-eu_ES-antton-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-eu_ES-maider-medium": {"artifacts": {"any": {"sha256": "60493b81a7f117ea96b6efc841d7465c1d4107ea72ef553ff91f92f72fbd95c1", "size": 67247291, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-eu_ES-maider-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa-haaniye_low": {"artifacts": {"any": {"sha256": "0a329e886eff1d0b4ec0b503a36fd7d8ce218c2ab7e69c068a02ebc039c6eaa1", "size": 67092634, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa-haaniye_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_IR-amir-medium": {"artifacts": {"any": {"sha256": "46af65c1cdd86ec300db3998f2bf31a68d9e38da930c0655c1ff6f610e84f864", "size": 67180373, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_IR-ganji-medium": {"artifacts": {"any": {"sha256": "6eae2acccd1b4460159fa5acdad4bb5d2df6d64d8da3e4029dbdff4db14e7a7a", "size": 67186157, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-ganji-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_IR-ganji_adabi-medium": {"artifacts": {"any": {"sha256": "c2c64b5b6e6f2a68b5e5e566ba7d0c87932b5b110ae98ad8c865774263a1155c", "size": 67221431, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-ganji_adabi-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_IR-gyro-medium": {"artifacts": {"any": {"sha256": "75dc485f0c0528b1b07800464e5c72f4229339919525b3f634aa89690988d30e", "size": 67183308, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-gyro-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_IR-reza_ibrahim-medium": {"artifacts": {"any": {"sha256": "c5a6c1da647f93e284c7956013dd2262210365b80a4870bc28f1ba7bc1f00bfe", "size": 67187249, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-reza_ibrahim-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fa_en-rezahedayatfar-ibrahimwalk-medium": {"artifacts": {"any": {"sha256": "ed0756ba340e832b2504a5910c0a2ea341a65fa3ec7f26729098df694eecde1d", "size": 67246929, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_en-rezahedayatfar-ibrahimwalk-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fi_FI-harri-low": {"artifacts": {"any": {"sha256": "cadbf6ae76204113557924c59f425c8b8ef2c8276ee44ebb0194a6dc0adbc796", "size": 67101909, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fi_FI-harri-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fi_FI-harri-medium": {"artifacts": {"any": {"sha256": "a7fd608e73983c366a5e0bcd13382e6529a6749f67efc406b5a7f9021e3a8b1d", "size": 67205198, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fi_FI-harri-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-gilles-low": {"artifacts": {"any": {"sha256": "9f4fdd2650f52638e5d890d330b4ee3a30fc6bb91d6ae6f37e639d0f474bc521", "size": 67094350, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-gilles-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-miro-high": {"artifacts": {"any": {"sha256": "f65818287e55abd16d48b0a42ba9975ad8e0e3c02c40055fe65a75a46c183245", "size": 67162880, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-siwis-low": {"artifacts": {"any": {"sha256": "3d69170c160c8375c4123901a72a3845222b39456d39ab74f5bbd7310952b5af", "size": 26522254, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-siwis-medium": {"artifacts": {"any": {"sha256": "375909aa30842b3a4efa10b1beb1d761af792960ae6873b4d53889f96c66195b", "size": 67207459, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-tjiho-model1": {"artifacts": {"any": {"sha256": "e48c52ee3dea03abc8c2d0bce143948b0d8cc50891e466e2a7481e14cf18c52c", "size": 67204019, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tjiho-model1.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-tjiho-model2": {"artifacts": {"any": {"sha256": "5b05e0f2532fd9be5306afc43b5046cb62fbb38df9dc323aa60994a6cf35b247", "size": 67204483, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tjiho-model2.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-tjiho-model3": {"artifacts": {"any": {"sha256": "cf8ec38f51687397f9515feca63276a022efde78d6e6a9e868c324b4d74cd58d", "size": 67251174, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tjiho-model3.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-tom-medium": {"artifacts": {"any": {"sha256": "3d8258ef8466b5d5f2cc46c06e1415d3d01c9cbaeed8b6d5b3d152073672472c", "size": 67202955, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-tom-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-fr_FR-upmc-medium": {"artifacts": {"any": {"sha256": "e9830a331a16f6cc5ef3116a287065e015d3495c3f56b974889a266da7f89a7f", "size": 80422639, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-upmc-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hi_IN-pratham-medium": {"artifacts": {"any": {"sha256": "2084d321e1d2752f2b64ed3012ba27751df01a80da46f52920098cdcb7e35648", "size": 67238438, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-pratham-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hi_IN-priyamvada-medium": {"artifacts": {"any": {"sha256": "399d91cc97eb288725633261f26b715f9a971e3bf7ec4fa1d7910cd0080d37eb", "size": 67240610, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-priyamvada-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hi_IN-rohan-medium": {"artifacts": {"any": {"sha256": "f0bb7781724951e9c90c49f68abfe821cffcbc198a9ae0031366d045a6ad5488", "size": 67221139, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-rohan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hu_HU-anna-medium": {"artifacts": {"any": {"sha256": "c67b13e57b71eca19098fe499afc35ebce8f63a0b524017c786af2025821216a", "size": 67167701, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hu_HU-anna-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hu_HU-berta-medium": {"artifacts": {"any": {"sha256": "a00ba073fa7f8e1b2be58f881b24892e2dca16c3c5979ee4ea4bc6ccdd89dbc0", "size": 67178197, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hu_HU-berta-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-hu_HU-imre-medium": {"artifacts": {"any": {"sha256": "7be44b928bb26b03e403660894cd8210828dd8a0e9dccc4bade4a1632fc4f8c4", "size": 67218203, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hu_HU-imre-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-id_ID-news_tts-medium": {"artifacts": {"any": {"sha256": "634b0169fe41c368e9fafe128f30647f9e0301e852ce503cd78146db524f1f12", "size": 67243848, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-id_ID-news_tts-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-is_IS-bui-medium": {"artifacts": {"any": {"sha256": "404a4de4b2a49dafb5a9f67ccf5366ab19d97e146aab602d348d8ba39dfb89d9", "size": 67271654, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-is_IS-bui-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-is_IS-salka-medium": {"artifacts": {"any": {"sha256": "493ad56f2d8a03ba9071c30b6d5aa59b96aba13955f7ae4387d426ee65fd60bd", "size": 67359734, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-is_IS-salka-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-is_IS-steinn-medium": {"artifacts": {"any": {"sha256": "22acffbaf4b919881ec463126eda7bf14f7dc8d4beb0cc84e161760702ada328", "size": 67377681, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-is_IS-steinn-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-is_IS-ugla-medium": {"artifacts": {"any": {"sha256": "2d2295b13746758620ef02ee35294ff1096d94fd01cb055c53f70de17a222519", "size": 67376655, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-is_IS-ugla-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-it_IT-dii-high": {"artifacts": {"any": {"sha256": "fb5ff18ca81d1d35de064bfdb58d04d153d1dcf8523e1fa3429e231aea860c78", "size": 67196676, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-it_IT-miro-high": {"artifacts": {"any": {"sha256": "4612a986f49680b571b8fe0b03f0b292b34c843178fd6e07826bf52de10157c4", "size": 67162890, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-it_IT-paola-medium": {"artifacts": {"any": {"sha256": "7541f75778afa164e44e34baaef63befad7698595df26a95ca944b63ef1a16b4", "size": 67221173, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-paola-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-it_IT-riccardo-x_low": {"artifacts": {"any": {"sha256": "8ad0791558ae2b3e96054fc5756ae3ae2f6457fb1765bc01f43bbab85e0a7021", "size": 26496614, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-riccardo-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ka_GE-natia-medium": {"artifacts": {"any": {"sha256": "18e34c601f4be13e5132ec772e2cbcfa47ca6a4aaaf995dd5baefe014f5a0256", "size": 67209457, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ka_GE-natia-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-kk_KZ-iseke-x_low": {"artifacts": {"any": {"sha256": "1a995dd9a0e0760942af5c7a3d84a688344ddb17dc51e95942848f855c9347eb", "size": 26517675, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-kk_KZ-iseke-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-kk_KZ-issai-high": {"artifacts": {"any": {"sha256": "6c59955f7f5e3fc50b130ced59a430eb4ef62d69155af4ce836db0dde4a42682", "size": 129278805, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-kk_KZ-issai-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-kk_KZ-raya-x_low": {"artifacts": {"any": {"sha256": "fce067c8c078d96586fba3a429b1acbf7911a1248b04eebfebab2cf110966ce0", "size": 26497880, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-kk_KZ-raya-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ku_TR-berfin_renas-medium": {"artifacts": {"any": {"sha256": "b72695bc6f1ac30eba67bc096c5cc5be0ddafac948efc3231f217d1c49b7cfaa", "size": 80263336, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ku_TR-berfin_renas-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-lb_LU-marylux-medium": {"artifacts": {"any": {"sha256": "f11117fc121db0d5c4dc46e07eac7b1d8ea719b04f0b381836a23050310ea5a4", "size": 67184319, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-lb_LU-marylux-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-lv_LV-aivars-medium": {"artifacts": {"any": {"sha256": "a0df58c9924761e201ef75d82473b90bde32c5372267e9b4c628fdd267cf2508", "size": 67196173, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-lv_LV-aivars-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ml_IN-arjun-medium": {"artifacts": {"any": {"sha256": "3058d098e8b1ffcdd6069e96b1d492f319333235912a627c309c7c54cea59acf", "size": 67222458, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ml_IN-arjun-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ml_IN-meera-medium": {"artifacts": {"any": {"sha256": "c8d870441e60870b7e8781c26eb22104aff51587b63bee94aba5e5f6c9fbb71f", "size": 67195010, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ml_IN-meera-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ne_NP-chitwan-medium": {"artifacts": {"any": {"sha256": "65fa157c090844bbe5b38c1c3e4321535f569fdbb526c08aaa2ad22c09d51279", "size": 67213467, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ne_NP-chitwan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ne_NP-google-medium": {"artifacts": {"any": {"sha256": "73c1e093451867779ec2b55cc3666de2db058019a2e7760e8c8f294a42caca2a", "size": 80242801, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ne_NP-google-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ne_NP-google-x_low": {"artifacts": {"any": {"sha256": "135690fa3b6d43fe8c5f270c7bbb3fa927eed0a98d6ac07494a7ec70e7607ede", "size": 33214875, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ne_NP-google-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_BE-nathalie-medium": {"artifacts": {"any": {"sha256": "c7484313abea395243e872196bc75181c07aad8120b8a61e0f6f4b3863b6a7c8", "size": 67226472, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_BE-nathalie-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_BE-nathalie-x_low": {"artifacts": {"any": {"sha256": "0cb6c3f702a12c12fb62c232ba5b206559edcf87c7dd2ed5faf2ec29fdb801e2", "size": 26502603, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_BE-nathalie-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_BE-rdh-medium": {"artifacts": {"any": {"sha256": "3e99e86fcd1ec1bf04bb68fc9e1588e5b88c4a5fa2ee507bd46ca9a947420d84", "size": 67047636, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_BE-rdh-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_BE-rdh-x_low": {"artifacts": {"any": {"sha256": "09a2d1425283f4c64cdde3a3a0eb0214d9c93f3eb2a7ee38d39f580d190a1180", "size": 26454425, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_BE-rdh-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_NL-alex-medium": {"artifacts": {"any": {"sha256": "52be645a8617eda0e592c604eb67f419fcb09376310c3ec7fc781beeb8e84bb6", "size": 67172584, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-alex-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_NL-dii-high": {"artifacts": {"any": {"sha256": "4620f8749efcef5d03533960bf13e723de75a2a9df50682ac56c0087401321dc", "size": 67203791, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_NL-miro-high": {"artifacts": {"any": {"sha256": "44dd05eae66b5681abd95a5f7b4339c83a4d095e4ac063ddcb88bf8f225b6c4f", "size": 67169101, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_NL-pim-medium": {"artifacts": {"any": {"sha256": "e78ed301bf6fc66561a04c110754cd6928d772630a3b80b09a83f89410130171", "size": 67240538, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-pim-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-nl_NL-ronnie-medium": {"artifacts": {"any": {"sha256": "d2cc688abf46054eba1d47b3b1406c742ccf66732cd47998a3ee727c1b96c09f", "size": 67194164, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-ronnie-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-no_NO-talesyntese-medium": {"artifacts": {"any": {"sha256": "dcb7c36b7222e290cca1fd4cdecb474e7fd651dc5b0d3d42c33d416a8e62018b", "size": 67194829, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-no_NO-talesyntese-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-bass-high": {"artifacts": {"any": {"sha256": "6640efabebff64f6ad066fa2b048b091961d63c2f5abf75eaebe81ddeeaea1e6", "size": 115576949, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-bass-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-darkman-medium": {"artifacts": {"any": {"sha256": "444727aa46eb6db645a2bc88fe73868e4bd7596b7f56ca39fad5ef53c41210d4", "size": 67215635, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-darkman-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-gosia-medium": {"artifacts": {"any": {"sha256": "75bd34dcbdc4dd98d763954756b4b34b4208100497c836381542e4d73dcefa9c", "size": 67211182, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-gosia-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-jarvis_wg_glos-medium": {"artifacts": {"any": {"sha256": "845e1f7a0aada0797085ed68364b220dbb35768b30d85412486d2895008d2eb1", "size": 67244103, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-jarvis_wg_glos-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-justyna_wg_glos-medium": {"artifacts": {"any": {"sha256": "ac8d115c6295831b1315927234302b2689b767231648f85a53a027024373ec4a", "size": 67242145, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-justyna_wg_glos-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-mc_speech-medium": {"artifacts": {"any": {"sha256": "6252744660fb9d2e4c93589b88d8d738df5003b0c651e52ed1202539aed77649", "size": 67234285, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-mc_speech-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-meski_wg_glos-medium": {"artifacts": {"any": {"sha256": "52e092f458470d109ccc1420fb615ed8354a67c0a4b38c9d800a4b97296673d7", "size": 67246175, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-meski_wg_glos-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pl_PL-zenski_wg_glos-medium": {"artifacts": {"any": {"sha256": "0d4312baf0733874eb579dc7d46c33bc94446b5d23c22b67a40dd98e89b22978", "size": 67251520, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-zenski_wg_glos-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-cadu-medium": {"artifacts": {"any": {"sha256": "aba78157d4b89acc17ddef15a70f4b2474f4c189d4de6035002ac7fec9d5d303", "size": 67207562, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-cadu-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-dii-high": {"artifacts": {"any": {"sha256": "76bdf009bb29e69b12336de833d0d219ffa558f4281330eb141e4a0569c108a2", "size": 67238016, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-edresson-low": {"artifacts": {"any": {"sha256": "670569e755cc48cda0a2f6a3ccba0698815566297069961edcd5f7daaf3d47a5", "size": 67081775, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-edresson-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-faber-medium": {"artifacts": {"any": {"sha256": "7add3f923ad6bc25ca8a192805fd1a64d1b3893e4611c4a9719545a825039a83", "size": 67183065, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-jeff-medium": {"artifacts": {"any": {"sha256": "da4c870fc7b20600c74261b3e1dd1c816da2ce063e18c46e1f2cd86dea88f3f0", "size": 67207052, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-jeff-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_BR-miro-high": {"artifacts": {"any": {"sha256": "7f30d1c3421362a60381807543aeafd7e1cd0acbcb92c349a29908526c6f4e6f", "size": 67207707, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_PT-dii-high": {"artifacts": {"any": {"sha256": "d0859dd3e4fac69aac33a3e58958d56cd4a8721446d597e21734a7048b977225", "size": 67243408, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_PT-dii-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_PT-miro-high": {"artifacts": {"any": {"sha256": "4b6d115b184104eb234cc8c955354f3c4af2db04faf18a48862d3dc199c2de31", "size": 67208098, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_PT-miro-high.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-pt_PT-tugao-medium": {"artifacts": {"any": {"sha256": "6b4f0a7bfc957bef26d6ac0703a8fa1ba659c8ab2df8b294f20206551859070c", "size": 67195014, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_PT-tugao-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ro_RO-mihai-medium": {"artifacts": {"any": {"sha256": "cfbee3cdc25cf063339f69e189f4d93cc3be6610d267567537323ced3cf87f4d", "size": 67182137, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ro_RO-mihai-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ru_RU-denis-medium": {"artifacts": {"any": {"sha256": "efa4c18e0b5e32b81d1b6df36b9d312831e5d545200e27848ef926a4cd930300", "size": 67190991, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ru_RU-denis-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ru_RU-dmitri-medium": {"artifacts": {"any": {"sha256": "c86d0803737de13d441923ff3b3f309482fab8d7af3ec85949942809eb9a3660", "size": 67188551, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ru_RU-dmitri-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ru_RU-irina-medium": {"artifacts": {"any": {"sha256": "1fc0f54e5e084fe287c07909f2f6e0ba6d857864cf800e3ab80286a4e8233008", "size": 67153308, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ru_RU-irina-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ru_RU-ruslan-medium": {"artifacts": {"any": {"sha256": "0690b1cad01f86e8db9ba988af24898bdc1af774e23cb2e46b9c730269b6fd83", "size": 67210684, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ru_RU-ruslan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sk_SK-lili-medium": {"artifacts": {"any": {"sha256": "a00dfbca5d34733862a59d9e309f4e94a92fccc9337c2b124de9a241b604fc0d", "size": 67183092, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sk_SK-lili-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sl_SI-artur-medium": {"artifacts": {"any": {"sha256": "df805f31c4513864edebf7e287cf0b54d72788fc661ed73f88dc4e5aabc5efd5", "size": 67025668, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sl_SI-artur-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sq_AL-edon-medium": {"artifacts": {"any": {"sha256": "2d7a3b3647a499ad40a28662edd5ff50eb8594ad7ace94a5d3525e280212bf99", "size": 67191820, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sq_AL-edon-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sr_RS-serbski_institut-medium": {"artifacts": {"any": {"sha256": "b8c100e5ff885d11ff96ad92a953f4b82e1cd649f9ac60a77ae4553d37507b2b", "size": 80298557, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sr_RS-serbski_institut-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sv_SE-alma-medium": {"artifacts": {"any": {"sha256": "4ab8212595575e52595bc95c37d0b4f79450c0f00b63496346cdc5941d913edc", "size": 67154700, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sv_SE-alma-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sv_SE-lisa-medium": {"artifacts": {"any": {"sha256": "78b5f6808e513d545d9284a015075ef31f09623e6c08d6186a29a1997aa577d7", "size": 67223955, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sv_SE-lisa-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sv_SE-nst-medium": {"artifacts": {"any": {"sha256": "5aed0f5ab75135fc3ba6a4f3567e171d72df753305b08a01ca42f79411587f67", "size": 67144884, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sv_SE-nst-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-sw_CD-lanfrica-medium": {"artifacts": {"any": {"sha256": "93196704a0ae0c984806059480775d69dcc2419d0d545cddd0903d244dc66a72", "size": 67217230, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-sw_CD-lanfrica-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-tr_TR-dfki-medium": {"artifacts": {"any": {"sha256": "b63babaefcdd63202c7079aba25b72a2013825ad5895e2aeff03d1ae5a5b3bbf", "size": 67201221, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-tr_TR-dfki-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-tr_TR-fahrettin-medium": {"artifacts": {"any": {"sha256": "2ee3c18b5dc0a5faf913f995b027163befa6e7a6ad2f5c6b8a2e99fe1aad8b6d", "size": 67212827, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-tr_TR-fahrettin-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-tr_TR-fettah-medium": {"artifacts": {"any": {"sha256": "314a9910616fb17be882c77f0bcf76796a1914d4d606f3c984f9094cb9abf1e5", "size": 67174342, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-tr_TR-fettah-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-uk_UA-lada-x_low": {"artifacts": {"any": {"sha256": "7a2228f249299d19016cd6ca170bf6916f8664231bcbd9e61f447b861a039cf5", "size": 26520908, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-uk_UA-lada-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-uk_UA-ukrainian_tts-medium": {"artifacts": {"any": {"sha256": "92be6ff21ebb1cbcc0c71121a6437db8d060cee5785287aaa6a19a2548f59c03", "size": 80355083, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-uk_UA-ukrainian_tts-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-ur_PK-fasih-medium": {"artifacts": {"any": {"sha256": "de64e03109f3c896b7cf910db6d9ffd2703e3d665580d9a19bedbf3e0760d0e4", "size": 67227718, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ur_PK-fasih-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-vi_VN-25hours_single-low": {"artifacts": {"any": {"sha256": "8aa8bbe88a1cb26ef4f33de56fced1720e72ec00491d23a3551de25a53c75149", "size": 67059380, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-vi_VN-25hours_single-low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-vi_VN-vais1000-medium": {"artifacts": {"any": {"sha256": "fa1367710767d36ed5cf13b4a449e20c35ffd12791c2e47c2e64142bfa55551a", "size": 67154040, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-vi_VN-vais1000-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-vi_VN-vivos-x_low": {"artifacts": {"any": {"sha256": "bee4ce76bdf4cc82c17b451c40d6244c5e87d2e847703ab4986c3243c43f8a5d", "size": 33409065, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-vi_VN-vivos-x_low.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-zh_CN-chaowen-medium": {"artifacts": {"any": {"sha256": "1b69bdcf10bb6331c7f8a7591940febeb175c6bb86caa3802d96531f8e4ad211", "size": 60443846, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-zh_CN-chaowen-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-zh_CN-huayan-medium": {"artifacts": {"any": {"sha256": "dbdfec42b91d9cee31cce9ff4b3e9c305eb6fbf60546d071f7e46273554cce6b", "size": 67255926, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-zh_CN-huayan-medium.tar.bz2"}}, "version": "tts-models"},
+    "piper-voice-zh_CN-xiao_ya-medium": {"artifacts": {"any": {"sha256": "9396a3dffbb95b037acaa18094500f58d0db9a7c4f2689554e2539717cf0db65", "size": 60462944, "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-zh_CN-xiao_ya-medium.tar.bz2"}}, "version": "tts-models"},
+    "porcupine": {
+      "artifacts": {
+        "any": {
+          "sha256": "92796dbd3cf80a56db1ce20702cbceb151aee34f19ef730591f815eb16f2ebfb",
+          "size": 3659883,
+          "url": "https://files.pythonhosted.org/packages/2a/ef/1c4b8e47d8248fe1b615772028265ca65d9ff3ea98022d84cd973d46db87/pvporcupine-4.0.3-py3-none-any.whl"
+        }
+      },
+      "version": "4.0.3"
+    },
+    "portaudio": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "e3aef00ad8b1d1740eb66d9a7671eab88a4d2b8fa4ab33498d742e63b65c309c",
+          "size": 1009647,
+          "url": "https://files.pythonhosted.org/packages/b6/84/85e719d49cf98b2f406d9ac9c338892286c4448eb42ef0b2625ccf159616/sounddevice-0.5.6-py3-none-macosx_10_6_x86_64.macosx_10_6_universal2.whl"
+        },
+        "darwin-x64": {
+          "sha256": "e3aef00ad8b1d1740eb66d9a7671eab88a4d2b8fa4ab33498d742e63b65c309c",
+          "size": 1009647,
+          "url": "https://files.pythonhosted.org/packages/b6/84/85e719d49cf98b2f406d9ac9c338892286c4448eb42ef0b2625ccf159616/sounddevice-0.5.6-py3-none-macosx_10_6_x86_64.macosx_10_6_universal2.whl"
+        },
+        "win32-arm64": {
+          "sha256": "c8ae19173e5f27f8c12d4b5eee2dbfe542cee125d591e663e0fb4dfb75246d45",
+          "size": 1009630,
+          "url": "https://files.pythonhosted.org/packages/60/a4/b0c21c9f215a6fd9606b8f8748c21212dc098e5d5a2d93068c50edcf19b4/sounddevice-0.5.6-py3-none-win_arm64.whl"
+        },
+        "win32-x64": {
+          "sha256": "7f4162f514f007b0bf25a3ccfed3f1705bc2ec311888a90232729eec4f57a4f4",
+          "size": 1009630,
+          "url": "https://files.pythonhosted.org/packages/8d/3e/cbc593c31a5f0d817b3fe97e64aa8461bd0f55cb07b67ce1b776296ae336/sounddevice-0.5.6-py3-none-win_amd64.whl"
+        }
+      },
+      "version": "0.5.6"
+    },
+    "pypinyin": {
+      "artifacts": {
+        "any": {
+          "sha256": "d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f",
+          "size": 840203,
+          "url": "https://files.pythonhosted.org/packages/b9/7b/4cabc76fcc21c3c7d5c671d8783984d30ac9d3bb387c4ba784fca3cdfa3a/pypinyin-0.55.0-py2.py3-none-any.whl"
+        }
+      },
+      "version": "0.55.0"
+    },
+    "ripgrep": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-apple-darwin.tar.gz"
+        },
+        "darwin-x64": {
+          "sha256": "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-apple-darwin.tar.gz"
+        },
+        "linux-arm64": {
+          "sha256": "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz"
+        },
+        "linux-arm64-bionic": {
+          "sha256": "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz"
+        },
+        "linux-arm64-musl": {
+          "sha256": "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-unknown-linux-musl.tar.gz"
+        },
+        "linux-x64": {
+          "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
+        },
+        "linux-x64-musl": {
+          "sha256": "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz"
+        },
+        "win32-arm64": [
+          {
+            "sha256": "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f",
+            "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-aarch64-pc-windows-msvc.zip"
+          },
+          {
+            "sha256": "b7af5a4655fcf919f00ef9426f9737637de73062bf9953cc0c13e50e516f282a",
+            "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9+20261021-aarch64-pc-windows-msvc-install_only.tar.gz"
+          }
+        ],
+        "win32-x64": {
+          "sha256": "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
+          "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip"
+        }
+      },
+      "version": "15.2.0"
+    },
+    "sherpa-kws-model": {
+      "artifacts": {
+        "any": {
+          "sha256": "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+          "size": 17626723,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01.tar.bz2"
+        }
+      },
+      "version": "2024-01-01"
+    },
+    "sherpa-onnx": {
+      "artifacts": {
+        "darwin-arm64": {
+          "sha256": "ae77050cdae565496059d96f5ab33d77b397a0864282a4e4a26e3b3b3effb948",
+          "size": 8773198,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-osx-arm64-shared-lib.tar.bz2"
+        },
+        "darwin-x64": {
+          "sha256": "0f88371565a06372889c76266e253abd1b415fcc6f98232cabd968933efb0711",
+          "size": 10014197,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-osx-x64-shared-lib.tar.bz2"
+        },
+        "linux-arm64": {
+          "sha256": "fb98b80628a383909bf83626daca2e0d0ffc93bf1f7d222eaaa4282b388f072f",
+          "size": 12595068,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-aarch64-shared-cpu-lib.tar.bz2"
+        },
+        "linux-arm64-bionic": {
+          "sha256": "ad7bac42adc6295293fe6d36475936afb227cdc757cf293c02a706f6aca4e0a2",
+          "size": 16451109,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-android-aarch64-termux-shared.tar.bz2"
+        },
+        "linux-x64": {
+          "sha256": "3892d184be41027e18165e67f549cd4e4cdd8dcd73ac5579e97afd55e14e30b6",
+          "size": 9816899,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-x64-shared-lib.tar.bz2"
+        },
+        "win32-arm64": {
+          "sha256": "22cd2b2b5e35c1132abc74a91ee77f683645437382617af6a4bd5818b9c509f4",
+          "size": 7622849,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-win-arm64-shared-MT-Release-lib.tar.bz2"
+        },
+        "win32-x64": {
+          "sha256": "b8eedf41bd6d3779218887b48367bb7a3ece5aaa7667f01f69ee823a12b0a9e7",
+          "size": 8032957,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-win-x64-shared-MT-Release-lib.tar.bz2"
+        }
+      },
+      "version": "1.13.8"
+    },
+    "sherpa-onnx-cuda": {
+      "artifacts": {
+        "linux-x64": {
+          "sha256": "2132af1ae8c84c84f86ac091e4311839287851d2bf5e660332ebce3898a1e0b2",
+          "size": 393010348,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-cuda-12.x-cudnn-9.x-onnxruntime1.28.2-linux-x64-gpu.tar.bz2"
+        },
+        "win32-x64": {
+          "sha256": "066c5b54dbafaa1388001a9c9837ac1374dbba6d6678f193ca06aa0d8e94d8c3",
+          "size": 595017373,
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-cuda-12.x-cudnn-9.x-onnxruntime1.28.2-win-x64-cuda.tar.bz2"
+        }
+      },
+      "version": "1.13.8"
+    },
+    "whispercpp-cpu": {
+      "artifacts": {
+        "win32-arm64": {
+          "sha256": "799543b926ab5b6c2d60cab269a2092e0ae8d27820e9e15429e59de3699546fc",
+          "url": "https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-win-cpu-arm64.zip"
+        }
+      },
+      "version": "b5130"
+    },
+    "whispercpp-models": {
+      "artifacts": {
+        "any": [
+          {
+            "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+            "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin"
+          },
+          {
+            "sha256": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+            "url": "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin"
+          }
+        ]
+      },
+      "version": "base"
+    }
+  },
+  "schema": 1
+}

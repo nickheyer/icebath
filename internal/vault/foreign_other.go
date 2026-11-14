@@ -10,8 +10,8 @@ func noLoginKeychain() error {
 }
 
 // Refuses because only macOS has a login keychain
-func (k *Keychain) findForeign(context.Context, string) (ForeignItem, error) {
-	return ForeignItem{}, noLoginKeychain()
+func (k *Keychain) findForeign(context.Context, string) (account, secret string, err error) {
+	return "", "", noLoginKeychain()
 }
 
 // Refuses because only macOS has a login keychain
@@ -20,4 +20,9 @@ func (k *Keychain) readForeign(context.Context, string) (string, error) { return
 // Refuses because only macOS has a login keychain
 func (k *Keychain) updateForeign(context.Context, string, string, []byte) error {
 	return noLoginKeychain()
+}
+
+// Refuses because only macOS has a login keychain
+func (k *Keychain) getForeign(context.Context, string, string) (string, error) {
+	return "", noLoginKeychain()
 }

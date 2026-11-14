@@ -2,11 +2,8 @@ package vault
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"strings"
 	"unicode/utf8"
 )
@@ -23,6 +20,9 @@ var (
 
 // Error for a service or account name the OS stores could not file an entry under
 var errBadName = errors.New("keychain name is not NUL free UTF-8 text")
+
+// Error for a secret the OS stores would alter because it is not UTF-8 text
+var errBadSecret = errors.New("keychain secret is not UTF-8 text")
 
 // Longest a keychain operation waits on an OS prompt the caller gave no deadline, the surfaces' unlock deadline
 const keychainPromptWait = UnlockPromptTimeout
@@ -102,10 +102,13 @@ func (k *Keychain) Get(ctx context.Context, service, account string) (string, er
 	return secret, asKeychainError(err)
 }
 
-// Stores secret for service and account, replacing an earlier one
+// Stores secret for service and account, replacing an earlier one, refusing bytes no store returns unchanged
 func (k *Keychain) Set(ctx context.Context, service, account, secret string) error {
 	if err := checkNames(service, account); err != nil {
 		return err
+	}
+	if !utf8.ValidString(secret) {
+		return keychainError(errBadSecret, "the secret for %s / %s is not UTF-8 text, which the keychain cannot return unchanged", quote(service), quote(account))
 	}
 	return asKeychainError(k.set(ctx, service, account, secret))
 }
@@ -129,40 +132,78 @@ func (k *Keychain) Label(ctx context.Context) string {
 	return keychainName
 }
 
-// Item another application owns in the macOS login keychain, read through the security tool
-type ForeignItem struct {
-	Account string
-	Secret  string
-}
-
-// Writes the account with a redaction marker in place of the secret
-func (i ForeignItem) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "{"+i.Account+" "+redacted+"}")
-}
-
-// Account with a redaction marker for structured logs
-func (i ForeignItem) LogValue() slog.Value {
-	return slog.GroupValue(slog.String("account", i.Account), slog.String("secret", redacted))
-}
-
-// Account with a redaction marker as a JSON object
-func (i ForeignItem) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]string{"account": i.Account, "secret": redacted})
-}
-
 // Account and secret of the login keychain item filed under service, read through the security tool
-func (k *Keychain) FindForeign(ctx context.Context, service string) (ForeignItem, error) {
-	item, err := k.findForeign(ctx, service)
-	return item, asKeychainError(err)
+func (k *Keychain) FindForeign(ctx context.Context, service string) (account, secret string, err error) {
+	if err := checkNames(service); err != nil {
+		return "", "", err
+	}
+	account, secret, err = k.findForeign(ctx, service)
+	return account, secret, asKeychainError(err)
 }
 
 // Secret of the login keychain item filed under service, read through the security tool
 func (k *Keychain) ReadForeign(ctx context.Context, service string) (string, error) {
+	if err := checkNames(service); err != nil {
+		return "", err
+	}
 	secret, err := k.readForeign(ctx, service)
 	return secret, asKeychainError(err)
 }
 
 // Rewrites the secret of the item for service and account in place, hex encoded on stdin
 func (k *Keychain) UpdateForeign(ctx context.Context, service, account string, secret []byte) error {
+	if err := checkNames(service, account); err != nil {
+		return err
+	}
 	return asKeychainError(k.updateForeign(ctx, service, account, secret))
+}
+
+// Secret of the login keychain item filed under service and account, read through the security tool
+func (k *Keychain) GetForeign(ctx context.Context, service, account string) (string, error) {
+	if err := checkNames(service, account); err != nil {
+		return "", err
+	}
+	secret, err := k.getForeign(ctx, service, account)
+	return secret, asKeychainError(err)
+}
+
+// Secret of the first Secret Service item whose attributes include every given pair, unlocking it when locked
+func (k *Keychain) LookupAttributes(ctx context.Context, attributes map[string]string) (string, error) {
+	if err := checkAttributes(attributes); err != nil {
+		return "", err
+	}
+	secret, err := k.lookupAttributes(ctx, attributes)
+	return secret, asKeychainError(err)
+}
+
+// Stores secret under label and attributes in the default Secret Service collection, replacing an item with the same attributes
+func (k *Keychain) StoreAttributes(ctx context.Context, label string, attributes map[string]string, secret string) error {
+	if err := checkAttributes(attributes); err != nil {
+		return err
+	}
+	if err := checkNames(label); err != nil {
+		return err
+	}
+	if !utf8.ValidString(secret) {
+		return keychainError(errBadSecret, "the secret for the item %s is not UTF-8 text, which the keychain cannot return unchanged", quote(label))
+	}
+	return asKeychainError(k.storeAttributes(ctx, label, attributes, secret))
+}
+
+// Deletes every Secret Service item whose attributes include every given pair
+func (k *Keychain) ClearAttributes(ctx context.Context, attributes map[string]string) error {
+	if err := checkAttributes(attributes); err != nil {
+		return err
+	}
+	return asKeychainError(k.clearAttributes(ctx, attributes))
+}
+
+// Refuses attribute names and values an OS store would truncate or mangle
+func checkAttributes(attributes map[string]string) error {
+	for name, value := range attributes {
+		if err := checkNames(name, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }

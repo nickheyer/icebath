@@ -84,11 +84,7 @@ func (s *Store) deferStaleFTSForHolders(ctx context.Context, c Conn, holders []H
 	}
 	escalate := attempts >= ftsHolderEscalateAttempts && now-firstSeen >= ftsHolderEscalateSpan.Seconds()
 	if escalate {
-		reaped, err := s.reapInactiveOrphanDesktopHolders(ctx, holders, ftsHolderEscalateSpan)
-		if err != nil {
-			return false, err
-		}
-		if len(reaped) > 0 {
+		if reaped := s.reapInactiveOrphanDesktopHolders(ctx, holders, ftsHolderEscalateSpan); len(reaped) > 0 {
 			slog.Error(fmt.Sprintf("Reaped inactive orphan Desktop backend(s) %v after %d state.db FTS rebuild deferrals; "+
 				"checking holders again.", reaped, attempts))
 			holders = ForeignHolders(s.path)
@@ -107,7 +103,7 @@ func (s *Store) deferStaleFTSForHolders(ctx context.Context, c Conn, holders []H
 	if err != nil {
 		return false, err
 	}
-	if _, err := c.ExecContext(ctx, stateMetaUpsertSQL, ftsRebuildDeferralKey, string(payload)); err != nil {
+	if err := SetMetaIn(ctx, c, ftsRebuildDeferralKey, string(payload)); err != nil {
 		return false, err
 	}
 	if len(holders) == 0 {
@@ -411,44 +407,39 @@ func tryIncrementalMergeFTS(ctx context.Context, s *Store) {
 	if !ftsGet(s.fts(), func(f *ftsFlags) bool { return f.enabled }) {
 		return
 	}
-	if _, err := s.mergeFTSIncrementally(ctx, ftsMergeMaxPages, ftsMergeCommandsPerRun); err != nil {
+	if err := s.mergeFTSIncrementally(ctx); err != nil {
 		slog.Warn(fmt.Sprintf("FTS incremental merge failed after commit: %s", errText(err)))
 	}
 }
 
-// Bounded FTS5 merge commands per present index, the usermerge floor lowered to two once, returning commands run
-func (s *Store) mergeFTSIncrementally(ctx context.Context, maxPages, maxCommands int) (int, error) {
-	if maxPages <= 0 || maxCommands <= 0 {
-		return 0, fmt.Errorf("merge pages and commands must be greater than zero")
-	}
+// Bounded FTS5 merge commands per present index until one makes no progress, the usermerge floor lowered to two once
+func (s *Store) mergeFTSIncrementally(ctx context.Context) error {
 	if err := s.acquire(ctx); err != nil {
-		return 0, err
+		return err
 	}
 	defer s.release()
 	if s.conn == nil {
-		return 0, fmt.Errorf("%w: %s", ErrClosed, s.path)
+		return fmt.Errorf("%w: %s", ErrClosed, s.path)
 	}
 	c := s.conn.q()
 	applied := ftsGet(s.fts(), func(f *ftsFlags) bool { return f.usermergeApplied })
-	executed := 0
 	for _, t := range presentFTSTables(ctx, c) {
 		if !applied {
 			if _, err := c.ExecContext(ctx, "INSERT INTO "+t+"("+t+", rank) VALUES('usermerge', 2)"); err != nil {
-				return executed, err
+				return err
 			}
 		}
-		for range maxCommands {
+		for range ftsMergeCommandsPerRun {
 			before, err := totalChanges(ctx, c)
 			if err != nil {
-				return executed, err
+				return err
 			}
-			if _, err := c.ExecContext(ctx, "INSERT INTO "+t+"("+t+", rank) VALUES('merge', ?)", maxPages); err != nil {
-				return executed, err
+			if _, err := c.ExecContext(ctx, "INSERT INTO "+t+"("+t+", rank) VALUES('merge', ?)", ftsMergeMaxPages); err != nil {
+				return err
 			}
-			executed++
 			after, err := totalChanges(ctx, c)
 			if err != nil {
-				return executed, err
+				return err
 			}
 			if after-before < 2 {
 				break
@@ -456,7 +447,7 @@ func (s *Store) mergeFTSIncrementally(ctx context.Context, maxPages, maxCommands
 		}
 	}
 	s.fts().set(func(f *ftsFlags) { f.usermergeApplied = true })
-	return executed, nil
+	return nil
 }
 
 // Rows the connection changed since it opened
