@@ -8,16 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
-// Scheduled edit check, failing the test when scheduling raises
-func mustStartEditCheck(t testing.TB, svc *Service, path string, preText, postText *string, owner string, carry []Note, roots map[string]bool) *EditFuture {
-	t.Helper()
-	fut, err := svc.StartEditCheck(path, preText, postText, owner, carry, roots)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fut
-}
-
 func TestRelativePathsRaiseFileNotFoundInRemovedCwd(t *testing.T) {
 	dir := t.TempDir()
 	gone := filepath.Join(dir, "gone")

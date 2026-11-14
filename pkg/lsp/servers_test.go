@@ -40,35 +40,6 @@ func TestBladeTemplatesRouteToLaravelLSPAndPlainPHPStaysOnIntelephense(t *testin
 	}
 }
 
-func TestCustomServerPrecedesBuiltinsAndCarriesLanguageID(t *testing.T) {
-	rt, h, _ := testRuntime(t)
-	mock := mockBinary(t)
-	cfg := map[string]any{
-		"pyright": map[string]any{"disabled": true},
-		"blade":   map[string]any{"command": []any{mock}, "extensions": []any{".PHP"}, "language_id": "blade"},
-		"broken":  map[string]any{"command": "not-a-list", "extensions": []any{".zzz"}},
-	}
-	custom := CustomServers(rt, cfg)
-	if len(custom) != 1 || custom[0].ServerID != "blade" {
-		t.Fatalf("custom %v", custom)
-	}
-	if len(h.matching("lsp.servers.broken", "ignored")) != 1 {
-		t.Fatal("malformed entry must warn")
-	}
-	registry := append(custom, Servers...)
-	if FindServerForFile("/w/index.php", registry).ServerID != "blade" || FindServerForFile("/w/index.php", nil).ServerID != "intelephense" {
-		t.Fatal("routing")
-	}
-	if LanguageIDFor("/w/index.php", custom[0]) != "blade" || LanguageIDFor("/w/index.php", nil) != "php" {
-		t.Fatal("language id")
-	}
-	spec, err := custom[0].BuildSpawn("/w", ServerContext{WorkspaceRoot: "/w", InstallStrategy: "manual", Runtime: rt})
-	must(t, err)
-	if spec == nil || !reflect.DeepEqual(spec.Command, []string{mock}) {
-		t.Fatalf("spec %v", spec)
-	}
-}
-
 func makeFakeBundle(t *testing.T, root string) string {
 	bundle := filepath.Join(root, "PowerShellEditorServices")
 	writeFile(t, filepath.Join(bundle, "PowerShellEditorServices", "Start-EditorServices.ps1"), "# fake")

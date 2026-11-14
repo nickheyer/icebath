@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,33 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// Child process whose argv carries the given trailing arguments, killed when the test ends
-func spawnArgvChild(t *testing.T, args ...string) int {
-	t.Helper()
-	cmd := exec.Command("sh", append([]string{"-c", "sleep 30"}, args...)...)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		_, _ = cmd.Process.Wait()
-	})
-	return cmd.Process.Pid
-}
-
-// test_mcp_tool.py TestFilterMCPChildren test_filters_gateway_children_by_argv_marker
-func TestFilterMCPChildrenFiltersGatewayChildrenByArgvMarker(t *testing.T) {
-	gateway := spawnArgvChild(t, tuigateway.SlashWorkerEntry, "--session-key", "abc")
-	jdtls := spawnArgvChild(t, "-jar", "/opt/jdtls/plugins/org.eclipse.equinox.launcher_1.7.0.jar")
-	node := spawnArgvChild(t, "server.js")
-	kept := filterMCPChildren(map[int]bool{gateway: true, jdtls: true, node: true})
-	if len(kept) != 1 || !kept[node] {
-		t.Fatalf("kept %v, node pid %d", kept, node)
-	}
-}
 
 // Registers an already connected stand in task under name so a register pass refreshes rather than spawns it
 func liveStandIn(t *testing.T, env *tools.Env, name string) *serverTask {

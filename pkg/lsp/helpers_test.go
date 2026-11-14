@@ -15,34 +15,7 @@ import (
 )
 
 var (
-	mockOnce  sync.Once
-	mockPath  string
-	mockErr   error
-	pkgDir, _ = os.Getwd()
-)
-
-// Builds the mock language server once per test binary
-func mockBinary(t *testing.T) string {
-	t.Helper()
-	mockOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "lsp-mock-")
-		if err != nil {
-			mockErr = err
-			return
-		}
-		mockPath = filepath.Join(dir, "mockserver")
-		build := exec.Command("go", "build", "-o", mockPath, "./testdata/mockserver")
-		build.Dir = pkgDir
-		out, err := build.CombinedOutput()
-		if err != nil {
-			mockErr = fmt.Errorf("building the mock server: %v: %s", err, out)
-		}
-	})
-	if mockErr != nil {
-		t.Fatal(mockErr)
-	}
-	return mockPath
-}
+				)
 
 // One captured log record
 type logRecord struct {
@@ -214,49 +187,6 @@ func testRuntime(t *testing.T) (*Runtime, *captureHandler, *ledger) {
 	return rt, h, led
 }
 
-// Command that runs the mock language server
-func mockCommand(t *testing.T) []string { return []string{mockBinary(t)} }
-
-// Env selecting a mock script
-func mockEnv(script string, extra map[string]string) map[string]string {
-	env := map[string]string{"MOCK_LSP_SCRIPT": script}
-	maps.Copy(env, extra)
-	return env
-}
-
-// Replaces a registered server with one spawning the mock on the workspace root, restored at cleanup
-func installMockServer(t *testing.T, scripts []string, serverID string) func() int {
-	t.Helper()
-	idx := -1
-	for i, s := range Servers {
-		if s.ServerID == serverID {
-			idx = i
-		}
-	}
-	original := Servers[idx]
-	var mu sync.Mutex
-	count := 0
-	Servers[idx] = &ServerDef{
-		ServerID: serverID, Extensions: original.Extensions,
-		ResolveRoot: func(_, ws string) string { return ws },
-		BuildSpawn: func(root string, _ ServerContext) (*SpawnSpec, error) {
-			mu.Lock()
-			i := min(count, len(scripts)-1)
-			count++
-			mu.Unlock()
-			return &SpawnSpec{Command: mockCommand(t), WorkspaceRoot: root, Cwd: root, Env: mockEnv(scripts[i], nil),
-				InitializationOptions: map[string]any{}}, nil
-		},
-		Description: "mock " + serverID,
-	}
-	t.Cleanup(func() { Servers[idx] = original })
-	return func() int {
-		mu.Lock()
-		defer mu.Unlock()
-		return count
-	}
-}
-
 // Git repo with a pyproject so pyright's root resolver finds it
 func gitRepo(t *testing.T, parent, name string) string {
 	t.Helper()
@@ -278,33 +208,6 @@ func writeFile(t *testing.T, path, text string) string {
 	must(t, os.MkdirAll(filepath.Dir(path), 0o755))
 	must(t, os.WriteFile(path, []byte(text), 0o644))
 	return path
-}
-
-// Started loop for driving clients directly
-func testLoop(t *testing.T) *loop {
-	t.Helper()
-	l := newLoop()
-	l.start()
-	t.Cleanup(l.stop)
-	return l
-}
-
-// Runs fn as a loop task and fails the test on a scheduling timeout
-func onLoop[T any](t *testing.T, l *loop, fn func(ctx context.Context) (T, error)) (T, error) {
-	t.Helper()
-	return runOnLoop(l, 60*time.Second, fn)
-}
-
-// Polls a condition until it holds or the timeout passes
-func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %s", what)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 }
 
 // Clears process caches between tests

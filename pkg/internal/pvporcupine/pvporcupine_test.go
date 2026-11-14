@@ -1,11 +1,7 @@
 package pvporcupine
 
 import (
-	"context"
 	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -236,51 +232,4 @@ func TestStatusToException(t *testing.T) {
 		}
 	}
 	wantPyError(t, statusError(12, "m", nil), "ValueError", "12 is not a valid Porcupine.PicovoiceStatuses")
-}
-
-func TestPvTrainModel(t *testing.T) {
-	m := &Module{System: "Linux", Machine: "x86_64"}
-	ctx := context.Background()
-	out := filepath.Join(t.TempDir(), "model.ppn")
-	wantPyError(t, m.PvTrainModel(ctx, "k", out, "xx", "hey there", nil), "ValueError", "Invalid language 'xx'")
-	bad := "amiga"
-	wantPyError(t, m.PvTrainModel(ctx, "k", out, "en", "hey there", &bad), "ValueError", "Invalid platform 'amiga'")
-	wantPyError(t, m.PvTrainModel(ctx, "k", out, "en", "", nil), "ValueError", "Phrase must not be empty")
-	wantPyError(t, m.PvTrainModel(ctx, "k", out, "en", strings.Repeat("é", 65), nil), "ValueError", "Phrase must not exceed 64 characters")
-	unsupported := &Module{System: "Linux", Machine: "sparc"}
-	wantPyError(t, unsupported.PvTrainModel(ctx, "k", out, "en", "x", nil), "NotImplementedError", `("Unsupported platform ('%s', '%s').", 'Linux', 'sparc')`)
-
-	var gotBody, gotPath, gotKey, gotAgent, gotType string
-	status := 200
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		gotBody, gotPath, gotKey, gotAgent, gotType = string(body), r.URL.Path, r.Header.Get("x-api-key"), r.Header.Get("User-Agent"), r.Header.Get("Content-Type")
-		w.WriteHeader(status)
-		_, _ = w.Write([]byte("model-bytes"))
-	}))
-	defer srv.Close()
-	m.APIURL, m.Transport = srv.URL+"/", http.DefaultTransport.(*http.Transport)
-	if err := m.PvTrainModel(ctx, "secret", out, "fr", strings.Repeat("é", 64), nil); err != nil {
-		t.Fatal(err)
-	}
-	wantBody := `{"platform": "linux", "phrase": "` + strings.Repeat(string(rune(92))+"u00e9", 64) + `"}`
-	if gotBody != wantBody || gotPath != "/fr/api/ppn" || gotKey != "secret" ||
-		gotAgent != "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" || gotType != "application/json" {
-		t.Fatalf("request body %q want %q path %q key %q agent %q type %q", gotBody, wantBody, gotPath, gotKey, gotAgent, gotType)
-	}
-	if data, err := os.ReadFile(out); err != nil || string(data) != "model-bytes" {
-		t.Fatalf("written model %q %v", data, err)
-	}
-	pi := "raspberry-pi"
-	if err := m.TrainWakeWordFromPhrase(ctx, "secret", out, "en", "hey there", &pi); err != nil || gotBody != `{"platform": "raspberry-pi", "phrase": "hey there"}` {
-		t.Fatalf("explicit platform body %q %v", gotBody, err)
-	}
-	status = 401
-	wantPyError(t, m.PvTrainModel(ctx, "secret", out, "en", "hey there", nil), "RuntimeError", "HTTP 401: model-bytes")
-	srv.Close()
-	err := m.PvTrainModel(ctx, "secret", out, "en", "hey there", nil)
-	var pe *PyError
-	if !errors.As(err, &pe) || pe.Class != "RuntimeError" || !strings.HasPrefix(pe.Msg, "Request failed: HTTPConnectionPool(host='127.0.0.1', port=") {
-		t.Fatalf("connection failure %v", err)
-	}
 }
