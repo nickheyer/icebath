@@ -1,0 +1,37 @@
+usage: icebath curator [-h]
+                       {status,usage,run,pause,resume,pin,unpin,lock,unlock,list-unmanaged,adopt,restore,list-archived,archive,prune,backup,rollback,ledger,purge} ...
+
+The curator is an auxiliary-model background task that periodically reviews agent-created skills,
+prunes stale ones, consolidates overlaps, and archives obsolete skills. Bundled and hub-installed
+skills are never touched. Archives are recoverable; auto-deletion never happens.
+
+positional arguments:
+  {status,usage,run,pause,resume,pin,unpin,lock,unlock,list-unmanaged,adopt,restore,list-archived,archive,prune,backup,rollback,ledger,purge}
+    status              Show curator status and skill stats
+    usage               Show usage telemetry for ALL skills (built-in, hub, agent) with provenance
+    run                 Trigger a curator review now
+    pause               Pause the curator until resumed
+    resume              Resume a paused curator
+    pin                 Pin a skill so the curator never auto-transitions it
+    unpin               Unpin a skill
+    lock                Lock a skill so the agent cannot change it (skill_manage, write_file,
+                        patch and terminal refuse; it stays readable and auto-loadable; your own
+                        edits are unaffected)
+    unlock              Lift a content lock
+    list-unmanaged      List curation-eligible skills with no provenance marker
+    adopt               Hand unmanaged skills to the curator (provenance is a user declaration)
+    restore             Restore an archived skill
+    list-archived       List archived skills
+    archive             Manually archive a skill (move to .archive/, excluded from prompt)
+    prune               Bulk-archive curator-managed skills idle for >= N days (default:
+                        curator.archive_after_days)
+    backup              Take a manual tar.gz snapshot of ~/.icebath/skills/ (curator also does
+                        this automatically before every real run)
+    rollback            Restore ~/.icebath/skills/ from a curator snapshot, or a single mutation
+                        by ledger entry id (see `icebath curator ledger`)
+    ledger              List the per-mutation skill audit ledger (all actors: curator/agent/user)
+    purge               Delete archived skills older than curator.archive_ttl_days (explicit only
+                        — never automatic; recorded in the ledger)
+
+options:
+  -h, --help            show this help message and exit

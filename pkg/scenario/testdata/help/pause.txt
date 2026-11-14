@@ -1,0 +1,10 @@
+usage: icebath pause [-h] [--reason REASON]
+
+Engage the global emergency stop. Halts NEW work only — cron dispatch, kanban dispatch, and new
+gateway turns — until `icebath resume`. Interactive CLI, TUI and Desktop turns are gateway turns,
+so they are held too: each gets "Icebath is paused" with the reason. Turns already running finish;
+in-flight work is never killed.
+
+options:
+  -h, --help       show this help message and exit
+  --reason REASON  Optional reason stored in the sentinel and shown to users

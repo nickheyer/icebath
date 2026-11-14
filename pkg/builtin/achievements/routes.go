@@ -2,7 +2,7 @@ package achievements
 
 import (
 	"context"
-	"embed"
+	_ "embed"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -11,12 +11,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/tarzst"
 )
 
-// Dashboard manifest, script bundle and stylesheet
+// Dashboard manifest, script bundle and stylesheet built ahead of time and packed as one archive
 //
-//go:embed all:dashboard
-var dashboardFS embed.FS
+//go:embed dashboard.tar.zst
+var dashboardArchive []byte
+
+var dashboardFS = tarzst.NewFS(dashboardArchive, "")
 
 func init() {
 	assets, err := fs.Sub(dashboardFS, "dashboard")

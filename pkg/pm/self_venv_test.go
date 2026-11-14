@@ -1,0 +1,684 @@
+package pm
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/nickheyer/icebath/pkg/home"
+)
+
+// Isolated home plus an empty checkout, returning the checkout
+func svRepo(t *testing.T) string {
+	t.Helper()
+	tmp := isolateHome(t)
+	return sttMkdir(t, filepath.Join(tmp, "repo"))
+}
+
+// Generation venv with pyvenv.cfg and site packages under the install state, returning the venv
+func svGeneration(t *testing.T, ctx context.Context, repo, name string) string {
+	t.Helper()
+	venv := filepath.Join(InstallStateDir(ctx, repo), "environments", name, "venv")
+	writeFile(t, filepath.Join(venv, "pyvenv.cfg"), []byte("version = 3.12.4\n"), 0o666)
+	site, err := SitePackages(venv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sttMkdir(t, site)
+	sttTouch(t, filepath.Join(filepath.Dir(venv), ".lease-managed"))
+	return venv
+}
+
+// Writes facts selecting a venv for the checkout
+func svSelect(t *testing.T, ctx context.Context, repo string, environment any) {
+	t.Helper()
+	data, _ := json.Marshal(map[string]any{"packages": map[string]any{"venv": map[string]any{"environment": environment}}})
+	writeFile(t, EnvironmentRuntimeFactsPath(ctx, repo), data, 0o666)
+}
+
+// Restores this process's import path and dependency env vars when the test ends
+func svKeepProcess(t *testing.T) {
+	t.Helper()
+	saved := importPathEntries()
+	t.Setenv("PATH", os.Getenv("PATH"))
+	t.Setenv("PYTHONPATH", os.Getenv("PYTHONPATH"))
+	t.Cleanup(func() {
+		importPath.Lock()
+		importPath.entries = saved
+		importPath.Unlock()
+		NoteRestartPending("")
+	})
+}
+
+func svWantError(t *testing.T, err error, fragment string) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), fragment) {
+		t.Fatalf("error %v, want %q", err, fragment)
+	}
+}
+
+func TestSVSelectedVenvReadsTheRecordedGeneration(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	if got, err := SelectedVenv(ctx, repo); err != nil || got != filepath.Join(resolvePath(repo), "venv") {
+		t.Fatalf("fresh selection %q %v", got, err)
+	}
+	sttMkdir(t, filepath.Join(repo, ".venv"))
+	if got, _ := SelectedVenv(ctx, repo); got != filepath.Join(resolvePath(repo), ".venv") {
+		t.Fatalf("in tree selection %q", got)
+	}
+	if got, err := CommittedVenv(ctx, repo); err != nil || got != "" {
+		t.Fatalf("nothing committed answered %q %v", got, err)
+	}
+	venv := svGeneration(t, ctx, repo, "a")
+	svSelect(t, ctx, repo, venv)
+	if got, _ := SelectedVenv(ctx, repo); got != resolvePath(venv) {
+		t.Fatalf("recorded selection %q", got)
+	}
+	svSelect(t, ctx, repo, filepath.Join(repo, "elsewhere"))
+	_, err := SelectedVenv(ctx, repo)
+	svWantError(t, err, "missing or outside this install")
+	svSelect(t, ctx, repo, 7)
+	_, err = SelectedVenv(ctx, repo)
+	svWantError(t, err, "invalid dependency environment path")
+	writeFile(t, EnvironmentRuntimeFactsPath(ctx, repo), []byte(`{"packages": []}`), 0o666)
+	_, err = SelectedVenv(ctx, repo)
+	svWantError(t, err, "invalid dependency environment record")
+	writeFile(t, EnvironmentRuntimeFactsPath(ctx, repo), []byte(`{`), 0o666)
+	_, err = SelectedVenv(ctx, repo)
+	svWantError(t, err, "cannot read dependency environment")
+	var py *PyError
+	if !errors.As(err, &py) || py.Class != "RuntimeError" {
+		t.Fatalf("class of %v", err)
+	}
+}
+
+func TestSVVenvPythonVersionReadsTheTree(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := filepath.Join(tmp, "a")
+	writeFile(t, filepath.Join(cfg, "pyvenv.cfg"), []byte("home = /x\nversion_info = 3.13.1.final.0\n"), 0o666)
+	if major, minor, ok, err := VenvPythonVersion(cfg); err != nil || !ok || major != "3" || minor != "13" {
+		t.Fatalf("pyvenv version %s %s %v %v", major, minor, ok, err)
+	}
+	lib := filepath.Join(tmp, "b")
+	sttMkdir(t, filepath.Join(lib, "lib", "python3.11"))
+	if major, minor, ok, _ := VenvPythonVersion(lib); !ok || major+"."+minor != "3.11" {
+		t.Fatalf("lib version %s.%s", major, minor)
+	}
+	odd := filepath.Join(tmp, "c")
+	writeFile(t, filepath.Join(odd, "pyvenv.cfg"), []byte("version = ³.12\n"), 0o666)
+	if _, _, _, err := VenvPythonVersion(odd); err == nil || errorClass(err) != "ValueError" {
+		t.Fatalf("superscript digit gave %v", err)
+	}
+	if _, _, ok, err := VenvPythonVersion(filepath.Join(tmp, "missing")); ok || err != nil {
+		t.Fatal("a missing venv has no version")
+	}
+}
+
+func TestUnsealedTreesRunTheVenvInterpreter(t *testing.T) {
+	tmp := isolateHome(t)
+	venv, _ := peTrapVenv(t, tmp)
+	got, err := VenvCommand(context.Background(), sttMkdir(t, filepath.Join(tmp, "checkout")), venv, []string{"-I", "-u"})
+	if err != nil || !reflect.DeepEqual(got, []string{VenvPython(venv), "-I", "-u"}) {
+		t.Fatalf("argv %v %v", got, err)
+	}
+}
+
+// Store interpreter prefix inside a payload, the host binary copied with its stdlib and libpython linked in, returning its relative path
+func svPayloadStore(t *testing.T, payload, prefix string) string {
+	t.Helper()
+	host, err := filepath.EvalSymlinks(peHostPython(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(host), "python"), "t")
+	if strings.Count(version, ".") != 1 {
+		t.Fatalf("host interpreter %s names no major.minor", host)
+	}
+	data, err := os.ReadFile(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative := filepath.Join(prefix, "bin", filepath.Base(host))
+	writeFile(t, filepath.Join(payload, relative), data, 0o755)
+	linked := 0
+	hostPrefix := filepath.Dir(filepath.Dir(host))
+	for _, lib := range []string{"lib", "lib64"} {
+		entries, _ := os.ReadDir(filepath.Join(hostPrefix, lib))
+		for _, entry := range entries {
+			if name := entry.Name(); name == "python"+version || strings.HasPrefix(name, "libpython") {
+				link := filepath.Join(payload, prefix, lib, name)
+				sttMkdir(t, filepath.Dir(link))
+				if err := os.Symlink(filepath.Join(hostPrefix, lib, name), link); err != nil {
+					t.Fatal(err)
+				}
+				linked++
+			}
+		}
+	}
+	if linked == 0 {
+		t.Fatalf("no python%s stdlib beside %s", version, host)
+	}
+	return filepath.ToSlash(relative)
+}
+
+// Sealed payload whose manifest names storePython, returning the checkout inside it
+func svSealedPayload(t *testing.T, payload, storePython string) string {
+	t.Helper()
+	repo := sttMkdir(t, filepath.Join(payload, "icebath-agent"))
+	manifest, _ := json.Marshal(map[string]any{"schema": 1, "target": "test", "repo": "icebath-agent", "venv": "venv", "store": "tools",
+		"runtime": map[string]any{"repoDir": "icebath-agent", "toolsDir": "tools", "storePython": storePython,
+			"sitePackages": "venv/site", "commands": map[string]any{}}})
+	writeFile(t, filepath.Join(payload, "manifest.json"), manifest, 0o666)
+	return repo
+}
+
+// Reports the venv launcher and pyvenv.cfg home name the store interpreter
+func svHealedOnto(t *testing.T, venv, storePython string) {
+	t.Helper()
+	if target, err := os.Readlink(VenvPython(venv)); err != nil || target != storePython {
+		t.Fatalf("launcher links %q %v want %q", target, err, storePython)
+	}
+	cfg, err := os.ReadFile(filepath.Join(venv, "pyvenv.cfg"))
+	if home, _, ok := pyvenvHome(string(cfg)); err != nil || !ok || home != filepath.Dir(storePython) {
+		t.Fatalf("pyvenv.cfg %q %v want home %q", cfg, err, filepath.Dir(storePython))
+	}
+}
+
+func TestSealedPayloadRunsScriptsCodeAndModulesWithoutTheRedirector(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
+	}
+	tmp := isolateHome(t)
+	venv, _ := peTrapVenv(t, tmp)
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	storePython, err := payloadStorePython(resolvePath(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"})
+	if err != nil || !reflect.DeepEqual(prefix, []string{VenvPython(venv), "-I", "-u"}) {
+		t.Fatalf("prefix %v %v", prefix, err)
+	}
+	svHealedOnto(t, venv, storePython)
+	if !strings.HasPrefix(storePython, resolvePath(payload)+string(filepath.Separator)) {
+		t.Fatalf("store interpreter %s is outside the payload", storePython)
+	}
+	cfg := filepath.Join(venv, "pyvenv.cfg")
+	before, _ := os.Stat(cfg)
+	launcher, _ := os.Lstat(VenvPython(venv))
+	if again, err := VenvCommand(context.Background(), repo, venv, []string{"-I", "-u"}); err != nil || !reflect.DeepEqual(again, prefix) {
+		t.Fatalf("second prefix %v %v", again, err)
+	}
+	if after, _ := os.Stat(cfg); !os.SameFile(before, after) {
+		t.Fatal("a venv already on the store interpreter had its pyvenv.cfg rewritten")
+	}
+	if after, _ := os.Lstat(VenvPython(venv)); !os.SameFile(launcher, after) {
+		t.Fatal("a venv already on the store interpreter had its launcher replaced")
+	}
+	script := filepath.Join(tmp, "work", "script.py")
+	peWrite(t, script, "import json, sys, venv_only_dep, pth_only_dep\nprint(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv]))\n")
+	if got := peRunJSON(t, append(append([]string{}, prefix...), script, "a", "--flag"), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{script, "a", "--flag"}}) {
+		t.Fatalf("script %v", got)
+	}
+	code := "import json, sys, venv_only_dep, pth_only_dep; print(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.argv, __name__]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code, "x"), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", []any{"-c", "x"}, "__main__"}) {
+		t.Fatalf("code %v", got)
+	}
+	got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_only_cli", "y"), tmp).([]any)
+	argv := got[1].([]any)
+	if got[0] != "from the venv" || !reflect.DeepEqual(argv[1:], []any{"y"}) || !strings.HasSuffix(argv[0].(string), "venv_only_cli.py") {
+		t.Fatalf("module %v", got)
+	}
+}
+
+func TestSealedPayloadVenvFollowsAMovedStoreInterpreter(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
+	}
+	tmp := isolateHome(t)
+	venv, _ := peTrapVenv(t, tmp)
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	if _, err := VenvCommand(context.Background(), repo, venv, []string{"-I"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(venv, "pyvenv.cfg")
+	if err := os.WriteFile(cfg, append([]byte("include-system-site-packages = false\n"), readFile(t, cfg)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(cfg, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(payload, "tools")); err != nil {
+		t.Fatal(err)
+	}
+	repo = svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python-next")))
+	storePython, err := payloadStorePython(resolvePath(repo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svHealedOnto(t, venv, storePython)
+	text := string(readFile(t, cfg))
+	if !strings.HasPrefix(text, "include-system-site-packages = false\n") || !strings.Contains(text, "\nversion = ") || strings.Count(text, "home") != 1 {
+		t.Fatalf("pyvenv.cfg lost its other keys %q", text)
+	}
+	if info, err := os.Stat(cfg); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("pyvenv.cfg mode %v %v", info, err)
+	}
+	code := "import json, sys, venv_only_dep, pth_only_dep; print(json.dumps([venv_only_dep.VALUE, pth_only_dep.VALUE, sys.prefix == sys.base_prefix]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from the venv", "from a .pth", false}) {
+		t.Fatalf("moved store %v", got)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := VenvCommand(cancelled, repo, venv, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled launch %v", err)
+	}
+}
+
+func TestVenvSitePthPathLinesImportLinesAndDottedPackagesBehaveAsInHermes(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("platforms linux, macos")
+	}
+	tmp := isolateHome(t)
+	venv, site := peTrapVenv(t, tmp)
+	peWrite(t, filepath.Join(site, "hook.pth"), "import os; os.environ['VENV_PTH_IMPORT'] = 'ran'\n")
+	peWrite(t, filepath.Join(site, "venv_pkg", "__init__.py"), "")
+	peWrite(t, filepath.Join(site, "venv_pkg", "sub", "__init__.py"), "")
+	peWrite(t, filepath.Join(site, "venv_pkg", "sub", "mod.py"), "import json, os, sys\nVALUE = 'dotted'\n"+
+		"if __name__ == '__main__':\n    print(json.dumps([VALUE, __package__, sys.argv[1:], os.environ.get('VENV_PTH_IMPORT')]))\n")
+	payload := filepath.Join(tmp, "payload")
+	repo := svSealedPayload(t, payload, svPayloadStore(t, payload, filepath.Join("tools", "python")))
+	prefix, err := VenvCommand(context.Background(), repo, venv, []string{"-I"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := "import json, os, pth_only_dep, venv_pkg.sub.mod; print(json.dumps([pth_only_dep.VALUE, venv_pkg.sub.mod.VALUE, os.environ.get('VENV_PTH_IMPORT')]))"
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from a .pth", "dotted", "ran"}) {
+		t.Fatalf("code %v", got)
+	}
+	if got := peRunJSON(t, append(append([]string{}, prefix...), "-m", "venv_pkg.sub.mod", "z"), tmp); !reflect.DeepEqual(got, []any{"dotted", "venv_pkg.sub", []any{"z"}, "ran"}) {
+		t.Fatalf("module %v", got)
+	}
+}
+
+func TestSVFlushRunsBeforeASelectionIsWritten(t *testing.T) {
+	calls := 0
+	saved := filesystemSync
+	filesystemSync = func() error { calls++; return nil }
+	t.Cleanup(func() { filesystemSync = saved })
+	if err := flushBeforeSelecting(); err != nil || calls != 1 {
+		t.Fatalf("flush calls %d %v", calls, err)
+	}
+}
+
+// Writes a config publication journal for the checkout and returns its path
+func svJournal(t *testing.T, ctx context.Context, repo string, row map[string]any) string {
+	t.Helper()
+	journal := filepath.Join(InstallStateDir(ctx, repo), "publication.json")
+	data, _ := json.Marshal(row)
+	writeFile(t, journal, data, 0o666)
+	return journal
+}
+
+func TestSVInvalidJournalCannotWriteOutsideHome(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	outside := filepath.Join(filepath.Dir(repo), "outside", "config.yaml")
+	writeFile(t, outside, []byte("untouched"), 0o666)
+	journal := svJournal(t, ctx, repo, map[string]any{"config": outside, "previous": "eA==", "facts_before": nil})
+	err := recoverPublication(ctx, repo)
+	svWantError(t, err, "outside icebath state")
+	if data, _ := os.ReadFile(outside); string(data) != "untouched" || !sttExists(journal) {
+		t.Fatal("recovery touched state it must preserve")
+	}
+}
+
+func TestSVRecoveryRefusesToReplaceANewerConfig(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	config := filepath.Join(home.Root(), "config.yaml")
+	original := []byte("plugins:\n  enabled: [old]\n")
+	published := []byte("plugins:\n  enabled: [new]\n")
+	writeFile(t, config, append(published, []byte("model: user-choice\n")...), 0o666)
+	row := map[string]any{"config": config, "previous": base64.StdEncoding.EncodeToString(original), "config_after": hexSHA256(published), "facts_before": nil}
+	journal := svJournal(t, ctx, repo, row)
+	svWantError(t, recoverPublication(ctx, repo), "config changed")
+	if !sttExists(journal) {
+		t.Fatal("journal dropped")
+	}
+	writeFile(t, config, published, 0o666)
+	if err := recoverPublication(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(config); !bytes.Equal(data, original) || sttExists(journal) {
+		t.Fatalf("rollback left %q", data)
+	}
+	writeFile(t, config, published, 0o666)
+	svJournal(t, ctx, repo, row)
+	if err := finishPublication(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(config); !bytes.Equal(data, published) || sttExists(journal) {
+		t.Fatal("a committed publication must keep its config")
+	}
+}
+
+func TestSVContextHomeRecoversFromItsOwnState(t *testing.T) {
+	tmp := isolateHome(t)
+	project := sttMkdir(t, filepath.Join(tmp, "repo"))
+	contextHome := sttMkdir(t, filepath.Join(tmp, "context-home"))
+	processState := InstallStateDir(context.Background(), project)
+	ctx := home.WithOverride(context.Background(), contextHome)
+	if InstallStateDir(ctx, project) == processState {
+		t.Fatal("a context home must own its dependency state")
+	}
+	config := filepath.Join(contextHome, "config.yaml")
+	writeFile(t, config, []byte("changed"), 0o666)
+	svJournal(t, ctx, project, map[string]any{"config": config, "previous": base64.StdEncoding.EncodeToString([]byte("original")), "config_after": hexSHA256([]byte("changed")), "facts_before": nil})
+	if err := recoverPublication(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(config); string(data) != "original" || sttExists(processState) {
+		t.Fatalf("context recovery left %q", data)
+	}
+	profile := sttMkdir(t, filepath.Join(home.Root(), "profiles", "worker"))
+	if InstallStateDir(home.WithOverride(context.Background(), profile), project) != processState {
+		t.Fatal("a named profile shares its root's install state")
+	}
+}
+
+func TestSVPluginJournalRestoresTheBackup(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	plugins := filepath.Join(home.Root(), "plugins")
+	target, backup := filepath.Join(plugins, "demo"), filepath.Join(plugins, ".previous-demo")
+	writeFile(t, filepath.Join(target, "new.py"), []byte("new"), 0o666)
+	writeFile(t, filepath.Join(backup, "old.py"), []byte("old"), 0o666)
+	metadata := filepath.Join(plugins, ".install-metadata.json")
+	writeFile(t, metadata, []byte("after"), 0o666)
+	journal := svJournal(t, ctx, repo, map[string]any{"kind": "plugin", "target": target, "backup": backup, "metadata": metadata,
+		"facts_before": nil, "metadata_before": base64.StdEncoding.EncodeToString([]byte("before")),
+		"metadata_after": base64.StdEncoding.EncodeToString([]byte("after")), "target_existed": true})
+	if err := recoverPublication(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	if !sttExists(filepath.Join(target, "old.py")) || sttExists(backup) || sttExists(journal) {
+		t.Fatal("plugin rollback incomplete")
+	}
+	if data, _ := os.ReadFile(metadata); string(data) != "before" {
+		t.Fatalf("metadata %q", data)
+	}
+}
+
+func TestSVCollectsOnlyUnselectedUnleasedOldGenerations(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	old := time.Now().Add(-48 * time.Hour)
+	var venvs []string
+	for _, name := range []string{"selected", "stale", "young", "leased"} {
+		venv := svGeneration(t, ctx, repo, name)
+		if name != "young" {
+			os.Chtimes(filepath.Join(filepath.Dir(venv), ".lease-managed"), old, old)
+		}
+		venvs = append(venvs, venv)
+	}
+	svSelect(t, ctx, repo, venvs[0])
+	release, err := LeaseGeneration(venvs[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if err := CollectSupersededGenerations(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []bool{true, false, true, true} {
+		if sttExists(filepath.Dir(venvs[i])) != want {
+			t.Fatalf("generation %d kept=%v", i, !want)
+		}
+	}
+}
+
+func TestSVActivationAdoptAndRestart(t *testing.T) {
+	repo := svRepo(t)
+	svKeepProcess(t)
+	ctx := context.Background()
+	first := svGeneration(t, ctx, repo, "first")
+	svSelect(t, ctx, repo, first)
+	if reason, _ := RestartNeeded(ctx, repo); reason != "" {
+		t.Fatalf("a process that never booted from the install needs no restart: %q", reason)
+	}
+	if err := ActivateDependencies(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+	running, _, err := runningFromSelectedEnvironment(ctx, repo)
+	if err != nil || !running {
+		t.Fatal("activation must put the selection on the import path")
+	}
+	site, _ := SitePackages(resolvePath(first))
+	if !strings.Contains(os.Getenv("PYTHONPATH"), site) {
+		t.Fatalf("PYTHONPATH %q", os.Getenv("PYTHONPATH"))
+	}
+	second := svGeneration(t, ctx, repo, "second")
+	svSelect(t, ctx, repo, second)
+	reason, err := RestartNeeded(ctx, repo)
+	if err != nil || !strings.Contains(reason, "second") {
+		t.Fatalf("reason %q %v", reason, err)
+	}
+	if ok, err := AdoptSelected(ctx, repo); err != nil || !ok {
+		t.Fatalf("adopt %v %v", ok, err)
+	}
+	if reason, _ := RestartNeeded(ctx, repo); reason != "" {
+		t.Fatalf("adopted process still owes %q", reason)
+	}
+	secondSite, _ := SitePackages(resolvePath(second))
+	tool := filepath.Join(secondSite, "demo.py")
+	writeFile(t, tool, []byte("x"), 0o666)
+	writeFile(t, filepath.Join(secondSite, "demo-1.0.dist-info", "METADATA"), []byte("Name: demo\nVersion: 1.0\n"), 0o666)
+	writeFile(t, filepath.Join(secondSite, "demo-1.0.dist-info", "RECORD"), []byte("demo.py,,\n"), 0o666)
+	third := svGeneration(t, ctx, repo, "third")
+	thirdSite, _ := SitePackages(resolvePath(third))
+	writeFile(t, filepath.Join(thirdSite, "demo-2.0.dist-info", "METADATA"), []byte("Name: demo\nVersion: 2.0\n"), 0o666)
+	svSelect(t, ctx, repo, third)
+	releaseHold := HoldGenerationFiles([]string{tool})
+	if ok, _ := AdoptSelected(ctx, repo); ok {
+		t.Fatal("a live child of a changed distribution forbids adoption")
+	}
+	releaseHold()
+	if ok, _ := AdoptSelected(ctx, repo); !ok {
+		t.Fatal("released holds leave the generation adoptable")
+	}
+}
+
+func TestSVActivationEnvironmentCarriesTheSentinel(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	t.Setenv("VIRTUAL_ENV", "/somewhere")
+	venv := svGeneration(t, ctx, repo, "a")
+	svSelect(t, ctx, repo, venv)
+	env, err := ActivationEnvironment(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		values[k] = v
+	}
+	site, _ := SitePackages(resolvePath(venv))
+	if _, has := values["VIRTUAL_ENV"]; has || values["PYTHONPATH"] != resolvePath(repo)+string(os.PathListSeparator)+site ||
+		values["__ICEBATH_ACTIVATED"] != EnvironmentRuntimeFactsPath(ctx, repo) {
+		t.Fatalf("activation env %v", values)
+	}
+}
+
+func TestSVShellExportsQuoteForEachDialect(t *testing.T) {
+	env := []string{"PLAIN=a b", "QUOTE=it's", "PWD=/x", "ProgramFiles(ARM)=c", "SLASH=back\\slash"}
+	sh, _ := ShellExports(env, "sh")
+	if sh != "export PLAIN='a b'\nexport QUOTE='it'\"'\"'s'\nexport PWD=/x\nexport SLASH='back\\slash'" {
+		t.Fatalf("sh %q", sh)
+	}
+	fish, _ := ShellExports(env, "fish")
+	if fish != "set -gx PLAIN 'a b'\nset -gx QUOTE 'it\\'s'\nset -gx SLASH 'back\\\\slash'" {
+		t.Fatalf("fish %q", fish)
+	}
+	if _, err := ShellExports(env, "csh"); errorClass(err) != "KeyError" {
+		t.Fatal("unknown dialect must be a KeyError")
+	}
+	if bash, err := exec.LookPath("bash"); err == nil && runtime.GOOS != "windows" {
+		out, err := exec.Command(bash, "-c", sh+"\nprintf '%s|%s|%s' \"$PLAIN\" \"$QUOTE\" \"$SLASH\"").Output()
+		if err != nil || string(out) != "a b|it's|back\\slash" {
+			t.Fatalf("bash evaluated %q %v", out, err)
+		}
+	}
+}
+
+func TestSVEnvironmentsMainParsesLikeArgparse(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := EnvironmentsMain(context.Background(), []string{"--format", "csh"}, "env", &out, &errOut); code != 2 ||
+		!strings.Contains(errOut.String(), "argument --format: invalid choice: 'csh' (choose from json, sh, fish)") {
+		t.Fatalf("code %d %q", code, errOut.String())
+	}
+	errOut.Reset()
+	if code := EnvironmentsMain(context.Background(), []string{"stray"}, "env", &out, &errOut); code != 2 || !strings.Contains(errOut.String(), "unrecognized arguments: stray") {
+		t.Fatalf("stray %q", errOut.String())
+	}
+	if code := EnvironmentsMain(context.Background(), []string{"-h"}, "env", &out, &errOut); code != 0 || !strings.Contains(out.String(), "Print the composed activation environment.") {
+		t.Fatalf("help %q", out.String())
+	}
+}
+
+func TestSVDeclinedExtrasRecordAndReasons(t *testing.T) {
+	repo := svRepo(t)
+	ctx := context.Background()
+	got, err := recordDeclinedExtras(ctx, []string{"Foo_Bar", "fal"}, nil, map[string]string{"fal": "  it  no\nlonger builds "}, repo)
+	if err != nil || !got["foo-bar"] || !got["fal"] {
+		t.Fatalf("record %v %v", got, err)
+	}
+	if reasons := declinedReasons(ctx, repo); reasons["fal"] != "it no longer builds" || len(reasons) != 1 {
+		t.Fatalf("reasons %v", reasons)
+	}
+	path := DeclinedExtrasPath(ctx, repo)
+	before, _ := os.Stat(path)
+	time.Sleep(10 * time.Millisecond)
+	recordDeclinedExtras(ctx, []string{"foo-bar"}, nil, nil, repo)
+	if after, _ := os.Stat(path); !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("an unchanged record must not be rewritten")
+	}
+	got, _ = recordDeclinedExtras(ctx, nil, []string{"fal"}, nil, repo)
+	if got["fal"] || len(declinedReasons(ctx, repo)) != 0 {
+		t.Fatal("removing an extra drops its reason")
+	}
+	writeFile(t, path, []byte("{"), 0o666)
+	var install *InstallError
+	if _, err := declinedExtras(ctx, repo); !errors.As(err, &install) {
+		t.Fatalf("damaged record gave %v", err)
+	}
+}
+
+func TestSVFeaturesFileAndDeclarations(t *testing.T) {
+	isolateHome(t)
+	ctx := context.Background()
+	if got, err := readFeatures(ctx); got != nil || err != nil {
+		t.Fatal("no file reads as None")
+	}
+	if _, err := WriteFeatures(ctx, []string{"b", "a", "b"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := readFeatures(ctx); strings.Join(got, ",") != "a,b" {
+		t.Fatalf("features %v", got)
+	}
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte("[project]\nname = \"icebath-agent\"\n[project.optional-dependencies]\nall = [\"icebath-agent[web]\"]\nweb = []\nfal = []\n[tool.icebath]\nopt-in-extras = [\"fal\"]\n"), 0o666)
+	if got, _ := declaredExtras(repo); strings.Join(got, ",") != "all,fal,web" {
+		t.Fatalf("declared %v", got)
+	}
+	if got, err := optInExtras(repo); err != nil || strings.Join(got, ",") != "fal" {
+		t.Fatalf("opt in %v %v", got, err)
+	}
+	if got, _ := DroppableExtras(repo); strings.Join(got, ",") != "fal" {
+		t.Fatalf("droppable %v", got)
+	}
+	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte("[project.optional-dependencies]\nweb = []\n[tool.icebath]\nopt-in-extras = [\"ghost\"]\n"), 0o666)
+	if _, err := optInExtras(repo); errorClass(err) != "ValueError" || !strings.Contains(err.Error(), "['ghost']") {
+		t.Fatalf("undeclared opt in gave %v", err)
+	}
+}
+
+func TestSVLegacySelectionCarriesWhatTheOldVenvHeld(t *testing.T) {
+	repo := svRepo(t)
+	saved := platformGatesCache.gates
+	platformGatesCache.gates = map[string]string{"documents": "sys_platform == 'nowhere'"}
+	t.Cleanup(func() { platformGatesCache.gates = saved })
+	site := filepath.Join(repo, "venv", "lib", "python3.11", "site-packages")
+	sttMkdir(t, filepath.Join(site, "pilk"))
+	writeFile(t, filepath.Join(site, "neutts.py"), nil, 0o666)
+	for _, anchor := range Anchors["documents"] {
+		sttMkdir(t, filepath.Join(site, anchor))
+	}
+	got, err := LegacySelection(context.Background(), repo)
+	if err != nil || strings.Join(got, ",") != "all,neutts,silk" {
+		t.Fatalf("legacy %v %v", got, err)
+	}
+	recordDeclinedExtras(context.Background(), []string{"neutts"}, nil, nil, repo)
+	if got, _ := LegacySelection(context.Background(), repo); strings.Join(got, ",") != "all,silk" {
+		t.Fatalf("declined extra carried %v", got)
+	}
+}
+
+func TestSVCarriedTransientRefusalAndLeftOutRecord(t *testing.T) {
+	repo := svRepo(t)
+	failing := map[string]CarriedFailure{"fal": {Reason: "download reset", Verdict: false}, "web": {Reason: "no wheel", Verdict: true}}
+	err := refuseTransient(failing, errors.New("cause"))
+	svWantError(t, err, "the extras ['fal'] icebath carried over from the old venv could not be prepared: download reset")
+	svWantError(t, err, "`icebath pm install --without fal`")
+	if refuseTransient(map[string]CarriedFailure{"web": failing["web"]}, nil) != nil {
+		t.Fatal("verdicts alone are not transient")
+	}
+	if !isBuildVerdict(&BuildFailure{InstallError: NewInstallError("venv", "x", "")}) || isBuildVerdict(errors.New("x")) {
+		t.Fatal("build verdict classes")
+	}
+	venv := newVenv(repo)
+	if err := recordLeftOut(context.Background(), venv, map[string]CarriedFailure{"web": failing["web"]}); err != nil {
+		t.Fatal(err)
+	}
+	if reasons := declinedReasons(context.Background(), repo); reasons["web"] != noBuildReason {
+		t.Fatalf("left out reason %v", reasons)
+	}
+}
+
+func TestSVRetiredEntryPoints(t *testing.T) {
+	var out bytes.Buffer
+	if ScanVenvBlockersMain(nil, &out) != 0 || !strings.Contains(out.String(), `"retired": true`) {
+		t.Fatalf("scan %q", out.String())
+	}
+	out.Reset()
+	if ScanVenvBlockersMain([]string{"--terminate-safe"}, &out) != 1 || !strings.Contains(out.String(), `"ok": false`) {
+		t.Fatalf("terminate %q", out.String())
+	}
+	if isPausableGateway("icebath gateway run") {
+		t.Fatal("no matcher fails closed")
+	}
+	saved := signingPlatform
+	signingPlatform = func() string { return "linux" }
+	defer func() { signingPlatform = saved }()
+	if SignManagedPython("/x/python") {
+		t.Fatal("signing happens only on macOS")
+	}
+}

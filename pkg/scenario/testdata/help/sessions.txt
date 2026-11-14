@@ -1,0 +1,39 @@
+usage: icebath sessions [-h]
+                        {list,export,delete,prune,archive,optimize,clean-markers,optimize-storage,repair,set-journal-mode,repair-routing,repair-profiles,repair-prompts,refresh-prompts,recover,stats,rename,discard,adopt,pin,unpin,pinned,retitle-skills,browse,import} ...
+
+View and manage the SQLite session store
+
+positional arguments:
+  {list,export,delete,prune,archive,optimize,clean-markers,optimize-storage,repair,set-journal-mode,repair-routing,repair-profiles,repair-prompts,refresh-prompts,recover,stats,rename,discard,adopt,pin,unpin,pinned,retitle-skills,browse,import}
+    list                List recent sessions
+    export              Export sessions to JSONL, Markdown, or QMD
+    delete              Delete a specific session
+    prune               Delete old sessions (filterable by time window, source, title, ...)
+    archive             Bulk-archive (soft-hide) sessions matching filters — no deletion
+    optimize            Reclaim disk space: merge FTS5 segments + VACUUM (no data change)
+    clean-markers       Permanently clear stale tool-call marker content left by sessions from
+                        before #78148
+    optimize-storage    Migrate the search index to the compact v23 layout (reclaims disk on large
+                        DBs)
+    repair              Repair a malformed state.db schema so hidden sessions reappear
+    set-journal-mode    Convert state.db between journal_mode=WAL and DELETE offline (every holder
+                        stopped)
+    repair-routing      Re-stamp gateway sessions that lost their routing identity
+    repair-profiles     Settle session/routing state that landed under the wrong profile
+    repair-prompts      Report or clear stored system prompts degraded to a reduced-toolset build
+    refresh-prompts     Make continuing sessions rebuild their system prompt on their next turn
+    recover             Rebuild canonical session data into a separate clean database
+    stats               Show session store statistics
+    rename              Set or change a session's title
+    discard             Acknowledge turns lost in a gateway crash (unknown admissions) so the
+                        session runs again
+    adopt               Bring this profile's pre-gateway chats under its gateway (run on the host)
+    pin                 Pin session(s) — durable keep flag, exempt from auto-archive
+    unpin               Remove the pin (durable keep flag) from session(s)
+    pinned              List pinned sessions
+    retitle-skills      Re-title sessions whose auto-title came from a /skill's own text
+    browse              Interactive session picker — browse, search, and resume sessions
+    import              Import a Claude Code or Codex CLI session into Icebath
+
+options:
+  -h, --help            show this help message and exit

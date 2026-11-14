@@ -1,0 +1,8 @@
+usage: icebath dump [-h] [--show-keys]
+
+Output a compact, plain-text summary of your Icebath setup that can be copy-pasted into
+Discord/GitHub for support context
+
+options:
+  -h, --help   show this help message and exit
+  --show-keys  Show redacted API key prefixes (first/last 4 chars) instead of just set/not set

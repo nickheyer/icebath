@@ -1,0 +1,7 @@
+usage: icebath completion [-h] [{bash,zsh,fish}]
+
+positional arguments:
+  {bash,zsh,fish}  Shell type (default: bash)
+
+options:
+  -h, --help       show this help message and exit

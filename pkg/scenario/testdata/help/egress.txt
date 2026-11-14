@@ -1,0 +1,21 @@
+usage: icebath egress [-h] {install,setup,start,stop,restart,reload,status,disable,config} ...
+
+Manage iron-proxy, the optional TLS-intercepting egress firewall that swaps proxy tokens for real
+API credentials before outbound requests leave a sandbox. Disabled by default. See:
+https://hermes-agent.nousresearch.com/docs/user-guide/egress/iron-proxy
+
+positional arguments:
+  {install,setup,start,stop,restart,reload,status,disable,config}
+    install             Install the PM-pinned iron-proxy binary
+    setup               Interactive wizard: install + CA + mint tokens + write config
+    start               Start the managed iron-proxy
+    stop                Stop the managed iron-proxy
+    restart             Restart the managed iron-proxy (stop if running, then start)
+    reload              Hot-reload the running daemon's ruleset from proxy.yaml (management API —
+                        no restart, no dropped connections)
+    status              Show proxy state and mappings
+    disable             Turn off the proxy integration
+    config              Print the generated proxy.yaml path
+
+options:
+  -h, --help            show this help message and exit

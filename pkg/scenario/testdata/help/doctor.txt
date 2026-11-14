@@ -1,0 +1,13 @@
+usage: icebath doctor [-h] [--fix] [--live] [--ack ADVISORY_ID]
+
+Diagnose issues with Icebath Agent setup
+
+options:
+  -h, --help         show this help message and exit
+  --fix              Attempt to fix issues automatically
+  --live             Opt-in: run one bounded, read-only real-call health probe per configured tool
+                     backend (Firecrawl/FAL/browser/MCP/TTS/STT) after the static checks. Makes
+                     real network calls.
+  --ack ADVISORY_ID  Acknowledge a security advisory by ID and exit. After ack, the advisory will
+                     no longer trigger startup banners. Run `icebath doctor` first to see active
+                     advisories and their IDs.

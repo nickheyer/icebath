@@ -1,0 +1,12 @@
+usage: icebath moa [-h] {list,ls,configure,config,delete,rm} ...
+
+Configure the provider/model set used by /moa <prompt>.
+
+positional arguments:
+  {list,ls,configure,config,delete,rm}
+    list (ls)           Show current MoA model slots
+    configure (config)  Interactively pick MoA models
+    delete (rm)         Delete a MoA preset
+
+options:
+  -h, --help            show this help message and exit

@@ -1,0 +1,22 @@
+usage: icebath setup [-h] [--non-interactive] [--reset] [--reconfigure] [--quick] [--portal]
+                     [{model,tts,terminal,gateway,tools,telemetry,agent}]
+
+Configure Icebath Agent with an interactive wizard. Run a specific section: icebath setup
+model|tts|terminal|gateway|tools|telemetry|agent
+
+positional arguments:
+  {model,tts,terminal,gateway,tools,telemetry,agent}
+                        Run a specific setup section instead of the full wizard
+
+options:
+  -h, --help            show this help message and exit
+  --non-interactive     Non-interactive mode (use defaults/env vars)
+  --reset               Reset configuration to defaults
+  --reconfigure         (Default on existing installs.) Re-run the full wizard, showing current
+                        values as defaults. Kept for backwards compatibility — a bare 'icebath
+                        setup' now does this.
+  --quick               On existing installs: only prompt for items that are missing or unset,
+                        instead of running the full reconfigure wizard.
+  --portal              One-shot Nous Portal setup: log in via OAuth, pick a Nous model, set Nous
+                        as the inference provider, and opt into the Tool Gateway. Skips the rest
+                        of the wizard.

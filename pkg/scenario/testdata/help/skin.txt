@@ -1,0 +1,12 @@
+usage: icebath skin [-h] {list,use,set} ...
+
+Manage Icebath skins. `set` tweaks one color of the active skin in place.
+
+positional arguments:
+  {list,use,set}
+    list          List available skins
+    use           Switch the active skin
+    set           Set one color of the active skin (e.g. `skin set ui_tool '#00FFFF'`)
+
+options:
+  -h, --help      show this help message and exit

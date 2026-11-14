@@ -1,0 +1,11 @@
+usage: icebath import [-h] [--force] zipfile
+
+Extract a previously created Icebath backup into your Icebath home directory, restoring
+configuration, skills, sessions, and data
+
+positional arguments:
+  zipfile      Path to the backup zip file
+
+options:
+  -h, --help   show this help message and exit
+  --force, -f  Overwrite existing files without confirmation

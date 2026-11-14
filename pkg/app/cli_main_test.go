@@ -1,0 +1,314 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"io"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/selfupdate"
+)
+
+// fakeLease is the active session slot the tests hand the CLI
+type fakeLease struct{ released atomic.Bool }
+
+func (l *fakeLease) Release() error { l.released.Store(true); return nil }
+
+// Installs doubles for the cmd/icebath wiring hooks the chat path reaches
+func TestMain(m *testing.M) {
+	hermetic.BlockExternalHTTP()
+	hermetic.BlockExternalDNS()
+	selfupdate.DispatchCustodyLauncher()
+	home.DispatchScratchPruneEntry(context.Background())
+	DispatchUninstallModuleEntry(context.Background())
+	TryAcquireActiveSession = func(ctx context.Context, sessionID, surface string, cfg map[string]any, metadata map[string]any) (ActiveSessionLease, *activesessions.Refusal, error) {
+		return &fakeLease{}, nil, nil
+	}
+	FormatRefusalStderr = activesessions.FormatRefusalStderr
+	SecurityAdvisoriesStartupBanner = func(ctx context.Context) string { return "" }
+	installAgentWiring()
+	os.Exit(m.Run())
+}
+
+// Serves one chat completions answer and counts the turn calls, session title requests answered uncounted
+func chatCompletionsServer(t *testing.T, answer string) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": []any{map[string]any{"id": "test/model", "object": "model"}}})
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		_ = json.Unmarshal(raw, &body)
+		if !strings.Contains(string(raw), "You name chat sessions") {
+			calls.Add(1)
+		}
+		if body["stream"] == true {
+			chunk := func(delta map[string]any, finish any, usage map[string]any) string {
+				row := map[string]any{"id": "chatcmpl-main", "object": "chat.completion.chunk", "created": 1, "model": "test/model",
+					"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
+				if usage != nil {
+					row["usage"] = usage
+				}
+				line, _ := json.Marshal(row)
+				return "data: " + string(line) + "\n\n"
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, chunk(map[string]any{"role": "assistant", "content": answer}, nil, nil))
+			_, _ = io.WriteString(w, chunk(map[string]any{}, "stop", map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15}))
+			_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "chatcmpl-main", "object": "chat.completion", "model": "test/model",
+			"usage":   map[string]any{"prompt_tokens": 12, "completion_tokens": 3, "total_tokens": 15},
+			"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": answer, "tool_calls": nil}, "finish_reason": "stop"}}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &calls
+}
+
+// Resets the once per process cleanup latches so every test runs the full exit path
+func resetProcessState(t *testing.T) {
+	t.Helper()
+	cleanupMu.Lock()
+	cleanupDone, cleanupInProgress = false, false
+	cleanupMu.Unlock()
+	setActiveAgent(nil)
+	sessionIDSetsMu.Lock()
+	singleQueryFinalizeAttemptedSessionIDs = map[string]bool{}
+	handedOffSessionIDs = map[string]bool{}
+	sessionIDSetsMu.Unlock()
+	t.Setenv("ICEBATH_EXIT_WATCHDOG_S", "0")
+	for _, name := range []string{"ICEBATH_KANBAN_TASK", "ICEBATH_SINGLE_QUERY_SESSION"} {
+		t.Setenv(name, "")
+		_ = os.Unsetenv(name)
+	}
+}
+
+// Makes a scripted gateway the owner every connection of the case dials, creates answered with the scripted session
+func installScriptedGateway(t *testing.T, client *scriptedClient) {
+	t.Helper()
+	client.t = t
+	client.events = gateway.NewEventQueue(0)
+	inner := client.override
+	client.override = func(method string, params map[string]any) (any, bool, error) {
+		if inner != nil {
+			if answer, handled, err := inner(method, params); handled {
+				return answer, handled, err
+			}
+		}
+		if method == "session.create" || method == "session.resume" {
+			client.record(method, params)
+			return storeSnapshot(scriptSID), true, nil
+		}
+		return nil, false, nil
+	}
+	gatewaycli.SharedGatewayConnection().Close(context.Background())
+	previous := gatewaycli.DefaultConnect
+	gatewaycli.DefaultConnect = func(context.Context) (gatewaycli.ConnectionClient, error) { return client, nil }
+	t.Cleanup(func() {
+		gatewaycli.SharedGatewayConnection().Close(context.Background())
+		gatewaycli.DefaultConnect = previous
+	})
+}
+
+func TestMainQuietSingleQueryAnswersThroughRunConversation(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	client := &scriptedClient{script: []any{completeFrame("hi there")}, result: map[string]any{"final_response": "hi there", "api_calls": 1, "completed": true}}
+	installScriptedGateway(t, client)
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
+		"agent": map[string]any{"max_turns": 5}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
+	code, err := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(5)})
+	if code != 0 || err != nil {
+		t.Fatalf("exit code %d %v, stdout %q, stderr %q", code, err, out.String(), errOut.String())
+	}
+	submits := client.callsOf("prompt.submit")
+	if len(submits) != 1 || submits[0]["text"] != "say hi" {
+		t.Fatalf("prompt.submit calls %v", submits)
+	}
+	if got := out.String(); got != "hi there\n" {
+		t.Fatalf("stdout %q", got)
+	}
+	if !strings.Contains(errOut.String(), "\nsession_id: "+scriptSID) {
+		t.Fatalf("stderr %q lacks the session_id trailer", errOut.String())
+	}
+}
+
+func TestMainQuietSingleQueryFailedTurnExitsOne(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	failure := "The provider rejected the request and retrying won't help: model not supported"
+	client := &scriptedClient{script: []any{scriptFrame("message.complete", map[string]any{"text": failure, "outcome": "failed", "status": "error"})},
+		result: map[string]any{"final_response": failure, "failed": true, "completed": false, "error": "model not supported", "api_calls": 1}}
+	installScriptedGateway(t, client)
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
+		"agent": map[string]any{"max_turns": 2}, "display": map[string]any{}})
+	code, err := Main(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1", MaxTurns: ptr(2)})
+	if code != 1 || err != nil {
+		t.Fatalf("exit code %d %v, stdout %q, stderr %q", code, err, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "rejected the request and retrying won't help") || !strings.Contains(out.String(), "model not supported") {
+		t.Fatalf("stdout %q lacks the failure copy the agent returns as its final response", out.String())
+	}
+}
+
+func TestTurnExitCodeContract(t *testing.T) {
+	cases := []struct {
+		name   string
+		result map[string]any
+		o      TurnExitOptions
+		want   int
+	}{
+		{"completed", map[string]any{"completed": true, "final_response": "ok"}, TurnExitOptions{}, 0},
+		{"interrupted", map[string]any{"interrupted": true}, TurnExitOptions{}, 130},
+		{"failed", map[string]any{"failed": true}, TurnExitOptions{}, 1},
+		{"partial", map[string]any{"partial": true}, TurnExitOptions{}, 1},
+		{"not_completed", map[string]any{"completed": false}, TurnExitOptions{}, 1},
+		{"no_result", nil, TurnExitOptions{}, 1},
+		{"worker_rate_limit", map[string]any{"failed": true, "failure_reason": "rate_limit"}, TurnExitOptions{KanbanWorker: true}, 75},
+		{"worker_terminal", map[string]any{"failed": true, "failure_reason": "auth"}, TurnExitOptions{KanbanWorker: true}, 78},
+		{"worker_credentials_rate_limited", nil, TurnExitOptions{KanbanWorker: true, CredentialsRateLimited: true}, 75},
+		{"worker_credentials_terminal", nil, TurnExitOptions{KanbanWorker: true, CredentialsTerminal: true}, 78},
+		{"non_worker_rate_limit", map[string]any{"failed": true, "failure_reason": "rate_limit"}, TurnExitOptions{}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := TurnExitCode(tc.result, tc.o); got != tc.want {
+				t.Fatalf("got %d want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseSkillsArgumentDedupesAndSplitsCommas(t *testing.T) {
+	got := parseSkillsArgument([]string{"a, b", "b", "", "c,,a"})
+	if strings.Join(got, "|") != "a|b|c" {
+		t.Fatalf("got %v", got)
+	}
+	if len(parseSkillsArgument(nil)) != 0 {
+		t.Fatal("nil must give an empty list")
+	}
+}
+
+func TestNormalizeMoaModelSelectsTheVirtualProvider(t *testing.T) {
+	if p, m := normalizeMoaModel(" MoA:fast "); p != "moa" || m != "fast" {
+		t.Fatalf("got %q %q", p, m)
+	}
+	if p, m := normalizeMoaModel("moa:"); p != "" || m != "moa:" {
+		t.Fatalf("got %q %q", p, m)
+	}
+	if p, m := normalizeMoaModel("openai/gpt-4o"); p != "" || m != "openai/gpt-4o" {
+		t.Fatalf("got %q %q", p, m)
+	}
+}
+
+func TestReadTurnReportRejectsOtherPids(t *testing.T) {
+	path := t.TempDir() + "/report.json"
+	writeTurnReport(context.Background(), path, 3, "boom", "reply")
+	if got := readTurnReport(path, os.Getpid()); got == nil || got["exit_code"].(float64) != 3 || got["reply"] != "reply" {
+		t.Fatalf("got %v", got)
+	}
+	if readTurnReport(path, os.Getpid()+1) != nil {
+		t.Fatal("another pid's report must read as absent")
+	}
+	if readTurnReport(t.TempDir()+"/missing.json", os.Getpid()) != nil {
+		t.Fatal("a missing report must read as absent")
+	}
+}
+
+func TestTakeTurnReportPathPopsTheEnv(t *testing.T) {
+	t.Setenv(TurnReportFileEnv, "/tmp/x.json")
+	if got := takeTurnReportPath(); got != "/tmp/x.json" {
+		t.Fatalf("got %q", got)
+	}
+	if _, ok := os.LookupEnv(TurnReportFileEnv); ok {
+		t.Fatal("the report path must not survive for subprocesses")
+	}
+	if takeTurnReportPath() != "" {
+		t.Fatal("a second read must be empty")
+	}
+}
+
+func TestCollectQueryImagesPlainTextHasNoImages(t *testing.T) {
+	msg, images, err := collectQueryImages("hello world", "")
+	if err != nil || msg != "hello world" || len(images) != 0 {
+		t.Fatalf("got %q %v %v", msg, images, err)
+	}
+	if _, _, err := collectQueryImages("x", t.TempDir()+"/missing.png"); err == nil || !strings.Contains(err.Error(), "Image file not found") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestStatusBarVisibleFromDisplayConfig(t *testing.T) {
+	if !statusBarVisibleFromDisplayConfig(nil) || !statusBarVisibleFromDisplayConfig(map[string]any{"statusbar": "top"}) {
+		t.Fatal("default and top must be visible")
+	}
+	for _, v := range []any{false, "off", "hidden", "0", "no", "false"} {
+		if statusBarVisibleFromDisplayConfig(map[string]any{"statusbar": v}) {
+			t.Fatalf("%v must hide the status bar", v)
+		}
+	}
+	if !statusBarVisibleFromDisplayConfig(map[string]any{"tui_statusbar": "bottom"}) {
+		t.Fatal("the legacy key must still read")
+	}
+}
+
+func TestChatMainPrintsTheStreamJSONValueErrorToStdout(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	code := ChatMain(context.Background(), MainOptions{OutputFormat: "stream-json"})
+	if code != 1 || out.String() != "Error: --format stream-json requires -q/--query\n" || strings.Contains(errOut.String(), "requires") {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}
+
+func TestChatMainPrintsACLIBuildValueErrorToStdout(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	t.Cleanup(func() { SetCLIConfig(nil) })
+	SetCLIConfig(map[string]any{"model": map[string]any{"default": "test/model", "provider": "openai", "base_url": "http://127.0.0.1:9/v1"},
+		"agent": map[string]any{"max_turns": math.NaN()}, "display": map[string]any{}, "skills": map[string]any{"auto_load": []any{}}})
+	code := ChatMain(context.Background(), MainOptions{Query: "say hi", Quiet: true, Model: "test/model", Provider: "openai",
+		APIKey: "test-key-1234567890", BaseURL: "http://127.0.0.1:9/v1"})
+	if code != 1 || out.String() != "Error: cannot convert float NaN to integer\n" || strings.Contains(errOut.String(), "NaN") {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}
+
+func TestCLIModuleEntryReportsTheStreamJSONValueErrorOnStderr(t *testing.T) {
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	resetProcessState(t)
+	out, errOut := captureStreams(t)
+	code := cliModuleMain(context.Background(), []string{"--output-format", "stream-json"}, errOut)
+	if code != 1 || out.String() != "" || errOut.String() != "--format stream-json requires -q/--query\n" {
+		t.Fatalf("exit code %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+}

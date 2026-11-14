@@ -1,0 +1,595 @@
+{
+ "bzip2-deflate.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   }
+  }
+ },
+ "bzip2-flip.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   }
+  }
+ },
+ "bzip2-none.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "bzip2-offset10.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   }
+  }
+ },
+ "bzip2-offset20.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "OSError",
+    "msg": "Invalid data stream"
+   }
+  }
+ },
+ "bzip2-truncated.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "deflated-deflate.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "error",
+    "msg": "Error -3 while decompressing data: invalid block type"
+   }
+  }
+ },
+ "deflated-flip.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "error",
+    "msg": "Error -3 while decompressing data: invalid code lengths set"
+   }
+  }
+ },
+ "deflated-none.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "deflated-offset10.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "deflated-offset20.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "error",
+    "msg": "Error -3 while decompressing data: invalid distance too far back"
+   }
+  }
+ },
+ "deflated-truncated.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "lzma-deflate.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "lzma-flip.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "lzma-none.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "lzma-offset10.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "LZMAError",
+    "msg": "Corrupt input data"
+   }
+  }
+ },
+ "lzma-offset20.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "LZMAError",
+    "msg": "Corrupt input data"
+   }
+  }
+ },
+ "lzma-truncated.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "stored-deflate.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "stored-flip.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "stored-none.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "stored-offset10.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "stored-offset20.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "stored-truncated.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "zstd-deflate.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+   }
+  }
+ },
+ "zstd-flip.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "ZstdError",
+    "msg": "Unable to decompress Zstandard data: Unknown frame descriptor"
+   }
+  }
+ },
+ "zstd-none.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "sha": "aa0ec5dcc4bb7131ebbfef0866ea473088aa169052ba034bc33d72f81492dd90"
+   }
+  }
+ },
+ "zstd-offset10.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "zstd-offset20.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ },
+ "zstd-truncated.zip": {
+  "is_zipfile": true,
+  "namelist": [
+   "config.yaml",
+   "skills/s0/SKILL.md",
+   "sessions/after.json"
+  ],
+  "read": {
+   "config.yaml": {
+    "sha": "7c0c623c2337f571334678ee46e8353f96e84bb295783a51375aea6bc76e14ec"
+   },
+   "sessions/after.json": {
+    "sha": "4e19a602bed1805756ca65b6168d92292cb98daa6c72f7784aed1d7a61203296"
+   },
+   "skills/s0/SKILL.md": {
+    "class": "BadZipFile",
+    "msg": "Bad CRC-32 for file 'skills/s0/SKILL.md'"
+   }
+  }
+ }
+}

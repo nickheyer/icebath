@@ -1,0 +1,258 @@
+{
+ "quick_full": {
+  "out": "\n\n◆ Quick Setup — Missing Items Only\n\n\n◆ Tool API Keys\n\n  ─── Exa API key for AI-native web search and contents ───\n\n    Enables: web_search, web_extract\n    Get your key at: https://exa.ai/\n\n  Exa API key: ⚠   Skipped (configure later with 'hermes setup')\n\n\n◆ Messaging Platforms\n  Connect Hermes to messaging apps to chat from anywhere.\n  You can configure these later with 'hermes setup gateway'.\n\n  ─── 📱 Telegram ───\n\n    Complete Telegram bot token created by @BotFather (numeric bot ID followed by a colon and secret)\n    https://t.me/BotFather\n  Telegram bot token: ⚠   Skipped\n\n    Optional comma-separated numeric Telegram user IDs allowed immediately; leave blank to approve new users through DM pairing\n    https://t.me/userinfobot\n  Allowed Telegram user IDs (comma-separated): ⚠   Skipped\n\n    Proxy URL for Telegram connections (overrides HTTPS_PROXY). Supports http://, https://, socks5://\n  Telegram proxy URL (optional): ⚠   Skipped\n\n    Allow any Telegram user to trigger the bot (dev only)\n  Allow all users? (true/false): ⚠   Skipped\n\n    Default chat ID for cron / notification delivery\n  Home channel ID: ⚠   Skipped\n\n    Display name for the Telegram home channel\n  Home channel display name: ⚠   Skipped\n\n    Secret token Telegram sends with each webhook update (required with TELEGRAM_WEBHOOK_URL)\n  Webhook secret: ⚠   Skipped\n\n[summary]\n",
+  "err": null,
+  "asked": [],
+  "checks": [
+   [
+    "Which tools would you like to configure?",
+    [
+     "Exa API key for AI-native web search and contents → web_search, web_extract",
+     "Parallel API key for AI-native web search and extract → web_search, web_extract",
+     "Firecrawl API key for web search and scraping → web_search, web_extract",
+     "Firecrawl API URL for self-hosted instances (optional)",
+     "Exact Firecrawl tool-gateway origin override for Nous Subscribers only (optional)",
+     "Exact shared tool-gateway origin for on-origin vendors and media uploads (optional)",
+     "Exact connector-gateway origin for the connectors API (optional)",
+     "Shared tool-gateway domain suffix for Nous Subscribers only, used to derive vendor hosts, e.g. nousresearch.com -> firecrawl-gateway.nousresearch.com",
+     "Shared tool-gateway URL scheme for Nous Subscribers only, used to derive vendor hosts (`https` by default, set `http` for local gateway testing)",
+     "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
+     "Tavily API key for AI-native web search and extract (optional — keyless works when Tavily is selected) → web_search, web_extract",
+     "Perplexity API key for the Search API web backend (ranked results + query-relevant page snippets) → web_search, web_extract",
+     "Keenable API key for fast independent-index web search and page fetch (optional — keyless free tier works without it) → web_search, web_extract",
+     "URL of your SearXNG instance for free self-hosted web search → web_search",
+     "Brave Search API subscription token (free tier: 2,000 queries/mo) → web_search",
+     "Browserbase API key for cloud browser (optional — local browser works without this) → browser_exec",
+     "Browserbase project ID (optional — only needed for cloud browser) → browser_exec",
+     "Browser Use API key for cloud browser (optional — local browser works without this) → browser_exec",
+     "Firecrawl browser session TTL in seconds (optional, default 300) → browser_exec",
+     "FAL API key for image and video generation → image_generate, video_generate",
+     "Krea API key for Krea 3 and Krea 2 image generation → image_generate",
+     "OpenAI API key for voice transcription (Whisper) and OpenAI TTS → voice_transcription, openai_tts",
+     "ElevenLabs API key for premium text-to-speech voices and Scribe transcription → elevenlabs_tts, voice_transcription",
+     "Mistral API key for Voxtral TTS and transcription (STT)",
+     "Picovoice access key for the Porcupine 'Hey Hermes' wake word engine (optional; openWakeWord is the free default)",
+     "GitHub token for Skills Hub (higher API rate limits, skill publish)",
+     "Honcho API key for AI-native persistent memory → honcho_context",
+     "Base URL for self-hosted Honcho instances (no API key needed)",
+     "Hindsight API key for graph-aware persistent memory → hindsight_recall",
+     "Base URL for the Hindsight API (default: https://api.hindsight.vectorize.io)",
+     "Supermemory API key for conversation-scoped persistent memory → supermemory_search",
+     "Mem0 Platform API key for semantic persistent memory → mem0_search",
+     "RetainDB API key for persistent memory → retaindb_search",
+     "Base URL for self-hosted RetainDB instances (default: https://api.retaindb.com)",
+     "ByteRover API key (optional, for cloud sync — local-first by default) → brv_query",
+     "OpenViking API key (leave blank for local dev mode) → viking_search",
+     "OpenViking server URL (default: http://127.0.0.1:1933)"
+    ]
+   ],
+   [
+    "Which platforms would you like to set up?",
+    [
+     "📱 Telegram",
+     "💬 Discord",
+     "💼 Slack"
+    ]
+   ]
+  ]
+ },
+ "quick_key": {
+  "out": "\n\n◆ Quick Setup — Missing Items Only\n\n\n◆ Tool API Keys\n\n  ─── Exa API key for AI-native web search and contents ───\n\n    Enables: web_search, web_extract\n    Get your key at: https://exa.ai/\n\n  Exa API key: ✓   ✓ Saved\n\n\n◆ Messaging Platforms\n  Connect Hermes to messaging apps to chat from anywhere.\n  You can configure these later with 'hermes setup gateway'.\n[summary]\n",
+  "err": null,
+  "asked": [],
+  "checks": [
+   [
+    "Which tools would you like to configure?",
+    [
+     "Exa API key for AI-native web search and contents → web_search, web_extract",
+     "Parallel API key for AI-native web search and extract → web_search, web_extract",
+     "Firecrawl API key for web search and scraping → web_search, web_extract",
+     "Firecrawl API URL for self-hosted instances (optional)",
+     "Exact Firecrawl tool-gateway origin override for Nous Subscribers only (optional)",
+     "Exact shared tool-gateway origin for on-origin vendors and media uploads (optional)",
+     "Exact connector-gateway origin for the connectors API (optional)",
+     "Shared tool-gateway domain suffix for Nous Subscribers only, used to derive vendor hosts, e.g. nousresearch.com -> firecrawl-gateway.nousresearch.com",
+     "Shared tool-gateway URL scheme for Nous Subscribers only, used to derive vendor hosts (`https` by default, set `http` for local gateway testing)",
+     "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
+     "Tavily API key for AI-native web search and extract (optional — keyless works when Tavily is selected) → web_search, web_extract",
+     "Perplexity API key for the Search API web backend (ranked results + query-relevant page snippets) → web_search, web_extract",
+     "Keenable API key for fast independent-index web search and page fetch (optional — keyless free tier works without it) → web_search, web_extract",
+     "URL of your SearXNG instance for free self-hosted web search → web_search",
+     "Brave Search API subscription token (free tier: 2,000 queries/mo) → web_search",
+     "Browserbase API key for cloud browser (optional — local browser works without this) → browser_exec",
+     "Browserbase project ID (optional — only needed for cloud browser) → browser_exec",
+     "Browser Use API key for cloud browser (optional — local browser works without this) → browser_exec",
+     "Firecrawl browser session TTL in seconds (optional, default 300) → browser_exec",
+     "FAL API key for image and video generation → image_generate, video_generate",
+     "Krea API key for Krea 3 and Krea 2 image generation → image_generate",
+     "OpenAI API key for voice transcription (Whisper) and OpenAI TTS → voice_transcription, openai_tts",
+     "ElevenLabs API key for premium text-to-speech voices and Scribe transcription → elevenlabs_tts, voice_transcription",
+     "Mistral API key for Voxtral TTS and transcription (STT)",
+     "Picovoice access key for the Porcupine 'Hey Hermes' wake word engine (optional; openWakeWord is the free default)",
+     "GitHub token for Skills Hub (higher API rate limits, skill publish)",
+     "Honcho API key for AI-native persistent memory → honcho_context",
+     "Base URL for self-hosted Honcho instances (no API key needed)",
+     "Hindsight API key for graph-aware persistent memory → hindsight_recall",
+     "Base URL for the Hindsight API (default: https://api.hindsight.vectorize.io)",
+     "Supermemory API key for conversation-scoped persistent memory → supermemory_search",
+     "Mem0 Platform API key for semantic persistent memory → mem0_search",
+     "RetainDB API key for persistent memory → retaindb_search",
+     "Base URL for self-hosted RetainDB instances (default: https://api.retaindb.com)",
+     "ByteRover API key (optional, for cloud sync — local-first by default) → brv_query",
+     "OpenViking API key (leave blank for local dev mode) → viking_search",
+     "OpenViking server URL (default: http://127.0.0.1:1933)"
+    ]
+   ],
+   [
+    "Which platforms would you like to set up?",
+    [
+     "📱 Telegram",
+     "💬 Discord",
+     "💼 Slack"
+    ]
+   ]
+  ],
+  "env": "EXA_API_KEY=sk-test-key\n"
+ },
+ "blank_finish": {
+  "out": "\n\n◆ Blank Slate Setup\n  Everything starts OFF. First we force-enable only what's required\n  to run an agent, then you choose whether to stop there or walk\n  through enabling more — opting in to exactly what you want.\n  \n  Forced on: Provider & Model, File Operations, Terminal, Vision, Skills.\n  Everything else (web, browser, code exec, memory,\n  delegation, cron, plugins, MCP, …) starts disabled. The\n  essential `hermes-agent` skill is always kept so the agent\n  can help you drive and configure Hermes itself.\n\n\n◆ Step 1 — Provider & Model (required)\n[model]\n\n◆ Step 2 — Terminal Backend\n[terminal]\n\n✓ Minimal baseline applied:\n    Toolsets: file, terminal, vision, skills (everything else off)\n    Compression, memory, checkpoints, smart routing: off\n\n\n◆ How far do you want to go?\n    Skipped (keeping current)\n\n[opt-out True]\n\n✓ Blank Slate setup complete — minimal agent ready.\n  Enable anything later, on demand:\n    Enable tools:        hermes tools\n    Seed skills:         hermes skills opt-in --sync\n    Add MCP servers:     hermes mcp add\n    Enable plugins:      hermes plugins\n    Tune agent settings: hermes setup agent\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Your minimal agent is ready. What next?"
+  ],
+  "checks": [],
+  "cfg": {
+   "platform_toolsets": {
+    "cli": [
+     "file",
+     "skills",
+     "terminal",
+     "vision"
+    ]
+   },
+   "compression": {
+    "enabled": false
+   },
+   "memory": {
+    "memory_enabled": false,
+    "user_profile_enabled": false
+   },
+   "checkpoints": {
+    "enabled": false
+   },
+   "smart_model_routing": {
+    "enabled": false
+   },
+   "agent": {
+    "disabled_toolsets": [
+     "bot_room",
+     "browser",
+     "catalog",
+     "clarify",
+     "code_execution",
+     "computer_use",
+     "connections",
+     "context_engine",
+     "cronjob",
+     "delegation",
+     "desktop_ui",
+     "discord",
+     "discord_admin",
+     "feishu_doc",
+     "feishu_drive",
+     "image_gen",
+     "kanban",
+     "memory",
+     "onboarding",
+     "project",
+     "session_search",
+     "stt",
+     "todo",
+     "tts",
+     "video",
+     "video_gen",
+     "web",
+     "x_search",
+     "yuanbao"
+    ],
+    "max_turns": 90
+   }
+  }
+ },
+ "blank_walk": {
+  "out": "\n\n◆ Blank Slate Setup\n  Everything starts OFF. First we force-enable only what's required\n  to run an agent, then you choose whether to stop there or walk\n  through enabling more — opting in to exactly what you want.\n  \n  Forced on: Provider & Model, File Operations, Terminal, Vision, Skills.\n  Everything else (web, browser, code exec, memory,\n  delegation, cron, plugins, MCP, …) starts disabled. The\n  essential `hermes-agent` skill is always kept so the agent\n  can help you drive and configure Hermes itself.\n\n\n◆ Step 1 — Provider & Model (required)\n[model]\n\n◆ Step 2 — Terminal Backend\n[terminal]\n\n✓ Minimal baseline applied:\n    Toolsets: file, terminal, vision, skills (everything else off)\n    Compression, memory, checkpoints, smart routing: off\n\n\n◆ How far do you want to go?\n\n\n\n◆ Bundled Skills\n  Blank Slate ships with NO bundled skills by default.\n[opt-out False]\n✓ Seeded 3 bundled skills.\n\n\n◆ Tools\n  Pick exactly which additional toolsets to turn on.\n  (file and terminal are already on; leave the rest off if you want\n   the most minimal agent.)\n  Keeping the minimal toolset. Add tools later with `hermes tools`.\n\n\n◆ Plugins\n  Manage plugins with `hermes plugins list` / `hermes plugins install`.\n\n\n◆ MCP Servers\n  No MCP servers configured. Add later with `hermes mcp add`.\n\n[gateway]\n\n✓ Blank Slate setup complete — minimal agent ready.\n    Enable more tools:   hermes tools\n    Seed skills:         hermes skills opt-in --sync\n    Add MCP servers:     hermes mcp add\n    Tune agent settings: hermes setup agent\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Your minimal agent is ready. What next?",
+   "Seed the full bundled skill catalog? (No = start with zero skills)",
+   "Open the tool selector to enable more tools?",
+   "Review and enable built-in plugins now?",
+   "Add an MCP server now?",
+   "Connect a messaging platform (Telegram, Discord, …)?"
+  ],
+  "checks": []
+ },
+ "blank_walk_no": {
+  "out": "\n\n◆ Blank Slate Setup\n  Everything starts OFF. First we force-enable only what's required\n  to run an agent, then you choose whether to stop there or walk\n  through enabling more — opting in to exactly what you want.\n  \n  Forced on: Provider & Model, File Operations, Terminal, Vision, Skills.\n  Everything else (web, browser, code exec, memory,\n  delegation, cron, plugins, MCP, …) starts disabled. The\n  essential `hermes-agent` skill is always kept so the agent\n  can help you drive and configure Hermes itself.\n\n\n◆ Step 1 — Provider & Model (required)\n[model]\n\n◆ Step 2 — Terminal Backend\n[terminal]\n\n✓ Minimal baseline applied:\n    Toolsets: file, terminal, vision, skills (everything else off)\n    Compression, memory, checkpoints, smart routing: off\n\n\n◆ How far do you want to go?\n\n\n\n◆ Bundled Skills\n  Blank Slate ships with NO bundled skills by default.\n[opt-out True]\n  No skills seeded (except the essential `hermes-agent`\n  skill). A .no-bundled-skills marker keeps future\n  `hermes update` runs from re-injecting them. Opt back in any\n  time with `hermes skills opt-in --sync`.\n\n\n◆ Tools\n  Pick exactly which additional toolsets to turn on.\n  (file and terminal are already on; leave the rest off if you want\n   the most minimal agent.)\n  Keeping the minimal toolset. Add tools later with `hermes tools`.\n\n\n◆ Plugins\n  No plugins enabled. Add later with `hermes plugins`.\n\n\n◆ MCP Servers\n  No MCP servers configured. Add later with `hermes mcp add`.\n\n\n✓ Blank Slate setup complete — minimal agent ready.\n    Enable more tools:   hermes tools\n    Seed skills:         hermes skills opt-in --sync\n    Add MCP servers:     hermes mcp add\n    Tune agent settings: hermes setup agent\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Your minimal agent is ready. What next?",
+   "Seed the full bundled skill catalog? (No = start with zero skills)",
+   "Open the tool selector to enable more tools?",
+   "Review and enable built-in plugins now?",
+   "Add an MCP server now?",
+   "Connect a messaging platform (Telegram, Discord, …)?"
+  ],
+  "checks": []
+ },
+ "first_quick_ok": {
+  "out": "\n\n◆ Nous Portal\n  One subscription, 300+ models, plus the Tool Gateway:\n    web search, image generation, TTS, browser automation.\n  Sign up: https://portal.nousresearch.com/manage-subscription\n\n[nous]\n[terminal]\n✓ Applied recommended defaults:\n    Max iterations: 150\n    Compression threshold: 0.50\n    Run `hermes setup agent` later to customize.\n\n    Skipped (keeping current)\n\n[gateway]\n\n✓ Setup complete! You're ready to go.\n\n    Configure all settings:    hermes setup\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Connect a messaging platform? (Telegram, Discord, etc.)"
+  ],
+  "checks": []
+ },
+ "first_quick_interrupt": {
+  "out": "\n\n◆ Nous Portal\n  One subscription, 300+ models, plus the Tool Gateway:\n    web search, image generation, TTS, browser automation.\n  Sign up: https://portal.nousresearch.com/manage-subscription\n\n\n  Nous Portal setup cancelled.\n[terminal]\n✓ Applied recommended defaults:\n    Max iterations: 150\n    Compression threshold: 0.50\n    Run `hermes setup agent` later to customize.\n\n    Skipped (keeping current)\n\n[gateway]\n\n✓ Setup complete! You're ready to go.\n\n    Configure all settings:    hermes setup\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Connect a messaging platform? (Telegram, Discord, etc.)"
+  ],
+  "checks": []
+ },
+ "first_quick_error": {
+  "out": "\n\n◆ Nous Portal\n  One subscription, 300+ models, plus the Tool Gateway:\n    web search, image generation, TTS, browser automation.\n  Sign up: https://portal.nousresearch.com/manage-subscription\n\n⚠ Could not finish connecting a provider (something went wrong while talking to the provider).\n  Your provider settings were not changed. Continue the wizard now and run `hermes model` afterwards to try again.\n    Details: portal down\n[terminal]\n✓ Applied recommended defaults:\n    Max iterations: 150\n    Compression threshold: 0.50\n    Run `hermes setup agent` later to customize.\n\n    Skipped (keeping current)\n\n[gateway]\n\n✓ Setup complete! You're ready to go.\n\n    Configure all settings:    hermes setup\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Connect a messaging platform? (Telegram, Discord, etc.)"
+  ],
+  "checks": []
+ },
+ "first_quick_skip_gateway": {
+  "out": "\n\n◆ Nous Portal\n  One subscription, 300+ models, plus the Tool Gateway:\n    web search, image generation, TTS, browser automation.\n  Sign up: https://portal.nousresearch.com/manage-subscription\n\n[nous]\n[terminal]\n✓ Applied recommended defaults:\n    Max iterations: 150\n    Compression threshold: 0.50\n    Run `hermes setup agent` later to customize.\n\n\n[service]\n\n✓ Setup complete! You're ready to go.\n\n    Configure all settings:    hermes setup\n    Connect Telegram/Discord:  hermes setup gateway\n\n[summary]\n",
+  "err": null,
+  "asked": [
+   "Connect a messaging platform? (Telegram, Discord, etc.)"
+  ],
+  "checks": []
+ },
+ "fda_denied": {
+  "out": "\n    macOS tip: silence ALL folder permission prompts with one switch —\n    System Settings → Privacy & Security → Full Disk Access → enable\n    your terminal (and Hermes.app if you use Desktop), or run:\n      open \"x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles\"\n    The grant is permanent — it survives every Hermes update.\n",
+  "err": null,
+  "asked": [],
+  "checks": []
+ },
+ "fda_granted": {
+  "out": "",
+  "err": null,
+  "asked": [],
+  "checks": []
+ },
+ "fda_missing": {
+  "out": "",
+  "err": null,
+  "asked": [],
+  "checks": []
+ }
+}

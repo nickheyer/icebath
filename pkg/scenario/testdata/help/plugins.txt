@@ -1,0 +1,30 @@
+usage: icebath plugins [-h]
+                       {install,search,browse,validate,update,adopt,trust-update-url,check-updates,check,remove,rm,uninstall,list,ls,enable,disable,capabilities,doctor,pack,show,info} ...
+
+Install, update, remove, list, or validate native Icebath plugins and portable Agent Plugins v1
+packages. Portable packages install disabled.
+
+positional arguments:
+  {install,search,browse,validate,update,adopt,trust-update-url,check-updates,check,remove,rm,uninstall,list,ls,enable,disable,capabilities,doctor,pack,show,info}
+    install             Install a plugin from the curated catalog, a Git URL, or owner/repo
+    search              Search the curated Icebath plugin catalog
+    browse              List every curated plugin catalog entry
+    validate            Validate a plugin directory for catalog admission (CI gate)
+    update              Update an installed plugin, or with no name every plugin that has an
+                        update
+    adopt               Adopt a self-cloned plugin dir into provenance tracking
+    trust-update-url    Confirm a changed plugin update_url into the saved tag
+    check-updates (check)
+                        Check whether installed plugins have updates (read-only)
+    remove (rm, uninstall)
+                        Remove an installed plugin
+    list (ls)           List installed plugins
+    enable              Enable a disabled plugin
+    disable             Disable a plugin without removing it
+    capabilities        Show declared vs granted capabilities per plugin
+    doctor              Validate a plugin with the real runtime contracts
+    pack                Declarative, shareable plugin sets (icebath-pack.yaml)
+    show (info)         Show details for a single plugin (including emits/listens)
+
+options:
+  -h, --help            show this help message and exit

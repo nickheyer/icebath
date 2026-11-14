@@ -281,28 +281,16 @@ func (t skillTree) copyInto(top, dir, dest string, dirsExistOK, keepExisting boo
 	return nil
 }
 
-// Permission bits of a tree entry, embedded scripts with an interpreter line being executable
+// Permission bits of a tree entry, the source checkout bits for the embedded copy
 func (t skillTree) mode(p string, isDir bool) (fs.FileInfo, os.FileMode) {
 	st, err := fs.Stat(t.fsys, p)
 	if t.root != "" && err == nil {
 		return st, st.Mode().Perm()
 	}
-	if isDir || t.startsWithShebang(p) {
+	if isDir || embeddedExecPaths[t.tag+"/"+p] {
 		return nil, 0o755
 	}
 	return nil, 0o644
-}
-
-// Whether an embedded file opens with an interpreter line
-func (t skillTree) startsWithShebang(p string) bool {
-	f, err := t.fsys.Open(p)
-	if err != nil {
-		return false
-	}
-	defer f.Close()
-	var head [2]byte
-	n, _ := io.ReadFull(f, head[:])
-	return n == 2 && head[0] == '#' && head[1] == '!'
 }
 
 // Copies one file with its permission bits and modification time

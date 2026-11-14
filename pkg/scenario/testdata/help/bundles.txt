@@ -1,0 +1,15 @@
+usage: icebath bundles [-h] {list,show,create,delete,reload} ...
+
+Skill bundles let you load several skills under one slash command. `/<bundle>` from the CLI or
+gateway loads every referenced skill at once.
+
+positional arguments:
+  {list,show,create,delete,reload}
+    list                List installed skill bundles
+    show                Show one bundle's contents
+    create              Create a new skill bundle
+    delete              Delete a skill bundle
+    reload              Re-scan the bundles directory and report changes
+
+options:
+  -h, --help            show this help message and exit

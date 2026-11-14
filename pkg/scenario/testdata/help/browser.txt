@@ -1,0 +1,13 @@
+usage: icebath browser [-h] {close-profile} ...
+
+Helpers for real-profile browsing (browser.use_real_profile). close-profile terminates the browser
+process tree holding your default profile so Icebath can copy it — DESTRUCTIVE (unsaved tabs in
+that browser are lost). The agent runs this only after you approve closing the browser.
+
+positional arguments:
+  {close-profile}
+    close-profile  Close the browser locking your real profile (asks nothing — run only with the
+                   user's explicit OK; loses unsaved tabs)
+
+options:
+  -h, --help       show this help message and exit

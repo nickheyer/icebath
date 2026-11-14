@@ -1,0 +1,1 @@
+{"tokenizer_class": "TikTokenTokenizer", "auto_map": {"AutoTokenizer": ["tokenization_kimi.TikTokenTokenizer", null]}, "bos_token": "[BOS]", "eos_token": "[EOS]", "added_tokens_decoder": {"419": {"content": "[BOS]", "special": true}, "420": {"content": "[EOS]", "special": true}, "424": {"content": "<|im_end|>", "special": true}}}

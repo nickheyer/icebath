@@ -1,0 +1,16 @@
+usage: icebath auth [-h] {add,list,remove,reset,priority,refresh,status,logout,upgrade} ...
+
+positional arguments:
+  {add,list,remove,reset,priority,refresh,status,logout,upgrade}
+    add                 Add a pooled credential
+    list                List pooled credentials
+    remove              Remove a pooled credential by index, id, or label
+    reset               Clear exhaustion status for a provider's credentials (all, or one target)
+    priority            Move a pooled credential to a priority (0 = tried first under fill_first)
+    refresh             Refresh a pooled OAuth credential's tokens and clear its cooldown
+    status              Show auth status for a provider
+    logout              Log out a provider and clear stored auth state
+    upgrade             Sign in with a Nous account, keeping your connectors
+
+options:
+  -h, --help            show this help message and exit

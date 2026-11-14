@@ -1,0 +1,23 @@
+usage: icebath journey [-h] [--reveal 0..1] [--play] [--fps FPS] [--width WIDTH] [--height HEIGHT]
+                       [--no-color] [--json]
+                       {list,delete,edit} ...
+
+A terminal rendition of the desktop Star Map / Memory Graph: a timeline bar chart of learned
+skills and memories over time (oldest at top, newest at bottom) plus a playable constellation
+scrubber. Mirrors the TUI `/journey` overlay and the desktop panel.
+
+positional arguments:
+  {list,delete,edit}
+    list              List node ids (for delete/edit).
+    delete            Delete a learned skill (archived) or memory by node id.
+    edit              Edit a learned skill or memory by node id in $EDITOR.
+
+options:
+  -h, --help          show this help message and exit
+  --reveal 0..1       Render the timeline built up to this point (0=oldest, 1=now).
+  --play              Animate the build-up over time (Ctrl-C to stop).
+  --fps FPS           Animation frames per second for --play (default 12).
+  --width WIDTH       Override render width in columns.
+  --height HEIGHT     Override render height in rows.
+  --no-color          Disable color output.
+  --json              Print the raw graph payload as JSON and exit.

@@ -1,0 +1,8 @@
+usage: icebath whatsapp-cloud [-h]
+
+Configure the official Meta WhatsApp Business Cloud API adapter (Business account required, public
+webhook URL required). Distinct from `icebath whatsapp` which sets up the Baileys bridge for
+personal accounts.
+
+options:
+  -h, --help  show this help message and exit
