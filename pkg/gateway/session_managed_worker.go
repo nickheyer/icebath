@@ -142,7 +142,7 @@ func sessionYolo(ctx context.Context, a *SessionAuthority, route string, policy 
 			persisted = entry.Yolo
 		}
 	}
-	tools.RestoreGatewayYolo(ctx, route, persisted, policy.Yolo())
+	tools.RestoreGatewayYolo(route, persisted, policy.Yolo())
 	return tools.IsSessionYoloEnabled(route), nil
 }
 
@@ -214,7 +214,7 @@ func WorkerTurnScope(ctx context.Context, frame *pyjson.Object) (context.Context
 	}
 	route := pyStrOf(frame.GetOr("route", nil))
 	if yolo {
-		tools.EnableSessionYolo(ctx, route)
+		tools.EnableSessionYolo(route)
 	}
 	scope, _ := frame.GetOr("scope", nil).(*pyjson.Object)
 	executionID := pyStrOf(scope.GetOr("execution_id", nil))

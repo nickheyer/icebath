@@ -67,7 +67,7 @@ func (r *GatewayRunner) hmwaPrepareTurn(ctx context.Context, event *gateway.Mess
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	tools.RestoreGatewayYolo(ctx, sessionKey, entry.Yolo, false)
+	tools.RestoreGatewayYolo(sessionKey, entry.Yolo, false)
 	sc := gateway.BuildSessionContext(ctx, source, r.config, entry)
 	sessionEnv, err := r.setSessionEnv(ctx, sc)
 	if err != nil {

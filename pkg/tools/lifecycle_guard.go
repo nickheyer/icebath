@@ -2,7 +2,6 @@ package tools
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -13,43 +12,24 @@ import (
 
 // Shell level command shapes that target the gateway lifecycle, each anchored on a concrete identifier
 var gatewayLifecyclePattern = regexp2.MustCompile(
-	`(?i)(?:(?<![/\w.\-])icebath(?:\.(?:exe|cmd|bat|com|ps1))?\s+gateway\s+(?:restart|stop|uninstall)\b)` +
-		`|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\bicebath[.\-]?gateway)` +
-		`|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\bicebath[.\-]?gateway)` +
-		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bicebath\b[^\n]*\bgateway)` +
-		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\bicebath)`)
+	`(?i)(?:(?<![/\w.\-])(?:icebath|hermes)(?:\.(?:exe|cmd|bat|com|ps1))?\s+gateway\s+(?:restart|stop|uninstall)\b)` +
+		`|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\b(?:icebath|hermes)[.\-]?gateway)` +
+		`|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\b(?:icebath|hermes)[.\-]?gateway)` +
+		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\b(?:icebath|hermes)\b[^\n]*\bgateway)` +
+		`|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\b(?:icebath|hermes))`)
 
-// Lower cased process names the gateway answers to, without any exe suffix
-var gatewayImageNames = func() []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(p string) {
-		name := strings.TrimSuffix(strings.ToLower(filepath.Base(strings.TrimSpace(p))), ".exe")
-		if name != "" && name != "." && name != string(filepath.Separator) && !seen[name] {
-			seen[name] = true
-			out = append(out, name)
-		}
-	}
-	add("icebath")
-	if len(os.Args) > 0 {
-		add(os.Args[0])
-	}
-	if exe, err := os.Executable(); err == nil {
-		add(exe)
-	}
-	if comm, err := os.ReadFile("/proc/self/comm"); err == nil {
-		add(string(comm))
-	}
-	return out
-}()
+var interpreterImageRe = regexp.MustCompile(`^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\n?$`)
 
-// Command lines a full command line match sees for the gateway, this process and the service form
-var gatewayCmdlines = func() []string {
-	out := []string{strings.Join(os.Args, " "), "icebath gateway run"}
-	if exe, err := os.Executable(); err == nil {
-		out = append(out, exe+" gateway run")
+// True when a lower cased image name is a Python interpreter name, one trailing newline allowed as re.match does
+func InterpreterImageMatch(name string) bool { return interpreterImageRe.MatchString(name) }
+
+// Lower cased image name of the running executable that hosts the gateway
+var hostInterpreterName = func() string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return ""
 	}
-	return out
+	return strings.ToLower(filepath.Base(exe))
 }()
 
 var pkillValueOptions = setOf(
@@ -67,15 +47,17 @@ var killerValueOptions = map[string]map[string]bool{
 }
 
 var (
+	ereTailRe              = regexp.MustCompile(`[.*+?\\\[\](){}|].*$`)
+	ereWildcardOnlyRe      = regexp.MustCompile(`^[.*+?$\s]*$`)
 	nameKillers            = setOf("pkill", "killall", "taskkill", "stop-process")
 	nameEnumerators        = setOf("pgrep", "pidof", "get-process")
 	killVerbRe             = regexp.MustCompile(`(?i)\b(?:kill|taskkill|stop-process)\b`)
-	signalTokenRe          = regexp.MustCompile(`^[0-9A-Z+]+$`)
+	gatewayCmdlineTokenRe  = regexp.MustCompile(`(?i)icebath_cli|hermes_cli|\b(?:icebath|hermes)\b[^\n]*\bgateway\b|\bgateway\b[^\n]*\b(?:icebath|hermes)\b`)
 	taskkillFilterRe       = regexp.MustCompile(`(?i)^\s*['"]?imagename\s+eq\s+(\S+)`)
 	shellLineContinuation  = regexp.MustCompile(`\\\r?\n[ \t]*`)
 	argvListPunctuationRe  = regexp.MustCompile(`[\[\],]+`)
 	launchctlLifecycleRe   = regexp.MustCompile(`(?i)\blaunchctl\s+(?:kickstart|unload|load|stop|restart|bootout|kill|disable|remove)\b`)
-	gatewayLabelRe         = regexp.MustCompile(`(?i)\bicebath[.\-]?gateway\b`)
+	gatewayLabelRe         = regexp.MustCompile(`(?i)\b(?:icebath|hermes)[.\-]?gateway\b`)
 	lifecycleEnvAssignRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 	dotCommandArgumentRe   = regexp.MustCompile(`^\.[A-Za-z]`)
 	pipeToInterpreterRe    = regexp.MustCompile(`\|\s*&?\s*(?:sudo\s+)?(?:sh|bash|dash|ksh|zsh|xargs|eval|source)\b`)
@@ -109,87 +91,53 @@ var (
 
 // Profile flag form of the gateway restart, blocked only when the named profile runs the guard
 var profileFlagLifecyclePattern = regexp2.MustCompile(pyPatternToRegexp2(
-	`(?i)icebath\s+(?:-\S++(?:\s++(?!-\S)\S++)?\s++)*(?:--profile=([^\s]+)|(?:-p|--profile)\s+([^\s]+))(?:\s++-\S++(?:\s++(?!-\S)\S++)?)*\s+gateway\s+(?:restart|stop)`))
+	`(?i)(?:icebath|hermes)\s+(?:-\S++(?:\s++(?!-\S)\S++)?\s++)*(?:--profile=([^\s]+)|(?:-p|--profile)\s+([^\s]+))(?:\s++-\S++(?:\s++(?!-\S)\S++)?)*\s+gateway\s+(?:restart|stop)`))
 
-// GatewayImageKillRejection is the text every surface shows for a kill aimed at the gateway image
-const GatewayImageKillRejection = "Blocked: this command kills every process whose image, name or command line " +
-	"matches the icebath executable running this gateway. " +
+// HostInterpreterKillRejection is the text every surface shows for a kill aimed at the gateway image
+const HostInterpreterKillRejection = "Blocked: this command kills every process whose image/name matches the " +
+	"interpreter hosting this gateway (and this command). " +
 	"Stop only the process you own instead: process(action=\"kill\", session_id=\"proc_…\") " +
 	"for a background job Icebath started, or kill/taskkill by its explicit PID."
 
-// Whether a pkill or killall regular expression selects the gateway by name or by full command line
-func regexSelectsGateway(pattern string, fullCmdline, anchored bool) bool {
-	expr := strings.NewReplacer(`\<`, `\b`, `\>`, `\b`).Replace(pattern)
-	if anchored {
-		expr = "^(?:" + expr + ")$"
-	}
-	re, err := regexp.Compile("(?i)" + expr)
-	if err != nil {
-		return true
-	}
-	subjects := gatewayImageNames
-	if fullCmdline {
-		subjects = gatewayCmdlines
-	}
-	for _, subject := range subjects {
-		if re.MatchString(subject) {
-			return true
-		}
-	}
-	return false
-}
-
-// Whether a literal process name is one the gateway answers to
-func nameSelectsGateway(value string) bool {
+// Reports whether a process or image name denotes the interpreter hosting the gateway
+func isInterpreterImage(value string, substring bool) bool {
 	name := strings.TrimSuffix(strings.ToLower(strings.Trim(strings.TrimSpace(value), "\"'")), ".exe")
-	for _, image := range gatewayImageNames {
-		if name == image {
-			return true
-		}
-	}
-	return false
-}
-
-// Whether a taskkill or PowerShell wildcard image name selects the gateway, a malformed pattern counting as a match
-func globSelectsGateway(value string) bool {
-	pattern := strings.ToLower(strings.Trim(strings.TrimSpace(value), "\"'"))
-	if pattern == "" {
+	if name == "" {
 		return false
 	}
-	for _, image := range gatewayImageNames {
-		for _, subject := range []string{image, image + ".exe"} {
-			if ok, err := path.Match(pattern, subject); err != nil || ok {
-				return true
-			}
-		}
+	if strings.HasSuffix(name, "*") {
+		prefix := strings.TrimRight(name, "*")
+		return strings.HasPrefix("python", prefix) || strings.HasPrefix(hostInterpreterName, prefix)
 	}
-	return false
+	if interpreterImageRe.MatchString(name) || name == strings.TrimSuffix(hostInterpreterName, ".exe") {
+		return true
+	}
+	return substring && len(name) >= 2 && strings.HasPrefix("python", name)
 }
 
-// Full command line and exact match switches of a pkill or pgrep argv, short option clusters included
-func pkillMatchFlags(args []string) (fullCmdline, exact bool) {
-	for i := 0; i < len(args); i++ {
-		token := args[i]
-		switch {
-		case token == "--":
-			return fullCmdline, exact
-		case token == "--full":
-			fullCmdline = true
-		case token == "--exact":
-			exact = true
-		case pkillValueOptions[token]:
-			i++
-		case strings.HasPrefix(token, "--") || !strings.HasPrefix(token, "-") || signalTokenRe.MatchString(token[1:]):
-		default:
-			fullCmdline = fullCmdline || strings.ContainsRune(token[1:], 'f')
-			exact = exact || strings.ContainsRune(token[1:], 'x')
+// Whether a pkill style pattern reaches the gateway process by name or full command line
+func patternReachesHostInterpreter(pattern string, fullCmdline, exact bool) bool {
+	core := strings.TrimPrefix(strings.Trim(strings.TrimSpace(pattern), "\"'"), "^")
+	core = strings.TrimLeft(core, "^")
+	core = strings.TrimSuffix(core, "$")
+	head, rest := core, ""
+	if fullCmdline {
+		head, _, rest = partition(core, " ")
+	}
+	if !isInterpreterImage(head, !exact) {
+		if loc := ereTailRe.FindStringIndex(head); loc != nil {
+			rest = head[loc[0]:] + " " + rest
+			head = head[:loc[0]]
 		}
 	}
-	return fullCmdline, exact
+	if !isInterpreterImage(head, !exact) {
+		return fullCmdline && gatewayCmdlineTokenRe.MatchString(core)
+	}
+	return strings.TrimSpace(rest) == "" || ereWildcardOnlyRe.MatchString(rest) || strings.Contains(strings.ToLower(rest), "hermes") || strings.Contains(strings.ToLower(rest), "icebath")
 }
 
-// Whether a killer or enumerator with the argv would select the gateway process
-func killerTargetsGateway(name string, args []string) bool {
+// Whether a killer or enumerator with the argv would select the host interpreter
+func killerTargetsHostInterpreter(name string, args []string) bool {
 	switch name {
 	case "pkill", "pgrep", "killall", "pidof":
 		hasFlag := func(opts ...string) bool {
@@ -202,20 +150,8 @@ func killerTargetsGateway(name string, args []string) bool {
 			}
 			return false
 		}
-		var operandSelects func(string) bool
-		switch name {
-		case "pkill", "pgrep":
-			fullCmdline, exact := pkillMatchFlags(args)
-			operandSelects = func(op string) bool { return regexSelectsGateway(op, fullCmdline, exact) }
-		case "killall":
-			if hasFlag("-r", "--regexp") {
-				operandSelects = func(op string) bool { return regexSelectsGateway(op, false, false) }
-			} else {
-				operandSelects = nameSelectsGateway
-			}
-		default:
-			operandSelects = nameSelectsGateway
-		}
+		exact := name == "pidof" || ((name == "killall") != hasFlag("-r", "--regexp", "-x", "--exact"))
+		fullCmdline := (name == "pkill" || name == "pgrep") && hasFlag("-f", "--full")
 		var operands []string
 		position := 0
 		for position < len(args) {
@@ -234,7 +170,7 @@ func killerTargetsGateway(name string, args []string) bool {
 			position++
 		}
 		for _, op := range operands {
-			if operandSelects(op) {
+			if patternReachesHostInterpreter(op, fullCmdline, exact) {
 				return true
 			}
 		}
@@ -243,11 +179,11 @@ func killerTargetsGateway(name string, args []string) bool {
 		for position := 0; position+1 < len(args); position++ {
 			option := strings.TrimLeft(strings.ToLower(args[position]), "/-")
 			value := args[position+1]
-			if option == "im" && globSelectsGateway(value) {
+			if option == "im" && isInterpreterImage(value, false) {
 				return true
 			}
 			if option == "fi" {
-				if m := taskkillFilterRe.FindStringSubmatch(value); m != nil && globSelectsGateway(m[1]) {
+				if m := taskkillFilterRe.FindStringSubmatch(value); m != nil && isInterpreterImage(m[1], false) {
 					return true
 				}
 			}
@@ -272,7 +208,7 @@ func killerTargetsGateway(name string, args []string) bool {
 	}
 	for _, value := range values {
 		for _, part := range strings.Split(value, ",") {
-			if globSelectsGateway(part) {
+			if isInterpreterImage(part, false) {
 				return true
 			}
 		}
@@ -280,8 +216,8 @@ func killerTargetsGateway(name string, args []string) bool {
 	return false
 }
 
-// Whether a tokenized segment runs one of the killers against the gateway process
-func segmentNamesGatewayImage(tokens []string, killers map[string]bool) bool {
+// Whether a tokenized segment runs one of the killers against the host interpreter
+func segmentNamesHostInterpreter(tokens []string, killers map[string]bool) bool {
 	var candidates []int
 	if index, ok := executedCommandIndex(tokens); ok {
 		candidates = append(candidates, index)
@@ -293,15 +229,15 @@ func segmentNamesGatewayImage(tokens []string, killers map[string]bool) bool {
 	}
 	for _, position := range candidates {
 		name := strings.TrimSuffix(strings.ToLower(lifecycleExecutableName(tokens[position])), ".exe")
-		if killers[name] && killerTargetsGateway(name, tokens[position+1:]) {
+		if killers[name] && killerTargetsHostInterpreter(name, tokens[position+1:]) {
 			return true
 		}
 	}
 	return false
 }
 
-// ContainsGatewayImageKill reports a process killer aimed at the icebath process running the gateway
-func ContainsGatewayImageKill(text string) bool {
+// ContainsHostInterpreterKill reports a process killer aimed at the image hosting the gateway
+func ContainsHostInterpreterKill(text string) bool {
 	normalized := shellLineContinuation.ReplaceAllString(text, " ")
 	killVerbPresent := killVerbRe.MatchString(normalized)
 	for _, segment := range iterLifecycleCommandSegments(normalized) {
@@ -312,10 +248,10 @@ func ContainsGatewayImageKill(text string) bool {
 			candidates = append(candidates, strings.Fields(stripped))
 		}
 		for _, tokens := range candidates {
-			if segmentNamesGatewayImage(tokens, nameKillers) {
+			if segmentNamesHostInterpreter(tokens, nameKillers) {
 				return true
 			}
-			if killVerbPresent && segmentNamesGatewayImage(tokens, nameEnumerators) {
+			if killVerbPresent && segmentNamesHostInterpreter(tokens, nameEnumerators) {
 				return true
 			}
 		}
@@ -368,7 +304,7 @@ func ContainsGatewayLifecycleCommand(text string) bool {
 			return true
 		}
 	}
-	return containsLaunchctlGatewayLifecycle(normalized) || ContainsGatewayImageKill(normalized)
+	return containsLaunchctlGatewayLifecycle(normalized) || ContainsHostInterpreterKill(normalized)
 }
 
 // Splits on newlines outside quotes honoring escapes

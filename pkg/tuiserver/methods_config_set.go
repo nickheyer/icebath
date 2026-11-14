@@ -510,7 +510,7 @@ func setYolo(ctx context.Context, rid any, params map[string]any, key string, va
 		if known {
 			requested = &word
 		}
-		enable = tools.ToggleSessionYolo(ctx, pyrepr.Str(sessionKey), requested, false, persist)
+		enable = tools.ToggleSessionYolo(pyrepr.Str(sessionKey), requested, false, persist)
 		emitSessionInfo(ctx, strOr(params["session_id"]), session)
 	default:
 		enable = !provider.IsTruthyValue(os.Getenv("ICEBATH_YOLO_MODE"))

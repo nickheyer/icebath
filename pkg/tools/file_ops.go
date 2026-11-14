@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -153,6 +154,15 @@ func (s *shellFileOps) cat(path string) *ExecuteResult {
 // First bytes of a file with stderr silenced
 func (s *shellFileOps) head(path string, nbytes int) *ExecuteResult {
 	return s.exec("head -c "+strconv.Itoa(nbytes)+" "+s.escapeShellArg(path, true)+" 2>/dev/null", "", 0)
+}
+
+// Snippet through the backend python3, retried with python when only that name exists
+func (s *shellFileOps) runPythonSnippet(snippet string) *ExecuteResult {
+	result := s.exec("python3 -c "+s.escapeShellArg(snippet, true), "", 0)
+	if result.ExitCode != 0 && strings.Contains(result.Stdout, "python3") {
+		result = s.exec("python -c "+s.escapeShellArg(snippet, true), "", 0)
+	}
+	return result
 }
 
 // Sentinel delimited segments of body and each extra command, body exit status, and the reply
@@ -600,6 +610,48 @@ func describeBinaryFile(sample []byte, fileSize int64) string {
 		size = strconv.FormatInt(fileSize, 10) + " bytes"
 	}
 	return "Binary file (" + kind + ", " + size + ") — cannot display as text."
+}
+
+// Python interpreter for the backend, the host interpreter on a host filesystem backend
+func (s *shellFileOps) pythonInterpreterCmd() string {
+	if s.lspLocalOnly() {
+		if py := hostPythonInterpreter(); py != "" {
+			return s.escapeShellArg(py, true)
+		}
+	}
+	return "python3"
+}
+
+// Snippet run base64 wrapped so it survives every quoting layer
+func (s *shellFileOps) execPythonSnippet(snippet, py string) *ExecuteResult {
+	encoded := base64.StdEncoding.EncodeToString([]byte(snippet))
+	if py == "" {
+		py = s.pythonInterpreterCmd()
+	}
+	return s.exec(py+` -c "import base64; exec(base64.b64decode('`+encoded+`').decode())"`, "", 0)
+}
+
+var (
+	hostPythonOnce sync.Once
+	hostPythonPath string
+)
+
+// First working python3 or python on the host PATH, skipping the Windows Store alias stubs
+func hostPythonInterpreter() string {
+	hostPythonOnce.Do(func() {
+		for _, name := range []string{"python3", "python"} {
+			p, err := exec.LookPath(name)
+			if err != nil {
+				continue
+			}
+			if isWindowsHost && strings.Contains(strings.ToLower(p), `\microsoft\windowsapps\`) {
+				continue
+			}
+			hostPythonPath = p
+			return
+		}
+	})
+	return hostPythonPath
 }
 
 // Native reads and writes only on POSIX with the host filesystem, ICEBATH_NATIVE_FILE_READ off switch

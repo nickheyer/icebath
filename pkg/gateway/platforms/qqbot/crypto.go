@@ -7,11 +7,16 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/pybase64"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Random base64 256 bit AES key the portal encrypts the bot secret under
-func generateBindKey() (string, error) {
+// ErrInvalidTag is the cryptography InvalidTag raised when GCM authentication fails
+var ErrInvalidTag = errors.New("InvalidTag")
+
+// GenerateBindKey returns a random base64 256 bit AES key for create_bind_task
+func GenerateBindKey() (string, error) {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		return "", err
@@ -19,33 +24,34 @@ func generateBindKey() (string, error) {
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
-// Opens a base64 nonce, ciphertext and tag sealed with AES-GCM under the base64 key
-func decryptSecret(encryptedBase64, keyBase64 string) (string, error) {
-	raw, err := base64.StdEncoding.DecodeString(encryptedBase64)
+// DecryptSecret opens base64 IV(12) ciphertext tag(16) under the base64 AES key and decodes UTF-8
+func DecryptSecret(encryptedBase64, keyBase64 string) (string, error) {
+	raw, err := pybase64.B64Decode(encryptedBase64)
 	if err != nil {
-		return "", fmt.Errorf("decode encrypted secret: %w", err)
+		return "", err
 	}
-	key, err := base64.StdEncoding.DecodeString(keyBase64)
+	key, err := pybase64.B64Decode(keyBase64)
 	if err != nil {
-		return "", fmt.Errorf("decode bind key: %w", err)
+		return "", err
+	}
+	if n := len(key); n != 16 && n != 24 && n != 32 {
+		return "", fmt.Errorf("AESGCM key must be 128, 192, or 256 bits.")
+	}
+	nonce := raw[:min(12, len(raw))]
+	if len(nonce) < 8 {
+		return "", fmt.Errorf("Nonce must be between 8 and 128 bytes")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
 	}
-	gcm, err := cipher.NewGCM(block)
+	gcm, err := cipher.NewGCMWithNonceSize(block, len(nonce))
 	if err != nil {
 		return "", err
 	}
-	if len(raw) < gcm.NonceSize()+gcm.Overhead() {
-		return "", errors.New("encrypted secret is too short")
-	}
-	plain, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], nil)
+	plain, err := gcm.Open(nil, nonce, raw[len(nonce):], nil)
 	if err != nil {
-		return "", errors.New("encrypted secret failed authentication")
+		return "", ErrInvalidTag
 	}
-	if !utf8.Valid(plain) {
-		return "", errors.New("decrypted secret is not valid UTF-8")
-	}
-	return string(plain), nil
+	return pystr.DecodeUTF8(plain)
 }

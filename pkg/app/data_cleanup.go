@@ -111,7 +111,7 @@ func planDataRemoval(ctx context.Context, h, project string, userdata *string) (
 		protected = append(protected, filepath.Join(machine, "profiles"))
 	}
 	if selfupdate.IsBundledPayload(project) {
-		layout, err := resolveBundleLayout(project)
+		layout, err := resolveBundleLayout(project, "")
 		if err != nil {
 			var notBundled *notBundledApp
 			if errors.As(err, &notBundled) {

@@ -143,14 +143,14 @@ func shouldRearmCompressionBudget(compressionAttempts int, completedCompactionPe
 }
 
 // Process teardown has begun, the sys.is_finalizing form of the shared shutdown predicate
-func interpreterFinalizing() bool { return tools.ProcessShuttingDown(nil) }
+func interpreterFinalizing() bool { return tools.InterpreterShuttingDown(nil) }
 
 // Fatal shutdown error, gated on the RuntimeError type so other errors with similar text never match
 func isInterpreterShutdownError(err error) bool {
 	if err == nil || !(isPyRuntimeError(err) || errors.Is(err, tools.ErrPoolShutdown)) {
 		return false
 	}
-	return tools.ProcessShuttingDown(err)
+	return tools.InterpreterShuttingDown(err)
 }
 
 type moaPreparer interface {

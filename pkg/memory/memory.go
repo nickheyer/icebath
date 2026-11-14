@@ -15,6 +15,7 @@ func init() {
 	registerMemoryQueryRewrite()
 	registerMemoryPromptBlocks()
 	registerMemorySetupCommands()
+	registerMemoryProviderMigration()
 	registerProfileMemoryConfigClone()
 	registerMemoryTrim()
 	registerMemoryOAuthRoutes()

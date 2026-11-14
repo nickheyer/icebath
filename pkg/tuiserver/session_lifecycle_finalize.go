@@ -282,7 +282,7 @@ func finalizeSession(ctx context.Context, session *tuigateway.Session, endReason
 		tools.InterruptAsyncDelegationsForSession(key, lifecycleOwnSID(session, ""), "", endReason)
 	})
 	if tuiOwnsLifecycle && truthy(sessionKey) {
-		suppress(func() { tools.ClearSession(ctx, pyrepr.Str(sessionKey)) })
+		suppress(func() { tools.ClearSession(pyrepr.Str(sessionKey)) })
 	}
 	if a != nil {
 		suppress(func() { a.CancelBackgroundReview(fmt.Sprintf("session ended (%s)", endReason), "session ended") })

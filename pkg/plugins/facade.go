@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
@@ -251,7 +252,7 @@ func readManifest(pluginDir string) (map[string]any, error) {
 	return manifest, nil
 }
 
-// Whether a dir has a native or portable manifest
+// Whether a dir has a native or portable manifest or a package init file
 func looksLikePluginDir(target string) (bool, error) {
 	native, err := nativeManifestFile(target)
 	if err != nil {
@@ -260,8 +261,12 @@ func looksLikePluginDir(target string) (bool, error) {
 	if native != "" {
 		return true, nil
 	}
-	_, err = os.Stat(filepath.Join(target, "plugin.json"))
-	return err == nil, nil
+	for _, name := range []string{"plugin.json", "__init__.py"} {
+		if _, err := os.Stat(filepath.Join(target, name)); err == nil {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // Copies each example file to its real name without overwriting an existing file
@@ -332,13 +337,15 @@ func pluginSelectionVersion(h string) (string, error) {
 
 // Proposed selection change and where a refusal is reported
 type admitSetOptions struct {
+	ExtraDirs      []string
 	Console        *Console
 	Action         string
 	ExpectedConfig string
+	Plugin         string
 	Settled        []string
 }
 
-// Saves proposed enabled and disabled sets when config.yaml is unchanged since they were read, reporting a refusal
+// Admits proposed enabled and disabled sets through the one PM transaction, reporting a refusal
 func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map[string]bool, opts admitSetOptions) error {
 	dir, err := pluginsDir(h)
 	if err != nil {
@@ -348,11 +355,19 @@ func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map
 	if action == "" {
 		action = "enable"
 	}
-	err = admitPluginSetChange(ctx, enabled, disabled, admitOptions{ActivePluginsDir: dir, ExpectedConfig: opts.ExpectedConfig, Settled: opts.Settled})
+	err = admitPluginSetChange(ctx, enabled, disabled, admitOptions{ActivePluginsDir: dir, ExtraDirs: opts.ExtraDirs,
+		ExpectedConfig: opts.ExpectedConfig, Plugin: opts.Plugin, Settled: opts.Settled})
+	var conflict *DependencyConflict
 	var refused *AdmissionRefused
-	if err != nil && opts.Console != nil && errors.As(err, &refused) {
+	switch {
+	case err == nil || opts.Console == nil:
+	case errors.As(err, &conflict):
+		opts.Console.Print("[red]✗[/red] " + pyrich.Escape(conflict.Error()))
+		opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
+	case errors.As(err, &refused):
 		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, refused.Error()))
-		opts.Console.Print("[dim]config.yaml is unchanged.[/dim]")
+		opts.Console.Print("[dim]config.yaml and the active environment are unchanged. " +
+			"Run `icebath pm install` to resolve dependencies, then retry.[/dim]")
 	}
 	return err
 }

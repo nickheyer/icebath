@@ -1,9 +1,8 @@
 package weixin
 
 import (
-	"strings"
-
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var envEnableCredentials = []string{"WEIXIN_TOKEN", "WEIXIN_ACCOUNT_ID"}
@@ -20,8 +19,8 @@ var envOverrides = []gateway.EnvStep{
 		Home: "WEIXIN_HOME_CHANNEL", HomeStrip: true},
 }
 
-// Lowercased env value
-func lower(value string) any { return strings.ToLower(value) }
+// Lowercases an env value the way str lower does
+func lower(value string) any { return pystr.Lower(value) }
 
 var authz = map[string]any{"allowed_users_env": "WEIXIN_ALLOWED_USERS", "allow_all_env": "WEIXIN_ALLOW_ALL_USERS",
 	"own_policy_env": []string{"WEIXIN_DM_POLICY", "WEIXIN_GROUP_POLICY"}, "allowlist_suppresses_pairing": true}

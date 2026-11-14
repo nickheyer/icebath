@@ -131,6 +131,7 @@ var approvalState = struct {
 	denialOrder         []string
 	gatewayQueues       map[string][]*ApprovalEntry
 	gatewayNotify       map[string]GatewayNotifyFunc
+	permissionReleasers []func(sessionKey string)
 	sessionClosers      []func(sessionKey string)
 }{
 	pending:           map[string]PendingApproval{},
@@ -416,6 +417,13 @@ func ApproveSession(sessionKey, patternKey string) {
 	set[patternKey] = true
 }
 
+// RegisterPermissionModeReleaser adds a hook run on both yolo edges and at session clear
+func RegisterPermissionModeReleaser(fn func(sessionKey string)) {
+	approvalState.Lock()
+	defer approvalState.Unlock()
+	approvalState.permissionReleasers = append(approvalState.permissionReleasers, fn)
+}
+
 // RegisterSessionCloser adds a hook run when a session's approval state is cleared
 func RegisterSessionCloser(fn func(sessionKey string)) {
 	approvalState.Lock()
@@ -423,21 +431,18 @@ func RegisterSessionCloser(fn func(sessionKey string)) {
 	approvalState.sessionClosers = append(approvalState.sessionClosers, fn)
 }
 
-// Releases the computer use backend whose fixed permission mode derived from the session yolo flag
-func releasePermissionModeDependents(ctx context.Context, sessionKey string) {
-	if ReleaseComputerUseSession == nil {
-		return
+// Drops resources whose immutable permission mode derives from yolo
+func releasePermissionModeDependents(sessionKey string) {
+	approvalState.Lock()
+	hooks := append([]func(string){}, approvalState.permissionReleasers...)
+	approvalState.Unlock()
+	for _, fn := range hooks {
+		fn(sessionKey)
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			toolsLogger(nil).Debug("failed to release permission mode dependent resources", "session", sessionKey, "error", r)
-		}
-	}()
-	ReleaseComputerUseSession(ctx, sessionKey)
 }
 
 // Flips the session yolo flag and releases mode dependent resources
-func setSessionYolo(ctx context.Context, sessionKey string, enabled bool) {
+func setSessionYolo(sessionKey string, enabled bool) {
 	if sessionKey == "" {
 		return
 	}
@@ -448,14 +453,14 @@ func setSessionYolo(ctx context.Context, sessionKey string, enabled bool) {
 		delete(approvalState.sessionYolo, sessionKey)
 	}
 	approvalState.Unlock()
-	releasePermissionModeDependents(ctx, sessionKey)
+	releasePermissionModeDependents(sessionKey)
 }
 
 // EnableSessionYolo enables the approval bypass for one session key
-func EnableSessionYolo(ctx context.Context, sessionKey string) { setSessionYolo(ctx, sessionKey, true) }
+func EnableSessionYolo(sessionKey string) { setSessionYolo(sessionKey, true) }
 
 // DisableSessionYolo disables the approval bypass for one session key
-func DisableSessionYolo(ctx context.Context, sessionKey string) { setSessionYolo(ctx, sessionKey, false) }
+func DisableSessionYolo(sessionKey string) { setSessionYolo(sessionKey, false) }
 
 // MarkLaunchYoloApplied records the launch yolo seed once per session, false when already seeded
 func MarkLaunchYoloApplied(sessionKey string) bool {
@@ -469,7 +474,7 @@ func MarkLaunchYoloApplied(sessionKey string) bool {
 }
 
 // ClearSession removes every approval, yolo, pending, and gateway state of a session
-func ClearSession(ctx context.Context, sessionKey string) {
+func ClearSession(sessionKey string) {
 	if sessionKey == "" {
 		return
 	}
@@ -485,7 +490,7 @@ func ClearSession(ctx context.Context, sessionKey string) {
 	delete(approvalState.gatewayQueues, sessionKey)
 	closers := append([]func(string){}, approvalState.sessionClosers...)
 	approvalState.Unlock()
-	releasePermissionModeDependents(ctx, sessionKey)
+	releasePermissionModeDependents(sessionKey)
 	for _, fn := range closers {
 		fn(sessionKey)
 	}

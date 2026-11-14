@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -39,7 +40,7 @@ func loadDashboardMemoryProvider(ctx context.Context, name string) memory.Provid
 
 // Plugin manifest of a memory provider, empty when it cannot be read
 func memoryProviderManifest(ctx context.Context, name string) map[string]any {
-	manifest, err := memory.MemoryProviderManifest(ctx, memoryToolsEnv(ctx), name)
+	manifest, _, err := memory.MemoryProviderDependencyInputs(ctx, memoryToolsEnv(ctx), name)
 	if err != nil {
 		webServerLog().Debug(fmt.Sprintf("Failed to read memory provider manifest for %s", name), "exc", err)
 		return map[string]any{}
@@ -62,12 +63,14 @@ func memoryStringList(value any) []any {
 	return out
 }
 
-// Setup display of a provider with the external tools and env vars its manifest declares
-func memoryProviderSetupManifest(ctx context.Context, name string) (*pyjson.Object, error) {
-	manifest, err := memory.MemoryProviderManifest(ctx, memoryToolsEnv(ctx), name)
+// Setup display of a provider and the venv inputs its dependency readiness is probed with
+func memoryProviderSetupManifest(ctx context.Context, name string) (*pyjson.Object, *pm.SyncVenvOptions, error) {
+	env := memoryToolsEnv(ctx)
+	manifest, inputs, err := memory.MemoryProviderDependencyInputs(ctx, env, name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	pluginDir := memory.FindProviderDir(ctx, env, name)
 	external := []any{}
 	if raw, ok := manifest["external_dependencies"].([]any); ok {
 		for _, item := range raw {
@@ -87,20 +90,44 @@ func memoryProviderSetupManifest(ctx context.Context, name string) (*pyjson.Obje
 			}
 		}
 	}
+	pipDeps := []any{}
+	if pluginDir != "" {
+		decl, err := pm.ReadPythonDeclaration(pluginDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		reqs, err := decl.InstallRequirements()
+		if err != nil {
+			return nil, nil, err
+		}
+		pipDeps = stringsAny(reqs)
+	}
 	return pyjson.ObjectOf(
+		"pip_dependencies", pipDeps,
+		"python_dependencies_declared", inputs != nil,
 		"external_dependencies", external,
 		"required_env", memoryStringList(manifest["requires_env"]),
-	), nil
+	), inputs, nil
 }
 
-// Setup display of a provider with whether its external dependencies are installed
+// Setup display of a provider with whether its Python and external dependencies are installed
 func memoryProviderSetupInfo(ctx context.Context, name string) *pyjson.Object {
-	setup, err := memoryProviderSetupManifest(ctx, name)
+	setup, inputs, err := memoryProviderSetupManifest(ctx, name)
 	if err != nil {
-		webServerLog().Debug(fmt.Sprintf("Invalid manifest for %s", name), "exc", err)
-		return pyjson.ObjectOf("external_dependencies", []any{}, "required_env", []any{}, "dependencies_installed", false)
+		webServerLog().Debug(fmt.Sprintf("Invalid dependency declaration for %s", name), "exc", err)
+		return pyjson.ObjectOf("pip_dependencies", []any{}, "python_dependencies_declared", true,
+			"external_dependencies", []any{}, "required_env", []any{}, "dependencies_installed", false)
 	}
-	setup.Set("dependencies_installed", memoryProviderExternalDependenciesInstalled(ctx, setup))
+	pythonReady := true
+	if inputs != nil {
+		current, err := pm.VenvIsCurrent(ctx, pm.VenvIsCurrentOptions{ProjectRoot: inputs.ProjectRoot, Extras: inputs.Extras, Plugins: inputs.Plugins})
+		if err != nil {
+			webServerLog().Debug(fmt.Sprintf("Could not read dependency state for %s", name), "exc", err)
+			current = false
+		}
+		pythonReady = current
+	}
+	setup.Set("dependencies_installed", pythonReady && memoryProviderExternalDependenciesInstalled(ctx, setup))
 	return setup
 }
 

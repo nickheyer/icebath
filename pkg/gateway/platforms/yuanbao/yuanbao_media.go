@@ -9,28 +9,34 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	uploadInfoPath = "/api/resource/genUploadInfo"
-	mediaMaxSizeMB = 50
+	UploadInfoPath   = "/api/resource/genUploadInfo"
+	DefaultAPIDomain = "yuanbao.tencent.com"
+	DefaultMaxSizeMB = 50
 )
 
-var mimeToImageFormat = map[string]uint32{
+var mimeToImageFormat = map[string]int64{
 	"image/jpeg": 1, "image/jpg": 1, "image/gif": 2, "image/png": 3, "image/bmp": 4,
 	"image/webp": 255, "image/heic": 255, "image/tiff": 255,
 }
@@ -48,126 +54,183 @@ var extToMIME = map[string]string{
 	".mp3": "audio/mpeg", ".mp4": "video/mp4", ".wav": "audio/wav", ".ogg": "audio/ogg", ".webm": "video/webm",
 }
 
-var imageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true,
-	".heic": true, ".tiff": true, ".ico": true}
+var imageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true, ".heic": true, ".tiff": true, ".ico": true}
 
-// Last path element of a slash or backslash separated name
-func baseName(name string) string {
-	return name[strings.LastIndexAny(name, `/\`)+1:]
+func ext(filename string) string {
+	_, e := pypath.Splitext(filename)
+	return pystr.Lower(e)
 }
 
-// Lowercased extension of the last path element, empty for a dot file without one
-func fileExt(name string) string {
-	base := strings.TrimLeft(baseName(name), ".")
-	if i := strings.LastIndexByte(base, '.'); i >= 0 {
-		return strings.ToLower(base[i:])
-	}
-	return ""
-}
-
-// MIME type of a file name by extension, octet stream when unknown
-func guessMIME(name string) string {
-	if m, ok := extToMIME[fileExt(name)]; ok {
+// GuessMIMEType maps a file extension to its MIME type, octet-stream when unknown
+func GuessMIMEType(filename string) string {
+	if m, ok := extToMIME[ext(filename)]; ok {
 		return m
 	}
 	return "application/octet-stream"
 }
 
-// Whether the MIME type or the extension names an image
-func isImage(name, mime string) bool {
-	return strings.HasPrefix(mime, "image/") || imageExts[fileExt(name)]
+// IsImage reports an image MIME prefix or an image extension
+func IsImage(filename, mimeType string) bool {
+	return strings.HasPrefix(mimeType, "image/") || imageExts[ext(filename)]
 }
 
-// TIM image format number of a MIME type, 255 when unknown
-func imageFormat(mime string) uint32 {
-	if f, ok := mimeToImageFormat[strings.ToLower(mime)]; ok {
+// GetImageFormat is the TIM image format number, 255 when unknown
+func GetImageFormat(mimeType string) int64 {
+	if f, ok := mimeToImageFormat[pystr.Lower(mimeType)]; ok {
 		return f
 	}
 	return 255
 }
 
-func md5Hex(data []byte) string {
+// MD5Hex is the hex md5 digest of the bytes
+func MD5Hex(data []byte) string {
 	sum := md5.Sum(data)
 	return hex.EncodeToString(sum[:])
 }
 
-// Hex string of n random bytes
-func randomHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
+// GenerateFileID returns 32 random hex characters
+func GenerateFileID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
-// Width and height from a PNG, JPEG, GIF or WebP header
-func imageSize(buf []byte) (uint32, uint32, bool) {
-	switch {
-	case len(buf) >= 24 && bytes.Equal(buf[:4], []byte("\x89PNG")):
-		return binary.BigEndian.Uint32(buf[16:20]), binary.BigEndian.Uint32(buf[20:24]), true
-	case len(buf) >= 4 && buf[0] == 0xFF && buf[1] == 0xD8:
-		for i := 2; i < len(buf)-9; {
-			switch {
-			case buf[i] != 0xFF:
-				i++
-			case buf[i+1] == 0xC0 || buf[i+1] == 0xC2:
-				return uint32(binary.BigEndian.Uint16(buf[i+7 : i+9])), uint32(binary.BigEndian.Uint16(buf[i+5 : i+7])), true
-			default:
-				i += 2 + int(binary.BigEndian.Uint16(buf[i+2:i+4]))
-			}
-		}
-	case len(buf) >= 10 && (string(buf[:6]) == "GIF87a" || string(buf[:6]) == "GIF89a"):
-		return uint32(binary.LittleEndian.Uint16(buf[6:8])), uint32(binary.LittleEndian.Uint16(buf[8:10])), true
-	case len(buf) >= 16 && string(buf[:4]) == "RIFF" && string(buf[8:12]) == "WEBP":
-		le24 := func(b []byte) uint32 { return uint32(b[0]) | uint32(b[1])<<8 | uint32(b[2])<<16 }
-		switch chunk := string(buf[12:16]); {
-		case chunk == "VP8 " && len(buf) >= 30 && bytes.Equal(buf[23:26], []byte{0x9d, 0x01, 0x2a}):
-			return uint32(binary.LittleEndian.Uint16(buf[26:28]) & 0x3FFF), uint32(binary.LittleEndian.Uint16(buf[28:30]) & 0x3FFF), true
-		case chunk == "VP8L" && len(buf) >= 25 && buf[20] == 0x2F:
-			bits := binary.LittleEndian.Uint32(buf[21:25])
-			return bits&0x3FFF + 1, (bits>>14)&0x3FFF + 1, true
-		case chunk == "VP8X" && len(buf) >= 30:
-			return le24(buf[24:27]) + 1, le24(buf[27:30]) + 1, true
+// ImageSize is the width and height parsed from an image header
+type ImageSize struct{ Width, Height int64 }
+
+func parsePNGSize(buf []byte) *ImageSize {
+	if len(buf) < 24 || !bytes.Equal(buf[:4], []byte("\x89PNG")) {
+		return nil
+	}
+	return &ImageSize{int64(binary.BigEndian.Uint32(buf[16:20])), int64(binary.BigEndian.Uint32(buf[20:24]))}
+}
+
+func parseJPEGSize(buf []byte) *ImageSize {
+	if len(buf) < 4 || buf[0] != 0xFF || buf[1] != 0xD8 {
+		return nil
+	}
+	i := 2
+	for i < len(buf)-9 {
+		switch {
+		case buf[i] != 0xFF:
+			i++
+		case buf[i+1] == 0xC0 || buf[i+1] == 0xC2:
+			h, w := binary.BigEndian.Uint16(buf[i+5:i+7]), binary.BigEndian.Uint16(buf[i+7:i+9])
+			return &ImageSize{int64(w), int64(h)}
+		case i+3 < len(buf):
+			i += 2 + int(binary.BigEndian.Uint16(buf[i+2:i+4]))
+		default:
+			return nil
 		}
 	}
-	return 0, 0, false
+	return nil
 }
 
-// Body and content type of a public URL fetched behind the SSRF guard within the size cap
-func downloadURL(ctx context.Context, rawURL string, maxSizeMB int64) ([]byte, string, error) {
-	env := gateway.URLSafetyEnv(ctx)
+func parseGIFSize(buf []byte) *ImageSize {
+	if len(buf) < 10 || (string(buf[:6]) != "GIF87a" && string(buf[:6]) != "GIF89a") {
+		return nil
+	}
+	return &ImageSize{int64(binary.LittleEndian.Uint16(buf[6:8])), int64(binary.LittleEndian.Uint16(buf[8:10]))}
+}
+
+func le24(b []byte) int64 { return int64(b[0]) | int64(b[1])<<8 | int64(b[2])<<16 }
+
+func parseWebPSize(buf []byte) *ImageSize {
+	if len(buf) < 16 || string(buf[:4]) != "RIFF" || string(buf[8:12]) != "WEBP" {
+		return nil
+	}
+	switch chunk := string(buf[12:16]); {
+	case chunk == "VP8 " && len(buf) >= 30 && bytes.Equal(buf[23:26], []byte{0x9d, 0x01, 0x2a}):
+		w, h := binary.LittleEndian.Uint16(buf[26:28]), binary.LittleEndian.Uint16(buf[28:30])
+		return &ImageSize{int64(w & 0x3FFF), int64(h & 0x3FFF)}
+	case chunk == "VP8L" && len(buf) >= 25 && buf[20] == 0x2F:
+		bits := binary.LittleEndian.Uint32(buf[21:25])
+		return &ImageSize{int64(bits&0x3FFF) + 1, int64((bits>>14)&0x3FFF) + 1}
+	case chunk == "VP8X" && len(buf) >= 30:
+		return &ImageSize{le24(buf[24:27]) + 1, le24(buf[27:30]) + 1}
+	}
+	return nil
+}
+
+// ParseImageSize reads the width and height of a PNG, JPEG, GIF or WebP header, nil when unrecognized
+func ParseImageSize(data []byte) *ImageSize {
+	for _, parse := range []func([]byte) *ImageSize{parsePNGSize, parseJPEGSize, parseGIFSize, parseWebPSize} {
+		if s := parse(data); s != nil {
+			return s
+		}
+	}
+	return nil
+}
+
+// Unwraps the url.Error around a redirect guard failure so the ValueError text stands alone
+func requestError(err error) error {
+	var uerr *url.Error
+	if errors.As(err, &uerr) && strings.HasPrefix(uerr.Err.Error(), "Blocked redirect to private/internal address: ") {
+		return uerr.Err
+	}
+	return fmt.Errorf("%s", pyhttpx.ErrorText(err))
+}
+
+// DownloadURL fetches a public URL behind the SSRF guard within the size cap and returns the bytes and content type
+func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB int64) ([]byte, string, error) {
 	if !tools.IsSafeURL(env, rawURL) {
-		return nil, "", fmt.Errorf("blocked unsafe URL (SSRF protection): %s", rawURL)
+		return nil, "", fmt.Errorf("Blocked unsafe URL (SSRF protection): %s", rawURL)
 	}
 	maxBytes := maxSizeMB * 1024 * 1024
 	client := tools.NewSSRFSafeClient(env, 30*time.Second, true)
-	if head, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil); err == nil {
-		if resp, err := client.Do(head); err == nil {
-			resp.Body.Close()
-			if resp.ContentLength > maxBytes {
-				return nil, "", fmt.Errorf("file too large: %.1f MB > %d MB", float64(resp.ContentLength)/1024/1024, maxSizeMB)
-			}
-		}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
 	if err != nil {
 		return nil, "", err
 	}
-	resp, err := client.Do(req)
+	head, err := pyhttpx.Do(client, headReq, 30*time.Second)
+	if err != nil {
+		return nil, "", requestError(err)
+	}
+	lengthValue := any(pyhttpx.HeaderGet(head.Header, "content-length", ""))
+	if !pyrepr.Truthy(lengthValue) {
+		lengthValue = int64(0)
+	}
+	contentLength, err := pyint.Of(lengthValue)
 	if err != nil {
 		return nil, "", err
+	}
+	if contentLength.Sign() > 0 && contentLength.Cmp(big.NewInt(maxBytes)) > 0 {
+		mb, _ := new(big.Float).Quo(new(big.Float).SetInt(contentLength), big.NewFloat(1024*1024)).Float64()
+		return nil, "", fmt.Errorf("文件过大: %.1f MB > %d MB", mb, maxSizeMB)
+	}
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	resp, err := pyhttpx.Stream(client, getReq, 30*time.Second)
+	if err != nil {
+		return nil, "", requestError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, "", fmt.Errorf("download of %s failed with HTTP %d", rawURL, resp.StatusCode)
+		return nil, "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return nil, "", err
+	contentType := pystr.Strip(strings.SplitN(pyhttpx.HeaderGet(resp.Header, "content-type", ""), ";", 2)[0])
+	var out []byte
+	buf := make([]byte, 65536)
+	for {
+		n, rerr := io.ReadFull(resp.Body, buf)
+		if n > 0 {
+			if int64(len(out)+n) > maxBytes {
+				return nil, "", fmt.Errorf("文件过大: 已超过 %d MB 限制", maxSizeMB)
+			}
+			out = append(out, buf[:n]...)
+		}
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+			break
+		}
+		if rerr != nil {
+			return nil, "", requestError(rerr)
+		}
 	}
-	if int64(len(data)) > maxBytes {
-		return nil, "", fmt.Errorf("file too large: exceeds the %d MB limit", maxSizeMB)
-	}
-	contentType, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
-	return data, strings.TrimSpace(contentType), nil
+	return out, contentType, nil
 }
 
 func hmacSHA1Hex(key, msg string) string {
@@ -176,111 +239,82 @@ func hmacSHA1Hex(key, msg string) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-// Percent encoding of every byte outside the unreserved set, slashes kept when keepSlash
-func percentEncode(s string, keepSlash bool) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-', c == '_', c == '.', c == '~',
-			c == '/' && keepSlash:
-			b.WriteByte(c)
-		default:
-			fmt.Fprintf(&b, "%%%02X", c)
-		}
+// Lowercased keys with fully percent encoded values in lexical order of the pairs
+func sortedKV(d [][2]string) [][2]string {
+	out := make([][2]string, len(d))
+	for i, kv := range d {
+		out[i] = [2]string{pystr.Lower(kv[0]), pyurl.Quote(kv[1], "")}
 	}
-	return b.String()
-}
-
-// q-sign-algorithm sha1 COS Authorization header over the method, path and signed headers
-func cosSign(method, signPath string, headers [][2]string, secretID, secretKey string, start, expire int64) string {
-	signTime := strconv.FormatInt(start, 10) + ";" + strconv.FormatInt(start+expire, 10)
-	signKey := hmacSHA1Hex(secretKey, signTime)
-	signed := make([][2]string, len(headers))
-	for i, p := range headers {
-		signed[i] = [2]string{strings.ToLower(p[0]), percentEncode(p[1], false)}
-	}
-	sort.Slice(signed, func(i, j int) bool {
-		if signed[i][0] != signed[j][0] {
-			return signed[i][0] < signed[j][0]
+	sort.Slice(out, func(i, j int) bool {
+		if out[i][0] != out[j][0] {
+			return out[i][0] < out[j][0]
 		}
-		return signed[i][1] < signed[j][1]
+		return out[i][1] < out[j][1]
 	})
-	kv, keys := make([]string, len(signed)), make([]string, len(signed))
-	for i, p := range signed {
-		kv[i], keys[i] = p[0]+"="+p[1], p[0]
+	return out
+}
+
+// CosSign builds the q-sign-algorithm=sha1 COS Authorization header from temporary credentials
+func CosSign(method, signPath string, params, headers [][2]string, secretID, secretKey string, startTime, expireSeconds *big.Int) string {
+	qSignTime := startTime.String() + ";" + new(big.Int).Add(startTime, expireSeconds).String()
+	signKey := hmacSHA1Hex(secretKey, qSignTime)
+	sortedParams, sortedHeaders := sortedKV(params), sortedKV(headers)
+	kv := func(pairs [][2]string) string {
+		parts := make([]string, len(pairs))
+		for i, p := range pairs {
+			parts[i] = p[0] + "=" + p[1]
+		}
+		return strings.Join(parts, "&")
 	}
-	headerKV, headerKeys := strings.Join(kv, "&"), strings.Join(keys, ";")
-	httpString := strings.Join([]string{strings.ToLower(method), signPath, "", headerKV, ""}, "\n")
+	keys := func(pairs [][2]string) string {
+		parts := make([]string, len(pairs))
+		for i, p := range pairs {
+			parts[i] = p[0]
+		}
+		return strings.Join(parts, ";")
+	}
+	httpString := strings.Join([]string{pystr.Lower(method), signPath, kv(sortedParams), kv(sortedHeaders), ""}, "\n")
 	digest := sha1.Sum([]byte(httpString))
-	stringToSign := strings.Join([]string{"sha1", signTime, hex.EncodeToString(digest[:]), ""}, "\n")
+	stringToSign := strings.Join([]string{"sha1", qSignTime, hex.EncodeToString(digest[:]), ""}, "\n")
 	return fmt.Sprintf("q-sign-algorithm=sha1&q-ak=%s&q-sign-time=%s&q-key-time=%s&q-header-list=%s&q-url-param-list=%s&q-signature=%s",
-		secretID, signTime, signTime, headerKeys, "", hmacSHA1Hex(signKey, stringToSign))
+		secretID, qSignTime, qSignTime, keys(sortedHeaders), keys(sortedParams), hmacSHA1Hex(signKey, stringToSign))
 }
 
-// Temporary COS upload credentials and target from genUploadInfo
-type cosCredentials struct {
-	Bucket, Region, Location, SecretID, SecretKey, SessionToken, ResourceURL string
-	StartTime, ExpiredTime                                                   int64
-}
+// Swappable clock and HTTP client for the COS calls
+var (
+	unixNow     = func() int64 { return time.Now().Unix() }
+	mediaClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+)
 
-// Text of a decoded JSON scalar, empty for null and containers
-func jsonText(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case json.Number:
-		return x.String()
-	case bool:
-		return strconv.FormatBool(x)
-	}
-	return ""
-}
-
-// Integer of a decoded JSON number or numeric string, zero otherwise
-func jsonInt(v any) int64 {
-	text := jsonText(v)
-	if n, err := strconv.ParseInt(text, 10, 64); err == nil {
-		return n
-	}
-	if f, err := strconv.ParseFloat(text, 64); err == nil {
-		return int64(f)
-	}
-	return 0
-}
-
-// Decoded JSON object of a body with numbers kept exact
-func decodeJSONObject(body []byte) (map[string]any, error) {
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	var out map[string]any
-	if err := dec.Decode(&out); err != nil {
-		return nil, err
-	}
-	if out == nil {
-		return nil, errors.New("response is not a JSON object")
-	}
-	return out, nil
-}
-
-// COS upload credentials for one file, X-ID naming the bot id or else the app key
-func getCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename, botID, routeEnv string) (*cosCredentials, error) {
-	payload, err := json.Marshal(struct {
-		FileName  string `json:"fileName"`
-		FileID    string `json:"fileId"`
-		DocFrom   string `json:"docFrom"`
-		DocOpenID string `json:"docOpenId"`
-	}{filename, randomHex(16), "localDoc", ""})
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(apiDomain, "/")+uploadInfoPath, bytes.NewReader(payload))
-	if err != nil {
-		return nil, err
-	}
+// GetCOSCredentials calls genUploadInfo for the temporary COS keys and upload target
+func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename string, fileID *string, botID, routeEnv string) (*pyjson.Object, error) {
 	xid := botID
 	if xid == "" {
 		xid = appKey
+	}
+	id := ""
+	if fileID != nil {
+		id = *fileID
+	} else {
+		generated, err := GenerateFileID()
+		if err != nil {
+			return nil, err
+		}
+		id = generated
+	}
+	body := pyjson.NewObject()
+	body.Set("fileName", filename)
+	body.Set("fileId", id)
+	body.Set("docFrom", "localDoc")
+	body.Set("docOpenId", "")
+	payload, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	if err != nil {
+		return nil, err
+	}
+	target := pystr.RstripChars(apiDomain, "/") + UploadInfoPath
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(payload))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Token", token)
@@ -289,139 +323,196 @@ func getCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename, 
 	if routeEnv != "" {
 		req.Header.Set("X-Route-Env", routeEnv)
 	}
-	resp, err := gateway.TrustEnvHTTPClient(ctx, 15*time.Second).Do(req)
+	resp, err := pyhttpx.Do(mediaClient(), req, 15*time.Second)
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+		return nil, requestError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("genUploadInfo returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
 	}
-	result, err := decodeJSONObject(body)
+	decoded, err := pyjson.LoadsBytes(resp.Content)
 	if err != nil {
-		return nil, fmt.Errorf("genUploadInfo response: %w", err)
+		return nil, err
 	}
-	if code, present := result["code"]; present && code != nil && jsonText(code) != "0" {
-		return nil, fmt.Errorf("genUploadInfo failed: code=%s, msg=%s", jsonText(code), jsonText(result["msg"]))
+	result, ok := decoded.(*pyjson.Object)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
 	}
-	data, ok := result["data"].(map[string]any)
-	if !ok || len(data) == 0 {
-		data = result
+	if code, present := result.Get("code"); present && code != nil && !pyjson.Equal(code, int64(0)) {
+		msg, ok := result.Get("msg")
+		if !ok {
+			msg = ""
+		}
+		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 失败: code=%s, msg=%s", pyrepr.Str(code), pyrepr.Str(msg))}
 	}
-	creds := &cosCredentials{Bucket: jsonText(data["bucketName"]), Region: jsonText(data["region"]), Location: jsonText(data["location"]),
-		SecretID: jsonText(data["encryptTmpSecretId"]), SecretKey: jsonText(data["encryptTmpSecretKey"]),
-		SessionToken: jsonText(data["encryptToken"]), ResourceURL: jsonText(data["resourceUrl"]),
-		StartTime: jsonInt(data["startTime"]), ExpiredTime: jsonInt(data["expiredTime"])}
-	var missing []string
-	if creds.Bucket == "" {
-		missing = append(missing, "bucketName")
+	dataValue, _ := result.Get("data")
+	if !pyrepr.Truthy(dataValue) {
+		dataValue = result
 	}
-	if creds.Location == "" {
-		missing = append(missing, "location")
+	data, ok := dataValue.(*pyjson.Object)
+	if !ok {
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(dataValue))
 	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("genUploadInfo response is missing %s", strings.Join(missing, ", "))
-	}
-	return creds, nil
-}
-
-// Uploaded COS object with its public URL, content digest, size and image dimensions
-type cosUpload struct {
-	URL           string
-	UUID          string
-	Size          uint32
-	Width, Height uint32
-}
-
-// PUTs the bytes to COS through the accelerate host signed with the temporary credentials
-func uploadToCOS(ctx context.Context, data []byte, filename, contentType string, creds *cosCredentials) (*cosUpload, error) {
-	if creds.SecretID == "" || creds.SecretKey == "" || creds.Location == "" {
-		return nil, fmt.Errorf("incomplete COS credentials: secretId=%t, secretKey=%t, location=%t",
-			creds.SecretID != "", creds.SecretKey != "", creds.Location != "")
-	}
-	host := creds.Bucket + ".cos.accelerate.myqcloud.com"
-	encodedKey := strings.TrimLeft(percentEncode(creds.Location, true), "/")
-	cosURL := "https://" + host + "/" + encodedKey
-	if contentType == "" || contentType == "application/octet-stream" {
-		contentType = "application/octet-stream"
-		if isImage(filename, "") {
-			contentType = guessMIME(filename)
+	var missing []any
+	for _, f := range []string{"bucketName", "location"} {
+		if v, _ := data.Get(f); !pyrepr.Truthy(v) {
+			missing = append(missing, f)
 		}
 	}
-	now := time.Now().Unix()
-	start, expire := now, int64(3600)
-	if creds.StartTime != 0 {
-		start = creds.StartTime
+	if len(missing) > 0 {
+		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 返回字段不完整: 缺少字段 %s", pyrepr.Repr(missing))}
 	}
-	if creds.ExpiredTime > now {
-		expire = creds.ExpiredTime - now
+	return data, nil
+}
+
+// RuntimeError is a Python RuntimeError raised by the media helpers
+type RuntimeError struct{ Msg string }
+
+func (e *RuntimeError) Error() string { return e.Msg }
+
+func credGet(c *pyjson.Object, key string) any {
+	if v, ok := c.Get(key); ok {
+		return v
 	}
-	authorization := cosSign("put", "/"+encodedKey,
-		[][2]string{{"host", host}, {"content-type", contentType}, {"x-cos-security-token", creds.SessionToken}},
-		creds.SecretID, creds.SecretKey, start, expire)
-	slog.Info(fmt.Sprintf("[Yuanbao] COS PUT: bucket=%s region=%s key=%s size=%d mime=%s", creds.Bucket, creds.Region,
-		creds.Location, len(data), contentType))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, cosURL, bytes.NewReader(data))
+	return ""
+}
+
+func credStr(c *pyjson.Object, key string) (string, error) {
+	v := credGet(c, key)
+	if s, ok := v.(string); ok {
+		return s, nil
+	}
+	if !pyrepr.Truthy(v) {
+		return "", nil
+	}
+	return pyrepr.Str(v), nil
+}
+
+// UploadToCOS PUTs the bytes to COS signed with the temporary credentials and returns url, uuid, size and image size
+func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType string, credentials *pyjson.Object, bucket, region string) (*pyjson.Object, error) {
+	secretID, _ := credStr(credentials, "encryptTmpSecretId")
+	secretKey, _ := credStr(credentials, "encryptTmpSecretKey")
+	sessionToken, _ := credStr(credentials, "encryptToken")
+	cosKey, _ := credStr(credentials, "location")
+	startTime, _ := credentials.Get("startTime")
+	expiredTime, _ := credentials.Get("expiredTime")
+	if secretID == "" || secretKey == "" || cosKey == "" {
+		return nil, &RuntimeError{fmt.Sprintf("COS credentials 不完整: secretId=%s, secretKey=%s, location=%s",
+			pyrepr.Str(secretID != ""), pyrepr.Str(secretKey != ""), pyrepr.Str(cosKey != ""))}
+	}
+	cosHost := bucket + ".cos.accelerate.myqcloud.com"
+	encodedKey := pystr.LstripChars(pyurl.Quote(cosKey, "/"), "/")
+	cosURL := "https://" + cosHost + "/" + encodedKey
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = "application/octet-stream"
+		if IsImage(filename, "") {
+			contentType = GuessMIMEType(filename)
+		}
+	}
+	now := big.NewInt(unixNow())
+	start := now
+	if pyrepr.Truthy(startTime) {
+		n, ok := pyint.Instance(startTime)
+		if !ok {
+			return nil, fmt.Errorf("unsupported operand type(s) for +: '%s' and 'int'", pyrepr.TypeName(startTime))
+		}
+		start = n
+	}
+	expire := big.NewInt(3600)
+	if pyrepr.Truthy(expiredTime) {
+		n, ok := pyint.Instance(expiredTime)
+		if !ok {
+			return nil, fmt.Errorf("'>' not supported between instances of '%s' and 'int'", pyrepr.TypeName(expiredTime))
+		}
+		if n.Cmp(now) > 0 {
+			expire = new(big.Int).Sub(n, now)
+		}
+	}
+	authorization := CosSign("put", "/"+encodedKey, nil,
+		[][2]string{{"host", cosHost}, {"content-type", contentType}, {"x-cos-security-token", sessionToken}},
+		secretID, secretKey, start, expire)
+	slog.Info(fmt.Sprintf("COS PUT: bucket=%s region=%s key=%s size=%d mime=%s", bucket, region, cosKey, len(fileBytes), contentType))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, cosURL, bytes.NewReader(fileBytes))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("x-cos-security-token", creds.SessionToken)
-	resp, err := gateway.TrustEnvHTTPClient(ctx, 120*time.Second).Do(req)
+	req.Header.Set("x-cos-security-token", sessionToken)
+	resp, err := pyhttpx.Do(mediaClient(), req, 120*time.Second)
 	if err != nil {
-		return nil, err
+		return nil, requestError(err)
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("COS upload returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
 	}
-	out := &cosUpload{URL: creds.ResourceURL, UUID: md5Hex(data), Size: uint32(len(data))}
-	if out.URL == "" {
-		out.URL = cosURL
+	resultURL := credGet(credentials, "resourceUrl")
+	if !pyrepr.Truthy(resultURL) {
+		resultURL = cosURL
 	}
+	result := pyjson.NewObject()
+	result.Set("url", resultURL)
+	result.Set("uuid", MD5Hex(fileBytes))
+	result.Set("size", int64(len(fileBytes)))
 	if strings.HasPrefix(contentType, "image/") {
-		out.Width, out.Height, _ = imageSize(data)
-	}
-	slog.Info(fmt.Sprintf("[Yuanbao] COS upload done: url=%s size=%d", out.URL, len(data)))
-	return out, nil
-}
-
-// TIMImageElem of an uploaded original image
-func imageElem(up *cosUpload, mime string) msgElem {
-	return msgElem{Type: "TIMImageElem", Content: msgContent{UUID: up.UUID, ImageFormat: imageFormat(mime),
-		Images: []imageInfo{{Type: 1, Size: up.Size, Width: up.Width, Height: up.Height, URL: up.URL}}}}
-}
-
-// TIMFileElem of an uploaded file
-func fileElem(up *cosUpload, filename string) msgElem {
-	return msgElem{Type: "TIMFileElem", Content: msgContent{UUID: up.UUID, FileName: filename, FileSize: up.Size, URL: up.URL}}
-}
-
-// TIMTextElem of a text
-func textElem(text string) msgElem {
-	return msgElem{Type: textElemType, Content: msgContent{Text: text}}
-}
-
-// Resource id query parameter of a Yuanbao resource URL, empty when absent
-func parseResourceID(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	q := u.Query()
-	for _, key := range []string{"resourceId", "resourceid"} {
-		if vs := q[key]; len(vs) > 0 {
-			return strings.TrimSpace(vs[0])
+		if size := ParseImageSize(fileBytes); size != nil {
+			result.Set("width", size.Width)
+			result.Set("height", size.Height)
 		}
 	}
-	return ""
+	slog.Info(fmt.Sprintf("COS 上传成功: url=%s size=%d", pyrepr.Str(resultURL), len(fileBytes)))
+	return result, nil
+}
+
+func basenameFromURL(rawURL string) string {
+	u, err := pyurl.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return pypath.Basename(u.Path)
+}
+
+// BuildImageMsgBody builds a TIMImageElem body, uuid falling back to the filename, the URL basename, then image
+func BuildImageMsgBody(rawURL, uuid, filename string, size, width, height int64, mimeType string) []any {
+	id := uuid
+	for _, c := range []string{filename, basenameFromURL(rawURL), "image"} {
+		if id != "" {
+			break
+		}
+		id = c
+	}
+	format := int64(255)
+	if mimeType != "" {
+		format = GetImageFormat(mimeType)
+	}
+	info := pyjson.NewObject()
+	info.Set("type", int64(1))
+	info.Set("size", size)
+	info.Set("width", width)
+	info.Set("height", height)
+	info.Set("url", rawURL)
+	content := pyjson.NewObject()
+	content.Set("uuid", id)
+	content.Set("image_format", format)
+	content.Set("image_info_array", []any{info})
+	el := pyjson.NewObject()
+	el.Set("msg_type", "TIMImageElem")
+	el.Set("msg_content", content)
+	return []any{el}
+}
+
+// BuildFileMsgBody builds a TIMFileElem body, uuid falling back to the filename
+func BuildFileMsgBody(rawURL, filename, uuid string, size int64) []any {
+	if uuid == "" {
+		uuid = filename
+	}
+	content := pyjson.NewObject()
+	content.Set("uuid", uuid)
+	content.Set("file_name", filename)
+	content.Set("file_size", size)
+	content.Set("url", rawURL)
+	el := pyjson.NewObject()
+	el.Set("msg_type", "TIMFileElem")
+	el.Set("msg_content", content)
+	return []any{el}
 }

@@ -684,7 +684,7 @@ func openReadonlyStore(dbPath string) (*sql.DB, error) {
 }
 
 // Why the gateway still needs a retained tree, session, cron or unreadable, empty when nothing serves it
-func treeStillServed(ctx context.Context, dbPath, worktreePath string) string {
+func treeStillServed(dbPath, worktreePath string) string {
 	chats := map[string]bool{}
 	if isRegularFile(dbPath) {
 		err := func() error {
@@ -723,7 +723,7 @@ func treeStillServed(ctx context.Context, dbPath, worktreePath string) string {
 			return "unreadable"
 		}
 	}
-	if cronBoundToTree(ctx, worktreePath, chats) {
+	if cronBoundToTree(worktreePath, chats) {
 		return "cron"
 	}
 	return ""
@@ -743,14 +743,14 @@ func sqlText(v any) string {
 
 // Installed by pkg/cron at init over the current store, the jobs.json path, its parsed payload and the runnable non terminal test
 var WorktreeCronStore struct {
-	JobsFile  func(ctx context.Context) string
+	JobsFile  func() string
 	ParseJobs func(path string) (any, error)
 	JobActive func(job *pyjson.Object) bool
 }
 
 // Whether an enabled non terminal cron job runs inside the tree or is bound to a local chat of a session there
-func cronBoundToTree(ctx context.Context, worktreePath string, chats map[string]bool) bool {
-	jobsFile := WorktreeCronStore.JobsFile(ctx)
+func cronBoundToTree(worktreePath string, chats map[string]bool) bool {
+	jobsFile := WorktreeCronStore.JobsFile()
 	if _, err := os.Stat(jobsFile); err != nil {
 		if os.IsNotExist(err) {
 			return false

@@ -20,12 +20,13 @@ import (
 
 // Discovery sources in precedence order, bundled first so a provider dropped in a tree never shadows a shipped one
 const (
-	SourceBundled = "bundled"
-	SourceUser    = "user"
-	SourceProject = "project"
+	SourceBundled    = "bundled"
+	SourceUser       = "user"
+	SourceProject    = "project"
+	SourceEntryPoint = "entry_point"
 )
 
-var sourceRank = map[string]int{SourceBundled: 0, SourceUser: 1, SourceProject: 2}
+var sourceRank = map[string]int{SourceBundled: 0, SourceUser: 1, SourceProject: 2, SourceEntryPoint: 3}
 
 // Config key recording the plugins an update turned off and why
 const disabledByUpdateRecord = "disabled_by_update"
@@ -113,7 +114,7 @@ func (s *ProviderConfigSchema) InlineFields() []ProviderField {
 	return out
 }
 
-// Rebuilds a schema that crossed the plugin wire as plain data, nil for an empty record
+// Rebuilds a schema that crossed the plugin host boundary as plain data, nil for an empty record
 func ProviderConfigSchemaFromRecord(record map[string]any) (*ProviderConfigSchema, error) {
 	if len(record) == 0 {
 		return nil, nil
@@ -292,11 +293,11 @@ type ProviderCLI struct {
 	Handler func(cmd *cobra.Command, args []string) error
 }
 
-// One discoverable memory provider, bundled ones compiled in and external ones loaded from runtime plugin directories
+// One discoverable memory provider, bundled ones compiled in and external ones installed by the plugin host
 type ProviderRegistration struct {
 	Name   string
 	Source string
-	// Provider directory of a runtime plugin, its base name one of the disabled list spellings
+	// Provider directory of a non bundled source, its base name one of the disabled list spellings
 	Dir string
 	// Home whose plugins directory supplied a user source provider
 	Home string
@@ -306,10 +307,10 @@ type ProviderRegistration struct {
 	Manifest     string
 	New          func(ctx context.Context, env *tools.Env, opts LoadOptions) (Provider, error)
 	ConfigSchema func(ctx context.Context) (*ProviderConfigSchema, error)
-	OAuth        OAuthFlow
-	CLI          *ProviderCLI
-	// Copies the provider's per profile settings into a new profile, true when it copied any
-	ProfileClone func(ctx context.Context, profileName string) (bool, error)
+	// config_schema.py the plugin host runs for ConfigSchema, no schema while it is not a file
+	SchemaFile string
+	OAuth      OAuthFlow
+	CLI        *ProviderCLI
 }
 
 // Description from the plugin manifest, empty when absent or unreadable
@@ -355,7 +356,7 @@ func RegisterProvider(reg ProviderRegistration) {
 	registrations = append(registrations, &r)
 }
 
-// Removes the registrations of a source, a home restricting it to that home's registrations
+// Removes external registrations of a source, used when the plugin host rescans its directories
 func UnregisterProviders(source, homeDir string) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -462,7 +463,11 @@ func DiscoverMemoryProviders(ctx context.Context, env *tools.Env) []DiscoveredPr
 			continue
 		}
 		seen[r.Name] = true
-		out = append(out, DiscoveredProvider{Name: r.Name, Description: r.Description(), Available: probeAvailability(ctx, env, r)})
+		description := ""
+		if r.Source != SourceEntryPoint {
+			description = r.Description()
+		}
+		out = append(out, DiscoveredProvider{Name: r.Name, Description: description, Available: probeAvailability(ctx, env, r)})
 	}
 	return out
 }
@@ -505,10 +510,10 @@ func loadMemoryProvider(ctx context.Context, env *tools.Env, name string, regist
 	log := envLog(env)
 	r := FindProvider(ctx, env, name)
 	if r == nil {
-		log.Debug(fmt.Sprintf("Memory provider '%s' not found in bundled or user plugins", name))
+		log.Debug(fmt.Sprintf("Memory provider '%s' not found in bundled, user plugins, or entry points", name))
 		return nil
 	}
-	if explicitlyDisabled(ctx, env, r) {
+	if hasProviderDir(r) && explicitlyDisabled(ctx, env, r) {
 		notice, _ := ParkedProviderNotice(ctx, env, name)
 		log.Warn(notice)
 		return nil
@@ -592,6 +597,11 @@ func providerSpellings(r *ProviderRegistration) map[string]bool {
 	return names
 }
 
+// Whether a registration has a provider directory, entry points only when their package directory resolved
+func hasProviderDir(r *ProviderRegistration) bool {
+	return r.Source != SourceEntryPoint || r.Dir != ""
+}
+
 // True when a non bundled provider is parked in plugins.disabled under any of its spellings
 func explicitlyDisabled(ctx context.Context, env *tools.Env, r *ProviderRegistration) bool {
 	if r.Source == SourceBundled {
@@ -617,7 +627,7 @@ func explicitlyDisabled(ctx context.Context, env *tools.Env, r *ProviderRegistra
 // User facing reason a configured provider is not loading because plugins.disabled parks it, false when not parked
 func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (string, bool) {
 	r := FindProvider(ctx, env, name)
-	if r == nil || !explicitlyDisabled(ctx, env, r) {
+	if r == nil || !hasProviderDir(r) || !explicitlyDisabled(ctx, env, r) {
 		return "", false
 	}
 	why := ""
@@ -636,6 +646,9 @@ func ParkedProviderNotice(ctx context.Context, env *tools.Env, name string) (str
 func GetProviderConfigSchema(ctx context.Context, env *tools.Env, name string) *ProviderConfigSchema {
 	r := FindProvider(ctx, env, name)
 	if r == nil || r.ConfigSchema == nil {
+		return nil
+	}
+	if r.SchemaFile != "" && !isRegularFile(r.SchemaFile) {
 		return nil
 	}
 	key := r.Source + "\x00" + homeKey(r.Home) + "\x00" + r.Dir + "\x00" + r.Name
@@ -683,36 +696,31 @@ func ProviderOAuthFlow(ctx context.Context, env *tools.Env, name string) (OAuthF
 		return r.OAuth, nil
 	}
 	if r.Dir == "" {
-		return nil, fmt.Errorf("memory provider %s has no oauth flow: %w", pyRepr(name), errNoOAuthFlow)
+		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
 	}
-	obj, err := plugins.LoadGuestMemoryProvider(ctx, name, r.Dir, false, nil)
+	mod, err := ImportProviderModule(ctx, name, "oauth_flow")
+	var importErr *ProviderImportError
+	if errors.As(err, &importErr) || plugins.RemoteIsInstance(err, "ImportError") {
+		return nil, fmt.Errorf("memory provider %s has no oauth_flow: %w", pyRepr(name), errNoOAuthFlow)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if obj == nil || !obj.HasMethod(guestOAuthStart) || !obj.HasMethod(guestOAuthStatus) {
-		return nil, fmt.Errorf("memory provider %s has no oauth flow: %w", pyRepr(name), errNoOAuthFlow)
-	}
-	return guestOAuthFlow{obj: obj}, nil
+	return hostedOAuthFlow{mod: mod}, nil
 }
 
-// Methods a guest memory provider implements to offer the dashboard OAuth connect flow
-const (
-	guestOAuthStart  = "start_loopback_flow_background"
-	guestOAuthStatus = "get_flow_status"
-)
+// OAuth flow module of a user provider package living in the plugin host
+type hostedOAuthFlow struct{ mod *plugins.HostedObject }
 
-// OAuth connect flow of a guest memory provider, run by the provider object in its guest
-type guestOAuthFlow struct{ obj *plugins.HostedObject }
-
-func (f guestOAuthFlow) StartLoopbackFlowBackground(ctx context.Context) (any, error) {
-	return f.obj.Call(ctx, guestOAuthStart, nil, nil)
+func (f hostedOAuthFlow) StartLoopbackFlowBackground(ctx context.Context) (any, error) {
+	return f.mod.Call(ctx, "start_loopback_flow_background", nil, nil)
 }
 
-func (f guestOAuthFlow) FlowStatus(ctx context.Context) (any, error) {
-	return f.obj.Call(ctx, guestOAuthStatus, nil, nil)
+func (f hostedOAuthFlow) FlowStatus(ctx context.Context) (any, error) {
+	return f.mod.Call(ctx, "get_flow_status", nil, nil)
 }
 
-// Whether an OAuth flow lookup failed because the provider is absent or ships no flow
+// Whether an OAuth flow lookup failed because the provider is absent or ships no flow, the ImportError of hermes
 func OAuthFlowUnsupported(err error) bool {
 	return errors.Is(err, errProviderNotInstalled) || errors.Is(err, errNoOAuthFlow)
 }
@@ -750,6 +758,9 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 		return nil
 	}
 	cli := r.CLI
+	if cli == nil && r.Source != SourceBundled && r.Dir != "" {
+		cli = hostedProviderCLI(ctx, env, r)
+	}
 	if cli == nil || cli.Setup == nil {
 		return nil
 	}
@@ -763,17 +774,3 @@ func DiscoverPluginCLICommands(ctx context.Context, env *tools.Env) []PluginCLIC
 
 // Provider registry registers nothing at import, bundled providers register from their own files
 func registerMemoryProviderRegistry() {}
-
-// Refusal a provider raises when the profile config may not be written
-type ConfigWriteRefused struct{ Msg string }
-
-func (e *ConfigWriteRefused) Error() string { return e.Msg }
-
-// Copies the honcho provider settings into a new profile, false when honcho is not installed or keeps none for the profile
-func CloneHonchoForProfile(ctx context.Context, profileName string) (bool, error) {
-	r := FindProvider(ctx, nil, "honcho")
-	if r == nil || r.ProfileClone == nil {
-		return false, nil
-	}
-	return r.ProfileClone(ctx, profileName)
-}

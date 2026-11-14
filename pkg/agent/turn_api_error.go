@@ -68,7 +68,7 @@ func handleAPIError(ctx context.Context, a *AIAgent, s *LoopState, apiError erro
 		captureRefusedCredits(a, *e.statusCode, apiError)
 	}
 
-	if tools.ProcessShuttingDown(apiError) {
+	if tools.InterpreterShuttingDown(apiError) {
 		conversationLoopLog().Warn(fmt.Sprintf("%sInterpreter is shutting down — abandoning turn during API call #%d (%s)", a.logPrefix, s.APICallCount, apiError))
 		summary := "Turn abandoned: the process was shutting down before the model call could complete."
 		return PhaseVerdict{Action: "return", Result: map[string]any{

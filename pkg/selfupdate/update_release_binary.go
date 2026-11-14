@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -16,9 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
-// Release download and swap, source check and build revision of a release binary update
+// Release download and swap, checkout rebuild, source check and build revision, replaced by tests
 var (
 	releaseBinaryUpdate = install.UpdateBinary
+	checkoutBinaryBuild = buildCheckoutBinary
 	releaseSourceCheck  = CheckForUpdates
 	releaseCheckoutSHA  = updaterecord.ReadCheckoutSHA
 )
@@ -141,9 +143,51 @@ func sourceCheckoutBuildsBinary(root string) bool {
 	return err == nil && st.IsDir()
 }
 
-// Tells a source checkout the command that rebuilds icebath and its browser bundles from the updated code
-func announceCheckoutRebuild(w io.Writer, root string) {
-	if sourceCheckoutBuildsBinary(root) {
-		fmt.Fprintf(w, "→ Run make build in %s to rebuild icebath from the updated code\n", root)
+// Rebuilds the dashboard bundle and the checkout binary from the pulled source as setup-icebath does
+func buildCheckoutBinary(ctx context.Context, w io.Writer, root string) error {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		return fmt.Errorf("Go is required to rebuild %s (see go.mod for the version)", root)
 	}
+	run := func(env []string, args ...string) error {
+		cmd := exec.CommandContext(ctx, gobin, args...)
+		cmd.Dir, cmd.Stdout, cmd.Stderr = root, w, w
+		cmd.Env = append(os.Environ(), env...)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go %s: %w", strings.Join(args, " "), err)
+		}
+		return nil
+	}
+	fmt.Fprintln(w, "→ Building the dashboard bundle...")
+	if err := run(nil, "run", "./cmd/icebath-build", "web"); err != nil {
+		return err
+	}
+	binary := filepath.Join(root, filepath.Base(install.InstallBinaryPath(root)))
+	staged := binary + ".build"
+	fmt.Fprintln(w, "→ Building the icebath binary...")
+	if err := run([]string{"CGO_ENABLED=0"}, "build", "-tags", "webdist,goolm", "-trimpath", "-o", staged, "./cmd/icebath"); err != nil {
+		os.Remove(staged)
+		return err
+	}
+	if err := install.ReplaceFile(staged, binary); err != nil {
+		return fmt.Errorf("cannot place %s: %w", binary, err)
+	}
+	fmt.Fprintln(w, "✓ Built "+binary)
+	return nil
+}
+
+// Rebuilds a source checkout's binary after its code moved, the old binary left when the build fails
+func rebuildSourceCheckout(ctx context.Context, w io.Writer, root string) error {
+	if !sourceCheckoutBuildsBinary(root) {
+		return nil
+	}
+	if err := checkoutBinaryBuild(ctx, w, root); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		fmt.Fprintf(w, "✗ Rebuilding icebath failed (the code update itself succeeded): %s\n", launchErrorText(err))
+		fmt.Fprintln(w, "  Fix the error above, then run ./setup-icebath.sh or `icebath update` again.")
+		return &pm.SystemExit{Code: 1}
+	}
+	return nil
 }

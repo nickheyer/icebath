@@ -169,7 +169,7 @@ func syncSessionKeyAfterCompress(ctx context.Context, sid string, session *tuiga
 	session.Set("session_key", newSessionID)
 	suppress(func() {
 		suppress(func() { tools.UnregisterGatewayNotify(oldKey) })
-		tools.TransferSessionYolo(ctx, oldKey, newSessionID)
+		tools.TransferSessionYolo(oldKey, newSessionID)
 		suppress(func() {
 			tools.RegisterGatewayNotify(newSessionID, func(data map[string]any) error {
 				emitApprovalRequest(ctx, sid, data)

@@ -54,7 +54,7 @@ func (s *Store) writeUsageAudit(record *pyjson.Object) {
 
 // True when the process is tearing down and the error is a shutdown artefact
 func interpreterShuttingDown(err error) bool {
-	return tools.ProcessShuttingDown(err)
+	return tools.InterpreterShuttingDown(err)
 }
 
 // Cron folder and tick lock file of the profile

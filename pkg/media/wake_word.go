@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,9 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/openwakeword"
-	"github.com/nickheyer/icebath/pkg/internal/porcupine"
 	"github.com/nickheyer/icebath/pkg/media/speech"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
@@ -30,7 +30,7 @@ const WakeSampleRate = 16000
 const (
 	wakeDefaultConfirmationFrames = 3
 	wakeSilencePeak               = 10
-	wakeDefaultPhrase             = "hey icebath"
+	wakeBundledModelName          = "hey_hermes"
 )
 
 var (
@@ -42,17 +42,29 @@ var (
 	wakeSilenceAlertSeconds      = 10.0
 )
 
-// WakeProviderNames lists the provider aliases in declaration order
-var WakeProviderNames = []string{"porcupine", "sherpa", "sherpa-onnx", "kws", "open", "openwakeword", "oww", "local"}
-
-// WakeProviders maps every provider alias to the engine it selects
-var WakeProviders = map[string]string{
-	"porcupine": "porcupine", "sherpa": "sherpa", "sherpa-onnx": "sherpa", "kws": "sherpa", "open": "sherpa",
-	"openwakeword": "openwakeword", "oww": "openwakeword", "local": "openwakeword",
+// WakeProviderEntry names the engine class and the pm extra of one provider alias
+type WakeProviderEntry struct {
+	Engine string
+	Extra  string
 }
 
-// WakeProviderPreference is the auto resolution order of the wake engines, the phrase spotting engine first
-var WakeProviderPreference = []string{"sherpa", "openwakeword", "porcupine"}
+// WakeProviderNames lists the provider aliases in the order hermes declares them
+var WakeProviderNames = []string{"porcupine", "sherpa", "sherpa-onnx", "kws", "open", "openwakeword", "oww", "local"}
+
+// WakeProviders maps every provider alias to its engine class and pm extra
+var WakeProviders = map[string]WakeProviderEntry{
+	"porcupine":    {"_PorcupineEngine", "wake-porcupine"},
+	"sherpa":       {"_SherpaKwsEngine", "wake-sherpa"},
+	"sherpa-onnx":  {"_SherpaKwsEngine", "wake-sherpa"},
+	"kws":          {"_SherpaKwsEngine", "wake-sherpa"},
+	"open":         {"_SherpaKwsEngine", "wake-sherpa"},
+	"openwakeword": {"_OpenWakeWordEngine", "wake-openwakeword"},
+	"oww":          {"_OpenWakeWordEngine", "wake-openwakeword"},
+	"local":        {"_OpenWakeWordEngine", "wake-openwakeword"},
+}
+
+// WakeProviderPreference is the auto resolution order of the wake engines
+var WakeProviderPreference = []string{"openwakeword", "sherpa", "porcupine"}
 
 // WakeWordInUse reports another surface or process owning the wake word microphone
 type WakeWordInUse struct {
@@ -75,9 +87,14 @@ func (e *WakeWordError) Unwrap() error { return e.Cause }
 
 var wakeDefaults = map[string]any{
 	"enabled": false, "surface": "auto", "input_device": nil, "capture": "auto",
-	"provider": "auto", "phrase": wakeDefaultPhrase, "sensitivity": 0.6,
+	"provider": "auto", "phrase": "hey hermes", "sensitivity": 0.6,
 	"confirmation_frames": wakeDefaultConfirmationFrames, "start_new_session": true,
 }
+
+var wakeBundledModelAliases = map[string]bool{"": true, "hey_hermes": true, "hey hermes": true, "hermes": true}
+
+//go:embed wakewords/hey_hermes.tflite
+var wakeBundledModels embed.FS
 
 func wakeLog() *slog.Logger { return slog.Default().With("logger", "tools.wake_word") }
 
@@ -85,6 +102,11 @@ var (
 	wakeLoadConfig = func(ctx context.Context) (config.Tree, error) {
 		return config.LoadContext(ctx, home.Dir(ctx), config.Lookup(os.LookupEnv))
 	}
+	wakeSpeechSupported     = speech.Supported
+	wakeExtraSupported      = wakeEngineSupported
+	wakePMAvailable         = wakeEngineAvailable
+	wakeEnsureImport        = pm.EnsureImport
+	wakeLazyInstallsAllowed = pm.LazyInstallsAllowedFor
 	wakeSysPlatform         = sysPlatform
 	wakeAudioAvailable      = func() (bool, error) { return audioAvailable() }
 	wakeLocalInputReady     = localInputDeviceReady
@@ -94,6 +116,27 @@ var (
 	wakeGetTTSProvider      = func(cfg map[string]any) (string, error) { return getTTSProvider(cfg), nil }
 	wakeCheckTTS            = func(ctx context.Context) (bool, error) { return checkTTSRequirements(ctx, nil), nil }
 )
+
+// Shipped hey_hermes model written under the home cache on first use, the file pyopen-wakeword loads
+func bundledWakewordPath(ctx context.Context) (string, error) {
+	dir := filepath.Join(home.CacheDir(home.Dir(ctx)), "wakewords")
+	target := filepath.Join(dir, wakeBundledModelName+".tflite")
+	data, err := wakeBundledModels.ReadFile("wakewords/" + wakeBundledModelName + ".tflite")
+	if err != nil {
+		return "", err
+	}
+	if st, err := os.Stat(target); err == nil && st.Size() == int64(len(data)) {
+		return target, nil
+	}
+	if err := os.MkdirAll(dir, 0o777); err != nil {
+		return "", err
+	}
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return "", err
+	}
+	return target, os.Rename(tmp, target)
+}
 
 // LoadWakeWordConfig returns the wake_word config section shape guarded to a dict
 func LoadWakeWordConfig(ctx context.Context) map[string]any {
@@ -166,18 +209,24 @@ func pyCastFallback(err error) bool {
 	return errors.As(err, &e) && (e.Kind == "TypeError" || e.Kind == "ValueError")
 }
 
-// Configured provider alias, auto resolving to the first engine the support check and config allow
-func wakeProvider(cfg map[string]any, supported func(engine string) (bool, error)) (string, error) {
+// Configured provider alias, auto resolving to the first supported engine of the preference list
+func wakeProvider(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (string, error) {
 	provider := pystr.Lower(pystr.Strip(pyrepr.Str(wakeGet(cfg, "provider"))))
-	if provider != "" && provider != "auto" {
+	if provider == "" {
+		provider = "auto"
+	}
+	if provider != "auto" {
 		return provider, nil
 	}
+	if supported == nil {
+		supported = func(extra string) (bool, error) { return wakeExtraSupported(ctx, extra) }
+	}
 	for _, name := range WakeProviderPreference {
-		ok, err := supported(name)
+		ok, err := supported(WakeProviders[name].Extra)
 		if err != nil {
 			return "", err
 		}
-		if ok && (name != "openwakeword" || openWakeWordModel(cfg) != "") {
+		if ok {
 			return name, nil
 		}
 	}
@@ -207,7 +256,7 @@ func WakePhrase(ctx context.Context, cfg map[string]any) string {
 	if s := pyrepr.Str(wakeGet(cfg, "phrase")); s != "" {
 		return s
 	}
-	return wakeDefaultPhrase
+	return "hey hermes"
 }
 
 // ResolveCaptureMode picks local or client capture, a working backend mic winning under auto
@@ -503,24 +552,24 @@ func SilentAudioHint(details WakeInputDeviceDetails) string {
 	return fmt.Sprintf("Microphone delivers only silence from %s. %s, then toggle the wake word.", label, fix)
 }
 
-// Wake engine constructors by engine name
-var wakeEngineConstructors = map[string]func(ctx context.Context, cfg map[string]any) (WakeEngine, error){
-	"openwakeword": newOpenWakeWordEngine,
-	"sherpa":       newSherpaKwsEngine,
-	"porcupine":    newPorcupineEngine,
+// Wake engine constructors by class name, the table a test or plugin swaps one engine in
+var wakeEngineClasses = map[string]func(ctx context.Context, cfg map[string]any) (WakeEngine, error){
+	"_OpenWakeWordEngine": newOpenWakeWordEngine,
+	"_SherpaKwsEngine":    newSherpaKwsEngine,
+	"_PorcupineEngine":    newPorcupineEngine,
 }
 
-// Builds the engine of the resolved provider, an error for an unknown alias
-func wakeBuildEngine(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
-	provider, err := wakeProvider(cfg, wakeNativeSupport)
+// Builds the engine of the resolved provider, a ValueError for an unknown alias
+var wakeBuildEngine = func(ctx context.Context, cfg map[string]any) (WakeEngine, error) {
+	provider, err := wakeProvider(ctx, cfg, nil)
 	if err != nil {
 		return nil, err
 	}
-	engine, ok := WakeProviders[provider]
+	entry, ok := WakeProviders[provider]
 	if !ok {
-		return nil, &WakeWordError{Msg: "Unknown wake_word provider: " + pyrepr.StrRepr(provider)}
+		return nil, &WakeWordError{Class: "ValueError", Msg: "Unknown wake_word provider: " + pyrepr.StrRepr(provider)}
 	}
-	return wakeEngineConstructors[engine](ctx, cfg)
+	return wakeEngineClasses[entry.Engine](ctx, cfg)
 }
 
 // Whether an enabled speech to text provider is configured
@@ -557,38 +606,52 @@ type WakeRequirements struct {
 	Hint                string `json:"hint"`
 }
 
-// Whether this platform has a native build of an engine
-func wakeNativeSupport(engine string) (bool, error) {
-	switch engine {
-	case "sherpa":
-		return speech.Supported(), nil
-	case "openwakeword":
-		return openwakeword.Supported(), nil
-	case "porcupine":
-		return porcupine.Supported(), nil
+// Whether an engine can run on this platform, the compiled in sherpa engine by its library build
+func wakeEngineSupported(ctx context.Context, extra string) (bool, error) {
+	if extra == "wake-sherpa" {
+		return wakeSpeechSupported(), nil
 	}
-	return false, nil
+	return pm.ExtraSupported(ctx, extra)
 }
 
-// CheckWakeWordRequirements probes engine support, configuration, key, mic, STT and TTS, supported overriding the native build check
-func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supported func(engine string) (bool, error)) (WakeRequirements, error) {
+// Whether an engine's dependencies are present, the compiled in sherpa engine needing only its library build
+func wakeEngineAvailable(ctx context.Context, extra string) (bool, error) {
+	if extra == "wake-sherpa" {
+		return wakeSpeechSupported(), nil
+	}
+	return pm.Available(ctx, extra)
+}
+
+// CheckWakeWordRequirements probes engine support, deps, key, mic, STT and TTS without installing anything
+func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supported func(string) (bool, error)) (WakeRequirements, error) {
 	if cfg == nil {
 		cfg = LoadWakeWordConfig(ctx)
 	}
 	if supported == nil {
-		supported = wakeNativeSupport
+		supported = func(extra string) (bool, error) { return wakeExtraSupported(ctx, extra) }
 	}
-	provider, err := wakeProvider(cfg, supported)
+	provider, err := wakeProvider(ctx, cfg, supported)
 	if err != nil {
 		return WakeRequirements{}, err
 	}
-	engine := WakeProviders[provider]
-	platformOK, err := supported(engine)
+	feature := "wake-openwakeword"
+	switch provider {
+	case "porcupine":
+		feature = "wake-porcupine"
+	case "sherpa", "sherpa-onnx", "kws", "open":
+		feature = "wake-sherpa"
+	}
+	depsOK, err := wakePMAvailable(ctx, feature)
 	if err != nil {
 		return WakeRequirements{}, err
 	}
-	configOK := engine != "openwakeword" || openWakeWordModel(cfg) != ""
-	depsOK := platformOK && configOK
+	platformOK := depsOK
+	if !platformOK {
+		if platformOK, err = supported(feature); err != nil {
+			return WakeRequirements{}, err
+		}
+	}
+	lazyOK := wakeLazyInstallsAllowed(ctx)
 	audioOK := false
 	if depsOK {
 		if audioOK, err = wakeAudioAvailable(); err != nil {
@@ -598,35 +661,30 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 	keyOK := true
 	sttOK := wakeSTTReady(ctx)
 	ttsOK := wakeTTSReady(ctx)
-	captureMode := ResolveCaptureMode(ctx, cfg, false, false)
 	hint := ""
 	switch {
-	case engine == "":
-		hint = "Unknown wake_word.provider " + pyrepr.StrRepr(provider) + ", use auto, sherpa, openwakeword or porcupine."
 	case !platformOK:
 		var alternatives []string
-		for _, name := range WakeProviderPreference {
-			ok, err := supported(name)
+		for _, name := range []string{"sherpa", "porcupine"} {
+			ok, err := supported(WakeProviders[name].Extra)
 			if err != nil {
 				return WakeRequirements{}, err
 			}
-			if ok && name != engine {
+			if ok {
 				alternatives = append(alternatives, name)
 			}
 		}
-		hint = fmt.Sprintf("The %s wake engine has no build for this platform.", provider)
+		hint = fmt.Sprintf("The %s wake engine is not supported on this platform.", provider)
 		if len(alternatives) > 0 {
 			hint += fmt.Sprintf(" Set wake_word.provider to %s.", strings.Join(alternatives, " or "))
 		}
-	case !configOK:
-		hint = "Set wake_word.openwakeword.model to a .tflite model file or a shipped openWakeWord model name."
-	case engine == "porcupine" && pystr.Strip(os.Getenv("PORCUPINE_ACCESS_KEY")) == "":
+	case provider == "porcupine" && pystr.Strip(os.Getenv("PORCUPINE_ACCESS_KEY")) == "":
 		keyOK = false
 		hint = "Set PORCUPINE_ACCESS_KEY (free key at https://console.picovoice.ai)."
-	case !audioOK && captureMode == "local":
-		hint = "No local microphone on this backend. Remote desktop can stream " +
-			"the client mic — set wake_word.capture: client or use a desktop " +
-			"build with client-capture wake support."
+	case !depsOK && !lazyOK:
+		hint = pm.InstallHint(feature)
+	case depsOK && !audioOK && ResolveCaptureMode(ctx, cfg, false, false) == "local":
+		hint = "Microphone capture needs the PortAudio library and a working audio device."
 	case !sttOK || !ttsOK:
 		var missing []string
 		if !sttOK {
@@ -638,9 +696,20 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		hint = fmt.Sprintf("Wake word needs %s configured — run `icebath tools` "+
 			"(Voice section) or see the voice-mode docs.", strings.Join(missing, " and "))
 	}
-	micOK := depsOK && (captureMode == "client" || audioOK)
+	captureMode := ResolveCaptureMode(ctx, cfg, false, false)
+	var micOK bool
+	if captureMode == "client" {
+		micOK = depsOK || lazyOK
+	} else {
+		micOK = (depsOK && audioOK) || (!depsOK && lazyOK)
+		if depsOK && !audioOK && hint == "" {
+			hint = "No local microphone on this backend. Remote desktop can stream " +
+				"the client mic — set wake_word.capture: client or use a desktop " +
+				"build with client-capture wake support."
+		}
+	}
 	return WakeRequirements{
-		Available: depsOK && keyOK && sttOK && ttsOK && micOK, Provider: provider,
+		Available: platformOK && keyOK && sttOK && ttsOK && micOK, Provider: provider,
 		DepsAvailable: depsOK, AudioAvailable: audioOK, LocalInputAvailable: depsOK && wakeLocalInputReady(),
 		Capture: captureMode, AccessKeySet: keyOK, STTAvailable: sttOK, TTSAvailable: ttsOK,
 		Phrase: WakePhrase(ctx, cfg), Hint: hint,

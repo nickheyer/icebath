@@ -286,13 +286,12 @@ func init() {
 		Schema:  DelegateTaskSchema,
 		Handler: func(ctx context.Context, call *Call) string {
 			args := call.Args
-			parent := ParentAgentFrom(ctx)
-			background := modelBackgroundValue(parent)
+			background := modelBackgroundValue(nil)
 			return DelegateTask(ctx, call.Env, DelegateTaskRequest{
 				Goal: args["goal"], Context: args["context"], Tasks: stripModelHiddenTaskFields(args["tasks"]),
 				MaxIterations: args["max_iterations"], Role: args["role"], Background: &background,
 				OutputSchema: args["output_schema"], Images: args["images"], Action: args["action"],
-				SubagentID: args["subagent_id"], Message: args["message"], ParentAgent: parent,
+				SubagentID: args["subagent_id"], Message: args["message"], ParentAgent: ParentAgentFrom(ctx),
 			})
 		},
 		Check:         checkDelegateRequirements,

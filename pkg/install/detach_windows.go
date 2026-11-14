@@ -4,6 +4,7 @@ package install
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -33,15 +34,24 @@ func hideConsole(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
-// Creates Start menu and Desktop shortcuts to the installed desktop executable
+// Grants AppContainer read access on the app dir and creates Start menu and Desktop shortcuts
 func (r *Runner) finishDesktopPlatform(ctx context.Context, exe string) {
 	appDir := filepath.Dir(exe)
+	if out, err := exec.CommandContext(ctx, "icacls", appDir, "/grant", "*S-1-15-2-2:(OI)(CI)(RX)", "/T", "/C", "/Q").CombinedOutput(); err == nil {
+		r.logInfo("Granted AppContainer read access on " + appDir)
+	} else {
+		r.logWarn("icacls AppContainer grant failed for " + appDir + ": " + strings.TrimSpace(string(out)))
+	}
+	icon := exe + ",0"
+	if _, err := os.Stat(filepath.Join(appDir, "resources", "icon.ico")); err == nil {
+		icon = filepath.Join(appDir, "resources", "icon.ico") + ",0"
+	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 	script := "$ErrorActionPreference='Stop'; $sh = New-Object -ComObject WScript.Shell; " +
 		"foreach ($dir in @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop'))) { " +
 		"if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }; " +
 		"$l = $sh.CreateShortcut((Join-Path $dir 'Icebath.lnk')); $l.TargetPath = " + quote(exe) + "; " +
-		"$l.WorkingDirectory = " + quote(appDir) + "; $l.IconLocation = " + quote(exe+",0") + "; $l.Save() }"
+		"$l.WorkingDirectory = " + quote(appDir) + "; $l.IconLocation = " + quote(icon) + "; $l.Save() }"
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	hideConsole(cmd)
 	if out, err := cmd.CombinedOutput(); err != nil {

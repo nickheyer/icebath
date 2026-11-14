@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -189,17 +190,62 @@ func guardedLoad(ctx context.Context, fn func(context.Context) (bool, error)) (o
 	return fn(ctx)
 }
 
-// Human readable load failure naming a recovered panic
+// Human readable load failure naming a recovered panic or a hosted sys.exit the way SystemExit is named
 func loadErrorText(err error) string {
 	var p *PluginPanicError
 	if errors.As(err, &p) {
-		return fmt.Sprintf("panic during register: %v", p.Value)
+		return fmt.Sprintf("SystemExit(%s) raised during import/register()", config.PyRepr(p.Value))
+	}
+	var exit *PluginSystemExit
+	if errors.As(err, &exit) {
+		return "SystemExit(" + exit.CodeRepr + ") raised during import/register()"
 	}
 	return err.Error()
 }
 
+// SystemExit a hosted import or register raised under in-process isolation, its code as the Python repr
+type PluginSystemExit struct{ CodeRepr string }
+
+func (e *PluginSystemExit) Error() string { return "SystemExit(" + e.CodeRepr + ")" }
+
+// Hosted import failure as an in-process load raises it, SystemExit caught by code and KeyboardInterrupt propagating
+func inProcessLoadFailure(ctx context.Context, err error) error {
+	var remote *PluginHostError
+	if !errors.As(err, &remote) || IsolationMode(ctx, nil) == IsolationHost {
+		return err
+	}
+	switch remote.TypeName {
+	case "SystemExit":
+		return &PluginSystemExit{CodeRepr: remote.ExitCode}
+	case "KeyboardInterrupt":
+		return &UserInterrupt{Err: err}
+	}
+	return err
+}
+
 // Why this icebath is not one the plugin accepts, empty when it fits
-func icebathFitError(mf *Manifest) string { return RequiresVersionError(mf.RequiresIcebath) }
+func icebathFitError(mf *Manifest) string {
+	if reason := RequiresVersionError(mf.RequiresIcebath); reason != "" {
+		return reason
+	}
+	if mf.Path == "" || !isDir(mf.Path) {
+		return ""
+	}
+	return coreRequirementError(mf.Path)
+}
+
+// Applicable core requirement refusal of a plugin directory, empty when its declaration cannot be read
+func coreRequirementError(pluginDir string) string {
+	declaration, err := pm.ReadPythonDeclaration(pluginDir)
+	if err != nil {
+		return ""
+	}
+	reason, err := pm.CoreRequirementError(context.Background(), declaration)
+	if err != nil {
+		return ""
+	}
+	return reason
+}
 
 // Warns without blocking on plugin settings that violate the manifest config schema
 func (m *Manager) validatePluginConfigSchema(mf *Manifest) {
@@ -277,7 +323,10 @@ func (m *Manager) loadPluginScoped(ctx context.Context, mf *Manifest) error {
 		}
 		plugin, ok := bundledPlugin(key)
 		if !ok || mf.Path != "" {
-			reason := UnknownPluginFormText
+			reason := "the plugin declares no runtime and entry; " + PluginFormsText
+			if isPythonPluginSource(mf) {
+				reason = "the plugin is Python source; " + PluginFormsText
+			}
 			attempt.fail(reason)
 			logWarn(fmt.Sprintf("Plugin '%s' not loaded: %s", mf.Name, reason))
 			return false, nil
@@ -375,9 +424,25 @@ func (m *Manager) storeLoaded(key string, loaded *LoadedPlugin) {
 	m.mu.Unlock()
 }
 
-// Whether a provides_locales plugin runs no code and is complete from its locale files
+// Reports whether a plugin directory or pip entry point carries Python source instead of a runtime entry
+func isPythonPluginSource(mf *Manifest) bool {
+	if mf.Source == "entrypoint" {
+		return true
+	}
+	return mf.Path != "" && (isFile(filepath.Join(mf.Path, "__init__.py")) || mf.PythonRuntime != "" || len(mf.PythonDeps) > 0)
+}
+
+// Error every path that would run Python plugin source returns
+func errPythonSource() error {
+	return &PluginHostUnsupported{Msg: "Python plugin source is not loaded; " + PluginFormsText}
+}
+
+// Refusal every loader of Python plugin source answers, no interpreter being hosted
+func (m *Manager) pluginHost() (*PluginHost, error) { return nil, errPythonSource() }
+
+// Whether a provides_locales plugin ships no Python and is complete from its locale files
 func isManifestOnlyLanguagePack(mf *Manifest) bool {
-	return len(mf.ProvidesLocales) > 0 && mf.Path != "" && !mf.HasEntry()
+	return len(mf.ProvidesLocales) > 0 && mf.Path != "" && !isFile(filepath.Join(mf.Path, "__init__.py"))
 }
 
 // Registers the locales directory of a provides_locales plugin, warning for a declared id with no file
@@ -569,8 +634,16 @@ func (m *Manager) directoryModuleName(mf *Manifest) string {
 	return bare + "__home_" + hex.EncodeToString(digest[:])[:12]
 }
 
-// Module prefix whose callbacks inherit the plugin policy
-func (m *Manager) policyModuleName(mf *Manifest) string { return m.directoryModuleName(mf) }
+// Module prefix whose callbacks inherit the plugin policy, the entry point module for a pip installed plugin
+func (m *Manager) policyModuleName(mf *Manifest) string {
+	if mf.Source == "entrypoint" && mf.Path != "" {
+		module, _, _ := strings.Cut(mf.Path, ":")
+		if module = pyStrip(module); module != "" {
+			return module
+		}
+	}
+	return m.directoryModuleName(mf)
+}
 
 // Runs a registrar body inside the replacement coordinator so snapshot, write and lease attach are one transaction
 func serializedReplacement(method func()) {
@@ -708,10 +781,11 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 	key := mf.ID()
 	declared := config.PyRepr(anyList(mf.ProvidesTools))
 	plugin, compiled := bundledPlugin(key)
-	guest := mf.Path != "" && manifestRuntime(mf) != ""
-	if !guest && (mf.Path != "" || !compiled) {
-		logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but is neither compiled in nor a runtime plugin; those tools will not be available in CLI/TUI sessions.", key, declared))
-		return
+	if mf.Path != "" || !compiled {
+		if mf.Path == "" || !isFile(filepath.Join(mf.Path, "tools.py")) {
+			logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but has no tools.py; those tools will not be available in CLI/TUI sessions.", key, declared))
+			return
+		}
 	}
 	m.mu.RLock()
 	before := map[string]bool{}
@@ -742,12 +816,12 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 		m.mu.Unlock()
 		pctx := newContext(mf, m)
 		pctx.module = moduleName
-		if guest {
-			host, err := m.guestHost(mf)
+		if mf.Path != "" || !compiled {
+			host, err := m.pluginHost()
 			if err != nil {
 				return err
 			}
-			file, err := host.LoadTools(ctx, mf, pctx)
+			file, err := host.LoadTools(ctx, mf, pctx, moduleName)
 			if err != nil {
 				return err
 			}
@@ -758,7 +832,7 @@ func (m *Manager) registerDeferredPlatformTools(ctx context.Context, mf *Manifes
 		} else {
 			registrar, ok := plugin.(ToolsRegistrar)
 			if !ok {
-				logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but registers no client tools ahead of its adapter; those tools will not be available in CLI/TUI sessions.", key, declared))
+				logWarn(fmt.Sprintf("Plugin '%s' declares provides_tools %s but its tools.py has no register_tools(ctx); those tools will not be available in CLI/TUI sessions.", key, declared))
 				return nil
 			}
 			if err := registrar.RegisterTools(pctx); err != nil {

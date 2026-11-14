@@ -11,7 +11,7 @@ import (
 // Bounded worker pool whose workers never hold the process open, each task running in its caller's context
 
 // ErrPoolShutdown is returned by Submit once the pool was shut down
-var ErrPoolShutdown = errors.New("pool is shut down")
+var ErrPoolShutdown = errors.New("cannot schedule new futures after shutdown")
 
 // ErrFutureCancelled is returned by a future that was cancelled before it ran
 var ErrFutureCancelled = errors.New("future cancelled")

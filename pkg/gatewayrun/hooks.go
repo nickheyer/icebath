@@ -45,10 +45,10 @@ type loadedHookDir struct {
 	description any
 }
 
-// Hook of a valid dir with the handler its runtime plugin registers, nil with the reason printed otherwise
+// Hook of a valid dir with its handler imported in the plugin host, nil with the reason printed otherwise
 func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
-	manifestPath := filepath.Join(hookDir, "HOOK.yaml")
-	if !pathExists(manifestPath) {
+	manifestPath, handlerPath := filepath.Join(hookDir, "HOOK.yaml"), filepath.Join(hookDir, "handler.py")
+	if !pathExists(manifestPath) || !pathExists(handlerPath) {
 		return nil, nil
 	}
 	raw, err := os.ReadFile(manifestPath)
@@ -80,7 +80,7 @@ func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
 		skipHook(hookName, "no events declared")
 		return nil, nil
 	}
-	handle, reason, err := plugins.LoadGatewayHook(ctx, hookName, hookDir)
+	handle, reason, err := plugins.LoadGatewayHook(ctx, hookName, handlerPath)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,20 @@ func loadHookDir(ctx context.Context, hookDir string) (*loadedHookDir, error) {
 	if v, ok := manifest["description"]; ok {
 		description = v
 	}
-	return &loadedHookDir{name: hookName, events: events, handle: hookHandler(handle), description: description}, nil
+	return &loadedHookDir{name: hookName, events: events, handle: hostedHookHandler(handle), description: description}, nil
+}
+
+// Handler calling the hosted handle, a TypeError on every call when the attribute is not callable
+func hostedHookHandler(handle any) hookHandler {
+	fn, ok := handle.(*plugins.HostedCallable)
+	if !ok {
+		return func(context.Context, string, map[string]any) (any, error) {
+			return nil, &pyTypeError{msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(handle))}
+		}
+	}
+	return func(ctx context.Context, eventType string, hookContext map[string]any) (any, error) {
+		return fn.Call(ctx, []any{eventType, hookContext}, nil)
+	}
 }
 
 // Whether the path exists

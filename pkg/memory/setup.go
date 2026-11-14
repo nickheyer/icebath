@@ -17,14 +17,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const setupCancelled = -1
 
 var (
-	setupReadManifest    = plugins.ReadManifestForInstall
-	setupFindProviderDir = FindProviderDir
+	setupReadManifest        = plugins.ReadManifestForInstall
+	setupSyncVenv            = pm.SyncVenv
+	setupRunningFromSelected = pm.RunningFromSelectedEnvironment
+	setupFindProviderDir     = FindProviderDir
 )
 
 type setupProvider struct {
@@ -147,20 +150,67 @@ func (m *MemorySetup) readPrompt(label, def string, secret bool) (string, error)
 	return val, nil
 }
 
-// Manifest of the provider plugin, empty for a provider compiled into icebath
-func MemoryProviderManifest(ctx context.Context, env *tools.Env, name string) (map[string]any, error) {
+// Manifest of the provider plugin and the extras and candidate members its preparation needs
+func MemoryProviderDependencyInputs(ctx context.Context, env *tools.Env, name string) (map[string]any, *pm.SyncVenvOptions, error) {
 	dir := setupFindProviderDir(ctx, env, name)
 	if dir == "" {
-		return map[string]any{}, nil
+		return map[string]any{}, nil, nil
 	}
-	return setupReadManifest(dir)
+	meta, err := setupReadManifest(dir)
+	member := false
+	if err == nil {
+		var decl *pm.PythonDeclaration
+		if decl, err = pm.ReadPythonDeclaration(dir); err == nil {
+			member, err = decl.InstallsPackages()
+		}
+	}
+	if err != nil {
+		return nil, nil, pm.NewInstallError(name, err.Error(), "")
+	}
+	var extras []string
+	if extra, ok := meta["extra"].(string); ok && extra != "" {
+		extras = []string{extra}
+	}
+	if len(extras) == 0 && !member {
+		return meta, nil, nil
+	}
+	opts := &pm.SyncVenvOptions{Extras: extras, Explicit: true}
+	if member {
+		opts.Plugins = &pm.Candidates{Dirs: []string{dir}}
+	}
+	return meta, opts, nil
 }
 
-// Prints install commands for the external tools the provider declares and this machine lacks
+// Syncs the provider's dependency union, installed or restart_required, empty when nothing needed preparing
+func PrepareMemoryProviderDependencies(ctx context.Context, env *tools.Env, name string) (map[string]any, string, error) {
+	meta, opts, err := MemoryProviderDependencyInputs(ctx, env, name)
+	if err != nil || opts == nil {
+		return meta, "", err
+	}
+	if err := setupSyncVenv(ctx, *opts); err != nil {
+		return nil, "", err
+	}
+	running, _, err := setupRunningFromSelected(ctx, pm.RepoRoot())
+	if err != nil {
+		return nil, "", err
+	}
+	if running {
+		return meta, "installed", nil
+	}
+	return meta, "restart_required", nil
+}
+
+// Prepares dependencies and prints install commands for missing external tools
 func (m *MemorySetup) installDeps(ctx context.Context, name string) error {
-	meta, err := MemoryProviderManifest(ctx, m.Env, name)
+	meta, status, err := PrepareMemoryProviderDependencies(ctx, m.Env, name)
 	if err != nil {
 		return err
+	}
+	if status != "" {
+		m.printf("  \u2713 Dependencies prepared for %s\n", name)
+		if status == "restart_required" {
+			m.printf("  Restart Icebath to use the prepared dependencies.\n")
+		}
 	}
 	deps, _ := meta["external_dependencies"].([]any)
 	for _, raw := range deps {
@@ -636,6 +686,12 @@ func (m *MemorySetup) Run(ctx context.Context, subcommand, provider string) (int
 		err = m.CmdSetupProvider(ctx, provider)
 	} else {
 		err = m.CmdSetup(ctx)
+	}
+	var installErr *pm.InstallError
+	if errors.As(err, &installErr) {
+		fmt.Fprintf(m.Stderr, "Memory setup failed: %s\n", installErr)
+		fmt.Fprintf(m.Stderr, "Correct the dependency error and retry setup.\n")
+		return 1, nil
 	}
 	return 0, err
 }

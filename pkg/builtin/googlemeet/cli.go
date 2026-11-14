@@ -27,6 +27,7 @@ var (
 	cliIn io.Reader = os.Stdin
 	// Handler meet subcommands run with their parsed namespace, swapped by tests
 	meetDispatch = meetCommand
+	pmSyncVenv   = pm.SyncVenv
 	pmEnsure     = pm.Ensure
 	lookPath     = exec.LookPath
 	// Runs a confirmed package manager command on the terminal, returning its exit code
@@ -58,8 +59,8 @@ func authStatePath(ctx context.Context) string {
 }
 
 var meetSubcommandHelp = [][2]string{
-	{"setup", "Preflight: bot driver, chromium, auth"},
-	{"install", "Install prerequisites (Chromium, platform audio tools)"},
+	{"setup", "Preflight: playwright, chromium, auth"},
+	{"install", "Install prerequisites (Python dependencies, Chromium, platform audio tools)"},
 	{"auth", "Sign in to Google and save session state"},
 	{"join", "Join a Meet URL"},
 	{"status", "Print current Meet bot state"},
@@ -234,9 +235,9 @@ func cmdSetup(ctx context.Context) int {
 	fmt.Fprintf(cliOut, "  platform       : %s  [%s]\n", system, state)
 	pwOK := meetDriverAvailable()
 	if pwOK {
-		fmt.Fprintln(cliOut, "  bot driver     : ok")
+		fmt.Fprintln(cliOut, "  playwright     : installed")
 	} else {
-		fmt.Fprintln(cliOut, "  bot driver     : missing from this icebath build")
+		fmt.Fprintln(cliOut, "  playwright     : NOT installed — run: icebath meet install")
 	}
 	chromiumOK, chromiumMsg := false, "unknown"
 	if pwOK {
@@ -288,7 +289,7 @@ func installPkgs(assumeYes bool, prompt string, argv []string, failMsg string) e
 	return nil
 }
 
-// Installs PM Chromium, plus platform audio tools with realtime
+// Installs the google-meet extra and PM Chromium, plus platform audio tools with realtime
 func cmdInstall(ctx context.Context, realtime, assumeYes bool) int {
 	system := pyplatform.System()
 	if system != "Linux" && system != "Darwin" {
@@ -296,13 +297,18 @@ func cmdInstall(ctx context.Context, realtime, assumeYes bool) int {
 		return 1
 	}
 	fmt.Fprintln(cliOut, "google_meet install\n-------------------")
-	fmt.Fprintln(cliOut, "\n[1/2] PM-managed Chromium")
+	fmt.Fprintln(cliOut, "\n[1/3] Python dependencies (google-meet extra)")
+	if err := pmSyncVenv(ctx, pm.SyncVenvOptions{Extras: []string{"google-meet"}, Explicit: true}); err != nil {
+		fmt.Fprintf(cliOut, "  dependency install failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintln(cliOut, "\n[2/3] PM-managed Chromium")
 	if _, err := pmEnsure(ctx, "chromium", pm.EnsureOptions{Explicit: true}); err != nil {
 		fmt.Fprintf(cliOut, "  Chromium install failed: %v\n", err)
 		return 1
 	}
 	if !realtime {
-		fmt.Fprintln(cliOut, "\n[2/2] skipped (pass --realtime to install audio tooling too)")
+		fmt.Fprintln(cliOut, "\n[3/3] skipped (pass --realtime to install audio tooling too)")
 	} else if err := installAudioTools(system, assumeYes); err != nil {
 		return uncaught(err)
 	}
@@ -312,7 +318,7 @@ func cmdInstall(ctx context.Context, realtime, assumeYes bool) int {
 
 // Step three of install, pulseaudio-utils on Linux or BlackHole and ffmpeg through brew on macOS
 func installAudioTools(system string, assumeYes bool) error {
-	fmt.Fprintln(cliOut, "\n[2/2] realtime audio deps")
+	fmt.Fprintln(cliOut, "\n[3/3] realtime audio deps")
 	have := func(name string) bool { _, err := lookPath(name); return err == nil }
 	switch system {
 	case "Linux":

@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,12 +18,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 const (
 	pluginDirStampTTL    = time.Second
 	pluginDirMtimeTickNS = int64(2_000_000_000)
+	pluginIsolationHost  = "host"
+	pluginIsolationInPro = "in_process"
 )
 
 // Bundled model provider plugin directories in sorted discovery order with the profiles each registers
@@ -318,11 +321,11 @@ func getProviderProfile(ctx context.Context, name string) *Profile {
 	}
 	discoverProviders(ctx)
 	layer, h, key := boundHomeLayer(ctx)
-	checked := refreshHomeLayer(ctx, layer, h, false)
+	checked := refreshHomeLayer(ctx, layer, h, key, false)
 	profile := layer.lookup(name)
 	isCustomRoute := strings.HasPrefix(strings.ToLower(name), "custom:")
 	if profile == nil && !isCustomRoute && !checked && missRecheckDue(layer, name) {
-		if refreshHomeLayer(ctx, layer, h, true) {
+		if refreshHomeLayer(ctx, layer, h, key, true) {
 			profile = layer.lookup(name)
 		}
 	}
@@ -385,7 +388,7 @@ func RegistryGeneration() int64 { return regGeneration.Load() }
 func BoundRegistryKey(ctx context.Context) (string, int64) {
 	discoverProviders(ctx)
 	layer, h, key := boundHomeLayer(ctx)
-	refreshHomeLayer(ctx, layer, h, false)
+	refreshHomeLayer(ctx, layer, h, key, false)
 	return key, regGeneration.Load()
 }
 
@@ -416,7 +419,7 @@ func profileForHostCtx(ctx context.Context, rawURL string, metadata bool) *Profi
 	}
 	discoverProviders(ctx)
 	layer, h, key := boundHomeLayer(ctx)
-	refreshHomeLayer(ctx, layer, h, false)
+	refreshHomeLayer(ctx, layer, h, key, false)
 	regMu.RLock()
 	shared := int64(len(regProfiles))
 	regMu.RUnlock()
@@ -550,8 +553,8 @@ func boundProfileResolver(ctx context.Context) profileResolve {
 
 // The bound home's layer after the plugin dir check
 func homeLayerFor(ctx context.Context, force bool) *homeLayer {
-	layer, h, _ := boundHomeLayer(ctx)
-	refreshHomeLayer(ctx, layer, h, force)
+	layer, h, key := boundHomeLayer(ctx)
+	refreshHomeLayer(ctx, layer, h, key, force)
 	return layer
 }
 
@@ -583,7 +586,7 @@ func boundHomeLayer(ctx context.Context) (*homeLayer, string, string) {
 }
 
 // Rescans the home's plugin dirs when their stamps moved, true when the check ran
-func refreshHomeLayer(ctx context.Context, layer *homeLayer, h string, force bool) bool {
+func refreshHomeLayer(ctx context.Context, layer *homeLayer, h, key string, force bool) bool {
 	now := registryMonotonic()
 	layer.mu.Lock()
 	due := force || layer.stampCheckedAt.IsZero() || now.Sub(layer.stampCheckedAt) >= pluginDirStampTTL
@@ -600,7 +603,7 @@ func refreshHomeLayer(ctx context.Context, layer *homeLayer, h string, force boo
 	layer.mu.Unlock()
 	if changed {
 		settled := pluginDirStampsSettled(stamps)
-		scanHomeLayerFn(ctx, layer, h)
+		scanHomeLayerFn(ctx, layer, h, key)
 		layer.mu.Lock()
 		if settled {
 			layer.stamps = stamps
@@ -713,8 +716,8 @@ func pyScalarStr(v any) string {
 	return fmt.Sprint(v)
 }
 
-// Loads every guest plugin dir of the home into its layer, user providers first then installed model-provider kinds
-func scanHomeLayer(ctx context.Context, layer *homeLayer, h string) {
+// Imports every plugin dir of the home into its layer, user providers first then installed model-provider kinds
+func scanHomeLayer(ctx context.Context, layer *homeLayer, h, key string) {
 	regScanDepth.Add(1)
 	defer regScanDepth.Add(-1)
 	userDir := filepath.Join(home.PluginsDir(h), "model-providers")
@@ -724,7 +727,7 @@ func scanHomeLayer(ctx context.Context, layer *homeLayer, h string) {
 			if strings.HasPrefix(name, "_") || strings.HasPrefix(name, ".") {
 				continue
 			}
-			importPluginDir(ctx, layer, child, "user")
+			importPluginDir(ctx, layer, child, "user", key)
 		}
 	}
 	installedDir := home.PluginsDir(h)
@@ -735,7 +738,7 @@ func scanHomeLayer(ctx context.Context, layer *homeLayer, h string) {
 				continue
 			}
 			if declaresModelProviderKind(child) {
-				importPluginDir(ctx, layer, child, "user")
+				importPluginDir(ctx, layer, child, "user", key)
 			}
 		}
 	}
@@ -758,28 +761,43 @@ func sortedChildDirs(dir string) []string {
 	return out
 }
 
-// Loads one home guest plugin dir into the layer, once per directory
-func importPluginDir(ctx context.Context, layer *homeLayer, pluginDir, source string) {
-	if plugins.GuestManifest(pluginDir) == nil {
+// Module name a home plugin imports under, unique per home
+func userModuleName(pluginDir, homeKey string) string {
+	sum := sha1.Sum([]byte(homeKey))
+	return "_icebath_user_provider_" + hex.EncodeToString(sum[:])[:10] + "_" + strings.ReplaceAll(filepath.Base(pluginDir), "-", "_")
+}
+
+// Loads one home plugin dir through the plugin host into the layer, once per module
+func importPluginDir(ctx context.Context, layer *homeLayer, pluginDir, source, homeKey string) {
+	if _, err := os.Stat(filepath.Join(pluginDir, "__init__.py")); err != nil {
 		return
 	}
+	moduleName := userModuleName(pluginDir, homeKey)
 	layer.mu.Lock()
-	done := layer.hosted[pluginDir]
+	done := layer.hosted[moduleName]
 	layer.mu.Unlock()
 	if done {
 		return
 	}
-	profiles, err := loadExternalProviderPluginFn(ctx, pluginDir)
+	hosted := isolationMode(LoadConfigSafe(ctx, home.Dir(ctx))) == pluginIsolationHost
+	profiles, err := loadExternalProviderPluginFn(ctx, pluginDir, source, homeKey)
 	for _, p := range profiles {
 		registerIntoLayer(layer, p)
 	}
-	noteLoadResult(layer, pluginDir, err)
 	if err != nil {
-		slog.Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
+		if hosted {
+			slog.Warn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), err))
+		} else {
+			slog.Warn(fmt.Sprintf("Failed to load %s provider plugin %s: %s", source, filepath.Base(pluginDir), err))
+		}
+		noteLoadResult(layer, pluginDir, err)
 		return
 	}
+	if !hosted {
+		noteLoadResult(layer, pluginDir, nil)
+	}
 	layer.mu.Lock()
-	layer.hosted[pluginDir] = true
+	layer.hosted[moduleName] = true
 	layer.mu.Unlock()
 }
 
@@ -803,6 +821,33 @@ func PluginLoadError(ctx context.Context, plugin string) string {
 	layer.mu.Lock()
 	defer layer.mu.Unlock()
 	return layer.errors[plugin]
+}
+
+// Plugin isolation mode from config, in process unless plugins.isolation names the host
+func isolationMode(cfg map[string]any) string {
+	if os.Getenv("ICEBATH_PLUGIN_HOST_PROCESS") == "1" {
+		return pluginIsolationInPro
+	}
+	plugins, _ := cfg["plugins"].(map[string]any)
+	raw, ok := plugins["isolation"]
+	if !ok || raw == nil || raw == "" || raw == false {
+		return pluginIsolationInPro
+	}
+	mode := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(pyScalarStr(raw))), "-", "_")
+	if mode != pluginIsolationHost && mode != pluginIsolationInPro {
+		slog.Warn(fmt.Sprintf("plugins.isolation=%s is not one of host, in_process; loading plugins in-process", pyRepr(raw)))
+		return pluginIsolationInPro
+	}
+	return mode
+}
+
+// Reason an in process import of third party code must not happen, empty when allowed
+func inProcessImportRefusal(cfg map[string]any, what string) string {
+	if isolationMode(cfg) != pluginIsolationHost {
+		return ""
+	}
+	return what + " runs only in-process, and plugins.isolation is 'host' (third-party plugin code " +
+		"never runs inside the icebath process); set plugins.isolation: in_process to load it"
 }
 
 // Names of a plugins config list as a set, nil when the key is not a list
@@ -892,7 +937,7 @@ var pluginDirStampsFn = pluginDirStamps
 var (
 	registryMonotonic = time.Now
 	registryWallNanos = func() int64 { return time.Now().UnixNano() }
-	scanHomeLayerFn   func(ctx context.Context, layer *homeLayer, h string)
+	scanHomeLayerFn   func(ctx context.Context, layer *homeLayer, h, key string)
 )
 
 // Discovery passes, replaced in tests running a cold discovery with their own registrations

@@ -3,6 +3,8 @@ package plugins
 import (
 	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +43,7 @@ func (h *PluginHost) networkDenied() bool { return h.envOverride[HostDenyNetwork
 
 var doctorManifestNames = []string{"plugin.yaml", "plugin.yml", "plugin.json"}
 
-var doctorStagingSkippedDirs = []string{".git"}
+var doctorStagingSkippedDirs = []string{".git", "__pycache__", ".pytest_cache"}
 
 // Tree copy the staging step runs, swapped by tests to observe or fail the copy
 var doctorCopyTree = func(src, dst string, ignore pyfs.IgnoreErrFunc) error {
@@ -77,7 +79,7 @@ func doctorStageCopy(source, staged string) error {
 			}
 		}
 		skipped := map[string]bool{}
-		for _, pattern := range doctorStagingSkippedDirs {
+		for _, pattern := range append(append([]string{}, doctorStagingSkippedDirs...), "*.pyc") {
 			for _, name := range fnmatch.Filter(names, pattern) {
 				skipped[name] = true
 			}
@@ -136,7 +138,11 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 	}
 	hctx := home.WithOverride(ctx, tmp)
 	manager := NewManager(tmp)
-	manager.guestEnv = map[string]string{home.EnvHome: tmp, "ICEBATH_BUNDLED_PLUGINS": bundled,
+	host, err := manager.pluginHost()
+	if err != nil {
+		return err
+	}
+	host.envOverride = map[string]string{home.EnvHome: tmp, "ICEBATH_BUNDLED_PLUGINS": bundled,
 		EnvEnableProjectPlugins: "0", HostDenyNetworkEnv: "1"}
 	scope := manager.home
 	entriesBefore := map[string]*tools.Def{}
@@ -165,9 +171,7 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 				tools.Default.RestorePluginOverridePolicy(policyModule, current, policyBefore, scope)
 			}
 		}
-		for _, host := range manager.GuestHosts() {
-			host.Shutdown()
-		}
+		host.Shutdown()
 	}()
 	manifests := scanDirectory(pluginsRoot, "user", nil, "", 0)
 	if len(manifests) == 0 {
@@ -178,14 +182,7 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 	}
 	mf := manifests[0]
 	if mf.Kind == "model-provider" {
-		registered, err := doctorLoadModelProvider(hctx, manager, staged)
-		if err != nil {
-			return err
-		}
-		return body(&doctorHost{manifest: mf, manager: manager, registeredProviders: registered})
-	}
-	if mf.Kind == "exclusive" {
-		registered, err := doctorLoadCategoryProviders(hctx, manager, mf)
+		registered, err := doctorLoadModelProvider(hctx, staged)
 		if err != nil {
 			return err
 		}
@@ -218,32 +215,30 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 		registeredHooks: append([]string{}, loadedCopy.HooksRegistered...)})
 }
 
-// Profile names a model-provider guest registers, loaded in a network denied guest
-func doctorLoadModelProvider(ctx context.Context, manager *Manager, pluginDir string) ([]string, error) {
-	mf, err := requireGuestManifest(pluginDir)
-	if err != nil {
-		return nil, &doctorLoadError{err.Error()}
-	}
-	inst, err := manager.guestProviderLoad(mf, "model_provider", nil, false, nil)
+// Module name a home provider plugin imports under, the provider registry formula with an empty home key
+func doctorProviderModuleName(pluginDir string) string {
+	sum := sha1.Sum([]byte(""))
+	return "_icebath_user_provider_" + hex.EncodeToString(sum[:])[:10] + "_" + strings.ReplaceAll(filepath.Base(pluginDir), "-", "_")
+}
+
+// Provider profile names a model-provider plugin registers at import, imported in a fresh network denied child
+func doctorLoadModelProvider(ctx context.Context, pluginDir string) ([]string, error) {
+	payload, err := cachedProfileExtraction(ctx, pluginDir, doctorProviderModuleName(pluginDir))
 	if err != nil {
 		return nil, err
 	}
-	items, _, err := inst.current(ctx)
-	if err != nil {
-		return nil, &doctorLoadError{"Plugin registration failed: " + err.Error()}
-	}
 	names := map[string]bool{}
-	for _, item := range items {
-		ref, _ := item["value"].(map[string]any)
-		if _, isObject := ref["__object__"]; !isObject {
-			return nil, &doctorLoadError{"model-provider plugin registered a provider that is not a profile object"}
-		}
-		if name := config.PyStr(mapOrEmpty(item["attrs"])["name"]); name != "" {
-			names[name] = true
+	if reason := payload["error"]; config.PyTruthy(reason) {
+		logWarn(fmt.Sprintf("Failed to load user provider plugin %s in the plugin host: %s", filepath.Base(pluginDir), config.PyStr(reason)))
+	} else {
+		for _, raw := range listOrEmpty(payload["profiles"]) {
+			if entry, ok := raw.(map[string]any); ok {
+				names[config.PyStr(entry["name"])] = true
+			}
 		}
 	}
 	if len(names) == 0 {
-		return nil, &doctorLoadError{"model-provider plugin registered no named model provider profile"}
+		return nil, &doctorLoadError{"model-provider plugin registered no ProviderProfile at import (see the warning above)"}
 	}
 	return sortedSet(names), nil
 }
@@ -300,7 +295,7 @@ func (r *PluginDoctorReport) FormatText() string {
 		lines = append(lines, fmt.Sprintf("  %s: %s", level, f.Message))
 	}
 	if r.OK() {
-		lines = append(lines, "  OK: discovery, manifest parsing, guest start and registration passed")
+		lines = append(lines, "  OK: runtime discovery, manifest parsing, import, and registration passed")
 	}
 	counts := fmt.Sprintf("  registrations: %d tool(s), %d hook(s)", len(r.RegisteredTools), len(r.RegisteredHooks))
 	if len(r.RegisteredProviders) > 0 {
@@ -715,37 +710,4 @@ func doctorErrorText(err error) string {
 		}
 	}
 	return err.Error()
-}
-
-// Provider kind and type of every category provider an exclusive guest declares in provides and registers
-func doctorLoadCategoryProviders(ctx context.Context, manager *Manager, mf *Manifest) ([]string, error) {
-	if !isGuestRuntime(manifestRuntime(mf)) {
-		return nil, &doctorLoadError{UnknownPluginFormText}
-	}
-	if len(mf.Provides) == 0 {
-		return nil, &doctorLoadError{"an exclusive plugin lists the provider kinds it supplies in provides"}
-	}
-	var registered []string
-	for _, kind := range mf.Provides {
-		inst, err := manager.guestProviderLoad(mf, kind, nil, false, nil)
-		if err != nil {
-			return nil, err
-		}
-		items, _, err := inst.current(ctx)
-		if err != nil {
-			return nil, &doctorLoadError{"Plugin registration failed: " + err.Error()}
-		}
-		if len(items) == 0 {
-			return nil, &doctorLoadError{fmt.Sprintf("manifest provides %s but registration added no %s provider", kind, kind)}
-		}
-		for _, item := range items {
-			ref, _ := item["value"].(map[string]any)
-			label := kind
-			if typ := wireStr(ref["type"]); typ != "" {
-				label += ":" + typ
-			}
-			registered = append(registered, label)
-		}
-	}
-	return registered, nil
 }

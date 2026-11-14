@@ -184,6 +184,15 @@ func installProcessWiring() {
 	dashboard.StatusCLI.BuildDebugShare = selfupdate.DebugShareForDashboard
 	dashboard.StatusCLI.RedactDebugSupportText = selfupdate.RedactDebugSupportText
 	dashboard.ConsoleCLI.NewEngine = app.NewDashboardConsole
+	gateway.WebUISourceBuild.ProductCurrent = selfupdate.SourceProductCurrent
+	gateway.WebUISourceBuild.Env = func(ctx context.Context) (map[string]string, error) {
+		return selfupdate.SourceBuildEnv(ctx, nil, false, true)
+	}
+	gateway.WebUISourceBuild.PrepareLaunch = selfupdate.PrepareLaunchDependencies
+	gateway.WebUISourceBuild.BuildWeb = func(ctx context.Context, projectRoot string, env map[string]string) error {
+		return selfupdate.BuildSourceWeb(ctx, projectRoot, env, "")
+	}
+	gateway.WebUISourceBuild.ExceptionName = selfupdate.ExceptionName
 	gateway.RefreshLiveSessions = tuiserver.RefreshLiveSessions
 	tuiserver.OpenSessionDBAtPath = dashboard.OpenSessionDBAtPath
 	tuiserver.MintDisplayTicket, tuiserver.DisplayAdmissionOf = dashboard.MintWSTicket, dashboard.SocketAdmission
@@ -259,6 +268,11 @@ func installProcessWiring() {
 			return out
 		}
 	}
+	gateway.WebappRendererBuild.Prepare = func(ctx context.Context, projectRoot string, force, skipBuild, explicit bool) (string, error) {
+		return selfupdate.PrepareWebappRenderer(ctx, projectRoot, force, skipBuild, explicit)
+	}
+	gateway.WebappRendererBuild.PackagedDist = selfupdate.PackagedWebappDist
+	gateway.WebappRendererBuild.ExceptionName = selfupdate.ExceptionName
 	selfupdate.RunCLIHook = run
 	agent.KanbanBudgetExhaustedHook = kanban.RecordBudgetExhausted
 	agent.TUIGatewayToolsets = tuiserver.GatewayToolsets
@@ -527,6 +541,9 @@ func pluginServices() *plugins.Services {
 		MaskedSecretPrompt:         provider.MaskedSecretPrompt,
 		ServerAvailabilityReason:   mcp.ServerAvailabilityReason,
 		DefinesMemoryProvider:      memory.DefinesMemoryProvider,
+		PrepareMemoryProviderDependencies: func(ctx context.Context, name string) error {
+			return memory.PrepareMemoryProviderDependenciesForPlugin(ctx, processToolsEnv(ctx), name)
+		},
 		RequiresAuthNotice:        provider.RequiresAuthNotice,
 		DeclaresModelProviderKind: provider.DeclaresModelProviderKind,
 		PluginOAuthKey:            provider.PluginOAuthKey,
@@ -561,13 +578,6 @@ func pluginServices() *plugins.Services {
 				out = append(out, [2]string{p.Name, p.Description})
 			}
 			return out
-		},
-		CredentialedProviderRequest: func(ctx context.Context, pluginDir, name, method, url string, json any, headers map[string]string, timeout time.Duration) (*plugins.ProviderRequestAnswer, error) {
-			resp, err := provider.CredentialedProviderRequest(pluginDir, name, method, url, provider.ProviderRequestOptions{JSON: json, Headers: headers, Timeout: timeout})
-			if err != nil {
-				return nil, err
-			}
-			return &plugins.ProviderRequestAnswer{Status: resp.Status, Headers: resp.Headers, Body: resp.Body}, nil
 		},
 	}
 	gateway.InstallPluginServices(s)
@@ -616,7 +626,7 @@ func hostedObjectName(kind string, obj any) (string, bool) {
 	return "", false
 }
 
-// Process exit hooks, marking the shutdown first and run once from exit
+// Exit hooks the Python modules registered with atexit, run once from exit
 var atExitDone bool
 
 func runAtExit() {
@@ -624,7 +634,6 @@ func runAtExit() {
 		return
 	}
 	atExitDone = true
-	tools.BeginProcessShutdown()
 	run := func(fn func()) {
 		defer func() { recover() }()
 		fn()

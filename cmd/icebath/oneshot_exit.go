@@ -56,7 +56,6 @@ func cleanupOneshotRuntime(ctx context.Context) {
 	}
 	oneshotCleanupDone = true
 	oneshotCleanupMu.Unlock()
-	tools.BeginProcessShutdown()
 	for _, step := range oneshotCleanups {
 		func() {
 			defer func() { _ = recover() }()

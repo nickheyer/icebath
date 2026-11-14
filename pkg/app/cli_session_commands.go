@@ -659,7 +659,7 @@ func (c *CLI) toggleYolo() {
 			return db.SetSessionYolo(c.ctx, sessionKey, on)
 		}
 	}
-	if tools.ToggleSessionYolo(c.ctx, sessionKey, nil, false, persist) {
+	if tools.ToggleSessionYolo(sessionKey, nil, false, persist) {
 		stateText := boldGreenANSI + c.t("cli.shared.label_on_upper", nil) + resetANSI
 		cprint("  " + c.t("cli.session.yolo_on", map[string]any{"state": stateText}))
 		return
@@ -726,7 +726,7 @@ func (c *CLI) manualCompress(cmdOriginal string) {
 		}
 		c.conversationHistory = result.AfterMessages
 		if agentSID := c.agentRef().SessionID(); agentSID != "" && agentSID != c.sessionID {
-			tools.TransferSessionYolo(c.ctx, c.sessionID, agentSID)
+			tools.TransferSessionYolo(c.sessionID, agentSID)
 			c.sessionID = agentSID
 			c.writeTerminalBreadcrumb()
 			c.pendingTitle = ""

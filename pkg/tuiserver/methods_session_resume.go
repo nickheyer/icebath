@@ -655,7 +655,7 @@ func sessionResume(ctx context.Context, rid any, params map[string]any) map[stri
 	if found {
 		return resumeReuseLive(r, liveSID, live)
 	}
-	tools.RestoreSessionYolo(ctx, r.target, state.SessionYoloEnabled(objectMap(r.found)))
+	tools.RestoreSessionYolo(r.target, state.SessionYoloEnabled(objectMap(r.found)))
 	switch {
 	case r.lazy:
 		return resumeLazy(r)

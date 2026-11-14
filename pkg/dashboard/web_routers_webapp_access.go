@@ -171,7 +171,7 @@ func webappAccessRouter() *APIRouter {
 				return nil, err
 			}
 			if _, err := webappAccessInGatewayHome(ctx, p.gateway, func(sctx context.Context) (any, error) {
-				return nil, gateway.WebappAccessRequireBundle(sctx)
+				return nil, gateway.WebappAccessBuildBundle(sctx)
 			}); err != nil {
 				return nil, err
 			}

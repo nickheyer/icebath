@@ -2,24 +2,42 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/pm"
 )
 
-// Config key recording the plugins an update turned off and why
-const disabledByUpdateKey = "disabled_by_update"
-
-// The candidate plugin set was refused with config untouched
+// The candidate plugin set was refused with config and environment untouched
 type AdmissionRefused struct{ Msg string }
 
 func (e *AdmissionRefused) Error() string { return e.Msg }
 
-// Proposed selection details beside the candidate sets
+// The resolver proved the candidate set cannot co-install with the pinned dependency set
+type DependencyConflict struct{ Cause, Plugin string }
+
+// Conflict message leading with the plugin the user asked for and keeping the resolver cause
+func (e *DependencyConflict) Error() string {
+	who := "The plugin selection"
+	if e.Plugin != "" {
+		who = "Plugin '" + e.Plugin + "'"
+	}
+	return who + " conflicts with the dependencies pinned by Icebath core or an enabled plugin, " +
+		"so it was not admitted. Resolver: " + e.Cause
+}
+
+// The AdmissionRefused base so a refusal check also catches a conflict
+func (e *DependencyConflict) Unwrap() error { return &AdmissionRefused{Msg: e.Error()} }
+
+// Proposed selection details handed to the PM publisher beside the candidate sets
 type admitOptions struct {
 	ActivePluginsDir string
+	ExtraDirs        []string
 	ExpectedConfig   string
+	Plugin           string
 	Settled          []string
 }
 
@@ -34,53 +52,60 @@ func sortedCopy(items []string) []any {
 	return out
 }
 
-// Writes the proposed plugins.enabled and plugins.disabled lists, refusing when config.yaml changed since it was read
+// PM discovers and validates the proposed union under its install lock without this process writing config
 func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool, opts admitOptions) error {
 	h := home.Dir(ctx)
 	if opts.ActivePluginsDir != "" {
 		h = filepath.Dir(opts.ActivePluginsDir)
 	}
-	return updateUserConfig(ctx, h, func(doc map[string]any) error {
-		if opts.ExpectedConfig != "" {
-			current, err := pluginSelectionVersion(h)
-			if err != nil {
-				return &AdmissionRefused{Msg: err.Error()}
-			}
-			if current != opts.ExpectedConfig {
-				return &AdmissionRefused{Msg: "Plugin configuration changed since this selection was read; retry."}
-			}
+	resolvedHome, err := pypath.Realpath(h, pypath.Lax)
+	if err != nil {
+		return &AdmissionRefused{Msg: err.Error()}
+	}
+	extra := []any{}
+	for _, d := range opts.ExtraDirs {
+		r, err := pypath.Realpath(d, pypath.Lax)
+		if err != nil {
+			return &AdmissionRefused{Msg: err.Error()}
 		}
-		section, ok := doc["plugins"].(map[string]any)
-		if !ok {
-			if doc["plugins"] != nil {
-				return &AdmissionRefused{Msg: "plugins must be a mapping in " + filepath.Join(h, "config.yaml")}
-			}
-			section = map[string]any{}
-			doc["plugins"] = section
-		}
-		section["enabled"] = sortedCopy(sortedKeys(enabled))
-		section["disabled"] = sortedCopy(sortedKeys(disabled))
-		settleDisabledByUpdate(section, opts.Settled, disabled)
+		extra = append(extra, r)
+	}
+	data := map[string]any{
+		"home": resolvedHome, "enabled": sortedCopy(sortedKeys(enabled)), "disabled": sortedCopy(sortedKeys(disabled)),
+		"extra_dirs": extra, "settled": sortedCopy(opts.Settled),
+	}
+	if opts.ExpectedConfig != "" {
+		data["expected_config"] = opts.ExpectedConfig
+	}
+	err = pm.SyncVenv(ctx, pm.SyncVenvOptions{Explicit: true, Plugins: &pm.Selection{Data: data}})
+	if err == nil {
 		return nil
-	})
+	}
+	var conflict *pm.ResolutionConflict
+	if errors.As(err, &conflict) && conflict.InstallError != nil {
+		return &DependencyConflict{Cause: conflict.InstallError.Cause, Plugin: opts.Plugin}
+	}
+	return &AdmissionRefused{Msg: err.Error()}
 }
 
-// Forgets the update records of settled plugins and of plugins no longer disabled, dropping an empty record
-func settleDisabledByUpdate(section map[string]any, settled []string, disabled map[string]bool) {
-	record, ok := section[disabledByUpdateKey].(map[string]any)
-	if !ok {
-		delete(section, disabledByUpdateKey)
-		return
+// Member dirs of the candidate selection, every recorded home selection kept without an active plugins dir
+func CandidateMemberDirs(ctx context.Context, enabled, disabled []string, activePluginsDir string, extraDirs []string) ([]string, error) {
+	proposedHome := ""
+	if activePluginsDir != "" {
+		proposedHome = pypath.PathParent(activePluginsDir)
 	}
-	for _, name := range settled {
-		delete(record, name)
-	}
-	for name := range record {
-		if !disabled[name] {
-			delete(record, name)
-		}
-	}
-	if len(record) == 0 {
-		delete(section, disabledByUpdateKey)
-	}
+	return pmCandidateMembers(ctx, extraDirs, proposedHome, enabled, disabled)
+}
+
+// Candidate member trees through the package manager selection, the proposed home overriding its recorded config
+func pmCandidateMembers(ctx context.Context, extraDirs []string, proposedHome string, enabled, disabled []string) ([]string, error) {
+	return pm.CandidateMembers(ctx, extraDirs, proposedHome, enabled, disabled)
+}
+
+// AdmitOptions carries the keyword arguments of admit_plugin_set_change
+type AdmitOptions = admitOptions
+
+// Public admission of a plugin set change, refused without touching config when the union cannot resolve
+func AdmitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool, opts AdmitOptions) error {
+	return admitPluginSetChange(ctx, enabled, disabled, opts)
 }

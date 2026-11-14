@@ -189,7 +189,7 @@ func handleRPCRequest(ctx context.Context, request *pyjson.Object, budget *rpcBu
 				result = toolError(fmt.Sprint(r))
 			}
 		}()
-		return dispatch(tools.SilenceOutput(ctx), name, toolArgs)
+		return dispatch(tools.ThreadScopedSilence(ctx), name, toolArgs)
 	}()
 	entry := toolCallEntry{
 		Tool:        name,

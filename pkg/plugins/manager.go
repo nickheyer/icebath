@@ -77,8 +77,8 @@ type Manager struct {
 	predeclaredModules            map[string]loadedModule
 	predeclaredTools              map[string][]string
 	pluginSecretSourcesReconciled bool
+	pluginHostInstance            *PluginHost
 	guestHosts                    map[string]*PluginHost
-	guestEnv                      map[string]string
 	widgets                       map[string]*Widget
 }
 

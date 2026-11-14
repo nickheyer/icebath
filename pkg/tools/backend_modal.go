@@ -59,12 +59,18 @@ func modalDeleteDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID
 	})
 }
 
-// Registry references load as registry images, snapshot ids load by id
+// Registry references become images with pip repaired before bootstrap, snapshot ids load by id
 func resolveModalImage(ctx context.Context, mc *modal.Client, spec string) (*modal.Image, error) {
 	if strings.HasPrefix(spec, "im-") {
 		return mc.Images.FromID(ctx, spec, nil)
 	}
-	return mc.Images.FromRegistry(spec, nil), nil
+	setup := []string{"RUN rm -rf /usr/local/lib/python*/site-packages/pip* 2>/dev/null; " +
+		"python -m ensurepip --upgrade --default-pip 2>/dev/null || true"}
+	lower := strings.ToLower(spec)
+	if strings.Contains(lower, "ubuntu") || strings.Contains(lower, "debian") {
+		setup = append([]string{"RUN apt-get update -qq && apt-get install -y -qq python3 python3-venv > /dev/null 2>&1 || true"}, setup...)
+	}
+	return mc.Images.FromRegistry(spec, nil).DockerfileCommands(setup, nil), nil
 }
 
 // Writes the payload in chunks then closes stdin

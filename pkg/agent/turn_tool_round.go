@@ -96,7 +96,7 @@ func (h *toolRoundValidationHost) Retries() *tools.TurnValidationRetries { retur
 func validateRoundToolCalls(ctx context.Context, a *AIAgent, s *LoopState, assistantMessage *provider.Response, finishReason string) (tools.ToolValidationVerdict, error) {
 	h := &toolRoundValidationHost{ctx: ctx, a: a, s: s, assistantMessage: assistantMessage, finishReason: finishReason,
 		retries: tools.TurnValidationRetries{InvalidTool: a.invalidToolRetries, InvalidJSON: a.invalidJSONRetries}}
-	verdict := tools.ValidateToolCalls(ctx, h, assistantMessage.Message.ToolCalls, finishReason)
+	verdict := tools.ValidateToolCalls(h, assistantMessage.Message.ToolCalls, finishReason)
 	a.invalidToolRetries, a.invalidJSONRetries = h.retries.InvalidTool, h.retries.InvalidJSON
 	return verdict, h.err
 }

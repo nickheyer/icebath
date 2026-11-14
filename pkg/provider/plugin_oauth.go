@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -383,9 +382,6 @@ func pluginOAuthParent(host string) string {
 	return strings.Join(labels[len(labels)-keep:], ".")
 }
 
-// Manifest files of a plugin directory, which name the token URL by design
-var pluginManifestFiles = map[string]bool{"plugin.yaml": true, "plugin.yml": true, "plugin.json": true}
-
 // OAuthAdmissionWarnings flags hosts outside the IdP domains and plugin code naming a token URL
 func OAuthAdmissionWarnings(manifest map[string]any, pluginDir string) []string {
 	clients, _ := ParseOAuthClients(manifest)
@@ -412,10 +408,7 @@ func OAuthAdmissionWarnings(manifest map[string]any, pluginDir string) []string 
 	urls := sortedBoolKeys(urlSet)
 	var files []string
 	_ = filepath.WalkDir(pluginDir, func(path string, d fs.DirEntry, err error) error {
-		if err == nil && d.IsDir() && d.Name() == ".git" {
-			return filepath.SkipDir
-		}
-		if err == nil && d.Type().IsRegular() && !pluginManifestFiles[d.Name()] {
+		if err == nil && !d.IsDir() && strings.HasSuffix(path, ".py") {
 			files = append(files, path)
 		}
 		return nil
@@ -425,9 +418,10 @@ func OAuthAdmissionWarnings(manifest map[string]any, pluginDir string) []string 
 		if err != nil {
 			continue
 		}
+		text := strings.ToValidUTF8(strings.TrimPrefix(string(raw), "\uFEFF"), "\uFFFD")
 		rel, _ := filepath.Rel(pluginDir, path)
 		for _, u := range urls {
-			if u != "" && bytes.Contains(raw, []byte(u)) {
+			if strings.Contains(text, u) {
 				warnings = append(warnings, fmt.Sprintf("oauth: %s names the token URL %s; Icebath refreshes the grant, so the plugin should not call it", filepath.ToSlash(rel), u))
 			}
 		}

@@ -120,20 +120,156 @@ type ProviderModuleManager struct {
 	PathArgs []int
 }
 
-// Context managers of a provider module kept entered until released
-type ProviderModuleHold struct{}
-
-// Calls a memory provider submodule function with JSON text arguments, refused for every provider
-func ProviderModuleJSONCall(ctx context.Context, pluginDir, moduleName, submodule, function, argsJSON string, pathArgs []int, require []string, track [][]any) (*ProviderModuleJSONResult, bool, error) {
-	return nil, false, errPythonProviderModule
+// Context managers of a provider module kept entered in the child until released
+type ProviderModuleHold struct {
+	host       *PluginHost
+	ref        int64
+	generation int
 }
 
-// Enters context managers of a memory provider submodule, refused for every provider
-func HoldProviderModuleManagers(ctx context.Context, pluginDir, moduleName, submodule string, managers []ProviderModuleManager) (*ProviderModuleHold, bool, error) {
-	return nil, false, errPythonProviderModule
+// Positions as a wire list
+func wirePositions(positions []int) []any {
+	out := make([]any, len(positions))
+	for i, p := range positions {
+		out[i] = p
+	}
+	return out
 }
 
-// Leaves held context managers, refused for every provider
+// Calls a provider module function with JSON text arguments in the child, loaded false when the package failed to import
+func (h *PluginHost) ProviderModuleJSONCall(ctx context.Context, pluginDir, moduleName, submodule, function, argsJSON string, pathArgs []int, require []string, track [][]any) (*ProviderModuleJSONResult, bool, error) {
+	if _, err := h.ensureStarted(ctx); err != nil {
+		return nil, false, err
+	}
+	params, err := providerModuleParams(pluginDir, moduleName, submodule)
+	if err != nil {
+		return nil, false, err
+	}
+	required := make([]any, len(require))
+	for i, name := range require {
+		required[i] = name
+	}
+	tracked := make([]any, len(track))
+	for i, path := range track {
+		tracked[i] = path
+	}
+	params["function"], params["args_json"], params["path_args"], params["require"], params["track"] = function, argsJSON, wirePositions(pathArgs), required, tracked
+	h.mu.Lock()
+	ch := h.channel
+	h.mu.Unlock()
+	if ch == nil {
+		return nil, false, h.unavailableAsExit(&PluginHostUnavailable{Reason: "not started"})
+	}
+	raw, err := ch.Call(ctx, "provider_module_json_call", params, 0)
+	if err != nil {
+		return nil, true, h.unavailableAsExit(err)
+	}
+	reply, _ := raw.(map[string]any)
+	if loaded, _ := reply["loaded"].(bool); !loaded {
+		return nil, false, nil
+	}
+	out := &ProviderModuleJSONResult{}
+	if text, ok := reply["root_json"].(string); ok {
+		out.RootJSON = &text
+	}
+	out.ResultIsPath, _ = reply["result_is_path"].(bool)
+	out.ResultPath, _ = reply["result_path"].(string)
+	for _, keys := range listOrEmpty(reply["result_keys"]) {
+		names := []string{}
+		for _, key := range listOrEmpty(keys) {
+			name, _ := graphKey(key)
+			names = append(names, name)
+		}
+		out.ResultKeys = append(out.ResultKeys, names)
+	}
+	for _, group := range listOrEmpty(reply["shared"]) {
+		var paths [][]any
+		for _, path := range listOrEmpty(group) {
+			paths = append(paths, listOrEmpty(path))
+		}
+		if len(paths) > 1 {
+			out.Shared = append(out.Shared, paths)
+		}
+	}
+	return out, true, nil
+}
+
+// Enters context managers of a provider module in order on one child thread, loaded false when the package failed to import
+func (h *PluginHost) HoldProviderModuleManagers(ctx context.Context, pluginDir, moduleName, submodule string, managers []ProviderModuleManager) (*ProviderModuleHold, bool, error) {
+	if _, err := h.ensureStarted(ctx); err != nil {
+		return nil, false, err
+	}
+	params, err := providerModuleParams(pluginDir, moduleName, submodule)
+	if err != nil {
+		return nil, false, err
+	}
+	specs := make([]any, len(managers))
+	for i, m := range managers {
+		specs[i] = map[string]any{"name": m.Name, "call": m.Call, "args_json": m.ArgsJSON, "path_args": wirePositions(m.PathArgs)}
+	}
+	params["managers"] = specs
+	h.mu.Lock()
+	ch := h.channel
+	generation := h.generation
+	h.mu.Unlock()
+	if ch == nil {
+		return nil, false, h.unavailableAsExit(&PluginHostUnavailable{Reason: "not started"})
+	}
+	raw, err := ch.Call(ctx, "provider_module_hold", params, 0)
+	if err != nil {
+		return nil, true, h.unavailableAsExit(err)
+	}
+	reply, _ := raw.(map[string]any)
+	if loaded, _ := reply["loaded"].(bool); !loaded {
+		return nil, false, nil
+	}
+	ref, ok := wireInt(reply["hold"])
+	if !ok {
+		return nil, true, fmt.Errorf("plugin host: provider_module_hold answered %T instead of a hold", reply["hold"])
+	}
+	return &ProviderModuleHold{host: h, ref: ref, generation: generation}, true, nil
+}
+
+// Leaves the held context managers in reverse order, a body failure raised inside them first as the named Python class
 func (o *ProviderModuleHold) Release(ctx context.Context, bodyErrType, bodyErrMessage string) (suppressed bool, err error) {
-	return false, errPythonProviderModule
+	h := o.host
+	h.mu.Lock()
+	ch := h.channel
+	current := h.generation
+	h.mu.Unlock()
+	if ch == nil {
+		return false, h.unavailableAsExit(&PluginHostUnavailable{Reason: "not started"})
+	}
+	if current != o.generation {
+		return false, h.unavailableAsExit(&PluginHostUnavailable{Reason: "this object belonged to a plugin host process that has exited"})
+	}
+	params := map[string]any{"hold": o.ref, "error": nil}
+	if bodyErrType != "" {
+		params["error"] = map[string]any{"type": bodyErrType, "message": bodyErrMessage}
+	}
+	raw, err := ch.Call(context.WithoutCancel(ctx), "provider_module_release", params, 0)
+	if err != nil {
+		return false, h.unavailableAsExit(err)
+	}
+	reply, _ := raw.(map[string]any)
+	suppressed, _ = reply["suppressed"].(bool)
+	return suppressed, nil
+}
+
+// Calls a provider module function with JSON text arguments in the plugin host of the context home
+func ProviderModuleJSONCall(ctx context.Context, pluginDir, moduleName, submodule, function, argsJSON string, pathArgs []int, require []string, track [][]any) (*ProviderModuleJSONResult, bool, error) {
+	host, err := GetPluginManager(ctx).pluginHost()
+	if err != nil {
+		return nil, false, err
+	}
+	return host.ProviderModuleJSONCall(ctx, pluginDir, moduleName, submodule, function, argsJSON, pathArgs, require, track)
+}
+
+// Enters context managers of a provider module in the plugin host of the context home
+func HoldProviderModuleManagers(ctx context.Context, pluginDir, moduleName, submodule string, managers []ProviderModuleManager) (*ProviderModuleHold, bool, error) {
+	host, err := GetPluginManager(ctx).pluginHost()
+	if err != nil {
+		return nil, false, err
+	}
+	return host.HoldProviderModuleManagers(ctx, pluginDir, moduleName, submodule, managers)
 }

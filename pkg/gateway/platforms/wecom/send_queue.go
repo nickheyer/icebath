@@ -5,34 +5,45 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Per chat token bucket of WeCom's 30 messages a minute, split into a normal and a reserved control pool
 const (
+	bucketMaxTokens      = 30
 	bucketNormalTokens   = 24
 	bucketReservedTokens = 6
-	bucketWindow         = time.Minute
 )
 
-// Error every send still queued or in flight receives once the adapter shuts its queue down
-var errQueueShutdown = errors.New("WeCom adapter shutting down")
+var processStart = time.Now()
 
-type tokenUsage struct {
-	normal, reserved int
-	windowStart      time.Time
-}
+// Monotonic seconds and context aware sleep, swappable in tests
+var (
+	monotonic = func() float64 { return time.Since(processStart).Seconds() }
+	sendSleep = func(ctx context.Context, seconds float64) error {
+		timer := time.NewTimer(time.Duration(seconds * float64(time.Second)))
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+)
 
-type sendOutcome struct {
+type tokenUsage struct{ normal, reserved, lastReset float64 }
+
+type sendResult struct {
 	value any
 	err   error
 }
 
 type sendJob struct {
 	send   func(ctx context.Context) (any, error)
-	result chan sendOutcome
+	result chan sendResult
 }
 
 // One FIFO lane of a chat drained by its own worker
@@ -44,69 +55,77 @@ type sendLane struct {
 
 // Two FIFO lanes per chat under a per minute token bucket, the control lane drawing on a reserved pool
 type ChatSendQueue struct {
-	name         string
-	mu           sync.Mutex
-	chatLanes    map[string]*sendLane
-	controlLanes map[string]*sendLane
-	usage        map[string]*tokenUsage
-	ctx          context.Context
-	cancel       context.CancelFunc
+	Name          string
+	mu            sync.Mutex
+	chatQueues    map[string]*sendLane
+	controlQueues map[string]*sendLane
+	tokenUsage    map[string]*tokenUsage
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 // Send queue whose workers stop when the adapter shuts it down
 func NewChatSendQueue(name string) *ChatSendQueue {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ChatSendQueue{name: name, chatLanes: map[string]*sendLane{}, controlLanes: map[string]*sendLane{},
-		usage: map[string]*tokenUsage{}, ctx: ctx, cancel: cancel}
+	return &ChatSendQueue{Name: name, chatQueues: map[string]*sendLane{}, controlQueues: map[string]*sendLane{},
+		tokenUsage: map[string]*tokenUsage{}, ctx: ctx, cancel: cancel}
 }
 
-// Consumes one token returning zero, else the wait until the minute window resets, control spilling into the reserve
-func (q *ChatSendQueue) bucketTryConsume(chatID string, isControl bool) time.Duration {
+// Token usage of a chat, created with the window starting now
+func (q *ChatSendQueue) getTokenUsage(chatID string) *tokenUsage {
+	key := pystr.Strip(chatID)
+	u, ok := q.tokenUsage[key]
+	if !ok {
+		u = &tokenUsage{lastReset: monotonic()}
+		q.tokenUsage[key] = u
+	}
+	return u
+}
+
+// Consumes one token returning zero, else seconds until the next minute window, control spilling into the reserve
+func (q *ChatSendQueue) bucketTryConsume(chatID string, isControl bool) float64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	now := time.Now()
-	u, ok := q.usage[chatID]
-	if !ok {
-		u = &tokenUsage{windowStart: now}
-		q.usage[chatID] = u
+	usage := q.getTokenUsage(chatID)
+	now := monotonic()
+	if now-usage.lastReset > 60.0 {
+		usage.normal, usage.reserved, usage.lastReset = 0, 0, now
 	}
-	if now.Sub(u.windowStart) > bucketWindow {
-		u.normal, u.reserved, u.windowStart = 0, 0, now
-	}
-	if u.normal < bucketNormalTokens {
-		u.normal++
+	if usage.normal < bucketNormalTokens {
+		usage.normal++
 		return 0
 	}
-	if isControl && u.reserved < bucketReservedTokens {
-		u.reserved++
+	if isControl && usage.reserved < bucketReservedTokens {
+		usage.reserved++
 		return 0
 	}
-	return bucketWindow - now.Sub(u.windowStart)
+	return 60.0 - (now - usage.lastReset)
+}
+
+// Queues and lane name of the normal or control lane
+func (q *ChatSendQueue) lane(isControl bool) (map[string]*sendLane, string) {
+	if isControl {
+		return q.controlQueues, "control"
+	}
+	return q.chatQueues, "normal"
 }
 
 // Queues a send for the chat and waits for its result, FIFO per chat and lane
 func (q *ChatSendQueue) EnqueueChatSend(ctx context.Context, chatID string, send func(ctx context.Context) (any, error), isControl bool) (any, error) {
-	if q.ctx.Err() != nil {
-		return nil, errQueueShutdown
-	}
-	key := strings.TrimSpace(chatID)
-	laneName := "normal"
+	key := pystr.Strip(chatID)
 	q.mu.Lock()
-	lanes := q.chatLanes
-	if isControl {
-		lanes, laneName = q.controlLanes, "control"
-	}
-	l, ok := lanes[key]
+	queues, laneName := q.lane(isControl)
+	l, ok := queues[key]
 	if !ok {
-		slog.Debug(fmt.Sprintf("[%s] Creating %s queue + worker for chat %s", q.name, laneName, key))
+		slog.Debug(fmt.Sprintf("[%s] Creating %s queue + worker for chat %s", q.Name, laneName, key))
 		l = &sendLane{notify: make(chan struct{}, 1)}
-		lanes[key] = l
+		queues[key] = l
 		go q.sendWorker(key, l, isControl)
 	}
 	q.mu.Unlock()
-	job := sendJob{send: send, result: make(chan sendOutcome, 1)}
+	job := sendJob{send: send, result: make(chan sendResult, 1)}
 	l.mu.Lock()
-	slog.Debug(fmt.Sprintf("[%s] Enqueuing send for chat %s (lane=%s, qsize=%d)", q.name, key, laneName, len(l.jobs)))
+	slog.Debug(fmt.Sprintf("[%s] Enqueuing send for chat %s (lane=%s, qsize=%d)", q.Name, key, laneName, len(l.jobs)))
 	l.jobs = append(l.jobs, job)
 	l.mu.Unlock()
 	select {
@@ -116,8 +135,6 @@ func (q *ChatSendQueue) EnqueueChatSend(ctx context.Context, chatID string, send
 	select {
 	case r := <-job.result:
 		return r.value, r.err
-	case <-q.ctx.Done():
-		return nil, errQueueShutdown
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -145,10 +162,10 @@ func (q *ChatSendQueue) nextJob(l *sendLane) (sendJob, bool) {
 	}
 }
 
-// Drains one lane under the token bucket, a shutdown failing the send in flight and every queued one
+// Drains one lane under the token bucket, a shutdown abandoning the send in flight and failing the queued ones
 func (q *ChatSendQueue) sendWorker(chatKey string, l *sendLane, isControl bool) {
 	if !isControl {
-		slog.Debug(fmt.Sprintf("[%s] Normal send worker started for chat %s", q.name, chatKey))
+		slog.Debug(fmt.Sprintf("[%s] Normal send worker started for chat %s", q.Name, chatKey))
 	}
 	defer func() {
 		l.mu.Lock()
@@ -156,7 +173,7 @@ func (q *ChatSendQueue) sendWorker(chatKey string, l *sendLane, isControl bool) 
 		l.jobs = nil
 		l.mu.Unlock()
 		for _, job := range pending {
-			job.result <- sendOutcome{err: errQueueShutdown}
+			job.result <- sendResult{err: errors.New("WeCom adapter shutting down")}
 		}
 	}()
 	for {
@@ -166,26 +183,20 @@ func (q *ChatSendQueue) sendWorker(chatKey string, l *sendLane, isControl bool) 
 		}
 		if wait := q.bucketTryConsume(chatKey, isControl); wait > 0 {
 			if !isControl {
-				slog.Debug(fmt.Sprintf("[%s] Normal worker rate-limited for chat %s, waiting %.1fs", q.name, chatKey, wait.Seconds()))
+				slog.Debug(fmt.Sprintf("[%s] Normal worker rate-limited for chat %s, waiting %.1fs", q.Name, chatKey, wait))
 			}
-			timer := time.NewTimer(wait)
-			select {
-			case <-timer.C:
-			case <-q.ctx.Done():
-				timer.Stop()
-				job.result <- sendOutcome{err: errQueueShutdown}
+			if sendSleep(q.ctx, wait) != nil {
 				return
 			}
 			q.bucketTryConsume(chatKey, isControl)
 		}
 		value, err := job.send(q.ctx)
 		if q.ctx.Err() != nil {
-			job.result <- sendOutcome{err: errQueueShutdown}
 			return
 		}
-		job.result <- sendOutcome{value, err}
+		job.result <- sendResult{value, err}
 	}
 }
 
-// Stops every worker, failing the sends still queued or in flight
+// Stops every worker, failing the sends still queued
 func (q *ChatSendQueue) Shutdown() { q.cancel() }

@@ -7,147 +7,188 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
-	"rsc.io/qr"
-
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Admin console endpoints of QR bot creation, which back the console rather than the public API
+// Admin console endpoints of the QR bot creation, which back the console rather than the public API
 const (
-	qrGenerateURL  = "https://work.weixin.qq.com/ai/qc/generate?source=icebath"
-	qrQueryURL     = "https://work.weixin.qq.com/ai/qc/query_result?scode="
-	qrCodePage     = "https://work.weixin.qq.com/ai/qc/gen?source=icebath&scode="
+	qrGenerateURL  = "https://work.weixin.qq.com/ai/qc/generate"
+	qrQueryURL     = "https://work.weixin.qq.com/ai/qc/query_result"
+	qrCodePage     = "https://work.weixin.qq.com/ai/qc/gen?source=hermes&scode="
 	qrPollInterval = 3.0
-	qrPollTimeout  = 5 * time.Minute
-	qrBorder       = 4
+	qrPollTimeout  = 300
 )
 
-// Decoded JSON object of a console endpoint fetched through the environment proxy
-func qrGetJSON(ctx context.Context, rawURL string, timeout time.Duration) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+// Fetches and decodes a JSON document like urlopen, a seam tests replace
+var qrGetJSON = func(ctx context.Context, url string, timeout time.Duration) (any, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "icebath-agent/1.0")
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyFromEnvironment
-	client := &http.Client{Timeout: timeout, Transport: transport}
-	defer client.CloseIdleConnections()
-	resp, err := client.Do(req)
+	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{Proxy: pyurl.UrlopenProxy}}).Do(req)
 	if err != nil {
-		return nil, err
+		reason := err.Error()
+		if pypath.OSErrorClass(err) != "OSError" {
+			reason = pypath.OSErrorText(err)
+		}
+		return nil, errors.New("<urlopen error " + reason + ">")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("HTTP Error %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	return decodeObject(raw)
-}
-
-// QR code of the text in half block characters for a dark terminal, with a four module quiet zone
-func renderQR(text string) (string, error) {
-	code, err := qr.Encode(text, qr.M)
+	text, err := pystr.DecodeUTF8(raw)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	n := code.Size
-	module := func(row, col int) int {
-		if row >= n+qrBorder || col >= n+qrBorder {
-			return 1
-		}
-		if code.Black(col, row) {
-			return 1
-		}
-		return 0
-	}
-	glyphs := []string{"█", "▄", "▀", " "}
-	var b strings.Builder
-	for row := -qrBorder; row < n+qrBorder; row += 2 {
-		for col := -qrBorder; col < n+qrBorder; col++ {
-			b.WriteString(glyphs[module(row, col)+module(row+1, col)<<1])
-		}
-		b.WriteByte('\n')
-	}
-	return b.String(), nil
+	return pyjson.Loads(text)
 }
 
-// Fetches and shows a WeCom QR code then polls until scanned, the bot id and secret when the scan creates a bot
-func qrScanForBotInfo(ctx context.Context, timeout time.Duration) (string, string, error) {
+// Sleep between polls that a Ctrl-C cuts short, a seam tests replace
+var qrSleep = func(w *gateway.InterruptWatch, seconds float64) error { return w.Sleep(seconds) }
+
+// Monotonic seconds of the poll deadline
+var qrClockBase = time.Now()
+var qrMonotonic = func() float64 { return time.Since(qrClockBase).Seconds() }
+
+// Dict get on a decoded JSON object, the AttributeError of anything that is not a dict
+func dictGet(v any, key string) (any, error) {
+	o, ok := v.(*pyjson.Object)
+	if !ok {
+		return nil, fmt.Errorf("AttributeError: '%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	}
+	return o.Vals[key], nil
+}
+
+// A dict value or an empty dict for a falsy one, like value or {}
+func orDict(v any) any {
+	if !pyrepr.Truthy(v) {
+		return pyjson.NewObject()
+	}
+	return v
+}
+
+// Stripped str of a falsy defaulted value, like str(value or "").strip()
+func textOf(v any) string {
+	if !pyrepr.Truthy(v) {
+		return ""
+	}
+	return pystr.Strip(pyrepr.Str(v))
+}
+
+// Fetches and renders a WeCom QR code then polls until scanned, the bot id and secret when it succeeds
+func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, bool, error) {
 	out := provider.SetupOutput()
 	watch := gateway.WatchInterrupt()
 	defer watch.Stop()
+	fail := func(logMsg string, detail any, shown string) (string, string, bool, error) {
+		slog.Error(fmt.Sprintf(logMsg, pyrepr.Str(detail)))
+		fmt.Fprintf(out, " failed: %s\n", shown)
+		return "", "", false, nil
+	}
 	fmt.Fprint(out, "  Connecting to WeCom...")
-	raw, err := qrGetJSON(ctx, qrGenerateURL, 15*time.Second)
+	raw, err := qrGetJSON(ctx, qrGenerateURL+"?source=hermes", 15*time.Second)
 	if err != nil {
-		slog.Error(fmt.Sprintf("WeCom QR: failed to fetch QR code: %v", err))
-		fmt.Fprintf(out, " failed: %v\n", err)
-		return "", "", nil
+		return fail("WeCom QR: failed to fetch QR code: %s", err.Error(), err.Error())
 	}
 	if err := watch.Check(); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
-	data := objAt(raw, "data")
-	scode, authURL := strAt(data, "scode"), strAt(data, "auth_url")
+	data, err := dictGet(raw, "data")
+	if err != nil {
+		return "", "", false, err
+	}
+	data = orDict(data)
+	scodeRaw, err := dictGet(data, "scode")
+	if err != nil {
+		return "", "", false, err
+	}
+	authRaw, err := dictGet(data, "auth_url")
+	if err != nil {
+		return "", "", false, err
+	}
+	scode, authURL := textOf(scodeRaw), textOf(authRaw)
 	if scode == "" || authURL == "" {
-		slog.Error(fmt.Sprintf("WeCom QR: unexpected response format: %v", raw))
-		fmt.Fprintln(out, " failed: unexpected response format")
-		return "", "", nil
+		return fail("WeCom QR: unexpected response format: %s", raw, "unexpected response format")
 	}
 	fmt.Fprint(out, " done.\n\n")
-	pageURL := qrCodePage + url.QueryEscape(scode)
-	if code, err := renderQR(authURL); err == nil {
-		fmt.Fprint(out, code)
+	pageURL := qrCodePage + pyurl.Quote(scode, "/")
+	if code, err := pyqrcode.Make(authURL, pyqrcode.ErrorCorrectM, 4); err == nil {
+		fmt.Fprint(out, code.PrintASCII(true))
 		fmt.Fprintf(out, "\n  Scan the QR code above, or open this URL directly:\n  %s\n", pageURL)
 	} else {
 		fmt.Fprintf(out, "  Open this URL in WeCom on your phone:\n\n  %s\n\n", pageURL)
 	}
 	fmt.Fprint(out, "\n  Fetching configuration results...")
-	deadline := time.Now().Add(timeout)
-	queryURL := qrQueryURL + url.QueryEscape(scode)
-	for time.Now().Before(deadline) {
+	deadline := qrMonotonic() + float64(timeoutSeconds)
+	queryURL := qrQueryURL + "?scode=" + pyurl.Quote(scode, "/")
+	for qrMonotonic() < deadline {
 		result, err := qrGetJSON(ctx, queryURL, 10*time.Second)
 		if err != nil {
-			slog.Debug(fmt.Sprintf("WeCom QR poll error: %v", err))
-			result = map[string]any{}
+			slog.Debug(fmt.Sprintf("WeCom QR poll error: %s", err.Error()))
+			result = pyjson.NewObject()
 		} else {
 			fmt.Fprint(out, ".")
 		}
 		if err := watch.Check(); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
-		resultData := objAt(result, "data")
-		if strings.ToLower(strAt(resultData, "status")) != "success" {
-			if err := watch.Sleep(qrPollInterval); err != nil {
-				return "", "", err
+		resultData, err := dictGet(result, "data")
+		if err != nil {
+			return "", "", false, err
+		}
+		resultData = orDict(resultData)
+		status, err := dictGet(resultData, "status")
+		if err != nil {
+			return "", "", false, err
+		}
+		if pystr.Lower(textOf(status)) != "success" {
+			if err := qrSleep(watch, qrPollInterval); err != nil {
+				return "", "", false, err
 			}
 			continue
 		}
-		botInfo := objAt(resultData, "bot_info")
-		botID := strAt(botInfo, "botid")
-		if botID == "" {
-			botID = strAt(botInfo, "bot_id")
+		botInfo, err := dictGet(resultData, "bot_info")
+		if err != nil {
+			return "", "", false, err
 		}
-		if secret := strAt(botInfo, "secret"); botID != "" && secret != "" {
+		botInfo = orDict(botInfo)
+		botid, _ := dictGet(botInfo, "botid")
+		if !pyrepr.Truthy(botid) {
+			botid, _ = dictGet(botInfo, "bot_id")
+		}
+		secretRaw, _ := dictGet(botInfo, "secret")
+		botID, secret := textOf(botid), textOf(secretRaw)
+		if botID != "" && secret != "" {
 			fmt.Fprintln(out)
-			return botID, secret, nil
+			return botID, secret, true, nil
 		}
-		slog.Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %v", resultData))
+		slog.Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %s", pyrepr.Str(resultData)))
 		fmt.Fprintln(out, "\n  QR scan reported success but no bot credentials were returned.\n"+
 			"  This usually means the bot was not actually created on the WeCom side.\n  Falling back to manual credential entry.")
-		return "", "", nil
+		return "", "", false, nil
 	}
-	fmt.Fprintf(out, "\n  QR scan timed out (%d minutes). Please try again.\n", int(timeout.Minutes()))
-	return "", "", nil
+	fmt.Fprintf(out, "\n  QR scan timed out (%d minutes). Please try again.\n", timeoutSeconds/60)
+	return "", "", false, nil
 }
+
+// QR bot creation of the wizard, the qr_scan_for_bot_info name its tests replace
+var qrScanFn = qrScanForBotInfo
 
 // Steps of finding an existing smart robot's credentials
 var manualSetupSteps = []string{
@@ -157,7 +198,7 @@ var manualSetupSteps = []string{
 	"4. The bot connects via WebSocket — no public endpoint needed",
 }
 
-// Menu label, env saves and printed lines per unauthorized user choice, the last one skipping
+// Menu label, env saves and printed lines per unauthorized user choice, index 3 skipping
 var accessChoices = []struct {
 	label    string
 	saves    [][2]string
@@ -183,19 +224,20 @@ func InteractiveSetup(ctx context.Context) error {
 		[]string{"Scan QR code to obtain Bot ID and Secret automatically (recommended)", "Enter existing Bot ID and Secret manually"}, 0)
 	botID, secret := "", ""
 	if method == 0 {
-		id, sec, err := qrScanForBotInfo(ctx, qrPollTimeout)
+		id, sec, ok, err := qrScanFn(ctx, qrPollTimeout)
 		switch {
 		case errors.Is(err, gateway.ErrKeyboardInterrupt):
 			cli.PrintWarning("WeCom setup cancelled.")
 			return nil
 		case err != nil:
 			cli.PrintWarning("QR scan failed: " + err.Error())
-		case id != "" && sec != "":
+		case ok:
 			botID, secret = id, sec
 			cli.PrintSuccess("✔ QR scan successful! Bot ID and Secret obtained.")
 		}
 		if botID == "" || secret == "" {
 			cli.PrintInfo("QR scan did not complete. Continuing with manual input.")
+			botID, secret = "", ""
 		}
 	}
 	if botID == "" || secret == "" {
@@ -235,8 +277,8 @@ func InteractiveSetup(ctx context.Context) error {
 			labels[i] = c.label
 		}
 		idx := gateway.WizardSetup.PromptChoice("How should unauthorized users be handled?", labels, 1)
-		if idx < 0 || idx >= len(accessChoices) {
-			idx = len(accessChoices) - 1
+		if idx < 0 || idx > 2 {
+			idx = 3
 		}
 		choice := accessChoices[idx]
 		for _, kv := range choice.saves {
@@ -244,12 +286,11 @@ func InteractiveSetup(ctx context.Context) error {
 				return err
 			}
 		}
-		show := map[string]func(string){"warning": cli.PrintWarning, "success": cli.PrintSuccess, "info": cli.PrintInfo}
 		for _, m := range choice.messages {
-			show[m[0]](m[1])
+			map[string]func(string){"warning": cli.PrintWarning, "success": cli.PrintSuccess, "info": cli.PrintInfo}[m[0]](m[1])
 		}
 	}
-	if home := strings.TrimSpace(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
+	if home := pystr.Strip(cli.Prompt("Home chat ID (optional, for cron/notifications)", "", false)); home != "" {
 		if err := cfg.SaveEnvValue(ctx, "WECOM_HOME_CHANNEL", home); err != nil {
 			return err
 		}

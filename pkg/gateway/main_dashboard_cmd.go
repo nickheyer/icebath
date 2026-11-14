@@ -20,11 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -84,12 +86,14 @@ var (
 	dashboardOpenBrowser           = provider.OpenBrowserURL
 	dashboardTypedArgv             = func() []string { return os.Args[1:] }
 	dashboardReexec                = reexecDashboard
+	dashboardBuildWebUI            = BuildWebUI
 	dashboardStartServer           = startDashboardServer
 	dashboardRequiresAuth          = webServerRequiresAuth
 	dashboardKillStale             = KillStaleDashboardProcesses
 	dashboardConsole               = cliui.Default
 	dashboardGetpass               = provider.Getpass
 	dashboardDiscoverPlugins       = plugins.DiscoverPlugins
+	dashboardProjectRoot           = pm.RepoRoot
 	dashboardApplyNofileLimit      = ApplyNofileSoftLimit
 	dashboardReadSSHToken          = readSSHSessionTokenFile
 	sshOwnerNonceRE                = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -232,11 +236,23 @@ func dashboardValidateServeArgs(ctx context.Context, l DashboardLaunch, headless
 	return nonce, nil
 }
 
-// Drops the headless variable a Desktop owned shell passes down, a standalone browser dashboard must not obey it
+// Drops the Desktop inherited web dist and headless variables a standalone browser dashboard must not obey
 func dashboardSanitizeDesktopEnv(headless bool) {
+	desktopOwnedChild := dashboardIsDesktopOwnedBackend()
+	if !headless && !desktopOwnedChild && isElectronPackagedWebDist(os.Getenv("ICEBATH_WEB_DIST")) {
+		os.Unsetenv("ICEBATH_WEB_DIST")
+	}
 	if !headless {
 		os.Unsetenv("ICEBATH_SERVE_HEADLESS")
 	}
+}
+
+// True when path lies inside an Electron packaged app.asar renderer dist
+func isElectronPackagedWebDist(path string) bool {
+	if path == "" {
+		return false
+	}
+	return strings.Contains(strings.ReplaceAll(path, `\`, "/"), "app.asar")
 }
 
 // Live host serve record with a bound port and a consistent token to attach to, nil when there is none
@@ -387,7 +403,7 @@ func routeNamedProfileDashboard(ctx context.Context, l DashboardLaunch, headless
 	if tokenFile != "" {
 		argv = append(argv, "--ssh-session-token-file", tokenFile)
 	}
-	for _, flag := range []string{"no_open", "insecure"} {
+	for _, flag := range []string{"no_open", "insecure", "skip_build"} {
 		if dashArgBool(ns, flag) {
 			argv = append(argv, "--"+strings.ReplaceAll(flag, "_", "-"))
 		}
@@ -400,18 +416,68 @@ func routeNamedProfileDashboard(ctx context.Context, l DashboardLaunch, headless
 	return dashboardReexec(argv, env)
 }
 
-// Resolves the dashboard bundle before the server starts, a missing bundle ending the launch
+// Builds or validates the web UI dist before the server starts, a missing dist ending the launch
 func resolveDashboardWebDist(ctx context.Context, l DashboardLaunch, headless bool) error {
-	if headless {
+	w := l.Stdout
+	skipBuild := dashArgBool(l.Namespace, "skip_build")
+	envDist, envSet := os.LookupEnv("ICEBATH_WEB_DIST")
+	root := dashboardProjectRoot()
+	webDir := filepath.Join(root, "web")
+	hasIndex := func(dist string) bool {
+		_, err := os.Stat(filepath.Join(dist, "index.html"))
+		return err == nil
+	}
+	switch {
+	case headless:
 		os.Setenv("ICEBATH_SERVE_HEADLESS", "1")
-		return nil
+	case !envSet && !skipBuild:
+		built, err := dashboardBuildWebUI(ctx, w, webDir, true)
+		if err != nil {
+			return err
+		}
+		if !built {
+			return &DashboardExit{Code: 1}
+		}
+	case skipBuild:
+		distRoot := webbundle.Dist(root)
+		if envSet {
+			distRoot = pypath.PathJoin(envDist)
+		}
+		if !hasIndex(distRoot) {
+			recoverable := !envSet
+			if recoverable {
+				fmt.Fprintf(w, "⚠ --skip-build was passed but no web dist found at: %s\n", distRoot)
+				fmt.Fprintln(w, "  Attempting one recovery build of the web UI...")
+				if _, err := dashboardBuildWebUI(ctx, w, webDir, true); err != nil {
+					return err
+				}
+			}
+			if !hasIndex(distRoot) {
+				fmt.Fprintf(w, "✗ --skip-build was passed but no web dist found at: %s\n", distRoot)
+				if recoverable {
+					fmt.Fprintln(w, "  The recovery build did not produce a usable dist.")
+				}
+				fmt.Fprintln(w, preBuildHint)
+				fmt.Fprintln(w, "  Or drop --skip-build to build automatically.")
+				return &DashboardExit{Code: 1}
+			}
+			fmt.Fprintln(w, "  ✓ Recovery build produced a web dist")
+		}
+		fmt.Fprintf(w, "→ Skipping web UI build (--skip-build); using dist at %s\n", distRoot)
+	default:
+		distRoot, err := pypath.PathExpanduser(pypath.PathJoin(envDist))
+		if err != nil {
+			return err
+		}
+		if !hasIndex(distRoot) {
+			fmt.Fprintf(w, "✗ ICEBATH_WEB_DIST is set but no web dist found at: %s\n", distRoot)
+			fmt.Fprintln(w, preBuildHint)
+			fmt.Fprintln(w, "  Or unset ICEBATH_WEB_DIST to build and use the default web UI dist.")
+			return &DashboardExit{Code: 1}
+		}
+		os.Setenv("ICEBATH_WEB_DIST", distRoot)
+		fmt.Fprintf(w, "→ Using web dist from ICEBATH_WEB_DIST: %s\n", distRoot)
 	}
-	dist, err := webbundle.Dir(ctx, webbundle.Dashboard, l.Stdout)
-	if err != nil {
-		fmt.Fprintf(l.Stdout, "✗ %s\n", err)
-		return &DashboardExit{Code: 1}
-	}
-	fmt.Fprintf(l.Stdout, "→ Serving the dashboard bundle at %s\n", dist)
 	return nil
 }
 

@@ -145,7 +145,7 @@ func (c *CLI) handleBranchCommand(cmdOriginal string) {
 	if _, err := c.sessionDB.SetSessionTitle(c.ctx, newSessionID, branchTitle); err != nil {
 		cliLogger.Debug(fmt.Sprintf("branch title %s failed: %v", newSessionID, err))
 	}
-	tools.TransferSessionYolo(c.ctx, c.sessionID, newSessionID)
+	tools.TransferSessionYolo(c.sessionID, newSessionID)
 	c.sessionID, c.sessionStart, c.pendingTitle = newSessionID, now, ""
 	c.resumed = true
 	syncProcessSessionID(c.ctx, c.env, newSessionID)

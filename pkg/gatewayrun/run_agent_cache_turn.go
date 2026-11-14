@@ -83,7 +83,7 @@ func (r *GatewayRunner) clearSessionBoundarySecurityState(ctx context.Context, s
 	for _, clear := range []struct {
 		what string
 		fn   func(string)
-	}{{"slash-confirm", SlashConfirmClear}, {"approval", func(key string) { tools.ClearSession(ctx, key) }}} {
+	}{{"slash-confirm", SlashConfirmClear}, {"approval", tools.ClearSession}} {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {

@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path"
@@ -53,6 +54,40 @@ func readCompiledManifestInfo(tree fs.FS, d, prefix string) (string, any, any, s
 		description = ""
 	}
 	return name, version, description, key, true, nil
+}
+
+// Listing scan of the compiled bundled tree matching scanLevel, category directories one level deep, entries without a directory
+func scanCompiledLevel(tree fs.FS, base string, skip map[string]bool, prefix string, depth int, seen *entrySet) {
+	children, err := fs.ReadDir(tree, base)
+	if err != nil {
+		logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
+		return
+	}
+	for _, child := range children {
+		d := path.Join(base, child.Name())
+		if !child.IsDir() || (depth == 0 && len(skip) > 0 && skip[child.Name()]) {
+			continue
+		}
+		name, version, description, key, ok, err := readCompiledManifestInfo(tree, d, prefix)
+		if err != nil {
+			logWarn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
+			continue
+		}
+		if !ok {
+			if depth == 0 {
+				sub := child.Name()
+				if prefix != "" {
+					sub = prefix + "/" + child.Name()
+				}
+				scanCompiledLevel(tree, d, nil, sub, 1, seen)
+			}
+			continue
+		}
+		if _, dup := seen.byKey[key]; dup {
+			continue
+		}
+		seen.put(PluginEntry{Name: name, Version: scalarString(version), Description: scalarString(description), Source: "bundled", Key: key})
+	}
 }
 
 // Manifest of the compiled tree plugin listed under a key, false under the override or for an unknown key
@@ -133,4 +168,12 @@ func compiledProvidesTools(name string) ([]string, bool) {
 		names = append(names, scalarString(p))
 	}
 	return names, true
+}
+
+// Plugins package root the host child execs parent packages from, the override directory when set, else the SDK plugins package
+func hostPluginsRoot() (string, error) {
+	if dir := bundledOverrideDir(); dir != "" {
+		return dir, nil
+	}
+	return "", errPythonSource()
 }

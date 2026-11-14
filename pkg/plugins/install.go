@@ -374,7 +374,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return "", nil, "", err
 	} else if !looks {
-		logWarn(fmt.Sprintf("%s has no plugin.yaml or plugin.json; may not be a valid plugin", filepath.Base(target)))
+		logWarn(fmt.Sprintf("%s has no plugin.yaml / __init__.py; may not be a valid plugin", filepath.Base(target)))
 	}
 	copyExampleFiles(target, NewConsole(os.Stdout))
 	installed, err := readManifest(target)
@@ -517,7 +517,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 		NewConsole(os.Stdout).Print(fmt.Sprintf("[yellow]Local edits to %d tracked file(s) were not carried over; "+
 			"copies are under %s (re-apply by hand).[/yellow]", len(trackedEdits), backup))
 	}
-	if err := publishPlugin(ctx, h, tmpTarget, target, oldMetadata, newMetadata, publishOptions{}); err != nil {
+	if err := publishPlugin(ctx, tmpTarget, target, oldMetadata, newMetadata, publishOptions{}); err != nil {
 		return "", &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' was not published: %v", pluginName, err), FailureClass: publishFailureClass(err)}
 	}
 	return target, nil
@@ -527,7 +527,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 func publishFailureClass(err error) (class string) {
 	defer func() {
 		if recover() != nil {
-			class = "other"
+			class = "deps_failed"
 		}
 	}()
 	var opErr *PluginOperationError
@@ -544,10 +544,14 @@ func publishFailureClass(err error) (class string) {
 	if errno == syscall.EACCES || errno == syscall.EPERM || errors.Is(err, fs.ErrPermission) {
 		return "permission"
 	}
+	switch errno {
+	case syscall.ECONNREFUSED, syscall.ECONNRESET, syscall.ECONNABORTED, syscall.EPIPE, syscall.ESHUTDOWN, syscall.ETIMEDOUT:
+		return "deps_failed"
+	}
 	if isOS {
 		return "filesystem_error"
 	}
-	return "other"
+	return "deps_failed"
 }
 
 // Shared metrics recorder of plugin installs, the module attribute the hermes cases replace
@@ -671,13 +675,13 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	if looks, err := looksLikePluginDir(target); err != nil {
 		return err
 	} else if !looks {
-		console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] %s doesn't contain plugin.yaml or plugin.json. "+
+		console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] %s doesn't contain plugin.yaml, plugin.json, or __init__.py. "+
 			"It may not be a valid Icebath plugin.", installedName))
 	}
 	if err := promptPluginEnvVars(ctx, h, installedManifest, console); err != nil {
 		return err
 	}
-	alreadyActive, err := activePluginTree(h, target)
+	alreadyActive, err := activePluginTree(ctx, target, false)
 	if err != nil {
 		return err
 	}
@@ -742,7 +746,7 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 	return nil
 }
 
-// Makes a memory provider live, or says how to
+// Makes a memory provider live after preparing its dependencies, or says how to
 func selectMemoryProvider(ctx context.Context, h, name string, console *Console, selectNow bool) error {
 	if !selectNow {
 		console.Print(fmt.Sprintf("[dim]Memory provider installed but not active. Run `icebath memory setup` "+
@@ -753,8 +757,17 @@ func selectMemoryProvider(ctx context.Context, h, name string, console *Console,
 	if svc == nil || svc.MemoryProviderDir == nil {
 		return &ServiceMissingError{Name: "MemoryProviderDir"}
 	}
+	if svc.PrepareMemoryProviderDependencies == nil {
+		return &ServiceMissingError{Name: "PrepareMemoryProviderDependencies"}
+	}
 	if _, ok := svc.MemoryProviderDir(h, name); !ok {
 		console.Print(fmt.Sprintf("[red]✗[/red] %s does not resolve as a memory provider; memory.provider is unchanged.", name))
+		return nil
+	}
+	if err := svc.PrepareMemoryProviderDependencies(ctx, name); err != nil {
+		logDebug(fmt.Sprintf("memory provider %s dependency preparation failed: %v", name, err))
+		console.Print(fmt.Sprintf("[red]✗[/red] Could not prepare %s's dependencies: %v", name, err))
+		console.Print("[dim]memory.provider is unchanged; run `icebath memory setup` after resolving it.[/dim]")
 		return nil
 	}
 	expected, err := pluginSelectionVersion(h)

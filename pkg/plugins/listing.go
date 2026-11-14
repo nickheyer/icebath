@@ -219,7 +219,20 @@ func cmdShow(ctx context.Context, name string, console *Console) error {
 	console.Print("[dim]Status:[/dim] " + status)
 	console.Print("[dim]Source:[/dim] " + match.Source)
 	console.Print("[dim]Key:[/dim] " + match.Key)
-	console.Print("[dim]Form:[/dim] " + pluginFormText(match.Source, match.Key, match.Dir, manifest))
+	if match.Dir != "" && match.Source != "bundled" {
+		audit, err := auditPluginDir(match.Dir, manifest)
+		if err != nil {
+			return err
+		}
+		mode := IsolationMode(ctx, nil)
+		runsIn := "Icebath process"
+		if mode == IsolationHost && audit.HostReady() {
+			runsIn = "plugin host"
+		} else if mode == IsolationHost {
+			runsIn = "refused (plugins.isolation: host)"
+		}
+		console.Print(fmt.Sprintf("[dim]Runs in:[/dim] %s [dim]— %s[/dim]", runsIn, audit.Summary()))
+	}
 	svc := installedServices()
 	if svc == nil || svc.RequiresAuthNotice == nil {
 		return &ServiceMissingError{Name: "RequiresAuthNotice"}

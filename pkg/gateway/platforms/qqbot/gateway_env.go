@@ -3,17 +3,17 @@ package qqbot
 import (
 	"context"
 	"log/slog"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-// Home channel from the QQBOT names, else the deprecated QQ names with a rename warning
+// Sets the home channel from the QQBOT names, else the deprecated QQ names with a rename warning
 func qqHome(ctx context.Context, cfg *gateway.GatewayConfig, pc *gateway.PlatformConfig) error {
-	home := strings.TrimSpace(gateway.Getenv(ctx, "QQBOT_HOME_CHANNEL", ""))
+	home := pystr.Strip(gateway.Getenv(ctx, "QQBOT_HOME_CHANNEL", ""))
 	nameEnv := "QQBOT_HOME_CHANNEL_NAME"
 	if home == "" {
-		if home = strings.TrimSpace(gateway.Getenv(ctx, "QQ_HOME_CHANNEL", "")); home != "" {
+		if home = pystr.Strip(gateway.Getenv(ctx, "QQ_HOME_CHANNEL", "")); home != "" {
 			nameEnv = "QQ_HOME_CHANNEL_NAME"
 			slog.Warn("QQ_HOME_CHANNEL is deprecated; rename to QQBOT_HOME_CHANNEL in your .env for consistency with the platform key.")
 		}

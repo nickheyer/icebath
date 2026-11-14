@@ -296,7 +296,7 @@ var builtinBackendProviders = struct {
 
 var terminalEnvRegistryLog = slog.Default().With("logger", "agent.terminal_env_registry")
 
-// Refusal of a plugin backend that takes a name owned by an in tree backend
+// Python ValueError a plugin raises by taking a name owned by an in tree backend
 func rejectBuiltinBackendCollision(name string) error {
 	return &providerregistry.ValueError{Message: fmt.Sprintf("Terminal backend name '%s' is reserved for the built-in %s backend and cannot be registered by a plugin", name, name)}
 }

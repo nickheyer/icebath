@@ -20,6 +20,11 @@ import (
 
 var upperSnakeRe = regexp.MustCompile(`^[A-Z][A-Z0-9_]*\n?$`)
 
+const (
+	probeTimeout  = 30
+	probeSentinel = "ICEBATH_VALIDATE_JSON:"
+)
+
 // One admission check outcome
 type ValidationCheck struct {
 	Name   string
@@ -27,11 +32,11 @@ type ValidationCheck struct {
 	Detail string
 }
 
-// Result of validating one plugin directory, the form informational only
+// Result of validating one plugin directory, isolation informational only
 type ValidationReport struct {
-	Checks   []ValidationCheck
-	Warnings []string
-	Form     string
+	Checks    []ValidationCheck
+	Warnings  []string
+	Isolation *IsolationReport
 }
 
 // Detail of every failed check, its name when the detail is empty
@@ -91,7 +96,11 @@ func (r *ValidationReport) ToDict() *pyjson.Object {
 		warnings[i] = w
 	}
 	out.Set("warnings", warnings)
-	out.Set("form", r.Form)
+	if r.Isolation != nil {
+		out.Set("isolation", r.Isolation.ToDict())
+	} else {
+		out.Set("isolation", nil)
+	}
 	return out
 }
 
@@ -281,6 +290,142 @@ func checkOAuth(report *ValidationReport, manifest map[string]any, pluginDir str
 	return nil
 }
 
+// Self contained harness importing the plugin and calling register against a recording context
+const probeScript = `
+import importlib.util
+import json
+import sys
+
+plugin_dir = sys.argv[1]
+sentinel = sys.argv[2]
+options = json.loads(sys.argv[3])
+context_methods = set(options["context_methods"])
+provider_kind = options["kind"] == "model-provider"
+
+recorded = {"tools": [], "hooks": [], "middleware": [], "commands": [], "providers": [], "trusted_inbound": []}
+
+
+class RecordingContext:
+    plugin_config = {}
+    profile_name = "default"
+    plugin_id = "icebath_validate_probe_plugin"
+
+    def register_tool(self, name, *args, **kwargs):
+        recorded["tools"].append(str(name))
+
+    def register_hook(self, hook_name, callback, *, hold_stream=False):
+        recorded["hooks"].append(str(hook_name))
+
+    def register_middleware(self, kind, callback):
+        recorded["middleware"].append(str(kind))
+
+    def register_command(self, name, *args, **kwargs):
+        recorded["commands"].append(str(name))
+
+    def register_cli_command(self, name, *args, **kwargs):
+        recorded["commands"].append(str(name))
+
+    def register_platform(self, name, *args, **kwargs):
+        if kwargs.get("trusted_inbound"):
+            recorded["trusted_inbound"].append(str(name))
+
+    def get_config(self, key, default=None):
+        return default
+
+    def __getattr__(self, name):
+        if name in context_methods:
+            def _noop(*args, **kwargs):
+                return None
+
+            return _noop
+        raise AttributeError(name)
+
+
+def emit(payload):
+    print(sentinel + json.dumps(payload))
+
+
+if provider_kind:
+    try:
+        import providers as _providers
+    except Exception as exc:
+        emit({"error": "model-provider probe could not import providers: %s" % exc})
+        sys.exit(0)
+    _real_register_provider = _providers.register_provider
+
+    def _recording_register_provider(profile):
+        recorded["providers"].append(str(getattr(profile, "name", profile)))
+        return _real_register_provider(profile)
+
+    _providers.register_provider = _recording_register_provider
+
+try:
+    spec = importlib.util.spec_from_file_location(
+        "icebath_validate_probe_plugin",
+        plugin_dir + "/__init__.py",
+        submodule_search_locations=[plugin_dir],
+    )
+    module = importlib.util.module_from_spec(spec)
+    module.__path__ = [plugin_dir]
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+except Exception as exc:
+    emit({"error": "import failed: %s" % exc})
+    sys.exit(0)
+
+if provider_kind:
+    if not recorded["providers"]:
+        emit({"error": "model-provider plugin registered no ProviderProfile at import"})
+    else:
+        emit(recorded)
+    sys.exit(0)
+
+register = getattr(module, "register", None)
+if register is None:
+    emit({"error": "no register() function"})
+    sys.exit(0)
+
+try:
+    register(RecordingContext())
+except Exception as exc:
+    emit({"error": "register() raised: %s" % exc})
+    sys.exit(0)
+
+emit(recorded)
+`
+
+// Public callable attributes of the plugin context class, the scoped provider registrars excluded
+var pluginContextStaticMethods = []string{
+	"apost_message", "ask_choice", "call_mcp", "current_cron_execution", "dispatch_tool", "emit", "get_config",
+	"has_capability", "has_plugin", "inject_message", "on_unload", "post_message", "register_approval_transport",
+	"register_automation_blueprint", "register_auxiliary_task", "register_cli_command", "register_command",
+	"register_context_engine", "register_context_reference", "register_dashboard_auth_provider", "register_hook",
+	"register_locale", "register_locale_dir", "register_memory_provider", "register_middleware", "register_platform",
+	"register_platform_handler", "register_redaction_patterns", "register_skill", "register_slack_action_handler",
+	"register_system_prompt_section", "register_telegram_handler", "register_tool", "session_cwd", "session_surface",
+	"set_config", "side_question", "spawn_task", "subscribe",
+}
+
+// Sorted public method names of the plugin context the recording context accepts as no ops
+func pluginContextMethods() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, name := range pluginContextStaticMethods {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, name)
+		}
+	}
+	for _, row := range scopedProviderRegistrars {
+		if !seen[row.method] {
+			seen[row.method] = true
+			out = append(out, row.method)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // String items of a manifest list, empty when the key is not a list
 func declaredList(manifest map[string]any, key string) []string {
 	raw, ok := manifest[key].([]any)
@@ -336,7 +481,7 @@ func checkLoadable(report *ValidationReport, pluginDir string, manifest map[stri
 		report.add("loadable", true, "entry: "+strings.Join(present, ", "))
 		return
 	}
-	report.add("loadable", false, UnknownPluginFormText)
+	report.add("loadable", false, "nothing to load: no runtime entry, desktop/plugin.js, plugin.json or provides_locales + locales/ beside plugin.yaml; "+PluginFormsText)
 }
 
 // Install time scanner at admission, dangerous fails and caution findings warn the reviewer
@@ -442,9 +587,19 @@ func validatePluginDir(ctx context.Context, path string) (*ValidationReport, err
 	if err != nil || manifest == nil {
 		return report, err
 	}
+	if err := checkCoreOverride(report, path); err != nil {
+		return nil, err
+	}
+	if err := checkPrivateImports(report, path); err != nil {
+		return nil, err
+	}
 	checkDesktopSurface(report, path)
 	checkLanguagePacks(report, manifest, path)
-	report.Form = pluginFormText("user", "", path, manifest)
+	isolation, err := auditPluginDir(path, manifest)
+	if err != nil {
+		return nil, err
+	}
+	report.Isolation = isolation
 	return report, nil
 }
 
@@ -594,7 +749,11 @@ func validatePortablePlugin(ctx context.Context, report *ValidationReport, plugi
 	}
 	checkSecurityScan(report, pluginDir)
 	checkDesktopSurface(report, pluginDir)
-	report.Form = pluginFormText("user", "", pluginDir, pkg.Manifest)
+	isolation, err := auditPluginDir(pluginDir, pkg.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	report.Isolation = isolation
 	return report, nil
 }
 
@@ -611,10 +770,14 @@ func pyLen(v any) int {
 	return 0
 }
 
-// Reports the form a plugin takes, failing a runtime whose entry cannot be started
+// Reports the form a plugin takes, failing Python source and a runtime whose entry cannot be started
 func checkPluginForm(report *ValidationReport, manifest map[string]any, pluginDir string) {
 	mf := manifestFromData(manifest, pluginDir, "user", "")
 	if manifestRuntime(mf) == "" {
+		if isPythonPluginSource(mf) {
+			report.add("plugin form", false, "the plugin is Python source; "+PluginFormsText)
+			return
+		}
 		report.add("plugin form", true, "manifest only plugin, no runtime entry")
 		return
 	}

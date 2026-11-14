@@ -1,50 +1,44 @@
 package qqbot
 
-import (
-	"os"
-	"time"
-)
+import "os"
 
 const (
-	adapterVersion        = "1.1.0"
-	apiBaseProduction     = "https://api.sgroup.qq.com"
-	apiBaseSandbox        = "https://sandbox.api.sgroup.qq.com"
-	tokenURL              = "https://bots.qq.com/app/getAppAccessToken"
-	gatewayURLPath        = "/gateway"
-	onboardCreatePath     = "/lite/create_bind_task"
-	onboardPollPath       = "/lite/poll_bind_result"
-	qrURLBase             = "https://q.qq.com/qqbot/openclaw/connect.html"
-	defaultAPITimeout     = 30 * time.Second
-	fileUploadTimeout     = 120 * time.Second
-	connectTimeout        = 20 * time.Second
-	maxReconnectAttempts  = 100
-	rateLimitDelay        = 60 * time.Second
-	quickDisconnectWindow = 5 * time.Second
-	maxQuickDisconnects   = 3
-	onboardPollInterval   = 2 * time.Second
-	onboardAPITimeout     = 10 * time.Second
-	maxMessageLength      = 4000
-	dedupWindowSeconds    = 300
-	dedupMaxSize          = 1000
-
-	msgTypeText        = 0
-	msgTypeMarkdown    = 2
-	msgTypeInputNotify = 6
-	msgTypeMedia       = 7
-
-	mediaTypeImage = 1
-	mediaTypeVideo = 2
-	mediaTypeVoice = 3
-	mediaTypeFile  = 4
+	QQBotVersion             = "1.1.0"
+	APIBase                  = "https://api.sgroup.qq.com"
+	TokenURL                 = "https://bots.qq.com/app/getAppAccessToken"
+	GatewayURLPath           = "/gateway"
+	OnboardCreatePath        = "/lite/create_bind_task"
+	OnboardPollPath          = "/lite/poll_bind_result"
+	QRURLTemplate            = "https://q.qq.com/qqbot/openclaw/connect.html?task_id={task_id}&_wv=2&source=hermes"
+	DefaultAPITimeout        = 30.0
+	FileUploadTimeout        = 120.0
+	ConnectTimeoutSeconds    = 20.0
+	MaxReconnectAttempts     = 100
+	RateLimitDelay           = 60
+	QuickDisconnectThreshold = 5.0
+	MaxQuickDisconnectCount  = 3
+	OnboardPollInterval      = 2.0
+	OnboardAPITimeout        = 10.0
+	MaxMessageLength         = 4000
+	DedupWindowSeconds       = 300
+	DedupMaxSize             = 1000
+	MsgTypeText              = 0
+	MsgTypeMarkdown          = 2
+	MsgTypeMedia             = 7
+	MsgTypeInputNotify       = 6
+	MediaTypeImage           = 1
+	MediaTypeVideo           = 2
+	MediaTypeVoice           = 3
+	MediaTypeFile            = 4
 )
 
-// Delays between gateway reconnect attempts, the last one repeating
-var reconnectBackoff = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second}
-
-// QQ_PORTAL_HOST when set, else the q.qq.com portal
-func portalHost() string {
+// PortalHost is QQ_PORTAL_HOST read once at load, q.qq.com when unset
+var PortalHost = func() string {
 	if v, ok := os.LookupEnv("QQ_PORTAL_HOST"); ok {
 		return v
 	}
 	return "q.qq.com"
-}
+}()
+
+// ReconnectBackoff lists the reconnect delays in seconds
+var ReconnectBackoff = []int{2, 5, 10, 30, 60}

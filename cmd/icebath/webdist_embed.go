@@ -9,16 +9,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/webbundle"
 )
 
-//go:embed all:web_dist all:webapp_dist
+//go:embed all:web_dist
 var webDistFS embed.FS
 
-// Hands the dashboard and Webapp bundles make web built into cmd/icebath to the servers of this binary
+// Hands the dashboard bundle built into cmd/icebath/web_dist to the server of a release binary
 func init() {
-	for bundle, dir := range map[webbundle.Bundle]string{webbundle.Dashboard: "web_dist", webbundle.Webapp: "webapp_dist"} {
-		sub, err := fs.Sub(webDistFS, dir)
-		if err != nil {
-			panic(err)
-		}
-		webbundle.Embedded[bundle] = sub
+	sub, err := fs.Sub(webDistFS, "web_dist")
+	if err != nil {
+		panic(err)
 	}
+	webbundle.Embedded = sub
 }

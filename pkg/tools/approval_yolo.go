@@ -1,9 +1,6 @@
 package tools
 
-import (
-	"context"
-	"log/slog"
-)
+import "log/slog"
 
 // MCPTransferSession moves a chat's MCP spend total to a new session key, registered by the mcp package
 var MCPTransferSession func(oldKey, newKey string)
@@ -19,7 +16,7 @@ func persistSessionYolo(persist func(enabled bool) error, enabled bool, sessionK
 }
 
 // ToggleSessionYolo flips or sets the bypass for a session and returns the new state
-func ToggleSessionYolo(ctx context.Context, sessionKey string, enabled *bool, persisted bool, persist func(enabled bool) error) bool {
+func ToggleSessionYolo(sessionKey string, enabled *bool, persisted bool, persist func(enabled bool) error) bool {
 	state := false
 	if enabled == nil {
 		state = !(persisted || IsSessionYoloEnabled(sessionKey))
@@ -28,41 +25,41 @@ func ToggleSessionYolo(ctx context.Context, sessionKey string, enabled *bool, pe
 	}
 	persistSessionYolo(persist, state, sessionKey)
 	if state {
-		EnableSessionYolo(ctx, sessionKey)
+		EnableSessionYolo(sessionKey)
 	} else {
-		DisableSessionYolo(ctx, sessionKey)
+		DisableSessionYolo(sessionKey)
 	}
 	return state
 }
 
 // RestoreSessionYolo re arms a persisted bypass in a fresh process, true when this call turned it on
-func RestoreSessionYolo(ctx context.Context, sessionKey string, persisted bool) bool {
+func RestoreSessionYolo(sessionKey string, persisted bool) bool {
 	if sessionKey == "" || !persisted || yoloModeFrozen || IsSessionYoloEnabled(sessionKey) {
 		return false
 	}
-	EnableSessionYolo(ctx, sessionKey)
+	EnableSessionYolo(sessionKey)
 	return true
 }
 
 // ApplyLaunchYolo seeds a gateway owned session's launch bypass once per session boundary
-func ApplyLaunchYolo(ctx context.Context, sessionKey string) {
+func ApplyLaunchYolo(sessionKey string) {
 	if sessionKey == "" || yoloModeFrozen {
 		return
 	}
 	if !MarkLaunchYoloApplied(sessionKey) {
 		return
 	}
-	EnableSessionYolo(ctx, sessionKey)
+	EnableSessionYolo(sessionKey)
 }
 
 // RestoreGatewayYolo restores the authoritative routing value, including off, before launch seeding
-func RestoreGatewayYolo(ctx context.Context, sessionKey string, persisted *bool, launch bool) {
+func RestoreGatewayYolo(sessionKey string, persisted *bool, launch bool) {
 	if sessionKey == "" {
 		return
 	}
 	if persisted == nil {
 		if launch {
-			ApplyLaunchYolo(ctx, sessionKey)
+			ApplyLaunchYolo(sessionKey)
 		}
 		return
 	}
@@ -80,15 +77,15 @@ func RestoreGatewayYolo(ctx context.Context, sessionKey string, persisted *bool,
 }
 
 // TransferSessionYolo moves the live bypass and the MCP spend total to a continuation session id
-func TransferSessionYolo(ctx context.Context, oldKey, newKey string) {
+func TransferSessionYolo(oldKey, newKey string) {
 	if MCPTransferSession != nil {
 		MCPTransferSession(oldKey, newKey)
 	}
 	if oldKey == "" || newKey == "" || oldKey == newKey || !IsSessionYoloEnabled(oldKey) {
 		return
 	}
-	EnableSessionYolo(ctx, newKey)
-	DisableSessionYolo(ctx, oldKey)
+	EnableSessionYolo(newKey)
+	DisableSessionYolo(oldKey)
 }
 
 // WithSessionYolo returns the model config of a session row being created carrying a live bypass

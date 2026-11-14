@@ -11,11 +11,20 @@ import (
 )
 
 const (
+	chatNeedsNode = "%s could not start: icebath needs Node.js to run the terminal chat. " +
+		"Install Node 18+ (for example from nodejs.org) and reopen this tab."
 	chatTooManyTerminals = "%s could not start: too many chat terminals are open in other tabs. " +
 		"Close one and click Start new session."
 	chatProfileUnknown = "%s could not start: %s Pick another profile from the switcher and reopen this tab."
 	chatStartFailed    = "%s could not start: %s Check the server log (`icebath dashboard` terminal) and click Start new session."
 )
+
+// Whether a start failure is a SystemExit or names a missing node, npm or Node.js
+func nodeMissing(exc error) bool {
+	text := exc.Error()
+	return pyrepr.TypeName(exc) == "SystemExit" || strings.Contains(text, "'node'") || strings.Contains(text, "'npm'") ||
+		strings.Contains(text, "Node.js")
+}
 
 // One plain sentence for the terminal pane describing a chat start failure, never the bare exception
 func chatStartFailureMessage(exc error, surface string) string {
@@ -25,6 +34,9 @@ func chatStartFailureMessage(exc error, surface string) string {
 	}
 	if h, ok := asHTTPException(exc); ok {
 		return fmt.Sprintf(chatProfileUnknown, surface, chatSentence(pyrepr.Str(h.Detail)))
+	}
+	if nodeMissing(exc) {
+		return fmt.Sprintf(chatNeedsNode, surface)
 	}
 	text := exc.Error()
 	if text == "" {

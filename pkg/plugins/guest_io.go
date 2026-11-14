@@ -285,17 +285,3 @@ func guestHTTP(ctx context.Context, grants guestGrants, params map[string]any) (
 	}
 	return map[string]any{"status": int64(resp.StatusCode), "headers": headers, "body": data}, nil
 }
-
-// Access a manifest grants its guest, one entry per file root, host and environment variable
-func grantSurface(manifest map[string]any) map[string]bool {
-	out := map[string]bool{}
-	grants := asMap(manifest["grants"])
-	for _, kind := range []string{"read", "write", "net", "env"} {
-		for _, item := range stringList(grants[kind]) {
-			if item = strings.TrimSpace(item); item != "" {
-				out[kind+" "+item] = true
-			}
-		}
-	}
-	return out
-}

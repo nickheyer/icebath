@@ -2,55 +2,125 @@ package qqbot
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
+
+	"github.com/dlclark/regexp2/v2"
+	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
-	approvalButtonPrefix = "approve:"
-	updatePromptPrefix   = "update_prompt:"
+	ApprovalButtonPrefix = "approve:"
+	UpdatePromptPrefix   = "update_prompt:"
 )
+
+// Compiled Python pattern, panicking at init on a malformed constant
+func mustPyRe(pattern string) *regexp2.Regexp {
+	re, err := pyre.Compile(pattern)
+	if err != nil {
+		panic(err)
+	}
+	return re
+}
 
 var (
-	approvalDataRE = regexp.MustCompile(`^approve:(.+):(allow-once|allow-always|deny)$`)
-	updatePromptRE = regexp.MustCompile(`^update_prompt:(y|n)$`)
+	approvalDataRe = mustPyRe(`^approve:(.+):(allow-once|allow-always|deny)$`)
+	updatePromptRe = mustPyRe(`^update_prompt:(y|n)$`)
 )
 
-type keyboardPermission struct {
-	Type int `json:"type"`
+type KeyboardButtonPermission struct{ Type int }
+
+type KeyboardButtonAction struct {
+	Type       int
+	Data       string
+	Permission KeyboardButtonPermission
+	ClickLimit int
 }
 
-type keyboardAction struct {
-	Type       int                `json:"type"`
-	Data       string             `json:"data"`
-	Permission keyboardPermission `json:"permission"`
-	ClickLimit int                `json:"click_limit"`
+type KeyboardButtonRenderData struct {
+	Label        string
+	VisitedLabel string
+	Style        int
 }
 
-type keyboardRenderData struct {
-	Label        string `json:"label"`
-	VisitedLabel string `json:"visited_label"`
-	Style        int    `json:"style"`
+type KeyboardButton struct {
+	ID         string
+	RenderData KeyboardButtonRenderData
+	Action     KeyboardButtonAction
+	GroupID    string
 }
 
-type keyboardButton struct {
-	ID         string             `json:"id"`
-	RenderData keyboardRenderData `json:"render_data"`
-	Action     keyboardAction     `json:"action"`
-	GroupID    string             `json:"group_id"`
+type KeyboardRow struct{ Buttons []KeyboardButton }
+
+type KeyboardContent struct{ Rows []KeyboardRow }
+
+type InlineKeyboard struct{ Content KeyboardContent }
+
+func obj(kv ...any) *pyjson.Object {
+	o := pyjson.NewObject()
+	for i := 0; i < len(kv); i += 2 {
+		o.Set(kv[i].(string), kv[i+1])
+	}
+	return o
 }
 
-type keyboardRow struct {
-	Buttons []keyboardButton `json:"buttons"`
+// ToDict serializes the permission in field declaration order
+func (p KeyboardButtonPermission) ToDict() *pyjson.Object { return obj("type", int64(p.Type)) }
+
+// ToDict serializes the action in field declaration order
+func (a KeyboardButtonAction) ToDict() *pyjson.Object {
+	return obj("type", int64(a.Type), "data", a.Data, "permission", a.Permission.ToDict(), "click_limit", int64(a.ClickLimit))
 }
 
-type keyboardContent struct {
-	Rows []keyboardRow `json:"rows"`
+// ToDict serializes the render data in field declaration order
+func (r KeyboardButtonRenderData) ToDict() *pyjson.Object {
+	return obj("label", r.Label, "visited_label", r.VisitedLabel, "style", int64(r.Style))
 }
 
-// Inline keyboard payload of a QQ message body
-type inlineKeyboard struct {
-	Content keyboardContent `json:"content"`
+// ToDict serializes the button in field declaration order
+func (b KeyboardButton) ToDict() *pyjson.Object {
+	return obj("id", b.ID, "render_data", b.RenderData.ToDict(), "action", b.Action.ToDict(), "group_id", b.GroupID)
+}
+
+// ToDict serializes the row in field declaration order
+func (r KeyboardRow) ToDict() *pyjson.Object {
+	buttons := make([]any, len(r.Buttons))
+	for i, b := range r.Buttons {
+		buttons[i] = b.ToDict()
+	}
+	return obj("buttons", buttons)
+}
+
+// ToDict serializes the content in field declaration order
+func (c KeyboardContent) ToDict() *pyjson.Object {
+	rows := make([]any, len(c.Rows))
+	for i, r := range c.Rows {
+		rows[i] = r.ToDict()
+	}
+	return obj("rows", rows)
+}
+
+// ToDict serializes the keyboard payload for MessageToCreate.keyboard
+func (k InlineKeyboard) ToDict() *pyjson.Object { return obj("content", k.Content.ToDict()) }
+
+// ParseApprovalButtonData splits approve data into session key and decision, ok false when it does not match
+func ParseApprovalButtonData(buttonData string) (sessionKey, decision string, ok bool) {
+	m, _ := approvalDataRe.FindStringMatch(buttonData)
+	if m == nil {
+		return "", "", false
+	}
+	return m.GroupByNumber(1).String(), m.GroupByNumber(2).String(), true
+}
+
+// ParseUpdatePromptButtonData returns y or n from update prompt data, ok false when it does not match
+func ParseUpdatePromptButtonData(buttonData string) (string, bool) {
+	m, _ := updatePromptRe.FindStringMatch(buttonData)
+	if m == nil {
+		return "", false
+	}
+	return m.GroupByNumber(1).String(), true
 }
 
 type buttonSpec struct {
@@ -58,22 +128,22 @@ type buttonSpec struct {
 	style                    int
 }
 
-// One row of single use callback buttons sharing a group so a click greys the rest
-func singleRowKeyboard(groupID string, buttons ...buttonSpec) *inlineKeyboard {
-	row := keyboardRow{}
+// One row of callback buttons sharing a group so a click greys the rest
+func singleRowKeyboard(groupID string, buttons ...buttonSpec) InlineKeyboard {
+	row := KeyboardRow{}
 	for _, b := range buttons {
-		row.Buttons = append(row.Buttons, keyboardButton{
+		row.Buttons = append(row.Buttons, KeyboardButton{
 			ID: b.id, GroupID: groupID,
-			Action:     keyboardAction{Type: 1, Data: b.data, Permission: keyboardPermission{Type: 2}, ClickLimit: 1},
-			RenderData: keyboardRenderData{Label: b.label, VisitedLabel: b.visited, Style: b.style},
+			Action:     KeyboardButtonAction{Type: 1, Data: b.data, Permission: KeyboardButtonPermission{Type: 2}, ClickLimit: 1},
+			RenderData: KeyboardButtonRenderData{Label: b.label, VisitedLabel: b.visited, Style: b.style},
 		})
 	}
-	return &inlineKeyboard{Content: keyboardContent{Rows: []keyboardRow{row}}}
+	return InlineKeyboard{Content: KeyboardContent{Rows: []KeyboardRow{row}}}
 }
 
-// Allow once, optional always allow and deny buttons carrying the session key
-func buildApprovalKeyboard(sessionKey string, allowPermanent bool) *inlineKeyboard {
-	prefix := approvalButtonPrefix + sessionKey
+// BuildApprovalKeyboard builds allow once, optional always allow and deny buttons carrying the session key
+func BuildApprovalKeyboard(sessionKey string, allowPermanent bool) InlineKeyboard {
+	prefix := ApprovalButtonPrefix + sessionKey
 	buttons := []buttonSpec{{"allow", "✅ 允许一次", "已允许", prefix + ":allow-once", 1}}
 	if allowPermanent {
 		buttons = append(buttons, buttonSpec{"always", "⭐ 始终允许", "已始终允许", prefix + ":allow-always", 1})
@@ -82,74 +152,85 @@ func buildApprovalKeyboard(sessionKey string, allowPermanent bool) *inlineKeyboa
 	return singleRowKeyboard("approval", buttons...)
 }
 
-// Confirm and cancel buttons of an update prompt
-func buildUpdatePromptKeyboard() *inlineKeyboard {
+// BuildUpdatePromptKeyboard builds the confirm and cancel buttons of an update prompt
+func BuildUpdatePromptKeyboard() InlineKeyboard {
 	return singleRowKeyboard("update_prompt",
-		buttonSpec{"yes", "✓ 确认", "已确认", updatePromptPrefix + "y", 1},
-		buttonSpec{"no", "✗ 取消", "已取消", updatePromptPrefix + "n", 0})
+		buttonSpec{"yes", "✓ 确认", "已确认", UpdatePromptPrefix + "y", 1},
+		buttonSpec{"no", "✗ 取消", "已取消", UpdatePromptPrefix + "n", 0})
 }
 
-// Session key and decision of approval button data, false when it does not match
-func parseApprovalButtonData(data string) (string, string, bool) {
-	m := approvalDataRE.FindStringSubmatch(data)
-	if m == nil {
-		return "", "", false
-	}
-	return m[1], m[2], true
+type ApprovalRequest struct {
+	SessionKey     string
+	Title          string
+	Description    string
+	CommandPreview string
+	Cwd            string
+	ToolName       string
+	Severity       string
+	TimeoutSec     int
+	AllowPermanent bool
 }
 
-// Answer y or n of update prompt button data, false when it does not match
-func parseUpdatePromptButtonData(data string) (string, bool) {
-	m := updatePromptRE.FindStringSubmatch(data)
-	if m == nil {
-		return "", false
-	}
-	return m[1], true
+// NewApprovalRequest fills the dataclass defaults of a 120 second timeout and permanent scope allowed
+func NewApprovalRequest(sessionKey, title string) ApprovalRequest {
+	return ApprovalRequest{SessionKey: sessionKey, Title: title, TimeoutSec: 120, AllowPermanent: true}
 }
 
-// Display data of one exec approval card
-type approvalRequest struct {
-	sessionKey     string
-	title          string
-	description    string
-	commandPreview string
-	timeoutSec     int
-	allowPermanent bool
-}
+var severityIcons = map[string]string{"critical": "🔴", "info": "🔵"}
 
-// Markdown body of an approval card, the command layout when a command is shown
-func buildApprovalText(req approvalRequest) string {
+// BuildApprovalText renders the markdown body of an exec or plugin approval request
+func BuildApprovalText(req ApprovalRequest) string {
 	var lines []string
-	if req.commandPreview != "" {
-		lines = []string{"🔐 **命令执行审批**", "", "```\n" + cutRunes(req.commandPreview, 300) + "\n```"}
-		if req.title != "" && req.title != req.commandPreview {
-			lines = append(lines, "📋 "+req.title)
+	if req.CommandPreview != "" || req.Cwd != "" {
+		lines = []string{"🔐 **命令执行审批**", ""}
+		if req.CommandPreview != "" {
+			preview := []rune(req.CommandPreview)
+			lines = append(lines, "```\n"+string(preview[:min(300, len(preview))])+"\n```")
+		}
+		if req.Cwd != "" {
+			lines = append(lines, "📁 目录: "+req.Cwd)
+		}
+		if req.Title != "" && req.Title != req.CommandPreview {
+			lines = append(lines, "📋 "+req.Title)
+		}
+		if req.Description != "" {
+			lines = append(lines, "📝 "+req.Description)
 		}
 	} else {
-		lines = []string{"🟡 **审批请求**", "", "📋 " + req.title}
+		icon, ok := severityIcons[req.Severity]
+		if !ok {
+			icon = "🟡"
+		}
+		lines = []string{icon + " **审批请求**", "", "📋 " + req.Title}
+		if req.Description != "" {
+			lines = append(lines, "📝 "+req.Description)
+		}
+		if req.ToolName != "" {
+			lines = append(lines, "🔧 工具: "+req.ToolName)
+		}
 	}
-	if req.description != "" {
-		lines = append(lines, "📝 "+req.description)
-	}
-	lines = append(lines, "", fmt.Sprintf("⏱️ 超时: %d 秒", req.timeoutSec))
+	lines = append(lines, "", fmt.Sprintf("⏱️ 超时: %d 秒", req.TimeoutSec))
 	return strings.Join(lines, "\n")
 }
 
-// Parsed INTERACTION_CREATE dispatch
-type interactionEvent struct {
-	id                string
-	scene             string
-	groupOpenID       string
-	groupMemberOpenID string
-	userOpenID        string
-	guildID           string
-	buttonData        string
-	resolverUserID    string
+type InteractionEvent struct {
+	ID                string
+	Type              int64
+	ChatType          int64
+	Scene             string
+	GroupOpenID       string
+	GroupMemberOpenID string
+	UserOpenID        string
+	ChannelID         string
+	GuildID           string
+	ButtonData        string
+	ButtonID          string
+	ResolverUserID    string
 }
 
-// Group member, then c2c user, then resolver user who clicked
-func (e interactionEvent) operatorOpenID() string {
-	for _, v := range []string{e.groupMemberOpenID, e.userOpenID, e.resolverUserID} {
+// OperatorOpenID is the group member, then the c2c user, then the resolver user id
+func (e InteractionEvent) OperatorOpenID() string {
+	for _, v := range []string{e.GroupMemberOpenID, e.UserOpenID, e.ResolverUserID} {
 		if v != "" {
 			return v
 		}
@@ -159,14 +240,76 @@ func (e interactionEvent) operatorOpenID() string {
 
 var sceneNames = map[int64]string{0: "guild", 1: "group", 2: "c2c"}
 
-// Reads the d payload of an INTERACTION_CREATE dispatch
-func parseInteractionEvent(raw map[string]any) interactionEvent {
-	resolved := jmap(jmap(raw["data"])["resolved"])
-	code, _ := jint(raw["chat_type"])
-	return interactionEvent{
-		id: jstr(raw["id"]), scene: sceneNames[code],
-		groupOpenID: jstr(raw["group_openid"]), groupMemberOpenID: jstr(raw["group_member_openid"]),
-		userOpenID: jstr(raw["user_openid"]), guildID: jstr(raw["guild_id"]),
-		buttonData: jstr(resolved["button_data"]), resolverUserID: jstr(resolved["user_id"]),
+// Dict view over a decoded JSON object or a Go map, ok false for any other value
+func asDict(v any) (map[string]any, bool) {
+	switch d := v.(type) {
+	case *pyjson.Object:
+		return d.Vals, true
+	case map[string]any:
+		return d, true
 	}
+	return nil, false
+}
+
+func getOr(d map[string]any, key string, def any) any {
+	if v, ok := d[key]; ok {
+		return v
+	}
+	return def
+}
+
+func orDefault(v, def any) any {
+	if pyrepr.Truthy(v) {
+		return v
+	}
+	return def
+}
+
+// Python int of a value, failing like int() on text or types it rejects
+func pyInt64(v any) (int64, error) {
+	n, err := pyint.Of(v)
+	if err != nil {
+		return 0, err
+	}
+	if !n.IsInt64() {
+		return 0, fmt.Errorf("Python int too large to convert to C ssize_t")
+	}
+	return n.Int64(), nil
+}
+
+func notDictErr(v any) error {
+	return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+}
+
+// ParseInteractionEvent reads the d payload of an INTERACTION_CREATE dispatch
+func ParseInteractionEvent(rawValue any) (InteractionEvent, error) {
+	raw, ok := asDict(rawValue)
+	if !ok {
+		return InteractionEvent{}, notDictErr(rawValue)
+	}
+	dataValue := orDefault(raw["data"], map[string]any{})
+	dataRaw, ok := asDict(dataValue)
+	if !ok {
+		return InteractionEvent{}, notDictErr(dataValue)
+	}
+	resolvedValue := orDefault(dataRaw["resolved"], map[string]any{})
+	sceneCode, err := pyInt64(orDefault(getOr(raw, "chat_type", int64(0)), int64(0)))
+	if err != nil {
+		return InteractionEvent{}, err
+	}
+	eventType, err := pyInt64(orDefault(getOr(dataRaw, "type", int64(0)), int64(0)))
+	if err != nil {
+		return InteractionEvent{}, err
+	}
+	resolved, ok := asDict(resolvedValue)
+	if !ok {
+		return InteractionEvent{}, notDictErr(resolvedValue)
+	}
+	str := func(d map[string]any, key string) string { return pyrepr.Str(getOr(d, key, "")) }
+	return InteractionEvent{
+		ID: str(raw, "id"), Type: eventType, ChatType: sceneCode, Scene: sceneNames[sceneCode],
+		GroupOpenID: str(raw, "group_openid"), GroupMemberOpenID: str(raw, "group_member_openid"),
+		UserOpenID: str(raw, "user_openid"), ChannelID: str(raw, "channel_id"), GuildID: str(raw, "guild_id"),
+		ButtonData: str(resolved, "button_data"), ButtonID: str(resolved, "button_id"), ResolverUserID: str(resolved, "user_id"),
+	}, nil
 }

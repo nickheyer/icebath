@@ -332,7 +332,7 @@ func removeIdleCleanTUIWorktree(ctx context.Context, info map[string]any) bool {
 	if tools.WorktreeStillInUse(path, 5*time.Second) {
 		return false
 	}
-	if tools.TreeStillServed(ctx, dbPath, path) != "" {
+	if tools.TreeStillServed(dbPath, path) != "" {
 		return false
 	}
 	cleanupWorktree(ctx, worktreeInfoStrings(info))

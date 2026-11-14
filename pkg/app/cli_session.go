@@ -244,7 +244,7 @@ func (c *CLI) restoreSessionYolo(sessionMeta map[string]any, quiet bool) {
 	if sessionKey == "" {
 		sessionKey = "default"
 	}
-	if tools.RestoreSessionYolo(c.ctx, sessionKey, state.SessionYoloEnabled(sessionMeta)) {
+	if tools.RestoreSessionYolo(sessionKey, state.SessionYoloEnabled(sessionMeta)) {
 		c.dimNotice(c.t("cli.session.yolo_restored", nil), quiet)
 	}
 }

@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"math"
 	"runtime"
 	"sort"
@@ -13,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Floor in minutes of the stale in flight allowance
@@ -408,7 +408,7 @@ func (s *Store) jobIntervalMinutes(job *Job) (float64, bool) {
 }
 
 // Error a pool raises for a submit after shutdown
-var errPoolShutdown = tools.ErrPoolShutdown
+var errPoolShutdown = errors.New("cannot schedule new futures after shutdown")
 
 // Result slot of one pool task, done once the task returns
 type poolFuture struct {

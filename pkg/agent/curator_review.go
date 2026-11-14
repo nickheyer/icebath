@@ -36,7 +36,7 @@ func runCuratorReview(ctx context.Context, req memory.CuratorReviewRequest) (*me
 		defer func() { _ = recover() }()
 		skills.ResetBackgroundReviewReadMarks(a.env)
 	}()
-	result, err := a.RunConversation(tools.SilenceOutput(ctx), req.Prompt, RunConversationOptions{})
+	result, err := a.RunConversation(tools.ThreadScopedSilence(ctx), req.Prompt, RunConversationOptions{})
 	if err != nil {
 		return nil, err
 	}
