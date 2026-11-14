@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -11,6 +13,9 @@ import (
 )
 
 const planSyncRetryAfter = 120 * time.Second
+
+// Logger of the plan snapshot sync records
+func planSyncLog() *slog.Logger { return slog.Default().With("logger", "agent.plan_snapshot_sync") }
 
 type planSyncSeen struct {
 	onWindow bool
@@ -74,6 +79,7 @@ func PlanSnapshotIsStale(state *CreditsState, snapshot *NousPortalAccountInfo) b
 func planSyncRefresh(ctx context.Context, planChanged bool, key string) {
 	defer func() {
 		if r := recover(); r != nil {
+			planSyncLog().Debug(fmt.Sprintf("plan sync ▸ refresh failed (fail-open): %v", r))
 			planSyncMu.Lock()
 			delete(planSyncLastAttempt, key)
 			planSyncMu.Unlock()
@@ -94,16 +100,18 @@ func planSyncRefresh(ctx context.Context, planChanged bool, key string) {
 
 // SyncPlanSnapshot starts one background account refresh when a reply says the cached plan is out of date
 func SyncPlanSnapshot(state *CreditsState) (started bool) {
-	ctx := creditsCtx()
-	key := home.Key(home.Dir(ctx))
+	key := ""
 	defer func() {
 		if r := recover(); r != nil {
+			planSyncLog().Debug(fmt.Sprintf("plan sync ▸ check failed (fail-open): %v", r))
 			planSyncMu.Lock()
 			delete(planSyncInflight, key)
 			planSyncMu.Unlock()
 			started = false
 		}
 	}()
+	ctx := creditsCtx()
+	key = home.Key(home.Dir(ctx))
 	onWindow := state != nil && state.IsUsageWindow()
 	if !onWindow {
 		if _, cachedWindow := snapshotFullIDs(planSyncPeek(ctx)); !cachedWindow {

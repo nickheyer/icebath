@@ -18,6 +18,9 @@ func auxRuntimeMain(ctx context.Context) map[string]any {
 	return runtime
 }
 
+// RuntimeMainOf is the live main runtime bound to the context, nil outside a binding
+func RuntimeMainOf(ctx context.Context) map[string]any { return auxRuntimeMain(ctx) }
+
 // One field of the bound main runtime, empty when unbound or unset
 func auxRuntimeMainValue(ctx context.Context, field string) any {
 	runtime := auxRuntimeMain(ctx)

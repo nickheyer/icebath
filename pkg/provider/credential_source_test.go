@@ -14,9 +14,9 @@ func neverCalled(context.Context) (string, error) {
 func TestCallableKeysAreLabelledByTheirSource(t *testing.T) {
 	cases := map[any]string{
 		TagCredentialSource(neverCalled, CredentialSourceEntraID):      "Microsoft Entra ID",
-		TagCredentialSource(neverCalled, CredentialSourceVertexOAuth):  "Google Vertex OAuth",
+		TagCredentialSource(neverCalled, CredentialSourceVertexOAuth):  "Google OAuth (Vertex AI)",
 		TagCredentialSource(neverCalled, CredentialSourceMinimaxOAuth): "MiniMax OAuth",
-		&CommandTokenSource{Command: "print-token"}:                    "key_cmd token",
+		&CommandTokenSource{Command: "print-token"}:                    "key_cmd token (command)",
 	}
 	for key, want := range cases {
 		if got := CredentialLabel(key); got != want {
@@ -24,7 +24,7 @@ func TestCallableKeysAreLabelledByTheirSource(t *testing.T) {
 		}
 	}
 	var untagged func(context.Context) (string, error) = neverCalled
-	if got := CredentialLabel(untagged); got != credentialSourceUnknownLabel {
+	if got := CredentialLabel(untagged); got != "Token provider" {
 		t.Fatalf("untagged callable gets the neutral label, got %q", got)
 	}
 	if CredentialLabel("sk-live-abcdefghijklmnop3456") != "" || CredentialLabel(nil) != "" {
@@ -37,7 +37,7 @@ func TestBothSurfacesShareOneSourceTable(t *testing.T) {
 	for source := range credentialSourceLabels {
 		seen[CredentialLabel(TagCredentialSource(neverCalled, source))] = true
 	}
-	if len(seen) != len(credentialSourceLabels) || seen[credentialSourceUnknownLabel] {
+	if len(seen) != len(credentialSourceLabels) || seen["Token provider"] {
 		t.Fatal("every source has its own label and none collides with the neutral one")
 	}
 }

@@ -184,17 +184,21 @@ func ProviderRetryAfter(e *APIError) (time.Duration, bool) {
 	if e == nil {
 		return 0, false
 	}
-	if e.RetryAfter > 0 {
-		return e.RetryAfter, true
+	if e.RetryAfterHeader != nil {
+		return *e.RetryAfterHeader, *e.RetryAfterHeader > 0
 	}
 	if body := decodeJSONObject(e.Body); body != nil {
 		target := body
 		if nested, ok := body["error"].(map[string]any); ok {
 			target = nested
 		}
-		if d, ok := retryAfterValue(target["retry_after"]); ok && d > 0 {
-			return d, true
+		if d, ok := retryAfterValue(target["retry_after"]); ok {
+			return d, d > 0
 		}
+		return 0, false
+	}
+	if e.RetryAfter > 0 {
+		return e.RetryAfter, true
 	}
 	return 0, false
 }

@@ -213,7 +213,10 @@ func bindLSP(cli *commands.CLI) {
 			return status(lsp.RunCommand(ctx, tools.LSPCommandContext(processToolsEnv(ctx)), a, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil)
 		})
 	}
-	cli.Bind("lsp", func(cmd *cobra.Command, args []string) error { return cmd.Help() })
+	cli.Bind("lsp", func(cmd *cobra.Command, args []string) error {
+		ctx := cmdCtx(cmd)
+		return status(lsp.RunCommand(ctx, tools.LSPCommandContext(processToolsEnv(ctx)), lsp.CommandArgs{}, cmd.OutOrStdout(), cmd.ErrOrStderr()), nil)
+	})
 }
 
 // Binds the computer-use tree onto the codeexec dispatcher

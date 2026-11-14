@@ -109,13 +109,13 @@ func TestEveryTaggedMinterKeepsItsSourceOnTheRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	src, _, ok := vertexRuntimeConfig(WithDeferredTokenMint(context.Background()), map[string]any{}, nil, h)
-	if !ok || CredentialSourceOf(src) != CredentialSourceVertexOAuth || CredentialLabel(src) != "Google Vertex OAuth" || atomic.LoadInt32(&calls) != 0 {
+	if !ok || CredentialSourceOf(src) != CredentialSourceVertexOAuth || CredentialLabel(src) != "Google OAuth (Vertex AI)" || atomic.LoadInt32(&calls) != 0 {
 		t.Fatalf("vertex minter tag %q label %q calls %d", CredentialSourceOf(src), CredentialLabel(src), calls)
 	}
 
 	keyCmd := map[string]any{"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "key_cmd": printTokenCmd("minted-token")}}}
 	rt = mustResolve(t, testResolver(t, keyCmd, &fakeCreds{}, ""), "custom:gw", "", "", "")
-	if route := rt.Route(); CredentialSourceOf(route.TokenSource) != CredentialSourceKeyCmd || CredentialLabel(route.TokenSource) != "key_cmd token" {
+	if route := rt.Route(); CredentialSourceOf(route.TokenSource) != CredentialSourceKeyCmd || CredentialLabel(route.TokenSource) != "key_cmd token (command)" {
 		t.Fatalf("key_cmd route tag %q", CredentialSourceOf(route.TokenSource))
 	}
 	if tok, err := rt.TokenSource(context.Background()); err != nil || tok != "minted-token" {
@@ -127,7 +127,7 @@ func TestEveryTaggedMinterKeepsItsSourceOnTheRoute(t *testing.T) {
 		t.Fatal("minimax provider tag lost on its bare func")
 	}
 	bare := func(context.Context) (string, error) { return "x", nil }
-	if CredentialSourceOf(bare) != "" || CredentialLabel(bare) != "token provider" {
+	if CredentialSourceOf(bare) != "" || CredentialLabel(bare) != "Token provider" {
 		t.Fatalf("untagged func must stay neutral %q %q", CredentialSourceOf(bare), CredentialLabel(bare))
 	}
 }

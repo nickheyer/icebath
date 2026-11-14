@@ -396,7 +396,9 @@ func SetCodexQuotaProbe(fn func(env PoolEnv, token, baseURL string) (bool, bool)
 
 // Client for Codex OAuth and probe endpoints racing address families with the proxy env normalized
 func codexHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: oauthTransport(oauthVerify{TLS: PlatformTLSConfig()})}
+	client := &http.Client{Timeout: timeout, Transport: oauthTransport(oauthVerify{TLS: PlatformTLSConfig()})}
+	enableHappyEyeballsOnClient(client)
+	return client
 }
 
 // Runs one Codex request with the 1 MiB response body cap

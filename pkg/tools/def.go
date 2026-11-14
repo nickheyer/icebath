@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -147,6 +148,10 @@ type Env struct {
 	profileHome string
 	// Set on the copy availability checks read while the context runs a delegate_task child
 	delegatedChild bool
+	// Session variables of a context forked from its parent, nil reading the shared values
+	sessionVars *sessionVarStore
+	// Live main runtime the owning agent bound for its turn, nil for an env no agent owns
+	runtimeMain *atomic.Pointer[map[string]any]
 }
 
 // Emit sends a progress event when the host registered a listener

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Reset windows shorter than this are upstream jitter rather than a breaker worthy exhaustion
@@ -336,10 +338,11 @@ func (g *NousRateGuard) Remaining() (time.Duration, bool) {
 	return 0, false
 }
 
-// Clear removes the shared state after a successful Nous request
+// Clear removes the shared state after a successful Nous request, logging and returning any other failure
 func (g *NousRateGuard) Clear() error {
 	err := os.Remove(g.statePath())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		nousRateGuardLog().Debug(fmt.Sprintf("Failed to clear Nous rate limit state: %s", pypath.OSErrorText(err)+": "+pyrepr.StrRepr(g.statePath())))
 		return err
 	}
 	return nil

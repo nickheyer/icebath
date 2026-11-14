@@ -2,20 +2,15 @@ package lsp
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
-
-var (
-				)
 
 // One captured log record
 type logRecord struct {

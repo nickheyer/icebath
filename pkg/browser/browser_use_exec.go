@@ -581,7 +581,14 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 	workspace := workspaceDir(env, taskID)
 	timeout := clampTimeout(timeoutS)
 	started := time.Now()
-	run := execRun{python: python, childEnv: execChildEnv(env, route, workspace), route: route, code: code, workspace: workspace,
+	childEnv := execChildEnv(env, route, workspace)
+	if err := NamespaceHarnessDirs(childEnv, servedProfileTag(ctx)); err != nil {
+		return "", err
+	}
+	if err := FitDefaultSocketDir(childEnv); err != nil {
+		return "", err
+	}
+	run := execRun{python: python, childEnv: childEnv, route: route, code: code, workspace: workspace,
 		timeout: timeout, activate: route[cloudBrowserSentinel] == activateAlways, ownTab: sessionName != "" && route[privateBrowserSentinel] == ""}
 	dispatch := func() map[string]any {
 		attachVaultSupervisor(ctx, env, route, taskID)

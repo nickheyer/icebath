@@ -419,7 +419,7 @@ func (c *codexResponsesClient) httpError(resp *http.Response, data []byte) error
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
-		apiErr.RetryAfter = RetryAfterFrom(resp.Header.Get("Retry-After"))
+		apiErr.SetRetryAfterHeader(resp.Header.Get("Retry-After"))
 	}
 	if apiErr.RequestID == "" {
 		apiErr.RequestID = headerRequestID(resp.Header)
@@ -569,7 +569,7 @@ func (c *codexResponsesClient) attemptError(err error, p *codexPrepared) error {
 			out.Message = pse.Error()
 		}
 		if pse.Headers != nil && out.RetryAfter == 0 {
-			out.RetryAfter = RetryAfterFrom(pse.Headers.Get("Retry-After"))
+			out.SetRetryAfterHeader(pse.Headers.Get("Retry-After"))
 		}
 		return out
 	}

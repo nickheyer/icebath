@@ -270,7 +270,7 @@ func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string
 	}
 	current := provider.BuildBackendIdentity(a.provider, a.model, a.baseURL)
 	candidate := provider.BuildBackendIdentity(fbProvider, fbModel, pyrepr.Str(orEmpty(fb["base_url"])))
-	if provider.ShouldSkipCandidate(candidate, current, provider.ScopeModel) {
+	if provider.ShouldSkipCandidateIn(ctx, candidate, current, provider.ScopeModel) {
 		where := current.BaseURL
 		if where == "" {
 			where = current.Provider

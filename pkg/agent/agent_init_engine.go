@@ -306,7 +306,7 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if a.env == nil {
 		a.env = tools.ToolEnvFrom(ctx)
 	}
-	a.env = withToolMetricSink(ctx, a.env)
+	a.env = tools.WithRuntimeMainSlot(withToolMetricSink(ctx, a.env))
 	a.sessionCwd = o.Cwd
 	budget := o.IterationBudget
 	if budget == nil {

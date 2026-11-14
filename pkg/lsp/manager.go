@@ -47,6 +47,9 @@ type Options struct {
 	WaitMode           string
 	WaitTimeout        float64
 	InstallStrategy    string
+	// Non string install_strategy of the config kept as given for the status report
+	InstallStrategyRaw any
+	InstallStrategySet bool
 	BinaryOverrides    map[string][]string
 	EnvOverrides       map[string]map[string]string
 	InitOverrides      map[string]map[string]any
@@ -67,6 +70,8 @@ type Service struct {
 	waitMode          string
 	waitTimeout       float64
 	installStrategy   string
+	installStrategyRaw any
+	installStrategySet bool
 	binaryOverrides   map[string][]string
 	envOverrides      map[string]map[string]string
 	initOverrides     map[string]map[string]any
@@ -214,6 +219,7 @@ func seconds(f float64) time.Duration {
 func NewService(rt *Runtime, o Options) *Service {
 	s := &Service{
 		rt: rt, enabled: o.Enabled, waitMode: o.WaitMode, waitTimeout: o.WaitTimeout, installStrategy: o.InstallStrategy,
+		installStrategyRaw: o.InstallStrategyRaw, installStrategySet: o.InstallStrategySet,
 		binaryOverrides: o.BinaryOverrides, envOverrides: o.EnvOverrides, initOverrides: o.InitOverrides,
 		disabledServers: map[string]bool{}, idleTimeout: o.IdleTimeout, extraServers: append([]*ServerDef{}, o.ExtraServers...),
 		brokenRetry: pyMax0(o.BrokenRetrySeconds), warmupTimeout: pyMax0(o.WarmupTimeout),
@@ -288,15 +294,20 @@ func ServiceFromConfig(rt *Runtime, lspCfg any, operatorRoots map[string]bool) (
 		return nil, err
 	}
 	installStrategy := "auto"
+	var installStrategyRaw any
+	installStrategySet := false
 	if v, ok := cfg["install_strategy"]; ok {
 		installStrategy = pyrepr.Str(v)
 		if s, isStr := v.(string); isStr {
 			installStrategy = s
+		} else {
+			installStrategyRaw, installStrategySet = v, true
 		}
 	}
 	o := Options{
 		Enabled: pyrepr.Truthy(dgetOr(cfg, "enabled", true)), WaitMode: waitMode, WaitTimeout: waitTimeout,
-		InstallStrategy: installStrategy, BinaryOverrides: map[string][]string{}, EnvOverrides: map[string]map[string]string{},
+		InstallStrategy: installStrategy, InstallStrategyRaw: installStrategyRaw, InstallStrategySet: installStrategySet,
+		BinaryOverrides: map[string][]string{}, EnvOverrides: map[string]map[string]string{},
 		InitOverrides: map[string]map[string]any{}, IdleTimeout: idle,
 		BrokenRetrySeconds: floatOr(cfg["broken_retry_seconds"], 0), WarmupTimeout: floatOr(cfg["warmup_timeout"], 0),
 		ExcludeRoots: cfg["exclude_roots"], TrustedWorkspaces: cfg["trusted_workspaces"], OperatorRoots: operatorRoots,
@@ -498,7 +509,7 @@ func (s *Service) brokenRetryIn(key pairKey) (float64, bool) {
 func (s *Service) markBroken(key pairKey) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if s.brokenRetry > 0 {
+	if s.brokenRetry > 0 && !math.IsInf(s.brokenRetry, 1) {
 		s.broken.set(key, brokenEntry{deadline: time.Now().Add(seconds(s.brokenRetry))})
 	} else {
 		s.broken.set(key, brokenEntry{forever: true})
@@ -752,6 +763,8 @@ type Status struct {
 	WaitMode            string
 	WaitTimeout         float64
 	InstallStrategy     string
+	InstallStrategyRaw  any
+	InstallStrategySet  bool
 	Clients             []ClientStatus
 	Broken              [][2]string
 	DisabledServers     []string
@@ -766,6 +779,7 @@ type Status struct {
 // GetStatus snapshots the service for the status command
 func (s *Service) GetStatus() Status {
 	st := Status{Enabled: s.enabled, WaitMode: s.waitMode, WaitTimeout: s.waitTimeout, InstallStrategy: s.installStrategy,
+		InstallStrategyRaw: s.installStrategyRaw, InstallStrategySet: s.installStrategySet,
 		BrokenRetrySeconds: s.brokenRetry, WarmupTimeout: s.warmupTimeout, ExcludeRootsInvalid: s.excludeInvalid,
 		Clients: []ClientStatus{}, Broken: [][2]string{}, UntrustedSkipped: [][2]string{}}
 	s.l.with(func() {

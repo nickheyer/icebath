@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Marker returned when the redactor itself fails so raw text never leaves the process
@@ -656,82 +658,12 @@ type RedactOptions struct {
 
 // Text with every credential shape masked, the force path every egress boundary runs
 func RedactSensitiveText(text string, opts RedactOptions) string {
-	if text == "" {
-		return text
-	}
-	codeFile := (opts.CodeFile || opts.FileRead) && !opts.SecretFile
-	prefixMask := maskToken
-	if opts.FileRead {
-		prefixMask = maskTokenNonreusable
-	}
-	if hasKnownPrefixSubstring(text) {
-		text = maskControlSplitTokens(text, prefixMask)
-		text = replaceSpans(text, prefixMatches(text), prefixMask)
-	}
-	if strings.Contains(text, ".") {
-		text = redactZhipu(text, prefixMask)
-	}
-	if !codeFile {
-		text = redactAssignments(text, opts.FileRead)
-	}
-	if strings.Contains(text, "uthorization") || strings.Contains(text, "UTHORIZATION") {
-		text = authHeaderRe.ReplaceAllStringFunc(text, func(m string) string {
-			g := authHeaderRe.FindStringSubmatch(m)
-			return g[1] + g[2] + maskToken(g[3])
-		})
-	}
-	if strings.Contains(text, ":") {
-		text = secretHeaderRe.ReplaceAllStringFunc(text, func(m string) string {
-			g := secretHeaderRe.FindStringSubmatch(m)
-			return g[1] + maskToken(g[2])
-		})
-		text = telegramRe.ReplaceAllString(text, "${1}${2}${3}:***")
-	}
-	if strings.Contains(text, "BEGIN") && strings.Contains(text, "-----") {
-		text = privateKeyRe.ReplaceAllString(text, "[REDACTED PRIVATE KEY]")
-	}
-	if strings.Contains(text, "://") {
-		text = redactURLCredentials(text, codeFile)
-	}
-	if strings.Contains(text, "eyJ") {
-		text = jwtRe.ReplaceAllStringFunc(text, maskToken)
-	}
-	if strings.Contains(text, "icebath-session=") || strings.Contains(text, "/webapp/launch#") {
-		text = webappLinkCredentialRe.ReplaceAllString(text, "${1}${2}***")
-	}
-	if opts.RedactURLCredentials {
-		text = redactStrictURLCredentials(text)
-	}
-	if strings.Contains(text, "&") && strings.Contains(text, "=") {
-		text = redactFormBody(text)
-	}
-	if strings.Contains(text, "+") {
-		text = signalPhoneRe.ReplaceAllStringFunc(text, func(m string) string {
-			g := signalPhoneRe.FindStringSubmatch(m)
-			phone := g[1]
-			keep := 4
-			if len(phone) <= 8 {
-				keep = 2
-			}
-			return phone[:keep] + "****" + phone[len(phone)-keep:] + g[2]
-		})
-	}
-	return text
+	return tools.RedactSensitiveTextWith(nil, text, tools.RedactOptions{Force: true, CodeFile: opts.CodeFile,
+		FileRead: opts.FileRead, SecretFile: opts.SecretFile, URLCredentials: opts.RedactURLCredentials})
 }
 
 // Text scrubbed for a remote reader with the bearer sweep applied, never raw on failure
-func RedactForEgress(text string) (out string) {
-	defer func() {
-		if r := recover(); r != nil {
-			out = RedactionUnavailable
-		}
-	}()
-	text = RedactSensitiveText(text, RedactOptions{})
-	if strings.Contains(text, "earer") {
-		text = bearerResidueRe.ReplaceAllString(text, "Bearer [redacted]")
-	}
-	return text
-}
+func RedactForEgress(text string) string { return tools.RedactForEgress(nil, text) }
 
 var tokenRe = regexp.MustCompile(`[A-Za-z0-9_\-./+]{16,}`)
 

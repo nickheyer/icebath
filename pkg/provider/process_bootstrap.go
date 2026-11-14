@@ -617,11 +617,38 @@ func enableHappyEyeballsOnClient(client *http.Client) {
 			}
 		}
 	case *http.Transport:
-		if t.Proxy == nil {
-			t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-				return happyEyeballsDial(ctx, network, address, 0)
+		raceDirectDials(t)
+	}
+}
+
+// Races address families on the direct connects of a transport, connects to a proxy keep its own dialer
+func raceDirectDials(t *http.Transport) {
+	serial, proxy := t.DialContext, t.Proxy
+	if serial == nil {
+		serial = (&net.Dialer{}).DialContext
+	}
+	var proxies sync.Map
+	if proxy != nil {
+		t.Proxy = func(req *http.Request) (*url.URL, error) {
+			target, err := proxy(req)
+			if target != nil {
+				port := target.Port()
+				if port == "" {
+					port = map[string]string{"https": "443", "socks5": "1080", "socks5h": "1080"}[target.Scheme]
+					if port == "" {
+						port = "80"
+					}
+				}
+				proxies.Store(net.JoinHostPort(target.Hostname(), port), true)
 			}
+			return target, err
 		}
+	}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if _, proxied := proxies.Load(address); proxied {
+			return serial(ctx, network, address)
+		}
+		return happyEyeballsDial(ctx, network, address, 0)
 	}
 }
 

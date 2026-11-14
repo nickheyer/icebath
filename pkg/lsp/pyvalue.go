@@ -140,6 +140,49 @@ func pyInt(v any) (int64, error) {
 		pyrepr.StrRepr(pyrepr.TypeName(v)))
 }
 
+// Python int of a value at any magnitude, floats truncated toward zero
+func pyBigInt(v any) (*big.Int, error) {
+	switch t := v.(type) {
+	case bool:
+		if t {
+			return big.NewInt(1), nil
+		}
+		return big.NewInt(0), nil
+	case int:
+		return big.NewInt(int64(t)), nil
+	case int64:
+		return big.NewInt(t), nil
+	case *big.Int:
+		return new(big.Int).Set(t), nil
+	case json.Number:
+		if n, ok := new(big.Int).SetString(string(t), 10); ok {
+			return n, nil
+		}
+		f, err := t.Float64()
+		if err != nil {
+			return nil, errors.New("ValueError: invalid literal for int() with base 10: " + pyrepr.StrRepr(string(t)))
+		}
+		return pyBigInt(f)
+	case float64:
+		if math.IsInf(t, 0) {
+			return nil, errors.New("OverflowError: cannot convert float infinity to integer")
+		}
+		if math.IsNaN(t) {
+			return nil, errors.New("ValueError: cannot convert float NaN to integer")
+		}
+		n, _ := new(big.Float).SetFloat64(t).Int(nil)
+		return n, nil
+	case string:
+		n, ok := pyint.Parse(t)
+		if !ok {
+			return nil, errors.New("ValueError: invalid literal for int() with base 10: " + pyrepr.StrRepr(t))
+		}
+		return n, nil
+	}
+	return nil, errors.New("TypeError: int() argument must be a string, a bytes-like object or a real number, not " +
+		pyrepr.StrRepr(pyrepr.TypeName(v)))
+}
+
 // Numeric value for Python equality and hashing, false for non numbers
 func pyNumber(v any) (float64, bool) {
 	switch t := v.(type) {

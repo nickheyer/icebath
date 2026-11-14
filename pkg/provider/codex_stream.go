@@ -2,21 +2,21 @@ package provider
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- events ----
@@ -616,133 +616,46 @@ func codexUsageFromMap(u map[string]any) Usage {
 
 // ---- zero event retry spillover ----
 
-const (
-	codexSpillResultSize = 100000
-	codexSpillTurnBudget = 200000
-	codexSpillPreview    = 1500
-	codexSpillSubdir     = "cache/spillover"
-	codexSpillMaxStem    = 120
-	codexPersistedTag    = "<persisted-output>"
-	codexPersistedClose  = "</persisted-output>"
-)
-
-var codexUnsafeFilenameRe = regexp.MustCompile(`[^A-Za-z0-9_.-]+`)
-
-// Spillover file name of a tool use id, hashed when sanitized or over the stem cap
-func codexSpillFilename(toolUseID string) string {
-	rawID := toolUseID
-	if rawID == "" {
-		rawID = "tool_result"
-	}
-	stem := strings.Trim(codexUnsafeFilenameRe.ReplaceAllString(rawID, "_"), "._-")
-	changed := stem != rawID
-	if stem == "" {
-		stem = "tool_result"
-	}
-	if changed || len(stem) > codexSpillMaxStem {
-		sum := sha256.Sum256([]byte(rawID))
-		digest := hex.EncodeToString(sum[:])[:12]
-		if len(stem) > codexSpillMaxStem {
-			stem = stem[:codexSpillMaxStem]
-		}
-		stem = strings.TrimRight(stem, "._-")
-		if stem == "" {
-			stem = "tool_result"
-		}
-		stem += "_" + digest
-	}
-	return stem + ".txt"
-}
-
-// Preview cut at the last newline within the cap and whether more follows
-func codexPreview(content string, maxChars int) (string, bool) {
-	if len(content) <= maxChars {
-		return content, false
-	}
-	if lastNL := strings.LastIndex(content[:maxChars], "\n"); lastNL > maxChars/2 {
-		return content[:lastNL+1], true
-	}
-	return content[:maxChars], true
-}
-
-// Persisted output block with the recovery guidance the tool result storage emits
-func codexPersistedMessage(preview string, hasMore bool, originalSize int, path string) string {
-	sizeKB := float64(originalSize) / 1024
-	sizeStr := fmt.Sprintf("%.1f KB", sizeKB)
-	if sizeKB >= 1024 {
-		sizeStr = fmt.Sprintf("%.1f MB", sizeKB/1024)
-	}
-	more := ""
-	if hasMore {
-		more = "\n..."
-	}
-	return codexPersistedTag + "\n" +
-		fmt.Sprintf("This tool result was too large (%s characters, %s).\n", commaInt(originalSize), sizeStr) +
-		fmt.Sprintf("Full output saved to: %s\n", path) +
-		"Use the read_file tool with offset and limit to access specific sections of this output.\n" +
-		"Recovery: page through the saved file with read_file (offset/limit) or " +
-		"process it with execute_code — do NOT re-request the same data from the " +
-		"remote API; the archive is kept while this session's transcript references " +
-		"it. If it is missing, inspect the current state before retrying — the call " +
-		"that produced it may already have taken effect.\n\n" +
-		fmt.Sprintf("Preview (first %d chars):\n", len(preview)) +
-		preview + more + "\n" + codexPersistedClose
-}
-
-// Spills an oversized tool output under the home cache and returns the preview block, the content when it fits
+// Spills an oversized tool output through the standard result storage policy, the content when it fits
 func codexSpillToolOutput(ctx context.Context, content, toolUseID string) string {
-	if len(content) <= codexSpillResultSize {
-		return content
-	}
-	dir := filepath.Join(home.Dir(ctx), filepath.FromSlash(codexSpillSubdir))
-	filename := codexSpillFilename(toolUseID)
-	preview, hasMore := codexPreview(content, codexSpillPreview)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		codexLog.Warn("Spillover write failed", "file", filename, "error", err)
-		return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(len(content)))
-	}
-	path := filepath.Join(dir, filename)
-	data := []byte(content)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		codexLog.Warn("Spillover write failed", "file", filename, "error", err)
-		return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(len(content)))
-	}
-	if st, err := os.Stat(path); err != nil || st.Size() != int64(len(data)) {
-		os.Remove(path)
-		codexLog.Warn("Spillover write is not lossless, discarding archive", "file", filename)
-		return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(len(content)))
-	}
-	codexLog.Info("Persisted large tool result", "tool", "codex_zero_event_retry", "id", toolUseID, "chars", len(content), "path", path)
-	return codexPersistedMessage(preview, hasMore, len(content), path)
+	return tools.MaybePersistToolResult(ctx, &tools.Env{Home: home.Dir(ctx)}, nil, content, "codex_zero_event_retry", toolUseID,
+		tools.DefaultBudget, tools.DefaultBudget.DefaultResultSize)
+}
+
+// UTF-8 size of the input items as json.dumps writes them with unknown values stringified
+func codexSerializedInputBytes(items any) int {
+	text, _ := pyjson.Dumps(items, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	return len(text)
 }
 
 // Retry payload with oversized inline function_call_output strings spilled before a zero event reconnect
 func pruneZeroEventRetryPayload(ctx context.Context, kwargs map[string]any, attempt, attempts int) map[string]any {
-	var items []map[string]any
+	var items []any
+	typed := false
 	switch t := kwargs["input"].(type) {
-	case []map[string]any:
-		items = t
 	case []any:
-		items = mapsOfList(t)
-		if len(items) != len(t) {
-			return kwargs
+		items = t
+	case []map[string]any:
+		typed = true
+		items = make([]any, len(t))
+		for i, item := range t {
+			items[i] = item
 		}
 	default:
 		return kwargs
 	}
-	beforeRaw, _ := json.Marshal(items)
-	before := len(beforeRaw)
-	if before <= codexSpillTurnBudget {
+	before := codexSerializedInputBytes(items)
+	if before <= tools.DefaultBudget.TurnBudget {
 		return kwargs
 	}
 	pruned := 0
-	prunedItems := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		if item["type"] == "function_call_output" {
-			if output, ok := item["output"].(string); ok {
-				callID := strOrEmpty(item["call_id"])
-				if callID == "" {
-					callID = "call"
+	prunedItems := make([]any, 0, len(items))
+	for _, raw := range items {
+		if item, ok := pyjson.Dict(raw); ok && pyrepr.Equal(item["type"], "function_call_output") {
+			if output, isText := item["output"].(string); isText {
+				callID := "call"
+				if id := item["call_id"]; pyrepr.Truthy(id) {
+					callID = pyrepr.Str(id)
 				}
 				if replaced := codexSpillToolOutput(ctx, output, callID); replaced != output {
 					cp := make(map[string]any, len(item))
@@ -750,24 +663,27 @@ func pruneZeroEventRetryPayload(ctx context.Context, kwargs map[string]any, atte
 						cp[k] = v
 					}
 					cp["output"] = replaced
-					item = cp
+					raw = cp
 					pruned++
 				}
 			}
 		}
-		prunedItems = append(prunedItems, item)
+		prunedItems = append(prunedItems, raw)
 	}
 	if pruned == 0 {
-		codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, strOrEmpty(kwargs["model"])))
+		codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, pyrepr.Str(kwargs["model"])))
 		return kwargs
 	}
-	afterRaw, _ := json.Marshal(prunedItems)
-	codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, len(afterRaw), strOrEmpty(kwargs["model"])))
+	codexLog.Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, codexSerializedInputBytes(prunedItems), pyrepr.Str(kwargs["model"])))
 	out := make(map[string]any, len(kwargs))
 	for k, v := range kwargs {
 		out[k] = v
 	}
-	out["input"] = prunedItems
+	if typed {
+		out["input"] = mapsOfList(prunedItems)
+	} else {
+		out["input"] = prunedItems
+	}
 	return out
 }
 

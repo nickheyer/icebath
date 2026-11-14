@@ -126,7 +126,7 @@ func LoadContextEngine(ctx context.Context, name string) *HostedObject {
 func loadEngineFromDir(ctx context.Context, engineDir string) (*HostedObject, error) {
 	name := filepath.Base(engineDir)
 	m := GetPluginManager(ctx)
-	host, err := m.pluginHost()
+	host, err := m.hostForDir(engineDir)
 	if err != nil {
 		return nil, err
 	}

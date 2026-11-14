@@ -209,6 +209,42 @@ func offerHomeChannel(ctx context.Context, homeVar, userID, what string) error {
 	return nil
 }
 
+// One env assignment of a multi value save, kept in call order like Python keyword arguments
+type EnvAssignment struct{ Name, Value string }
+
+// Saves each env assignment in order to the home .env
+func saveEnvValues(ctx context.Context, values ...EnvAssignment) error {
+	for _, v := range values {
+		if err := gatewayFacade.saveEnvValue(ctx, v.Name, v.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Comma separated id answer with every space removed
+func promptCSV(promptText, def string) string {
+	return strings.ReplaceAll(gatewayFacade.prompt(promptText, def, false), " ", "")
+}
+
+// The hermes_cli.gateway_setup_wizard helpers platform plugin wizards import
+type GatewaySetupWizardFns struct {
+	PrintSetupHeader   func(title string)
+	ConfirmReconfigure func(ctx context.Context, label string, envVars ...string) (bool, error)
+	OfferHomeChannel   func(ctx context.Context, homeVar, userID, what string) error
+	SaveEnvValues      func(ctx context.Context, values ...EnvAssignment) error
+	PromptCSV          func(promptText, def string) string
+}
+
+// The gateway setup wizard module as the platform plugin wizards see it
+var WizardGateway = GatewaySetupWizardFns{
+	PrintSetupHeader:   printSetupHeader,
+	ConfirmReconfigure: confirmReconfigure,
+	OfferHomeChannel:   offerHomeChannel,
+	SaveEnvValues:      saveEnvValues,
+	PromptCSV:          promptCSV,
+}
+
 // Default index and choices of the no allowlist access prompt, keyed by whether the platform is email
 var unauthorizedAccessChoices = map[bool]struct {
 	def     int

@@ -51,17 +51,27 @@ func RouteIdentity(r Route) BackendIdentity {
 	return BuildBackendIdentity(r.Provider, r.Model, r.BaseURL)
 }
 
-// Registry probe the first class provider check consults, swapped by tests
-var providerIsFirstClass = func(provider string) bool {
-	_, ok := ProfileFor(provider)
-	return ok
+// Raw membership of a provider id in the auth registry of the context home
+func providerInRegistry(ctx context.Context, provider string) bool {
+	return providerRegistry().contains(ctx, provider)
 }
+
+// Registry probe the first class provider check consults for the process home, swapped by tests
+var providerIsFirstClass = func(provider string) bool { return providerInRegistry(context.Background(), provider) }
 
 func bothFirstClass(a, b BackendIdentity) bool {
 	if a.Provider == "" || b.Provider == "" || a.Provider == b.Provider {
 		return false
 	}
 	return providerIsFirstClass(a.Provider) && providerIsFirstClass(b.Provider)
+}
+
+// True when both providers are distinct rows of the auth registry the context home sees
+func bothFirstClassIn(ctx context.Context, a, b BackendIdentity) bool {
+	if a.Provider == "" || b.Provider == "" || a.Provider == b.Provider {
+		return false
+	}
+	return providerInRegistry(ctx, a.Provider) && providerInRegistry(ctx, b.Provider)
 }
 
 // SameCredentialSurface reports two identities sharing the credential a 401 or 402 just invalidated
@@ -82,8 +92,18 @@ func SameEndpoint(a, b BackendIdentity) bool {
 
 // SameDeployment reports the exact same model deployment, the thing a timeout kills
 func SameDeployment(a, b BackendIdentity) bool {
+	return sameDeployment(a, b, bothFirstClass)
+}
+
+// SameDeploymentIn reports the exact same model deployment with first class providers read from the context home
+func SameDeploymentIn(ctx context.Context, a, b BackendIdentity) bool {
+	return sameDeployment(a, b, func(a, b BackendIdentity) bool { return bothFirstClassIn(ctx, a, b) })
+}
+
+// Provider and model match, a shared url and model across labels counting unless both labels are first class
+func sameDeployment(a, b BackendIdentity, firstClass func(a, b BackendIdentity) bool) bool {
 	if !(a.Provider != "" && b.Provider != "" && a.Provider == b.Provider) {
-		return a.BaseURL != "" && a.BaseURL == b.BaseURL && a.Model != "" && a.Model == b.Model && !bothFirstClass(a, b)
+		return a.BaseURL != "" && a.BaseURL == b.BaseURL && a.Model != "" && a.Model == b.Model && !firstClass(a, b)
 	}
 	if !(a.Model != "" && b.Model != "" && a.Model == b.Model) {
 		return false
@@ -93,13 +113,23 @@ func SameDeployment(a, b BackendIdentity) bool {
 
 // ShouldSkipCandidate reports whether trying the candidate would just repeat the failure along the scope axis
 func ShouldSkipCandidate(candidate, failed BackendIdentity, scope FailureScope) bool {
+	return shouldSkipCandidate(candidate, failed, scope, SameDeployment)
+}
+
+// ShouldSkipCandidateIn is the skip test with first class providers read from the context home
+func ShouldSkipCandidateIn(ctx context.Context, candidate, failed BackendIdentity, scope FailureScope) bool {
+	return shouldSkipCandidate(candidate, failed, scope, func(a, b BackendIdentity) bool { return SameDeploymentIn(ctx, a, b) })
+}
+
+// Sameness along the axis the failure invalidated, the deployment test for every other scope
+func shouldSkipCandidate(candidate, failed BackendIdentity, scope FailureScope, sameDeployment func(a, b BackendIdentity) bool) bool {
 	switch scope {
 	case ScopeCredential:
 		return SameCredentialSurface(candidate, failed)
 	case ScopeEndpoint:
 		return SameEndpoint(candidate, failed)
 	}
-	return SameDeployment(candidate, failed)
+	return sameDeployment(candidate, failed)
 }
 
 // PoolProbe is the credential pool view the fallback walk and primary restore consult
@@ -412,7 +442,7 @@ func (c *Chain) shouldSkipCandidate(ctx context.Context, fb Route, key [3]string
 	}
 	currentIdent := RouteIdentity(c.current)
 	fbIdent := BuildBackendIdentity(provider, model, fb.BaseURL)
-	if ShouldSkipCandidate(fbIdent, currentIdent, ScopeModel) {
+	if ShouldSkipCandidateIn(ctx, fbIdent, currentIdent, ScopeModel) {
 		where := currentIdent.BaseURL
 		if where == "" {
 			where = currentIdent.Provider

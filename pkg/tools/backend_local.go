@@ -311,20 +311,32 @@ func BindSessionContext(env *Env, vars map[string]string) {
 	for k, v := range vars {
 		copyVars[k] = v
 	}
-	env.Values.Store(sessionContextValuesKey, copyVars)
+	if env.sessionVars != nil {
+		env.sessionVars.vars.Store(&copyVars)
+	} else {
+		env.Values.Store(sessionContextValuesKey, copyVars)
+	}
 	env.Values.Store(sessionContextEngagedKey, true)
 }
 
 // Bound session variables and whether this context or the process ever bound a session
 func sessionContextState(env *Env) (map[string]string, bool) {
-	if env == nil || env.Values == nil {
+	if env == nil {
 		return nil, SessionContextEngaged()
 	}
 	engaged := SessionContextEngaged()
-	if v, ok := env.Values.Load(sessionContextEngagedKey); ok {
-		if b, _ := v.(bool); b {
-			engaged = true
+	if env.Values != nil {
+		if v, ok := env.Values.Load(sessionContextEngagedKey); ok {
+			if b, _ := v.(bool); b {
+				engaged = true
+			}
 		}
+	}
+	if env.sessionVars != nil {
+		return *env.sessionVars.vars.Load(), engaged
+	}
+	if env.Values == nil {
+		return nil, engaged
 	}
 	bound, _ := env.Values.Load(sessionContextValuesKey)
 	vars, _ := bound.(map[string]string)

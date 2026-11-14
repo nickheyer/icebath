@@ -731,11 +731,24 @@ func CustomServers(rt *Runtime, serversCfg any) []*ServerDef {
 	for _, s := range Servers {
 		builtin[s.ServerID] = true
 	}
-	ids := make([]string, 0, len(cfg))
-	for id := range cfg {
-		ids = append(ids, id)
+	var ids []string
+	listed := map[string]bool{}
+	if rt != nil && rt.ServerOrder != nil {
+		for _, id := range rt.ServerOrder() {
+			if _, declared := cfg[id]; declared && !listed[id] {
+				listed[id] = true
+				ids = append(ids, id)
+			}
+		}
 	}
-	sort.Strings(ids)
+	var rest []string
+	for id := range cfg {
+		if !listed[id] {
+			rest = append(rest, id)
+		}
+	}
+	sort.Strings(rest)
+	ids = append(ids, rest...)
 	var out []*ServerDef
 	for _, serverID := range ids {
 		entry, ok := cfg[serverID].(map[string]any)

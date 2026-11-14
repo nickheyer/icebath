@@ -26,6 +26,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 const (
@@ -71,7 +75,7 @@ func IsNativeAnthropicHost(baseURL string) bool {
 
 // AnthropicRouteIsOAuth reports the Claude Code OAuth identity for one Anthropic Messages route
 func AnthropicRouteIsOAuth(ctx context.Context, baseURL, credential string, tokenSource func(context.Context) (string, error), provider string) bool {
-	if !(IsNativeAnthropicHost(baseURL) || strings.ToLower(strings.TrimSpace(provider)) == "anthropic") {
+	if !(IsNativeAnthropicHost(baseURL) || pystr.Lower(pystr.Strip(provider)) == "anthropic") {
 		return false
 	}
 	if credential == "" && tokenSource != nil {
@@ -892,16 +896,11 @@ func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, boo
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
 	oauthState := base64.RawURLEncoding.EncodeToString(stateRaw[:])
-	params := url.Values{}
-	params.Set("code", "true")
-	params.Set("client_id", anthropicOAuthClientID)
-	params.Set("response_type", "code")
-	params.Set("redirect_uri", anthropicOAuthRedirectURI)
-	params.Set("scope", anthropicOAuthScopes)
-	params.Set("code_challenge", challenge)
-	params.Set("code_challenge_method", "S256")
-	params.Set("state", oauthState)
-	authURL := "https://claude.ai/oauth/authorize?" + params.Encode()
+	authURL := "https://claude.ai/oauth/authorize?" + pyurl.URLEncode([][2]string{
+		{"code", "true"}, {"client_id", anthropicOAuthClientID}, {"response_type", "code"},
+		{"redirect_uri", anthropicOAuthRedirectURI}, {"scope", anthropicOAuthScopes}, {"code_challenge", challenge},
+		{"code_challenge_method", "S256"}, {"state", oauthState},
+	})
 	fmt.Println(strings.Join([]string{
 		"", "Authorize Icebath with your Claude Pro/Max subscription.", "",
 		"╭─ Claude Pro/Max Authorization ────────────────────╮",
@@ -911,7 +910,7 @@ func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, boo
 		"", "  " + authURL, "",
 	}, "\n"))
 	if canOpenGraphicalBrowser() {
-		if openBrowserURL(authURL) == nil {
+		if _, err := pywebbrowser.Open(authURL, 0); err == nil {
 			fmt.Println("  (Browser opened automatically)")
 		}
 	}
@@ -920,19 +919,27 @@ func RunHermesOAuthLoginPure(env PoolEnv, prompt func(label string) (string, boo
 	if !ok {
 		return nil
 	}
-	authCode = strings.TrimSpace(authCode)
+	authCode = pystr.Strip(authCode)
 	if authCode == "" {
 		fmt.Println("No code entered.")
 		return nil
 	}
-	code, receivedState, _ := strings.Cut(authCode, "#")
+	splits := strings.Split(authCode, "#")
+	code, receivedState := splits[0], ""
+	if len(splits) > 1 {
+		receivedState = splits[1]
+	}
 	if receivedState != oauthState {
 		env.log().Warn("OAuth state mismatch — possible CSRF, aborting")
 		return nil
 	}
-	exchange, _ := json.Marshal(map[string]string{"grant_type": "authorization_code", "client_id": anthropicOAuthClientID, "code": code,
-		"state": receivedState, "redirect_uri": anthropicOAuthRedirectURI, "code_verifier": verifier})
-	result, err := postAnthropicOAuthToken(env, exchange, "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
+	exchangeText, err := pyjson.Dumps(pyjson.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
+		"code", code, "state", receivedState, "redirect_uri", anthropicOAuthRedirectURI, "code_verifier", verifier))
+	if err != nil {
+		fmt.Printf("Token exchange failed: %v\n", err)
+		return nil
+	}
+	result, err := postAnthropicOAuthToken(env, []byte(exchangeText), "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
 	if err != nil {
 		fmt.Printf("Token exchange failed: %v\n", err)
 		return nil
@@ -961,22 +968,29 @@ func WriteHermesOAuthCredentials(env PoolEnv, accessToken, refreshToken string, 
 	return commitPrivateJSON(env, target, map[string]any{"accessToken": accessToken, "refreshToken": refreshToken, "expiresAt": expiresAtMS}, "Icebath OAuth credentials")
 }
 
-// Opens a URL in the user's default browser through the platform opener
-func openBrowserURL(target string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", target)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
-	default:
-		cmd = exec.Command("xdg-open", target)
+// Browser registry answer that no registered browser took the URL
+var errBrowserNotOpened = errors.New("no browser opened the URL")
+
+// Opens a URL through the browser registry in the window mode given, an error when no browser took it
+func openBrowserWith(target string, mode int) error {
+	opened, err := pywebbrowser.Open(target, mode)
+	if err != nil {
+		return err
 	}
-	return cmd.Start()
+	if !opened {
+		return errBrowserNotOpened
+	}
+	return nil
 }
 
-// Opens a URL in the default browser through the platform opener for callers outside the package
+// Opens a URL in the same window of the first registry browser that takes it
+func openBrowserURL(target string) error { return openBrowserWith(target, 0) }
+
+// Opens a URL through the browser registry for callers outside the package
 func OpenBrowserURL(target string) error { return openBrowserURL(target) }
+
+// Opens a URL in a new tab through the browser registry for callers outside the package
+func OpenBrowserTab(target string) error { return openBrowserWith(target, 2) }
 
 // Fills the buffer from the OS entropy source, panicking when the kernel refuses
 func fillRandom(buf []byte) {

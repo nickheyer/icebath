@@ -263,7 +263,7 @@ func askHook(ctx context.Context, p *Profile, hook string, args []any, kwargs ma
 	if !ok1 || !ok2 {
 		return callProfileHook(ctx, p, hook, args, kwargs)
 	}
-	key := fmt.Sprintf("%d|%s|%s|%s|%s", RegistryGeneration(), profileIdentity(p), hook, frozenArgs, frozenKw)
+	key := fmt.Sprintf("%d|%p|%s|%s|%s", RegistryGeneration(), p, hook, frozenArgs, frozenKw)
 	routePureMemoMu.Lock()
 	answer, hit := routePureMemo[key]
 	routePureMemoMu.Unlock()
@@ -310,10 +310,10 @@ func profileIdentity(p *Profile) string {
 	return p.Name
 }
 
-// Sticky failure key of a profile's hook within the registry generation that holds the profile object
+// Sticky failure key of one profile object's hook and the process wide warning key of its name
 func stickyHookKey(p *Profile, hook string) (string, string) {
 	name := profileIdentity(p)
-	return fmt.Sprintf("%d|%s|%s", RegistryGeneration(), name, hook), name + "|" + hook
+	return fmt.Sprintf("%p|%s|%s", p, name, hook), name + "|" + hook
 }
 
 // HookFailed reports whether the profile's hook already failed in scope so asking answers the fallback

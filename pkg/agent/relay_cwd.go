@@ -2,9 +2,9 @@ package agent
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -32,8 +32,8 @@ func cleanRelayCwd(value any) string {
 	if !ok {
 		return ""
 	}
-	s = strings.TrimSpace(s)
-	if relayCwdSentinels[strings.ToLower(s)] {
+	s = pystr.Strip(s)
+	if relayCwdSentinels[pystr.Lower(s)] {
 		return ""
 	}
 	return s
@@ -51,27 +51,13 @@ func relayRecordedCwd(env *tools.Env, key string) (string, error) {
 	return cleanRelayCwd(v), nil
 }
 
-// Absolute form of a host path with symlinks of its existing prefix resolved
+// Absolute form of a host path as Path.resolve gives it, the path itself when it cannot be resolved
 func resolveHostPath(p string) string {
-	abs, err := filepath.Abs(p)
+	resolved, err := pypath.Resolve(p)
 	if err != nil {
 		return p
 	}
-	dir, rest := abs, ""
-	for {
-		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-			if rest == "" {
-				return resolved
-			}
-			return filepath.Join(resolved, rest)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return abs
-		}
-		rest = filepath.Join(filepath.Base(dir), rest)
-		dir = parent
-	}
+	return resolved
 }
 
 // Logical session and turn cwd for relay scopes, keeping remote paths as declared and omitting unknown ones
@@ -128,7 +114,7 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 			if err != nil {
 				return err
 			}
-			backend = strings.ToLower(strings.TrimSpace(value))
+			backend = pystr.Lower(pystr.Strip(value))
 			cwd, err := relayTerminalEnv(env, "TERMINAL_CWD", "")
 			if err != nil {
 				return err
@@ -142,11 +128,12 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 	if sessionCwd == "" && (platform == "" || platform == "cli") && (backend == "" || backend == "local") {
 		if resolved, err := relayResolveAgentCwd(env); err != nil {
 			runAgentLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
-		} else {
-			if !filepath.IsAbs(resolved) {
-				resolved = resolveHostPath(resolved)
-			}
+		} else if pypath.IsAbs(resolved) {
 			sessionCwd = cleanRelayCwd(resolved)
+		} else if absolute, err := pypath.Resolve(resolved); err != nil {
+			runAgentLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
+		} else {
+			sessionCwd = cleanRelayCwd(absolute)
 		}
 	}
 	turnCwd := taskCwd

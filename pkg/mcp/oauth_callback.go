@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,6 +15,8 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
+
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 // OAuthNonInteractiveError reports an OAuth step that needs a person no session can reach
@@ -102,57 +103,10 @@ func canOpenBrowser() bool {
 // Opens a URL with the platform browser registry, true when a browser launched, swapped by tests
 var openBrowser = webbrowserOpen
 
-// Launches the first browser the BROWSER variable or the platform registry names
+// Launches the first browser the BROWSER variable or the platform registry names, any failure answering false
 func webbrowserOpen(url string) bool {
-	var candidates [][]string
-	if env := os.Getenv("BROWSER"); env != "" {
-		for _, cmdline := range strings.Split(env, string(os.PathListSeparator)) {
-			if cmdline == "" {
-				continue
-			}
-			fields := strings.Fields(cmdline)
-			replaced := false
-			for i, f := range fields {
-				if strings.Contains(f, "%s") {
-					fields[i] = strings.ReplaceAll(f, "%s", url)
-					replaced = true
-				}
-			}
-			if !replaced {
-				fields = append(fields, url)
-			}
-			candidates = append(candidates, fields)
-		}
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = append(candidates, []string{"open", url})
-	case "windows":
-		candidates = append(candidates, []string{"rundll32", "url.dll,FileProtocolHandler", url})
-	default:
-		if os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != "" {
-			candidates = append(candidates, []string{"xdg-open", url}, []string{"gio", "open", url}, []string{"gvfs-open", url},
-				[]string{"kfmclient", "exec", url})
-			for _, name := range []string{"x-www-browser", "firefox", "iceweasel", "seamonkey", "mozilla-firefox", "mozilla", "konqueror",
-				"epiphany", "google-chrome", "chrome", "chromium", "chromium-browser", "opera", "microsoft-edge"} {
-				candidates = append(candidates, []string{name, url})
-			}
-		}
-	}
-	for _, argv := range candidates {
-		path, err := exec.LookPath(argv[0])
-		if err != nil {
-			continue
-		}
-		cmd := exec.Command(path, argv[1:]...)
-		setProcessGroup(cmd)
-		if err := cmd.Start(); err != nil {
-			continue
-		}
-		go cmd.Wait()
-		return true
-	}
-	return false
+	opened, err := pywebbrowser.Open(url, 0)
+	return err == nil && opened
 }
 
 // Callback port reservations held from selection until the waiter adopts them

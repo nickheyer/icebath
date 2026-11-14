@@ -59,13 +59,20 @@ type LimitHit struct {
 
 // ToPayload is the wire form of a limit hit carried on the turn result
 func (h LimitHit) ToPayload() map[string]any {
+	plain := func(fields map[string]string) map[string]any {
+		out := make(map[string]any, len(fields))
+		for k, v := range fields {
+			out[k] = v
+		}
+		return out
+	}
 	suggestions := make([]any, 0, len(h.Suggestions))
 	for _, s := range h.Suggestions {
-		suggestions = append(suggestions, s.ToPayload())
+		suggestions = append(suggestions, plain(s.ToPayload()))
 	}
 	var credits any
 	if h.Credits != nil {
-		credits = h.Credits.ToPayload()
+		credits = plain(h.Credits.ToPayload())
 	}
 	var resets any
 	if h.ResetsAtMs != nil {

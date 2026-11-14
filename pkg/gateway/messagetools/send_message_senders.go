@@ -76,7 +76,14 @@ var telegramRetrySleep = func(ctx context.Context, seconds float64) error {
 // Idempotent plugin scan of the active profile, replaced by tests that patch discover_plugins
 var discoverPlugins = func(ctx context.Context) { plugins.DiscoverPlugins(ctx, false) }
 
-func init() { gateway.SendMessageSendersError = sendError }
+func init() {
+	gateway.SendMessageSendersError = sendError
+	gateway.SendMessageSendersLiveAdapter = func(ctx context.Context, platform gateway.Platform) gateway.PlatformAdapter {
+		_, adapter := liveAdapter(ctx, platform, "")
+		live, _ := adapter.(gateway.PlatformAdapter)
+		return live
+	}
+}
 
 func mustPyRE(pattern string) *regexp2.Regexp {
 	re, err := pyre.Compile(pattern)

@@ -376,8 +376,7 @@ func raiseForAnonStatus(env PoolEnv, resp *anonResponse, action string, override
 		}
 		env.log().Info(fmt.Sprintf("Nous free tier %s failed (%d%s)", action, status, suffix))
 	}
-	seconds, has := parseRetryAfterSeconds(resp.Header)
-	retryAfter := time.Duration(seconds) * time.Second
+	retryAfter, has := RetryAfterFromHeaders(resp.Header)
 	authErr := anonErr(anonFailureCopy(verdict.code, retryAfter, has), verdict.code, retryAfter, has)
 	if verdict.dead {
 		return nil, &AnonCredentialDeadError{Auth: authErr}

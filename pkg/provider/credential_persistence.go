@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type providerSource struct{ provider, source string }
@@ -58,11 +61,11 @@ func normalizeSecretKey(key string) string {
 
 // IsBorrowedCredentialSource reports whether a pool source is reference only and must never persist secrets
 func IsBorrowedCredentialSource(source, providerID string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(source))
+	normalized := pystr.Lower(pystr.Strip(source))
 	if normalized == "" || normalized == "manual" || strings.HasPrefix(normalized, "manual:") {
 		return false
 	}
-	return !persistableProviderSources[providerSource{strings.ToLower(strings.TrimSpace(providerID)), normalized}]
+	return !persistableProviderSources[providerSource{pystr.Lower(pystr.Strip(providerID)), normalized}]
 }
 
 func isSecretPayloadKey(key string) bool {
@@ -141,7 +144,10 @@ func SanitizeBorrowedCredentialPayload(payload map[string]any, providerID string
 	for k, v := range payload {
 		result[k] = v
 	}
-	source, _ := result["source"].(string)
+	source := ""
+	if raw := result["source"]; pyrepr.Truthy(raw) {
+		source = pyrepr.Str(raw)
+	}
 	if !IsBorrowedCredentialSource(source, providerID) {
 		return result
 	}

@@ -1033,7 +1033,7 @@ func validatedDashboardToken(ctx context.Context, candidates []deviceTokenCandid
 }
 
 // Browser opener of the device flow, swappable so tests never launch one
-var webbrowserOpen = provider.OpenBrowserURL
+var webbrowserOpen = provider.OpenBrowserTab
 
 // Runs the whole device login, validating the token against the dashboard before persisting it
 func LoginDeviceFlow(ctx context.Context, clientID string, openBrowser bool, onUserCode func(DeviceCode)) (string, error) {

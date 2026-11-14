@@ -387,12 +387,14 @@ func RefuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEnt
 
 // Options of a catalog entry install beyond the entry itself
 type CatalogInstallOptions struct {
-	Force        bool
-	Ref          string
-	AllowRemoved bool
-	ScanDecision func(scan any) bool
-	BeforeSwap   func(manifest map[string]any, tree string) ([]string, error)
-	InspectedSha string
+	Force             bool
+	Ref               string
+	AllowRemoved      bool
+	ScanDecision      func(scan any) bool
+	BeforeSwap        func(manifest map[string]any, tree string) ([]string, error)
+	InspectedSha      string
+	NoDeps            bool
+	AssumeDepsConsent bool
 }
 
 // Installs the entry at its catalog pin, or the explicit ref, recording catalog provenance on the install record
@@ -412,7 +414,7 @@ func installCatalogEntry(ctx context.Context, entry *PluginCatalogEntry, opts Ca
 	return installPluginCore(ctx, entry.InstallIdentifier(), installCoreOptions{
 		Force: opts.Force, Ref: ref, ScanDecision: opts.ScanDecision, ReviewedPin: entry.Sha,
 		AllowRemoved: opts.AllowRemoved, BeforeSwap: opts.BeforeSwap,
-		AppTitle: entry.Title, InspectedSha: opts.InspectedSha,
+		AppTitle: entry.Title, InspectedSha: opts.InspectedSha, NoDeps: opts.NoDeps, AssumeDepsConsent: opts.AssumeDepsConsent,
 		Catalog: map[string]any{"name": entry.Name, "repo": entry.Repo, "tier": entry.Tier, "pin": entry.Sha},
 	})
 }
@@ -856,7 +858,7 @@ func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]a
 	if err := stashLocalFiles(target, modified, backup); err != nil {
 		return nil, err
 	}
-	if _, err := updatePlugin(ctx, target, updatePluginOptions{CatalogEntry: entry,
+	if _, err := updatePlugin(ctx, target, updatePluginOptions{CatalogEntry: entry, Interactive: interactive,
 		CarryUserFiles: func(staged string) ([]string, error) { return carryUserFiles(target, staged, local, gitTree) }}); err != nil {
 		return nil, err
 	}

@@ -11,22 +11,29 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Default Entra scope for Azure AI Foundry
 const ScopeAIAzureDefault = "https://ai.azure.com/.default"
 
-// Callable api key minting a fresh Entra JWT per request
-func azureEntraCredentials(cfgEntra map[string]any) (func(context.Context) (string, error), error) {
-	scope := strings.TrimSpace(cfgString(cfgEntra["scope"]))
+// Callable api key minting a fresh Entra JWT per request, its credential built for the context profile
+func azureEntraCredentialsIn(ctx context.Context, cfgEntra map[string]any) (func(context.Context) (string, error), error) {
+	scope := ""
+	if raw := cfgEntra["scope"]; pyrepr.Truthy(raw) {
+		scope = pystr.Strip(pyrepr.Str(raw))
+	}
 	if scope == "" {
 		scope = ScopeAIAzureDefault
 	}
-	src, err := entraTokenProvider(scope)
-	if err != nil {
-		return nil, newAuthErr("azure-foundry", err.Error(), "", false)
-	}
-	return src, nil
+	return entraTokenProviderIn(ctx, scope)
+}
+
+// Callable api key minting a fresh Entra JWT per request for the process profile
+func azureEntraCredentials(cfgEntra map[string]any) (func(context.Context) (string, error), error) {
+	return azureEntraCredentialsIn(context.Background(), cfgEntra)
 }
 
 // Azure Foundry API key from the explicit arg, the .env file, then the environment
@@ -98,7 +105,7 @@ func (r *resolver) resolveAzureFoundryRuntime(requestedProvider string, modelCfg
 		src := forwardedToken
 		if src == nil {
 			var err error
-			src, err = azureEntraCredentials(cfgEntra)
+			src, err = azureEntraCredentialsIn(r.ctx, cfgEntra)
 			if err != nil {
 				return nil, err
 			}

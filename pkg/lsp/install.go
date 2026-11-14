@@ -288,7 +288,7 @@ var runInstallCommand = func(argv []string, timeout time.Duration, env map[strin
 	hideWindow(cmd)
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &TimeoutError{msg: fmt.Sprintf("Command %s timed out after %d seconds", pyrepr.Repr(argv), int(timeout/time.Second))}
+		return nil, &TimeoutError{msg: fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(argv), int(timeout/time.Second))}
 	}
 	res := &installRun{stdout: decodeUTF8Replace(stdout.Bytes()), stderr: decodeUTF8Replace(stderr.Bytes())}
 	if err != nil {

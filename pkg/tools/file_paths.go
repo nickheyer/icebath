@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -667,20 +668,17 @@ func resolvePathForTask(env *Env, filePath string) (string, error) {
 
 // Splits a directory entry keeping the last component after dropping trailing separators and dots
 func splitEntry(p string) (string, string) {
-	vol := filepath.VolumeName(p)
-	tail := p[len(vol):]
-	trimmed := strings.TrimRight(tail, `/\`)
+	drive, root, rest := pypath.SplitRoot(p)
+	tail := root + rest
+	seps := "/"
+	if runtime.GOOS == "windows" {
+		seps = `\/`
+	}
+	trimmed := strings.TrimRight(tail, seps)
 	if trimmed == "" && tail != "" {
 		trimmed = tail[:1]
 	}
-	full := vol + trimmed
-	parent, leaf := filepath.Split(full)
-	if parent != "" && parent != full {
-		parent = strings.TrimRight(parent, `/\`)
-		if parent == "" || parent == vol {
-			parent = vol + string(filepath.Separator)
-		}
-	}
+	parent, leaf := pypath.Split(drive + trimmed)
 	if leaf == "." && parent != "" {
 		return splitEntry(parent)
 	}

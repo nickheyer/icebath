@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- helpers ----
@@ -2305,7 +2306,7 @@ func TestCodexSpillToolOutput(t *testing.T) {
 	}
 	big := strings.Repeat("line of output\n", 15000)
 	replaced := codexSpillToolOutput(ctx, big, "call_big")
-	if !strings.HasPrefix(replaced, codexPersistedTag+"\n") || !strings.HasSuffix(replaced, codexPersistedClose) || !strings.Contains(replaced, "Preview (first ") {
+	if !strings.HasPrefix(replaced, tools.PersistedOutputTag+"\n") || !strings.HasSuffix(replaced, tools.PersistedOutputClosingTag) || !strings.Contains(replaced, "Preview (first ") {
 		t.Fatalf("replaced %q", replaced[:200])
 	}
 	path := filepath.Join(h, "cache", "spillover", "call_big.txt")
@@ -2316,8 +2317,12 @@ func TestCodexSpillToolOutput(t *testing.T) {
 	if !strings.Contains(replaced, "Full output saved to: "+path) {
 		t.Fatal("path missing")
 	}
-	if name := codexSpillFilename("codex_mcp__icebath-tools__exec/" + strings.Repeat("x", 200)); !strings.HasSuffix(name, ".txt") || len(name) > 140 {
-		t.Fatalf("filename %s", name)
+	unsafe := tools.ExtractPersistedPath(codexSpillToolOutput(ctx, big, "codex_mcp__icebath-tools__exec/"+strings.Repeat("x", 200)))
+	if name := filepath.Base(unsafe); filepath.Dir(unsafe) != filepath.Join(h, "cache", "spillover") || !strings.HasSuffix(name, ".txt") || len(name) > 140 {
+		t.Fatalf("filename %s", unsafe)
+	}
+	if data, err := os.ReadFile(unsafe); err != nil || string(data) != big {
+		t.Fatalf("unsafe id spill file %v", err)
 	}
 	kwargs := map[string]any{"model": "m", "input": []map[string]any{{"type": "function_call_output", "call_id": "call_big", "output": big}, {"role": "user", "content": "hi"}}}
 	pruned := pruneZeroEventRetryPayload(ctx, kwargs, 2, 2)
@@ -2572,7 +2577,7 @@ func TestCodexWireZeroEventRetrySpillsOversizedToolOutput(t *testing.T) {
 			spilled = stringOf(m["output"])
 		}
 	}
-	if !strings.HasPrefix(spilled, codexPersistedTag) || !strings.Contains(spilled, "Full output saved to: ") {
+	if !strings.HasPrefix(spilled, tools.PersistedOutputTag) || !strings.Contains(spilled, "Full output saved to: ") {
 		t.Fatalf("spilled %q", truncate(spilled, 120))
 	}
 	path := strings.TrimSpace(strings.SplitN(strings.SplitN(spilled, "Full output saved to: ", 2)[1], "\n", 2)[0])

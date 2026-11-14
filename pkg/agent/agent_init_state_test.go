@@ -21,10 +21,10 @@ func TestKeyBannerLabelsACallableKeyByItsSource(t *testing.T) {
 		label string
 	}{
 		{"entra", provider.TagCredentialSource(neverMinted, provider.CredentialSourceEntraID), "Microsoft Entra ID"},
-		{"vertex", provider.TagCredentialSource(neverMinted, provider.CredentialSourceVertexOAuth), "Google Vertex OAuth"},
-		{"key_cmd", &provider.CommandTokenSource{Command: "print-token", Label: "corp"}, "key_cmd token"},
+		{"vertex", provider.TagCredentialSource(neverMinted, provider.CredentialSourceVertexOAuth), "Google OAuth (Vertex AI)"},
+		{"key_cmd", &provider.CommandTokenSource{Command: "print-token", Label: "corp"}, "key_cmd token (command)"},
 		{"minimax", provider.TagCredentialSource(neverMinted, provider.CredentialSourceMinimaxOAuth), "MiniMax OAuth"},
-		{"unknown", func(context.Context) (string, error) { return neverMinted(nil) }, "token provider"},
+		{"unknown", func(context.Context) (string, error) { return neverMinted(nil) }, "Token provider"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

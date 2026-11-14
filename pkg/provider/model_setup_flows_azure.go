@@ -112,7 +112,12 @@ func azureEntraPreflightStep(r *ModelFlowRun, currentEntra map[string]any) azure
 				tokenProvider = nil
 			}
 		}()
-		tokenProvider = BuildEntraTokenProvider(&cfg, entraScope, true)
+		built, err := BuildEntraTokenProviderIn(r.Ctx, &cfg, entraScope, true)
+		if err != nil {
+			fmt.Fprintf(r.Out, "⚠ Could not build token provider for probing: %v\n", err)
+			return
+		}
+		tokenProvider = built
 	}()
 	return azureEntraPreflight{tokenProvider: tokenProvider, entraOverrides: entraOverrides}
 }

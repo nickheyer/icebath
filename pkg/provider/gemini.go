@@ -532,6 +532,9 @@ func (c *geminiNativeClient) apiError(gerr *GeminiAPIError) *APIError {
 	if gerr.RetryAfter > 0 {
 		apiErr.RetryAfter = gerr.RetryAfter
 	}
+	if declared, ok := RetryAfterFromHeaders(gerr.Headers); ok {
+		apiErr.RetryAfterHeader = &declared
+	}
 	if apiErr.RequestID == "" && gerr.Headers != nil {
 		apiErr.RequestID = headerRequestID(gerr.Headers)
 	}

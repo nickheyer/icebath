@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 var bedrockLog = slog.Default()
@@ -230,11 +232,11 @@ func bedrockOpenAIBaseURL(region string) string {
 
 // Region of a Mantle host and the lowered path without its trailing slash
 func bedrockMantleURLParts(baseURL string) (string, bool, string) {
-	u, err := url.Parse(strings.TrimSpace(baseURL))
+	u, err := pyurl.Parse(baseURL)
 	if err != nil {
 		return "", false, ""
 	}
-	path := strings.ToLower(strings.TrimRight(u.Path, "/"))
+	path := pystr.Lower(strings.TrimRight(u.Path, "/"))
 	m := bedrockOpenAIHostRe.FindStringSubmatch(u.Hostname())
 	if m == nil {
 		return "", false, path

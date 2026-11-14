@@ -91,7 +91,7 @@ func TestAnthropicPortalTagsAndSessionReachTheMessagesRequest(t *testing.T) {
 		}
 		has[s] = true
 	}
-	for _, want := range []string{"product=icebath-agent", "client=icebath-client-v" + BuildVersion, "conversation=sess-abc123"} {
+	for _, want := range []string{"product=icebath-agent", "client=icebath-client-v" + baseVersion(), "conversation=sess-abc123"} {
 		if !has[want] {
 			t.Errorf("tag %q missing from %v", want, tags)
 		}

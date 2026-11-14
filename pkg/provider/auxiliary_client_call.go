@@ -838,11 +838,21 @@ var auxLatencyMu sync.Mutex
 
 // CallLLM runs an auxiliary LLM request under the configured task limit and relay identity
 func CallLLM(ctx context.Context, kwargs map[string]any) (any, error) {
-	req, err := auxParseCallKwargs("call_llm", kwargs, true)
-	if err != nil {
-		return nil, err
+	return auxRelayAuxiliaryCall(ctx, auxRelayCallTask(kwargs), func(ctx context.Context) (any, error) {
+		req, err := auxParseCallKwargs("call_llm", kwargs, true)
+		if err != nil {
+			return nil, err
+		}
+		return auxCallLLM(ctx, req)
+	})
+}
+
+// Task label of the relay call record, the text of a truthy task argument
+func auxRelayCallTask(kwargs map[string]any) string {
+	if task := kwargs["task"]; pyrepr.Truthy(task) {
+		return pyrepr.Str(task)
 	}
-	return auxRelayAuxiliaryCall(ctx, req.Task, func(ctx context.Context) (any, error) { return auxCallLLM(ctx, req) })
+	return ""
 }
 
 // Sync call under the task semaphore with latency stamps and the scoped runtime and progress hooks
@@ -938,11 +948,18 @@ func (s *auxSemaphoreStream) Close() error {
 }
 
 // AsyncCallLLM runs an auxiliary LLM request on the async client surface under the async task limit
-func AsyncCallLLM(ctx context.Context, kwargs map[string]any) (response any, err error) {
-	req, err := auxParseCallKwargs("async_call_llm", kwargs, false)
-	if err != nil {
-		return nil, err
-	}
+func AsyncCallLLM(ctx context.Context, kwargs map[string]any) (any, error) {
+	return auxRelayAuxiliaryCall(ctx, auxRelayCallTask(kwargs), func(ctx context.Context) (any, error) {
+		req, err := auxParseCallKwargs("async_call_llm", kwargs, false)
+		if err != nil {
+			return nil, err
+		}
+		return auxAsyncCallLLM(ctx, req)
+	})
+}
+
+// Async call under the async task semaphore with the scoped main runtime bound
+func auxAsyncCallLLM(ctx context.Context, req auxCallRequest) (response any, err error) {
 	semaphore, err := auxAcquireAsyncAuxSemaphore(ctx, req.Task)
 	if err != nil {
 		return nil, err

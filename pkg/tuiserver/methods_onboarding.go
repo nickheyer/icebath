@@ -301,7 +301,10 @@ func planOnboardingStart(ctx context.Context, rid any, params map[string]any, fr
 		return nil, dbUnavailableError(ctx, rid, 5000), nil
 	}
 	plan = &onboardingStartPlan{}
-	openIDs := tools.OpenOnboardingSessionIDs(db)
+	openIDs, err := tools.OpenOnboardingSessionIDsErr(db)
+	if err != nil {
+		return nil, nil, err
+	}
 	if !truthy(params["rerun"]) && !freshLaunch && len(openIDs) > 0 {
 		plan.stored = openIDs[0]
 	}

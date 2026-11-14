@@ -269,7 +269,7 @@ func BuildProposals(records []ApprovalRecord, existing map[string]bool, minCount
 			continue
 		}
 		raw := NormalizeCommand(rec.Command)
-		normalized := RedactSensitiveText(raw)
+		normalized := RedactSensitiveTextWith(nil, raw, RedactOptions{Force: true})
 		glob := DeriveGlob(raw)
 		if glob != "" && DeriveGlob(normalized) != glob {
 			glob = ""

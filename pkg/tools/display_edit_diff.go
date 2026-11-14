@@ -144,11 +144,11 @@ func snapshotText(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	text := strictUTF8Text(data)
-	if text == "" && len(strings.TrimPrefix(string(data), "\xef\xbb\xbf")) != 0 {
+	text, err := pystr.DecodeUTF8SigFile(data)
+	if err != nil {
 		return "", false
 	}
-	return text, true
+	return pystr.TranslateNewlines(text), true
 }
 
 // Path relative to the current directory when it lies under it, else the path itself

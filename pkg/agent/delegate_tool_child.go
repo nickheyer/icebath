@@ -166,7 +166,14 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 				panic(r)
 			}
 		}()
-		child, err = newChildAIAgentFn(tools.WithDelegatedChildContext(buildCtx, true), o)
+		childCtx := tools.WithDelegatedChildContext(buildCtx, true)
+		sessionEnv := o.Env
+		if sessionEnv == nil {
+			sessionEnv = tools.ToolEnvFrom(childCtx)
+		}
+		defer tools.ScopedCurrentSessionID(sessionEnv, nil)()
+		o.Env = tools.ForkSessionContext(sessionEnv)
+		child, err = newChildAIAgentFn(childCtx, o)
 		if err != nil && childDB != nil {
 			delegateQuiet("", func() { releaseOrCloseStore(childDB) })
 		}

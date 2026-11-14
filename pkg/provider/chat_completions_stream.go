@@ -1017,7 +1017,7 @@ func (c *chatCompletionsClient) streamError(pse *ProviderStreamError) error {
 		apiErr.Message = pse.Error()
 	}
 	if pse.Headers != nil && apiErr.RetryAfter == 0 {
-		apiErr.RetryAfter = RetryAfterFrom(pse.Headers.Get("Retry-After"))
+		apiErr.SetRetryAfterHeader(pse.Headers.Get("Retry-After"))
 	}
 	return apiErr
 }

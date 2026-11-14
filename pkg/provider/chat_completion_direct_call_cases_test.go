@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Client answering a fixed response map while recording the kwargs it was sent
@@ -247,8 +249,8 @@ func TestInlineCallPassesHardReadTimeoutToTheSdk(t *testing.T) {
 	if err != nil || resp.(map[string]any)["id"] != "ok" {
 		t.Fatalf("resp %v err %v", resp, err)
 	}
-	if kw := sentKwargs(sent); kw["timeout"] != 0.5 {
-		t.Fatalf("timeout %v", kw["timeout"])
+	if timeout, ok := sentKwargs(sent)["timeout"].(pyhttpx.Timeout); !ok || timeout.Read != 500*time.Millisecond {
+		t.Fatalf("timeout %v", sentKwargs(sent)["timeout"])
 	}
 }
 

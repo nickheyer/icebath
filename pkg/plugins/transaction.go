@@ -41,7 +41,34 @@ func activePluginTree(ctx context.Context, target string, installing bool) (bool
 
 // How a staged tree is published and whose consent it already carries
 type publishOptions struct {
-	TargetDigest *string
+	TargetDigest   *string
+	RequireConsent bool
+	AssumeConsent  bool
+}
+
+// Asks the dependency consent of an active replacement, an error naming the refusal when it is declined
+func consentActiveReplacement(ctx context.Context, staged, target string, exists bool) error {
+	active, err := activePluginTree(ctx, target, true)
+	if err != nil || !active {
+		return err
+	}
+	manifest, err := ReadManifestForInstall(staged)
+	if err != nil {
+		return err
+	}
+	consented, reason := installPluginPythonDeps(ctx, manifest, staged, NewConsole(os.Stdout), false)
+	if consented {
+		return nil
+	}
+	outcome := "Install declined: %s. Nothing was installed."
+	if exists {
+		outcome = "Reinstall declined: %s. The installed plugin and active environment are unchanged."
+	}
+	class := reason.FailureClass
+	if class == "" {
+		class = "other"
+	}
+	return &PluginOperationError{Msg: fmt.Sprintf(outcome, reason.Text), FailureClass: class}
 }
 
 // Publishes a staged tree over its target and the metadata change through one PM sync
@@ -56,6 +83,11 @@ func publishPlugin(ctx context.Context, staged, target string, oldMetadata, newM
 		if !config.PyTruthy(manifest["entry"]) {
 			return &PluginOperationError{Msg: fmt.Sprintf("%s is Python source and was not installed; %s.", manifestText(manifest, "name", filepath.Base(target)), PluginFormsText),
 				FailureClass: "unsupported_form"}
+		}
+	}
+	if opts.RequireConsent && !opts.AssumeConsent {
+		if err := consentActiveReplacement(ctx, staged, target, exists); err != nil {
+			return err
 		}
 	}
 	absTarget, err := filepath.Abs(target)
@@ -115,6 +147,7 @@ func ignorePycache(_ string, names []string) map[string]bool {
 // Update inputs, the catalog entry selects a re pin and its absence a git pull
 type updatePluginOptions struct {
 	CatalogEntry   *PluginCatalogEntry
+	Interactive    bool
 	Force          bool
 	ScanDecision   func(scan any) bool
 	CarryUserFiles func(staged string) ([]string, error)
@@ -291,6 +324,9 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 		return "", err
 	}
 	copyExampleFiles(staged, NewConsole(os.Stdout))
+	if err := refreshDeclaredDependencies(ctx, target, staged, manifest, opts.Interactive); err != nil {
+		return "", err
+	}
 	current, err := pm.TreeDigest(target)
 	if err != nil {
 		return "", err

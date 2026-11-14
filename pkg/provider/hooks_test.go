@@ -87,7 +87,7 @@ func TestSanitizeHookPayloadRespectsCap(t *testing.T) {
 	if !ok {
 		t.Fatalf("payload %T", got)
 	}
-	if m["_truncated"] != true || m["original_type"] != "map[string]interface {}" {
+	if m["_truncated"] != true || m["original_type"] != "dict" {
 		t.Fatalf("truncated payload %v", m)
 	}
 	if preview, _ := m["preview"].(string); len([]rune(preview)) != 1200 {

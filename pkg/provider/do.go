@@ -694,9 +694,7 @@ func (l *doLoop) captureSuccessHeaders(resp *Response) {
 	}
 	if l.route.Provider == "nous" {
 		guard := &NousRateGuard{Home: l.opts.Home, Anonymous: l.anonymous(), Now: l.now}
-		if err := guard.Clear(); err != nil {
-			l.log.Debug(fmt.Sprintf("nous rate guard clear failed: %v", err))
-		}
+		_ = guard.Clear()
 	}
 }
 

@@ -156,16 +156,22 @@ func AdvanceOnboarding(ctx context.Context, db OnboardingStore, sessionID string
 
 // OpenOnboardingSessionIDs lists the chats whose run is still in progress, newest first, each at its compression tip
 func OpenOnboardingSessionIDs(db OnboardingStore) []string {
+	open, _ := OpenOnboardingSessionIDsErr(db)
+	return open
+}
+
+// OpenOnboardingSessionIDsErr lists the chats whose run is in progress, a store failure returned to the caller
+func OpenOnboardingSessionIDsErr(db OnboardingStore) ([]string, error) {
 	ids, err := db.SessionIDsWithModelConfigKey(OnboardingRecordKey)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	tips := map[string]bool{}
 	var open []string
 	for _, sid := range ids {
 		tip, err := db.ResolveResumeSessionID(sid)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		if tip == "" {
 			tip = sid
@@ -178,7 +184,7 @@ func OpenOnboardingSessionIDs(db OnboardingStore) []string {
 			open = append(open, tip)
 		}
 	}
-	return open
+	return open, nil
 }
 
 // ActiveOnboardingSessionID is the newest chat with a run in progress, empty when none
@@ -203,7 +209,11 @@ func DeleteOnboardingChat(ctx context.Context, db *state.DB, sessionID string, d
 	live := OnboardingActive(record) && tip == sessionID
 	last := live
 	if live {
-		for _, sid := range OpenOnboardingSessionIDs(db) {
+		open, err := OpenOnboardingSessionIDsErr(db)
+		if err != nil {
+			return false, err
+		}
+		for _, sid := range open {
 			if sid != sessionID {
 				last = false
 			}
@@ -229,11 +239,16 @@ func DeleteOnboardingChat(ctx context.Context, db *state.DB, sessionID string, d
 	if live {
 		runID := onbRecordString(record, "run_id")
 		if runID != "" {
-			ids, _ := db.SessionIDsWithModelConfigKey(OnboardingRecordKey)
+			ids, err := db.SessionIDsWithModelConfigKey(OnboardingRecordKey)
+			if err != nil {
+				return false, err
+			}
 			for _, sid := range ids {
 				older := LoadOnboardingRecord(db, sid)
 				if older != nil && onbRecordString(older, "run_id") == runID {
-					db.PatchModelConfig(sid, map[string]any{OnboardingRecordKey: onbEndDeleted(older)})
+					if err := db.PatchModelConfig(sid, map[string]any{OnboardingRecordKey: onbEndDeleted(older)}); err != nil {
+						return false, err
+					}
 				}
 			}
 		}

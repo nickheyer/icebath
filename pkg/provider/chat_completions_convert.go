@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -38,9 +40,17 @@ var BuildVersion = "dev"
 const attributionReferer = "https://github.com/nickheyer/icebath"
 const attributionTitle = "Icebath Agent"
 
+// Base version of the running build from the version record, the build variable when the record cannot be read
+func baseVersion() string {
+	if info, err := updaterecord.GetVersionInfo(); err == nil && info.BaseVersion != "" {
+		return info.BaseVersion
+	}
+	return BuildVersion
+}
+
 // User agent of every OpenAI wire request
 func userAgent(product string) string {
-	return product + "/" + BuildVersion
+	return product + "/" + baseVersion()
 }
 
 // JSON object that marshals its keys in insertion order
@@ -767,7 +777,14 @@ var ThinkStripPatterns = func() []*regexp2.Regexp {
 	)
 }()
 
-var inlineThinkRe = regexp.MustCompile(`(?is)<(?:` + thinkTagAlt + `)>(.*?)</(?:` + thinkTagAlt + `)>`)
+// One capture pattern per reasoning tag in tag order, each opening tag closed by its own name
+var inlineReasoningPatterns = func() []*regexp2.Regexp {
+	out := make([]*regexp2.Regexp, 0, len(ThinkTagNames))
+	for _, tag := range ThinkTagNames {
+		out = append(out, regexp2.MustCompile(`<`+tag+`>(.*?)</`+tag+`>`, regexp2.Singleline|regexp2.IgnoreCase))
+	}
+	return out
+}()
 
 // StripStrayToolCallClosers drops orphan tool_call and function closing tags
 func StripStrayToolCallClosers(s string) string {
@@ -805,9 +822,13 @@ func StripThinkBlocks(content string) string {
 // Inline reasoning blocks of a content string joined with blank lines
 func inlineReasoning(content string) string {
 	var parts []string
-	for _, m := range inlineThinkRe.FindAllStringSubmatch(content, -1) {
-		if t := strings.TrimSpace(m[1]); t != "" {
-			parts = append(parts, t)
+	for _, pattern := range inlineReasoningPatterns {
+		m, _ := pattern.FindStringMatch(content)
+		for m != nil {
+			if text := pystr.Strip(m.GroupByNumber(1).String()); text != "" && !slices.Contains(parts, text) {
+				parts = append(parts, text)
+			}
+			m, _ = pattern.FindNextMatch(m)
 		}
 	}
 	return strings.Join(parts, "\n\n")
@@ -1244,7 +1265,11 @@ func moonshotRepairSchema(node any) any {
 			delete(repaired, "type")
 			var nonNull []any
 			for _, b := range anyOf {
-				if bm, ok := b.(map[string]any); ok && stringOf(bm["type"]) == "null" {
+				bm, isDict := b.(map[string]any)
+				if !isDict {
+					continue
+				}
+				if kind, isText := bm["type"].(string); isText && kind == "null" {
 					continue
 				}
 				nonNull = append(nonNull, b)
@@ -2415,7 +2440,7 @@ func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, suppor
 			top["extra_headers"] = map[string]string{"x-grok-conv-id": sticky}
 		}
 	case c.isNous() && known:
-		tags := []any{"product=icebath-agent", "client=icebath-client-v" + BuildVersion}
+		tags := []any{"product=icebath-agent", "client=icebath-client-v" + baseVersion()}
 		if conv := firstNonEmpty(req.CacheScope, req.SessionID); conv != "" {
 			tags = append(tags, "conversation="+conv)
 		}

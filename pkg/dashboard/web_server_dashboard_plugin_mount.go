@@ -59,6 +59,54 @@ type pluginAPIRoute struct {
 	*APIRoute
 	inProcess bool
 	apiPath   string
+	native    *Router
+	prefix    string
+}
+
+// Routers of compiled dashboards whose backend is written against this server, keyed by plugin name
+var compiledPluginRouters = map[string]func() *APIRouter{}
+
+// Full match of every http and websocket path below a native plugin prefix, else the catch all route match
+func (r *pluginAPIRoute) Matches(s *Scope) (Match, *childScope) {
+	if r.native == nil {
+		return r.APIRoute.Matches(s)
+	}
+	if s.Type != "http" && s.Type != "websocket" {
+		return MatchNone, nil
+	}
+	if !strings.HasPrefix(getRoutePath(s), r.prefix+"/") {
+		return MatchNone, nil
+	}
+	return MatchFull, &childScope{endpoint: r.Endpoint, pathParams: map[string]any{}, route: r}
+}
+
+// Serves a native plugin request through its own router inside the request profile scope
+func (r *pluginAPIRoute) Handle(ctx context.Context, s *Scope, receive Receive, send Send) error {
+	if r.native == nil {
+		return r.APIRoute.Handle(ctx, s, receive, send)
+	}
+	inner := func(ctx context.Context, s *Scope, receive Receive, send Send) error {
+		conn := &HTTPConnection{Scope: s, receive: receive, send: send}
+		sctx, err := pluginRouteSecretScope(ctx, conn, conn.QueryParams().Get("profile"))
+		if err != nil {
+			return err
+		}
+		return r.native.app(sctx, s, receive, send)
+	}
+	if s.Type == "websocket" {
+		return wrapAppHandlingExceptions(inner, nil, NewWebSocket(s, receive, send))(ctx, s, receive, send)
+	}
+	return wrapAppHandlingExceptions(inner, NewRequest(s, receive, send), nil)(ctx, s, receive, send)
+}
+
+// Route of a compiled dashboard whose backend is a native router mounted under the plugin prefix
+func nativePluginAPIRoute(name string, router *APIRouter, apiPath string) *pluginAPIRoute {
+	prefix := "/api/plugins/" + name
+	ep := &Endpoint{Name: "plugin_api", Handle: func(ctx context.Context, c *Call) (any, error) {
+		return nil, NewHTTPException(404, nil)
+	}}
+	return &pluginAPIRoute{APIRoute: NewAPIRoute(prefix+"/{path:path}", pluginAPIMethods, ep), inProcess: true, apiPath: apiPath,
+		native: &Router{Routes: router.Routes, RedirectSlash: true}, prefix: prefix}
 }
 
 // Forward route of a plugin api served by the plugin host of the requesting profile
@@ -128,17 +176,21 @@ func hostedPluginForRequest(ctx context.Context, name string) (*hostedTarget, er
 		if pluginAPIMountSkipReason(plugin, plugins.EnabledPluginSet(ctx), plugins.DisabledPluginSet(ctx)) != "" {
 			return nil, nil
 		}
-		host, err := plugins.GetPluginManager(ctx).PluginHost()
+		dir := pyrepr.Str(plugin.GetOr("_dir", nil))
+		host, err := plugins.GetPluginManager(ctx).HostForPluginDir(filepath.Dir(dir))
 		if err != nil {
 			return nil, err
 		}
-		return &hostedTarget{host: host, dir: pyrepr.Str(plugin.GetOr("_dir", nil)), apiFile: pyrepr.Str(plugin.GetOr("_api_file", nil))}, nil
+		return &hostedTarget{host: host, dir: dir, apiFile: pyrepr.Str(plugin.GetOr("_api_file", nil))}, nil
 	}
 	return nil, nil
 }
 
 // Route of a compiled in dashboard api handler bound to the request profile scope
 func compiledPluginAPIRoute(name string, d plugins.BundledDashboard, apiPath string) *pluginAPIRoute {
+	if build := compiledPluginRouters[name]; build != nil {
+		return nativePluginAPIRoute(name, build(), apiPath)
+	}
 	ep := &Endpoint{
 		Name:   "plugin_api",
 		Params: []Param{PathParam("path", Str), QueryParam("profile", Optional(Str), nil)},
@@ -259,7 +311,7 @@ func onePluginAPIRoute(ctx context.Context, app *FastAPI, plugin *pyjson.Object,
 		return nil, nil
 	}
 	if d, compiled := compiledDashboard(plugin); compiled {
-		if d.API == nil {
+		if d.API == nil && compiledPluginRouters[name] == nil {
 			webServerLog().Warn(fmt.Sprintf("Plugin %s declares api=%s but file not found", name, apiFileName))
 			return nil, nil
 		}

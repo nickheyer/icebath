@@ -33,6 +33,8 @@ type Runtime struct {
 	ReleaseProcessGroupOnceEmpty func(pgid int, poll func(), timeout time.Duration) bool
 	Opcodes                      func(a, b []string) []Opcode
 	DecodeJSON                   func(text string) (any, error)
+	// Ids under lsp.servers in the order the config file declares them
+	ServerOrder func() []string
 }
 
 // Logger of the runtime or the process default

@@ -27,8 +27,9 @@ import (
 type InstallPhase string
 
 const (
-	InstallPhaseDownloading  InstallPhase = "downloading"
-	InstallPhaseLoadingTools InstallPhase = "loading_tools"
+	InstallPhaseDownloading    InstallPhase = "downloading"
+	InstallPhasePythonPackages InstallPhase = "python_packages"
+	InstallPhaseLoadingTools   InstallPhase = "loading_tools"
 )
 
 type sharedAnswersKey struct{}
@@ -309,16 +310,18 @@ func cloneAtReviewedCommit(ctx context.Context, h, tmpClone, gitURL, requestedRe
 
 // Install inputs, an empty Ref or ReviewedPin or InspectedSha means none was given
 type installCoreOptions struct {
-	Force         bool
-	AcceptCaution *bool
-	Ref           string
-	ScanDecision  func(scan any) bool
-	ReviewedPin   string
-	Catalog       map[string]any
-	AllowRemoved  bool
-	BeforeSwap    func(manifest map[string]any, tree string) ([]string, error)
-	AppTitle      string
-	InspectedSha  string
+	Force             bool
+	AcceptCaution     *bool
+	Ref               string
+	ScanDecision      func(scan any) bool
+	ReviewedPin       string
+	Catalog           map[string]any
+	AllowRemoved      bool
+	BeforeSwap        func(manifest map[string]any, tree string) ([]string, error)
+	AppTitle          string
+	InspectedSha      string
+	NoDeps            bool
+	AssumeDepsConsent bool
 }
 
 // Clones, scans and atomically publishes a git plugin with its source and exact revision recorded
@@ -460,6 +463,16 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 	if _, err := scanMergedTree(h, tmpTarget, identifier, merged, scanOptions{Force: force, ScanDecision: opts.ScanDecision, ReviewedPin: atReviewedPin}); err != nil {
 		return "", err
 	}
+	if opts.NoDeps {
+		active, err := activePluginTree(ctx, target, true)
+		if err != nil {
+			return "", err
+		}
+		if active {
+			return "", &PluginOperationError{Msg: "--no-deps cannot replace an active plugin. Retry without --no-deps; " +
+				"PM must prepare its dependencies before publication.", FailureClass: "already_installed"}
+		}
+	}
 	if err := refuseUnavailablePortablePlugin(ctx, pluginName, tmpTarget, opts.AppTitle); err != nil {
 		return "", err
 	}
@@ -517,7 +530,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 		NewConsole(os.Stdout).Print(fmt.Sprintf("[yellow]Local edits to %d tracked file(s) were not carried over; "+
 			"copies are under %s (re-apply by hand).[/yellow]", len(trackedEdits), backup))
 	}
-	if err := publishPlugin(ctx, tmpTarget, target, oldMetadata, newMetadata, publishOptions{}); err != nil {
+	if err := publishPlugin(ctx, tmpTarget, target, oldMetadata, newMetadata, publishOptions{RequireConsent: true, AssumeConsent: opts.AssumeDepsConsent}); err != nil {
 		return "", &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' was not published: %v", pluginName, err), FailureClass: publishFailureClass(err)}
 	}
 	return target, nil
@@ -606,6 +619,8 @@ type InstallCommandOptions struct {
 	Ref          string
 	AllowRemoved bool
 	Brief        bool
+	NoDeps       bool
+	YesDeps      bool
 }
 
 // Installs a plugin from the catalog, a git URL or owner/repo shorthand, then prompts, enables and reports
@@ -649,9 +664,11 @@ func CmdInstall(ctx context.Context, opts InstallCommandOptions, out io.Writer) 
 	target, installedManifest, installedName, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
 		if entry != nil {
 			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: opts.Force, Ref: opts.Ref, AllowRemoved: opts.AllowRemoved,
+				NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps,
 				ScanDecision: decide})
 		}
 		return installPluginCore(ctx, identifier, installCoreOptions{Force: opts.Force, Ref: opts.Ref, ScanDecision: decide,
+			NoDeps: opts.NoDeps, AssumeDepsConsent: opts.YesDeps,
 			AllowRemoved: opts.AllowRemoved})
 	}, catalogName, identifier)
 	var opErr *PluginOperationError
@@ -686,6 +703,11 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 		return err
 	}
 	shouldEnable := opts.Enable
+	if opts.NoDeps {
+		disabled := false
+		shouldEnable = &disabled
+		console.Print("[dim]--no-deps: skipping dependency consent; the plugin stays disabled.[/dim]")
+	}
 	svc := installedServices()
 	if svc == nil || svc.DefinesMemoryProvider == nil {
 		return &ServiceMissingError{Name: "DefinesMemoryProvider"}
@@ -700,8 +722,18 @@ func finishInstall(ctx context.Context, h string, console *Console, opts Install
 		shouldEnable = &answer
 	}
 	enable := shouldEnable != nil && *shouldEnable
+	depsOK, depsReason := true, (*ConsentRefusal)(nil)
+	if enable && !alreadyActive {
+		depsOK, depsReason = installPluginPythonDeps(ctx, installedManifest, target, console, opts.YesDeps)
+	}
 	if err := displayAfterInstall(console, target, identifier, opts.Brief); err != nil {
 		return err
+	}
+	if enable && !depsOK {
+		console.Print(fmt.Sprintf("[red]✗[/red] Cannot enable [bold]%s[/bold]: %s", installedName, depsReason.Text))
+		console.Print("[dim]The plugin stays installed but disabled; re-enable " +
+			"after resolving the conflict.[/dim]")
+		enable = false
 	}
 	activate := opts.Enable != nil && *opts.Enable
 	explicitEnable := activate
@@ -881,6 +913,12 @@ func resolveSource(ctx context.Context, identifier, catalogName string) (*Plugin
 // Tree to enable, reusing a refused catalog install on disk, else the error result of a fresh install
 func placeTree(ctx context.Context, h string, entry *PluginCatalogEntry, identifier string, force bool, ref string,
 	step func(InstallPhase), inspectedSha string) (string, map[string]any, string, map[string]any, error) {
+	return placeTreeConsented(ctx, h, entry, identifier, force, ref, step, inspectedSha, false)
+}
+
+// Tree placement carrying the dependency consent the caller already holds into publication
+func placeTreeConsented(ctx context.Context, h string, entry *PluginCatalogEntry, identifier string, force bool, ref string,
+	step func(InstallPhase), inspectedSha string, assumeDepsConsent bool) (string, map[string]any, string, map[string]any, error) {
 	ref = strings.TrimSpace(ref)
 	if ref != "" {
 		inspectedSha = ""
@@ -898,9 +936,11 @@ func placeTree(ctx context.Context, h string, entry *PluginCatalogEntry, identif
 	}
 	target, manifest, name, err := recordedInstall(ctx, h, func() (string, map[string]any, string, error) {
 		if entry != nil {
-			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: force, Ref: ref, InspectedSha: inspectedSha})
+			return installCatalogEntry(ctx, entry, CatalogInstallOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
+				AssumeDepsConsent: assumeDepsConsent})
 		}
-		return installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref, InspectedSha: inspectedSha})
+		return installPluginCore(ctx, identifier, installCoreOptions{Force: force, Ref: ref, InspectedSha: inspectedSha,
+			AssumeDepsConsent: assumeDepsConsent})
 	}, catalogName, identifier)
 	var blocked *PluginScanBlocked
 	var moved *PluginSourceMoved
@@ -935,6 +975,8 @@ type DashboardInstallOptions struct {
 	Ref          string
 	OnStep       func(InstallPhase)
 	InspectedSha string
+	// Consent the caller holds for the Python dependencies, nil taking a fresh enable without force as that consent
+	AssumeDepsConsent *bool
 }
 
 // Non interactive install for the dashboard and TUI with the kill list enforced on every path
@@ -951,11 +993,19 @@ func DashboardInstallPlugin(ctx context.Context, opts DashboardInstallOptions) (
 	if refusal != nil {
 		return refusal, nil
 	}
-	target, manifest, installedName, result, err := placeTree(ctx, h, entry, identifier, opts.Force, opts.Ref, step, opts.InspectedSha)
+	assumeDepsConsent := opts.Enable && !opts.Force
+	if opts.AssumeDepsConsent != nil {
+		assumeDepsConsent = *opts.AssumeDepsConsent
+	}
+	target, manifest, installedName, result, err := placeTreeConsented(ctx, h, entry, identifier, opts.Force, opts.Ref, step, opts.InspectedSha, assumeDepsConsent)
 	if err != nil || result != nil {
 		return result, err
 	}
+	deps := pythonDependencySummary(target, &warnings)
 	if opts.Enable {
+		if len(deps) > 0 {
+			step(InstallPhasePythonPackages)
+		}
 		refused, err := enablePlaced(ctx, h, installedName)
 		if err != nil || refused != nil {
 			return refused, err
@@ -985,7 +1035,7 @@ func DashboardInstallPlugin(ctx context.Context, opts DashboardInstallOptions) (
 		knownIssues = stringsAny(entry.KnownIssues)
 	}
 	out := map[string]any{"ok": true, "plugin_name": installedName, "warnings": stringsAny(warnings),
-		"missing_env": missingNames, "after_install_path": afterInstall, "enabled": opts.Enable}
+		"python_dependencies": stringsAny(deps), "missing_env": missingNames, "after_install_path": afterInstall, "enabled": opts.Enable}
 	for k, v := range activated {
 		out[k] = v
 	}

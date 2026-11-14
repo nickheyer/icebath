@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"net/url"
 	"os/signal"
 	"reflect"
 	"strconv"
@@ -373,10 +374,37 @@ func TestEnableHappyEyeballsOnClientSkipsProxyPools(t *testing.T) {
 			t.Fatal("proxy pools keep their serial connect")
 		}
 	}
-	raw := &http.Transport{Proxy: http.ProxyFromEnvironment}
+	var serialDials, racedLookups []string
+	oldLookup := happyEyeballsLookupFn
+	defer func() { happyEyeballsLookupFn = oldLookup }()
+	happyEyeballsLookupFn = func(_ context.Context, host string) ([]net.IP, error) {
+		racedLookups = append(racedLookups, host)
+		return nil, errors.New("raced lookup")
+	}
+	proxyURL, err := url.Parse("http://127.0.0.1:3128")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := &http.Transport{Proxy: http.ProxyURL(proxyURL), DialContext: func(_ context.Context, _, address string) (net.Conn, error) {
+		serialDials = append(serialDials, address)
+		return nil, errors.New("serial dial")
+	}}
 	enableHappyEyeballsOnClient(&http.Client{Transport: raw})
-	if raw.DialContext != nil {
-		t.Fatal("a proxy backed transport must stay untouched")
+	req, err := http.NewRequest(http.MethodGet, "https://api.example.com/v1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target, err := raw.Proxy(req); err != nil || target.Host != "127.0.0.1:3128" {
+		t.Fatalf("proxy lookup %v %v", target, err)
+	}
+	if _, err := raw.DialContext(context.Background(), "tcp", "127.0.0.1:3128"); err == nil || err.Error() != "serial dial" {
+		t.Fatalf("a connect to the proxy must keep the transport's own dialer, got %v", err)
+	}
+	if _, err := raw.DialContext(context.Background(), "tcp", "bypassed.example.com:443"); err == nil || err.Error() != "raced lookup" {
+		t.Fatalf("a direct connect of a proxy backed transport must race, got %v", err)
+	}
+	if !reflect.DeepEqual(serialDials, []string{"127.0.0.1:3128"}) || !reflect.DeepEqual(racedLookups, []string{"bypassed.example.com"}) {
+		t.Fatalf("serial dials %v raced lookups %v", serialDials, racedLookups)
 	}
 	direct := &http.Transport{}
 	enableHappyEyeballsOnClient(&http.Client{Transport: direct})

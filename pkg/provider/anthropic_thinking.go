@@ -3,10 +3,13 @@ package provider
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Routes whose thinking blocks carry upstream verified signatures and heal a signature 400 durably
@@ -24,7 +27,7 @@ var anthRejectedThinkingCarriers = []string{"reasoning_details", "anthropic_cont
 
 // Coarse sha256 fingerprint of a signed thinking block, empty for anything else
 func anthThinkingFingerprint(block any) string {
-	m, ok := asMap(block)
+	m, ok := pyjson.Dict(block)
 	if !ok {
 		return ""
 	}
@@ -40,18 +43,16 @@ func anthThinkingFingerprint(block any) string {
 	if value == nil {
 		return ""
 	}
-	payload, isStr := value.(string)
-	if !isStr {
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return ""
-		}
-		payload = string(raw)
-	}
-	if payload == "" {
+	if raw, isBytes := value.([]byte); isBytes && len(raw) == 0 {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(kind + "\x00" + payload))
+	payload, isStr := value.(string)
+	if !isStr {
+		payload = pyrepr.Repr(value)
+	} else if payload == "" {
+		return ""
+	}
+	sum := sha256.Sum256(pystr.EncodeUTF8Replace(kind + "\x00" + payload))
 	return hex.EncodeToString(sum[:])
 }
 

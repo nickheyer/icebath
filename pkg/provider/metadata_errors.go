@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Canonical model at base url key with trailing slashes stripped
@@ -36,6 +38,7 @@ func SaveContextLength(ctx context.Context, model, baseURL string, length int, s
 		}
 		if source == "bedrock-confirmed-v1" {
 			confirmed[key] = length
+			config.AppendMappingKey(confirmed, key)
 		}
 		if cur, ok := cache[key]; ok && cur == length && sameConfirmed(confirmed, oldConfirmed) {
 			return

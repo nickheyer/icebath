@@ -249,6 +249,14 @@ func defaultShotDir(env *tools.Env) string {
 	return filepath.Join(cfgOf(env).homeDir(), "cache", "browser-use", "tmp")
 }
 
+// Screenshot dir of one call, the BH_TMP_DIR of its child env ahead of the process one
+func callShotDir(env *tools.Env, childEnv map[string]string) string {
+	if v := strings.TrimSpace(childEnv["BH_TMP_DIR"]); v != "" {
+		return v
+	}
+	return defaultShotDir(env)
+}
+
 // Connects the session's browser, attaches a tab, then runs the code with its helper calls answered on that tab
 var execRunCode = func(ctx context.Context, env *tools.Env, run execRun) execProc {
 	deadline := time.Now().Add(time.Duration(run.timeout) * time.Second)
@@ -256,12 +264,12 @@ var execRunCode = func(ctx context.Context, env *tools.Env, run execRun) execPro
 	if endpoint == "" {
 		endpoint = ResolveCDPOverride(ctx, run.route["BU_CDP_URL"])
 	}
-	name := run.route["BU_NAME"]
-	if name == "" {
-		name = "default"
-	}
 	homeKey := cfgOf(env).homeKey()
-	sess := execSessionFor(strings.Join([]string{homeKey, servedProfileTag(ctx), name}, "\x00"), homeKey)
+	identity := DaemonIdentity(run.childEnv)
+	if identity[4] == "" {
+		identity[4] = "default"
+	}
+	sess := execSessionFor(strings.Join(append([]string{homeKey}, identity[:]...), "\x00"), homeKey)
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
 	setupDeadline := time.Now().Add(execSetupTimeout)
@@ -270,7 +278,7 @@ var execRunCode = func(ctx context.Context, env *tools.Env, run execRun) execPro
 	}
 	setupCtx, cancelSetup := context.WithDeadline(ctx, setupDeadline)
 	defer cancelSetup()
-	h := &helperRun{ctx: setupCtx, s: sess, workspace: run.workspace, shotDir: defaultShotDir(env),
+	h := &helperRun{ctx: setupCtx, s: sess, workspace: run.workspace, shotDir: callShotDir(env, run.childEnv),
 		activate: run.activate, ownTab: run.ownTab}
 	refuse := func(format string, args ...any) execProc {
 		if time.Now().After(deadline) {

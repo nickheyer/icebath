@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -31,6 +32,7 @@ var (
 
 func init() {
 	displayRegistry.scopedMethod("display.status", displayStatus)
+	displayRegistry.scopedMethod("display.thumbnail", displayThumbnail)
 	displayRegistry.scopedMethod("display.start", displayStart)
 	displayRegistry.scopedMethod("display.stop", displayStop)
 	displayRegistry.scopedMethod("display.observe", displayObserve)
@@ -276,4 +278,23 @@ func displayLeaseRelease(ctx context.Context, rid any, params map[string]any) ma
 		return rpcErr(rid, displayErr, "viewer_id required to release another viewer's lease (or pass force: true)", map[string]any{"code": "viewer_mismatch"})
 	}
 	return ok(rid, map[string]any{"lease": botdesktop.LeasePublicView(lease)})
+}
+
+// One JPEG grab of the scoped screen, withheld while a human holds the lease or it moved during the grab
+func displayThumbnail(ctx context.Context, rid any, params map[string]any) map[string]any {
+	before := botdesktop.LeaseGet(home.Dir(ctx))
+	if before.Holder == botdesktop.LeaseHuman {
+		return ok(rid, map[string]any{"data_url": nil, "suppressed": "human_has_control"})
+	}
+	dataURL, err := botdesktop.ThumbnailDataURL(displayEnv(ctx), botdesktop.ThumbMaxW, botdesktop.ThumbMaxH, 72)
+	if err != nil {
+		return rpcErr(rid, displayErr, err.Error(), nil)
+	}
+	if !pyrepr.Equal(botdesktop.LeaseGet(home.Dir(ctx)).Epoch, before.Epoch) {
+		return ok(rid, map[string]any{"data_url": nil, "suppressed": "human_has_control"})
+	}
+	if dataURL == "" {
+		return ok(rid, map[string]any{"data_url": nil})
+	}
+	return ok(rid, map[string]any{"data_url": dataURL})
 }

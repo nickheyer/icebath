@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/lsp"
@@ -69,6 +70,9 @@ func LSPRuntime(env *Env) *lsp.Runtime {
 		ReleaseProcessGroupOnceEmpty: ReleaseProcessGroupOnceEmpty,
 		Opcodes:                      lspOpcodes,
 		DecodeJSON:                   lspDecodeJSON,
+		ServerOrder: func() []string {
+			return config.MappingKeyOrder(home.ConfigPath(lspHomeKey(env)), "lsp", "servers")
+		},
 	}
 }
 
@@ -94,6 +98,11 @@ func lspJSONValue(v any) any {
 	case *pyjson.Object:
 		m := make(map[string]any, len(t.Keys))
 		for _, k := range t.Keys {
+			if related, ordered := t.Vals[k].(*pyjson.Object); ordered && k == "relatedDocuments" {
+				reports, _ := lspJSONValue(related).(map[string]any)
+				m[k] = lsp.RelatedDocuments{URIs: append([]string(nil), related.Keys...), Reports: reports}
+				continue
+			}
 			m[k] = lspJSONValue(t.Vals[k])
 		}
 		return m
@@ -117,7 +126,7 @@ func lspOperatorWorkspaceRoots(env *Env) map[string]bool {
 		return map[string]bool{}
 	}
 	anchors := []func() (string, error){os.Getwd}
-	if !sessionFlag(env, "cron", "ICEBATH_CRON_SESSION") {
+	if !truthyEnvValue(GetSessionEnv(env, "ICEBATH_CRON_SESSION", "")) {
 		anchors = append(anchors, func() (string, error) { return ResolveAgentCwd(env) })
 	}
 	return lsp.OperatorWorkspaceRoots(anchors)

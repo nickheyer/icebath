@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -77,18 +78,19 @@ func FormatDiagnostic(d map[string]any, isPrintable func(rune) bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	line, err := pyInt(dgetOr(start, "line", int64(0)))
+	line, err := pyBigInt(dgetOr(start, "line", int64(0)))
 	if err != nil {
 		return "", err
 	}
-	col, err := pyInt(dgetOr(start, "character", int64(0)))
+	col, err := pyBigInt(dgetOr(start, "character", int64(0)))
 	if err != nil {
 		return "", err
 	}
 	msg := sanitizeField(d["message"], maxMessageChars, isPrintable)
 	code := sanitizeField(d["code"], maxCodeChars, isPrintable)
 	source := sanitizeField(d["source"], maxSourceChars, isPrintable)
-	out := fmt.Sprintf("%s [%d:%d] %s", sev, line+1, col+1, msg)
+	one := big.NewInt(1)
+	out := fmt.Sprintf("%s [%s:%s] %s", sev, line.Add(line, one), col.Add(col, one), msg)
 	if code != "" {
 		out += " [" + code + "]"
 	}

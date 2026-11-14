@@ -215,7 +215,10 @@ func onboardingHasMessages(ctx context.Context, a *SessionAuthority, sessionID s
 
 // Picks the open run to resume or measures facts and claims the trial, refusing 5079 or 5080 when no chat can open
 func onboardingChooseRun(ctx context.Context, a *SessionAuthority, request *pydantic.Instance) (*onboardingPlan, error) {
-	openIDs := tools.OpenOnboardingSessionIDs(a.DB)
+	openIDs, err := tools.OpenOnboardingSessionIDsErr(a.DB)
+	if err != nil {
+		return nil, err
+	}
 	rerun := request.Get("rerun") == true
 	plan := &onboardingPlan{}
 	if !rerun && request.Get("fresh_launch") != true && len(openIDs) > 0 {

@@ -11,7 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds before the in hand Nous key expires at which a fresh store key is adopted
@@ -189,12 +191,47 @@ func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged boo
 	return a.applyClientHeadersForBaseURL(ctx, a.baseURL, !routeChanged)
 }
 
+// AI Gateway attribution headers for the routes that take them on a client rebuild
+func aiGatewayRouteHeaders(context.Context, string, string) (map[string]string, error) {
+	return provider.AIGatewayHeaders(), nil
+}
+
+// Route default headers a client rebuild applies, the first matching host winning
+var routeDefaultHeadersTable = []hostDefaultHeaders{
+	{"openrouter.ai", func(ctx context.Context, _, _ string) (map[string]string, error) {
+		return provider.BuildORHeaders(ctx, nil)
+	}},
+	{"ai-gateway.vercel.sh", aiGatewayRouteHeaders},
+	{"integrate.api.nvidia.com", func(_ context.Context, _, base string) (map[string]string, error) {
+		return provider.BuildNvidiaNIMHeaders(base), nil
+	}},
+	{"api.routermint.com", func(context.Context, string, string) (map[string]string, error) { return routermintHeaders() }},
+	{"api.kimi.com", aiGatewayRouteHeaders},
+	{"portal.qwen.ai", func(context.Context, string, string) (map[string]string, error) { return qwenPortalHeaders(), nil }},
+	{"chatgpt.com", func(_ context.Context, key, base string) (map[string]string, error) {
+		return provider.CodexCloudflareHeaders(key, base), nil
+	}},
+	{"x.ai", func(context.Context, string, string) (map[string]string, error) {
+		return tools.XAIDefaultHeaders(), nil
+	}},
+}
+
+// Header factory of the first rebuild table host the base url matches, nil when none does
+func routeDefaultHeadersFactory(baseURL string) hostHeadersFactory {
+	for _, entry := range routeDefaultHeadersTable {
+		if matched, _ := pyurl.BaseURLHostMatches(baseURL, entry.host); matched {
+			return entry.factory
+		}
+	}
+	return nil
+}
+
 // Route headers for the base url from host table, route hook or profile, then user and custom extras
 func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL string, applyUserHeaders bool) error {
 	if a.clientKwargs == nil {
 		a.clientKwargs = map[string]any{}
 	}
-	if factory := hostDefaultHeadersFactory(baseURL); factory != nil {
+	if factory := routeDefaultHeadersFactory(baseURL); factory != nil {
 		headers, err := factory(ctx, pyStrValue(a.clientKwargs["api_key"]), baseURL)
 		if err != nil {
 			return err

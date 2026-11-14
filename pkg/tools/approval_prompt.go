@@ -727,9 +727,5 @@ func sanitizeCommandForDisplay(text string, prose bool) string {
 
 // Secret redaction plus display sanitizing for every approval surface
 func redactApprovalDisplay(env *Env, text string, force bool) string {
-	text = redactRegisteredVaultValues(env, text)
-	if force || redactionEnabled(env) {
-		text = RedactSensitiveText(text)
-	}
-	return sanitizeCommandForDisplay(text, false)
+	return sanitizeCommandForDisplay(RedactSensitiveTextWith(env, text, RedactOptions{Force: force}), false)
 }

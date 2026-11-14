@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -349,7 +350,8 @@ func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map
 			for k, v := range apiKwargs {
 				next[k] = v
 			}
-			next["timeout"] = staleTimeout
+			connCap := secondsDuration(math.Min(staleTimeout, 60))
+			next["timeout"] = pyhttpx.Timeout{Connect: connCap, Read: hard, Write: connCap, Pool: connCap}
 			apiKwargs = next
 		}
 	}

@@ -111,9 +111,10 @@ func lmRangesTotal(t *testing.T, v any) int64 {
 	return total
 }
 
-// Range honoring loopback server mirroring the shared Python RangeHandler
+// Range honoring loopback server mirroring the shared Python RangeHandler, one request served at a time
 type lmRangeServer struct {
 	*httptest.Server
+	serving      sync.Mutex
 	mu           sync.Mutex
 	payloads     map[string][]byte
 	slowPerChunk time.Duration
@@ -158,9 +159,11 @@ func (s *lmRangeServer) seen() []string {
 }
 
 func (s *lmRangeServer) handle(w http.ResponseWriter, r *http.Request) {
+	s.serving.Lock()
+	defer s.serving.Unlock()
 	s.mu.Lock()
 	payload, ok := s.payloads[r.URL.Path]
-	slow, chunk, etags := s.slowPerChunk, s.chunk, s.etags
+	etags := s.etags
 	declared, lies := s.contentLen[r.URL.Path]
 	fallback := s.fallback
 	s.requests = append(s.requests, r.Header.Get("Range"))
@@ -183,6 +186,9 @@ func (s *lmRangeServer) handle(w http.ResponseWriter, r *http.Request) {
 	flusher := w.(http.Flusher)
 	stream := func(body []byte) {
 		for served := 0; served < len(body); {
+			s.mu.Lock()
+			slow, chunk := s.slowPerChunk, s.chunk
+			s.mu.Unlock()
 			if slow > 0 {
 				time.Sleep(slow)
 			}

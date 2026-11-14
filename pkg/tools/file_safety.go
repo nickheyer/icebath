@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -117,22 +117,33 @@ func ntNamespaceError(path, verb string) string {
 
 // Every home the write guards must cover, realpathed
 func guardHomes(env *Env, path string) []string {
-	homes := map[string]bool{}
-	if h := userHomeDir(); h != "" {
-		homes[h] = true
+	homes := map[string]bool{pypath.Expanduser("~"): true}
+	for _, candidate := range []string{realHome(env, map[string]string{}), subprocessHome(env, map[string]string{})} {
+		if candidate != "" {
+			homes[candidate] = true
+		}
 	}
 	if profileHome := filepath.Join(envHome(env), "home"); isDir(profileHome) {
 		homes[profileHome] = true
 	}
 	if len(path) > 1 && path[0] == '~' && path[1] != '/' && path[1] != '\\' {
-		name := strings.FieldsFunc(path[1:], func(r rune) bool { return r == '/' || r == '\\' })[0]
-		if u, err := user.Lookup(name); err == nil && u.HomeDir != "" {
-			homes[u.HomeDir] = true
+		name, _, _ := strings.Cut(path[1:], "/")
+		name, _, _ = strings.Cut(name, `\`)
+		if expanded := pypath.Expanduser("~" + name); !strings.HasPrefix(expanded, "~") {
+			homes[expanded] = true
 		}
 	}
-	out := make([]string, 0, len(homes))
+	resolved := map[string]bool{}
 	for h := range homes {
-		out = append(out, resolveNonStrict(h))
+		if real, err := pypath.Realpath(h, pypath.Lax); err == nil {
+			resolved[real] = true
+		} else {
+			resolved[resolveNonStrict(h)] = true
+		}
+	}
+	out := make([]string, 0, len(resolved))
+	for h := range resolved {
+		out = append(out, h)
 	}
 	sort.Strings(out)
 	return out
@@ -206,15 +217,43 @@ func safeWriteRoots(env *Env) []string {
 var protectedRuntimeOnce sync.Once
 var protectedRuntimePaths [][2]string
 
-// Resolved paths of the running binary and its directory with their descriptions
+// Git bash and WSL drive spellings of a Windows path
+var runtimeWinDriveFromPosixRe = regexp.MustCompile(`^/(?:(mnt)/)?([a-zA-Z])/([^\n]+)\n?$`)
+
+// One canonical form for shell spellings and runtime paths, empty for blank input
+func runtimeNormalizePath(raw string) string {
+	path := pystr.Strip(raw)
+	if path == "" {
+		return ""
+	}
+	if len(path) >= 2 && path[0] == path[len(path)-1] && (path[0] == '"' || path[0] == '\'') {
+		path = path[1 : len(path)-1]
+	}
+	path = pypath.Expandvars(pypath.Expanduser(path))
+	if runtime.GOOS == "windows" {
+		if m := runtimeWinDriveFromPosixRe.FindStringSubmatch(path); m != nil {
+			path = m[2] + `:\` + m[3]
+		}
+		path = strings.ReplaceAll(path, "/", `\`)
+	}
+	normed := pypath.Normpath(path)
+	real, err := pypath.Realpath(normed, pypath.Lax)
+	if err != nil {
+		return pypath.Normcase(normed)
+	}
+	return pypath.Normcase(real)
+}
+
+// Normalized path of the running binary with its description
 func protectedRuntime() [][2]string {
 	protectedRuntimeOnce.Do(func() {
 		exe, err := os.Executable()
-		if err != nil || exe == "" {
+		if err != nil {
 			return
 		}
-		real := resolveNonStrict(exe)
-		protectedRuntimePaths = append(protectedRuntimePaths, [2]string{real, "the icebath binary this runtime is running from"})
+		if real := runtimeNormalizePath(exe); real != "" {
+			protectedRuntimePaths = append(protectedRuntimePaths, [2]string{real, "the icebath binary this runtime is running from"})
+		}
 	})
 	return protectedRuntimePaths
 }
@@ -223,19 +262,21 @@ func protectedRuntime() [][2]string {
 func isProtectedPath(path string, follow bool) string {
 	var resolved string
 	if follow {
-		resolved = realPath(path)
+		resolved = runtimeNormalizePath(path)
 	} else {
-		parent, leaf := splitEntry(expandTilde(path))
+		parent, leaf := splitEntry(path)
 		if parent == "" {
 			parent = "."
 		}
-		resolved = filepath.Join(resolveNonStrict(parent), leaf)
+		if resolved = runtimeNormalizePath(parent); resolved != "" {
+			resolved = pypath.Normcase(pypath.Join(resolved, leaf))
+		}
 	}
 	if resolved == "" {
 		return ""
 	}
-	for _, entry := range protectedRuntime() {
-		if resolved == entry[0] || isUnder(resolved, entry[0]) || isUnder(entry[0], resolved) {
+	for _, entry := range protectedRuntimeEntries() {
+		if runtimePathsOverlap(resolved, entry[0]) {
 			return entry[1]
 		}
 	}
@@ -660,7 +701,7 @@ func redactRegisteredVaultValues(env *Env, text string) string {
 	return text
 }
 
-// Effective redaction switch from the env file first and the config second, on by default
+// Effective redaction switch from the env file first, the config second, then the launch snapshot
 func redactionEnabled(env *Env) bool {
 	if env != nil && env.Secrets != nil {
 		if raw, ok := env.Secrets.Get("ICEBATH_REDACT_SECRETS"); ok && strings.TrimSpace(raw) != "" {
@@ -674,7 +715,7 @@ func redactionEnabled(env *Env) bool {
 	if env != nil && env.Config != nil {
 		return env.Config.Bool("security.redact_secrets", true)
 	}
-	return true
+	return launchRedactEnabled()
 }
 
 // Submatch index arrays of every match that passes the boundary check, retrying one rune past a rejected start

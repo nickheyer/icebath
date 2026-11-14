@@ -67,7 +67,7 @@ func pullPluginUpdate(ctx context.Context, h, target string, pinnedMsg func(map[
 	if beforePull != nil {
 		beforePull()
 	}
-	return updatePlugin(ctx, target, updatePluginOptions{Force: force, ScanDecision: scanDecision})
+	return updatePlugin(ctx, target, updatePluginOptions{Interactive: interactive, Force: force, ScanDecision: scanDecision})
 }
 
 // Re installs a subdirectory install from its source, carrying user files into the staged tree
@@ -442,13 +442,15 @@ func dashboardUpdateStep(ctx context.Context, h, name, target string, acceptCapa
 		}
 		warnings := append([]string{}, result.Warnings...)
 		activated := map[string]any{}
+		deps := []string{}
 		if result.Changed {
+			deps = pythonDependencySummary(filepath.Join(filepath.Dir(target), result.InstalledName), &warnings)
 			if activated, err = activatePluginNow(ctx, result.InstalledName); err != nil {
 				return nil, "", err
 			}
 		}
 		return mergeResult(map[string]any{"ok": true, "name": result.InstalledName, "sha": result.Sha, "unchanged": !result.Changed,
-			"warnings": warnings}, activated), "", nil
+			"python_dependencies": deps, "warnings": warnings}, activated), "", nil
 	}
 	msg, err := pullPluginUpdate(ctx, h, target,
 		func(rec map[string]any) string {

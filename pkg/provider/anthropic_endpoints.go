@@ -1,11 +1,14 @@
 package provider
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 var minimaxAnthropicPrefixes = []string{"https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"}
@@ -28,21 +31,17 @@ func parseBaseURL(raw string) *url.URL {
 
 // Lowercased hostname of a base URL, empty when absent
 func baseURLHostname(raw string) string {
-	u := parseBaseURL(raw)
-	if u == nil {
+	host, err := pyurl.BaseURLHostname(raw)
+	if err != nil {
 		return ""
 	}
-	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	return host
 }
 
 // Reports whether the base URL host is the domain or one of its subdomains
 func baseURLHostMatches(raw, domain string) bool {
-	host := baseURLHostname(raw)
-	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
-	if host == "" || domain == "" {
-		return false
-	}
-	return host == domain || strings.HasSuffix(host, "."+domain)
+	matches, err := pyurl.BaseURLHostMatches(raw, domain)
+	return err == nil && matches
 }
 
 func normalizeBaseURLText(raw string) string { return strings.TrimSpace(raw) }
@@ -215,10 +214,7 @@ func isNativeAnthropicHost(baseURL string) bool {
 
 // Claude Code OAuth identity applies on the native host or the anthropic provider with an OAuth credential
 func anthropicRouteIsOAuth(baseURL, credential, providerName string) bool {
-	if !(isNativeAnthropicHost(baseURL) || strings.ToLower(strings.TrimSpace(providerName)) == "anthropic") {
-		return false
-	}
-	return isOAuthToken(credential)
+	return AnthropicRouteIsOAuth(context.Background(), baseURL, credential, nil, providerName)
 }
 
 var claudeVersionRe = regexp.MustCompile(`(?i)claude[-_.](opus|sonnet|haiku|fable|mythos)[-_.](\d+)(?:[-_.](\d{1,2})(?:$|[-_.]))?`)

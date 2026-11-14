@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"log/slog"
-	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -13,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
@@ -770,7 +770,7 @@ func (a *AIAgent) SavedDelegationBackend() string {
 
 func delegateDef(list []any) any {
 	for _, t := range list {
-		if d, ok := t.(map[string]any); ok && snapshotToolName(d) == "delegate_task" {
+		if d, ok := pyjson.Dict(t); ok && snapshotToolName(d) == "delegate_task" {
 			return d
 		}
 	}
@@ -779,7 +779,7 @@ func delegateDef(list []any) any {
 
 // Records the backend as the session's when the carried delegate_task is the one defs carries
 func (a *AIAgent) AdoptBuiltBackend(defs []any, backend any) {
-	if reflect.DeepEqual(delegateDef(a.tools), delegateDef(defs)) {
+	if pyrepr.Equal(delegateDef(a.tools), delegateDef(defs)) {
 		name, _ := backend.(string)
 		a.setDelegationBackend(name)
 	}

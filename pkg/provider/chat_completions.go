@@ -209,7 +209,7 @@ func (c *chatCompletionsClient) httpError(resp *http.Response, data []byte) erro
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
-		apiErr.RetryAfter = RetryAfterFrom(resp.Header.Get("Retry-After"))
+		apiErr.SetRetryAfterHeader(resp.Header.Get("Retry-After"))
 	}
 	if apiErr.RequestID == "" {
 		apiErr.RequestID = headerRequestID(resp.Header)

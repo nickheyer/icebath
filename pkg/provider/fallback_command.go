@@ -333,7 +333,7 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, store *Store, picke
 	if err != nil {
 		return err
 	}
-	if primaryEntry != nil && SameDeployment(FallbackEntryIdentity(primaryEntry), newIdent) {
+	if primaryEntry != nil && SameDeploymentIn(ctx, FallbackEntryIdentity(primaryEntry), newIdent) {
 		fmt.Fprintf(w, "\n  Selected model matches the current primary (%s).\n", FormatFallbackEntry(newEntry))
 		fmt.Fprintln(w, "  A provider cannot be a fallback for itself — no change.")
 		return nil
@@ -344,7 +344,7 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, store *Store, picke
 	}
 	chain := ReadFallbackChain(final)
 	for _, existing := range chain {
-		if SameDeployment(FallbackEntryIdentity(existing), newIdent) {
+		if SameDeploymentIn(ctx, FallbackEntryIdentity(existing), newIdent) {
 			fmt.Fprintf(w, "\n  %s is already in the fallback chain — skipped.\n", FormatFallbackEntry(newEntry))
 			return nil
 		}

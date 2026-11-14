@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Total spendable dollars below which a paid account is flagged low
@@ -27,7 +28,7 @@ func finiteUSD(v *float64) *float64 {
 // FormatUSD renders dollars with thousands separators and cents, nil reads as zero
 func FormatUSD(v *float64) string {
 	value := 0.0
-	if v != nil {
+	if v != nil && *v != 0 {
 		value = *v
 	}
 	text := strconv.FormatFloat(math.Abs(value), 'f', 2, 64)
@@ -61,65 +62,31 @@ func FetchNousAccount(ctx context.Context, timeout time.Duration) (*NousPortalAc
 	return FetchPortalAccount(ctx, timeout)
 }
 
-var (
-	isoDateRe     = regexp.MustCompile(`^(\d{4})(-?)(\d{2})(-?)(\d{2})(.*)$`)
-	isoTimeRe     = regexp.MustCompile(`^\d{2}(:?\d{2}(:?\d{2}([.,]\d{1,9})?)?)?(Z|[+-]\d{2}(:?\d{2}(:?\d{2}([.,]\d{1,6})?)?)?)?$`)
-	strptimeDayRe = regexp.MustCompile(`^(\d{4})-(\d{1,2})-(\d{1,2})$`)
-)
-
-func validDate(y, m, d int) bool {
-	if m < 1 || m > 12 || d < 1 {
-		return false
-	}
-	t := time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
-	return t.Day() == d && int(t.Month()) == m
-}
-
-// Date of an ISO 8601 date or timestamp as Python fromisoformat accepts it
+// Date of an ISO 8601 date or timestamp as Python fromisoformat accepts it, a trailing Z read as UTC
 func isoDate(text string) (time.Time, bool) {
-	m := isoDateRe.FindStringSubmatch(text)
-	if m == nil || m[2] != m[4] {
-		return time.Time{}, false
+	iso := text
+	if strings.HasSuffix(text, "Z") {
+		iso = text[:len(text)-1] + "+00:00"
 	}
-	y, _ := strconv.Atoi(m[1])
-	mo, _ := strconv.Atoi(m[3])
-	d, _ := strconv.Atoi(m[5])
-	if !validDate(y, mo, d) {
-		return time.Time{}, false
-	}
-	if rest := m[6]; rest != "" {
-		if !isoTimeRe.MatchString(rest[1:]) || (rest[0] != 'T' && rest[0] != ' ') {
-			return time.Time{}, false
-		}
-	}
-	return time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC), true
+	dt, _, err := pydatetime.ParseISOFormat(iso)
+	return dt, err == nil
 }
 
 // FormatRenews renders an ISO date or timestamp as Jul 24, 2026, unparseable text comes back unchanged
 func FormatRenews(value string) (string, bool) {
-	text := strings.TrimSpace(value)
+	text := pystr.Strip(value)
 	if text == "" {
 		return "", false
 	}
 	dt, ok := isoDate(text)
 	if !ok {
-		head := text
-		if len(head) > 10 {
-			head = head[:10]
-		}
-		m := strptimeDayRe.FindStringSubmatch(head)
-		if m == nil {
+		day, _, err := pydatetime.Strptime(pystr.Slice(text, 0, 10), "%Y-%m-%d")
+		if err != nil {
 			return text, true
 		}
-		y, _ := strconv.Atoi(m[1])
-		mo, _ := strconv.Atoi(m[2])
-		d, _ := strconv.Atoi(m[3])
-		if !validDate(y, mo, d) {
-			return text, true
-		}
-		dt = time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC)
+		dt = day
 	}
-	return fmt.Sprintf("%s %d, %d", dt.Format("Jan"), dt.Day(), dt.Year()), true
+	return fmt.Sprintf("%s %d, %d", pydatetime.Strftime(dt, "%b"), dt.Day(), dt.Year()), true
 }
 
 // UsageBar is spent of total plus remaining, a top-up bar has no denominator and renders full
@@ -343,7 +310,11 @@ func BillingOrEntitlementMessage(capability, provider, baseURL, model string, un
 
 // BillingBlockDict is the structured billing descriptor, flagged unverified when the cause may be a filter
 func BillingBlockDict(provider, baseURL, model, message string, unverified bool) map[string]any {
-	block := BuildBillingBlock(provider, baseURL, model, message).ToDict()
+	built, err := BuildBillingBlockErr(provider, baseURL, model, message)
+	if err != nil {
+		return nil
+	}
+	block := built.ToDict()
 	if unverified {
 		block["unverified"] = true
 	}

@@ -181,7 +181,7 @@ func rebuildSourceCheckout(ctx context.Context, w io.Writer, root string) error 
 	if !sourceCheckoutBuildsBinary(root) {
 		return nil
 	}
-	if err := checkoutBinaryBuild(ctx, w, root); err != nil {
+	if err := BuildSourceTUI(ctx, w, root); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

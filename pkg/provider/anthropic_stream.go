@@ -98,10 +98,37 @@ type anthAccumulator struct {
 	blocks      map[int]map[string]any
 	partialJSON map[int]string
 	sawPartial  map[int]bool
+	// Output token count of message_start carried into a message_delta whose usage is null
+	outputTokens any
 }
 
 func newAnthAccumulator() *anthAccumulator {
-	return &anthAccumulator{message: map[string]any{}, blocks: map[int]map[string]any{}, partialJSON: map[int]string{}, sawPartial: map[int]bool{}}
+	return &anthAccumulator{message: map[string]any{}, blocks: map[int]map[string]any{}, partialJSON: map[int]string{},
+		sawPartial: map[int]bool{}, outputTokens: float64(0)}
+}
+
+// Fills a null usage on message_start and message_delta in place before the event is accumulated
+func (a *anthAccumulator) normalizeUsage(ev *anthEvent) {
+	p := ev.Payload
+	switch ev.Type {
+	case "message_start":
+		m, ok := asMap(p["message"])
+		if !ok {
+			return
+		}
+		if m["usage"] == nil {
+			m["usage"] = map[string]any{"input_tokens": float64(0), "output_tokens": float64(0)}
+		} else if usage, isMap := asMap(m["usage"]); isMap {
+			a.outputTokens = float64(0)
+			if pyTruthy(usage["output_tokens"]) {
+				a.outputTokens = usage["output_tokens"]
+			}
+		}
+	case "message_delta":
+		if p["usage"] == nil {
+			p["usage"] = map[string]any{"output_tokens": a.outputTokens}
+		}
+	}
 }
 
 // Folds one event into the message snapshot
@@ -109,6 +136,7 @@ func (a *anthAccumulator) observe(ev *anthEvent) {
 	if ev == nil || ev.Payload == nil {
 		return
 	}
+	a.normalizeUsage(ev)
 	p := ev.Payload
 	switch ev.Type {
 	case "message_start":
@@ -170,7 +198,7 @@ func (a *anthAccumulator) observe(ev *anthEvent) {
 					merged[k] = v
 				}
 				for k, v := range incoming {
-					if v != nil {
+					if v != nil || k == "output_tokens" {
 						merged[k] = v
 					}
 				}
@@ -557,7 +585,7 @@ func (c *anthropicClient) streamError(pse *ProviderStreamError) error {
 		apiErr.Message = pse.Error()
 	}
 	if pse.Headers != nil && apiErr.RetryAfter == 0 {
-		apiErr.RetryAfter = RetryAfterFrom(pse.Headers.Get("Retry-After"))
+		apiErr.SetRetryAfterHeader(pse.Headers.Get("Retry-After"))
 	}
 	return apiErr
 }

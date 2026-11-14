@@ -44,7 +44,7 @@ func reviewDeferMaxAgeS(taskCfg map[string]any) float64 {
 		return reviewMaxAgeDefaultSeconds
 	}
 	value, valid := pyFloatCoerce(v)
-	if !valid || value <= 0 {
+	if !valid || !(value > 0) {
 		return reviewMaxAgeDefaultSeconds
 	}
 	return value

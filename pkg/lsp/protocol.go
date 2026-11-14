@@ -4,15 +4,16 @@ package lsp
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -86,19 +87,54 @@ func attachDetails(err error, details string) {
 
 // EncodeMessage frames an envelope as compact UTF-8 JSON behind an exact Content-Length header
 func EncodeMessage(obj any) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(obj); err != nil {
+	body, err := pyjson.Dumps(orderedEnvelope(obj), pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	if err != nil {
 		return nil, err
 	}
-	body := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	out := make([]byte, 0, len(body)+32)
 	out = append(out, fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))...)
 	return append(out, body...), nil
 }
 
-// One header field in arrival order
+// Envelope and error object with their keys in the order the message builders write them
+func orderedEnvelope(obj any) any {
+	envelope, ok := obj.(map[string]any)
+	if !ok {
+		return obj
+	}
+	if errObj, isMap := envelope["error"].(map[string]any); isMap {
+		copied := make(map[string]any, len(envelope))
+		for k, v := range envelope {
+			copied[k] = v
+		}
+		copied["error"] = keysFirst(errObj, "code", "message", "data")
+		envelope = copied
+	}
+	return keysFirst(envelope, "jsonrpc", "id", "method", "params", "result", "error")
+}
+
+// Ordered object with the named keys first and every other key after them in sorted order
+func keysFirst(m map[string]any, first ...string) *pyjson.Object {
+	out := pyjson.NewObject()
+	for _, k := range first {
+		if v, has := m[k]; has {
+			out.Set(k, v)
+		}
+	}
+	rest := make([]string, 0, len(m))
+	for k := range m {
+		if _, done := out.Get(k); !done {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		out.Set(k, m[k])
+	}
+	return out
+}
+
+// One header field in first arrival order
 type headerField struct{ key, value string }
 
 // Header block in order, nil on a clean EOF before any header started
@@ -133,7 +169,16 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 		if key == "" {
 			return nil, false, protocolErrorf("malformed LSP header line: %s", pyrepr.BytesRepr(line))
 		}
-		headers = append(headers, headerField{strings.ToLower(pystr.Strip(key)), pystr.Strip(value)})
+		name, repeated := pystr.Lower(pystr.Strip(key)), false
+		for i := range headers {
+			if headers[i].key == name {
+				headers[i].value, repeated = pystr.Strip(value), true
+				break
+			}
+		}
+		if !repeated {
+			headers = append(headers, headerField{name, pystr.Strip(value)})
+		}
 	}
 }
 

@@ -195,6 +195,9 @@ func auxAIGatewayHeaders() map[string]string {
 	return map[string]string{"HTTP-Referer": attributionReferer, "X-Title": attributionTitle, "User-Agent": userAgent("IcebathAgent")}
 }
 
+// AIGatewayHeaders is the AI Gateway attribution header set for callers outside the package
+func AIGatewayHeaders() map[string]string { return auxAIGatewayHeaders() }
+
 // Active profile's auth.json at call time so a multiplexed secondary never reads the launch profile's token
 func auxAuthJSONPath(ctx context.Context) string {
 	if auxAuthJSONPathOverride != "" {

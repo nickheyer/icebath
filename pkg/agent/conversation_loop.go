@@ -486,7 +486,11 @@ var billingOrEntitlementMessage = func(ctx context.Context, capability, prov, ba
 
 // Structured billing descriptor, flagged unverified so every surface can hedge
 func billingBlockDict(prov, baseURL, model, message string, unverified bool) map[string]any {
-	block := provider.BuildBillingBlock(prov, baseURL, model, message).ToDict()
+	built, err := provider.BuildBillingBlockErr(prov, baseURL, model, message)
+	if err != nil {
+		return nil
+	}
+	block := built.ToDict()
 	if block != nil && unverified {
 		block["unverified"] = true
 	}

@@ -21,6 +21,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // NousBillingDefaultTimeout keeps a hung portal from freezing the TUI on charge and poll calls
@@ -469,7 +471,26 @@ func nousBillingRequest(env PoolEnv, method, path string, body []nousBillingFiel
 		return nil, &BillingError{Message: "Billing endpoint returned a non-JSON response (it may not be available on this deployment).",
 			Status: resp.StatusCode, ErrorCode: "endpoint_unavailable", Payload: map[string]any{}, Cause: err}
 	}
+	keepChargePresetOrder(decoded, string(raw))
 	return decoded, nil
+}
+
+// Swaps an object valued chargePresets for its ordered form so iteration follows the JSON key order
+func keepChargePresetOrder(decoded any, text string) {
+	payload, ok := decoded.(map[string]any)
+	if !ok {
+		return
+	}
+	if _, isObject := payload["chargePresets"].(map[string]any); !isObject {
+		return
+	}
+	ordered, err := pyjson.LoadsDict(text)
+	if err != nil {
+		return
+	}
+	if presets, found := ordered.Get("chargePresets"); found {
+		payload["chargePresets"] = presets
+	}
 }
 
 // Stripped non blank string or a typed billing error naming what is missing

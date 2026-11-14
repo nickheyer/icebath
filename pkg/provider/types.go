@@ -200,6 +200,17 @@ type APIError struct {
 	RetryAfter time.Duration
 	Kind       ErrorKind
 	Err        error
+	// Parsed Retry-After header of the failed response, nil when it carried none that parses
+	RetryAfterHeader *time.Duration
+}
+
+// Records the Retry-After header of the failed response beside the cooldown the retry loop reads
+func (e *APIError) SetRetryAfterHeader(raw string) {
+	e.RetryAfter = RetryAfterFrom(raw)
+	e.RetryAfterHeader = nil
+	if d, ok := ParseRetryAfter(raw); ok {
+		e.RetryAfterHeader = &d
+	}
 }
 
 func (e *APIError) Error() string {

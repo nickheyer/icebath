@@ -62,6 +62,10 @@ func Main() {
 	l := &stdioLink{out: os.Stdout, pending: map[int64]chan []byte{}}
 	os.Stdout = os.Stderr
 	p := newPeer(l)
+	if len(os.Args) > 1 && os.Args[1] == ExtractProfilesFlag {
+		_, _ = l.out.Write(p.extractProfiles())
+		os.Exit(0)
+	}
 	reader := bufio.NewReaderSize(os.Stdin, 1<<16)
 	for {
 		line, err := reader.ReadBytes('\n')

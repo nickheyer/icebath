@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"os/exec"
 	"testing"
 	"time"
 )
@@ -121,9 +120,10 @@ func TestDecodeKeychainAttr(t *testing.T) {
 	}
 }
 
-func TestOpenBrowserURLRunsThePlatformOpener(t *testing.T) {
+func TestOpenBrowserURLReportsThatNoRegistryBrowserTookTheURL(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	if err := OpenBrowserURL("https://example.invalid/device"); !errors.Is(err, exec.ErrNotFound) {
-		t.Fatalf("opener lookup on an empty PATH = %v", err)
+	t.Setenv("BROWSER", "")
+	if err := OpenBrowserURL("https://example.invalid/device"); !errors.Is(err, errBrowserNotOpened) {
+		t.Fatalf("open with no browser on the PATH = %v", err)
 	}
 }

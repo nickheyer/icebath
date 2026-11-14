@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -578,21 +579,9 @@ func degradedResult(env *Env, e *EnvironmentConnectionError, taskID string) stri
 
 // Runs the pre exec guard chain on a worker bounded by the command deadline, true when it timed out
 func runBoundedGuard(timeout time.Duration, guard func() error) (error, bool) {
-	done := make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				done <- fmt.Errorf("terminal.pre-exec-guard panicked: %v", r)
-			}
-		}()
-		done <- guard()
-	}()
-	select {
-	case err := <-done:
-		return err, false
-	case <-time.After(timeout):
-		return nil, true
-	}
+	bounded, err := pydeadline.RunBounded(context.Background(), func(context.Context) (any, error) { return nil, guard() },
+		timeout, true, "terminal.pre-exec-guard", pydeadline.Hooks{})
+	return err, bounded.TimedOut
 }
 
 // Runs the terminal tool with the plan already made, errors carry the finished result

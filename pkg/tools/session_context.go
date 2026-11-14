@@ -30,6 +30,25 @@ var sessionVarMap = setOf(SessionContextEnvVars...)
 // Whether any session has been bound through SetSessionVars in this process
 func SessionContextEngaged() bool { return sessionContextLatch.Load() }
 
+// Session variables of one forked context, writes never reaching the context it was forked from
+type sessionVarStore struct{ vars atomic.Pointer[map[string]string] }
+
+// Copy of the env whose session variables start as the bound ones and change apart from them afterwards
+func ForkSessionContext(env *Env) *Env {
+	if env == nil {
+		return nil
+	}
+	forked := *env
+	vars, _ := sessionContextState(env)
+	seeded := make(map[string]string, len(vars))
+	for k, v := range vars {
+		seeded[k] = v
+	}
+	forked.sessionVars = &sessionVarStore{}
+	forked.sessionVars.vars.Store(&seeded)
+	return &forked
+}
+
 // Applies edit to a fresh copy of the bound session variables, giving an env without a value store one first
 func updateSessionVars(env *Env, edit func(vars map[string]string)) {
 	if env == nil {
@@ -37,7 +56,7 @@ func updateSessionVars(env *Env, edit func(vars map[string]string)) {
 	}
 	sessionVarsMu.Lock()
 	defer sessionVarsMu.Unlock()
-	if env.Values == nil {
+	if env.sessionVars == nil && env.Values == nil {
 		env.Values = &sync.Map{}
 	}
 	vars, _ := sessionContextState(env)
@@ -46,6 +65,10 @@ func updateSessionVars(env *Env, edit func(vars map[string]string)) {
 		next[k] = v
 	}
 	edit(next)
+	if env.sessionVars != nil {
+		env.sessionVars.vars.Store(&next)
+		return
+	}
 	env.Values.Store(sessionContextValuesKey, next)
 }
 

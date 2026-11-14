@@ -18,6 +18,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -351,18 +353,17 @@ func textTypeFor(role string) string {
 func coerceArguments(arguments any) string {
 	var s string
 	switch t := arguments.(type) {
-	case map[string]any:
-		raw, _ := json.Marshal(t)
-		s = string(raw)
+	case map[string]any, *pyjson.Object:
+		s, _ = pyjson.Dumps(t, pyjson.EnsureASCII(false))
 	case string:
 		s = t
 	default:
-		s = strOrEmpty(arguments)
+		s = pyrepr.Str(arguments)
 	}
-	if strings.TrimSpace(s) == "" {
+	if s = pystr.Strip(s); s == "" {
 		return "{}"
 	}
-	return strings.TrimSpace(s)
+	return s
 }
 
 // Rewrites reserved Harmony wire tokens with fullwidth bars, matching across Unicode format controls
@@ -936,7 +937,8 @@ func replayToolCallItems(msg *codexMsg, startIndex int, wire *wireCallIDs) []map
 		if arguments == "" {
 			arguments = "{}"
 		}
-		callID := resolveCallID("", tc.ID, tc.Function.Name, arguments, index, true)
+		storedCallID, _ := tc.Extra["call_id"].(string)
+		callID := resolveCallID(storedCallID, tc.ID, tc.Function.Name, arguments, index, true)
 		wireID := clampResponsesCallID(callID)
 		if wire != nil {
 			wireID = wire.forCall(callID)

@@ -52,7 +52,16 @@ func (h *PluginHost) launchProgram(s *hostStart, spec *guestSpec) (*Channel, *ho
 		env[k] = v
 	}
 	env[GuestPluginNameEnv], env[GuestPluginDirEnv] = spec.name, spec.dir
-	cmd := exec.Command(program, spec.entry[1:]...)
+	if _, set := env[HostLogLevelEnv]; !set {
+		env[HostLogLevelEnv] = "WARNING"
+	}
+	env[HostProcessEnv] = "1"
+	launcher, err := HostLauncher(h.baseCtx, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	argv := append(append(append([]string{}, launcher...), program), spec.entry[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Env, cmd.Dir = envList(env), spec.dir
 	proc.Group(cmd)
 	var parentEnds, childEnds []*os.File

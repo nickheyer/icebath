@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -125,14 +126,7 @@ func runAbandonCleanup(ctx context.Context, onAbandon func(ctx context.Context) 
 }
 
 // BoundedResult is the outcome of a bounded operation, operation errors never land here
-type BoundedResult struct {
-	TimedOut bool
-	Value    any
-	Elapsed  time.Duration
-	Timeout  time.Duration
-	Bounded  bool
-	Label    string
-}
+type BoundedResult = pydeadline.Result
 
 // ClampTimeout maps NaN, infinite, or non positive seconds to unbounded and caps the rest
 func ClampTimeout(seconds float64) (time.Duration, bool) {
@@ -265,42 +259,8 @@ func startBounded(ctx context.Context, fn func(ctx context.Context) (any, error)
 
 // RunBounded runs fn on a worker keeping the caller context values, abandoning the worker uncancelled on expiry
 func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), timeout time.Duration, bounded bool, label string, onTimeout func(), backend any) (BoundedResult, error) {
-	start := deadlineNow()
-	if !bounded {
-		v, err := fn(ctx)
-		return BoundedResult{Value: v, Elapsed: deadlineNow().Sub(start), Label: label}, err
-	}
-	done := startBounded(context.WithoutCancel(ctx), fn, label)
-	result := func(o boundedOutcome) (BoundedResult, error) {
-		return BoundedResult{Value: o.value, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, o.err
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case o := <-done:
-		return result(o)
-	case <-ctx.Done():
-		return BoundedResult{Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, ctx.Err()
-	case <-timer.C:
-	}
-	select {
-	case o := <-done:
-		return result(o)
-	default:
-	}
-	slog.Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; worker abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
-	markBackendSuspect(backend, label, timeout)
-	if onTimeout != nil {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Debug(fmt.Sprintf("deadline on_timeout callback failed: %v", r))
-				}
-			}()
-			onTimeout()
-		}()
-	}
-	return BoundedResult{TimedOut: true, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, nil
+	return pydeadline.RunBounded(ctx, fn, timeout, bounded, label, pydeadline.Hooks{Now: deadlineNow, OnTimeout: onTimeout,
+		MarkSuspect: func() { markBackendSuspect(backend, label, timeout) }})
 }
 
 // RunBoundedAsync runs fn under a timer driven deadline, cancelling and abandoning it on expiry or caller cancellation

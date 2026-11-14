@@ -168,7 +168,7 @@ func ParseImageSize(data []byte) *ImageSize {
 func requestError(err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) && strings.HasPrefix(uerr.Err.Error(), "Blocked redirect to private/internal address: ") {
-		return uerr.Err
+		return valueError(uerr.Err.Error())
 	}
 	return fmt.Errorf("%s", pyhttpx.ErrorText(err))
 }
@@ -176,7 +176,7 @@ func requestError(err error) error {
 // DownloadURL fetches a public URL behind the SSRF guard within the size cap and returns the bytes and content type
 func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB int64) ([]byte, string, error) {
 	if !tools.IsSafeURL(env, rawURL) {
-		return nil, "", fmt.Errorf("Blocked unsafe URL (SSRF protection): %s", rawURL)
+		return nil, "", valueError(fmt.Sprintf("Blocked unsafe URL (SSRF protection): %s", rawURL))
 	}
 	maxBytes := maxSizeMB * 1024 * 1024
 	client := tools.NewSSRFSafeClient(env, 30*time.Second, true)
@@ -198,7 +198,7 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 	}
 	if contentLength.Sign() > 0 && contentLength.Cmp(big.NewInt(maxBytes)) > 0 {
 		mb, _ := new(big.Float).Quo(new(big.Float).SetInt(contentLength), big.NewFloat(1024*1024)).Float64()
-		return nil, "", fmt.Errorf("文件过大: %.1f MB > %d MB", mb, maxSizeMB)
+		return nil, "", valueError(fmt.Sprintf("文件过大: %.1f MB > %d MB", mb, maxSizeMB))
 	}
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -219,7 +219,7 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 		n, rerr := io.ReadFull(resp.Body, buf)
 		if n > 0 {
 			if int64(len(out)+n) > maxBytes {
-				return nil, "", fmt.Errorf("文件过大: 已超过 %d MB 限制", maxSizeMB)
+				return nil, "", valueError(fmt.Sprintf("文件过大: 已超过 %d MB 限制", maxSizeMB))
 			}
 			out = append(out, buf[:n]...)
 		}
@@ -377,23 +377,23 @@ func credGet(c *pyjson.Object, key string) any {
 	return ""
 }
 
-func credStr(c *pyjson.Object, key string) (string, error) {
+func credStr(c *pyjson.Object, key string) string {
 	v := credGet(c, key)
 	if s, ok := v.(string); ok {
-		return s, nil
+		return s
 	}
 	if !pyrepr.Truthy(v) {
-		return "", nil
+		return ""
 	}
-	return pyrepr.Str(v), nil
+	return pyrepr.Str(v)
 }
 
 // UploadToCOS PUTs the bytes to COS signed with the temporary credentials and returns url, uuid, size and image size
 func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType string, credentials *pyjson.Object, bucket, region string) (*pyjson.Object, error) {
-	secretID, _ := credStr(credentials, "encryptTmpSecretId")
-	secretKey, _ := credStr(credentials, "encryptTmpSecretKey")
-	sessionToken, _ := credStr(credentials, "encryptToken")
-	cosKey, _ := credStr(credentials, "location")
+	secretID := credStr(credentials, "encryptTmpSecretId")
+	secretKey := credStr(credentials, "encryptTmpSecretKey")
+	sessionToken := credStr(credentials, "encryptToken")
+	cosKey := credStr(credentials, "location")
 	startTime, _ := credentials.Get("startTime")
 	expiredTime, _ := credentials.Get("expiredTime")
 	if secretID == "" || secretKey == "" || cosKey == "" {

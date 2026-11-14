@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"strings"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -37,8 +38,35 @@ type VisionCapabilitySource interface {
 // VisionCapabilities is the installed capability source, nil leaving every probe without a verdict
 var VisionCapabilities VisionCapabilitySource
 
+// Copy of the env with its own slot for the live main runtime of the agent that owns it
+func WithRuntimeMainSlot(env *Env) *Env {
+	if env == nil {
+		return nil
+	}
+	out := *env
+	out.runtimeMain = &atomic.Pointer[map[string]any]{}
+	return &out
+}
+
+// Binds the live main runtime of a turn on the agent's env, a nil map clearing it
+func BindRuntimeMain(env *Env, runtime map[string]any) {
+	if env == nil || env.runtimeMain == nil {
+		return
+	}
+	if runtime == nil {
+		env.runtimeMain.Store(nil)
+		return
+	}
+	env.runtimeMain.Store(&runtime)
+}
+
 // Live main runtime map bound for this session, nil when the turn bound none
 func runtimeMain(env *Env) map[string]any {
+	if env != nil && env.runtimeMain != nil {
+		if bound := env.runtimeMain.Load(); bound != nil {
+			return *bound
+		}
+	}
 	if env == nil || env.Values == nil {
 		return nil
 	}

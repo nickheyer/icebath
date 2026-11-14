@@ -19,14 +19,14 @@ const (
 	CredentialSourceMinimaxOAuth = "minimax-oauth"
 )
 
-// Credential source to display label, both display surfaces resolve labels here
+// Credential source to its catalog key, both display surfaces resolve labels here
 var credentialSourceLabels = map[string]string{
-	CredentialSourceEntraID: "Microsoft Entra ID", CredentialSourceVertexOAuth: "Google Vertex OAuth",
-	CredentialSourceKeyCmd: "key_cmd token", CredentialSourceMinimaxOAuth: "MiniMax OAuth",
+	CredentialSourceEntraID: "cli.config.microsoft_entra_id", CredentialSourceVertexOAuth: "cli.config.google_vertex_oauth",
+	CredentialSourceKeyCmd: "cli.config.key_cmd_token", CredentialSourceMinimaxOAuth: "cli.config.minimax_oauth",
 }
 
-// Neutral label for an untagged token source, never another vendor's name
-const credentialSourceUnknownLabel = "token provider"
+// Catalog key of the neutral label for an untagged token source, never another vendor's name
+const credentialSourceUnknownLabel = "cli.config.token_provider"
 
 // TaggedTokenSource is a token minter that names its credential source without being called
 type TaggedTokenSource struct {
@@ -109,10 +109,10 @@ func CredentialLabel(key any) string {
 	default:
 		return ""
 	}
-	if label, ok := credentialSourceLabels[CredentialSourceOf(key)]; ok {
-		return label
+	if labelKey, ok := credentialSourceLabels[CredentialSourceOf(key)]; ok {
+		return i18nT(labelKey, "", nil)
 	}
-	return credentialSourceUnknownLabel
+	return i18nT(credentialSourceUnknownLabel, "", nil)
 }
 
 // ---- credential_sources.py ----

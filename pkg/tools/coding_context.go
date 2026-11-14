@@ -580,14 +580,7 @@ func workspaceRoots(cwd string) (string, string) {
 
 // Structured project facts for a directory, nil outside a workspace
 func projectFactsFor(cwd string) map[string]any {
-	if cwd == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil
-		}
-		cwd = wd
-	}
-	_, root := workspaceRoots(expandUser(cwd))
+	_, root := workspaceRoots(resolveCodingCwd(nil, cwd))
 	if root == "" {
 		return nil
 	}
@@ -616,14 +609,7 @@ const WorkspaceBlockHeader = "Workspace (snapshot at session start — re-check 
 
 // BuildCodingWorkspaceBlock renders the workspace snapshot, empty outside a workspace
 func BuildCodingWorkspaceBlock(cwd string) string {
-	if cwd == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return ""
-		}
-		cwd = wd
-	}
-	git, root := workspaceRoots(expandUser(cwd))
+	git, root := workspaceRoots(resolveCodingCwd(nil, cwd))
 	if root == "" {
 		return ""
 	}

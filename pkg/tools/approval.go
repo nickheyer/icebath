@@ -14,6 +14,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"gopkg.in/yaml.v3"
 )
 
@@ -1351,7 +1354,7 @@ var runtimeCommandPrefixes = map[string]bool{"sudo": true, "command": true, "noh
 
 var runtimeDeletingCommands = map[string]bool{"rm": true, "rmdir": true, "rd": true, "del": true, "erase": true, "remove-item": true, "ri": true}
 
-var runtimeFindDeleteRe = regexp.MustCompile(`(?i)(?:^|\s)-(?:delete|exec\s+rm\b)`)
+var runtimeFindDeleteRe = pyre.MustCompile(`(?i)(?:^|\s)-(?:delete|exec\s+rm\b)`)
 
 var runtimeEnvAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 
@@ -1359,7 +1362,7 @@ var runtimeEnvAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 func runtimeSplitWords(segment string) []string {
 	words, err := shlexSplit(segment)
 	if err != nil {
-		return strings.Fields(segment)
+		return pystr.SplitWhitespace(segment, -1)
 	}
 	return words
 }
@@ -1399,22 +1402,11 @@ func runtimePathsOverlap(a, b string) bool {
 }
 
 // Description of the protected runtime entry a deleted path touches, empty when none
-func runtimeDeleteHit(path string) string {
-	resolved := realPath(expandTilde(path))
-	if resolved == "" {
-		return ""
-	}
-	for _, entry := range protectedRuntimeEntries() {
-		if runtimePathsOverlap(resolved, entry[0]) {
-			return entry[1]
-		}
-	}
-	return ""
-}
+func runtimeDeleteHit(path string) string { return isProtectedPath(path, true) }
 
 // Matches a uv python uninstall spec against the running base version and directory name
 func versionSpecMatches(spec, version, uvRootName string) bool {
-	spec = strings.ToLower(strings.TrimSpace(spec))
+	spec = pystr.Lower(pystr.Strip(spec))
 	if spec == "" {
 		return false
 	}
@@ -1424,7 +1416,7 @@ func versionSpecMatches(spec, version, uvRootName string) bool {
 	if strings.HasPrefix(spec, "-") {
 		return false
 	}
-	if strings.HasPrefix(strings.ToLower(uvRootName), spec) {
+	if strings.HasPrefix(pystr.Lower(uvRootName), spec) {
 		return true
 	}
 	return spec == version || (strings.HasPrefix(version, spec) && strings.HasPrefix(version[len(spec):], "."))
@@ -1443,7 +1435,7 @@ func uvUninstallTarget(words []string) string {
 	}
 	pythonAt, uninstallAt := -1, -1
 	for i, w := range words {
-		lower := strings.ToLower(w)
+		lower := pystr.Lower(w)
 		if pythonAt < 0 {
 			if lower == "python" {
 				pythonAt = i
@@ -1465,7 +1457,7 @@ func uvUninstallTarget(words []string) string {
 		if m := uvInstallDirRe.FindStringSubmatch(strings.ReplaceAll(root, "\\", "/")); m != nil {
 			version = m[uvInstallDirRe.SubexpIndex("version")]
 		}
-		rootName := filepath.Base(root)
+		rootName := pypath.Basename(root)
 		for _, spec := range specs {
 			if versionSpecMatches(spec, version, rootName) {
 				return description
@@ -1477,7 +1469,7 @@ func uvUninstallTarget(words []string) string {
 
 // Description of the runtime path the command would delete, empty when none
 func commandDeletesRuntime(command string) string {
-	if strings.TrimSpace(command) == "" || len(protectedRuntimeEntries()) == 0 {
+	if pystr.Strip(command) == "" || len(protectedRuntimeEntries()) == 0 {
 		return ""
 	}
 	for _, segment := range runtimeSegmentSplitRe.Split(command, -1) {
@@ -1485,14 +1477,14 @@ func commandDeletesRuntime(command string) string {
 		if len(words) == 0 {
 			continue
 		}
-		name := strings.ToLower(filepath.Base(words[0]))
+		name := pystr.Lower(pypath.Basename(words[0]))
 		if name == "uv" {
 			if target := uvUninstallTarget(words); target != "" {
 				return target
 			}
 			continue
 		}
-		if name == "find" && runtimeFindDeleteRe.MatchString(segment) {
+		if findDeletes, _ := runtimeFindDeleteRe.MatchString(segment); name == "find" && findDeletes {
 			for _, word := range words[1:] {
 				if !strings.HasPrefix(word, "-") {
 					if hit := runtimeDeleteHit(word); hit != "" {

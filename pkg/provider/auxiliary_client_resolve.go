@@ -698,7 +698,8 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 			realClient = realClient.withDefaultHeaders(entryHeaders)
 		}
 		keyStr, _ := customKey.(string)
-		client := newAnthropicAuxiliaryClientFrom(realClient, finalModel, customKey, customBase, anthropicRouteIsOAuth(customBase, keyStr, ""))
+		source, _ := anthSDKTokenSource(customKey)
+		client := newAnthropicAuxiliaryClientFrom(realClient, finalModel, customKey, customBase, AnthropicRouteIsOAuth(ctx, customBase, keyStr, source, ""))
 		return auxRouteClient(ctx, req, client, finalModel), true, nil
 	}
 	client, err := auxNamedCustomOpenAIWireClient(ctx, customBase, customKey, entryHeaders)

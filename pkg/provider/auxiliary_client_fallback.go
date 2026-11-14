@@ -361,7 +361,7 @@ func auxTryPaymentFallback(ctx context.Context, failedProvider, task, reason, fa
 	for s := range skipLabels {
 		skipChainLabels[auxNormalizeChainLabel(s)] = true
 	}
-	skipBackend := auxFailedBackendSkip(failedProvider, "", failedBaseURL, scope)
+	skipBackend := auxFailedBackendSkipIn(ctx, failedProvider, "", failedBaseURL, scope)
 	var tried []string
 	for _, entry := range auxProviderChainFn() {
 		candidateBaseURL := auxCustomHealthBaseURL(ctx, entry.label, "")
@@ -389,6 +389,11 @@ func auxTryPaymentFallback(ctx context.Context, failedProvider, task, reason, fa
 
 // Candidate skip predicate for a failed route, model scoped with a failed model and credential wide without
 func auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL string, scope FailureScope) func(provider, model, baseURL string) bool {
+	return auxFailedBackendSkipIn(context.Background(), failedProvider, failedModel, failedBaseURL, scope)
+}
+
+// Candidate skip predicate for a failed route with first class providers read from the context home
+func auxFailedBackendSkipIn(ctx context.Context, failedProvider, failedModel, failedBaseURL string, scope FailureScope) func(provider, model, baseURL string) bool {
 	skipModel := strings.ToLower(strings.TrimSpace(failedModel))
 	failed := BuildBackendIdentity(failedProvider, skipModel, failedBaseURL)
 	if scope == "" {
@@ -398,7 +403,7 @@ func auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL string, sco
 		}
 	}
 	return func(provider, model, baseURL string) bool {
-		return ShouldSkipCandidate(BuildBackendIdentity(provider, model, baseURL), failed, scope)
+		return ShouldSkipCandidateIn(ctx, BuildBackendIdentity(provider, model, baseURL), failed, scope)
 	}
 }
 
@@ -421,7 +426,7 @@ func auxTryMainAgentModelFallback(ctx context.Context, failedProvider, task, rea
 		return nil, "", "", nil
 	}
 	mainBaseURL := auxCustomHealthBaseURL(ctx, mainProvider, "")
-	if auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL, scope)(mainProvider, mainModel, mainBaseURL) {
+	if auxFailedBackendSkipIn(ctx, failedProvider, failedModel, failedBaseURL, scope)(mainProvider, mainModel, mainBaseURL) {
 		return nil, "", "", nil
 	}
 	if auxIsProviderUnhealthy(ctx, mainProvider, mainBaseURL) {
@@ -500,7 +505,7 @@ func auxTryConfiguredFallbackChain(ctx context.Context, task, failedProvider, re
 	if !ok || len(chain) == 0 {
 		return nil, "", "", nil
 	}
-	skip := auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL, scope)
+	skip := auxFailedBackendSkipIn(ctx, failedProvider, failedModel, failedBaseURL, scope)
 	var tried []string
 	minCtx, hasMin := auxTaskMinimumContextLength(task)
 	for i, raw := range chain {
@@ -620,7 +625,7 @@ func auxTryMainFallbackChain(ctx context.Context, task, failedProvider, reason, 
 	if len(chain) == 0 {
 		return nil, "", "", nil
 	}
-	skip := auxFailedBackendSkip(failedProvider, failedModel, failedBaseURL, scope)
+	skip := auxFailedBackendSkipIn(ctx, failedProvider, failedModel, failedBaseURL, scope)
 	var tried []string
 	minCtx, hasMin := auxTaskMinimumContextLength(task)
 	for i, entry := range chain {

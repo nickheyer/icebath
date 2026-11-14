@@ -1060,6 +1060,7 @@ func (c *streamingCall) run() (any, error) {
 		monitorDone := make(chan struct{})
 		go func() {
 			defer close(monitorDone)
+			defer func() { _ = recover() }()
 			streamingCallMonitorLoop(c)
 		}()
 		c.runCall()

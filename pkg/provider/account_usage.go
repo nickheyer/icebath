@@ -1301,28 +1301,14 @@ func callPluginUsageHook(ctx context.Context, profile Profile, baseURL, apiKey s
 	if profile.FetchAccountUsageHook == nil {
 		return nil, nil
 	}
-	type result struct {
-		snap *AccountUsageSnapshot
-		err  error
+	bounded, err := RunBounded(ctx, func(ctx context.Context) (any, error) {
+		return profile.FetchAccountUsage(ctx, baseURL, apiKey)
+	}, PluginUsageHookDeadline, true, "plugin-account-usage", nil, nil)
+	if err != nil || bounded.TimedOut {
+		return nil, err
 	}
-	done := make(chan result, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				done <- result{err: fmt.Errorf("plugin account usage hook panicked: %v", r)}
-			}
-		}()
-		snap, err := profile.FetchAccountUsage(ctx, baseURL, apiKey)
-		done <- result{snap, err}
-	}()
-	timer := time.NewTimer(PluginUsageHookDeadline)
-	defer timer.Stop()
-	select {
-	case r := <-done:
-		return r.snap, r.err
-	case <-timer.C:
-		return nil, nil
-	}
+	snap, _ := bounded.Value.(*AccountUsageSnapshot)
+	return snap, nil
 }
 
 // AccountUsageFetchOptions selects the credential a usage fetch reads and the cache slot it lands in

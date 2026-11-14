@@ -419,7 +419,7 @@ func (a *AIAgent) Redirect(text string) bool {
 	if a.executingTools {
 		accepted := a.Steer(cleaned)
 		if accepted {
-			for _, id := range a.toolWorkerIDs() {
+			for _, id := range append(a.toolWorkerIDs(), a.toolExecutor().TrackedWorkerIDs()...) {
 				tools.RequestYield(id)
 			}
 		}

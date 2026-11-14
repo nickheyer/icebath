@@ -27,6 +27,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"gopkg.in/yaml.v3"
 )
@@ -537,17 +538,15 @@ func (p IronProxy) detectDockerBridgeIP() string {
 	if err != nil || !addr.Is4() {
 		return ""
 	}
-	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsMulticast() || addr.IsLinkLocalUnicast() || addr.IsGlobalUnicast() && !addr.IsPrivate() || isReservedV4(addr) {
+	global := !netip.MustParsePrefix("100.64.0.0/10").Contains(addr) && !pyipaddress.IsPrivate(addr)
+	if addr.IsUnspecified() || pyipaddress.IsLoopback(addr) || addr.IsMulticast() || pyipaddress.IsReserved(addr) || pyipaddress.IsLinkLocal(addr) || global {
 		p.log().Warn(fmt.Sprintf("Refusing suspicious docker bridge IP %s reported by `ip`; skipping bridge bind.", candidate))
 		return ""
 	}
 	return addr.String()
 }
 
-func isReservedV4(addr netip.Addr) bool {
-	b := addr.As4()
-	return b[0] >= 240
-}
+func isReservedV4(addr netip.Addr) bool { return pyipaddress.IsReserved(addr) }
 
 // IronProxyConfigOptions parameterize the generated proxy.yaml
 type IronProxyConfigOptions struct {

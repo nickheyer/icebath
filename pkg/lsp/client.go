@@ -1025,6 +1025,10 @@ func (c *Client) sendReply(ctx context.Context, msg map[string]any) {
 func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	key, ok := pendingKey(id)
 	if !ok {
+		switch id.(type) {
+		case []any, map[string]any:
+			return &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(id))}
+		}
 		return nil
 	}
 	fut := c.pending[key]
@@ -1047,6 +1051,12 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	}
 	fut.setError(NewRequestError(int(code), pyrepr.Str(dgetOr(em, "message", "unknown")), em["data"]))
 	return nil
+}
+
+// RelatedDocuments is the relatedDocuments object of a pull response with its uris in server order
+type RelatedDocuments struct {
+	URIs    []string
+	Reports map[string]any
 }
 
 // Pending map key of a response id, numbers comparing as Python dict keys do
@@ -1334,7 +1344,12 @@ func (c *Client) pullDocumentDiagnostics(ctx context.Context, path string) error
 		tag  *int
 	}
 	reports := []report{{absPath, res, &sentVersion}}
-	if related, ok := res["relatedDocuments"].(map[string]any); ok {
+	switch related := res["relatedDocuments"].(type) {
+	case RelatedDocuments:
+		for _, u := range related.URIs {
+			reports = append(reports, report{URIToPath(u), related.Reports[u], nil})
+		}
+	case map[string]any:
 		uris := make([]string, 0, len(related))
 		for u := range related {
 			uris = append(uris, u)

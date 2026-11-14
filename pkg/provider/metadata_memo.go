@@ -9,7 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Entry count bound of the message token memo
@@ -21,8 +23,26 @@ var msgTokensCacheMaxBytes = 16 * 1024 * 1024
 // Fingerprint structure cost per pinned string leaf
 const leafOverheadBytes = 120
 
-// Fixed cost of one string object beside its characters
-const stringHeaderBytes = 49
+// Fixed cost of one ASCII string object beside its characters
+const stringHeaderBytes = 41
+
+// Bytes sys.getsizeof reports for a str, by the widest code point it stores
+func strSizeof(s string) int {
+	runes := pystr.Runes(s)
+	widest := rune(0)
+	for _, r := range runes {
+		widest = max(widest, r)
+	}
+	switch {
+	case widest < 0x80:
+		return stringHeaderBytes + len(runes)
+	case widest < 0x100:
+		return 57 + len(runes)
+	case widest < 0x10000:
+		return 58 + 2*len(runes)
+	}
+	return 60 + 4*len(runes)
+}
 
 // Entries looked up this recently are never evicted
 const activeWindow = 60 * time.Second
@@ -58,7 +78,7 @@ var msgTokensCache = &msgTokensMemo{order: list.New(), index: map[string]*list.E
 func entryBytes(e messageTokenEntry) int {
 	total := 0
 	for _, s := range e.pins.Strings {
-		total += len(s) + stringHeaderBytes + leafOverheadBytes
+		total += strSizeof(s) + leafOverheadBytes
 	}
 	return total
 }
@@ -146,8 +166,16 @@ func longStrings(value any, out map[string]bool) {
 			for _, item := range t {
 				stack = append(stack, item)
 			}
+		case *pyjson.Object:
+			if t != nil {
+				for _, key := range t.Keys {
+					stack = append(stack, t.Vals[key])
+				}
+			}
+		case pyrepr.Tuple:
+			stack = append(stack, t...)
 		case string:
-			if len(t) > 64 {
+			if pystr.Len(t) > 64 {
 				out[t] = true
 			}
 		}

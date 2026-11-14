@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"os"
 	"reflect"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -104,23 +109,26 @@ type ErrorPayload struct {
 
 // HookPayloadMaxChars reads the payload cap from the environment with a 1000 char floor
 func HookPayloadMaxChars() int {
-	raw := os.Getenv(HookPayloadMaxCharsEnv)
-	if raw == "" {
+	raw, set := os.LookupEnv(HookPayloadMaxCharsEnv)
+	if !set {
 		return defaultHookPayloadMaxChars
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil {
+	n, valid := pystr.IntText(raw)
+	if !valid {
 		return defaultHookPayloadMaxChars
 	}
-	if n < 1000 {
+	if n.Cmp(big.NewInt(1000)) < 0 {
 		return 1000
 	}
-	return n
+	if !n.IsInt64() || n.Int64() > math.MaxInt {
+		return math.MaxInt
+	}
+	return int(n.Int64())
 }
 
 // IsSensitiveHookKey reports a credential bearing key such as api_key, authorization, or any _api_key suffix
 func IsSensitiveHookKey(key string) bool {
-	lowered := strings.ReplaceAll(strings.ToLower(key), "-", "_")
+	lowered := strings.ReplaceAll(pystr.Lower(key), "-", "_")
 	return sensitiveHookKeys[lowered] || strings.HasSuffix(lowered, "_api_key")
 }
 
@@ -155,20 +163,6 @@ func truncateRunes(s string, n int) (string, int) {
 	return string(r[:n]), len(r) - n
 }
 
-func typeName(v any) string {
-	if v == nil {
-		return "NoneType"
-	}
-	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	if t.Name() != "" {
-		return t.Name()
-	}
-	return t.String()
-}
-
 // JSON mode dump of an SDK model through whichever model_dump signature it offers, false for a value without one
 func modelDump(value any) (any, bool, error) {
 	switch m := value.(type) {
@@ -190,16 +184,21 @@ func HookJSONable(value any, caps HookJSONCaps) any {
 
 func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 	if depth > caps.MaxDepth {
-		return fmt.Sprintf("<%s depth limit>", typeName(value))
+		return fmt.Sprintf("<%s depth limit>", pyrepr.TypeName(value))
 	}
 	recurse := func(item any) any { return hookJSONable(item, depth+1, caps) }
 	switch v := value.(type) {
 	case nil:
 		return nil
-	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, *big.Int:
 		return v
 	case json.Number:
 		return v
+	case *pyjson.Object:
+		if v == nil {
+			return nil
+		}
+		return hookJSONableItems(v.Keys, func(key string) any { return v.Vals[key] }, recurse, caps)
 	case string:
 		cut, dropped := truncateRunes(v, caps.MaxString)
 		if dropped > 0 {
@@ -263,7 +262,7 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 				return recurse(decoded)
 			}
 		}
-		s, _ := truncateRunes(fmt.Sprint(value), caps.MaxString)
+		s, _ := truncateRunes(pyrepr.Str(value), caps.MaxString)
 		return s
 	case reflect.String:
 		return recurse(rv.String())
@@ -276,24 +275,36 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 	case reflect.Float32, reflect.Float64:
 		return rv.Float()
 	}
-	s, _ := truncateRunes(fmt.Sprint(value), caps.MaxString)
+	s, _ := truncateRunes(pyrepr.Str(value), caps.MaxString)
 	return s
 }
 
+// Dict of a Go map with its keys visited in sorted text order
 func hookJSONableMap(rv reflect.Value, recurse func(any) any, caps HookJSONCaps) any {
+	values := make(map[string]any, rv.Len())
+	keys := make([]string, 0, rv.Len())
+	for _, k := range rv.MapKeys() {
+		strKey := pyrepr.Str(k.Interface())
+		keys = append(keys, strKey)
+		values[strKey] = rv.MapIndex(k).Interface()
+	}
+	sort.Strings(keys)
+	return hookJSONableItems(keys, func(key string) any { return values[key] }, recurse, caps)
+}
+
+// Dict of the first max sequence items in key order, sensitive keys redacted and the dropped count recorded
+func hookJSONableItems(keys []string, value func(key string) any, recurse func(any) any, caps HookJSONCaps) any {
 	out := map[string]any{}
-	keys := rv.MapKeys()
-	for idx, k := range keys {
+	for idx, key := range keys {
 		if idx >= caps.MaxSequence {
 			out["_truncated_items"] = len(keys) - caps.MaxSequence
 			break
 		}
-		strKey := fmt.Sprint(k.Interface())
-		if IsSensitiveHookKey(strKey) {
-			out[strKey] = "<redacted>"
+		if IsSensitiveHookKey(key) {
+			out[key] = "<redacted>"
 			continue
 		}
-		out[strKey] = recurse(rv.MapIndex(k).Interface())
+		out[key] = recurse(value(key))
 	}
 	return out
 }
@@ -320,18 +331,17 @@ func SanitizeHookPayload(value any) any {
 	encoded := ""
 	for _, caps := range []HookJSONCaps{DefaultHookJSONCaps, {MaxDepth: 8, MaxString: 1000, MaxSequence: 50}} {
 		payload := HookJSONable(value, caps)
-		raw, err := json.Marshal(payload)
+		text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
 		if err != nil {
-			s, _ := truncateRunes(fmt.Sprint(payload), limit)
+			s, _ := truncateRunes(pyrepr.Str(payload), limit)
 			return s
 		}
-		encoded = string(raw)
-		if len([]rune(encoded)) <= limit {
+		encoded = text
+		if pystr.Len(encoded) <= limit {
 			return payload
 		}
 	}
-	preview, _ := truncateRunes(encoded, limit)
-	return map[string]any{"_truncated": true, "original_type": typeName(value), "preview": preview}
+	return map[string]any{"_truncated": true, "original_type": pyrepr.TypeName(value), "preview": pystr.Slice(encoded, 0, limit)}
 }
 
 // requestBody renders a request as the wire shaped body a plugin inspects

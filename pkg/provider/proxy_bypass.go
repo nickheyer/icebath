@@ -154,10 +154,8 @@ func LoopbackBypassesProxy(rawURL string) bool {
 func AddLoopbackNoProxy(env map[string]string) map[string]string {
 	for _, key := range []string{"NO_PROXY", "no_proxy"} {
 		v := env[key]
-		for _, e := range NoProxyEntries(&v) {
-			if strings.Contains(e, "*") {
-				return env
-			}
+		if containsString(NoProxyEntries(&v), "*") {
+			return env
 		}
 	}
 	for _, key := range []string{"NO_PROXY", "no_proxy"} {

@@ -93,6 +93,9 @@ var SendMessageSendersError func(message string) map[string]any
 // Standalone sender failure envelope with vendor exception text redacted
 func SendError(message any) map[string]any { return SendMessageSendersError(pyrepr.Str(message)) }
 
+// Active profile's adapter of the in process gateway for a platform, wired by the message tools package
+var SendMessageSendersLiveAdapter func(ctx context.Context, platform Platform) PlatformAdapter
+
 // One YAML key bridged to an env var by its kind, lower, str, csv or json
 type YAMLBridgeRow struct {
 	Key, Env, Kind string

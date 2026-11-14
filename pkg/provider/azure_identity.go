@@ -1357,33 +1357,48 @@ func resolveEntraConfig(cfg *EntraIdentityConfig, scope string, excludeInteracti
 	return NewEntraIdentityConfig(scope, excludeInteractiveBrowser)
 }
 
-// BuildEntraTokenProvider mints a bearer per call, reusing each credential's token until its refresh point
-func BuildEntraTokenProvider(cfg *EntraIdentityConfig, scope string, excludeInteractiveBrowser bool) func(context.Context) (string, error) {
+// Bearer minter over the credential built now for the context profile, a credential build failure returned at once
+func BuildEntraTokenProviderIn(ctx context.Context, cfg *EntraIdentityConfig, scope string, excludeInteractiveBrowser bool) (func(context.Context) (string, error), error) {
 	resolved := resolveEntraConfig(cfg, scope, excludeInteractiveBrowser)
+	cred, err := buildEntraCredential(ctx, resolved)
+	if err != nil {
+		return nil, err
+	}
 	var mu sync.Mutex
-	tokens := map[entraCredential]EntraAccessToken{}
+	var tok EntraAccessToken
+	minted := false
 	src := func(ctx context.Context) (string, error) {
-		cred, err := buildEntraCredential(ctx, resolved)
-		if err != nil {
-			return "", err
-		}
 		mu.Lock()
 		defer mu.Unlock()
 		now := entraNow().Unix()
-		tok, ok := tokens[cred]
-		if !ok || (tok.RefreshOn != 0 && tok.RefreshOn <= now) || tok.ExpiresOn-now < 300 {
-			if tok, err = cred.GetToken(ctx, resolved.Scope); err != nil {
+		if !minted || (tok.RefreshOn != 0 && tok.RefreshOn <= now) || tok.ExpiresOn-now < 300 {
+			fresh, err := cred.GetToken(ctx, resolved.Scope)
+			if err != nil {
 				return "", err
 			}
-			tokens[cred] = tok
+			tok, minted = fresh, true
 		}
 		return tok.Token, nil
 	}
-	return TagCredentialSource(src, CredentialSourceEntraID).Func()
+	return TagCredentialSource(src, CredentialSourceEntraID).Func(), nil
+}
+
+// BuildEntraTokenProvider is the process profile minter, a credential build failure answered by every mint
+func BuildEntraTokenProvider(cfg *EntraIdentityConfig, scope string, excludeInteractiveBrowser bool) func(context.Context) (string, error) {
+	src, err := BuildEntraTokenProviderIn(context.Background(), cfg, scope, excludeInteractiveBrowser)
+	if err != nil {
+		return TagCredentialSource(func(context.Context) (string, error) { return "", err }, CredentialSourceEntraID).Func()
+	}
+	return src
+}
+
+// Bearer minter of a scope with the default chain settings, built for the context profile
+func entraTokenProviderIn(ctx context.Context, scope string) (func(context.Context) (string, error), error) {
+	return BuildEntraTokenProviderIn(ctx, nil, scope, true)
 }
 
 func entraTokenProvider(scope string) (func(context.Context) (string, error), error) {
-	return BuildEntraTokenProvider(nil, scope, true), nil
+	return entraTokenProviderIn(context.Background(), scope)
 }
 
 // Token or error from one chain walk under a deadline, nil when the deadline passes first

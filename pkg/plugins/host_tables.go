@@ -3,6 +3,7 @@ package plugins
 const (
 	HostProcessEnv     = "ICEBATH_PLUGIN_HOST_PROCESS"
 	HostDenyNetworkEnv = "ICEBATH_PLUGIN_HOST_DENY_NETWORK"
+	HostLogLevelEnv    = "ICEBATH_PLUGIN_HOST_LOG_LEVEL"
 )
 
 // Context methods the host refuses with the reason the live object cannot cross

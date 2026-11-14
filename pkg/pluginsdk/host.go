@@ -18,6 +18,7 @@ type host struct {
 	mu       sync.Mutex
 	loading  context.Context
 	unloads  []func() error
+	capture  *capture
 }
 
 // Registrar name and argument name of each provider kind
@@ -48,6 +49,9 @@ func (h *host) registering() context.Context {
 }
 
 func (h *host) Call(ctx context.Context, method string, args []any, kwargs map[string]any) (any, error) {
+	if h.capture != nil && h.capture.intercept(method, args) {
+		return nil, nil
+	}
 	return h.peer.call(ctx, "ctx", map[string]any{"plugin": h.key, "method": method, "args": h.peer.encode(listOrEmpty(args)),
 		"kwargs": h.peer.encode(mapOrEmpty(kwargs))})
 }

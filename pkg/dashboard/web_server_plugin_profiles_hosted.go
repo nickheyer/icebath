@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -262,7 +263,7 @@ func forwardSecondaryPluginRequest(ctx context.Context, req *Request, name strin
 	dir := pyrepr.Str(plugin.GetOr("_dir", nil))
 	method := req.Method()
 	call := func(jctx context.Context, timeout time.Duration) (map[string]any, error) {
-		host, err := plugins.GetPluginManager(jctx).PluginHost()
+		host, err := plugins.GetPluginManager(jctx).HostForPluginDir(filepath.Dir(dir))
 		if err != nil {
 			return nil, err
 		}

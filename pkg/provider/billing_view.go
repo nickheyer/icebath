@@ -14,6 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // DevBillingFixtureEnv names the offline billing screen fixture
@@ -332,6 +334,12 @@ func pyIterItems(value any) ([]any, error) {
 		out := make([]any, 0, utf8.RuneCountInString(t))
 		for _, r := range t {
 			out = append(out, string(r))
+		}
+		return out, nil
+	case *pyjson.Object:
+		out := make([]any, len(t.Keys))
+		for i, k := range t.Keys {
+			out[i] = k
 		}
 		return out, nil
 	case map[string]any:

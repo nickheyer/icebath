@@ -130,7 +130,7 @@ func (h *PluginHost) serveCollectSource(ctx context.Context, params map[string]a
 // Loads a user memory provider package in the plugin host with its other registrations collected here
 func CollectMemoryProviderInHost(ctx context.Context, name, providerDir, moduleName string, registerSkills bool, trackSkill func(qualifiedName string)) (*HostedObject, error) {
 	m := GetPluginManager(ctx)
-	host, err := m.pluginHost()
+	host, err := m.hostForDir(providerDir)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func RunMemoryProviderCLI(ctx context.Context, name, providerDir, moduleName, de
 
 // Runs a user memory provider config_schema.py in the profile plugin host and returns its CONFIG_SCHEMA
 func MemoryProviderConfigSchema(ctx context.Context, path string) (any, error) {
-	host, err := GetPluginManager(ctx).pluginHost()
+	host, err := GetPluginManager(ctx).hostForDir(filepath.Dir(path))
 	if err != nil {
 		return nil, err
 	}

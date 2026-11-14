@@ -8,3 +8,9 @@ import "io/fs"
 func ownedPrivateDir(info fs.FileInfo) bool { return false }
 
 func ownedWithoutGroupWrite(info fs.FileInfo) bool { return true }
+
+// Windows has no uid
+const harnessHasUID = false
+
+// Zero stands in for the absent uid in the private short dir digest
+func harnessUID() int { return 0 }

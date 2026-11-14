@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const liveSendConfirmTimeout = 60 * time.Second
@@ -92,10 +94,11 @@ type cronFuture struct {
 	cancel context.CancelFunc
 }
 
-// Work scheduled on a running gateway loop, nil when the loop takes no work
+// Work scheduled on a running gateway loop, nil with the reason logged when the loop takes no work
 func safeScheduleThreadsafe(ctx context.Context, loop any, fn func(ctx context.Context) (any, error)) *cronFuture {
 	l, ok := loop.(cronLoop)
 	if !ok || l == nil {
+		tools.LogScheduleFailure(ctx, nil, "", slog.LevelDebug, tools.ErrLoopIsNone)
 		return nil
 	}
 	cctx, cancel := context.WithCancel(ctx)
@@ -111,6 +114,7 @@ func safeScheduleThreadsafe(ctx context.Context, loop any, fn func(ctx context.C
 	})
 	if !scheduled {
 		cancel()
+		tools.LogScheduleFailure(ctx, nil, "", slog.LevelDebug, tools.ErrEventLoopClosed)
 		return nil
 	}
 	return f

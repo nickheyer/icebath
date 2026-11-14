@@ -702,6 +702,8 @@ func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[s
 			}
 		}()
 		runCtx := tools.WithDelegatedChildContext(childProfileScope(ctx, child), true)
+		childSessionID := child.sessionID
+		defer tools.ScopedCurrentSessionID(child.env, &childSessionID)()
 		out, err := runChildConversationFn(runCtx, child, tools.BuildRetryMessage(errs), RunConversationOptions{TaskID: childTaskID, StreamCallback: relay})
 		if err != nil {
 			delegateLog().Warn(fmt.Sprintf("Subagent %d schema-retry turn failed: %v", taskIndex, err))
@@ -1173,6 +1175,8 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 			defer func() { child.env = saved }()
 		}
 		runCtx := tools.WithDelegatedChildContext(childProfileScope(context.WithoutCancel(r.ctx), child), true)
+		childSessionID := child.sessionID
+		defer tools.ScopedCurrentSessionID(child.env, &childSessionID)()
 		outcome.result, outcome.err = runChildConversationFn(runCtx, child, userMessage, RunConversationOptions{TaskID: r.childTaskID, StreamCallback: r.relayText})
 	}()
 	settled := r.heartbeat.settled

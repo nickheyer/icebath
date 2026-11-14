@@ -127,7 +127,8 @@ var smartApproveFunc = smartApprove
 // Runs the guardian with observer hooks and returns approve, deny, or escalate
 func smartVerdict(ctx context.Context, env *Env, command, description, patternKey string, patternKeys []string, sessionKey string) string {
 	payload := map[string]any{
-		"command": RedactSensitiveText(command), "description": RedactSensitiveText(description),
+		"command":     RedactSensitiveTextWith(env, command, RedactOptions{Force: true}),
+		"description": RedactSensitiveTextWith(env, description, RedactOptions{Force: true}),
 		"pattern_key": patternKey, "pattern_keys": append([]string{}, patternKeys...),
 		"session_key": sessionKey, "surface": "smart",
 	}

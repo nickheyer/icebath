@@ -9,15 +9,17 @@ require (
 	charm.land/lipgloss/v2 v2.0.6
 	github.com/HugoSmits86/nativewebp v1.3.0
 	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/UserExistsError/conpty v0.1.4
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/andybalholm/brotli v1.2.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/harmonica v0.2.0
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
+	github.com/charmbracelet/x/vt v0.1.0
+	github.com/creack/pty v1.1.24
 	github.com/daytona/clients/api-client-go v0.227.3
 	github.com/daytona/clients/sdk-go v0.227.3
 	github.com/dlclark/regexp2/v2 v2.2.1
@@ -74,7 +76,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/UserExistsError/conpty v0.1.4
 	github.com/aristanetworks/gomap v0.0.0-20230726210543-f4e41046dced // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.4 // indirect
@@ -94,15 +95,14 @@ require (
 	github.com/beeper/argo-go v1.1.2 // indirect
 	github.com/bits-and-blooms/bitset v1.24.6 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
-	github.com/charmbracelet/x/vt v0.1.0
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
-	github.com/creack/pty v1.1.24
 	github.com/daytona/clients/analytics-api-client-go v0.0.0-20260722121532-3d2223c79fe5 // indirect
 	github.com/daytona/clients/toolbox-api-client-go v0.227.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

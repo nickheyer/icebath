@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,11 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // In memory TTL of the OpenRouter catalog
@@ -346,57 +346,40 @@ func contextCachePath(ctx context.Context) string {
 	return filepath.Join(metadataHome(ctx), "context_length_cache.yaml")
 }
 
-// Atomic yaml write of the context cache document
 // Context cache writer, a seam the read only cache tests fail on purpose
 var writeContextCache = writeContextCacheDocument
 
+// Atomic yaml write of the context cache document with every key in its file or insertion order
 func writeContextCacheDocument(ctx context.Context, cache map[string]int, bedrockConfirmed map[string]any) error {
-	document := map[string]any{"context_lengths": cache}
+	path := contextCachePath(ctx)
+	lengths := make(map[string]any, len(cache))
+	for k, v := range cache {
+		lengths[k] = v
+	}
+	config.SetMappingKeys(lengths, config.MappingKeyOrder(path, "context_lengths"))
+	document := map[string]any{"context_lengths": lengths}
+	order := []string{"context_lengths"}
 	if len(bedrockConfirmed) > 0 {
 		document["bedrock_confirmed_v1"] = bedrockConfirmed
+		order = append(order, "bedrock_confirmed_v1")
 	}
-	raw, err := yaml.Marshal(document)
-	if err != nil {
-		return err
-	}
-	path := contextCachePath(ctx)
+	config.SetMappingKeys(document, order)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return config.AtomicWrite(path, raw, 0o600)
+	return config.AtomicYAMLWrite(ctx, path, document, "")
 }
 
-var contextCacheProcessLock sync.Mutex
-
-// Runs a load mutate write cycle under the cache file cross process lock, skipped when the lock is busy
+// Runs a load mutate write cycle under the cache file cross process lock, skipped when the lock cannot be taken
 func lockedContextCache(ctx context.Context, fn func()) {
-	path := contextCachePath(ctx)
-	lockPath := path + ".lock"
-	contextCacheProcessLock.Lock()
-	defer contextCacheProcessLock.Unlock()
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
-		metadataLog.Debug("skipping context length cache update", "error", err)
-		return
-	}
-	f, err := openLockFile(lockPath)
+	lockPath := contextCachePath(ctx) + ".lock"
+	release, err := FileLock(lockPath, contextCacheLockTimeout,
+		fmt.Sprintf("Timed out waiting for the context length cache lock (%s)", lockPath))
 	if err != nil {
-		metadataLog.Debug("skipping context length cache update", "error", err)
+		metadataLog.Debug("Skipping context length cache update", "error", err)
 		return
 	}
-	defer f.Close()
-	deadline := time.Now().Add(contextCacheLockTimeout)
-	for {
-		err := kernelLock(f, true)
-		if err == nil {
-			break
-		}
-		if !isLockContention(err) || time.Now().After(deadline) {
-			metadataLog.Debug("skipping context length cache update", "error", err, "lock", lockPath)
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	defer kernelLock(f, false)
+	defer release()
 	fn()
 }
 
@@ -407,8 +390,18 @@ func loadContextCacheDocument(ctx context.Context) (map[string]int, map[string]a
 	if err != nil {
 		return cache, confirmed
 	}
-	var doc map[string]any
-	if err := yaml.Unmarshal(raw, &doc); err != nil || doc == nil {
+	text, err := pystr.DecodeUTF8Sig(raw)
+	if err != nil {
+		metadataLog.Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
+		return cache, confirmed
+	}
+	loaded, err := config.SafeLoad(text)
+	if err != nil {
+		metadataLog.Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
+		return cache, confirmed
+	}
+	doc, ok := loaded.(map[string]any)
+	if !ok {
 		return cache, confirmed
 	}
 	if lengths, ok := doc["context_lengths"].(map[string]any); ok {

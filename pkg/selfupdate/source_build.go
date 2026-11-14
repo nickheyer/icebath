@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -314,4 +315,9 @@ func SwapSourceToolsForTests(ensure func(ctx context.Context, name string, opts 
 	prevEnsure, prevNode := sourceEnsure, sourceNodeBinary
 	sourceEnsure, sourceNodeBinary = ensure, node
 	return func() { sourceEnsure, sourceNodeBinary = prevEnsure, prevNode }
+}
+
+// Compiles the terminal UI of a source checkout, which ships inside the icebath binary built from it
+func BuildSourceTUI(ctx context.Context, w io.Writer, projectRoot string) error {
+	return checkoutBinaryBuild(ctx, w, projectRoot)
 }

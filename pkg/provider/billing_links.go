@@ -2,7 +2,9 @@ package provider
 
 import (
 	"strings"
-	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // BillingBlock is the structured billing wall descriptor every surface renders
@@ -46,62 +48,82 @@ var billingProviders = []billingProvider{
 	{"NVIDIA", "https://build.nvidia.com/settings/billing", []string{"nvidia"}, nil},
 }
 
+// Nous managed inference gateway by provider or host, the urlparse ValueError of a malformed base url returned
+func isNousInferenceRoute(provider, baseURL string) (bool, error) {
+	if pystr.Lower(pystr.Strip(provider)) == "nous" {
+		return true, nil
+	}
+	return pyurl.BaseURLHostMatches(baseURL, "inference-api.nousresearch.com")
+}
+
 // IsNousInferenceRoute reports the Nous managed inference gateway by provider or host
 func IsNousInferenceRoute(provider, baseURL string) bool {
-	return strings.ToLower(strings.TrimSpace(provider)) == "nous" || baseURLHostMatches(baseURL, "inference-api.nousresearch.com")
+	nous, err := isNousInferenceRoute(provider, baseURL)
+	return err == nil && nous
 }
 
-// Python str.title, a letter after a non letter is upper cased and every other letter lower cased
-func pyTitle(s string) string {
-	var b strings.Builder
-	prevCased := false
-	for _, r := range s {
-		switch {
-		case unicode.IsLetter(r) && !prevCased:
-			b.WriteRune(unicode.ToTitle(r))
-		case unicode.IsLetter(r):
-			b.WriteRune(unicode.ToLower(r))
-		default:
-			b.WriteRune(r)
-		}
-		prevCased = unicode.IsLetter(r)
-	}
-	return b.String()
-}
+// Python str.title of the text
+func pyTitle(s string) string { return pystr.Title(s) }
 
 // Label and billing page by exact slug, then base url host, then a readable label without a url
-func resolveProviderLink(slug, baseURL string) (string, string) {
+func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 	for _, p := range billingProviders {
 		for _, s := range p.slugs {
 			if s == slug {
-				return p.label, p.url
+				return p.label, p.url, nil
 			}
 		}
 	}
 	for _, p := range billingProviders {
 		for _, host := range p.hosts {
-			if baseURLHostMatches(baseURL, host) {
-				return p.label, p.url
+			matches, err := pyurl.BaseURLHostMatches(baseURL, host)
+			if err != nil {
+				return "", "", err
+			}
+			if matches {
+				return p.label, p.url, nil
 			}
 		}
 	}
-	label := pyTitle(strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
+	label := pystr.Title(pystr.Strip(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
 	if label == "" {
 		label = "your provider"
 	}
-	return label, ""
+	return label, "", nil
+}
+
+// Label and billing page of a provider, a readable label without a url when the base url is malformed
+func resolveProviderLink(slug, baseURL string) (string, string) {
+	label, url, err := resolveProviderLinkErr(slug, baseURL)
+	if err != nil {
+		return "", ""
+	}
+	return label, url
+}
+
+// BuildBillingBlockErr describes a billing classified failure, the urlparse ValueError of a malformed base url returned
+func BuildBillingBlockErr(provider, baseURL, model, message string) (BillingBlock, error) {
+	slug := pystr.Lower(pystr.Strip(provider))
+	model = pystr.Strip(model)
+	nous, err := isNousInferenceRoute(slug, baseURL)
+	if err != nil {
+		return BillingBlock{}, err
+	}
+	if nous {
+		if slug == "" {
+			slug = "nous"
+		}
+		return BillingBlock{Provider: slug, ProviderLabel: "Nous Portal", Model: model, BillingURL: NousPortalBillingURL(""), IsNous: true, Message: message}, nil
+	}
+	label, url, err := resolveProviderLinkErr(slug, baseURL)
+	if err != nil {
+		return BillingBlock{}, err
+	}
+	return BillingBlock{Provider: slug, ProviderLabel: label, Model: model, BillingURL: url, Message: message}, nil
 }
 
 // BuildBillingBlock describes a billing classified failure with the provider add credits page
 func BuildBillingBlock(provider, baseURL, model, message string) BillingBlock {
-	slug := strings.ToLower(strings.TrimSpace(provider))
-	model = strings.TrimSpace(model)
-	if IsNousInferenceRoute(slug, baseURL) {
-		if slug == "" {
-			slug = "nous"
-		}
-		return BillingBlock{Provider: slug, ProviderLabel: "Nous Portal", Model: model, BillingURL: NousPortalBillingURL(""), IsNous: true, Message: message}
-	}
-	label, url := resolveProviderLink(slug, baseURL)
-	return BillingBlock{Provider: slug, ProviderLabel: label, Model: model, BillingURL: url, Message: message}
+	block, _ := BuildBillingBlockErr(provider, baseURL, model, message)
+	return block
 }

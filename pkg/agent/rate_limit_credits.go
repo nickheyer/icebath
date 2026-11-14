@@ -19,15 +19,16 @@ func (a *AIAgent) creditsCapture() *provider.CreditsCapture {
 		if err != nil {
 			tree = nil
 		}
-		c := provider.NewCreditsCapture(tree, a.provider, a.model, a.baseURL, a.sessionID)
-		c.Notice = a.emitNotice
-		c.NoticeClear = a.emitNoticeClear
-		a.credits = c
-		return c
+		a.credits = provider.NewCreditsCapture(tree, a.provider, a.model, a.baseURL, a.sessionID)
+	} else {
+		a.credits.SetRoute(a.provider, a.model, a.baseURL)
+		if a.credits.SessionID != a.sessionID {
+			a.credits.SessionID = a.sessionID
+		}
 	}
-	a.credits.SetRoute(a.provider, a.model, a.baseURL)
-	if a.credits.SessionID != a.sessionID {
-		a.credits.SessionID = a.sessionID
+	a.credits.Notice, a.credits.NoticeClear = nil, nil
+	if a.noticeCallback != nil || a.noticeClearCallback != nil {
+		a.credits.Notice, a.credits.NoticeClear = a.emitNotice, a.emitNoticeClear
 	}
 	return a.credits
 }

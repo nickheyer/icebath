@@ -13,7 +13,7 @@ func hasConversationTag(tags []string) bool {
 
 func TestNousPortalTagsContainsProductAndClient(t *testing.T) {
 	tags := nousPortalTags(context.Background(), "")
-	if !slices.Contains(tags, "product=icebath-agent") || !slices.Contains(tags, "client=icebath-client-v"+BuildVersion) {
+	if !slices.Contains(tags, "product=icebath-agent") || !slices.Contains(tags, "client=icebath-client-v"+baseVersion()) {
 		t.Fatalf("tags %v", tags)
 	}
 }

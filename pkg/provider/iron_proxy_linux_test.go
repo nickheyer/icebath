@@ -95,7 +95,7 @@ func TestStartProxyInjectsManagementKeyEnv(t *testing.T) {
 	binDir := filepath.Join(h, "bin")
 	_ = os.MkdirAll(binDir, 0o700)
 	fakeBin := filepath.Join(binDir, "iron-proxy")
-	_ = os.WriteFile(fakeBin, []byte("#!/bin/sh\nexec sleep 60\n"), 0o755)
+	_ = os.WriteFile(fakeBin, []byte("#!/bin/sh\nwhile :; do sleep 0.2; done\n"), 0o755)
 	status, err := p.StartProxy(IronProxyStartOptions{Binary: fakeBin, ConfigPath: cfgPath})
 	if err != nil {
 		t.Fatal(err)

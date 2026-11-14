@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 )
 
@@ -176,11 +177,24 @@ func (p *peer) dispatch(ctx context.Context, method string, params map[string]an
 		if obj == nil {
 			return nil, &Error{Type: "LookupError", Message: fmt.Sprintf("object %v was released", params["ref"])}
 		}
-		value, ok := obj.Attrs[text(params["name"])]
-		if !ok {
-			return nil, &Error{Type: "AttributeError", Message: text(params["name"])}
+		name := text(params["name"])
+		p.mu.Lock()
+		value, ok := obj.Attrs[name]
+		p.mu.Unlock()
+		if !ok || strings.HasPrefix(name, "_") {
+			return map[string]any{"__missing__": name}, nil
 		}
 		return value, nil
+	case "obj_setattr":
+		return p.objSetattr(params)
+	case "load_instance":
+		return p.loadInstance(ctx, params)
+	case "profile_call":
+		return p.profileCall(ctx, params)
+	case "asgi":
+		return p.asgi(ctx, params)
+	case "config_schema":
+		return configSchema, nil
 	case "obj_overrides":
 		obj := p.object(params["ref"])
 		return obj != nil && obj.Methods[text(params["method"])] != nil, nil

@@ -288,7 +288,7 @@ func translateGeminiStreamEvent(event map[string]any, model string, slots *gemin
 		}
 		if fc := geminiPartFunctionCall(part); fc != nil {
 			name := pyStr(fc["name"])
-			argsStr := geminiDumpCallArgs(fc)
+			argsStr := geminiDumpCallArgsWith(fc, true)
 			key, slot := geminiToolCallSlot(fc, part, partIndex, argsStr, slots)
 			if slot == nil {
 				slot = &geminiToolSlot{index: len(slots.keys), id: geminiNewCallID(fc)}

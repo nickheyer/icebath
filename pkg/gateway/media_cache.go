@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
@@ -46,4 +47,57 @@ func ExtForMime(mime string, overrides map[string]string, useDefaults, useMimety
 		}
 	}
 	return fallback
+}
+
+// Canonical mime per extension, the explicit inverse of the many to one forward table
+var DefaultExtToMime = map[string]string{
+	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
+	".webp": "image/webp", ".ogg": "audio/ogg", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+	".m4a": "audio/mp4", ".aac": "audio/aac", ".mp4": "video/mp4", ".pdf": "application/pdf",
+	".zip": "application/zip",
+}
+
+// Mime of a dotted extension from the overrides then the shared inverse table, else the fallback
+func MimeForExt(ext string, overrides map[string]string, fallback string) string {
+	key := pystr.Lower(pystr.Strip(ext))
+	if mime := overrides[key]; mime != "" {
+		return mime
+	}
+	if mime, ok := DefaultExtToMime[key]; ok {
+		return mime
+	}
+	return fallback
+}
+
+// Caches downloaded bytes through the image, audio or document primitive picked by kind hint or mime class
+func CacheMediaBytesByMime(ctx context.Context, data []byte, mime, filenameHint string, kindHint *string, extOverrides map[string]string) (string, error) {
+	primary := normalizeMime(mime)
+	kind := "document"
+	switch {
+	case kindHint != nil:
+		kind = *kindHint
+	case strings.HasPrefix(primary, "image/"):
+		kind = "image"
+	case strings.HasPrefix(primary, "audio/"):
+		kind = "audio"
+	}
+	if kind == "image" {
+		ext := ExtForMime(primary, extOverrides, true, true, ".jpg")
+		if ext == "" {
+			ext = ".jpg"
+		}
+		return cacheImageFromBytes(ctx, data, ext)
+	}
+	if kind == "audio" {
+		ext := ExtForMime(primary, extOverrides, true, true, ".ogg")
+		if ext == "" {
+			ext = ".ogg"
+		}
+		return cacheAudioFromBytes(ctx, data, ext)
+	}
+	filename := filenameHint
+	if filename == "" {
+		filename = "file_" + uuidHex()[:8] + ExtForMime(primary, extOverrides, true, true, ".bin")
+	}
+	return cacheDocumentFromBytes(ctx, data, filename)
 }

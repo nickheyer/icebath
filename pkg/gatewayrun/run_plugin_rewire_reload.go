@@ -58,7 +58,7 @@ func reloadPluginsVerb(ctx context.Context, r *GatewayRunner, loop gateway.Event
 		plugins.DiscoverPlugins(scoped, true)
 		manager := plugins.GetPluginManager(scoped)
 		names := manager.PluginKeys()
-		activations := plugins.ActivationSummaries(scoped, manager)
+		activations := append(plugins.ActivationSummaries(scoped, manager), plugins.DependencyBlockedSummaries(scoped, manager)...)
 		reconcilePluginMCPServers(ctx, r, requested)
 		var rewired any
 		if count, ok := countAdaptersOnLoop(r, loop, profileName); ok {

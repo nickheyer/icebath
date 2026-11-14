@@ -21,6 +21,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 // Synthetic code for a stream data field rejected before any completion chunk arrived
@@ -427,6 +429,8 @@ type Verdict struct {
 	ShouldRotateCredential *bool
 	ShouldFallback         *bool
 	Context                map[string]any
+	// Message a plugin classification puts in place of the extracted error message
+	Message *string
 }
 
 func bptr(b bool) *bool { return &b }
@@ -646,7 +650,41 @@ func pluginVerdict(c *classifyCtx) *Verdict {
 			return vd
 		}
 	}
-	return nil
+	var status *int
+	if c.status != 0 {
+		status = &c.status
+	}
+	result, err := plugins.GetPluginErrorClassification(context.Background(), plugins.ErrorClassificationInput{
+		Provider: c.provider, Model: c.model, StatusCode: status, ErrorType: c.errorType, ErrorCode: c.errorCode,
+		ErrorMessage: c.msg, ErrorBody: c.body, Err: c.err, ApproxTokens: c.in.ApproxTokens,
+		ContextLength: c.in.ContextLength, NumMessages: c.in.NumMessages})
+	if err != nil {
+		slog.Debug(fmt.Sprintf("Plugin error classification unavailable: %s", err))
+		return nil
+	}
+	reason, ok := result["reason"].(FailoverReason)
+	if !ok {
+		return nil
+	}
+	vd := &Verdict{Reason: reason}
+	for key, slot := range map[string]**bool{"retryable": &vd.Retryable, "should_compress": &vd.ShouldCompress,
+		"should_rotate_credential": &vd.ShouldRotateCredential, "should_fallback": &vd.ShouldFallback} {
+		if flag, has := result[key].(bool); has {
+			*slot = bptr(flag)
+		}
+	}
+	if message, has := result["message"].(string); has {
+		vd.Message = &message
+	}
+	if errorContext, has := result["error_context"].(map[string]any); has {
+		vd.Context = errorContext
+	}
+	statusText := "None"
+	if status != nil {
+		statusText = strconv.Itoa(*status)
+	}
+	slog.Info(fmt.Sprintf("API error classified by plugin hook: %s (provider=%s, status=%s)", reason, c.provider, statusText))
+	return vd
 }
 
 // The erroring provider's own profile classify_api_error verdict, a panicking hook counted as no verdict
@@ -1538,6 +1576,9 @@ func ClassifyError(in ClassifyInput) *Classified {
 		if host := offRouteHost(c); host != "" {
 			message = message + " (endpoint: " + host + ")"
 		}
+	}
+	if verdict.Message != nil {
+		message = *verdict.Message
 	}
 	out.Message = message
 	return out

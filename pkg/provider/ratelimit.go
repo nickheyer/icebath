@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Header tag per rate limit window in state field order
@@ -159,7 +161,7 @@ func bar(pct float64, width int) string {
 	if filled > width {
 		filled = width
 	}
-	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", width-filled) + "]"
+	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
 }
 
 func bucketLine(label string, b RateLimitBucket, now time.Time) string {
@@ -174,7 +176,7 @@ func bucketLine(label string, b RateLimitBucket, now time.Time) string {
 // FormatRateLimitDisplay renders the multi line usage view with warnings at eighty percent
 func FormatRateLimitDisplay(s *RateLimitState, now time.Time) string {
 	if !s.HasData() {
-		return "No rate limit data yet. Make an API request first."
+		return "No rate limit data yet — make an API request first."
 	}
 	age := s.AgeSeconds(now)
 	freshness := "just now"
@@ -185,7 +187,7 @@ func FormatRateLimitDisplay(s *RateLimitState, now time.Time) string {
 	}
 	label := "Provider"
 	if s.Provider != "" {
-		label = strings.ToUpper(s.Provider[:1]) + s.Provider[1:]
+		label = pystr.Title(s.Provider)
 	}
 	labeled := []struct {
 		name string
@@ -197,7 +199,7 @@ func FormatRateLimitDisplay(s *RateLimitState, now time.Time) string {
 	var warnings []string
 	for _, l := range labeled {
 		if l.b.Limit > 0 && l.b.UsagePct() >= 80 {
-			warnings = append(warnings, fmt.Sprintf("  ! %s at %.0f%%, resets in %s", strings.ToLower(l.name), l.b.UsagePct(), FormatSeconds(l.b.RemainingSecondsNow(now))))
+			warnings = append(warnings, fmt.Sprintf("  ⚠ %s at %.0f%% — resets in %s", pystr.Lower(l.name), l.b.UsagePct(), FormatSeconds(l.b.RemainingSecondsNow(now))))
 		}
 	}
 	if len(warnings) > 0 {

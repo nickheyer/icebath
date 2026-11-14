@@ -39,7 +39,7 @@ func portalConversationContext(ctx context.Context) string {
 
 // Client attribution tag carrying the running build's base version
 func icebathClientTag() string {
-	return "client=icebath-client-v" + BuildVersion
+	return "client=icebath-client-v" + baseVersion()
 }
 
 // Conversation tag for a session id

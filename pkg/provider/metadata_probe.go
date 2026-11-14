@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // Wall clock cap on one probe including the whole body
@@ -69,19 +71,18 @@ func isConnectTimeout(err error) bool {
 
 // TLS policy of a probe to the base url from the custom provider entry serving it
 func metadataTLSConfig(ctx context.Context, baseURL string) (*tls.Config, error) {
-	if strings.TrimSpace(baseURL) == "" {
-		return nil, nil
-	}
-	cfg := metadataConfig(ctx)
-	if cfg == nil {
-		return nil, nil
-	}
-	settings := CustomProviderTLSSettings(baseURL, nil, cfg)
+	caCert := ""
 	var sslVerify any
-	if settings.HasVerify {
-		sslVerify = settings.Verify
+	if baseURL != "" {
+		if cfg := metadataConfig(ctx); cfg != nil {
+			settings := CustomProviderTLSSettings(baseURL, nil, cfg)
+			caCert = settings.CACert
+			if settings.HasVerify {
+				sslVerify = settings.Verify
+			}
+		}
 	}
-	return ResolveTLSVerify(nil, settings.CACert, sslVerify, baseURL).Config, nil
+	return ResolveTLSVerify(nil, caCert, sslVerify, baseURL).Config, nil
 }
 
 // Proxy for a probe request read from the environment on every call
@@ -130,6 +131,15 @@ type probeClient struct {
 	read    time.Duration
 	tls     *tls.Config
 	tlsErr  error
+	// Hands a redirect answer back unfollowed, the plain httpx client default
+	keepRedirects bool
+}
+
+// Probe client that returns a redirect answer instead of following it
+func newDirectProbeClient(ctx context.Context, baseURL string, headers map[string]string, connect, read time.Duration) *probeClient {
+	client := newProbeClient(ctx, baseURL, headers, connect, read)
+	client.keepRedirects = true
+	return client
 }
 
 func newProbeClient(ctx context.Context, baseURL string, headers map[string]string, connect, read time.Duration) *probeClient {
@@ -151,10 +161,11 @@ func (c *probeClient) httpClient(target string) *http.Client {
 	if metadataTransport != nil {
 		transport = metadataTransport
 	}
-	return &http.Client{
-		Transport:     transport,
-		CheckRedirect: credentialRedirectPolicy(target),
+	redirects := credentialRedirectPolicy(target)
+	if c.keepRedirects {
+		redirects = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
+	return &http.Client{Transport: transport, CheckRedirect: redirects}
 }
 
 // Sends one request under the total deadline, reading the body only for successes
@@ -249,13 +260,30 @@ func intOrDefault(v any, fallback int) int {
 	return fallback
 }
 
-// Positive integer from a numeric value, zero otherwise
+// Integer of a truthy JSON number, zero for strings, zero and every other value
 func positiveIntOf(v any) int {
-	n, ok := positiveInt(v)
-	if !ok {
-		return 0
+	switch n := v.(type) {
+	case bool:
+		if n {
+			return 1
+		}
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		if !math.IsNaN(n) && !math.IsInf(n, 0) {
+			return int(n)
+		}
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return int(i)
+		}
+		if f, err := n.Float64(); err == nil && !math.IsNaN(f) && !math.IsInf(f, 0) {
+			return int(f)
+		}
 	}
-	return n
+	return 0
 }
 
 // FetchModelMetadata returns the OpenRouter catalog, cached for an hour in memory and on disk
@@ -610,7 +638,7 @@ func probeModelIDMatches(candidateID, lookupModel string) bool {
 
 // Ollama show payload for the model, nil on any failure
 func ollamaShow(ctx context.Context, serverURL, apiKey, bareModel string, timeout time.Duration, noteBlackhole bool) map[string]any {
-	client := newProbeClient(ctx, serverURL, authHeaders(apiKey), timeout, timeout)
+	client := newDirectProbeClient(ctx, serverURL, authHeaders(apiKey), timeout, timeout)
 	resp, err := client.PostJSON(serverURL+"/api/show", map[string]any{"name": bareModel})
 	if err != nil {
 		if noteBlackhole {
@@ -755,7 +783,7 @@ func lmstudioContext(client *probeClient, lmstudioURL, model string) (int, bool,
 			for _, rawInst := range instances {
 				inst, _ := rawInst.(map[string]any)
 				cfg, _ := inst["config"].(map[string]any)
-				if n := positiveIntOf(cfg["context_length"]); n > 0 {
+				if n := positiveIntOf(cfg["context_length"]); n != 0 {
 					return n, true, nil
 				}
 			}
@@ -793,7 +821,7 @@ func openAIModelsListContext(client *probeClient, serverURL, model string) (int,
 		sources = append(sources, meta)
 	}
 	for _, source := range sources {
-		if n := positiveIntOf(source["n_ctx"]); n > 0 {
+		if n := positiveIntOf(source["n_ctx"]); n != 0 {
 			return n, true, nil
 		}
 	}
@@ -807,16 +835,16 @@ func openAIModelsListContext(client *probeClient, serverURL, model string) (int,
 
 // LlamacppContext reads the runtime n_ctx from props else the router launch ctx size
 func LlamacppContext(client *probeClient, serverURL, model string) (int, bool, error) {
-	for _, propsPath := range []string{"/props?model=" + url.QueryEscape(model) + "&autoload=false", "/props"} {
+	for _, propsPath := range []string{"/props?model=" + pyurl.Quote(model, "/") + "&autoload=false", "/props"} {
 		resp, err := client.Get(serverURL+propsPath, nil)
 		if err != nil {
-			return 0, false, err
+			return 0, false, nil
 		}
 		if resp.StatusCode != 200 {
 			continue
 		}
 		settings, _ := resp.JSON()["default_generation_settings"].(map[string]any)
-		if n := positiveIntOf(settings["n_ctx"]); n > 0 {
+		if n := positiveIntOf(settings["n_ctx"]); n != 0 {
 			return n, true, nil
 		}
 	}
@@ -827,7 +855,7 @@ func LlamacppContext(client *probeClient, serverURL, model string) (int, bool, e
 func RouterLaunchCtx(client *probeClient, serverURL, model string) (int, bool, error) {
 	resp, err := client.Get(serverURL+"/models", nil)
 	if err != nil {
-		return 0, false, err
+		return 0, false, nil
 	}
 	if resp.StatusCode != 200 {
 		return 0, false, nil
@@ -877,7 +905,7 @@ func queryLocalContextLengthUncached(ctx context.Context, model, baseURL, apiKey
 		return 0
 	}
 	serverType := DetectLocalServerType(ctx, baseURL, apiKey)
-	client := newProbeClient(ctx, baseURL, authHeaders(apiKey), 3*time.Second, 3*time.Second)
+	client := newDirectProbeClient(ctx, baseURL, authHeaders(apiKey), 3*time.Second, 3*time.Second)
 	type probe func() (int, bool, error)
 	ollamaCtx := func() (int, bool, error) {
 		resp, err := client.PostJSON(server+"/api/show", map[string]any{"name": model})
@@ -999,7 +1027,7 @@ func DetectLocalServerType(ctx context.Context, baseURL, apiKey string) string {
 		{"vllm", []string{server + "/version"}, func(r *probeResponse) bool { _, has := r.JSON()["version"]; return has }},
 	}
 	result := ""
-	client := newProbeClient(ctx, baseURL, authHeaders(apiKey), 2*time.Second, 2*time.Second)
+	client := newDirectProbeClient(ctx, baseURL, authHeaders(apiKey), 2*time.Second, 2*time.Second)
 legs:
 	for _, l := range waterfall {
 		var last *probeResponse

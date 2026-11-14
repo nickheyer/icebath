@@ -416,10 +416,12 @@ func publishRuntimeMain(ctx context.Context, a *AIAgent) (out context.Context) {
 	out = ctx
 	defer func() { _ = recover() }()
 	scope := provider.ResolvePromptCacheScopeSafe(a.cacheScopeAgent())
-	return provider.SetRuntimeMain(ctx, a.provider, a.model, provider.RuntimeMainOptions{
+	out = provider.SetRuntimeMain(ctx, a.provider, a.model, provider.RuntimeMainOptions{
 		RequestedProvider: a.requestedProvider, BaseURL: a.baseURL, APIKey: a.apiKey, APIMode: a.apiMode,
 		AuthMode: a.authMode, SessionID: a.sessionID, CacheScope: scope,
 	})
+	tools.BindRuntimeMain(a.env, provider.RuntimeMainOf(out))
+	return out
 }
 
 // Adopts late MCP connections and refreshes the MCP tool snapshot before the first call of the turn

@@ -147,6 +147,11 @@ func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
 		return nil, err
 	}
 	scanLevel(user, "user", nil, "", 0, seen)
+	for _, mf := range DiscoverEntrypointManifests(home.WithOverride(context.Background(), h)) {
+		if _, dup := seen.byKey[mf.Name]; !dup {
+			seen.put(PluginEntry{Name: mf.Name, Version: mf.Version, Description: mf.Description, Source: "entrypoint", Dir: mf.Path, Key: mf.Name})
+		}
+	}
 	out := make([]PluginEntry, 0, len(seen.order))
 	for _, key := range seen.order {
 		out = append(out, seen.byKey[key])

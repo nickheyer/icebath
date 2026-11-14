@@ -1,11 +1,14 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const sessionCwdKey = "session.cwd"
@@ -74,19 +77,31 @@ func scopeTerminalCwd(env *Env) (string, error) {
 func ScopeTerminalCwd(env *Env) (string, error) { return scopeTerminalCwd(env) }
 
 func existingDir(env *Env, raw, label string) string {
-	p := expandUser(raw)
-	if st, err := os.Stat(p); err == nil && st.IsDir() {
-		return p
+	p, _ := existingDirErr(env, raw, label)
+	return p
+}
+
+// Normalized path of a configured directory with its user home expanded, empty with a warning when it is no directory
+func existingDirErr(env *Env, raw, label string) (string, error) {
+	p, err := pypath.PathExpanduser(raw)
+	if err != nil {
+		return "", err
 	}
-	envLog(env).Warn(label+" does not exist", "path", raw)
-	return ""
+	if st, err := os.Stat(p); err == nil && st.IsDir() {
+		return p, nil
+	}
+	envLog(env).Warn(fmt.Sprintf("%s does not exist: %s", label, raw))
+	return "", nil
 }
 
 // Session override then TERMINAL_CWD, each validated as a real directory
 func resolveConfiguredCwd(env *Env, overrideIsFinal, includeSessionOverride bool) (string, error) {
 	if includeSessionOverride {
 		if override := ScopedSessionCwd(env); override != "" {
-			p := existingDir(env, override, "configured working directory")
+			p, err := existingDirErr(env, override, "configured working directory")
+			if err != nil {
+				return "", err
+			}
 			if p != "" || overrideIsFinal {
 				return p, nil
 			}
@@ -96,11 +111,11 @@ func resolveConfiguredCwd(env *Env, overrideIsFinal, includeSessionOverride bool
 	if err != nil {
 		return "", err
 	}
-	raw = strings.TrimSpace(raw)
+	raw = pystr.Strip(raw)
 	if raw == "" {
 		return "", nil
 	}
-	return existingDir(env, raw, "TERMINAL_CWD"), nil
+	return existingDirErr(env, raw, "TERMINAL_CWD")
 }
 
 // ResolveAgentCwd returns the configured cwd else the launch directory

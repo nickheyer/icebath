@@ -803,12 +803,15 @@ func geminiNewCallID(fc map[string]any) string {
 }
 
 // Function call args as Python json text, an empty object when absent
-func geminiDumpCallArgs(fc map[string]any) string {
+func geminiDumpCallArgs(fc map[string]any) string { return geminiDumpCallArgsWith(fc, false) }
+
+// Function call args as Python json text with keys sorted when asked, an empty object when absent
+func geminiDumpCallArgsWith(fc map[string]any, sortKeys bool) string {
 	args := fc["args"]
 	if !pyTruthy(args) {
 		args = map[string]any{}
 	}
-	out, err := pyjson.Dumps(args, pyjson.EnsureASCII(false))
+	out, err := pyjson.Dumps(args, pyjson.EnsureASCII(false), pyjson.SortKeys(sortKeys))
 	if err != nil {
 		return "{}"
 	}

@@ -853,7 +853,7 @@ func LookupModelsDevContext(ctx context.Context, provider, model string, allowNe
 	if n, ok := overrideContextWindow(provider, model, cfg); ok {
 		return n, true
 	}
-	if n, ok := overrideInt(providerModelCapabilities(provider, model), "context_window"); ok {
+	if n, ok := overrideInt(providerModelCapabilitiesIn(h, provider, model), "context_window"); ok {
 		return n, true
 	}
 	if models := modelsDevProviderModels(h, provider, allowNetwork, cfg); models != nil {
@@ -1183,15 +1183,23 @@ func RegisterModelCapabilities(provider string, caps map[string]map[string]any) 
 
 // Exact model declaration from the registered profile capabilities, the one plugin seam
 func providerModelCapabilities(provider, model string) map[string]any {
-	modelCapabilitiesMu.Lock()
-	defer modelCapabilitiesMu.Unlock()
-	caps := registeredModelCaps[NormalizeProvider(provider)]
-	if caps == nil {
-		return map[string]any{}
+	return providerModelCapabilitiesIn("", provider, model)
+}
+
+// Exact model declaration of the provider profile registered for a home, then of a direct registration
+func providerModelCapabilitiesIn(h, provider, model string) map[string]any {
+	ctx := context.Background()
+	if h != "" {
+		ctx = home.WithOverride(ctx, h)
 	}
-	decl := caps[model]
+	var decl map[string]any
+	if profile := getProviderProfile(ctx, provider); profile != nil {
+		decl = profile.ModelCapabilities[model]
+	}
 	if decl == nil {
-		return map[string]any{}
+		modelCapabilitiesMu.Lock()
+		decl = registeredModelCaps[NormalizeProvider(provider)][model]
+		modelCapabilitiesMu.Unlock()
 	}
 	out := make(map[string]any, len(decl))
 	for k, v := range decl {
@@ -1206,7 +1214,7 @@ func applyModelsDevOverrides(h, provider, model string, entry map[string]any, cf
 	if base == nil {
 		base = builtinModelMetadata(h, provider, model, cfg)
 	}
-	if declared := providerModelCapabilities(provider, model); len(declared) > 0 {
+	if declared := providerModelCapabilitiesIn(h, provider, model); len(declared) > 0 {
 		if base == nil {
 			base = unknownModelBase()
 		}

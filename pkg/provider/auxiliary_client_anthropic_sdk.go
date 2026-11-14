@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -209,6 +210,19 @@ func anthOfferResponse(call anthMessageCall, resp *http.Response) {
 	call.onResponse(resp)
 }
 
+// Per request httpx limits of a timeout keyword, a number applying to every phase
+func anthRequestTimeout(raw any) (pyhttpx.Timeout, bool) {
+	if limits, ok := raw.(pyhttpx.Timeout); ok {
+		return limits, true
+	}
+	seconds, ok := finitePositive(raw)
+	if !ok {
+		return pyhttpx.Timeout{}, false
+	}
+	d := secondsDuration(seconds)
+	return pyhttpx.Timeout{Connect: d, Read: d, Write: d, Pool: d}, true
+}
+
 // Posts the Messages request and returns the response with its body still open
 func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any, stream bool) (*http.Response, error) {
 	body, extraHeaders := anthSDKRequest(apiKwargs, stream)
@@ -221,8 +235,18 @@ func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any,
 		return nil, err
 	}
 	_, connect := anthClientTimeout(0)
-	resp, err := c.inner.httpClient(connect).Do(httpReq)
+	client := c.inner.httpClient(connect)
+	if limits, ok := anthRequestTimeout(apiKwargs["timeout"]); ok {
+		scoped := *client
+		scoped.Transport = pyhttpx.PhaseTimeoutTransport(client.Transport, limits)
+		client = &scoped
+	}
+	resp, err := client.Do(httpReq)
 	if err != nil {
+		var phased *pyhttpx.TimeoutError
+		if errors.As(err, &phased) {
+			err = &TimeoutPhaseError{Phase: phased.Phase, Err: err}
+		}
 		return nil, c.inner.transportError(ctx, err, TimeoutPhaseConnect)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

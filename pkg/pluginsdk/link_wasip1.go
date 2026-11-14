@@ -113,3 +113,11 @@ func (c *polledContext) Err() error { return c.poll() }
 
 // Has nothing to do in a WebAssembly module, where icebath calls the exported functions
 func Main() {}
+
+// Profiles of the module as a JSON document the host reads without loading the plugin
+//
+//go:wasmexport icebath_profiles
+func guestProfiles() uint64 {
+	doc := guest.extractProfiles()
+	return uint64(pin(doc))<<32 | uint64(len(doc))
+}

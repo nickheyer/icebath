@@ -255,7 +255,7 @@ func (a *AIAgent) nativeCompactionContextManagement(route provider.ResponsesRout
 		localTrigger = engineThresholdTokens(a.contextCompressor)
 	}
 	if a.codexResponsesCompactThreshold != 0 {
-		threshold = a.codexResponsesCompactThreshold
+		threshold = int(a.codexResponsesCompactThreshold)
 	}
 	return provider.NativeCompactionContextManagement(provider.NativeCompactionGate{
 		RuntimeCapability: a.runtimeCapabilities == nil || a.runtimeCapabilities["native_compaction"],

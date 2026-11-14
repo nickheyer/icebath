@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"os"
 	"os/exec"
 	"sort"
@@ -14,6 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // ---- user configured provider definitions (hermes_cli/providers.py) ----
@@ -329,37 +334,64 @@ type CommandTokenSource struct {
 	run       func(ctx context.Context, command string, env []string) ([]byte, int, error)
 }
 
-// Runs the command and returns the token plus its ttl, zero when the helper advertised none
+// Seconds of a JSON number the way a Python int or float compares, a bool counting as its int
+func commandTokenSeconds(v any) (float64, bool) {
+	switch n := v.(type) {
+	case bool:
+		if n {
+			return 1, true
+		}
+		return 0, true
+	case int64:
+		return float64(n), true
+	case *big.Int:
+		f, _ := new(big.Float).SetInt(n).Float64()
+		return f, true
+	case float64:
+		return n, true
+	}
+	return 0, false
+}
+
+// Runs the command for the served profile and returns the token plus its ttl, zero when the helper advertised none
 func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, error) {
+	env, err := s.servedChildEnv(ctx)
+	if err != nil {
+		return "", 0, err
+	}
 	runCtx, cancel := context.WithTimeout(ctx, mintTimeout)
 	defer cancel()
-	stdout, code, err := s.run(runCtx, s.Command, s.childEnv())
+	stdout, code, err := s.run(runCtx, s.Command, env)
+	label := pyrepr.StrRepr(s.Label)
 	if runCtx.Err() == context.DeadlineExceeded {
-		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q timed out after %ds", s.Label, int(mintTimeout.Seconds()))}
+		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s timed out after %ds", label, int(mintTimeout.Seconds()))}
 	}
 	if err != nil && code == 0 {
-		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q could not be executed: %v", s.Label, err)}
+		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s could not be executed: %v", label, err)}
 	}
 	if code != 0 {
-		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q exited %d. Run that provider's key_cmd manually to see why "+
-			"(e.g. `databricks auth login` if its OAuth session expired).", s.Label, code)}
+		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s exited %d. Run that provider's key_cmd manually to see why "+
+			"(e.g. `databricks auth login` if its OAuth session expired).", label, code)}
 	}
-	out := string(stdout)
-	if strings.TrimSpace(out) == "" {
-		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q produced no output", s.Label)}
+	out := pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stdout))
+	if pystr.Strip(out) == "" {
+		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s produced no output", label)}
 	}
-	if strings.HasPrefix(strings.TrimLeft(out, " \t\r\n"), "{") {
-		var payload map[string]any
-		if json.Unmarshal([]byte(out), &payload) == nil && payload != nil {
-			token := strings.TrimSpace(cfgString(payload["access_token"]))
-			if token == "" {
-				return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q returned JSON without an 'access_token' field", s.Label)}
+	if strings.HasPrefix(pystr.Lstrip(out), "{") {
+		decoded, _ := pyjson.Loads(out)
+		if payload, isDict := decoded.(*pyjson.Object); isDict && payload != nil {
+			token := ""
+			if raw, _ := payload.Get("access_token"); pyrepr.Truthy(raw) {
+				token = pystr.Strip(pyrepr.Str(raw))
 			}
-			if ttl, ok := floatValue(payload["expires_in"]); ok && ttl > 0 {
+			if token == "" {
+				return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s returned JSON without an 'access_token' field", label)}
+			}
+			if ttl, numeric := commandTokenSeconds(payload.GetOr("expires_in", nil)); numeric && ttl > 0 {
 				return token, time.Duration(ttl * float64(time.Second)), nil
 			}
 			for _, field := range []string{"expiry", "expiresOn"} {
-				if deadline, ok := ParseISOTimestamp(payload[field]); ok {
+				if deadline, ok := ParseISOTimestamp(payload.GetOr(field, nil)); ok {
 					if remaining := time.Until(time.Unix(0, int64(deadline*float64(time.Second)))); remaining > 0 {
 						return token, remaining, nil
 					}
@@ -368,29 +400,23 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 			return token, 0, nil
 		}
 	}
-	token := strings.TrimSpace(out)
+	token := pystr.Strip(out)
 	if strings.Contains(token, "\n") {
-		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %q printed multiple lines; it must "+
-			"print only the token (or JSON with an 'access_token' field)", s.Label)}
+		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s printed multiple lines; it must "+
+			"print only the token (or JSON with an 'access_token' field)", label)}
 	}
 	return token, 0, nil
 }
 
-// Child environment of the served profile, its .env overlaid on the process environment
-func (s *CommandTokenSource) childEnv() []string {
-	env := map[string]string{}
-	for _, kv := range os.Environ() {
-		if i := strings.Index(kv, "="); i > 0 {
-			env[kv[:i]] = kv[i+1:]
-		}
+// Child environment of the profile the token is minted for, its own secrets in place of the launch credentials
+func (s *CommandTokenSource) servedChildEnv(ctx context.Context) ([]string, error) {
+	profileHome := s.home
+	if profileHome == "" {
+		profileHome = home.Dir(ctx)
 	}
-	if s.fileEnv != nil {
-		for k, v := range s.fileEnv() {
-			env[k] = v
-		}
-	}
-	if s.home != "" {
-		env[home.EnvHome] = s.home
+	env, err := tools.ServedProfileChildEnv(ctx, &tools.Env{Home: profileHome}, nil, "", true)
+	if err != nil {
+		return nil, err
 	}
 	keys := make([]string, 0, len(env))
 	for k := range env {
@@ -401,7 +427,13 @@ func (s *CommandTokenSource) childEnv() []string {
 	for _, k := range keys {
 		out = append(out, k+"="+env[k])
 	}
-	return out
+	return out, nil
+}
+
+// Child environment of the served profile, empty when the profile scope refuses the spawn
+func (s *CommandTokenSource) childEnv() []string {
+	env, _ := s.servedChildEnv(context.Background())
+	return env
 }
 
 // Runs a shell command and returns its stdout and exit code

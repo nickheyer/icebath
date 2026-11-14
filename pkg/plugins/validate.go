@@ -442,11 +442,11 @@ func declaredList(manifest map[string]any, key string) []string {
 }
 
 func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any) {
-	candidates := toSet(declaredList(manifest, "provides_tools"))
-	if len(candidates) == 0 {
-		report.add("built-in tool collisions", true, "no tools to check")
-		return
-	}
+	checkBuiltinCollisionsWith(report, manifest, nil)
+}
+
+// Sorted candidate tool names that a built in tool already holds
+func builtinToolCollisions(candidates map[string]bool) []string {
 	collisions := []string{}
 	for _, name := range tools.Default.Names() {
 		if candidates[name] {
@@ -454,11 +454,7 @@ func checkBuiltinCollisions(report *ValidationReport, manifest map[string]any) {
 		}
 	}
 	sort.Strings(collisions)
-	if len(collisions) > 0 {
-		report.add("built-in tool collisions", false, "tool name(s) collide with built-in tools: "+strings.Join(collisions, ", "))
-	} else {
-		report.add("built-in tool collisions", true, "no collisions")
-	}
+	return collisions
 }
 
 var loadableEntrypoints = []string{"desktop/plugin.js", "plugin.json"}
@@ -648,8 +644,13 @@ func validateManifestAndProbe(ctx context.Context, path string) (*ValidationRepo
 		return nil, nil, err
 	}
 	checkLoadable(report, path, manifest)
+	checkPythonDependencies(report, path)
 	checkPluginForm(report, manifest, path)
-	checkBuiltinCollisions(report, manifest)
+	recorded := checkCapabilities(ctx, report, manifest, path)
+	checkBuiltinCollisionsWith(report, manifest, recorded)
+	if err := checkTrustedInbound(report, recorded); err != nil {
+		return nil, nil, err
+	}
 	checkSecurityScan(report, path)
 	return report, manifest, nil
 }

@@ -216,11 +216,11 @@ func parseToolArgs(raw any) any {
 	if !ok {
 		return raw
 	}
-	var out any
-	if err := json.Unmarshal([]byte(s), &out); err != nil {
+	out, err := pyjson.Loads(s)
+	if err != nil {
 		return map[string]any{}
 	}
-	return out
+	return pyjson.Plain(out)
 }
 
 func stripThinking(blocks []any) []any {

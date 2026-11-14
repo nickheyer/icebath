@@ -2,9 +2,12 @@ package lsp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"math/big"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -82,9 +85,20 @@ func pyMinusOne(v any) (any, error) {
 		}
 		return int64(-1), nil
 	case int64:
+		if t == math.MinInt64 {
+			return json.Number(new(big.Int).Sub(big.NewInt(t), big.NewInt(1)).String()), nil
+		}
 		return t - 1, nil
 	case int:
-		return int64(t) - 1, nil
+		return pyMinusOne(int64(t))
+	case json.Number:
+		if n, ok := new(big.Int).SetString(string(t), 10); ok {
+			n.Sub(n, big.NewInt(1))
+			if n.IsInt64() {
+				return n.Int64(), nil
+			}
+			return json.Number(n.String()), nil
+		}
 	case float64:
 		return t - 1, nil
 	}

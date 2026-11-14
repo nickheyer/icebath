@@ -43,7 +43,7 @@ func (p *HostedProfile) Call(ctx context.Context, attr string, args []any, kwarg
 	if m == nil {
 		return nil, &PluginHostUnavailable{Reason: "plugins.isolation is no longer 'host'; restart Icebath"}
 	}
-	host, err := m.pluginHost()
+	host, err := m.hostForDir(p.PluginDir)
 	if err != nil {
 		return nil, err
 	}
@@ -145,9 +145,4 @@ func hostedAmbientEnvNames() []string {
 		}
 	}
 	return sortedKeys(names)
-}
-
-// Extraction payload cached under the home by the plugin fingerprint and module name
-func cachedProfileExtraction(ctx context.Context, pluginDir, moduleName string) (map[string]any, error) {
-	return nil, errPythonSource()
 }

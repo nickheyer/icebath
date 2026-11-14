@@ -302,9 +302,13 @@ func statusJSON(st Status) jsonObj {
 	if st.ExcludeRootsInvalid {
 		exclude = "INVALID"
 	}
+	var installStrategy any = st.InstallStrategy
+	if st.InstallStrategySet {
+		installStrategy = st.InstallStrategyRaw
+	}
 	return jsonObj{
 		{"enabled", st.Enabled}, {"wait_mode", st.WaitMode}, {"wait_timeout", st.WaitTimeout},
-		{"install_strategy", st.InstallStrategy}, {"clients", clients}, {"broken", pairs(st.Broken)},
+		{"install_strategy", installStrategy}, {"clients", clients}, {"broken", pairs(st.Broken)},
 		{"disabled_servers", strs(st.DisabledServers)}, {"broken_retry_seconds", st.BrokenRetrySeconds},
 		{"warmup_timeout", st.WarmupTimeout}, {"exclude_roots", exclude},
 		{"trusted_workspaces", strs(st.TrustedWorkspaces)}, {"untrusted_skipped", pairs(st.UntrustedSkipped)},

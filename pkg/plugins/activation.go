@@ -130,6 +130,9 @@ func pluginActivationSummary(ctx context.Context, m *Manager, pluginKey string) 
 	}
 	m.mu.RUnlock()
 	summary := map[string]any{"name": name, "key": pluginKey, "activated_now": now, "deferred": deferred}
+	if missing := MissingPythonDependencies(ctx, manifest); len(missing) > 0 {
+		summary["missing_dependencies"] = anyList(missing)
+	}
 	return summary
 }
 
@@ -297,10 +300,29 @@ func activatePluginNowFrom(ctx context.Context, name string, inProcess bool) (ma
 		}
 		gatewayActivation = found
 	}
+	backendActivation, err := pyDictOr(activation)
+	if err != nil {
+		return nil, err
+	}
+	missing, missingIn, err := dependencyGaps(gatewayActivation["missing_dependencies"], backendActivation["missing_dependencies"])
+	if err != nil {
+		return nil, err
+	}
 	if reloaded && activation == nil && gatewayActivation != nil {
 		activation = gatewayActivation
 	}
-	return map[string]any{"gateway_reloaded": reloaded, "activation": activation, "restart_required": !reloaded}, nil
+	if len(missing) > 0 {
+		merged := map[string]any{"name": name, "key": name}
+		if current, _ := activation.(map[string]any); len(current) > 0 {
+			merged = map[string]any{}
+			for k, v := range current {
+				merged[k] = v
+			}
+		}
+		merged["missing_dependencies"], merged["missing_in"] = anyList(missing), anyList(missingIn)
+		activation = merged
+	}
+	return map[string]any{"gateway_reloaded": reloaded, "activation": activation, "restart_required": !reloaded || len(missing) > 0}, nil
 }
 
 // Asks the gateway serving this profile, else the multiplexer serving it, to rediscover plugins now
@@ -379,6 +401,11 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		var err error
 		if activation, err = findActivation(summaryItems(ActivationSummaries(lctx, m)), name); err != nil {
 			return nil, err
+		}
+		if activation == nil {
+			if blocked, err = findActivation(summaryItems(DependencyBlockedSummaries(lctx, m)), name); err != nil {
+				return nil, err
+			}
 		}
 		portable = m.GetPortableMCPServers()
 		if activation != nil {
@@ -585,6 +612,21 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 			reason = pyrepr.Str(e)
 		}
 		lines = append(lines, "MCP server "+pyrepr.Str(serverName)+" not connected: "+reason)
+	}
+	if missing := act["missing_dependencies"]; pyrepr.Truthy(missing) {
+		deps, err := pyStrItems(missing)
+		if err != nil {
+			return "", err
+		}
+		processes, err := pyStrItems(act["missing_in"])
+		if err != nil {
+			return "", err
+		}
+		hint, err := dependencyRestartHint(ctx, deps, processes)
+		if err != nil {
+			return "", err
+		}
+		return strings.Join(append(lines, hint), "\n"), nil
 	}
 	if !pyrepr.Truthy(result["gateway_reloaded"]) {
 		if len(lines) > 0 {

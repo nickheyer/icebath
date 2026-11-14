@@ -1289,7 +1289,7 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 		if extra == nil {
 			extra = map[string]any{}
 		}
-		tags := []any{"product=icebath-agent", "client=icebath-client-v" + BuildVersion}
+		tags := []any{"product=icebath-agent", "client=icebath-client-v" + baseVersion()}
 		if conv := firstNonEmpty(req.CacheScope, req.SessionID); conv != "" {
 			tags = append(tags, "conversation="+conv)
 		}
@@ -1436,7 +1436,7 @@ func (c *anthropicClient) httpError(resp *http.Response, data []byte) error {
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
-		apiErr.RetryAfter = RetryAfterFrom(resp.Header.Get("Retry-After"))
+		apiErr.SetRetryAfterHeader(resp.Header.Get("Retry-After"))
 	}
 	if apiErr.RequestID == "" {
 		apiErr.RequestID = headerRequestID(resp.Header)

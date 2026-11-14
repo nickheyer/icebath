@@ -171,7 +171,7 @@ func IsEntitlement403(agent AuthRecoveryAgent, statusCode int, errorContext map[
 
 // Waits out a server side 401 on an unexpired key then retries with the store's current key
 func retryAfterBackoff(agent AuthRecoveryAgent, pool *Pool, ep *AuthEpisode, failedKey, entryID, credentialID string, hasRetried429 bool) (bool, bool) {
-	log := pool.env.log()
+	log := pool.env.log().With("logger", "run_agent")
 	step := ep.Waits
 	if step >= len(TransientAuthBackoff) {
 		log.Warn(fmt.Sprintf("Credential auth failure persists for pool entry %s after one refresh and %d backoff retries — treating as unrecoverable and allowing fallback to activate.", entryID, step))
@@ -209,7 +209,7 @@ type AuthRecoveryRequest struct {
 
 // RecoverAuthFailure refreshes or rotates the dispatched credential after a 401 or 403, returning recovered and the 429 flag
 func RecoverAuthFailure(agent AuthRecoveryAgent, pool *Pool, req AuthRecoveryRequest) (bool, bool) {
-	log := pool.env.log()
+	log := pool.env.log().With("logger", "run_agent")
 	if IsEntitlement403(agent, req.StatusCode, req.ErrorContext) {
 		status := "auth"
 		if req.StatusCode != 0 {

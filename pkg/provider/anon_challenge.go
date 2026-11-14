@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +17,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
+	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -141,13 +143,13 @@ func clientSurface(env PoolEnv) string {
 	return "cli"
 }
 
-// Base version of the running build, unknown when the build carries none
+// Base version of the install stamp or build identity, unknown when neither carries one
 func anonBaseVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" || info.Main.Version == "(devel)" {
-		return "unknown"
+	info, err := updaterecord.GetVersionInfo()
+	if err != nil {
+		panic(err)
 	}
-	return strings.TrimPrefix(info.Main.Version, "v")
+	return info.BaseVersion
 }
 
 // Machine name the way uname reports it for the running binary's architecture
@@ -443,10 +445,15 @@ func presentChallengeInTerminal(env PoolEnv, challenge BrowserChallenge) {
 	challengeStateMu.Unlock()
 	opened := false
 	if !alreadyOpen && clientSurface(env) != "gateway" && !isRemoteSession() && canOpenGraphicalBrowser() {
-		if err := openBrowserFn(challenge.URL); err != nil {
-			env.log().Debug(fmt.Sprintf("could not open the challenge in a browser: %v", err))
-		} else {
+		var browserErr *pywebbrowser.Error
+		switch err := openBrowserFn(challenge.URL); {
+		case err == nil:
 			opened = true
+		case errors.Is(err, errBrowserNotOpened):
+		case errors.As(err, &browserErr), pypath.IsOSError(err):
+			env.log().Debug(fmt.Sprintf("could not open the challenge in a browser: %v", err))
+		default:
+			panic(err)
 		}
 		if opened {
 			challengeStateMu.Lock()
