@@ -1,9 +1,0 @@
-usage: icebath prompt-size [-h] [--platform PLATFORM] [--json]
-
-Report the fixed prompt budget for a fresh session: system prompt total, skills index, memory,
-user profile, and tool-schema JSON. Runs offline (no API call).
-
-options:
-  -h, --help           show this help message and exit
-  --platform PLATFORM  Platform to simulate (cli, telegram, discord, ...). Default: cli
-  --json               Emit the breakdown as JSON

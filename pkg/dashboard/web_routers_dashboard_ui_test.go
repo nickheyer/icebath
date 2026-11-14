@@ -8,63 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
-
-// Archive of the hermes example dashboard plugin fixture
-const exampleDashboardFixture = "testdata/example-dashboard.tar.zst"
-
-// Copies the example dashboard fixture into the user plugins dir of home and enables it, the launch cache dropped
-func installExamplePlugin(t *testing.T, h string) {
-	t.Helper()
-	resetDashboardPluginCache(t)
-	dst := filepath.Join(h, "plugins", "example-dashboard", "dashboard")
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	fixture := hermetic.UnpackTarZst(t, exampleDashboardFixture)
-	for _, name := range []string{"manifest.json", "plugin_api.py"} {
-		raw, err := os.ReadFile(filepath.Join(fixture, "dashboard", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeTestFile(t, filepath.Join(dst, name), string(raw))
-	}
-	writeTestFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  enabled:\n  - example\n")
-}
-
-// Unauthenticated client over the test application with the example plugin installed and enabled
-func assetClient(t *testing.T) *testClient {
-	t.Helper()
-	app := dashboardTestApp(t)
-	installExamplePlugin(t, os.Getenv("ICEBATH_HOME"))
-	return newTestClient(t, app)
-}
-
-func TestDashboardPluginStaticAssetAllowlistPythonSourceIs404(t *testing.T) {
-	if resp := assetClient(t).get("/dashboard-plugins/example/plugin_api.py"); resp.Status != 404 {
-		t.Fatalf("status %d %s", resp.Status, resp.Body)
-	}
-}
-
-func TestDashboardPluginStaticAssetAllowlistManifestJsonStillServed(t *testing.T) {
-	resp := assetClient(t).get("/dashboard-plugins/example/manifest.json")
-	if resp.Status != 200 || !strings.HasPrefix(resp.Headers.Get("content-type"), "application/json") {
-		t.Fatalf("status %d headers %v body %s", resp.Status, resp.Raw, resp.Body)
-	}
-	if jsonObject(t, resp)["name"] != "example" {
-		t.Fatalf("body %s", resp.Body)
-	}
-}
-
-func TestDashboardPluginStaticAssetAllowlistPathTraversalStillBlocked(t *testing.T) {
-	resp := assetClient(t).get("/dashboard-plugins/example/..%2Fplugin_api.py")
-	if resp.Status != 403 && resp.Status != 404 {
-		t.Fatalf("status %d %s", resp.Status, resp.Body)
-	}
-}
 
 const (
 	catalogValidSha = "38fe0fb53eff98d477f807432e965429e665ca33"

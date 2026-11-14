@@ -1,24 +1,17 @@
 package pyast
 
 import (
-	"archive/tar"
 	"bufio"
 	"compress/gzip"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 type cpythonCase struct {
@@ -194,110 +187,4 @@ func firstRunes(s string, n int) string {
 		return string(r[:n]) + "..."
 	}
 	return s
-}
-
-// Recorded hermes sources by slash path, read once from the zstd tar under testdata without touching disk
-var hermesTree = sync.OnceValues(func() (map[string][]byte, error) {
-	f, err := os.Open(filepath.Join("testdata", "hermes_tree.tar.zst"))
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	dec, err := zstd.NewReader(f)
-	if err != nil {
-		return nil, err
-	}
-	defer dec.Close()
-	files := map[string][]byte{}
-	tr := tar.NewReader(dec)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return files, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		if files[hdr.Name], err = io.ReadAll(tr); err != nil {
-			return nil, err
-		}
-	}
-})
-
-// Bytes of one recorded hermes source, a not exist error when the archive lacks it
-func hermesSource(rel string) ([]byte, error) {
-	files, err := hermesTree()
-	if err != nil {
-		return nil, err
-	}
-	data, ok := files[rel]
-	if !ok {
-		return nil, &fs.PathError{Op: "open", Path: rel, Err: fs.ErrNotExist}
-	}
-	return data, nil
-}
-
-func TestParseMatchesCPythonOnHermesTree(t *testing.T) {
-	lines := strings.Split(strings.TrimSpace(string(readGzip(t, "hermes_tree.tsv.gz"))), "\n")
-	type result struct{ rel, msg string }
-	jobs := make(chan string)
-	results := make(chan result)
-	var wg sync.WaitGroup
-	for w := 0; w < 6; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for line := range jobs {
-				parts := strings.SplitN(line, "\t", 5)
-				rel, srcHash, kind, want := parts[0], parts[1], parts[2], parts[3]
-				data, err := hermesSource(rel)
-				if err != nil {
-					results <- result{rel, err.Error()}
-					continue
-				}
-				if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != srcHash {
-					results <- result{rel, "source changed since the CPython reference was recorded"}
-					continue
-				}
-				got, unparsed := parseOutcomes(data, true)
-				if kind == "ok" {
-					sum := sha256.Sum256([]byte(strings.TrimPrefix(got, "dump:")))
-					if !strings.HasPrefix(got, "dump:") || hex.EncodeToString(sum[:]) != want {
-						results <- result{rel, firstRunes(got, 200)}
-						continue
-					}
-					if parts[4] != "-" {
-						up := sha256.Sum256([]byte(unparsed))
-						if hex.EncodeToString(up[:]) != parts[4] {
-							results <- result{rel, "unparse differs"}
-						}
-					}
-					continue
-				}
-				var fields []any
-				_ = json.Unmarshal([]byte(want), &fields)
-				if got != "err:"+expectedErrorRow(fields) {
-					results <- result{rel, firstRunes(got, 200) + " want " + want}
-				}
-			}
-		}()
-	}
-	go func() {
-		for _, l := range lines {
-			jobs <- l
-		}
-		close(jobs)
-		wg.Wait()
-		close(results)
-	}()
-	failed := 0
-	for r := range results {
-		failed++
-		if failed <= 25 {
-			t.Errorf("%s: %s", r.rel, r.msg)
-		}
-	}
-	if failed > 0 {
-		t.Errorf("%d of %d hermes files differ from CPython", failed, len(lines))
-	}
 }

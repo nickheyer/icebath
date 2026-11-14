@@ -1,1 +1,0 @@
-{"tokenizer_class": "T5Tokenizer", "extra_ids": 3, "eos_token": "</s>", "unk_token": "<unk>", "pad_token": "<pad>"}

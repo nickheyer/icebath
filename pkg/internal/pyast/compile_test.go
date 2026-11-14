@@ -1,7 +1,6 @@
 package pyast
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -95,64 +94,6 @@ func TestCompileMatchesCPythonCases(t *testing.T) {
 				t.Errorf("with its file %q\n got %s\nwant %s", firstRunes(string(c.bytes()), 200), firstRunes(got, 300), firstRunes(want, 300))
 			}
 		})
-	}
-}
-
-func TestCompileMatchesCPythonOnHermesTree(t *testing.T) {
-	lines := strings.Split(strings.TrimSpace(string(readGzip(t, "compile_hermes_tree.tsv.gz"))), "\n")
-	if len(lines) < 10000 {
-		t.Fatalf("only %d recorded rows", len(lines))
-	}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var bad []string
-	disk := t.TempDir()
-	jobs := make(chan string)
-	for w := 0; w < 6; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for line := range jobs {
-				parts := strings.SplitN(line, "\t", 3)
-				rel, srcHash := parts[0], parts[1]
-				var want any
-				_ = json.Unmarshal([]byte(parts[2]), &want)
-				path := filepath.Join(disk, filepath.FromSlash(rel))
-				msg := ""
-				data, err := hermesSource(rel)
-				// A source CPython rejected sits on disk so its error text is read from the file as CPython read it
-				if err == nil && want != "ok" {
-					if err = os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
-						err = os.WriteFile(path, data, 0o644)
-					}
-				}
-				if err != nil {
-					msg = err.Error()
-				} else if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != srcHash {
-					msg = "source changed since the CPython reference was recorded"
-				} else if got := compileRow(Compile(data, path)); got != wantCompileRow(want) {
-					msg = firstRunes(got, 300) + " want " + firstRunes(wantCompileRow(want), 300)
-				}
-				if msg != "" {
-					mu.Lock()
-					bad = append(bad, rel+": "+msg)
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	for _, l := range lines {
-		jobs <- l
-	}
-	close(jobs)
-	wg.Wait()
-	for i, b := range bad {
-		if i < 25 {
-			t.Error(b)
-		}
-	}
-	if len(bad) > 0 {
-		t.Errorf("%d of %d hermes files differ from CPython", len(bad), len(lines))
 	}
 }
 

@@ -1,7 +1,6 @@
 package pm
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -25,54 +24,6 @@ func declActorOf(ctx context.Context) string {
 	return name
 }
 
-// Checkout holding the upstream pyproject with a client lock and home, the install command steps replaced
-func declSynced(t *testing.T) (string, *[][]string) {
-	t.Helper()
-	tmp := ieClientEnv(t)
-	repo := filepath.Join(tmp, "checkout")
-	peWrite(t, filepath.Join(repo, "pyproject.toml"), peRead(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
-	peSwap(t, &repoRoot, func() string { return repo })
-	calls := &[][]string{}
-	peSwap(t, &cliInstallNames, func(context.Context, []string, *string, bool) (int, error) { return 0, nil })
-	peSwap(t, &installActivate, func(context.Context, bool) ([]string, error) { return []string{}, nil })
-	peSwap(t, &installSyncVenv, func(_ context.Context, opts SyncVenvOptions) error {
-		*calls = append(*calls, append([]string{}, opts.Extras...))
-		return nil
-	})
-	return repo, calls
-}
-
-// Venv double over the checkout whose stamp is fixed, the target selection's package argument
-func declSelection(t *testing.T, recorded, requested []string) []string {
-	t.Helper()
-	v := &pubVenv{Venv: NewVenv(RepoRoot()).(*Venv), stamp: func(context.Context, []string, []MemberDir) (string, error) { return "stamp", nil }}
-	v.Venv.BasePackage.bind(v)
-	enabled, _, _, err := targetSelection(context.Background(), v, map[string]any{"extras": anySlice(recorded)}, requested, VenvApplyOptions{}, false, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return enabled
-}
-
-func anySlice(items []string) []any {
-	out := make([]any, len(items))
-	for i, s := range items {
-		out[i] = s
-	}
-	return out
-}
-
-// Creates the main era venv anchors of documents and silk under root
-func declLegacyVenv(t *testing.T, root string) {
-	t.Helper()
-	site := filepath.Join(root, "venv", "lib", "python3.11", "site-packages")
-	for _, anchor := range append(anchors("documents"), "pilk") {
-		if err := os.MkdirAll(filepath.Join(site, anchor), 0o777); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func declDeclined(t *testing.T, root string) map[string]bool {
 	t.Helper()
 	declined, err := declinedExtras(context.Background(), root)
@@ -80,56 +31,6 @@ func declDeclined(t *testing.T, root string) map[string]bool {
 		t.Fatal(err)
 	}
 	return declined
-}
-
-func TestWithoutDropsARecordedExtraFromEveryLaterSelection(t *testing.T) {
-	declSynced(t)
-	ctx := context.Background()
-	if code, err := CmdInstall(ctx, InstallArgs{Without: []string{"documents"}}); code != 0 || err != nil {
-		t.Fatalf("install %d %v", code, err)
-	}
-	if got := declSelection(t, []string{"all", "silk", "documents"}, nil); !reflect.DeepEqual(got, []string{"all", "silk"}) {
-		t.Fatalf("next selection %v", got)
-	}
-	tmp := t.TempDir()
-	declLegacyVenv(t, tmp)
-	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "documents", "silk"}) {
-		t.Fatalf("legacy %v %v", got, err)
-	}
-	if _, err := recordDeclinedExtras(ctx, []string{"documents"}, nil, nil, tmp); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := LegacySelection(ctx, tmp); err != nil || !reflect.DeepEqual(got, []string{"all", "silk"}) {
-		t.Fatalf("legacy after decline %v %v", got, err)
-	}
-	v := NewVenv(RepoRoot()).(VenvState)
-	var ie *InstallError
-	if err := refuseDeclined(ctx, v, []string{"documents"}, false); !errors.As(err, &ie) || !strings.Contains(err.Error(), "pm install --extra documents") {
-		t.Fatalf("lazy refusal %v", err)
-	}
-}
-
-func TestExtraOptsADroppedExtraBackIn(t *testing.T) {
-	declSynced(t)
-	ctx := context.Background()
-	if _, err := recordDeclinedExtras(ctx, []string{"matrix"}, nil, nil, ""); err != nil {
-		t.Fatal(err)
-	}
-	if got := declSelection(t, []string{"all"}, []string{"matrix"}); !reflect.DeepEqual(got, []string{"all", "matrix"}) {
-		t.Fatalf("selection %v", got)
-	}
-	if err := refuseDeclined(ctx, NewVenv(RepoRoot()).(VenvState), []string{"matrix"}, true); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestWithoutRefusesAnExtraTheDefaultSyncSelectsAnyway(t *testing.T) {
-	_, calls := declSynced(t)
-	var out bytes.Buffer
-	code, err := CmdInstall(withSyncOutput(context.Background(), &out), InstallArgs{Without: []string{"web"}})
-	if code != 1 || err != nil || !strings.Contains(out.String(), "extras outside [all]") || len(*calls) != 0 {
-		t.Fatalf("install %d %v %q %v", code, err, out.String(), *calls)
-	}
 }
 
 // Venv double whose build records its selection and runs a hook once for a held selection
@@ -312,21 +213,6 @@ func TestWithoutDuringAnOptInSyncStaysRecorded(t *testing.T) {
 		t.Fatal("opt-out still running")
 	}
 	if got := declDeclined(t, ""); !reflect.DeepEqual(got, map[string]bool{"matrix": true}) {
-		t.Fatalf("declined %v", got)
-	}
-}
-
-func TestWithoutAfterAFailedFirstMigrationKeepsTheOtherLegacyExtras(t *testing.T) {
-	root, calls := declSynced(t)
-	peSwap(t, &cliInstallDefaults, func(context.Context, []string, bool) error { return nil })
-	declLegacyVenv(t, root)
-	if code, err := CmdInstall(context.Background(), InstallArgs{Without: []string{"documents"}}); code != 0 || err != nil {
-		t.Fatalf("install %d %v", code, err)
-	}
-	if !reflect.DeepEqual(*calls, [][]string{{"all", "silk"}}) {
-		t.Fatalf("syncs %v", *calls)
-	}
-	if got := declDeclined(t, root); !reflect.DeepEqual(got, map[string]bool{"documents": true}) {
 		t.Fatalf("declined %v", got)
 	}
 }

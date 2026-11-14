@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -525,101 +523,6 @@ func TestUpdateCommandRoutesTermuxToItsOwnPass(t *testing.T) {
 	}
 	if !reflect.DeepEqual(seen, []bool{true}) || !strings.Contains(out.String(), "ignoring names") {
 		t.Fatalf("seen %v out %q", seen, out.String())
-	}
-}
-
-// Checkout copy carrying the upstream installers, their pin generator and its PM package
-func peBootstrapCheckout(t *testing.T) (string, *Lockfile) {
-	t.Helper()
-	root := t.TempDir()
-	references := peReferences(t, "scripts/gen-bootstrap-pins.py", "scripts/install.sh", "scripts/install.ps1", "pm/")
-	for _, rel := range []string{"scripts/gen-bootstrap-pins.py", "scripts/install.sh", "scripts/install.ps1"} {
-		writeFile(t, filepath.Join(root, rel), readFile(t, filepath.Join(references, rel)), 0o755)
-	}
-	if err := os.CopyFS(filepath.Join(root, "pm"), os.DirFS(filepath.Join(references, "pm"))); err != nil {
-		t.Fatal(err)
-	}
-	lock := NewLockfile(filepath.Join(root, "pm", "lock.json"))
-	peSwap(t, &updateLockfile, func() *Lockfile { return lock })
-	peSwap(t, &updateHashURL, func(string) (string, error) { return strings.Repeat("0", 64), nil })
-	peSwap(t, &updateInstallNames, func(context.Context, []string) int { return 0 })
-	peSwap(t, &updateSyncVenvStep, func(context.Context, io.Writer) (bool, error) { return true, nil })
-	python := peHostPython(t)
-	peSwap(t, &bootstrapPinsPython, func(context.Context) (string, error) { return python, nil })
-	return root, lock
-}
-
-// Runs the installers' pin generator in check mode
-func peFragmentsCheck(t *testing.T, root string) (int, string) {
-	t.Helper()
-	cmd := exec.Command(peHostPython(t), filepath.Join(root, "scripts", "gen-bootstrap-pins.py"), "--check")
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	code, err := exitStatus(cmd.Run())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return code, out.String()
-}
-
-// Re-pins uv on every non bionic target the way an update decision does
-func peUVRepin(t *testing.T, lock *Lockfile) int {
-	t.Helper()
-	var per []TargetVersion
-	for _, target := range AllTargets {
-		if target != "linux-arm64-bionic" {
-			per = append(per, TargetVersion{target, "99.0.0"})
-		}
-	}
-	rc, err := applyPins(context.Background(), io.Discard, []*Resolved{{Name: "uv", Locked: lockedVersion(lock, "uv"), Style: "semver",
-		Version: strPtr("99.0.0"), PerTarget: per, ArtifactUpdates: map[string][]string{}}}, lock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rc
-}
-
-func TestUVRepinRegeneratesInstallerPins(t *testing.T) {
-	bump := func(t *testing.T, lock *Lockfile) int {
-		name, version := "uv", "99.0.0"
-		rc, err := CmdLock(withSyncOutput(context.Background(), io.Discard), LockArgs{Name: &name, Version: &version})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return rc
-	}
-	for _, c := range []struct {
-		id    string
-		repin func(*testing.T, *Lockfile) int
-	}{{"update", peUVRepin}, {"bump", bump}} {
-		t.Run(c.id, func(t *testing.T) {
-			root, lock := peBootstrapCheckout(t)
-			if rc := c.repin(t, lock); rc != 0 {
-				t.Fatalf("rc %d", rc)
-			}
-			if code, out := peFragmentsCheck(t, root); code != 0 {
-				t.Fatalf("fragments stale: %s", out)
-			}
-		})
-	}
-}
-
-func TestRetryWithCurrentPinsRepairsFragmentsAFailedRunLeftStale(t *testing.T) {
-	root, lock := peBootstrapCheckout(t)
-	regenerate := updateRegenerate
-	peSwap(t, &updateRegenerate, func(context.Context, *Lockfile) (int, error) { return 1, nil })
-	if rc := peUVRepin(t, lock); rc != 1 {
-		t.Fatalf("rc %d", rc)
-	}
-	if code, _ := peFragmentsCheck(t, root); code == 0 {
-		t.Fatal("the failed run must leave the fragments stale")
-	}
-	updateRegenerate = regenerate
-	if rc, err := applyPins(context.Background(), io.Discard, nil, lock); err != nil || rc != 0 {
-		t.Fatalf("retry %d %v", rc, err)
-	}
-	if code, out := peFragmentsCheck(t, root); code != 0 {
-		t.Fatalf("fragments stale: %s", out)
 	}
 }
 

@@ -19,45 +19,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tarzst"
 )
-
-// Recorded hermes tree archive the pm cases read, resolved before any test changes directory
-var peArchive, _ = filepath.Abs(filepath.Join("testdata", "hermes.tar.zst"))
-
-// Private copy of the named recorded hermes members, a slash path or a directory prefix ending in a slash
-func peReferences(t *testing.T, members ...string) string {
-	t.Helper()
-	archive, err := os.ReadFile(peArchive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	files, err := tarzst.Decode(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	for _, member := range members {
-		found := false
-		for _, f := range files {
-			if f.Path != member && !(strings.HasSuffix(member, "/") && strings.HasPrefix(f.Path, member)) {
-				continue
-			}
-			found = true
-			target := filepath.Join(root, filepath.FromSlash(f.Path))
-			if err := os.MkdirAll(filepath.Dir(target), 0o777); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(target, f.Data, f.Mode); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if !found {
-			t.Fatalf("recorded hermes tree has no %s", member)
-		}
-	}
-	return root
-}
 
 // User cache directory read before any test moves HOME
 var peCacheRoot, _ = os.UserCacheDir()

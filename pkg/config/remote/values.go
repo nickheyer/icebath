@@ -21,7 +21,7 @@ import (
 
 const MaxSafeInteger = 1<<53 - 1
 
-//go:embed testdata/conformance/config-secret-keys.json
+//go:embed config-secret-keys.json
 var secretKeysFixture []byte
 
 func rootName(path Path) string {

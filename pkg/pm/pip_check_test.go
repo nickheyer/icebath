@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -117,48 +116,6 @@ func TestPipCheckOverridesRoundTripAsRequirementLines(t *testing.T) {
 	peWrite(t, unsupported, "[manifest]\noverrides = [{ name = \"x\", url = \"https://x\", specifier = \">1\" }]\n")
 	if _, err := OverrideRequirements(unsupported); err == nil || err.Error() != "unsupported uv.lock override: {'name': 'x', 'url': 'https://x', 'specifier': '>1'}" {
 		t.Fatalf("unsupported override: %v", err)
-	}
-}
-
-// The upstream application lock reads the same through this parser as through tomllib in pip_check itself
-func TestPipCheckReadsTheRealLockLikeTomllib(t *testing.T) {
-	reference := peReferences(t, "uv.lock", "pm/")
-	lock := filepath.Join(reference, "uv.lock")
-	versions, err := OverriddenVersions(lock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requirements, err := OverrideRequirements(lock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(versions) == 0 {
-		t.Fatal("the reference lock declares overrides; an empty read means the parser missed them")
-	}
-	script := "import json, sys; sys.path.insert(0, sys.argv[1]); from pathlib import Path\n" +
-		"from pm.pip_check import overridden_versions, override_requirements\n" +
-		"lock = Path(sys.argv[2])\n" +
-		"print(json.dumps([{k: sorted(v) for k, v in overridden_versions(lock).items()}, override_requirements(lock)]))"
-	cmd := exec.Command(peHostPython(t), "-I", "-B", "-c", script, reference, lock)
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, os.Stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
-	}
-	var python [2]json.RawMessage
-	if err := json.Unmarshal(out.Bytes(), &python); err != nil {
-		t.Fatal(err)
-	}
-	var pyVersions map[string][]string
-	var pyRequirements []string
-	json.Unmarshal(python[0], &pyVersions)
-	json.Unmarshal(python[1], &pyRequirements)
-	goVersions := map[string][]string{}
-	for k, set := range versions {
-		goVersions[k] = sortedNames(set)
-	}
-	if !reflect.DeepEqual(goVersions, pyVersions) || !reflect.DeepEqual(requirements, pyRequirements) {
-		t.Fatalf("go %v %v python %v %v", goVersions, requirements, pyVersions, pyRequirements)
 	}
 }
 

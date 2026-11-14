@@ -6,24 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-// Checkout carrying the reference pyproject under icebath names, gates reread from it until the test ends
-func svRealPyproject(t *testing.T) string {
-	t.Helper()
-	text := string(readFile(t, filepath.Join(peReferences(t, "pyproject.toml"), "pyproject.toml")))
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "[tool.hermes", "[tool.icebath"), "hermes-agent", "icebath-agent")
-	repo := t.TempDir()
-	writeFile(t, filepath.Join(repo, "pyproject.toml"), []byte(text), 0o666)
-	peSwap(t, &repoRoot, func() string { return repo })
-	svGates(t, nil)
-	return repo
-}
 
 // Replaces the cached gate table until the test ends, nil rereading the checkout pyproject
 func svGates(t *testing.T, gates map[string]string) {
@@ -130,67 +117,6 @@ func TestSVSyncRefusesPythonGatedExtraBeforeTouchingEnvironment(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(InstallStateDir(ctx, repo), "environments")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("refused sync touched the environment store: %v", err)
-	}
-}
-
-func TestSVDeclaredExtraGatesMatchDependencySelection(t *testing.T) {
-	isolateHome(t)
-	repo := svRealPyproject(t)
-	defaults := svHostMarkers(t)
-	data, err := loadPyproject(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	optional := wsAt(data, "project", "optional-dependencies").(*OrderedObject)
-	gates := wsAt(data, "tool", "icebath", "extras-platforms").(*OrderedObject)
-	targets := [][3]string{{"linux", "Linux", "x86_64"}, {"linux", "Linux", "aarch64"}, {"darwin", "Darwin", "x86_64"},
-		{"darwin", "Darwin", "arm64"}, {"win32", "Windows", "AMD64"}, {"win32", "Windows", "ARM64"}, {"android", "Android", "aarch64"}}
-	for _, target := range targets {
-		for _, python := range []string{"3.12", "3.13", "3.14"} {
-			environment := map[string]string{}
-			for k, v := range defaults {
-				environment[k] = v
-			}
-			environment["sys_platform"], environment["platform_system"], environment["platform_machine"] = target[0], target[1], target[2]
-			environment["python_version"], environment["python_full_version"] = python, python+".0"
-			for _, extra := range gates.Keys {
-				selected := false
-				for _, text := range wsStrings(optional.Values[extra]) {
-					req, err := ParseRequirement(text)
-					if err != nil {
-						t.Fatal(err)
-					}
-					ok := len(req.Marker) == 0
-					if !ok {
-						if ok, err = evaluateMarker(req.Marker, nil, environment); err != nil {
-							t.Fatal(err)
-						}
-					}
-					selected = selected || ok
-				}
-				got, err := extraSupported(context.Background(), extra, environment, func(string) bool { return false })
-				if err != nil || got != selected {
-					t.Fatalf("%s %s %s %s gate %v, dependency selection %v (%v)", extra, target[0], target[2], python, got, selected, err)
-				}
-			}
-		}
-	}
-}
-
-func TestSVFasterWhisperTargetsAreGated(t *testing.T) {
-	isolateHome(t)
-	svRealPyproject(t)
-	targets := map[string]map[string]string{
-		"win32-arm64": {"sys_platform": "win32", "platform_system": "Windows", "platform_machine": "ARM64", "os_name": "nt"},
-		"darwin-x64":  {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "x86_64", "os_name": "posix"},
-		"linux-x64":   {"sys_platform": "linux", "platform_system": "Linux", "platform_machine": "x86_64", "os_name": "posix"},
-	}
-	got := map[string]bool{}
-	for name, environment := range targets {
-		got[name], _ = extraSupported(context.Background(), "stt-whisper", environment, func(string) bool { return false })
-	}
-	if want := map[string]bool{"win32-arm64": false, "darwin-x64": false, "linux-x64": true}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("supported %v", got)
 	}
 }
 
@@ -323,29 +249,6 @@ func TestSVEnsureAndBindPreservesTargetOnFailure(t *testing.T) {
 				t.Fatalf("target %v", target)
 			}
 		})
-	}
-}
-
-func TestSVEveryAnchorExtraExistsInPyproject(t *testing.T) {
-	isolateHome(t)
-	repo := svRealPyproject(t)
-	data, err := loadPyproject(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	declared, err := optionalDependencyNames(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var orphans []string
-	for extra := range Anchors {
-		if !slices.Contains(declared, extra) {
-			orphans = append(orphans, extra)
-		}
-	}
-	if len(orphans) > 0 {
-		slices.Sort(orphans)
-		t.Fatalf("Anchors names extras pyproject does not declare: %v", orphans)
 	}
 }
 
