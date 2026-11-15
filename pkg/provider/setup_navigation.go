@@ -122,8 +122,10 @@ func SetupPrompt(question, def string, password bool) string {
 func setupPromptValue(question string, def any, password bool) any {
 	c := setupUI()
 	display := question + ": "
+	fallback := ""
 	if pyrepr.Truthy(def) {
-		display = question + " [" + pyrepr.Str(def) + "]: "
+		fallback = pyrepr.Str(def)
+		display = question + " [" + fallback + "]: "
 	}
 	display = c.Color(display, cliui.Yellow)
 	var value string
@@ -131,7 +133,7 @@ func setupPromptValue(question string, def any, password bool) any {
 	if password {
 		value, err = c.MaskedSecret(display)
 	} else {
-		value, err = c.LineInput(display)
+		value, err = c.LineInputDefault(display, question, fallback)
 	}
 	if err != nil {
 		if errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) {
@@ -149,10 +151,18 @@ func setupPromptValue(question string, def any, password bool) any {
 	return ""
 }
 
+// One answered setup prompt, the prompt title that identifies it and the value it resolved to
+type setupAnswer struct {
+	key   string
+	value any
+}
+
 // Per invocation navigation state of the synchronous setup wizard
 type setupNavigationState struct {
 	sectionIndex, promptIndex, activePromptIndex int
-	resolvedChoices, replayChoices               []any
+	activeKey                                    string
+	guardCancel                                  bool
+	resolvedChoices, replayChoices               []setupAnswer
 }
 
 // Fresh state reset to the section with the prompt counter set afterwards
@@ -164,16 +174,16 @@ func newSetupNavigationState(sectionIndex, promptIndex int) *setupNavigationStat
 }
 
 // Rewinds the per section counters when entering a section or leaving the wizard
-func (s *setupNavigationState) reset(sectionIndex int, replay []any) {
-	s.sectionIndex, s.promptIndex, s.activePromptIndex = sectionIndex, 0, -1
-	s.resolvedChoices = []any{}
+func (s *setupNavigationState) reset(sectionIndex int, replay []setupAnswer) {
+	s.sectionIndex, s.promptIndex, s.activePromptIndex, s.activeKey = sectionIndex, 0, -1, ""
+	s.resolvedChoices = []setupAnswer{}
 	s.replayChoices = deepCopyChoices(replay)
 }
 
-func deepCopyChoices(values []any) []any {
-	out := make([]any, 0, len(values))
+func deepCopyChoices(values []setupAnswer) []setupAnswer {
+	out := make([]setupAnswer, 0, len(values))
 	for _, v := range values {
-		out = append(out, pyjson.Clone(v))
+		out = append(out, setupAnswer{key: v.key, value: pyjson.Clone(v.value)})
 	}
 	return out
 }
@@ -215,7 +225,7 @@ func isSetupControlFlow(r any) bool {
 	return ok
 }
 
-// Translates the shared menu events into setup control flow
+// Translates the shared prompt events into setup control flow, replaying an answer only to the prompt that gave it
 func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*cliui.MenuNavigationStart, error) {
 	state := currentSetupNavigation()
 	if state == nil {
@@ -225,16 +235,23 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 	case cliui.NavEventBegin:
 		if state.sectionIndex < 0 {
 			state.activePromptIndex = -1
-			return &cliui.MenuNavigationStart{}, nil
+			return &cliui.MenuNavigationStart{GuardCancel: state.guardCancel}, nil
+		}
+		key := ""
+		if len(value) > 0 {
+			key, _ = value[0].(string)
 		}
 		idx := state.promptIndex
-		state.activePromptIndex = idx
+		state.activePromptIndex, state.activeKey = idx, key
 		state.promptIndex++
 		allowBack := state.sectionIndex > 0 || idx > 0
 		if idx < len(state.replayChoices) {
-			return &cliui.MenuNavigationStart{AllowBack: allowBack, Replay: true, ReplayValue: pyjson.Clone(state.replayChoices[idx])}, nil
+			if recorded := state.replayChoices[idx]; recorded.key == key {
+				return &cliui.MenuNavigationStart{AllowBack: allowBack, Replay: true, ReplayValue: pyjson.Clone(recorded.value)}, nil
+			}
+			state.replayChoices = state.replayChoices[:idx]
 		}
-		return &cliui.MenuNavigationStart{AllowBack: allowBack}, nil
+		return &cliui.MenuNavigationStart{AllowBack: allowBack, GuardCancel: state.guardCancel}, nil
 	case cliui.NavEventResolve:
 		if idx := state.activePromptIndex; idx >= 0 {
 			var resolved any
@@ -244,7 +261,7 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 			if idx < len(state.resolvedChoices) {
 				state.resolvedChoices = state.resolvedChoices[:idx]
 			}
-			state.resolvedChoices = append(state.resolvedChoices, resolved)
+			state.resolvedChoices = append(state.resolvedChoices, setupAnswer{key: state.activeKey, value: resolved})
 		}
 		return nil, nil
 	case cliui.NavEventCancel:
@@ -261,10 +278,14 @@ func HandleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 }
 
 // Installs the setup navigation state and menu handler around fn and restores both after
-func setupNavigationScope(fn func()) {
+func setupNavigationScope(fn func()) { guardedNavigationScope(false, fn) }
+
+// Navigation scope whose prompts ask for a second Escape before cancelling when guard is set
+func guardedNavigationScope(guard bool, fn func()) {
 	setupNavMu.Lock()
 	prev := setupNavigation
 	setupNavigation = newSetupNavigationState(-1, 0)
+	setupNavigation.guardCancel = guard
 	setupNavMu.Unlock()
 	token := cliui.SetMenuNavigationHandler(handleSetupMenuNavigation)
 	defer func() {
@@ -300,8 +321,8 @@ func runSetupSection(action func() error) (nav *setupGoBack, err error) {
 func runSetupSteps(steps []SetupStep) error {
 	state := currentSetupNavigation()
 	sectionIndex := 0
-	answersBySection := map[int][]any{}
-	replayBySection := map[int][]any{}
+	answersBySection := map[int][]setupAnswer{}
+	replayBySection := map[int][]setupAnswer{}
 	record := func() {
 		if state != nil {
 			answersBySection[sectionIndex] = deepCopyChoices(state.resolvedChoices)
@@ -318,6 +339,9 @@ func runSetupSteps(steps []SetupStep) error {
 			replay := replayBySection[sectionIndex]
 			delete(replayBySection, sectionIndex)
 			state.reset(sectionIndex, replay)
+		}
+		if ui := setupUI(); ui.IsFlow() && len(steps) > 1 {
+			ui.Step(sectionIndex+1, len(steps), step.Label)
 		}
 		nav, err := runSetupSection(step.Action)
 		if err != nil {
@@ -349,8 +373,18 @@ func runSetupSteps(steps []SetupStep) error {
 }
 
 // RunWithSetupNavigation runs fn under a navigation scope, a cancel printing the message instead of unwinding
-func RunWithSetupNavigation(fn func() error, cancelledMessage string) (err error) {
-	setupNavigationScope(func() {
+func RunWithSetupNavigation(fn func() error, cancelledMessage string) error {
+	return runWithNavigation(false, fn, cancelledMessage)
+}
+
+// RunWizardWithSetupNavigation is the navigation scope of the whole wizard, where leaving takes a second Escape
+func RunWizardWithSetupNavigation(fn func() error, cancelledMessage string) error {
+	return runWithNavigation(true, fn, cancelledMessage)
+}
+
+// Runs fn under a navigation scope, a cancel printing the message instead of unwinding
+func runWithNavigation(guard bool, fn func() error, cancelledMessage string) (err error) {
+	guardedNavigationScope(guard, func() {
 		defer func() {
 			if r := recover(); r != nil {
 				if _, ok := r.(setupCancelled); ok {
@@ -404,10 +438,6 @@ var setupRadiolist = func(question string, choices []string, def int, descriptio
 func PromptChoice(question string, choices []string, def int, description string) int {
 	idx := setupRadiolist(question, choices, def, description)
 	if idx < 0 {
-		return def
-	}
-	if idx == def {
-		SetupInfo("  Skipped (keeping current)", nil)
 		return def
 	}
 	setupPrintln("")

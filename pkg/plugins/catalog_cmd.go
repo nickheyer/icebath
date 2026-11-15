@@ -1201,9 +1201,64 @@ func CmdInfo(ctx context.Context, name string, out io.Writer) error {
 	return nil
 }
 
-// Catalog admission validation of a plugin directory, the CI gate, exiting 0 or 1
-func CmdValidate(ctx context.Context, path string, asJSON bool, out, errOut io.Writer) error {
-	report, err := validatePluginDir(ctx, path)
+// Dependency environment reads of validate with install deps, swapped by tests the way hermes patches pm.environments
+var (
+	projectPython         = pm.ProjectPython
+	selectedVenv          = pm.SelectedVenv
+	venvCommand           = pm.VenvCommand
+	activationEnvironment = pm.ActivationEnvironment
+)
+
+// Syncs the deps path declares and returns the probe of the committed environment, nil for a developer venv
+func prepareValidateDeps(ctx context.Context, path string, out io.Writer) (*capabilityProbe, error) {
+	if err := syncVenv(ctx, pm.SyncVenvOptions{Plugins: &pm.Candidates{Dirs: []string{path}}, Stdout: out}); err != nil {
+		return nil, err
+	}
+	root := pm.RepoRoot()
+	python, err := projectPython(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	if !isFile(python) {
+		return nil, nil
+	}
+	venv, err := selectedVenv(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	argv, err := venvCommand(ctx, root, venv, nil)
+	if err != nil {
+		return nil, err
+	}
+	env, err := activationEnvironment(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	return &capabilityProbe{argv: argv, env: env}, nil
+}
+
+// Whether err is a user interrupt or exit status, the BaseException kinds an except Exception lets through
+func escapesExceptException(ctx context.Context, err error) bool {
+	var exit *CommandExit
+	var pmExit *pm.SystemExit
+	return isUserInterrupt(ctx, err) || errors.As(err, &exit) || errors.As(err, &pmExit)
+}
+
+// Catalog admission validation of a plugin directory, the CI gate exiting 0 or 1, with installDeps syncing its deps first
+func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out, errOut io.Writer) error {
+	var probe *capabilityProbe
+	if installDeps {
+		prepared, err := prepareValidateDeps(ctx, path, out)
+		if err != nil {
+			if escapesExceptException(ctx, err) {
+				return err
+			}
+			_, text := exceptionClassAndText(err)
+			fmt.Fprintf(errOut, "dependency preparation failed: %s\n", text)
+		}
+		probe = prepared
+	}
+	report, err := validatePluginDir(ctx, path, probe)
 	if err != nil {
 		return err
 	}

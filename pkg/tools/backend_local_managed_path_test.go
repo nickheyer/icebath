@@ -173,7 +173,7 @@ func TestExistingUserLocalBinAppendedAfterInheritedEntries(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin:/bin")
 	stubManagedRuntime(t, "")
 	env := newTestToolEnv(t)
-	runEnv, err := makeRunEnv(env, map[string]string{})
+	runEnv, err := makeRunEnv(context.Background(), env, map[string]string{})
 	if err != nil {
 		t.Fatal(err)
 	}

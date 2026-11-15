@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 type agentImportHarness struct {
@@ -33,9 +32,9 @@ func newAgentImportHarness(t *testing.T) *agentImportHarness {
 	t.Setenv("USERPROFILE", h.userHome)
 	t.Setenv("ICEBATH_HOME", h.icebathHome)
 	t.Setenv("ICEBATH_NONINTERACTIVE", "")
-	prevAsk, prevPick, prevInstall, prevEnable, prevRun, prevExe, prevEnsure := agentImportAsk, agentImportChecklist, agentImportInstall, agentImportEnable, agentImportRunChild, agentImportSelfExe, agentImportEnsure
+	prevAsk, prevPick := agentImportAsk, agentImportChecklist
 	t.Cleanup(func() {
-		agentImportAsk, agentImportChecklist, agentImportInstall, agentImportEnable, agentImportRunChild, agentImportSelfExe, agentImportEnsure = prevAsk, prevPick, prevInstall, prevEnable, prevRun, prevExe, prevEnsure
+		agentImportAsk, agentImportChecklist = prevAsk, prevPick
 	})
 	agentImportAsk = func(question string, def bool, description string) bool {
 		h.calls = append(h.calls, fmt.Sprintf("ask|%s|%v", question, def))
@@ -50,18 +49,6 @@ func newAgentImportHarness(t *testing.T) *agentImportHarness {
 			}
 		}
 		return out
-	}
-	agentImportInstall = func(ctx context.Context, name string, out io.Writer) error {
-		h.calls = append(h.calls, "install|"+name+"|true|true")
-		return os.MkdirAll(filepath.Join(h.icebathHome, "plugins", name), 0o755)
-	}
-	agentImportSelfExe = func() (string, error) { return "/opt/icebath/bin/icebath", nil }
-	agentImportRunChild = func(argv []string, env map[string]string) (int, error) {
-		h.calls = append(h.calls, "import|"+strings.Join(argv[1:], " ")+"|"+env["ICEBATH_HOME"])
-		if err := os.WriteFile(filepath.Join(h.icebathHome, "config.yaml"), []byte("imported: "+argv[len(argv)-1]+"\n"), 0o644); err != nil {
-			return 0, err
-		}
-		return h.childCode, nil
 	}
 	restore := WithSetupOutput(io.Discard)
 	t.Cleanup(restore)
@@ -87,36 +74,6 @@ func offer(t *testing.T, h *agentImportHarness) string {
 		t.Fatal(err)
 	}
 	return got
-}
-
-func TestFoundAgentIsOfferedThenInstalledFromTheCatalogAndImported(t *testing.T) {
-	h := newAgentImportHarness(t)
-	h.mkdir(t, ".openclaw")
-	if got := offer(t, h); got != "OpenClaw" {
-		t.Fatalf("got %q", got)
-	}
-	want := []string{"ask|Import your setup from OpenClaw?|true", "install|agent-importers|true|true",
-		"import|--profile default import-agent openclaw --migrate-secrets --from-setup|" + h.icebathHome}
-	if strings.Join(h.calls, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("calls %v", h.calls)
-	}
-}
-
-func TestSeveralFoundAreOfferedAsAChecklistAndOnlyThePicksImport(t *testing.T) {
-	h := newAgentImportHarness(t)
-	h.mkdir(t, ".claude")
-	h.mkdir(t, ".cursor")
-	h.unpick["Cursor"] = true
-	if got := offer(t, h); got != "Claude Code" {
-		t.Fatalf("got %q", got)
-	}
-	if h.calls[1] != "pick|Claude Code,Cursor|[0 1]" {
-		t.Fatalf("pick call %q", h.calls[1])
-	}
-	want := []string{"install|agent-importers|true|true", "import|--profile default import-agent claude-code --from-setup|" + h.icebathHome}
-	if strings.Join(h.calls[2:], "\n") != strings.Join(want, "\n") {
-		t.Fatalf("calls %v", h.calls)
-	}
 }
 
 func TestDecliningInstallsNothing(t *testing.T) {
@@ -146,24 +103,6 @@ func TestHeadlessOrNothingFoundAsksNothing(t *testing.T) {
 	}
 }
 
-func TestARefusedEnableSkipsTheImportAndSetupGoesOn(t *testing.T) {
-	h := newAgentImportHarness(t)
-	h.mkdir(t, ".cursor")
-	if err := os.MkdirAll(filepath.Join(h.icebathHome, "plugins", "agent-importers"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	agentImportEnable = func(ctx context.Context, name string, out io.Writer) error {
-		h.calls = append(h.calls, "enable|"+name)
-		return &plugins.AdmissionRefused{Msg: "dependency conflict"}
-	}
-	if got := offer(t, h); got != "" {
-		t.Fatalf("got %q", got)
-	}
-	if strings.Join(h.calls, "\n") != "ask|Import your setup from Cursor?|true\nenable|agent-importers" {
-		t.Fatalf("calls %v", h.calls)
-	}
-}
-
 func TestSetupMenuShowsWhatWasFoundWithTheQuestion(t *testing.T) {
 	h := newAgentImportHarness(t)
 	for _, d := range []string{".openclaw", ".claude", ".codex"} {
@@ -190,47 +129,6 @@ func TestSetupMenuShowsWhatWasFoundWithTheQuestion(t *testing.T) {
 	}
 	if len(h.calls) != 0 || h.pluginsExist() {
 		t.Fatalf("calls %v plugins %v", h.calls, h.pluginsExist())
-	}
-}
-
-func TestGrokBotExportInDownloadsIsOfferedLikeTheOtherAgents(t *testing.T) {
-	h := newAgentImportHarness(t)
-	h.mkdir(t, "Downloads")
-	if err := os.WriteFile(filepath.Join(h.userHome, "Downloads", "grok-bot-export.json"), []byte("{}"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := offer(t, h); got != "Grok Bot" {
-		t.Fatalf("got %q", got)
-	}
-	if last := h.calls[len(h.calls)-1]; last != "import|--profile default import-agent grok-bot --from-setup|"+h.icebathHome {
-		t.Fatalf("last call %q", last)
-	}
-}
-
-func TestIcebathMigrateNamesAnAgentInstallsThePluginAndForwardsItsFlags(t *testing.T) {
-	h := newAgentImportHarness(t)
-	ns := map[string]any{"migrate_type": "grok-bot", "migrate_agent": "grok-bot", "source": "~/export.json", "activate_routines": true,
-		"bot": []string{"Scout"}, "yes": true, "dry_run": false, "overwrite": false}
-	var out, errOut bytes.Buffer
-	code, err := MigrateCommand(context.Background(), h.icebathHome, ns, &out, &errOut)
-	if err != nil || code != 0 {
-		t.Fatalf("code %d err %v", code, err)
-	}
-	want := []string{"install|agent-importers|true|true",
-		"import|--profile default import-agent grok-bot --yes --activate-routines --source " + filepath.Join(h.userHome, "export.json") + " --bot Scout|" + h.icebathHome}
-	if strings.Join(h.calls, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("calls %v", h.calls)
-	}
-	h.calls = nil
-	agentImportEnsure = func(context.Context, string) (bool, error) { return true, nil }
-	code, err = MigrateCommand(context.Background(), h.icebathHome, map[string]any{"migrate_type": "openclaw", "migrate_agent": "openclaw", "yes": true}, &out, &errOut)
-	if err != nil || code != 0 || h.calls[len(h.calls)-1] != "import|--profile default import-agent openclaw --yes|"+h.icebathHome {
-		t.Fatalf("code %d err %v calls %v", code, err, h.calls)
-	}
-	h.childCode = 1
-	code, err = MigrateCommand(context.Background(), h.icebathHome, ns, &out, &errOut)
-	if err != nil || code != 1 {
-		t.Fatalf("code %d err %v after a failed import", code, err)
 	}
 }
 

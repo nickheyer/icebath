@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,28 +56,28 @@ func TestProfileScopedResolution(t *testing.T) {
 	os.WriteFile(secretsPath, []byte("SERVICE_TOKEN=profile-b\n"), 0o600)
 	env.Secrets = config.NewSecrets(env.Home)
 	fallback := "profile-a"
-	got, err := ResolvePassthroughValue(env, "SERVICE_TOKEN", &fallback)
+	got, err := ResolvePassthroughValue(context.Background(), env, "SERVICE_TOKEN", &fallback)
 	if err != nil || got == nil || *got != "profile-b" {
 		t.Fatalf("scope override: %v %v", got, err)
 	}
-	got, err = ResolvePassthroughValue(env, "OTHER_TOKEN", &fallback)
+	got, err = ResolvePassthroughValue(context.Background(), env, "OTHER_TOKEN", &fallback)
 	if err != nil || got != nil {
 		t.Fatalf("missing scoped read fell back: %v %v", got, err)
 	}
 	env.Secrets = nil
-	if _, err := ResolvePassthroughValue(env, "SERVICE_TOKEN", &fallback); err != ErrUnscopedSecret {
+	if _, err := ResolvePassthroughValue(context.Background(), env, "SERVICE_TOKEN", &fallback); err != ErrUnscopedSecret {
 		t.Fatalf("unscoped multiplex read did not fail closed: %v", err)
 	}
 	SetMultiplexActive(false)
 	single := passthroughEnv(t, nil)
-	got, err = ResolvePassthroughValue(single, "SERVICE_TOKEN", &fallback)
+	got, err = ResolvePassthroughValue(context.Background(), single, "SERVICE_TOKEN", &fallback)
 	if err != nil || got == nil || *got != "profile-a" {
 		t.Fatal("single profile fallback")
 	}
 	SetMultiplexActive(true)
 	env.Secrets = config.NewSecrets(env.Home)
 	explicit := "/explicit"
-	got, _ = ResolvePassthroughValue(env, "TERMINAL_CWD", &explicit)
+	got, _ = ResolvePassthroughValue(context.Background(), env, "TERMINAL_CWD", &explicit)
 	if got == nil || *got != "/explicit" {
 		t.Fatal("global override")
 	}
@@ -136,7 +137,7 @@ func TestPassthroughCannotOverrideProviderBlocklist(t *testing.T) {
 		t.Fatal("non secret routing or third party key refused")
 	}
 	os.Setenv("ICEBATH_MULTIPLEX_ACTIVE", "")
-	additions := ScopedPassthroughAdditions(env, map[string]bool{})
+	additions := ScopedPassthroughAdditions(context.Background(), env, map[string]bool{})
 	if len(additions) != 0 {
 		t.Fatal("additions without a scope")
 	}
@@ -151,22 +152,22 @@ func TestMissingRoutedSecretUnderMultiplexReadsProfileFileOnly(t *testing.T) {
 	SetMultiplexActive(true)
 	t.Cleanup(func() { SetMultiplexActive(false) })
 	fallback := "token-for-default"
-	got, err := ResolvePassthroughValue(env, "SERVICE_TOKEN", &fallback)
+	got, err := ResolvePassthroughValue(context.Background(), env, "SERVICE_TOKEN", &fallback)
 	if err != nil || got != nil {
 		t.Fatalf("missing routed secret leaked %v %v", got, err)
 	}
-	if adds := ScopedPassthroughAdditions(env, map[string]bool{}); len(adds) != 0 {
+	if adds := ScopedPassthroughAdditions(context.Background(), env, map[string]bool{}); len(adds) != 0 {
 		t.Fatalf("scoped additions leaked the process value %v", adds)
 	}
 	os.WriteFile(filepath.Join(env.Home, ".env"), []byte("SERVICE_TOKEN=routed\n"), 0o600)
-	if adds := ScopedPassthroughAdditions(env, map[string]bool{}); adds["SERVICE_TOKEN"] != "routed" {
+	if adds := ScopedPassthroughAdditions(context.Background(), env, map[string]bool{}); adds["SERVICE_TOKEN"] != "routed" {
 		t.Fatalf("scoped additions %v", adds)
 	}
-	if adds := ScopedPassthroughAdditions(env, map[string]bool{"SERVICE_TOKEN": true}); len(adds) != 0 {
+	if adds := ScopedPassthroughAdditions(context.Background(), env, map[string]bool{"SERVICE_TOKEN": true}); len(adds) != 0 {
 		t.Fatalf("present name added %v", adds)
 	}
 	env.Secrets = nil
-	got, err = ResolvePassthroughValue(env, "PATH", nil)
+	got, err = ResolvePassthroughValue(context.Background(), env, "PATH", nil)
 	if err != nil || got == nil || *got != os.Getenv("PATH") {
 		t.Fatalf("unscoped global read %v %v", got, err)
 	}
@@ -179,22 +180,22 @@ func TestSingleProfileScopeFallsBackToProcessEnvThenCallerValue(t *testing.T) {
 	os.WriteFile(filepath.Join(env.Home, ".env"), []byte("OTHER=1\n"), 0o600)
 	env.Secrets = config.NewSecrets(env.Home)
 	fallback := "from-caller"
-	got, err := ResolvePassthroughValue(env, "SERVICE_TOKEN", &fallback)
+	got, err := ResolvePassthroughValue(context.Background(), env, "SERVICE_TOKEN", &fallback)
 	if err != nil || got == nil || *got != "from-process" {
 		t.Fatalf("own profile miss did not read the process env %v %v", got, err)
 	}
-	got, _ = ResolvePassthroughValue(env, "UNSET_TOKEN_XYZ", &fallback)
+	got, _ = ResolvePassthroughValue(context.Background(), env, "UNSET_TOKEN_XYZ", &fallback)
 	if got == nil || *got != "from-caller" {
 		t.Fatalf("own profile miss lost the caller value %v", got)
 	}
 	routed := passthroughEnv(t, nil)
 	routed.Secrets = config.NewSecrets(routed.Home)
-	got, _ = ResolvePassthroughValue(routed, "SERVICE_TOKEN", &fallback)
+	got, _ = ResolvePassthroughValue(context.Background(), routed, "SERVICE_TOKEN", &fallback)
 	if got == nil || *got != "from-caller" {
 		t.Fatalf("routed profile miss read the launch process env %v", got)
 	}
 	routed.Secrets = nil
-	got, err = ResolvePassthroughValue(routed, "SERVICE_TOKEN", &fallback)
+	got, err = ResolvePassthroughValue(context.Background(), routed, "SERVICE_TOKEN", &fallback)
 	if err != nil || got == nil || *got != "from-caller" {
 		t.Fatalf("unscoped single profile fallback %v %v", got, err)
 	}

@@ -38,7 +38,7 @@ func (r *rig) wrote(from, to time.Time) int {
 func TestKonsoleInputLatency(t *testing.T) {
 	for _, mode := range []string{"glyphs", "image"} {
 		t.Run(mode, func(t *testing.T) {
-			env := map[string]string{"sprint.arena.display": mode, "sprint.arena.world": "den", "sprint.arena.quality": "ultra"}
+			env := map[string]string{"arena.display": mode, "arena.world": "den", "arena.quality": "ultra"}
 			if profile := os.Getenv("TERMLAB_PROFILE"); profile != "" {
 				env["ICEBATH_CPUPROFILE"] = profile + "-" + mode + ".prof"
 			}

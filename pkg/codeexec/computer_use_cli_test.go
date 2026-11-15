@@ -166,7 +166,7 @@ func TestPermissionsStatusNamesTheStaleTCCRowForTheMissingGrant(t *testing.T) {
 		{"accessibility", false}, {"screen_recording", true}, {"screen_recording_capturable", true}} {
 		st.Set(kv.k, kv.v)
 	}
-	cuSwap(t, &cliComputerUseStatus, func(*tools.Env, *string) (*pyjson.Object, error) { return st, nil })
+	cuSwap(t, &cliComputerUseStatus, func(context.Context, *tools.Env, *string) (*pyjson.Object, error) { return st, nil })
 	rc, out, _ := cuInvoke(t, env, "permissions", "status")
 	if rc != 1 || !strings.Contains(out, "tccutil reset Accessibility com.trycua.driver") || strings.Contains(out, "ScreenCapture") ||
 		!strings.Contains(out, "icebath computer-use permissions grant") {

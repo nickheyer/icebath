@@ -142,9 +142,7 @@ func TestMalformedMemoryConfigStillBuildsDefaultStore(t *testing.T) {
 
 func TestAIAgentReusesExistingErrorsLogHandler(t *testing.T) {
 	env := promptTestEnv(t)
-	prevSetup := agentSetupLogging
-	agentSetupLogging = realAgentSetupLogging
-	t.Cleanup(func() { agentSetupLogging = prevSetup })
+	resetLoggingState(t)
 	if _, err := logging.SetupLogging(t.Context(), logging.Options{Home: env.Home}); err != nil {
 		t.Fatal(err)
 	}

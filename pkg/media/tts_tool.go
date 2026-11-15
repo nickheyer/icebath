@@ -651,9 +651,14 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 	return ttsToolFailure("TTS long-form generation failed", provider, err), nil
 }
 
+// Tool env of the profile the context scopes, the caller's bound tool env carried over with that profile's secrets
+func scopedToolEnv(ctx context.Context) *tools.Env {
+	return tools.EnvForProfileHome(ctx, tools.ToolEnvFrom(ctx), home.Dir(ctx))
+}
+
 // TextToSpeechTool speaks text into the output path for gateway auto TTS, returning the tool result envelope
 func TextToSpeechTool(ctx context.Context, text, outputPath string) (string, error) {
-	return textToSpeechTool(ctx, nil, ttsCallArgs{Text: text, OutputPath: outputPath})
+	return textToSpeechTool(ctx, scopedToolEnv(ctx), ttsCallArgs{Text: text, OutputPath: outputPath})
 }
 
 // Whether the MiniMax region and credential resolve
@@ -712,7 +717,9 @@ func checkTTSRequirements(ctx context.Context, env *tools.Env) bool {
 }
 
 // CheckTTSRequirements reports the configured text to speech provider usable for gateway auto TTS
-func CheckTTSRequirements(ctx context.Context) bool { return checkTTSRequirements(ctx, nil) }
+func CheckTTSRequirements(ctx context.Context) bool {
+	return checkTTSRequirements(ctx, scopedToolEnv(ctx))
+}
 
 const configuredVoiceSentence = "Voice and provider are user-configured (built-in providers like edge/openai or custom command providers under tts.providers.<name>), not model-selected."
 const elevenLabsVoiceSentence = "The provider is user-configured (ElevenLabs); pick a voice per call with voice_id, found with find_voices (one character per voice, e.g. for game NPCs)."

@@ -122,7 +122,7 @@ func copyPyObject(o *pyjson.Object) *pyjson.Object {
 }
 
 // Runtime manifest check cached for thirty seconds by binary path, mtime and size
-var cuaDriverContractStatus = func(env *tools.Env, binary string) (*pyjson.Object, error) {
+var cuaDriverContractStatus = func(ctx context.Context, env *tools.Env, binary string) (*pyjson.Object, error) {
 	resolved := binary
 	if resolved == "" {
 		var err error
@@ -131,11 +131,11 @@ var cuaDriverContractStatus = func(env *tools.Env, binary string) (*pyjson.Objec
 		}
 	}
 	if resolved == "" {
-		return cuaDriverRuntimeContractStatus(env, "")
+		return cuaDriverRuntimeContractStatus(ctx, env, "")
 	}
 	st, err := os.Stat(resolved)
 	if err != nil {
-		return cuaDriverRuntimeContractStatus(env, resolved)
+		return cuaDriverRuntimeContractStatus(ctx, env, resolved)
 	}
 	fingerprint := fmt.Sprintf("%s\x00%d\x00%d", resolved, st.ModTime().UnixNano(), st.Size())
 	now := cuaSetupMonotonic()
@@ -148,7 +148,7 @@ var cuaDriverContractStatus = func(env *tools.Env, binary string) (*pyjson.Objec
 		return out, nil
 	}
 	cuaDriverContractCacheMu.Unlock()
-	state, err := cuaDriverRuntimeContractStatus(env, resolved)
+	state, err := cuaDriverRuntimeContractStatus(ctx, env, resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +168,8 @@ func clearCuaDriverContractCache() {
 }
 
 // Whether the selected driver passes its contract with the host integration its platform needs
-var cuaDriverInstallReady = func(env *tools.Env) (bool, error) {
-	state, err := cuaDriverContractStatus(env, "")
+var cuaDriverInstallReady = func(ctx context.Context, env *tools.Env) (bool, error) {
+	state, err := cuaDriverContractStatus(ctx, env, "")
 	if err != nil {
 		return false, err
 	}
@@ -211,7 +211,7 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 		return cuaFail(con, "    PM did not select a usable cua-driver executable."), nil
 	}
 	clearCuaDriverContractCache()
-	contract, err := cuaDriverContractStatus(env, binary)
+	contract, err := cuaDriverContractStatus(ctx, env, binary)
 	if err != nil {
 		return false, err
 	}
@@ -226,7 +226,7 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 		}
 		return cuaFail(con, "    cua-driver runtime contract is unusable: "+reason+".", hint), nil
 	}
-	if cuPlatform == "win32" && !repairCuaDriverAutostartWindows(env, con, binary, showInstallerProgress) {
+	if cuPlatform == "win32" && !repairCuaDriverAutostartWindows(ctx, env, con, binary, showInstallerProgress) {
 		return cuaFail(con, "    cua-driver is compatible, but Windows autostart setup failed."), nil
 	}
 	if cuPlatform == "darwin" {
@@ -419,7 +419,7 @@ func cuaAutostartRegistrationPSCommand(binary string) string {
 }
 
 // Registers the opted in autostart task for the selected binary, true when nothing needs repair
-var repairCuaDriverAutostartWindows = func(env *tools.Env, con *cliui.Console, driverCmd string, verbose bool) bool {
+var repairCuaDriverAutostartWindows = func(ctx context.Context, env *tools.Env, con *cliui.Console, driverCmd string, verbose bool) bool {
 	if cuPlatform != "win32" {
 		return true
 	}
@@ -445,7 +445,7 @@ var repairCuaDriverAutostartWindows = func(env *tools.Env, con *cliui.Console, d
 		con.PrintInfo("    Repairing cua-driver auto-start registration...")
 	}
 	result, err := cuaSetupRunText([]string{ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-Command", cuaAutostartRegistrationPSCommand(binary)}, 300, sanitizedCuaDriverEnv(env), cuaPostSetupNoWindow(false))
+		"-Command", cuaAutostartRegistrationPSCommand(binary)}, 300, sanitizedCuaDriverEnv(ctx, env), cuaPostSetupNoWindow(false))
 	if err != nil {
 		var timeout *subprocessTimeout
 		if errors.As(err, &timeout) {

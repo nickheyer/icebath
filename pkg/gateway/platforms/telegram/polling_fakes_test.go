@@ -293,15 +293,23 @@ func newTestLifecycle(t *testing.T, app pollingApp) (*pollingLifecycle, *fakePol
 	p.timings.conflictRetryDelayBase, p.timings.conflictRetryDelayFactor = 0, 0
 	p.app = app
 	t.Cleanup(func() {
-		for _, task := range host.pendingTasks() {
+		pending := host.pendingTasks()
+		p.mu.Lock()
+		for _, task := range []*gateway.AdapterTask{p.errorTask, p.verifierTask} {
+			if task != nil {
+				pending = append(pending, task)
+			}
+		}
+		p.mu.Unlock()
+		for _, task := range pending {
 			task.Cancel()
 		}
-		p.mu.Lock()
-		tasks := []*gateway.AdapterTask{p.errorTask, p.verifierTask}
-		p.mu.Unlock()
-		for _, task := range tasks {
-			if task != nil {
-				task.Cancel()
+		deadline, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		for _, task := range pending {
+			_ = task.Wait(deadline)
+			if !task.Done() {
+				t.Errorf("polling task was still running 30s after the test cancelled it")
 			}
 		}
 	})

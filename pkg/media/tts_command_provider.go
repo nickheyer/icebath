@@ -358,7 +358,7 @@ func runCommandProvider(ctx context.Context, env *tools.Env, command string, tim
 		if v, ok := os.LookupEnv(key); ok {
 			fallback = &v
 		}
-		value, err := tools.ResolvePassthroughValue(env, key, fallback)
+		value, err := tools.ResolvePassthroughValue(ctx, env, key, fallback)
 		if err != nil {
 			return nil, err
 		}

@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,56 +11,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Curses stand in replaying scripted key codes and recording every text write, the hermes FakeStdscr
-type pickerFakeScreen struct {
-	keys   []int
-	writes []string
-}
-
-func (f *pickerFakeScreen) Getch() (int, error) {
-	if len(f.keys) == 0 {
-		return 0, errors.New("menu requested a key after the scripted keys")
-	}
-	k := f.keys[0]
-	f.keys = f.keys[1:]
-	return k, nil
-}
-func (f *pickerFakeScreen) Timeout(int)          {}
-func (f *pickerFakeScreen) Clear()               {}
-func (f *pickerFakeScreen) GetMaxYX() (int, int) { return 24, 100 }
-func (f *pickerFakeScreen) AddNStr(_, _ int, text string, n int, _ cliui.Attr) error {
-	if rs := []rune(text); len(rs) > n {
-		text = string(rs[:max(n, 0)])
-	}
-	f.writes = append(f.writes, text)
-	return nil
-}
-func (f *pickerFakeScreen) Refresh() error              { return nil }
-func (f *pickerFakeScreen) HasColors() bool             { return false }
-func (f *pickerFakeScreen) InitColors(bool) error       { return nil }
-func (f *pickerFakeScreen) InitPairs(map[int]int) error { return nil }
-func (f *pickerFakeScreen) Colors() int                 { return 0 }
-
-// Menu console claiming a terminal whose full screen opens pop the scripted screens in order
-func pickerScreensConsole(t *testing.T, screens *[]*pickerFakeScreen) {
+// Menu console claiming a terminal that reads the scripted keys and records everything the lists draw
+func pickerKeysConsole(t *testing.T, keys string) *bytes.Buffer {
 	t.Helper()
-	console := &cliui.Console{In: strings.NewReader(""), Out: io.Discard,
-		Getenv:   func(string) (string, bool) { return "", false },
+	out := &bytes.Buffer{}
+	env := map[string]string{"TERM": "xterm-256color", "LANG": "C.UTF-8"}
+	console := &cliui.Console{In: strings.NewReader(keys), Out: out,
+		Getenv:   func(k string) (string, bool) { v, ok := env[k]; return v, ok },
 		StdinTTY: func() bool { return true }, StdoutTTY: func() bool { return true },
-		OpenScreen: func() (cliui.Screen, func(), error) {
-			if len(*screens) == 0 {
-				return nil, nil, errors.New("no scripted screen left")
-			}
-			next := (*screens)[0]
-			*screens = (*screens)[1:]
-			return next, func() {}, nil
-		}}
+		TermSize: func() (int, int, error) { return 24, 100, nil }}
 	swapFlowSeam(t, &pickerConsoleFn, func() *cliui.Console { return console })
+	return out
 }
 
 func TestCmdModelForwardsNousLoginTlsOptions(t *testing.T) {
@@ -89,14 +55,9 @@ func TestCmdModelForwardsNousLoginTlsOptions(t *testing.T) {
 	}
 }
 
-func TestStandaloneModelFlowRendersPreviousAndReopensProvider(t *testing.T) {
+func TestStandaloneModelFlowOffersBackAndReopensProvider(t *testing.T) {
 	_, ctx, _ := pickerCaseHome(t)
-	providerScreen := &pickerFakeScreen{keys: []int{13}}
-	modelBackScreen := &pickerFakeScreen{keys: []int{cliui.KeyLeft}}
-	providerReselectScreen := &pickerFakeScreen{keys: []int{13}}
-	modelSelectScreen := &pickerFakeScreen{keys: []int{13}}
-	screens := []*pickerFakeScreen{providerScreen, modelBackScreen, providerReselectScreen, modelSelectScreen}
-	pickerScreensConsole(t, &screens)
+	drawn := pickerKeysConsole(t, "\r\x1b[D\r\r")
 	var resolved []int
 	swapFlowSeam(t, &selectProviderAndModelFn, func(context.Context, map[string]any) error {
 		idx, err := cursesRadiolist("Select provider:", plainPickerRows([]string{"OpenAI"}), PickerRadiolistOptions{CancelReturns: -1})
@@ -116,17 +77,16 @@ func TestStandaloneModelFlowRendersPreviousAndReopensProvider(t *testing.T) {
 	if _, err := CmdModel(ctx, map[string]any{"refresh": false}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(resolved, []int{0, 0, 0}) || len(screens) != 0 {
-		t.Fatalf("resolved %v screens left %d", resolved, len(screens))
+	if !reflect.DeepEqual(resolved, []int{0, 0, 0}) {
+		t.Fatalf("resolved %v", resolved)
 	}
-	previous := false
-	for _, w := range modelBackScreen.writes {
-		if strings.Contains(w, "← previous") {
-			previous = true
-		}
+	screen := ansi.Strip(drawn.String())
+	provider, model := strings.Index(screen, "Select provider"), strings.Index(screen, "Select default model")
+	if provider < 0 || model < provider || strings.Contains(screen[:model], "← back") || !strings.Contains(screen[model:], "← back") {
+		t.Fatalf("the model list must offer the back step and the first provider list must not:\n%q", screen)
 	}
-	if !previous {
-		t.Fatalf("model screen writes %q", modelBackScreen.writes)
+	if strings.Count(screen, "› Select provider  OpenAI") != 2 || strings.Count(screen, "› Select default model  gpt-5.6-sol") != 1 {
+		t.Fatalf("answers left on the terminal:\n%q", screen)
 	}
 }
 

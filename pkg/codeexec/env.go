@@ -119,7 +119,7 @@ func sessionToolEnv(env *tools.Env) map[string]string {
 }
 
 // Scrubbed child env applying passthrough, secret, safe prefix, control name and Windows essential rules
-func scrubChildEnv(env *tools.Env, source map[string]string, opts scrubOptions) (map[string]string, error) {
+func scrubChildEnv(ctx context.Context, env *tools.Env, source map[string]string, opts scrubOptions) (map[string]string, error) {
 	isPassthrough := opts.isPassthrough
 	if isPassthrough == nil {
 		isPassthrough = func(k string) bool { return tools.IsEnvPassthrough(env, k) }
@@ -133,7 +133,7 @@ func scrubChildEnv(env *tools.Env, source map[string]string, opts scrubOptions) 
 	for _, k := range sortedKeys(source) {
 		v := source[k]
 		if isPassthrough(k) {
-			resolved, err := tools.ResolvePassthroughValue(env, k, &v)
+			resolved, err := tools.ResolvePassthroughValue(ctx, env, k, &v)
 			if err != nil {
 				return nil, err
 			}
@@ -162,7 +162,7 @@ func scrubChildEnv(env *tools.Env, source map[string]string, opts scrubOptions) 
 	for k := range scrubbed {
 		present[k] = true
 	}
-	for k, v := range tools.ScopedPassthroughAdditions(env, present) {
+	for k, v := range tools.ScopedPassthroughAdditions(ctx, env, present) {
 		if isPassthrough(k) {
 			scrubbed[k] = v
 		}
@@ -199,7 +199,7 @@ func buildChildEnv(ctx context.Context, env *tools.Env, spec childEnvSpec) (map[
 	for k := range sessionToolEnv(env) {
 		toolchain[k] = true
 	}
-	child, err := scrubChildEnv(env, toolchainEnviron(env), scrubOptions{toolchain: toolchain})
+	child, err := scrubChildEnv(ctx, env, toolchainEnviron(env), scrubOptions{toolchain: toolchain})
 	if err != nil {
 		return nil, err
 	}

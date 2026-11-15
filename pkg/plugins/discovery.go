@@ -29,13 +29,13 @@ var bundledSkipNames = map[string]bool{"memory": true, "context_engine": true, "
 // Per harness manifest directories other agent tools ship inside plugin repos
 var foreignHarnessDirs = map[string]bool{".claude-plugin": true, ".codex-plugin": true, ".cursor-plugin": true, ".devin-plugin": true, ".kimi-plugin": true}
 
-// Bundled keys of features that left core and the catalog plugin that replaced them
+// Old bundled keys and the built in plugin each still selects
 var leftCoreAliases = map[string]string{"observability/langfuse": "langfuse"}
 
-// Catalog plugin a bundled key that left core now names, empty when none
+// Built in plugin an old bundled key selects, empty when none
 func legacyPluginAlias(name string) string { return leftCoreAliases[name] }
 
-// Bundled keys that now name the catalog plugin
+// Old bundled keys that select the plugin
 func legacyPluginKeys(plugin string) []string {
 	var out []string
 	for key, p := range leftCoreAliases {
@@ -44,16 +44,6 @@ func legacyPluginKeys(plugin string) []string {
 		}
 	}
 	return out
-}
-
-// Install hint for a plugin name that left core, empty when it never did
-func movedPluginHint(name string) string {
-	for key, plugin := range leftCoreAliases {
-		if name == key || name == plugin {
-			return fmt.Sprintf("%s moved out of core into the '%s' plugin: install it with `icebath plugins install %s`.", plugin, plugin, plugin)
-		}
-	}
-	return ""
 }
 
 // Reports whether a directory name is never a plugin

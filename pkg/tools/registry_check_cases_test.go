@@ -36,7 +36,7 @@ func multiplexFor(t *testing.T) {
 // Probe reading a profile secret the fail closed way, panicking on an unscoped read like get_secret
 func secretProbe(name string) func(*Env) bool {
 	return func(env *Env) bool {
-		v, err := ResolvePassthroughValue(env, name, nil)
+		v, err := ResolvePassthroughValue(context.Background(), env, name, nil)
 		if err != nil {
 			panic(err)
 		}

@@ -207,8 +207,18 @@ func getSessionPlatform(env *Env) string {
 }
 
 // Reports an approval decision running inside cron
-func isCronApprovalContext(env *Env) bool {
-	return sessionFlag(env, "cron", "ICEBATH_CRON_SESSION")
+func isCronApprovalContext(env *Env) bool { return isCronSession(env) }
+
+// Whether a cron job runs the turn, by shared value, then bound session variable, then process env
+func isCronSession(env *Env) bool {
+	if env != nil && env.Values != nil {
+		if v, ok := env.Values.Load("session.cron"); ok {
+			if b, ok := v.(bool); ok {
+				return b
+			}
+		}
+	}
+	return truthyEnvValue(GetSessionEnv(env, "ICEBATH_CRON_SESSION", ""))
 }
 
 // Reports a programmatic platform where nobody can resolve a pending approval

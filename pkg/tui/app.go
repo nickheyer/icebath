@@ -9,12 +9,15 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 
+	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	uitheme "github.com/nickheyer/icebath/pkg/ui/theme"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
+	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
 
 const (
@@ -62,6 +65,8 @@ type app struct {
 	git     *gitBranchTracker
 	battery *batteryPoller
 	resize  *resizeCoalescer
+	arena   *arenaFeed
+	post    func(tea.Msg)
 
 	history        []msg
 	lastUserMsg    string
@@ -133,6 +138,7 @@ func tuiKeymap() *keys.Map {
 		km.Register(a)
 	}
 	registerListKeys(km)
+	arena.RegisterKeys(km)
 	return km
 }
 
@@ -148,6 +154,7 @@ func newApp(ctx context.Context) *app {
 	a.prompts = &promptSubmitter{store: store, turn: turn, gw: gw, deps: a}
 	a.queue = newComposerQueue(store, gw, a.uncaught)
 	a.config = newConfigSync(store, turn, gw, a)
+	a.arena = newArenaFeed(a)
 	a.syncTheme()
 	a.widgets = newWidgetHost(a)
 	a.localCommands = append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...)
@@ -169,10 +176,14 @@ func bootMotion() float64 {
 	return 1
 }
 
-// Runs the terminal UI on the process terminal until the user quits, the exit status as the result
+// Runs the terminal UI until the user quits, the exit status as the result, profiled into ICEBATH_CPUPROFILE when set
 func Run(ctx context.Context) int {
+	if stop := startCPUProfile(os.Getenv("ICEBATH_CPUPROFILE")); stop != nil {
+		defer stop()
+	}
 	a := newApp(ctx)
 	p := tea.NewProgram(a, tea.WithContext(ctx))
+	a.post = newMailbox(ctx, p.Send).post
 	a.gw.attach(p.Send)
 	a.gw.start()
 	_, err := p.Run()
@@ -223,8 +234,17 @@ func (a *app) tabMarker() string {
 func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m := m.(type) {
-	case tea.WindowSizeMsg:
+	case uv.KittyGraphicsEvent, uv.CellSizeEvent, uv.PixelSizeEvent, uv.PrimaryDeviceAttributesEvent, uv.UnknownCsiEvent:
+		a.arena.terminal(m)
+	case tea.FocusMsg, tea.BlurMsg:
+		a.arena.focus(m)
 		_, cmd = a.wm.Update(m)
+	case tea.WindowSizeMsg:
+		a.arena.terminal(m)
+		_, cmd = a.wm.Update(m)
+		if a.arena.probed {
+			cmd = tea.Batch(cmd, a.arena.graphics.Measure())
+		}
 		if _, reflow := a.resize.schedule(); reflow != nil {
 			cmd = tea.Batch(cmd, reflow)
 		}
@@ -265,6 +285,9 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		a.exitCode = m.code
 		return a, tea.Quit
 	default:
+		if ev, isEvent := m.(gatewayEventMsg); isEvent {
+			a.arena.observe(ev)
+		}
 		if handled, c := a.events.update(m); handled {
 			cmd = c
 		} else if handled, c := a.git.update(m); handled {
@@ -275,7 +298,20 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 			_, cmd = a.wm.Update(m)
 		}
 	}
-	return a, tea.Batch(cmd, a.afterUpdate())
+	after := a.afterUpdate()
+	if feedsArena(m) {
+		a.arena.sync()
+	}
+	return a, tea.Batch(cmd, after)
+}
+
+// Reports whether a message may change what the arena shows, window manager and arena frames never doing so
+func feedsArena(m tea.Msg) bool {
+	switch m.(type) {
+	case anim.FrameMsg, wm.Addressed:
+		return false
+	}
+	return true
 }
 
 // Follows what an update changed, the session in view, the theme, the queue, the open prompts and the turn clock
@@ -310,6 +346,9 @@ func (a *app) afterUpdate() tea.Cmd {
 		a.syncTheme()
 		a.wm.SetTheme(a.toolkit)
 		a.card.composer.SetTheme(a.toolkit)
+		if a.arena.card != nil {
+			a.arena.card.Retheme(a.toolkit)
+		}
 		a.card.view.invalidate()
 	}
 	cmds = append(cmds, a.battery.sync(a.store, a.gw), a.syncDialogs(), a.drainQueue())

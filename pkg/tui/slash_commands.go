@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/vxl/arena"
 )
 
 // Markers of rows the compaction wrote, never the target of an undo
@@ -1111,6 +1112,9 @@ func (a *app) opsCommands() []slashCommand {
 				return a.openPluginsHub()
 			}
 			return r.viaWorker(tr("slashCmd.ops.slashWorker.pluginsTitle"), tr("slashCmd.ops.slashWorker.pluginsNoOutput"))
+		}},
+		{name: arena.Name, help: "watch the agents of the session work on a voxel platform, with their tickets, log and replay", run: func(r *slashRun) tea.Cmd {
+			return a.openArena()
 		}},
 		{name: "agents", aliases: []string{"tasks"}, help: "open the agents of the session, with stop and pause controls", usage: "[pause|resume|status]",
 			suggest: func(string) []string { return []string{"pause", "resume", "status"} },

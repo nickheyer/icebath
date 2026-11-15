@@ -36,8 +36,10 @@ type Console struct {
 	// Full screen opener standing in for curses.wrapper, an error routes menus to the numbered fallback
 	OpenScreen func() (Screen, func(), error)
 
-	pumpOnce sync.Once
-	pump     *inputPump
+	pumpOnce  sync.Once
+	pump      *inputPump
+	guardOnce sync.Once
+	guard     *termGuard
 }
 
 var (
@@ -62,6 +64,22 @@ func Default() *Console {
 	}
 	return defaultConsole
 }
+
+// SwapDefault makes c the process console, the returned func restoring the previous one
+func SwapDefault(c *Console) func() {
+	defaultMu.Lock()
+	prev := defaultConsole
+	defaultConsole = c
+	defaultMu.Unlock()
+	return func() {
+		defaultMu.Lock()
+		defaultConsole = prev
+		defaultMu.Unlock()
+	}
+}
+
+// ReadLine reads one line of input without printing a prompt, interrupt and end of input as errors
+func (c *Console) ReadLine() (string, error) { return c.input("") }
 
 func (c *Console) getenv(name string) (string, bool) {
 	if c.Getenv != nil {
@@ -130,6 +148,7 @@ type inputPump struct {
 	arrived *sync.Cond
 	waiters int
 	gate    readGate
+	pending []byte
 }
 
 // Wait for a stream to become readable that ends early once no console waits on it any more
@@ -228,9 +247,34 @@ func (c *Console) startPump() {
 // errTimeout is a byte read that saw nothing within its window
 var errTimeout = errors.New("timeout")
 
+// Returns bytes a reader took but did not use, so the next read sees them first
+func (p *inputPump) unread(bs []byte) {
+	if len(bs) == 0 {
+		return
+	}
+	p.mu.Lock()
+	p.pending = append(append([]byte{}, bs...), p.pending...)
+	p.mu.Unlock()
+}
+
+// Oldest returned byte, false when none wait
+func (p *inputPump) takePending() (byte, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.pending) == 0 {
+		return 0, false
+	}
+	b := p.pending[0]
+	p.pending = p.pending[1:]
+	return b, true
+}
+
 // Reads one input byte waiting at most timeout, forever when timeout is negative
 func (c *Console) readByte(timeout time.Duration, interrupt <-chan os.Signal) (byte, error) {
 	c.startPump()
+	if b, ok := c.pump.takePending(); ok {
+		return b, nil
+	}
 	select {
 	case b := <-c.pump.bytesCh:
 		return b, nil
@@ -292,23 +336,7 @@ func (c *Console) input(prompt string) (string, error) {
 	}
 }
 
-// Puts the input terminal in raw mode, returning the restore function
-func (c *Console) makeRaw() (func(), error) {
-	f, ok := c.In.(*os.File)
-	if !ok || !xterm.IsTerminal(f.Fd()) {
-		if c.stdinTTY() {
-			return func() {}, nil
-		}
-		return nil, errors.New("input is not a terminal")
-	}
-	state, err := xterm.MakeRaw(f.Fd())
-	if err != nil {
-		return nil, err
-	}
-	return func() { xterm.Restore(f.Fd(), state) }, nil
-}
-
-// FlushStdin drops unread terminal input left behind by a full screen menu, a no op off a terminal
+// FlushStdin drops unread terminal input left behind by a full screen surface, a no op off a terminal
 func (c *Console) FlushStdin() {
 	if !c.stdinTTY() {
 		return
@@ -317,6 +345,9 @@ func (c *Console) FlushStdin() {
 		tcflushInput(int(f.Fd()))
 	}
 	c.startPump()
+	c.pump.mu.Lock()
+	c.pump.pending = nil
+	c.pump.mu.Unlock()
 	for {
 		select {
 		case <-c.pump.bytesCh:

@@ -39,6 +39,9 @@ type cuaAsyncBridge struct {
 	cancel context.CancelFunc
 }
 
+// Root context a driver backend's lifecycle, bridged loop and driver children run under, carrying no caller scope
+func cuaSessionContext() context.Context { return context.Background() }
+
 // Starts the loop context once, a second start of a live bridge is a no-op
 func (b *cuaAsyncBridge) start() error {
 	b.mu.Lock()
@@ -46,7 +49,7 @@ func (b *cuaAsyncBridge) start() error {
 	if b.ctx != nil && b.ctx.Err() == nil {
 		return nil
 	}
-	b.ctx, b.cancel = context.WithCancel(context.Background())
+	b.ctx, b.cancel = context.WithCancel(cuaSessionContext())
 	return nil
 }
 
@@ -408,6 +411,7 @@ type cuaDriverSession struct {
 	bridge         *cuaAsyncBridge
 	embeddedDaemon *embeddedCuaDaemon
 	env            *tools.Env
+	callContext    func() context.Context
 
 	mu      sync.Mutex
 	started atomic.Bool
@@ -500,12 +504,12 @@ func (s *cuaDriverSession) lifecycle(ctx context.Context, ready, shutdown chan s
 		if sandbox != nil {
 			command, args, childEnv = sandbox.Command, sandbox.Args, sandboxEnv
 		} else {
-			command, args = resolveMCPInvocation(s.env, driverCmd, 6.0)
+			command, args = resolveMCPInvocation(ctx, s.env, driverCmd, 6.0)
 			childEnv = cuaDriverChildEnv(s.env, nil)
 		}
 	}
 	tManifest := time.Now()
-	sanitized, err := tools.SanitizeSubprocessEnv(s.env, childEnv, nil)
+	sanitized, err := tools.SanitizeSubprocessEnv(ctx, s.env, childEnv, nil)
 	if err != nil {
 		return err
 	}
@@ -841,6 +845,14 @@ func (s *cuaDriverSession) recreateSession(name string, timeout float64, logMsg 
 	return nil
 }
 
+// Context a direct driver call reads its secret scope from, the owning backend's bound caller or the lifecycle root
+func (s *cuaDriverSession) driverCallContext() context.Context {
+	if s.callContext != nil {
+		return s.callContext()
+	}
+	return cuaSessionContext()
+}
+
 // cua-driver call subprocess fallback transport with the screenshot routed through a temp file
 func (s *cuaDriverSession) callToolViaCLI(name string, args *pyjson.Object, timeout float64) (*pyjson.Object, error) {
 	callArgs, shotFile := args.Copy(), ""
@@ -881,7 +893,7 @@ func (s *cuaDriverSession) callToolViaCLI(name string, args *pyjson.Object, time
 		return nil, err
 	}
 	cmd := append([]string{driverCommand, "call", name, encoded}, socketArgs...)
-	sanitized, err := tools.SanitizeSubprocessEnv(s.env, childEnv, nil)
+	sanitized, err := tools.SanitizeSubprocessEnv(s.driverCallContext(), s.env, childEnv, nil)
 	if err != nil {
 		return nil, err
 	}

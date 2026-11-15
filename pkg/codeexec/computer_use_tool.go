@@ -262,6 +262,19 @@ func detachLocked(sid string) (ComputerUseBackend, *sync.Mutex) {
 	return backend, callLock
 }
 
+// Backend whose driver children read the secret scope of the tool call driving it
+type callContextBinder interface {
+	bindCallContext(ctx context.Context) func()
+}
+
+// Binds the calling context on a backend whose driver children read it, returning the release
+func bindBackendCall(ctx context.Context, backend ComputerUseBackend) func() {
+	if b, ok := backend.(callContextBinder); ok {
+		return b.bindCallContext(ctx)
+	}
+	return func() {}
+}
+
 // Stops a backend under its call lock so an in flight action finishes, the failure absorbed by onError
 func stopBackend(backend ComputerUseBackend, callLock *sync.Mutex, onError func(error)) {
 	if callLock != nil {
@@ -291,7 +304,9 @@ func getBackend(ctx context.Context, env *tools.Env, sessionID string) (Computer
 		if cached == nil {
 			backend, err := newComputerUseBackend(env, permissionMode)
 			if err == nil {
+				release := bindBackendCall(ctx, backend)
 				err = backend.Start()
+				release()
 			}
 			if err != nil {
 				cuBackendMu.Unlock()
@@ -311,7 +326,9 @@ func getBackend(ctx context.Context, env *tools.Env, sessionID string) (Computer
 		}
 		_, staleLock := detachLocked(sid)
 		cuBackendMu.Unlock()
+		release := bindBackendCall(ctx, cached)
 		stopBackend(cached, staleLock, func(error) {})
+		release()
 	}
 }
 
@@ -354,6 +371,8 @@ func ReleaseComputerUseSession(ctx context.Context, sessionID string) bool {
 	if backend == nil {
 		return false
 	}
+	release := bindBackendCall(ctx, backend)
+	defer release()
 	stopBackend(backend, callLock, func(err error) {
 		cuDebugStopFailed(fmt.Sprintf("computer_use backend release failed for session %s: %v", sid, err))
 	})

@@ -1576,7 +1576,7 @@ func NewDockerEnvironment(ctx context.Context, env *Env, o DockerOptions) (*dock
 		stripSandboxPrivileges(ctx, env, d.dockerExe, d.containerID, nil)
 	}
 	reclaimSandboxFiles(ctx, env, d.dockerExe, d.containerID, d.sandboxMounts)
-	if err := d.buildInitEnvArgs(); err != nil {
+	if err := d.buildInitEnvArgs(ctx); err != nil {
 		return nil, err
 	}
 	d.initSession(ctx)
@@ -1838,8 +1838,8 @@ func (d *dockerEnv) dockerRun(ctx context.Context, cwd string) (string, error) {
 	return cid, nil
 }
 
-func (d *dockerEnv) buildInitEnvArgs() error {
-	passthrough, unset, err := resolvePassthroughEnv(d.env, d.forwardEnv)
+func (d *dockerEnv) buildInitEnvArgs(ctx context.Context) error {
+	passthrough, unset, err := resolvePassthroughEnv(ctx, d.env, d.forwardEnv)
 	if err != nil {
 		return err
 	}
@@ -1859,8 +1859,8 @@ func (d *dockerEnv) buildInitEnvArgs() error {
 	return nil
 }
 
-func (d *dockerEnv) runtimeEnvArgsWithUnsets() ([]string, map[string]bool, map[string]string, error) {
-	passthrough, unset, err := resolvePassthroughEnv(d.env, d.forwardEnv)
+func (d *dockerEnv) runtimeEnvArgsWithUnsets(ctx context.Context) ([]string, map[string]bool, map[string]string, error) {
+	passthrough, unset, err := resolvePassthroughEnv(ctx, d.env, d.forwardEnv)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1883,7 +1883,7 @@ func (d *dockerEnv) runBash(ctx context.Context, cmd string, login bool, timeout
 		envValues = d.initEnvValues
 		unset = d.initUnsetNames
 	} else if d.profileScopedPassthrough {
-		runtimeArgs, u, values, err := d.runtimeEnvArgsWithUnsets()
+		runtimeArgs, u, values, err := d.runtimeEnvArgsWithUnsets(ctx)
 		if err != nil {
 			return nil, err
 		}

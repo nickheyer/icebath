@@ -22,10 +22,10 @@ func configureDefaultProfile(t *testing.T, rid int, params map[string]any) map[s
 	return result
 }
 
-// Whether the example server reads enabled in the user config as the profile editor reads it
-func exampleMCPEnabled(t *testing.T) bool {
+// Whether the example server reads enabled in the config.yaml of home as the profile editor reads it
+func exampleMCPEnabled(t *testing.T, h string) bool {
 	t.Helper()
-	raw, err := config.ReadUserConfigRaw(context.Background(), "")
+	raw, err := config.ReadUserConfigRaw(context.Background(), config.GetConfigPath(h))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestProfileEditorReportsMcpUnappliedWhenLegacyDisabledCleanupIsLocked(t *te
 	if applied["mcp_servers"] != false || locked["ok"] != false {
 		t.Fatalf("locked edit answered %v", locked)
 	}
-	if exampleMCPEnabled(t) {
+	if exampleMCPEnabled(t, p.Home) {
 		t.Fatal("the editor shows the locked server on")
 	}
 	p.Mu.Lock()
@@ -59,7 +59,7 @@ func TestProfileEditorReportsMcpUnappliedWhenLegacyDisabledCleanupIsLocked(t *te
 	if applied["mcp_servers"] != true || unlocked["ok"] != true {
 		t.Fatalf("unlocked edit answered %v", unlocked)
 	}
-	if !exampleMCPEnabled(t) {
+	if !exampleMCPEnabled(t, p.Home) {
 		t.Fatal("the editor shows the unlocked server off")
 	}
 }

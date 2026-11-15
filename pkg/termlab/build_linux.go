@@ -8,10 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/nickheyer/icebath/pkg/observability"
 )
 
 // Environment variable carrying the address space limit and command of a limited exec, as JSON
@@ -126,14 +129,42 @@ func RemoveBuild() error {
 	return os.RemoveAll(built.dir)
 }
 
-// Writes a configuration directory holding config.json with the settings given, for ICEBATH_CONFIG_DIR
+// Writes an icebath home with a loopback provider, metrics declined, the terminal UI and the settings given
 func WriteConfig(dir string, settings map[string]string) error {
-	raw, err := json.MarshalIndent(map[string]any{"settings": settings}, "", "  ")
+	arena := map[string]any{}
+	cfg := map[string]any{
+		"model":     map[string]any{"provider": "custom", "default": "termlab-model", "base_url": "http://127.0.0.1:9/v1", "api_key": "termlab-loopback"},
+		"display":   map[string]any{"interface": "tui", "arena": arena},
+		"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false}},
+		"updates":   map[string]any{"check": false},
+	}
+	observability.SetAnswer(cfg, false, false)
+	for key, value := range settings {
+		if name, ok := strings.CutPrefix(key, "arena."); ok {
+			arena[name] = value
+			continue
+		}
+		node := cfg
+		parts := strings.Split(key, ".")
+		for _, part := range parts[:len(parts)-1] {
+			next, ok := node[part].(map[string]any)
+			if !ok {
+				next = map[string]any{}
+				node[part] = next
+			}
+			node = next
+		}
+		node[parts[len(parts)-1]] = value
+	}
+	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "config.json"), raw, 0o600)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=termlab-loopback\n"), 0o600); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "config.yaml"), raw, 0o600)
 }

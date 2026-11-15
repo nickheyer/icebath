@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/builtin/delegationdefault"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -79,9 +80,24 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Setenv("ICEBATH_HOME", dir)
+	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, joinTitleUpgrades)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// Joins the title upgrades a case left running so none resolves the home of a later case
+func joinTitleUpgrades(t *testing.T) func() {
+	return func() {
+		waitForTitleUpgrades(30 * time.Second)
+		titleUpgradeMu.Lock()
+		defer titleUpgradeMu.Unlock()
+		for wp := range titleUpgradeThreads {
+			if thread := wp.Value(); thread != nil && thread.Alive() {
+				t.Errorf("title upgrade %q was still running 30s after the test", thread.Name)
+			}
+		}
+	}
 }
 
 // Real logging setup, kept so a test that drives the agent file handlers can opt back in

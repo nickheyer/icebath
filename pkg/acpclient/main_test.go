@@ -2,6 +2,7 @@ package acpclient
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,11 +11,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
+// Dispatches the scratch prune and fake agent children, then runs the suite with the env hook doubles
 func TestMain(m *testing.M) {
+	home.DispatchScratchPruneEntry(context.Background())
 	if mode := os.Getenv("ACPCLIENT_FAKE"); mode != "" {
 		os.Exit(runFakeAgent(mode))
 	}
@@ -27,7 +31,19 @@ func TestMain(m *testing.M) {
 	if tools.RegisteredAdapterSecretEnv == nil {
 		tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
 	}
-	os.Exit(m.Run())
+	os.Exit(runSandboxed(m))
+}
+
+// Runs the cases under a session home so a case setting none never writes into the real home
+func runSandboxed(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "acpclient-home-")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	os.Setenv("ICEBATH_HOME", dir)
+	os.Setenv("ICEBATH_TEST_ISOLATION", dir)
+	return m.Run()
 }
 
 // Agent CLI behaviours the test binary plays when re-executed with ACPCLIENT_FAKE set

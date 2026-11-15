@@ -69,8 +69,11 @@ func scheduleCheckFnProbe(fn func(*tools.Env) bool) <-chan struct{} {
 // Background probe scheduler of the hub auth hint, the module attribute hermes tests wrap
 var hubScheduleCheckFnProbe = scheduleCheckFnProbe
 
-// Login command of a plugin that left core with its own CLI, else the auth command of its name
+// Login command of a built in or left core plugin with its own CLI, else icebath auth name
 func pluginLoginCommand(name string) string {
+	if command, ok := provider.SpotifyPluginLoginCommand(name); ok {
+		return command
+	}
 	for _, f := range provider.LeftCore() {
 		if f.Plugin == name && f.CLI != "" {
 			return fmt.Sprintf("icebath %s login", f.CLI)

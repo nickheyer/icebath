@@ -45,8 +45,8 @@ var cuaDriverRuntimeContractArgs = []struct {
 }
 
 // Parsed JSON object stdout of a driver verb, nil on spawn failure, empty or non object output or a nonzero exit
-func driverJSON(env *tools.Env, driverCmd string, timeout float64, args ...string) *pyjson.Object {
-	proc, err := runDriver(env, driverCmd, timeout, args...)
+func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout float64, args ...string) *pyjson.Object {
+	proc, err := runDriver(ctx, env, driverCmd, timeout, args...)
 	if err != nil || proc == nil {
 		return nil
 	}
@@ -162,12 +162,12 @@ func cuaDriverInstallHint() string {
 }
 
 // Args with --no-overlay appended when configured and supported by the driver
-func mcpArgsWithOverlayFlag(env *tools.Env, args []string, driverCmd string) []string {
+func mcpArgsWithOverlayFlag(ctx context.Context, env *tools.Env, args []string, driverCmd string) []string {
 	out := slices.Clone(args)
 	if out == nil {
 		out = []string{}
 	}
-	if cuaNoOverlay(env) && cuaDriverSupportsNoOverlay(env, driverCmd) {
+	if cuaNoOverlay(env) && cuaDriverSupportsNoOverlay(ctx, env, driverCmd) {
 		out = append(out, "--no-overlay")
 	}
 	return out
@@ -181,7 +181,7 @@ var noOverlayCache struct {
 }
 
 // Whether driver help mentions --no-overlay, probed once for the most recent command
-var cuaDriverSupportsNoOverlay = func(env *tools.Env, driverCmd string) bool {
+var cuaDriverSupportsNoOverlay = func(ctx context.Context, env *tools.Env, driverCmd string) bool {
 	noOverlayCache.Lock()
 	if noOverlayCache.valid && noOverlayCache.cmd == driverCmd {
 		v := noOverlayCache.value
@@ -190,7 +190,7 @@ var cuaDriverSupportsNoOverlay = func(env *tools.Env, driverCmd string) bool {
 	}
 	noOverlayCache.Unlock()
 	value := false
-	if proc, err := runDriver(env, driverCmd, 3.0, "--help"); err == nil {
+	if proc, err := runDriver(ctx, env, driverCmd, 3.0, "--help"); err == nil {
 		value = strings.Contains(proc.Stdout+proc.Stderr, "--no-overlay")
 	}
 	noOverlayCache.Lock()
@@ -207,8 +207,8 @@ func clearNoOverlayCache() {
 }
 
 // Command and args spawning the stdio MCP server as the driver manifest reports, mcp on any discovery failure
-func resolveMCPInvocation(env *tools.Env, driverCmd string, timeout float64) (string, []string) {
-	manifest := driverJSON(env, driverCmd, timeout, "manifest")
+func resolveMCPInvocation(ctx context.Context, env *tools.Env, driverCmd string, timeout float64) (string, []string) {
+	manifest := driverJSON(ctx, env, driverCmd, timeout, "manifest")
 	var invocation any
 	if manifest != nil {
 		invocation, _ = manifest.Get("mcp_invocation")
@@ -229,7 +229,7 @@ func resolveMCPInvocation(env *tools.Env, driverCmd string, timeout float64) (st
 	if command == "" || !hasPathSeparator(command) {
 		command = driverCmd
 	}
-	return command, mcpArgsWithOverlayFlag(env, args, command)
+	return command, mcpArgsWithOverlayFlag(ctx, env, args, command)
 }
 
 // Why a parsed manifest fails the 0.20 contract, empty when it passes
@@ -335,7 +335,7 @@ func pyIterItems(value any) ([]any, error) {
 }
 
 // Readiness of a local driver for the 0.20 integration with its version and the failing reason
-func cuaDriverRuntimeContractStatus(env *tools.Env, binary string) (*pyjson.Object, error) {
+func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary string) (*pyjson.Object, error) {
 	resolved := binary
 	if resolved == "" {
 		var err error
@@ -350,7 +350,7 @@ func cuaDriverRuntimeContractStatus(env *tools.Env, binary string) (*pyjson.Obje
 		if cuPlatform == "win32" {
 			timeout = 15.0
 		}
-		result, err := runDriver(env, resolved, timeout, "manifest")
+		result, err := runDriver(ctx, env, resolved, timeout, "manifest")
 		if err != nil {
 			var se *spawnError
 			var te *subprocessTimeout

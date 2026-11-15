@@ -963,6 +963,7 @@ var extraEnvKeys = map[string]bool{
 	"MATRIX_REQUIRE_MENTION": true, "MATRIX_FREE_RESPONSE_ROOMS": true, "MATRIX_AUTO_THREAD": true, "MATRIX_DM_AUTO_THREAD": true,
 	"MATRIX_RECOVERY_KEY":     true,
 	"ICEBATH_ACP_AUTH_METHOD": true, "ICEBATH_ACP_AUTO_APPROVE": true,
+	"ICEBATH_COPILOT_ACP_COMMAND": true, "ICEBATH_COPILOT_ACP_ARGS": true, "COPILOT_CLI_PATH": true, "COPILOT_ACP_BASE_URL": true,
 }
 
 // Suffixes of self configuring platform variables hidden from setup forms

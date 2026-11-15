@@ -145,7 +145,7 @@ func TestBundledEnvFallbacksApplyWithoutOverride(t *testing.T) {
 	}
 	want := map[string]bool{"telegram": true, "discord": true, "whatsapp": false, "whatsapp_cloud": false, "slack": true, "signal": false,
 		"mattermost": true, "matrix": true, "email": false, "dingtalk": false, "feishu": false, "wecom": false,
-		"wecom_callback": false, "weixin": true, "bluebubbles": false, "yuanbao": false}
+		"wecom_callback": false, "weixin": true, "bluebubbles": false, "yuanbao": false, "qqbot": false, "sms": false}
 	if !maps.Equal(withToken, want) {
 		t.Fatalf("enabled platforms and token presence %v", withToken)
 	}

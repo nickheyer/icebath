@@ -13,8 +13,7 @@ import (
 
 // Installs the core slash command lookup pkg/commands registers at init in the icebath binary
 func registerCoreCommands(t *testing.T) {
-	skills.RegisterCoreCommandResolver(func(name string) bool { return name == "status" })
-	t.Cleanup(func() { skills.RegisterCoreCommandResolver(nil) })
+	t.Cleanup(skills.SwapCoreCommandResolverForTests(func(name string) bool { return name == "status" }))
 }
 
 func TestExpandSkillInvocationForReplayRoundTripsTheProjection(t *testing.T) {

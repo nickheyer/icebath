@@ -39,7 +39,7 @@ func newLoggingToolEnv(t *testing.T) (*Env, *bytes.Buffer) {
 // Run env of the backend failing the test on a scope error
 func mustRunEnv(t *testing.T, env *Env) map[string]string {
 	t.Helper()
-	run, err := makeRunEnv(env, nil)
+	run, err := makeRunEnv(context.Background(), env, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func mustRunEnv(t *testing.T, env *Env) map[string]string {
 // Sanitized env failing the test on a scope error
 func mustSanitize(t *testing.T, env *Env, base, extra map[string]string) map[string]string {
 	t.Helper()
-	out, err := SanitizeSubprocessEnv(env, base, extra)
+	out, err := SanitizeSubprocessEnv(context.Background(), env, base, extra)
 	if err != nil {
 		t.Fatal(err)
 	}

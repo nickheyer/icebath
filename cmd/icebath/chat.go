@@ -633,6 +633,17 @@ func firstRunSetupGuard(a *chatArgs) {
 
 // The first run guard, its exit code and whether it raised SystemExit, a completed setup returning normally
 func firstRunSetupGuardCode(a *chatArgs) (int, bool) {
+	if app.InteractiveTerminal() {
+		if code := cmdSetup(a); code != 0 {
+			return code, true
+		}
+		if hasAnyProviderConfigured(context.Background(), false) {
+			return 0, false
+		}
+		fmt.Println()
+		fmt.Println("You can run 'icebath setup' at any time to configure.")
+		return 1, true
+	}
 	fmt.Println()
 	fmt.Println("It looks like Icebath isn't configured yet -- no API keys or providers found.")
 	fmt.Println()

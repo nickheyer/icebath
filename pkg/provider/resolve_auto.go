@@ -1626,6 +1626,11 @@ func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg 
 	if !ok {
 		return nil
 	}
+	if p := getProviderProfile(r.ctx, provider); provider != "nous" && p != nil && p.PreparePoolEntryHook != nil {
+		entry := PooledCredential{Provider: provider, AuthType: AuthTypeAPIKey, AccessToken: cred.APIKey, BaseURL: cred.BaseURL}
+		cred.APIKey = p.PreparePoolEntry(&entry, cred.APIKey)
+		cred.BaseURL = entry.RuntimeBaseURL()
+	}
 	if cred.TokenSource == nil && !hasUsableSecret(cred.APIKey) {
 		return nil
 	}

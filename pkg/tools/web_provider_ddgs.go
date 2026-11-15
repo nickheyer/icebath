@@ -222,7 +222,7 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 // Runs the search in a disposable worker with a hard deadline, killing it on timeout or interrupt
 func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit int) ([]WebSearchHit, error) {
 	request := pyObject("query", query, "safe_limit", safeLimit)
-	childEnv, err := SanitizeSubprocessEnv(env, environMap(), nil)
+	childEnv, err := SanitizeSubprocessEnv(ctx, env, environMap(), nil)
 	if err != nil {
 		return nil, err
 	}

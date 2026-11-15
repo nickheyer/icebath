@@ -10,9 +10,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -26,6 +28,17 @@ func fakeEntryStartup(t *testing.T, stdin string) {
 	swapVar(t, &entryEnsureSkinWatcher, func(context.Context) {})
 	swapVar(t, &entryHandleSpuriousEOF, func(*[]float64, func(string)) bool { return false })
 	swapVar(t, &entryStdin, io.Reader(strings.NewReader(stdin)))
+	swapVar(t, &entryPrewarmPickerCache, func(ctx context.Context) {
+		if done := provider.PrewarmPickerCacheAsync(ctx); done != nil {
+			t.Cleanup(func() {
+				select {
+				case <-done:
+				case <-time.After(30 * time.Second):
+					t.Error("the picker cache prewarm was still running 30s after the case")
+				}
+			})
+		}
+	})
 	wasChannel := tuigateway.StdioIsRPCChannel()
 	tuigateway.SetStdioIsRPCChannel(false)
 	t.Cleanup(func() { tuigateway.SetStdioIsRPCChannel(wasChannel) })
@@ -137,6 +150,8 @@ func runEntryMainRecording(t *testing.T, prewarm func(context.Context)) [][2]str
 	t.Helper()
 	fakeEntryStartup(t, "")
 	swapVar(t, &entryLogExit, func(string) {})
+	swapVar(t, &entryStartHeartbeat, func(context.Context) {})
+	swapVar(t, &entryScheduleOrphanSweep, func(context.Context) {})
 	var mu sync.Mutex
 	var events [][2]string
 	swapVar(t, &entryWriteJSON, func(_ context.Context, payload *pyjson.Object) bool {

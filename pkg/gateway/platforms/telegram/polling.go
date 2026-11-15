@@ -457,9 +457,8 @@ func (p *pollingLifecycle) startPollingOnce(ctx context.Context, app pollingApp,
 		}
 	}
 	gen := generation
-	pollCtx := withPollingGeneration(context.WithoutCancel(ctx), &gen)
-	_, err := awaitWithThreadDeadline(ctx, func(context.Context) (any, error) {
-		return nil, app.Updater().StartPolling(pollCtx, dropPendingUpdates, generationCallback)
+	_, err := awaitWithThreadDeadline(ctx, func(callCtx context.Context) (any, error) {
+		return nil, app.Updater().StartPolling(withPollingGeneration(callCtx, &gen), dropPendingUpdates, generationCallback)
 	}, p.timings.updaterStartTimeout, onAbandon, "telegram", true)
 	if err != nil {
 		return 0, nil, err

@@ -38,6 +38,7 @@ type Server struct {
 	mu        sync.Mutex
 	calls     []Call
 	responses map[string][]reply
+	computed  map[string]func(Call) map[string]any
 	uploads   int
 	tickets   int
 	conns     []*Conn
@@ -49,8 +50,8 @@ type Server struct {
 // Starts the fake and routes every slack.com dial of the default transport to it until the test ends
 func New(t testing.TB) *Server {
 	t.Helper()
-	s := &Server{responses: map[string][]reply{}, arrivals: make(chan *Conn, 64), callSeen: make(chan struct{}, 1),
-		apiConns: map[net.Conn]http.ConnState{}}
+	s := &Server{responses: map[string][]reply{}, computed: map[string]func(Call) map[string]any{},
+		arrivals: make(chan *Conn, 64), callSeen: make(chan struct{}, 1), apiConns: map[net.Conn]http.ConnState{}}
 	s.api = httptest.NewUnstartedServer(http.HandlerFunc(s.serveAPI))
 	s.api.Config.ConnState = func(c net.Conn, state http.ConnState) {
 		s.mu.Lock()
@@ -167,6 +168,13 @@ func (s *Server) RespondStatus(method string, status int, header map[string]stri
 	s.mu.Unlock()
 }
 
+// Answers every call of the method with the payload answer computes from it, ahead of queued payloads
+func (s *Server) RespondFunc(method string, answer func(Call) map[string]any) {
+	s.mu.Lock()
+	s.computed[method] = answer
+	s.mu.Unlock()
+}
+
 // Calls recorded for the method in order
 func (s *Server) CallsTo(method string) []Call {
 	s.mu.Lock()
@@ -237,23 +245,28 @@ func (s *Server) serveAPI(w http.ResponseWriter, r *http.Request) {
 			args[k] = v[0]
 		}
 	}
+	call := Call{Method: method, Args: args, Header: r.Header.Clone()}
 	s.mu.Lock()
-	s.calls = append(s.calls, Call{Method: method, Args: args, Header: r.Header.Clone()})
+	s.calls = append(s.calls, call)
+	compute := s.computed[method]
 	var payload map[string]any
 	answer := reply{status: http.StatusOK}
-	if queue := s.responses[method]; len(queue) > 0 {
+	if queue := s.responses[method]; compute == nil && len(queue) > 0 {
 		answer = queue[0]
 		payload = answer.body
 		if len(queue) > 1 {
 			s.responses[method] = queue[1:]
 		}
 	}
-	if method == "files.getUploadURLExternal" && payload == nil {
+	if method == "files.getUploadURLExternal" && payload == nil && compute == nil {
 		s.uploads++
 		id := fmt.Sprintf("F%d", s.uploads)
 		payload = map[string]any{"ok": true, "upload_url": "https://files.slack.com/upload/" + id, "file_id": id}
 	}
 	s.mu.Unlock()
+	if compute != nil {
+		payload = compute(call)
+	}
 	if method == "apps.connections.open" && payload == nil {
 		payload = map[string]any{"ok": true, "url": s.SocketURL()}
 	}

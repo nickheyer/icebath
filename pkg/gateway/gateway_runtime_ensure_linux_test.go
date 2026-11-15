@@ -170,16 +170,36 @@ func TestInstalledServiceStartIsNonmutatingAndFailedManagerNeverSpawns(t *testin
 	}
 }
 
+// Whether pid is a live stand in gateway child, a reaped, zombie or reused pid counting as gone
+func standInRunning(pid int) bool {
+	stat, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return false
+	}
+	end := strings.LastIndexByte(string(stat), ')')
+	if end < 0 || end+2 >= len(stat) || stat[end+2] == 'Z' || stat[end+2] == 'X' {
+		return false
+	}
+	cmdline, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	return err == nil && strings.HasSuffix(string(cmdline), "gateway\x00run\x00--quiet\x00")
+}
+
 func TestUnmanagedChildUsesExplicitHomeAndSurvivesLauncherExit(t *testing.T) {
 	tmp := t.TempDir()
 	h := filepath.Join(tmp, "profile")
 	os.Mkdir(h, 0o700)
-	t.Cleanup(func() { os.WriteFile(filepath.Join(h, "exit"), nil, 0o600) })
+	ownerRead, ownerWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ownerWrite.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	launcher := exec.CommandContext(ctx, os.Args[0], "-test.run=^$")
-	launcher.Env = append(os.Environ(), unmanagedLauncherEnv+"="+h, unmanagedChildEnv+"=1", "ICEBATH_HOME="+filepath.Join(tmp, "wrong"))
+	launcher.Env = append(os.Environ(), unmanagedLauncherEnv+"="+h, unmanagedChildEnv+"=1", unmanagedOwnerFDEnv+"=3", "ICEBATH_HOME="+filepath.Join(tmp, "wrong"))
+	launcher.ExtraFiles = []*os.File{ownerRead}
 	out, err := launcher.Output()
+	ownerRead.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,6 +223,19 @@ func TestUnmanagedChildUsesExplicitHomeAndSurvivesLauncherExit(t *testing.T) {
 	pid, _ := strconv.Atoi(strings.TrimSpace(string(out)))
 	if value.PID != pid || value.SID != pid || value.Home != h {
 		t.Fatalf("%+v stdout %q", value, out)
+	}
+	if !standInRunning(pid) {
+		t.Fatalf("stand in child %d did not survive its launcher's exit", pid)
+	}
+	if err := ownerWrite.Close(); err != nil {
+		t.Fatal(err)
+	}
+	gone := time.Now().Add(5 * time.Second)
+	for standInRunning(pid) && time.Now().Before(gone) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if standInRunning(pid) {
+		t.Fatalf("stand in child %d outlived the close of its owner's pipe", pid)
 	}
 }
 

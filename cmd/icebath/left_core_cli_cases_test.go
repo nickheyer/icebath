@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/commands"
@@ -64,41 +63,4 @@ func leftCoreExit(t *testing.T, err error) *commands.ExitError {
 		t.Fatalf("error %T %v", err, err)
 	}
 	return exit
-}
-
-func TestOldMCPServeSpellingNamesThePluginCommand(t *testing.T) {
-	h, ctx := leftCoreCLIHome(t, "mcp", "serve", "--tools")
-	var err error
-	out := captureStream(t, &os.Stdout, func() { err = newCLI().Execute([]string{"mcp", "serve", "--tools"}) })
-	exit := leftCoreExit(t, err)
-	if exit.Code != 2 || out != "" {
-		t.Fatalf("code %d stdout %q", exit.Code, out)
-	}
-	if !strings.Contains(exit.Msg, "`icebath mcp serve` is now `icebath mcp-serve`") || !strings.Contains(exit.Msg, "plugins install mcp-serve") {
-		t.Fatalf("stderr %q", exit.Msg)
-	}
-	if err := os.MkdirAll(filepath.Join(h, "plugins", "mcp-serve"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	hint := provider.MovedCommandHint(ctx, "icebath mcp", "serve", "")
-	if !strings.Contains(hint, "is now `icebath mcp-serve`") || strings.Contains(hint, "install") {
-		t.Fatalf("installed hint %q", hint)
-	}
-}
-
-func TestOldSpellingWithoutThePluginNamesTheInstall(t *testing.T) {
-	for _, argv := range [][]string{{"import-agent", "claude-code", "--dry-run"}, {"claw", "migrate", "--dry-run"}} {
-		_, ctx := leftCoreCLIHome(t, argv...)
-		exit := leftCoreExit(t, newCLI().Execute(argv))
-		if exit.Code != 2 {
-			t.Fatalf("%v code %d", argv, exit.Code)
-		}
-		want := "`icebath " + argv[0] + "` moved out of core into the 'agent-importers' plugin, which is not loaded"
-		if !strings.Contains(exit.Msg, want) || !strings.Contains(exit.Msg, "icebath plugins install agent-importers") {
-			t.Fatalf("%v stderr %q", argv, exit.Msg)
-		}
-		if hint := provider.MovedCommandHint(ctx, "icebath auth", argv[0], ""); hint != "" {
-			t.Fatalf("%v auth hint %q", argv, hint)
-		}
-	}
 }

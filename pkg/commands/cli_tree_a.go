@@ -2,7 +2,10 @@ package commands
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
+	"github.com/nickheyer/icebath/pkg/agentimport/openclaw"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/spf13/cobra"
 
@@ -42,8 +45,7 @@ func yesFlag(cmd *cobra.Command, help string) {
 }
 func jsonFlag(cmd *cobra.Command, help string) { bf(cmd, "json", "", help) }
 
-// ImportSource is one agent whose setup the migrate command can import
-// ImportSource is one importer the migrate command offers, the plugins table
+// ImportSource is one native importer the migrate command offers
 type ImportSource = provider.ImportSource
 
 // ImportSources lists the importers the migrate command offers
@@ -182,7 +184,7 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	bf(mRelay, "no-validate", "", "Skip activating the generated file through Relay's validator before writing it")
 	for _, src := range ImportSources {
 		sub := c.newCmd(migrate, src.Name, "Import your "+src.Label+" setup into Icebath",
-			"Import your "+src.Label+" setup into the active profile through the agent-importers plugin (installed from the plugin catalog when missing). Always previews first and asks before changing anything.")
+			"Import your "+src.Label+" setup into the active profile (same as `icebath import-agent "+src.Name+"`). Always previews first and asks before changing anything.")
 		sf(sub, "source", "", "", "Where the agent's setup (or, for Grok Bot, its export file) is")
 		bf(sub, "dry-run", "", "Preview only")
 		bf(sub, "overwrite", "", "Replace existing items on name conflicts")
@@ -195,6 +197,8 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 			af(sub, "bot", "", "Only this Bot or agent, by name (repeatable)")
 		}
 	}
+
+	c.addImportAgent(root)
 
 	codex := c.helpCmd(root, "codex-runtime", "Manage the optional codex app-server runtime (migrate MCP config)",
 		"Noninteractive counterpart of the /codex-runtime slash command. Toggling the runtime itself stays in the chat command (`/codex-runtime on|off`); `migrate` re-projects Icebath' mcp_servers + installed codex plugins into the managed block of ~/.codex/config.toml for the selected profile.", 0)
@@ -534,4 +538,66 @@ func (c *CLI) addCron(root *cobra.Command) {
 	c.newCmd(cron, "doctor", "Check scheduled jobs for common health issues", "")
 	tick := c.newCmd(cron, "tick", "Run due jobs once and exit", "")
 	acceptHooks(tick)
+}
+
+// Default dirs the import-agent auto detection checks, as its help lists them
+const importDirsHint = "~/.openclaw, ~/.claude, ~/.codex or ~/.cursor"
+
+// Adds the OpenClaw only flags, defaults filled for claw migrate and left unset for import-agent
+func openclawMigrateFlags(c *CLI, cmd *cobra.Command, defaults bool) {
+	preset, conflict := "", ""
+	if defaults {
+		preset, conflict = "full", "skip"
+	}
+	sf(cmd, "preset", "", preset, "OpenClaw migration preset (default: full). Neither preset imports secrets — pass --migrate-secrets to include API keys.")
+	c.choice(cmd, "preset", "user-data", "full")
+	bf(cmd, "migrate-secrets", "", "OpenClaw: include allowlisted secrets (TELEGRAM_BOT_TOKEN, API keys, etc.). Required even under --preset full.")
+	bf(cmd, "no-backup", "", "OpenClaw: skip the pre-migration zip snapshot of the Icebath home (by default one restore-point archive is written to its backups/ dir before apply; restorable with 'icebath import').")
+	sf(cmd, "workspace-target", "", "", "OpenClaw: absolute path to copy workspace instructions into")
+	sf(cmd, "skill-conflict", "", conflict, "OpenClaw: how to handle skill name conflicts (default: skip)")
+	c.choice(cmd, "skill-conflict", "skip", "overwrite", "rename")
+	ids := make([]string, 0, len(openclaw.MigrationOptions))
+	for _, o := range openclaw.MigrationOptions {
+		ids = append(ids, o.ID)
+	}
+	sort.Strings(ids)
+	af(cmd, "include", "", "OpenClaw: comma-separated migration option ids to include, repeatable (default: all). Valid ids: "+strings.Join(ids, ", "))
+	af(cmd, "exclude", "", "OpenClaw: comma-separated migration option ids to skip, repeatable. Valid ids: "+strings.Join(ids, ", "))
+	sf(cmd, "output-dir", "", "", "OpenClaw: where to write the report, backups, and archived docs")
+	bf(cmd, "json", "", "OpenClaw: print the migration report as JSON on stdout (redacted). Combine with --dry-run for a safe plan-only machine-readable preview.")
+}
+
+// Adds icebath import-agent and icebath claw with their migrate and cleanup subcommands
+func (c *CLI) addImportAgent(root *cobra.Command) {
+	ia := c.newCmd(root, "import-agent", "Import an OpenClaw, Claude Code, Codex CLI, Cursor, Grok Bot or OpenBot setup into Icebath",
+		"One-command import of another agent's setup into Icebath. Maps CLAUDE.md/AGENTS.md instructions, Cursor rules, permission allowlists, MCP servers, skills, and memories into their Icebath equivalents; Grok Bot and OpenBot routines become cron jobs. Always shows a preview before making changes. API keys and credentials are never imported — run 'icebath setup' for those. OpenClaw (the former 'icebath claw migrate') imports allowlisted secrets only with --migrate-secrets.")
+	c.pos(ia, pOptChoice("agent", "", "openclaw", "claude-code", "codex", "cursor", "grok-bot", "openbot").withHelp("Which agent to import from (default: auto-detect "+importDirsHint+")"))
+	sf(ia, "source", "", "", "Path to the agent's config directory (default: "+importDirsHint+"); for grok-bot, the export file the Bot wrote (or a folder of them, or - to read a pasted reply from stdin); for openbot, its user data folder (the one holding openbot.db)")
+	bf(ia, "dry-run", "", "Preview only — stop after showing what would be imported")
+	bf(ia, "overwrite", "", "Overwrite existing Icebath items on name conflicts (default: skip)")
+	bf(ia, "yes", "y", "Skip confirmation prompts")
+	bf(ia, "sync", "", "Re-import every previously imported source whose files changed since the last import (registered in ICEBATH_HOME/import-sync.json). Runs without prompts; combine with --dry-run to preview.")
+	bf(ia, "from-setup", "", "")
+	hide(ia, "from-setup")
+	openclawMigrateFlags(c, ia, false)
+	bf(ia, "activate-routines", "", "Grok Bot / OpenBot: create the imported cron jobs active (default: paused, so they don't run alongside the originals until you turn those off)")
+	af(ia, "bot", "", "Grok Bot / OpenBot: import only this Bot or agent, by name (repeatable)")
+
+	claw := c.newCmd(root, "claw", "OpenClaw migration tools",
+		"Migrate settings, memories, skills, and API keys from OpenClaw to Icebath ('icebath claw migrate' is the same as 'icebath import-agent openclaw')")
+	subDest(claw, "claw_action")
+	migrate := c.newCmd(claw, "migrate", "Migrate from OpenClaw to Icebath (same as 'icebath import-agent openclaw')",
+		"Import settings, memories, skills, and API keys from an OpenClaw installation. Always shows a preview before making changes.")
+	sf(migrate, "source", "", "", "Path to OpenClaw directory (default: ~/.openclaw)")
+	bf(migrate, "dry-run", "", "Preview only — stop after showing what would be migrated")
+	bf(migrate, "overwrite", "", "Overwrite existing files (default: refuse to apply when the plan has conflicts)")
+	openclawMigrateFlags(c, migrate, true)
+	bf(migrate, "yes", "y", "Skip confirmation prompts")
+	bf(migrate, "from-setup", "", "")
+	hide(migrate, "from-setup")
+	cleanup := c.newCmd(claw, "cleanup", "Archive leftover OpenClaw directories after migration",
+		"Scan for and archive leftover OpenClaw directories to prevent state fragmentation", "clean")
+	sf(cleanup, "source", "", "", "Path to a specific OpenClaw directory to clean up")
+	bf(cleanup, "dry-run", "", "Preview what would be archived without making changes")
+	bf(cleanup, "yes", "y", "Skip confirmation prompts")
 }

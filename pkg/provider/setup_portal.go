@@ -20,6 +20,18 @@ func SwapSetupModelFlowNous(fn func(ctx context.Context, cfg map[string]any) err
 	return func() { setupModelFlowNous = prev }
 }
 
+// SetupBrand draws the brand banner of a setup screen on a terminal, installed by the package that owns the art
+var SetupBrand func(c *cliui.Console, title string)
+
+// PrintSetupTitle opens a setup screen, the brand banner with the title on a terminal and the box banner otherwise
+func PrintSetupTitle(title string, box ...string) {
+	if c := setupUI(); c.IsFlow() && SetupBrand != nil {
+		SetupBrand(c, title)
+		return
+	}
+	PrintSetupBanner(box...)
+}
+
 // PrintSetupBanner prints the magenta box banner, top border, the body lines and bottom border
 func PrintSetupBanner(lines ...string) {
 	c := setupUI()
@@ -95,7 +107,7 @@ func RunNousFlow(ctx context.Context, cfg map[string]any, flowContext string, ca
 
 // RunPortalOneShot is the one shot Nous Portal setup of icebath setup --portal and icebath portal
 func RunPortalOneShot(ctx context.Context, cfg config.Tree) error {
-	PrintSetupBanner("│     ☤ Icebath Setup — Nous Portal (one-shot)            │")
+	PrintSetupTitle("Setup · Nous Portal", "│     ☤ Icebath Setup — Nous Portal (one-shot)            │")
 	SetupInfo(nil, "  One subscription, 300+ models, plus the Tool Gateway:",
 		"    web search, image generation, TTS, browser automation",
 		"    — all routed through your Nous Portal sub.", nil,

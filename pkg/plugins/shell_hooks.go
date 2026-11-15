@@ -689,7 +689,7 @@ func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) 
 	if env == nil {
 		env = &tools.Env{Home: home.Dir(ctx)}
 	}
-	childEnv, err := tools.BuildSubprocessEnv(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: tools.MultiplexActive()})
+	childEnv, err := tools.BuildSubprocessEnv(ctx, env, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: tools.MultiplexActiveFor(ctx, env)})
 	if err != nil {
 		return failed(err.Error())
 	}

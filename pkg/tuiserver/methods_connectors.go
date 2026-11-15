@@ -322,7 +322,7 @@ func connectorRows(rows []any) ([]any, error) {
 // Connectors page list read with the stored bearer, never creating an identity
 func accountConnectorList(ctx context.Context, env *tools.Env, rid any) (map[string]any, error) {
 	rows := []any{}
-	if tools.ReadNousAccessToken(env) != "" {
+	if tools.ReadNousAccessToken(ctx, env) != "" {
 		client, err := tools.NewManagedClient(env, false, tools.InitiatorAgentTool, nil)
 		if err != nil {
 			return nil, err
@@ -464,10 +464,14 @@ func accountHome(request *pydantic.Instance) string {
 	return profileDir
 }
 
-// Runs body with the session variables of the desktop Connectors page bound for a sessionless request
+// Runs body with the Connectors page variables bound for a sessionless request, a served profile's page holding its own secrets
 func desktopPageVars(ctx context.Context, body func(ctx context.Context, env *tools.Env)) {
 	cronSession := ""
-	env := &tools.Env{Home: home.Dir(ctx), Values: &sync.Map{}, TerminalScope: tools.GetTerminalScope(ctx)}
+	h := home.Dir(ctx)
+	env := &tools.Env{Home: h, Values: &sync.Map{}, TerminalScope: tools.GetTerminalScope(ctx)}
+	if !provider.IsProcessHome(h) {
+		env.Secrets = config.NewSecrets(h)
+	}
 	tools.SetSessionVars(env, tools.SessionVars{Source: "desktop", Profile: currentProfileName(ctx), CronSession: &cronSession})
 	defer clearSessionContext(env)
 	body(tools.WithToolEnv(ctx, env), env)

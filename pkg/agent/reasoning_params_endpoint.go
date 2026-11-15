@@ -77,10 +77,7 @@ func (a *AIAgent) reasoningEndpointProfile(ctx context.Context) *provider.Profil
 			return nil
 		}
 	}
-	if p, ok := provider.ProfileForHost(ctx, a.baseURL, false); ok {
-		return &p
-	}
-	return nil
+	return provider.RegisteredProfileForHost(ctx, a.baseURL, false)
 }
 
 // Reasoning payload of the endpoint gating profile for the model and reasoning config, nil when no profile gates

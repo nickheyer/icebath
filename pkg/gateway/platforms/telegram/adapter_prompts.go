@@ -1176,8 +1176,8 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 	}
 	success := false
 	label := ""
-	env, envErr := tools.BuildSubprocessEnv(ctx, &tools.Env{Home: home.Dir(ctx), TerminalScope: tools.GetTerminalScope(ctx)},
-		tools.SubprocessEnvOptions{StripLaunchProfile: true})
+	env, envErr := tools.BuildSubprocessEnv(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)),
+		tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if envErr != nil {
 		label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", pyrepr.ExceptionMessage(envErr))
 		slog.Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(envErr)))

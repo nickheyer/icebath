@@ -327,7 +327,7 @@ func TestPromptBindsSessionIdIntoSubprocessEnv(t *testing.T) {
 	mock := mockOf(t, st)
 	child := ""
 	mock.run = func(ctx context.Context, userMessage any, o agent.RunConversationOptions) (map[string]any, error) {
-		runEnv, err := tools.MakeRunEnv(mock.env, map[string]string{})
+		runEnv, err := tools.MakeRunEnv(ctx, mock.env, map[string]string{})
 		if err != nil {
 			return nil, err
 		}

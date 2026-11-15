@@ -36,7 +36,7 @@ func resetDeliver(t *testing.T) {
 	testDeliver.Unlock()
 	t.Cleanup(func() {
 		testDeliver.Lock()
-		testDeliver.sent = nil
+		testDeliver.sent, testDeliver.err, testDeliver.targets = nil, nil, nil
 		testDeliver.Unlock()
 	})
 }

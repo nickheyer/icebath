@@ -736,7 +736,7 @@ func mirrorVoiceSections(ctx context.Context, path string) (written bool) {
 			written = false
 		}
 	}()
-	srcCfg, err := config.ReadUser(home.Dir(ctx))
+	srcCfg, err := readUserConfigRaw(ctx, home.Dir(ctx))
 	if err != nil {
 		return false
 	}
@@ -750,7 +750,7 @@ func mirrorVoiceSections(ctx context.Context, path string) (written bool) {
 		return false
 	}
 	scoped := hermesHomeScope(ctx, path)
-	dstCfg, err := config.ReadUser(path)
+	dstCfg, err := readUserConfigRaw(scoped, path)
 	if err != nil {
 		return false
 	}
@@ -781,7 +781,7 @@ func mirrorVoiceSections(ctx context.Context, path string) (written bool) {
 // Inherits the launch model and its custom endpoint when the new profile has no model of its own
 func inheritLaunchModel(ctx context.Context, path string) (bool, error) {
 	scoped := hermesHomeScope(ctx, path)
-	dstRaw, err := config.ReadUser(path)
+	dstRaw, err := readUserConfigRaw(scoped, path)
 	if err != nil {
 		return false, err
 	}
@@ -798,13 +798,13 @@ func inheritLaunchModel(ctx context.Context, path string) (bool, error) {
 	if !(truthy(modelCfg["provider"]) && truthy(modelCfg["default"])) {
 		return false, nil
 	}
-	launchRaw, err := config.ReadUser(launchHome)
+	launchRaw, err := readUserConfigRaw(ctx, launchHome)
 	if err != nil {
 		return false, err
 	}
 	seed := provider.LaunchModelSeed(ctx, launchRaw)
 	if truthy(seed["providers"]) || truthy(seed["custom_providers"]) {
-		current, err := config.ReadUser(path)
+		current, err := readUserConfigRaw(scoped, path)
 		if err != nil {
 			return false, err
 		}
@@ -817,7 +817,7 @@ func inheritLaunchModel(ctx context.Context, path string) (bool, error) {
 	}
 	launchModel, _ := launchRaw["model"].(map[string]any)
 	if rawURL, isText := launchModel["base_url"].(string); isText && strings.Contains(rawURL, "${") {
-		cfg, err := config.ReadUser(path)
+		cfg, err := readUserConfigRaw(scoped, path)
 		if err != nil {
 			return false, err
 		}
@@ -1092,7 +1092,7 @@ func configureCfgSections(ctx context.Context, profileDir string, params map[str
 	launchMCP := map[string]any{}
 	if wantMCP {
 		launchMCP = tryOr(func() (map[string]any, error) {
-			raw, err := config.ReadUser(home.Dir(ctx))
+			raw, err := readUserConfigRaw(ctx, home.Dir(ctx))
 			if err != nil {
 				return nil, err
 			}
@@ -1129,18 +1129,18 @@ func configureCfgSections(ctx context.Context, profileDir string, params map[str
 				applied["skills"] = false
 				return
 			}
-			applied["skills"] = landed(profileDir, cfg, []string{"skills", "disabled"}, nil)
+			applied["skills"] = landed(scoped, profileDir, cfg, []string{"skills", "disabled"}, nil)
 			cfg = load()
 		}()
 	}
 	if toolsetList, isList := params["enabled_toolsets"].([]any); isList {
 		applied["toolsets"] = bestEffort(func() error { return saveToolsetPin(scoped, profileDir, cfg, toolsetList) }) &&
-			landed(profileDir, cfg, []string{"platform_toolsets", "cli"}, nil)
+			landed(scoped, profileDir, cfg, []string{"platform_toolsets", "cli"}, nil)
 	}
 	if wantMCP {
 		mcpCfg := load()
 		applied["mcp_servers"] = bestEffort(func() error { return saveMCPToggles(scoped, profileDir, mcpCfg, enabledMCP, launchMCP) }) &&
-			landed(profileDir, mcpCfg, []string{"mcp_servers"}, mcpToggleState)
+			landed(scoped, profileDir, mcpCfg, []string{"mcp_servers"}, mcpToggleState)
 	}
 }
 
@@ -1162,8 +1162,13 @@ func mcpToggleState(servers any) any {
 	return out
 }
 
+// User config.yaml of a home exactly as written, read through the active config backend
+func readUserConfigRaw(ctx context.Context, h string) (map[string]any, error) {
+	return config.ReadUserConfigRaw(ctx, config.GetConfigPath(h))
+}
+
 // Whether a section a bulk save was asked to write reads back from the user layer as written
-func landed(profileDir string, cfg map[string]any, path []string, key func(any) any) bool {
+func landed(ctx context.Context, profileDir string, cfg map[string]any, path []string, key func(any) any) bool {
 	if key == nil {
 		key = func(v any) any { return v }
 	}
@@ -1182,7 +1187,7 @@ func landed(profileDir string, cfg map[string]any, path []string, key func(any) 
 		}
 		return node
 	}
-	raw, err := config.ReadUser(profileDir)
+	raw, err := readUserConfigRaw(ctx, profileDir)
 	if err != nil {
 		panic(err)
 	}

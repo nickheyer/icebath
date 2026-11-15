@@ -296,12 +296,12 @@ func (d *embeddedCuaDaemon) childEnv() map[string]string {
 	return env
 }
 
-func (d *embeddedCuaDaemon) sanitizedEnv() (map[string]string, error) {
-	return tools.SanitizeSubprocessEnv(d.env, d.childEnv(), nil)
+func (d *embeddedCuaDaemon) sanitizedEnv(ctx context.Context) (map[string]string, error) {
+	return tools.SanitizeSubprocessEnv(ctx, d.env, d.childEnv(), nil)
 }
 
 // serve argv of the private daemon with the manifest and the overlay policy
-func (d *embeddedCuaDaemon) serveArgs() []string {
+func (d *embeddedCuaDaemon) serveArgs(ctx context.Context) []string {
 	args := []string{"serve", "--embedded", "--socket", d.socketPath, "--no-permissions-gate", "--permission-mode", d.permissionMode}
 	if d.permissionMode == "unrestricted" {
 		args = append(args, "--dangerously-bypass-approvals")
@@ -309,7 +309,7 @@ func (d *embeddedCuaDaemon) serveArgs() []string {
 	if d.manifestApplies {
 		args = append(args, "--capability-manifest", d.capabilityManifest, "--approve-capability-manifest")
 	}
-	return mcpArgsWithOverlayFlag(d.env, args, d.command)
+	return mcpArgsWithOverlayFlag(ctx, d.env, args, d.command)
 }
 
 // Launches the private daemon and waits until its socket answers status
@@ -328,12 +328,12 @@ func (d *embeddedCuaDaemon) start(ctx context.Context) error {
 	if driverCmd == "" {
 		return errors.New(cuaDriverInstallHint())
 	}
-	d.command, d.mcpArgs = resolveMCPInvocation(d.env, driverCmd, 6.0)
-	env, err := d.sanitizedEnv()
+	d.command, d.mcpArgs = resolveMCPInvocation(ctx, d.env, driverCmd, 6.0)
+	env, err := d.sanitizedEnv(ctx)
 	if err != nil {
 		return err
 	}
-	command, err := embeddedDaemonSpawnCommand(d.env, d.command, d.serveArgs(), cuPlatform, "")
+	command, err := embeddedDaemonSpawnCommand(d.env, d.command, d.serveArgs(ctx), cuPlatform, "")
 	if err != nil {
 		return err
 	}
@@ -352,7 +352,7 @@ func (d *embeddedCuaDaemon) start(ctx context.Context) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if err := d.stop(); err != nil {
+	if err := d.stop(ctx); err != nil {
 		return err
 	}
 	return d.startupFailure("embedded cua-driver startup timed out", "daemon did not become ready")
@@ -381,13 +381,13 @@ func (d *embeddedCuaDaemon) proxyInvocation() (string, []string, error) {
 }
 
 // Stops the private daemon, reaps its process group and removes the socket file
-func (d *embeddedCuaDaemon) stop() error {
+func (d *embeddedCuaDaemon) stop(ctx context.Context) error {
 	process := d.process
 	d.process = nil
 	ownsRuntime := d.ownsRuntime
 	d.ownsRuntime, d.running = false, false
 	if ownsRuntime {
-		env, err := d.sanitizedEnv()
+		env, err := d.sanitizedEnv(ctx)
 		if err != nil {
 			return err
 		}

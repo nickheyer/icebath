@@ -58,7 +58,7 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	c.addComputerUse(root)
 
 	mcp := c.newCmd(root, "mcp", "Manage MCP server connections",
-		"Manage MCP server connections.\n\nMCP servers provide additional tools via the Model Context Protocol.\nUse 'icebath mcp add' to connect to a new server. Running Icebath itself as an\nMCP server is the mcp-serve plugin: `icebath plugins install mcp-serve`.")
+		"Manage MCP server connections.\n\nMCP servers provide additional tools via the Model Context Protocol.\nUse 'icebath mcp add' to connect to a new server. Running Icebath itself as an\nMCP server is `icebath mcp-serve`.")
 	mAdd := c.newCmd(mcp, "add", "Add an MCP server (discovery-first install)", "")
 	c.pos(mAdd, p("name"), pRem("args").withHelp("Arguments for stdio command; must be the last option"))
 	sf(mAdd, "url", "", "", "HTTP/SSE endpoint URL")

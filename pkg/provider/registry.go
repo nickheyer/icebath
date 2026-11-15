@@ -38,7 +38,8 @@ var bundledPluginDirs = []struct {
 	{"anthropic", []string{"anthropic"}}, {"arcee", []string{"arcee"}}, {"azure-foundry", []string{"azure-foundry"}},
 	{"bedrock", []string{"bedrock"}}, {"commandcode", []string{"commandcode", "commandcode-anthropic"}},
 	{"custom", []string{"custom"}}, {"deepinfra", []string{"deepinfra"}}, {"deepseek", []string{"deepseek"}},
-	{"fireworks", []string{"fireworks"}}, {"gemini", []string{"gemini"}}, {"gmi", []string{"gmi"}},
+	{"fireworks", []string{"fireworks"}}, {"gemini", []string{"gemini"}},
+	{"github-copilot", []string{"copilot", "copilot-acp"}}, {"gmi", []string{"gmi"}},
 	{"huggingface", []string{"huggingface"}}, {"kilocode", []string{"kilocode"}},
 	{"kimi-coding", []string{"kimi-coding", "kimi-coding-cn"}}, {"lmstudio", []string{"lmstudio"}},
 	{"meta-ai", []string{"meta-ai"}}, {"minimax", []string{"minimax", "minimax-cn", "minimax-oauth"}},
@@ -404,6 +405,11 @@ func ProfileForHost(ctx context.Context, rawURL string, metadata bool) (Profile,
 		return *p, true
 	}
 	return Profile{}, false
+}
+
+// Registry owned profile claiming the url host, one identity per registration so per profile hook memos hold
+func RegisteredProfileForHost(ctx context.Context, rawURL string, metadata bool) *Profile {
+	return profileForHostCtx(ctx, rawURL, metadata)
 }
 
 func profileForHostCtx(ctx context.Context, rawURL string, metadata bool) *Profile {

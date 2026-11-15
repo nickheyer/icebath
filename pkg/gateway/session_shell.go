@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -100,12 +101,12 @@ func lastRunes(text string, n int) string {
 	return string(runes[len(runes)-n:])
 }
 
-// Runs the command through the platform shell with a scrubbed env, its redacted output tails returned
+// Runs the command through the platform shell with the scoped profile's scrubbed env, its redacted output tails returned
 func runShellCommand(ctx context.Context, command, cwd string) (map[string]any, error) {
 	if info, err := os.Stat(cwd); err != nil || !info.IsDir() {
 		return nil, runtimeRefusal("cwd_unavailable")
 	}
-	env, err := tools.BuildSubprocessEnvOrdered(ctx, nil, tools.SubprocessEnvOptions{
+	env, err := tools.BuildSubprocessEnvOrdered(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)), tools.SubprocessEnvOptions{
 		InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if err != nil {
 		return nil, err

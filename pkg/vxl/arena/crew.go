@@ -1,5 +1,3 @@
-//go:build ignore
-
 package arena
 
 import (
@@ -12,9 +10,6 @@ import (
 
 // Rigs a member may wear on its head
 var RigNames = []string{"visor", "halo", "antenna", "hood", "crest", "mask", "horns", "plugs", "none"}
-
-// Rig a hat name of the first arena stood for, so saved outfits still dress the crew
-var hatRigs = map[string]string{"cap": "crest", "beanie": "hood", "fedora": "hood", "hardhat": "mask", "headphones": "plugs", "bandana": "crest", "crown": "halo"}
 
 // World units one voxel of a figure spans
 const figureScale = 0.25
@@ -255,8 +250,6 @@ type actor struct {
 	partner *actor
 	// Seconds the actor has been working at its node
 	jacked float64
-	// Share of the time limit of the current exchange spent
-	clock float64
 	// Last tool class seen, for the drone and the sparks
 	toolKind toolKind
 	drone    float64

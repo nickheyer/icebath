@@ -47,28 +47,21 @@ func TestScenarioMigrateXaiAndBareMigrate(t *testing.T) {
 	s.Run("migrate", "no-such-agent").Exit(2).Has("no-such-agent", "icebath migrate")
 }
 
-// A second agent's setup in the user home is named by bare migrate when nobody can answer an offer
-func TestScenarioMigrateNamesAgentsFoundWithoutATerminal(t *testing.T) {
-	s := Start(t, Setup{User: map[string]string{".claude/settings.json": "{}\n"}})
-	headless := s.RunStep(Step{Args: []string{"migrate"}, Env: map[string]string{"ICEBATH_NONINTERACTIVE": "1"}}).Exit(0)
-	headless.Has("Found: Claude Code. Import one with: icebath migrate openclaw").Lacks("No other agent setup found", "Coming from another agent?")
-	named := s.Run("migrate", "claude-code", "--yes").Exit(1)
-	named.Has("Importing is done by the 'agent-importers' plugin from the Icebath plugin catalog. Installing it now...",
-		"The 'agent-importers' plugin could not be installed, so nothing was imported. Try again later with: icebath plugins install agent-importers")
-}
-
 // setup agent asks its three questions on a terminal, saves valid answers and keeps values on bad ones
 func TestScenarioSetupAgentSectionOnATerminal(t *testing.T) {
 	s := Start(t, Setup{})
 	tm := s.Terminal("setup", "agent")
-	tm.Await(`Icebath Setup — Agent Settings`)
-	tm.Await(`Max iterations \[None\]:`)
+	tm.Await(`Setup · Agent Settings`)
+	tm.Await(`● Max iterations`)
+	tm.Await(`enter keeps None`)
 	tm.Line("120")
+	tm.Await(`› Max iterations  120`)
 	tm.Await(`Max iterations set to 120`)
-	tm.Await(`Tool progress mode \(Enter keeps per-platform defaults\):`)
+	tm.Await(`● Tool progress mode \(Enter keeps per-platform defaults\)`)
 	tm.Line("Verbose")
 	tm.Await(`Tool progress set to: verbose`)
-	tm.Await(`Compression threshold \(0\.5-0\.95\) \[0\.5\]:`)
+	tm.Await(`● Compression threshold \(0\.5-0\.95\)`)
+	tm.Await(`enter keeps 0\.5`)
 	tm.Line("0.7")
 	tm.Await(`Context compression threshold set to 0\.7`)
 	tm.Await(`Agent Settings configuration complete!`)
@@ -79,14 +72,16 @@ func TestScenarioSetupAgentSectionOnATerminal(t *testing.T) {
 		"compression": {"threshold": 0.7}, "model": {"default": "fake-model"}}`)
 
 	tm = s.Terminal("setup", "agent")
-	tm.Await(`Max iterations \[120\]:`)
+	tm.Await(`enter keeps 120`)
 	tm.Line("many")
 	tm.Await(`Invalid number, keeping current value`)
-	tm.Await(`Tool progress mode \[verbose\]:`)
+	tm.Await(`● Tool progress mode`)
+	tm.Await(`enter keeps verbose`)
 	tm.Line("loud")
 	tm.Await(`Unknown mode 'loud', keeping 'verbose'`)
-	tm.Await(`Compression threshold \(0\.5-0\.95\) \[0\.7\]:`)
-	tm.Line("")
+	tm.Await(`enter keeps 0\.7`)
+	tm.Send("\r")
+	tm.Await(`› Compression threshold \(0\.5-0\.95\)  0\.7`)
 	tm.Await(`Context compression threshold set to 0\.7`)
 	if code := tm.Wait(); code != 0 {
 		s.Failf("setup agent with bad answers exited %d\n%s", code, clip(tm.Text()))
@@ -102,27 +97,27 @@ func TestScenarioSetupAgentSectionOnATerminal(t *testing.T) {
 func TestScenarioSetupTelemetrySectionOnATerminal(t *testing.T) {
 	s := Start(t, Setup{})
 	tm := s.Terminal("setup", "telemetry")
-	tm.Await(`Send shared metrics to Nous\?`)
-	tm.Await(`→ \(●\) No`)
+	tm.Await(`● Send shared metrics to Nous\?`)
+	tm.Await(`❯ No`)
 	tm.Send("\x1b[A")
-	tm.Await(`→ \(○\) Yes`)
+	tm.Await(`❯ Yes`)
 	tm.Send("\r")
+	tm.Await(`› Send shared metrics to Nous\?  Yes`)
 	tm.Await(`Shared metrics sent to Nous once a day\.`)
 	tm.Await(`Shared Metrics configuration complete!`)
 	if code := tm.Wait(); code != 0 {
 		s.Failf("setup telemetry exited %d\n%s", code, clip(tm.Text()))
 	}
-	if !shownOnTerminal(tm, "☤ Icebath Setup — Shared Metrics") || !shownOnTerminal(tm, "Never prompts, files, paths, setting values or error text.") {
+	if !shownOnTerminal(tm, "Setup · Shared Metrics") || !shownOnTerminal(tm, "Never prompts, files, paths, setting values or error text.") {
 		s.Failf("the section did not print its banner and what shared metrics contain\n%s", clip(tm.Text()))
 	}
 	s.HasJSON(s.YAML("config.yaml"), `{"telemetry": {"shared_metrics": {"enabled": true, "send": true}}}`)
 
 	tm = s.Terminal("setup", "telemetry")
-	tm.Await(`Send shared metrics to Nous\?`)
-	tm.Await(`→ \(●\) Yes`)
-	tm.Send("\x1b[B")
-	tm.Await(`→ \(○\) No`)
-	tm.Send("\r")
+	tm.Await(`● Send shared metrics to Nous\?`)
+	tm.Await(`❯ Yes`)
+	tm.Send("n")
+	tm.Await(`› Send shared metrics to Nous\?  No`)
 	tm.Await(`Shared metrics off\.`)
 	if code := tm.Wait(); code != 0 {
 		s.Failf("setup telemetry answered no exited %d\n%s", code, clip(tm.Text()))
@@ -195,75 +190,12 @@ func TestScenarioModelOptionsOverTheGatewaySocket(t *testing.T) {
 	}
 }
 
-// Bare migrate on a terminal offers the agent found, and without a reachable catalog imports nothing
-func TestScenarioMigrateOffersTheAgentFoundOnATerminal(t *testing.T) {
-	s := Start(t, Setup{User: map[string]string{".claude/settings.json": "{}\n"}})
-	tm := s.Terminal("migrate")
-	tm.Await(`Coming from another agent\?`)
-	tm.Await(`Found on this computer: Claude Code \(~/\.claude\)\.`)
-	tm.Await(`Import your setup from Claude Code\? \[Y/n\]:`)
-	tm.Line("n")
-	tm.Await(`Skipped\. Import later with: icebath plugins install agent-importers, then icebath import-agent`)
-	if code := tm.Wait(); code != 0 {
-		s.Failf("migrate after a declined offer exited %d\n%s", code, clip(tm.Text()))
-	}
-
-	tm = s.Terminal("migrate")
-	tm.Await(`Import your setup from Claude Code\? \[Y/n\]:`)
-	tm.Line("y")
-	tm.Await(`Importing is done by the 'agent-importers' plugin`)
-	tm.Await(`plugin could not be installed, so nothing was imported`)
-	if code := tm.Wait(); code != 0 {
-		s.Failf("migrate after a failed plugin install exited %d\n%s", code, clip(tm.Text()))
-	}
-	for _, line := range []string{"Importing is done by the 'agent-importers' plugin from the Icebath plugin catalog. Installing it now...",
-		"The 'agent-importers' plugin could not be installed, so nothing was imported. Try again later with: icebath plugins install agent-importers"} {
-		if !shownOnTerminal(tm, line) {
-			s.Failf("the terminal did not show %q\n%s", line, clip(tm.Text()))
-		}
-	}
-	if s.Exists("plugins/agent-importers") {
-		s.Failf("a failed install left the plugin folder behind")
-	}
-}
-
-// An installed importer plugin without the agent's command is updated once, then the import is reported as not run
-func TestScenarioMigrateReportsAnImporterThatDidNotRun(t *testing.T) {
-	s := Start(t, Setup{
-		User: map[string]string{".claude/settings.json": "{}\n"},
-		Home: map[string]string{"plugins/agent-importers/plugin.yaml": "name: agent-importers\nversion: 0.0.1\ndescription: Scenario fixture without an importer command\n"},
-	})
-	s.Finding("SF-2")
-	before := s.Read("config.yaml")
-	tm := s.Terminal("migrate")
-	tm.Await(`Import your setup from Claude Code\? \[Y/n\]:`)
-	tm.Line("y")
-	tm.Await(`Importing from Claude Code`)
-	tm.Await(`Your 'agent-importers' plugin predates the Claude Code importer`)
-	tm.Await(`The Claude Code import did not run`)
-	if code := tm.Wait(); code != 0 {
-		s.Failf("migrate after an importer that did not run exited %d\n%s", code, clip(tm.Text()))
-	}
-	for _, line := range []string{"Your 'agent-importers' plugin predates the Claude Code importer. Updating it...",
-		"The Claude Code import did not run. If the error names an invalid choice or unrecognized arguments, update the plugin first: icebath plugins update agent-importers"} {
-		if !shownOnTerminal(tm, line) {
-			s.Failf("the terminal did not show %q\n%s", line, clip(tm.Text()))
-		}
-	}
-	if strings.Contains(tm.Text(), "Importing is done by the") {
-		s.Failf("an installed plugin was installed again\n%s", clip(tm.Text()))
-	}
-	if !strings.Contains(s.Read("config.yaml"), "fake-model") || strings.Contains(before, "agent-importers") {
-		s.Failf("the config lost its model or the fixture began enabled")
-	}
-}
-
 // icebath model picks a model of the saved endpoint and, a pick having been saved, offers the effort step
 func TestScenarioModelCommandOnATerminal(t *testing.T) {
 	s := Start(t, Setup{ModelOptions: fakellm.Options{RecordGet: true}, Extra: "custom_providers:\n  - name: scripted\n    base_url: ${MODEL_URL}\n"})
 	tm := s.Terminal("model")
-	tm.Await(`Select provider:`)
-	tm.Await(`→ \(●\) scripted \(127\.0\.0\.1:\d+/v1\)\s+← currently active`)
+	tm.Await(`● Select provider`)
+	tm.Await(`❯ scripted\s+currently active\s+127\.0\.0\.1:\d+/v1`)
 	tm.Send("\x1b")
 	tm.Await(`No change\.`)
 	if code := tm.Wait(); code != 0 {
@@ -274,12 +206,13 @@ func TestScenarioModelCommandOnATerminal(t *testing.T) {
 	}
 
 	tm = s.Terminal("model")
-	tm.Await(`Select provider:`)
+	tm.Await(`● Select provider`)
 	tm.Send("\r")
-	tm.Await(`Select model from scripted:`)
-	tm.Await(`→ \(●\) fake-model`)
+	tm.Await(`● Select model from scripted`)
+	tm.Await(`❯ fake-model`)
 	tm.Send("\r")
-	tm.Await(`Select reasoning effort:`)
+	tm.Await(`● Select reasoning effort`)
+	tm.Await(`❯ medium`)
 	tm.Send("\r")
 	tm.Await(`Reasoning effort set to: medium`)
 	if code := tm.Wait(); code != 0 {

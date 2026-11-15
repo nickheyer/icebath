@@ -15,7 +15,7 @@ func TestToolsConfigBridgeForwardsTheCuaSetup(t *testing.T) {
 	}
 	prevReady, prevInstall := cuaDriverInstallReady, installCuaDriver
 	t.Cleanup(func() { cuaDriverInstallReady, installCuaDriver = prevReady, prevInstall })
-	cuaDriverInstallReady = func(*tools.Env) (bool, error) { return true, nil }
+	cuaDriverInstallReady = func(context.Context, *tools.Env) (bool, error) { return true, nil }
 	if ok, err := hooks.CuaDriverInstallReady(&tools.Env{}); !ok || err != nil {
 		t.Fatalf("ready %v %v", ok, err)
 	}

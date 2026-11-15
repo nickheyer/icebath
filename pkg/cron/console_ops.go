@@ -10,6 +10,11 @@ func CreateJob(ctx context.Context, h string, o CreateJobOptions) (*Job, error) 
 	return openCronStore(h, nil).createJob(ctx, o)
 }
 
+// Schedule record a schedule string parses to under the cron settings of the home, cron/jobs.py parse_schedule
+func ParseSchedule(h, schedule string) (*Schedule, error) {
+	return openCronStore(h, nil).parseSchedule(schedule)
+}
+
 // Job of the home by exact id, nil when absent, cron/jobs.py get_job
 func GetJob(ctx context.Context, h, jobID string) (*Job, error) {
 	return openCronStore(h, nil).getJob(ctx, jobID)

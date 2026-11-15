@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -20,11 +21,11 @@ func sendWire(t *testing.T, messages []map[string]any) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(converted)
+	raw, err := pyjson.Dumps(converted, pyjson.SortKeys(true))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(raw)
+	return raw
 }
 
 // Request rows the live send path builds for history with the current turn at idx

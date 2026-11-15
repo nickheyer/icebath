@@ -465,15 +465,15 @@ func fireOverdueJobs(ctx context.Context, p CronScheduler, o FireOptions, now *t
 	return fired, nil
 }
 
-// Runs one claimed misfire fire off the caller, an escaping failure printed as threading.excepthook prints it
+// Runs one claimed misfire fire off the caller, an escaping failure handed to the thread exception hook
 func runMisfireFire(ctx context.Context, p CronScheduler, claimed *Job, o FireOptions, thread string) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%v\n%s", thread, r, debug.Stack())
+			threadExceptHook(thread, fmt.Sprintf("%v\n%s", r, debug.Stack()))
 		}
 	}()
 	if _, err := schedulerFireClaimed(ctx, p, claimed, FireOptions{Adapters: o.Adapters, Loop: o.Loop}); err != nil {
-		fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%s: %v\n", thread, cronExceptionName(err), err)
+		threadExceptHook(thread, fmt.Sprintf("%s: %v\n", cronExceptionName(err), err))
 	}
 }
 

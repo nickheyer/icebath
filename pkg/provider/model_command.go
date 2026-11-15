@@ -32,6 +32,8 @@ var providerModelFlows = map[string]func(r *ModelFlowRun) error{
 	"bedrock":       modelFlowBedrock,
 	"vertex":        modelFlowVertex,
 	"azure-foundry": modelFlowAzureFoundry,
+	"copilot":       modelFlowCopilot,
+	"copilot-acp":   modelFlowCopilotACP,
 }
 
 // Model command seams, swappable so tests script the picker and the flows like the hermes monkeypatches
@@ -484,6 +486,7 @@ func modelCommandEnv(ctx context.Context) PoolEnv {
 func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 	env := modelCommandEnv(ctx)
 	r := &ModelFlowRun{Ctx: ctx, Env: env, Out: SetupOutput(), Args: ns}
+	defer setupUI().Await("Checking providers")()
 	tree, err := r.loadConfig()
 	if err != nil {
 		return err
@@ -543,6 +546,7 @@ func SelectProviderAndModel(ctx context.Context, ns map[string]any) error {
 	}
 	savesBefore := modelChoiceSaveCount()
 	providerGone := false
+	defer setupUI().Await("Loading " + labelOr(providerLabels, selected))()
 	err = observability.CLIProviderSetup(ctx, selected, func(ctx context.Context) error {
 		if flow := providerModelFlows[selected]; flow != nil {
 			return flow(r)

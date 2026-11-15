@@ -78,6 +78,26 @@ func flowAsk(out io.Writer, prompt string, o flowAskOptions) (string, bool) {
 	return strings.TrimSpace(answer), true
 }
 
+// Arrow key list standing in for a typed prompt on a terminal, answering what the chosen row would type
+func flowMenuAnswer(title string, labels, answers []string, def int) (answer string, ran, cancelled bool) {
+	if !pickerConsoleFn().Interactive() {
+		return "", false, false
+	}
+	idx, err := flowRadiolistFn(title, plainPickerRows(labels), PickerRadiolistOptions{Selected: def, CancelReturns: -1})
+	if err != nil {
+		return "", false, false
+	}
+	if idx < 0 || idx >= len(answers) {
+		return "", true, true
+	}
+	return answers[idx], true, false
+}
+
+// SetupMenuAnswer is the arrow key list standing in for a typed setup prompt, ran false off a terminal
+func SetupMenuAnswer(title string, labels, answers []string, def int) (answer string, ran, cancelled bool) {
+	return flowMenuAnswer(title, labels, answers, def)
+}
+
 // Resolves an existing wizard credential and its source without changing its storage
 func existingAPIKeyForModelFlow(env PoolEnv, providerID string, pconfig Profile) (string, string) {
 	key, source, _ := authResolver(env).apiKeyProviderSecret(providerID, pconfig)

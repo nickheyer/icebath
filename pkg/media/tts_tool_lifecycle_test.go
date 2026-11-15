@@ -430,17 +430,17 @@ func TestPluginProviderWarmAndReleaseFollowTheLease(t *testing.T) {
 }
 
 // Command runner double recording each hook command and signalling once per run
-func fakeHookRunner(t *testing.T, each func(env *tools.Env, envPassthrough []string)) (*[]string, chan struct{}) {
+func fakeHookRunner(t *testing.T, each func(ctx context.Context, env *tools.Env, envPassthrough []string)) (*[]string, chan struct{}) {
 	t.Helper()
 	ran := &[]string{}
 	done := make(chan struct{}, 4)
 	var mu sync.Mutex
-	swap(t, &lifecycleRunCommandProvider, func(_ context.Context, env *tools.Env, command string, _ float64, envPassthrough []string) (*commandCompleted, error) {
+	swap(t, &lifecycleRunCommandProvider, func(ctx context.Context, env *tools.Env, command string, _ float64, envPassthrough []string) (*commandCompleted, error) {
 		mu.Lock()
 		*ran = append(*ran, command)
 		mu.Unlock()
 		if each != nil {
-			each(env, envPassthrough)
+			each(ctx, env, envPassthrough)
 		}
 		done <- struct{}{}
 		return &commandCompleted{}, nil
@@ -491,11 +491,11 @@ func TestCommandHookThreadResolvesPassthroughUnderTheCallersScope(t *testing.T) 
 	fakeTimers(t)
 	var seen []any
 	var mu sync.Mutex
-	_, done := fakeHookRunner(t, func(env *tools.Env, envPassthrough []string) {
+	_, done := fakeHookRunner(t, func(ctx context.Context, env *tools.Env, envPassthrough []string) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, k := range envPassthrough {
-			v, err := tools.ResolvePassthroughValue(env, k, nil)
+			v, err := tools.ResolvePassthroughValue(ctx, env, k, nil)
 			switch {
 			case err != nil:
 				seen = append(seen, err)

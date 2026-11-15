@@ -80,8 +80,8 @@ func TestWaitingContextReadsKeepReaderBackpressure(t *testing.T) {
 	if started != wsConcurrentReadLimit {
 		t.Fatalf("%d reads started, want %d", started, wsConcurrentReadLimit)
 	}
-	if !wsTestSettle(func() bool { return len(sock.inbound) == 0 }, 30*time.Second) {
-		t.Fatal("the released reads never drained the socket")
+	if !wsTestSettle(func() bool { return len(sock.inbound) == 0 && log.count("done:") == burst }, 30*time.Second) {
+		t.Fatalf("the released reads never drained the socket, %d of %d done", log.count("done:"), burst)
 	}
 	sock.inbound <- nil
 	if err := wsTestAwait(t, done, 30*time.Second); err != nil {

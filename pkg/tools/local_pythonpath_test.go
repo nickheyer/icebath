@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -158,7 +159,7 @@ func TestBasePythonSanitizerUsesValidatedSeparateRuntimeVenv(t *testing.T) {
 	withRuntimeRepoRoot(t, repo, []string{repo})
 	withRunningSitePackages(t, nil)
 	unrelated := "/custom/lib/python3.13/site-packages"
-	result, err := SanitizeSubprocessEnv(env, map[string]string{"VIRTUAL_ENV": venv, "PYTHONPATH": joinPP(site, unrelated)}, nil)
+	result, err := SanitizeSubprocessEnv(context.Background(), env, map[string]string{"VIRTUAL_ENV": venv, "PYTHONPATH": joinPP(site, unrelated)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,9 +199,11 @@ func TestUnrelatedVirtualEnvIsNotRuntimeProvenance(t *testing.T) {
 // Every subprocess env builder strips the running venv site packages and keeps user entries
 func TestBuildersStripIcebathVenvPythonpath(t *testing.T) {
 	builders := map[string]func(env *Env) (map[string]string, error){
-		"makeRunEnv": func(env *Env) (map[string]string, error) { return makeRunEnv(env, map[string]string{}) },
+		"makeRunEnv": func(env *Env) (map[string]string, error) {
+			return makeRunEnv(context.Background(), env, map[string]string{})
+		},
 		"SanitizeSubprocessEnv": func(env *Env) (map[string]string, error) {
-			return SanitizeSubprocessEnv(env, environMap(), nil)
+			return SanitizeSubprocessEnv(context.Background(), env, environMap(), nil)
 		},
 		"IcebathSubprocessEnv": func(env *Env) (map[string]string, error) {
 			return icebathSubprocessEnv(env, false, nil)
@@ -473,9 +476,11 @@ func damageRuntimeRecord(t *testing.T) string {
 func TestBuildersPropagateDamagedRuntimeRecord(t *testing.T) {
 	builders := map[string]func(env *Env) (map[string]string, error){
 		"finalizeChildEnv": func(env *Env) (map[string]string, error) { return finalizeChildEnv(env, environMap(), nil) },
-		"makeRunEnv":       func(env *Env) (map[string]string, error) { return makeRunEnv(env, map[string]string{}) },
+		"makeRunEnv": func(env *Env) (map[string]string, error) {
+			return makeRunEnv(context.Background(), env, map[string]string{})
+		},
 		"SanitizeSubprocessEnv": func(env *Env) (map[string]string, error) {
-			return SanitizeSubprocessEnv(env, environMap(), nil)
+			return SanitizeSubprocessEnv(context.Background(), env, environMap(), nil)
 		},
 		"icebathSubprocessEnv": func(env *Env) (map[string]string, error) { return icebathSubprocessEnv(env, false, nil) },
 		"ServedProfileChildEnv": func(env *Env) (map[string]string, error) {
@@ -702,7 +707,7 @@ func TestRuntimeProvenanceIsIndependentOfAliasesAndVirtualEnv(t *testing.T) {
 				t.Fatal(err)
 			}
 			base := map[string]string{"VIRTUAL_ENV": userVenv, "PYTHONPATH": joinPP(site, alias, userSite)}
-			result, err := SanitizeSubprocessEnv(env, base, nil)
+			result, err := SanitizeSubprocessEnv(context.Background(), env, base, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -743,7 +748,7 @@ func TestSealedPayloadVenvIsRuntimeProvenanceWithoutFacts(t *testing.T) {
 	withRuntimeRepoRoot(t, root, []string{root})
 	withRunningSitePackages(t, nil)
 	userSite := filepath.Join(t.TempDir(), "user-site")
-	result, err := SanitizeSubprocessEnv(env, map[string]string{"PYTHONPATH": joinPP(shipped, userSite)}, nil)
+	result, err := SanitizeSubprocessEnv(context.Background(), env, map[string]string{"PYTHONPATH": joinPP(shipped, userSite)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

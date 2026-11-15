@@ -1,5 +1,3 @@
-//go:build ignore
-
 package arena
 
 import (
@@ -104,9 +102,9 @@ type nodeMark struct {
 	status TicketStatus
 }
 
-// What a member looked like on the floor when a frame was drawn
+// What a member looked like on the floor when a frame was drawn, what it does off duty among it
 type actorMark struct {
-	idle  bool
+	doing string
 	emote string
 	gone  bool
 }
@@ -191,6 +189,7 @@ type stage struct {
 	hover      string
 	selTicket  string
 	hoverTick  string
+	focusOn    string
 	followAt   vxl.Vec3
 	followName string
 	blurred    bool
@@ -393,7 +392,7 @@ func (s *stage) configure(cfg Config) {
 		s.sc.setWorld(worldFor(cfg.Arena.World))
 	}
 	if cfg.Arena.Camera != camera {
-		s.rig.preset = cfg.Arena.Camera
+		s.preset(cfg.Arena.Camera)
 	}
 	if s.surface != nil {
 		s.surface.SetRate(max(cfg.Arena.FPS, 5))
@@ -437,9 +436,32 @@ func (s *stage) preset(name string) {
 	s.remeasure()
 }
 
-// Takes the member and ticket the person selected and the ones under the pointer, for the rings on the floor
+// Takes the selected and hovered member and ticket, the camera turning to the newest selection
 func (s *stage) mark(sel, hover, selTicket, hoverTicket string) {
+	switch {
+	case selTicket != s.selTicket && selTicket != "":
+		s.focusOn = "ticket"
+	case sel != s.sel && sel != "":
+		s.focusOn = "member"
+	case sel == "" && selTicket == "":
+		s.focusOn = ""
+	}
 	s.sel, s.hover, s.selTicket, s.hoverTick = sel, hover, selTicket, hoverTicket
+}
+
+// Point the camera centers on for the selection, the selected core or the selected member, false while nothing is selected
+func (s *stage) focusPoint() (vxl.Vec3, bool) {
+	if n := s.sc.nodes[s.selTicket]; s.focusOn == "ticket" && n != nil {
+		return n.core(s.sc.t), true
+	}
+	act := s.selectedActor()
+	if s.focusOn == "" || act == nil || act.gone {
+		return vxl.Vec3{}, false
+	}
+	if s.followName != act.name || act.pos.Flat(s.followAt) > followSlack || math.Abs(act.pos.Y-s.followAt.Y) > 1 {
+		s.followAt, s.followName = act.pos, act.name
+	}
+	return s.followAt.Add(vxl.V(0, 1.5, 0)), true
 }
 
 // Takes whether the terminal window is focused
@@ -473,6 +495,9 @@ func (s *stage) moveCamera(dt float64) {
 	case "cinematic":
 		s.shoot(dt)
 		target, pitch, dist, yaw = s.cine.target, 0.5, s.cine.dist, s.cine.yaw
+	}
+	if at, ok := s.focusPoint(); ok && rig.preset != "follow" {
+		target, pitch, dist = at, 0.62, min(dist, 30)
 	}
 	rig.tx.Set(target.X)
 	rig.ty.Set(target.Y)
@@ -759,7 +784,7 @@ func (s *stage) render(now time.Time) {
 	}
 	cell := func(sx, sy float64) (int, int) { return int(sx / px), int(sy / py) }
 	for _, act := range sc.actors {
-		f.actors[act.name] = actorMark{idle: ambientText(act) != "", emote: act.emote, gone: act.gone}
+		f.actors[act.name] = actorMark{doing: ambientText(act), emote: act.emote, gone: act.gone}
 		if act.gone {
 			continue
 		}

@@ -84,8 +84,8 @@ func TestPromptChoiceKeepsTheDefaultOnCancelAndSkip(t *testing.T) {
 		t.Fatal("cancel changed the default")
 	}
 	stubSetupRadiolist(t, func(string, []string, int, string) int { return 1 })
-	if PromptChoice("Pick", []string{"a", "b"}, 1, "") != 1 || !strings.Contains(out.String(), "Skipped (keeping current)") {
-		t.Fatalf("skip output %q", out.String())
+	if PromptChoice("Pick", []string{"a", "b"}, 1, "") != 1 || strings.Contains(out.String(), "Skipped") {
+		t.Fatalf("picking the default printed %q", out.String())
 	}
 	stubSetupRadiolist(t, func(string, []string, int, string) int { return 0 })
 	if PromptChoice("Pick", []string{"a", "b"}, 1, "") != 0 {
@@ -112,7 +112,7 @@ func TestRunSetupStepsLeftArrowReplaysEarlierChoices(t *testing.T) {
 	out := captureSetupOutput(t)
 	var visits []string
 	stubSetupRadiolist(t, func(question string, choices []string, def int, description string) int {
-		start, err := handleSetupMenuNavigation(cliui.NavEventBegin)
+		start, err := handleSetupMenuNavigation(cliui.NavEventBegin, question)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,6 +143,47 @@ func TestRunSetupStepsLeftArrowReplaysEarlierChoices(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Returning to the previous choice in Provider...") {
 		t.Fatalf("output %q", out.String())
+	}
+}
+
+func TestReplayStopsAtTheFirstPromptThatIsNotTheOneRecorded(t *testing.T) {
+	captureSetupOutput(t)
+	var visits []string
+	pass := 0
+	ask := func(question string) {
+		start, err := handleSetupMenuNavigation(cliui.NavEventBegin, question)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if start.Replay {
+			_, _ = handleSetupMenuNavigation(cliui.NavEventResolve, start.ReplayValue)
+			visits = append(visits, "replay:"+question)
+			return
+		}
+		visits = append(visits, question)
+		if question == "effort" && pass == 1 {
+			panic(setupGoBack{promptIndex: 3})
+		}
+		_, _ = handleSetupMenuNavigation(cliui.NavEventResolve, question+" answer")
+	}
+	err := runSetupStepsWithNavigation([]SetupStep{{Label: "Provider", Action: func() error {
+		pass++
+		ask("provider")
+		if pass == 1 {
+			ask("auth method")
+		} else {
+			ask("existing credentials")
+		}
+		ask("model")
+		ask("effort")
+		return nil
+	}}}, "cancelled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "provider auth method model effort replay:provider existing credentials model effort"
+	if strings.Join(visits, " ") != want {
+		t.Fatalf("visits %v", visits)
 	}
 }
 

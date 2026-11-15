@@ -97,9 +97,6 @@ func unknownPluginMessage(name string, downloadedOnly bool) string {
 	if downloadedOnly {
 		scope = " This command only works on downloaded plugins; bundled ones can only be enabled or disabled."
 	}
-	if moved := movedPluginHint(name); moved != "" {
-		return fmt.Sprintf("[red]No plugin named '%s'.[/red] %s", name, moved)
-	}
 	return fmt.Sprintf("[red]No plugin named '%s'.[/red] Run `icebath plugins list` to see the exact names "+
 		"(nested plugins use their full key, e.g. web/firecrawl).%s "+
 		"To add one: `icebath plugins install <owner/repo>`.", name, scope)

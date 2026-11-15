@@ -65,7 +65,7 @@ func (u *sdkUpdater) Running() bool {
 	return u.running
 }
 
-// Bootstraps by deleting the webhook then starts the polling loop under the caller's generation context
+// Deletes the webhook under the cancellable call context then starts a polling loop that outlives the call
 func (u *sdkUpdater) StartPolling(ctx context.Context, dropPendingUpdates bool, errorCallback func(error)) error {
 	u.lifecycle.Lock()
 	defer u.lifecycle.Unlock()
@@ -87,8 +87,9 @@ func (u *sdkUpdater) StartPolling(ctx context.Context, dropPendingUpdates bool, 
 	u.mu.Lock()
 	u.stopEvent, u.pollingDone, u.pollingErr = stop, done, nil
 	u.mu.Unlock()
+	loopCtx := context.WithoutCancel(ctx)
 	go func() {
-		err := u.networkRetryLoop(ctx, stop, errorCallback)
+		err := u.networkRetryLoop(loopCtx, stop, errorCallback)
 		u.mu.Lock()
 		u.pollingErr = err
 		u.mu.Unlock()

@@ -1,6 +1,7 @@
 package codeexec
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -133,13 +134,13 @@ func TestCuaDriverSupportsNoOverlayProbe(t *testing.T) {
 	calls := cuFakeRun(t, func([]string) string {
 		return "Usage: cua-driver [OPTIONS] COMMAND\n  --no-overlay  Disable cursor overlay\n"
 	}, 0)
-	if !cuaDriverSupportsNoOverlay(nil, "cua-driver") {
+	if !cuaDriverSupportsNoOverlay(context.Background(), nil, "cua-driver") {
 		t.Fatal("help naming the flag must report support")
 	}
 	if len(*calls) != 1 || (*calls)[0].opts.Env == nil || !slices.Equal((*calls)[0].argv, []string{"cua-driver", "--help"}) {
 		t.Fatalf("help probe must pass an explicit sanitized env, calls %v", *calls)
 	}
-	cuaDriverSupportsNoOverlay(nil, "cua-driver")
+	cuaDriverSupportsNoOverlay(context.Background(), nil, "cua-driver")
 	if len(*calls) != 1 {
 		t.Fatal("the probe result must be cached per command")
 	}
@@ -150,26 +151,26 @@ func TestMCPInvocationUsesResolvedCommand(t *testing.T) {
 	cuFakeRun(t, func([]string) string { return manifest }, 0)
 	cuSwap(t, &cuaNoOverlay, func(*tools.Env) bool { return true })
 	var probed []string
-	cuSwap(t, &cuaDriverSupportsNoOverlay, func(_ *tools.Env, cmd string) bool {
+	cuSwap(t, &cuaDriverSupportsNoOverlay, func(_ context.Context, _ *tools.Env, cmd string) bool {
 		probed = append(probed, cmd)
 		return cmd == "/opt/relocated/cua-driver"
 	})
-	cmd, args := resolveMCPInvocation(nil, "/usr/bin/cua-driver", 6.0)
+	cmd, args := resolveMCPInvocation(context.Background(), nil, "/usr/bin/cua-driver", 6.0)
 	if cmd != "/opt/relocated/cua-driver" || !slices.Equal(probed, []string{"/opt/relocated/cua-driver"}) {
 		t.Fatalf("manifest command must drive the support probe, cmd %q probed %v", cmd, probed)
 	}
 	if !slices.Equal(args, []string{"mcp", "--no-overlay"}) {
 		t.Fatalf("args %v", args)
 	}
-	if got := mcpArgsWithOverlayFlag(nil, []string{"mcp"}, "/usr/bin/cua-driver"); slices.Contains(got, "--no-overlay") {
+	if got := mcpArgsWithOverlayFlag(context.Background(), nil, []string{"mcp"}, "/usr/bin/cua-driver"); slices.Contains(got, "--no-overlay") {
 		t.Fatal("support must not leak between binaries")
 	}
 	original := []string{"mcp"}
-	if got := mcpArgsWithOverlayFlag(nil, original, "/opt/relocated/cua-driver"); !slices.Equal(got, []string{"mcp", "--no-overlay"}) || len(original) != 1 {
+	if got := mcpArgsWithOverlayFlag(context.Background(), nil, original, "/opt/relocated/cua-driver"); !slices.Equal(got, []string{"mcp", "--no-overlay"}) || len(original) != 1 {
 		t.Fatalf("appended %v original %v", got, original)
 	}
 	cuSwap(t, &cuaNoOverlay, func(*tools.Env) bool { return false })
-	if got := mcpArgsWithOverlayFlag(nil, []string{"mcp"}, cuaDriverDefaultCmd); !slices.Equal(got, []string{"mcp"}) {
+	if got := mcpArgsWithOverlayFlag(context.Background(), nil, []string{"mcp"}, cuaDriverDefaultCmd); !slices.Equal(got, []string{"mcp"}) {
 		t.Fatalf("disabled overlay flag appended %v", got)
 	}
 }
@@ -185,7 +186,7 @@ func TestWSLWindowsManifestPath(t *testing.T) {
 	cuFakeRun(t, func([]string) string { return string(manifest) }, 0)
 	clearNoOverlayCache()
 	t.Cleanup(clearNoOverlayCache)
-	cmd, args := resolveMCPInvocation(nil, "cua-driver", 6.0)
+	cmd, args := resolveMCPInvocation(context.Background(), nil, "cua-driver", 6.0)
 	if cmd != want || !slices.Equal(args, []string{"mcp"}) {
 		t.Fatalf("cmd %q args %v", cmd, args)
 	}
@@ -226,17 +227,17 @@ func TestCuaSpawnSitesSanitizeEnv(t *testing.T) {
 	cuConfig(t, map[string]any{}, false)
 	cuSwap(t, &cuaNoOverlay, func(*tools.Env) bool { return false })
 	calls := cuFakeRun(t, func([]string) string { return `{"mcp_invocation": {"command": "cua-driver", "args": ["mcp"]}}` }, 0)
-	if cmd, _ := resolveMCPInvocation(env, "cua-driver", 6.0); cmd != "cua-driver" {
+	if cmd, _ := resolveMCPInvocation(context.Background(), env, "cua-driver", 6.0); cmd != "cua-driver" {
 		t.Fatalf("cmd %q", cmd)
 	}
 	cuAssertSanitized(t, *calls)
 	calls = cuFakeRun(t, func([]string) string { return "{}" }, 0)
-	if _, err := cuaDriverRuntimeContractStatus(env, "cua-driver"); err != nil {
+	if _, err := cuaDriverRuntimeContractStatus(context.Background(), env, "cua-driver"); err != nil {
 		t.Fatal(err)
 	}
 	cuAssertSanitized(t, *calls)
 	calls = cuFakeRun(t, func([]string) string { return "{}" }, 0)
-	if _, err := permissionsRun(env, "cua-driver", 1.0, "doctor", "--json"); err != nil {
+	if _, err := permissionsRun(context.Background(), env, "cua-driver", 1.0, "doctor", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	cuAssertSanitized(t, *calls)
@@ -266,7 +267,7 @@ func TestManifestContractReason(t *testing.T) {
 		t.Fatalf("non iterable subcommands must raise, got %v", err)
 	}
 	cuFakeRun(t, func([]string) string { return full }, 0)
-	status, err := cuaDriverRuntimeContractStatus(nil, "/opt/cua-driver")
+	status, err := cuaDriverRuntimeContractStatus(context.Background(), nil, "/opt/cua-driver")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +277,7 @@ func TestManifestContractReason(t *testing.T) {
 	cuSwap(t, &runQuiet, func(argv []string, _ float64, _ runOpts) (*completedProcess, error) {
 		return &completedProcess{Args: argv, Returncode: 2, Stderr: "warn\nunknown verb manifest\n"}, nil
 	})
-	status, _ = cuaDriverRuntimeContractStatus(nil, "/opt/cua-driver")
+	status, _ = cuaDriverRuntimeContractStatus(context.Background(), nil, "/opt/cua-driver")
 	if b, _ := json.Marshal(status); string(b) != `{"ready":false,"binary":"/opt/cua-driver","version":null,"reason":"unknown verb manifest"}` {
 		t.Fatalf("failed manifest status %s", b)
 	}

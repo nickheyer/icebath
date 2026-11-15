@@ -96,7 +96,7 @@ func TestRefusalReadsAsTheStopLine(t *testing.T) {
 		if r.Limit["gauge_id"] != "day" || r.Limit["scope"] != "all" || r.Limit["message"] != want {
 			t.Fatalf("limit %v", r.Limit)
 		}
-		if !reflect.DeepEqual(r.Limit["credits"], map[string]string{"action": "use_credits"}) || r.Limit["current_model"] != "example/model-b" {
+		if !reflect.DeepEqual(r.Limit["credits"], map[string]any{"action": "use_credits"}) || r.Limit["current_model"] != "example/model-b" {
 			t.Fatalf("limit %v", r.Limit)
 		}
 	})
@@ -141,7 +141,7 @@ func TestRefusalReadsAsTheStopLine(t *testing.T) {
 		if !strings.HasSuffix(r.Message, " · add credits and turn on Keep going in /topup") {
 			t.Fatalf("text %q", r.Message)
 		}
-		if !reflect.DeepEqual(r.Limit["credits"], map[string]string{"action": "add_credits_and_keep_going"}) {
+		if !reflect.DeepEqual(r.Limit["credits"], map[string]any{"action": "add_credits_and_keep_going"}) {
 			t.Fatalf("limit %v", r.Limit)
 		}
 		raw, _ := json.Marshal(refusalGauges(100, 50, 0, 0))
@@ -189,11 +189,11 @@ func TestRefusalReadsAsTheStopLine(t *testing.T) {
 			"example/model-free:free": map[string]any{"prompt": "0", "completion": "0", "name": "Model Free"},
 		}, []string{"example/model-b", "example/model-free:free"})
 		r := usageWindowRefusal(ctx, refusalAgent(t, full), refusalWindow(nil), nil)
-		want := []any{map[string]string{"model": "example/model-free:free", "label": "Model Free", "note": "free", "provider": "nous"}}
+		want := []any{map[string]any{"model": "example/model-free:free", "label": "Model Free", "note": "free", "provider": "nous"}}
 		if !reflect.DeepEqual(r.Limit["suggestions"], want) {
 			t.Fatalf("suggestions %v", r.Limit["suggestions"])
 		}
-		if !reflect.DeepEqual(r.Limit["credits"], map[string]string{"action": "add_credits"}) {
+		if !reflect.DeepEqual(r.Limit["credits"], map[string]any{"action": "add_credits"}) {
 			t.Fatalf("credits %v", r.Limit["credits"])
 		}
 	})

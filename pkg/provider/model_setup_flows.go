@@ -687,7 +687,7 @@ func modelFlowMinimaxOAuth(r *ModelFlowRun) error {
 		return err
 	}
 	baseURL := anyString(creds["base_url"])
-	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, ModelSelectionPrompt{ModelIDs: providerModels["minimax-oauth"], CurrentModel: r.CurrentModel,
+	selected, _ := flowPromptModelSelectionFn(r.Env, r.Out, ModelSelectionPrompt{ModelIDs: staticCatalogModels("minimax-oauth"), CurrentModel: r.CurrentModel,
 		ConfirmProvider: "minimax-oauth", ConfirmBaseURL: baseURL})
 	return activateProviderModel(r.Env, r.Out, selected, "minimax-oauth", baseURL, fmt.Sprintf("✓ Using MiniMax model: %s", selected), nil)
 }
@@ -722,7 +722,7 @@ func modelFlowKimi(r *ModelFlowRun) error {
 	if isCodingPlan {
 		catalogKey, via = "kimi-coding", "Kimi Coding"
 	}
-	selected, _ := pickModelOrPromptFn(r.Env, r.Out, providerModels[catalogKey], "Enter model name: ",
+	selected, _ := pickModelOrPromptFn(r.Env, r.Out, staticCatalogModels(catalogKey), "Enter model name: ",
 		ModelSelectionPrompt{CurrentModel: r.CurrentModel, ConfirmProvider: providerID, ConfirmBaseURL: effectiveBase, ConfirmAPIKey: existingKey})
 	_, err = finishModelFn(r.Env, r.Out, selected, providerID, fmt.Sprintf("Default model set to: %s (via %s)", selected, via), flowNoChange,
 		persistModelOptions{BaseURL: optStr(effectiveBase), DropAPIMode: true})
@@ -790,7 +790,7 @@ func modelFlowStepfun(r *ModelFlowRun) error {
 	if len(modelList) > 0 {
 		fmt.Fprintf(r.Out, "  Found %d model(s) from %s API\n", len(modelList), name)
 	} else {
-		modelList = providerModels[providerID]
+		modelList = staticCatalogModels(providerID)
 		if len(modelList) > 0 {
 			fmt.Fprintf(r.Out, "  Could not auto-detect models from %s API — showing Step Plan fallback catalog.\n", name)
 		}
@@ -862,7 +862,7 @@ func modelFlowVertex(r *ModelFlowRun) error {
 	if region == "" {
 		region = currentRegion
 	}
-	modelList := providerModels["vertex"]
+	modelList := staticCatalogModels("vertex")
 	if len(modelList) == 0 {
 		modelList = []string{"google/gemini-3-pro-preview", "google/gemini-3-flash-preview"}
 	}
@@ -1116,11 +1116,18 @@ func modelFlowAPIKeyProvider(r *ModelFlowRun, providerID string) error {
 func anthropicAuthenticate(r *ModelFlowRun) (bool, error) {
 	h := r.home()
 	save := func(name, value string) error { return config.SaveEnvValue(h, name, value) }
-	flowSay(r.Out, "", "  Choose authentication method:", "", "    1. Claude Pro/Max subscription (OAuth login)",
-		"    2. Anthropic API key (pay-per-token)", "    3. Cancel", "")
-	choice, ok := flowAskFn(r.Out, "  Choice [1/2/3]: ", flowAskOptions{Raw: true, CancelMsg: optStr("")})
-	if !ok {
+	choice, ran, cancelled := flowMenuAnswer("Choose authentication method", []string{"Claude Pro/Max subscription (OAuth login)",
+		"Anthropic API key (pay-per-token)", "Cancel"}, []string{"1", "2", "3"}, 0)
+	if cancelled {
 		return false, nil
+	}
+	if !ran {
+		flowSay(r.Out, "", "  Choose authentication method:", "", "    1. Claude Pro/Max subscription (OAuth login)",
+			"    2. Anthropic API key (pay-per-token)", "    3. Cancel", "")
+		var ok bool
+		if choice, ok = flowAskFn(r.Out, "  Choice [1/2/3]: ", flowAskOptions{Raw: true, CancelMsg: optStr("")}); !ok {
+			return false, nil
+		}
 	}
 	switch choice {
 	case "1":
@@ -1191,7 +1198,7 @@ func modelFlowAnthropic(r *ModelFlowRun) error {
 		}
 	}
 	fmt.Fprintln(r.Out)
-	selected, _ := pickModelOrPromptFn(r.Env, r.Out, providerModels["anthropic"], "Model name (e.g., claude-sonnet-4-20250514): ",
+	selected, _ := pickModelOrPromptFn(r.Env, r.Out, staticCatalogModels("anthropic"), "Model name (e.g., claude-sonnet-4-20250514): ",
 		ModelSelectionPrompt{CurrentModel: r.CurrentModel, ConfirmProvider: "anthropic"})
 	_, err := finishModelFn(r.Env, r.Out, selected, "anthropic", fmt.Sprintf("Default model set to: %s (via Anthropic)", selected), flowNoChange,
 		persistModelOptions{DropBaseURL: true, DropAPIMode: true})

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/pflag"
 )
 
 func TestArgparseHelpPause(t *testing.T) {
@@ -59,6 +61,7 @@ func TestArgparseHelpSubparsersAndWrappedUsage(t *testing.T) {
 	}
 }
 
+// Every table option has a cobra flag and every visible cobra flag of a table command has a table option
 func TestArgparseTableMatchesCobraTree(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := NewCLI()
@@ -71,10 +74,19 @@ func TestArgparseTableMatchesCobraTree(t *testing.T) {
 			t.Errorf("parser %q has no cobra command", path)
 			continue
 		}
+		declared := map[string]bool{}
 		for _, a := range p.Acts {
 			if _, ok := apOptionHelp(cmd, a); a.Kind == 'f' && !ok {
 				t.Errorf("parser %q option %v has no cobra flag", path, a.Opts)
 			}
+			if fl := apFlag(cmd, a.Opts); fl != nil {
+				declared[fl.Name] = true
+			}
 		}
+		cmd.LocalNonPersistentFlags().VisitAll(func(f *pflag.Flag) {
+			if f.Name != "help" && !f.Hidden && !declared[f.Name] {
+				t.Errorf("parser %q has no option for cobra flag --%s", path, f.Name)
+			}
+		})
 	}
 }

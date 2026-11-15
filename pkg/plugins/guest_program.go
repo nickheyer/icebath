@@ -31,19 +31,15 @@ func guestProgramPath(spec *guestSpec) (string, error) {
 	return resolved, nil
 }
 
-// Starts the entry program in its own process group with the profile environment and joins its standard streams to a channel
-func (h *PluginHost) launchProgram(s *hostStart, spec *guestSpec) (*Channel, *hostProcess, error) {
-	program, err := guestProgramPath(spec)
-	if err != nil {
-		return nil, nil, err
-	}
+// Environment a host child runs with, the served profile's own env with its ambient credentials and the host markers
+func (h *PluginHost) childEnviron() (map[string]string, error) {
 	env, err := tools.ServedProfileChildEnv(h.baseCtx, nil, nil, h.home, true)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	ambient, err := hostedAmbientCredentials(h.baseCtx, h.home)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	for k, v := range ambient {
 		env[k] = v
@@ -51,11 +47,24 @@ func (h *PluginHost) launchProgram(s *hostStart, spec *guestSpec) (*Channel, *ho
 	for k, v := range h.envOverride {
 		env[k] = v
 	}
-	env[GuestPluginNameEnv], env[GuestPluginDirEnv] = spec.name, spec.dir
 	if _, set := env[HostLogLevelEnv]; !set {
 		env[HostLogLevelEnv] = "WARNING"
 	}
 	env[HostProcessEnv] = "1"
+	return env, nil
+}
+
+// Starts the entry program in its own process group with the profile environment and joins its standard streams to a channel
+func (h *PluginHost) launchProgram(s *hostStart, spec *guestSpec) (*Channel, *hostProcess, error) {
+	program, err := guestProgramPath(spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	env, err := h.childEnviron()
+	if err != nil {
+		return nil, nil, err
+	}
+	env[GuestPluginNameEnv], env[GuestPluginDirEnv] = spec.name, spec.dir
 	launcher, err := HostLauncher(h.baseCtx, nil)
 	if err != nil {
 		return nil, nil, err

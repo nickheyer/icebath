@@ -406,6 +406,7 @@ func dispatchComputerUse(ctx context.Context, env *tools.Env, backend ComputerUs
 					action, pyrepr.Repr(*mismatch), want, want)}, "ok", "action", "code", "error"), nil
 		}
 	}
+	defer bindBackendCall(ctx, backend)()
 	c := &cuCall{ctx: ctx, env: env, backend: backend, action: action, args: args, fence: fence, sessionID: sessionID}
 	if spec.input {
 		mode, err := cuOptStr("delivery_mode", args["delivery_mode"])

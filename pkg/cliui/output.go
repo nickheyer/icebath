@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
-	"unicode"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
@@ -45,16 +42,81 @@ func (c *Console) PrintTruncated(ctx context.Context, more *int, hint string) {
 	c.println(c.Color("  … "+count+suffix, Dim))
 }
 
-// LineInput reads text with cursor editing keys on a terminal and plain input otherwise
+// LineInput reads one line in an inline field with editing keys on a terminal and as plain input otherwise
 func (c *Console) LineInput(prompt string) (string, error) {
-	if !(c.stdinTTY() && c.stdoutTTY()) {
-		return c.input(prompt)
+	return c.ask(inputSpec{title: cleanTitle(prompt)}, func() (string, error) { return c.input(prompt) })
+}
+
+// LineInputDefault reads one line whose field shows the value a bare Enter keeps
+func (c *Console) LineInputDefault(prompt, title, fallback string) (string, error) {
+	return c.ask(inputSpec{title: cleanTitle(title), fallback: fallback}, func() (string, error) { return c.input(prompt) })
+}
+
+// SecretLine reads one hidden line in an inline masked field, errEditorUnavailable off a capable terminal
+func (c *Console) SecretLine(prompt, mask string) (string, error) {
+	if mask != "" {
+		mask = c.glyphs().mask
 	}
-	text, _, err := c.editLine(prompt, nil)
+	return c.ask(inputSpec{title: cleanTitle(prompt), secret: true, mask: mask}, func() (string, error) { return "", errEditorUnavailable })
+}
+
+// ErrNoEditor reports a terminal that cannot draw an inline field
+var ErrNoEditor = errEditorUnavailable
+
+// Runs one inline field under scoped navigation, replaying a recorded answer, plain taking over when the terminal cannot draw
+func (c *Console) ask(spec inputSpec, plain func() (string, error)) (string, error) {
+	if !c.interactive() {
+		return plain()
+	}
+	handler := navHandler(nil)
+	var start *MenuNavigationStart
+	if handler != nil {
+		s, err := handler(NavEventBegin, spec.title)
+		if err != nil {
+			return "", err
+		}
+		start = s
+	}
+	if start != nil && start.Replay {
+		if text, ok := start.ReplayValue.(string); ok {
+			if _, err := handler(NavEventResolve, text); err != nil {
+				return "", err
+			}
+			replay := &inputPrompt{c: c, spec: spec}
+			replay.ed.insert(text)
+			region := c.openRegion()
+			region.close(replay.answer(inputDone, false))
+			return text, nil
+		}
+	}
+	spec.cancel = handler != nil
+	spec.back, spec.guardEsc = start != nil && start.AllowBack, start != nil && start.GuardCancel
+	field := &inputPrompt{c: c, spec: spec}
+	text, outcome, err := field.run()
 	if errors.Is(err, errEditorUnavailable) {
-		return c.input(prompt)
+		return plain()
 	}
-	return text, err
+	if err != nil {
+		return "", err
+	}
+	switch outcome {
+	case inputCancelled:
+		if _, err := handler(NavEventCancel); err != nil {
+			return "", err
+		}
+		return "", ErrInterrupt
+	case inputBack:
+		if _, err := handler(NavEventBack); err != nil {
+			return "", err
+		}
+		return "", ErrInterrupt
+	}
+	if handler != nil {
+		if _, err := handler(NavEventResolve, text); err != nil {
+			return "", err
+		}
+	}
+	return text, nil
 }
 
 // Prompt reads a stripped answer or the default on plain Enter, empty after printing a newline on Ctrl-C or EOF
@@ -102,268 +164,29 @@ func (c *Console) PromptYesNo(ctx context.Context, question string, def bool) bo
 
 var errEditorUnavailable = errors.New("line editor unavailable")
 
-// Navigation result of a scoped numbered prompt key binding
-type numberedNav int
+var yesNoPromptRe = regexp.MustCompile(`^(.*?)\s*[\[(]\s*([Yy])\s*/\s*([Nn])\s*[\])]\s*:?\s*$`)
 
-const (
-	navNone numberedNav = iota
-	navCancelKey
-	navBackKey
-)
-
-// Bindings that end a scoped numbered prompt early
-type editorBindings struct {
-	cancel bool
-	back   bool
-}
-
-// Raw mode emacs style line editor, returning the line, a binding result, or an interrupt or EOF error
-func (c *Console) editLine(prompt string, binds *editorBindings) (string, numberedNav, error) {
-	restore, err := c.makeRaw()
-	if err != nil {
-		return "", navNone, errEditorUnavailable
+// Input reads one line like Python input, inside a setup presentation as a yes or no list or a field
+func (c *Console) Input(prompt string) (string, error) {
+	if !c.IsFlow() {
+		return c.input(prompt)
 	}
-	defer restore()
-	io.WriteString(c.Out, "\x1b[?2004h")
-	defer io.WriteString(c.Out, "\x1b[?2004l")
-	ed := &lineEditor{c: c, prompt: prompt}
-	ed.render()
-	dec := &uv.EventDecoder{}
-	var buf []byte
-	pasting := false
-	for {
-		if len(buf) == 0 {
-			b, err := c.readByte(-1, nil)
-			if err != nil {
-				return "", navNone, err
-			}
-			buf = append(buf, b)
-		}
-		buf = c.gatherBurst(buf)
-		n, ev := dec.Decode(buf)
-		if n <= 0 {
-			n = 1
-		}
-		buf = buf[n:]
-		switch e := ev.(type) {
-		case uv.PasteStartEvent:
-			pasting = true
-			continue
-		case uv.PasteEndEvent:
-			pasting = false
-			continue
-		case uv.PasteEvent:
-			ed.insert(strings.ReplaceAll(strings.ReplaceAll(e.Content, "\r\n", "\n"), "\r", "\n"))
-		case uv.KeyPressEvent:
-			k := uv.Key(e)
-			if pasting {
-				switch {
-				case k.Code == uv.KeyEnter:
-					ed.insert("\n")
-				case k.Text != "":
-					ed.insert(k.Text)
-				}
-				ed.render()
-				continue
-			}
-			if binds != nil {
-				if binds.cancel && ((k.Code == uv.KeyEscape && k.Mod == 0) || (k.Code == 'c' && k.Mod&uv.ModCtrl != 0)) {
-					ed.finish()
-					return "", navCancelKey, nil
-				}
-				if binds.back && k.Code == uv.KeyLeft && k.Mod == 0 {
-					ed.finish()
-					return "", navBackKey, nil
-				}
-			}
-			done, err := ed.key(k)
-			if err != nil {
-				ed.finish()
-				return "", navNone, err
-			}
-			if done {
-				ed.finish()
-				return string(ed.buf), navNone, nil
-			}
-		}
-		ed.render()
+	m := yesNoPromptRe.FindStringSubmatch(ansi.Strip(prompt))
+	if m == nil {
+		return c.ask(inputSpec{title: cleanTitle(prompt)}, func() (string, error) { return c.input(prompt) })
 	}
-}
-
-// Collects bytes that belong to the same key burst so escape sequences decode whole
-func (c *Console) gatherBurst(buf []byte) []byte {
-	for {
-		wait := time.Duration(0)
-		if incompleteEscape(buf) {
-			wait = 50 * time.Millisecond
-		}
-		b, err := c.readByte(wait, nil)
-		if err != nil {
-			return buf
-		}
-		buf = append(buf, b)
+	selected := 0
+	if m[3] == "N" {
+		selected = 1
 	}
-}
-
-// Reports whether the buffer ends inside an escape sequence
-func incompleteEscape(buf []byte) bool {
-	i := len(buf) - 1
-	for i >= 0 && buf[i] != 0x1b {
-		i--
-	}
-	if i < 0 {
-		return false
-	}
-	tail := buf[i:]
-	if len(tail) == 1 {
-		return true
-	}
-	if tail[1] != '[' && tail[1] != 'O' {
-		return false
-	}
-	if len(tail) == 2 {
-		return true
-	}
-	last := tail[len(tail)-1]
-	if tail[1] == 'O' {
-		return false
-	}
-	return !(last >= 0x40 && last <= 0x7e) || (len(tail) == 3 && last == '[')
-}
-
-type lineEditor struct {
-	c      *Console
-	prompt string
-	buf    []rune
-	pos    int
-	kill   string
-}
-
-// Redraws the prompt and buffer on the current line and places the cursor
-func (e *lineEditor) render() {
-	text := string(e.buf)
-	before := string(e.buf[:e.pos])
-	out := "\r\x1b[K" + e.prompt + text
-	back := ansi.StringWidth(text) - ansi.StringWidth(before)
-	if back > 0 {
-		out += fmt.Sprintf("\x1b[%dD", back)
-	}
-	io.WriteString(e.c.Out, out)
-}
-
-func (e *lineEditor) finish() { io.WriteString(e.c.Out, "\r\n") }
-
-func (e *lineEditor) insert(s string) {
-	rs := []rune(s)
-	e.buf = append(e.buf[:e.pos], append(rs, e.buf[e.pos:]...)...)
-	e.pos += len(rs)
-}
-
-func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }
-
-func (e *lineEditor) wordStartBefore(p int) int {
-	for p > 0 && !isWordRune(e.buf[p-1]) {
-		p--
-	}
-	for p > 0 && isWordRune(e.buf[p-1]) {
-		p--
-	}
-	return p
-}
-
-func (e *lineEditor) wordEndAfter(p int) int {
-	for p < len(e.buf) && !isWordRune(e.buf[p]) {
-		p++
-	}
-	for p < len(e.buf) && isWordRune(e.buf[p]) {
-		p++
-	}
-	return p
-}
-
-func (e *lineEditor) cut(from, to int) {
-	e.kill = string(e.buf[from:to])
-	e.buf = append(e.buf[:from], e.buf[to:]...)
-	e.pos = from
-}
-
-// Applies one key with prompt_toolkit emacs bindings, true when Enter accepts the line
-func (e *lineEditor) key(k uv.Key) (bool, error) {
-	ctrl, alt := k.Mod&uv.ModCtrl != 0, k.Mod&uv.ModAlt != 0
+	cancel := -1
+	idx, err := c.CursesRadiolist(context.Background(), m[1], []RadioItem{PlainItem("Yes"), PlainItem("No")}, selected,
+		RadiolistOptions{CancelReturns: &cancel})
 	switch {
-	case k.Code == uv.KeyEnter || (ctrl && (k.Code == 'm' || k.Code == 'j')):
-		return true, nil
-	case ctrl && k.Code == 'c':
-		return false, ErrInterrupt
-	case ctrl && k.Code == 'd':
-		if len(e.buf) == 0 {
-			return false, ErrEOF
-		}
-		if e.pos < len(e.buf) {
-			e.buf = append(e.buf[:e.pos], e.buf[e.pos+1:]...)
-		}
-	case (ctrl && k.Code == 'a') || k.Code == uv.KeyHome:
-		e.pos = 0
-	case (ctrl && k.Code == 'e') || k.Code == uv.KeyEnd:
-		e.pos = len(e.buf)
-	case (ctrl && k.Code == 'b') || (k.Code == uv.KeyLeft && !ctrl && !alt):
-		if e.pos > 0 {
-			e.pos--
-		}
-	case (ctrl && k.Code == 'f') || (k.Code == uv.KeyRight && !ctrl && !alt):
-		if e.pos < len(e.buf) {
-			e.pos++
-		}
-	case (alt && k.Code == 'b') || (k.Code == uv.KeyLeft && (ctrl || alt)):
-		e.pos = e.wordStartBefore(e.pos)
-	case (alt && k.Code == 'f') || (k.Code == uv.KeyRight && (ctrl || alt)):
-		e.pos = e.wordEndAfter(e.pos)
-	case k.Code == uv.KeyBackspace && alt, ctrl && k.Code == 'w':
-		start := e.pos
-		if ctrl {
-			for start > 0 && unicode.IsSpace(e.buf[start-1]) {
-				start--
-			}
-			for start > 0 && !unicode.IsSpace(e.buf[start-1]) {
-				start--
-			}
-		} else {
-			start = e.wordStartBefore(e.pos)
-		}
-		e.cut(start, e.pos)
-	case k.Code == uv.KeyBackspace || (ctrl && k.Code == 'h'):
-		if e.pos > 0 {
-			e.buf = append(e.buf[:e.pos-1], e.buf[e.pos:]...)
-			e.pos--
-		}
-	case k.Code == uv.KeyDelete:
-		if e.pos < len(e.buf) {
-			e.buf = append(e.buf[:e.pos], e.buf[e.pos+1:]...)
-		}
-	case alt && k.Code == 'd':
-		e.cut(e.pos, e.wordEndAfter(e.pos))
-	case ctrl && k.Code == 'k':
-		e.cut(e.pos, len(e.buf))
-	case ctrl && k.Code == 'u':
-		e.cut(0, e.pos)
-	case ctrl && k.Code == 'y':
-		e.insert(e.kill)
-	case ctrl && k.Code == 't':
-		if e.pos > 0 && len(e.buf) > 1 {
-			p := e.pos
-			if p == len(e.buf) {
-				p--
-			}
-			e.buf[p-1], e.buf[p] = e.buf[p], e.buf[p-1]
-			e.pos = p + 1
-		}
-	case ctrl && k.Code == 'l':
-		io.WriteString(e.c.Out, "\x1b[H\x1b[2J")
-	case k.Text != "" && !ctrl && !alt:
-		e.insert(k.Text)
+	case err != nil:
+		return "", err
+	case idx < 0:
+		return "", ErrInterrupt
 	}
-	return false, nil
+	return []string{"y", "n"}[idx], nil
 }
-
-// Input is Python input, writing the prompt and reading one line with interrupt and end of input as errors
-func (c *Console) Input(prompt string) (string, error) { return c.input(prompt) }

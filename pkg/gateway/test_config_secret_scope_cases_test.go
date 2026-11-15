@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -58,6 +59,7 @@ func secretScopeOwner(t *testing.T, ctx context.Context, home, instance string) 
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	store := NewSessionStore(ctx, filepath.Join(home, "sessions"), DefaultGatewayConfig(ctx), nil)
+	t.Cleanup(store.CloseAllDBHandles)
 	store.PinDB(db)
 	base := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
 	a, err := InitializeSessionAuthority(ctx, secretScopeRunner{base}, home, instance, db, false)
@@ -231,7 +233,7 @@ func TestANonSecretProfileEditKeepsTheSessionAndItsModelSwitch(t *testing.T) {
 		"mcp_list":  strings.ReplaceAll(secretScopeConfig, "}}}\n", "}}, extra: {command: extra-mcp}}\n"),
 	}
 	for _, edit := range []string{"base_url", "reasoning", "mcp_list"} {
-		t.Run(edit, func(t *testing.T) {
+		hermetic.Run(t, edit, func(t *testing.T) {
 			ctx := context.Background()
 			switchToM2(t)
 			home := secretScopeHome(t)

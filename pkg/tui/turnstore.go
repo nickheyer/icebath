@@ -112,6 +112,7 @@ type uiState struct {
 	Streaming                  bool
 	Theme                      theme
 	Usage                      map[string]any
+	Arena                      any
 }
 
 // UI state of a fresh session

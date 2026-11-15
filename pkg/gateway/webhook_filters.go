@@ -470,7 +470,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
 		return false, nil, nil
 	}
-	child, err := tools.BuildSubprocessEnvOrdered(ctx, nil, tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
+	child, err := tools.BuildSubprocessEnvOrdered(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
 	if err != nil {
 		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
 		return false, nil, nil

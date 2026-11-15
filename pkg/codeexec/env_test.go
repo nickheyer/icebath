@@ -32,7 +32,7 @@ func TestNativeEssentialsAndPassthroughPriority(t *testing.T) {
 			}
 			w := windows
 			p := passthrough
-			got, err := scrubChildEnv(env, source, scrubOptions{isWindows: &w,
+			got, err := scrubChildEnv(context.Background(), env, source, scrubOptions{isWindows: &w,
 				isPassthrough: func(k string) bool { return p && k == "TENOR_API_KEY" }})
 			if err != nil {
 				t.Fatal(err)
@@ -67,7 +67,7 @@ func scopedSecretEnv(t *testing.T, dotenv string) *tools.Env {
 
 func TestExecuteCodeUsesActiveProfileForPassthrough(t *testing.T) {
 	env := scopedSecretEnv(t, "SERVICE_TOKEN=token-for-routed-profile\n")
-	child, err := scrubChildEnv(env, map[string]string{"SERVICE_TOKEN": "token-for-default"}, scrubOptions{})
+	child, err := scrubChildEnv(context.Background(), env, map[string]string{"SERVICE_TOKEN": "token-for-default"}, scrubOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestExecuteCodeUsesActiveProfileForPassthrough(t *testing.T) {
 
 func TestExecuteCodeOmitsMissingScopedPassthrough(t *testing.T) {
 	env := scopedSecretEnv(t, "")
-	child, err := scrubChildEnv(env, map[string]string{"SERVICE_TOKEN": "token-for-default"}, scrubOptions{})
+	child, err := scrubChildEnv(context.Background(), env, map[string]string{"SERVICE_TOKEN": "token-for-default"}, scrubOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestExecuteCodeOmitsMissingScopedPassthrough(t *testing.T) {
 
 func TestExecuteCodeStripsBuzzVars(t *testing.T) {
 	env := testEnv(t)
-	child, err := scrubChildEnv(env, map[string]string{
+	child, err := scrubChildEnv(context.Background(), env, map[string]string{
 		"BUZZ_PRIVATE_KEY": "nsec1fake", "BUZZ_AUTH_TAG": `["tag","data","kind","sig"]`,
 		"BUZZ_RELAY_URL": "https://mycommunity.communities.buzz.xyz", "PATH": "/usr/bin", "HOME": "/home/user",
 	}, scrubOptions{})
@@ -119,7 +119,7 @@ func TestCredentialAndControlNamesAreRefusedBySecretPolicy(t *testing.T) {
 	}
 	env := testEnv(t)
 	no := false
-	child, err := scrubChildEnv(env, map[string]string{"ICEBATH_KANBAN_DB": "/board.db", "ICEBATH_SECRET_THING": "x",
+	child, err := scrubChildEnv(context.Background(), env, map[string]string{"ICEBATH_KANBAN_DB": "/board.db", "ICEBATH_SECRET_THING": "x",
 		"ICEBATH_PROFILE": "work", "NVM_DIR": "/client/.nvm"}, scrubOptions{isWindows: &no, toolchain: map[string]bool{"NVM_DIR": true}})
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestDelegateChildExecuteCodeEnvBridgesContextvarAndScrubsKanban(t *testing.
 	os.Unsetenv("ICEBATH_DELEGATED_CHILD_CONTEXT")
 	env.Values.Store("session.delegated_child", true)
 	no := false
-	child, err := scrubChildEnv(env, environMap(), scrubOptions{isWindows: &no,
+	child, err := scrubChildEnv(context.Background(), env, environMap(), scrubOptions{isWindows: &no,
 		isPassthrough: func(k string) bool { return len(k) > 15 && k[:15] == "ICEBATH_KANBAN_" }})
 	if err != nil {
 		t.Fatal(err)

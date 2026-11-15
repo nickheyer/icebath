@@ -82,7 +82,7 @@ func NewPortalConnectorClient(ctx context.Context, env *Env, opts PortalOptions)
 		c.endpoint = func() (string, error) { return portalDefaultEndpointResolver(ctx) }
 	}
 	if c.headers == nil {
-		c.headers = func(string) map[string]string { return portalDefaultHeaderProvider(env) }
+		c.headers = func(string) map[string]string { return portalDefaultHeaderProvider(ctx, env) }
 	}
 	return c
 }
@@ -93,8 +93,8 @@ func portalDefaultEndpointResolver(ctx context.Context) (string, error) {
 }
 
 // Bearer header of the stored Nous access token for any Portal URL, none when no token is stored
-func portalDefaultHeaderProvider(env *Env) map[string]string {
-	if token := readNousAccessToken(env); strings.TrimSpace(token) != "" {
+func portalDefaultHeaderProvider(ctx context.Context, env *Env) map[string]string {
+	if token := readScopedNousAccessToken(ctx, env); strings.TrimSpace(token) != "" {
 		return map[string]string{"Authorization": "Bearer " + token}
 	}
 	return map[string]string{}

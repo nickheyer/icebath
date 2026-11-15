@@ -34,16 +34,27 @@ func searchEnv(t *testing.T) *Env {
 	return &Env{Home: t.TempDir(), Config: config.Defaults()}
 }
 
+// Registers a probe tool for the case, putting back any registration it shadowed when the case ends
 func registerSearchTool(t *testing.T, name, toolset string, params map[string]any) {
 	t.Helper()
 	if params == nil {
 		params = map[string]any{"type": "object", "properties": map[string]any{}}
 	}
+	Default.mu.RLock()
+	previous := Default.tools[name]
+	Default.mu.RUnlock()
 	Default.Register(Def{Name: name, Toolset: toolset, Schema: map[string]any{"name": name, "description": "desc " + name, "parameters": params},
 		Handler: func(ctx context.Context, call *Call) string {
 			return jsonCompact(map[string]any{"ok": true, "args": call.Args})
 		}})
-	t.Cleanup(func() { Default.Remove(name) })
+	Default.mu.RLock()
+	current := Default.tools[name]
+	Default.mu.RUnlock()
+	t.Cleanup(func() {
+		if !Default.RestoreRegistration(name, current, previous, "") {
+			t.Errorf("the %s registration was replaced before the case could put the shadowed one back", name)
+		}
+	})
 }
 
 func TestToolSearchConfigParsing(t *testing.T) {

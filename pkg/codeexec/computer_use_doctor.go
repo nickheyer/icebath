@@ -2,6 +2,7 @@ package codeexec
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -55,8 +56,8 @@ type doctorRuntimeError struct{ msg string }
 func (e *doctorRuntimeError) Error() string { return e.msg }
 
 // Captured run of the driver with the sanitized env, an IO failure returned as the error
-func cliText(env *tools.Env, binary string, timeout float64, args ...string) (*completedProcess, error) {
-	return permissionsRun(env, binary, timeout, args...)
+func cliText(ctx context.Context, env *tools.Env, binary string, timeout float64, args ...string) (*completedProcess, error) {
+	return permissionsRun(ctx, env, binary, timeout, args...)
 }
 
 // Stripped stdout plus stderr
@@ -72,8 +73,8 @@ func firstLine(text string) *string {
 }
 
 // First line of the driver version output, nil when the run failed
-func readCLIVersion(env *tools.Env, binary string) *string {
-	cp, err := cliText(env, binary, 5, "--version")
+func readCLIVersion(ctx context.Context, env *tools.Env, binary string) *string {
+	cp, err := cliText(ctx, env, binary, 5, "--version")
 	if err != nil {
 		return nil
 	}
@@ -84,8 +85,8 @@ func readCLIVersion(env *tools.Env, binary string) *string {
 }
 
 // Status and version or failure message of the driver version verb
-func cliDriverVersion(env *tools.Env, binary string) (string, string) {
-	cp, err := cliText(env, binary, 5, "--version")
+func cliDriverVersion(ctx context.Context, env *tools.Env, binary string) (string, string) {
+	cp, err := cliText(ctx, env, binary, 5, "--version")
 	if err != nil {
 		return "fail", "--version failed: " + err.Error()
 	}
@@ -107,8 +108,8 @@ func cliDriverVersion(env *tools.Env, binary string) (string, string) {
 }
 
 // Output of the driver doctor verb, nil on failure or silence
-func cliDoctorSnippet(env *tools.Env, binary string) *string {
-	cp, err := cliText(env, binary, 8, "doctor")
+func cliDoctorSnippet(ctx context.Context, env *tools.Env, binary string) *string {
+	cp, err := cliText(ctx, env, binary, 8, "doctor")
 	if err != nil {
 		return nil
 	}
@@ -129,9 +130,9 @@ func versionToken(text string) string {
 }
 
 // Identity block comparing the resolved binary's own version with the health report's
-func buildIdentity(env *tools.Env, binary string, report *pyjson.Object) *pyjson.Object {
+func buildIdentity(ctx context.Context, env *tools.Env, binary string, report *pyjson.Object) *pyjson.Object {
 	cli := ""
-	if v := readCLIVersion(env, binary); v != nil {
+	if v := readCLIVersion(ctx, env, binary); v != nil {
 		cli = *v
 	}
 	reportV := ""
@@ -233,9 +234,9 @@ type cuMCPProc struct {
 }
 
 // Spawns the driver mcp verb with piped stdio and the sanitized env, a spawn failure being an OSError
-var openMCP = func(env *tools.Env, binary string) (*cuMCPProc, error) {
+var openMCP = func(ctx context.Context, env *tools.Env, binary string) (*cuMCPProc, error) {
 	cmd := exec.Command(binary, "mcp")
-	cmd.Env = envList(permissionsChildEnv(env))
+	cmd.Env = envList(permissionsChildEnv(ctx, env))
 	hideConsoleWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -325,8 +326,8 @@ func callTool(p *cuMCPProc, msgID int, name string, arguments *pyjson.Object) (a
 }
 
 // Runs fn in an MCP session, closing stdin and waiting out or killing the child afterwards
-func withMCPSession(env *tools.Env, binary string, timeout float64, fn func(*cuMCPProc) error) error {
-	p, err := openMCP(env, binary)
+func withMCPSession(ctx context.Context, env *tools.Env, binary string, timeout float64, fn func(*cuMCPProc) error) error {
+	p, err := openMCP(ctx, env, binary)
 	if err != nil {
 		return err
 	}
@@ -345,7 +346,7 @@ func withMCPSession(env *tools.Env, binary string, timeout float64, fn func(*cuM
 }
 
 // Handshake then health_report, unavailable for the fallback or a runtime failure
-func driveHealthReport(env *tools.Env, binary string, include, skip []string, timeout float64) (*pyjson.Object, error) {
+func driveHealthReport(ctx context.Context, env *tools.Env, binary string, include, skip []string, timeout float64) (*pyjson.Object, error) {
 	args := pyjson.NewObject()
 	for _, kv := range []struct {
 		k string
@@ -360,7 +361,7 @@ func driveHealthReport(env *tools.Env, binary string, include, skip []string, ti
 		}
 	}
 	var result any
-	err := withMCPSession(env, binary, timeout, func(p *cuMCPProc) error {
+	err := withMCPSession(ctx, env, binary, timeout, func(p *cuMCPProc) error {
 		if _, err := mcpRPC(p, 1, "initialize", pyjson.NewObject()); err != nil {
 			return err
 		}
@@ -418,9 +419,9 @@ type fallbackProbes struct {
 }
 
 // One MCP session reading the initialize version, check_permissions and a list_apps probe
-func driveFallbackProbes(env *tools.Env, binary string, timeout float64) (*fallbackProbes, error) {
+func driveFallbackProbes(ctx context.Context, env *tools.Env, binary string, timeout float64) (*fallbackProbes, error) {
 	out := &fallbackProbes{}
-	err := withMCPSession(env, binary, timeout, func(p *cuMCPProc) error {
+	err := withMCPSession(ctx, env, binary, timeout, func(p *cuMCPProc) error {
 		init, err := mcpRPC(p, 1, "initialize", pyjson.NewObject())
 		if err != nil {
 			return err
@@ -596,10 +597,10 @@ func overallFrom(checks []any) string {
 }
 
 // Schema version one report synthesized from CLI and MCP probes when health_report is denied
-func composeFallbackReport(env *tools.Env, binary, reason string, timeout float64) (*pyjson.Object, error) {
+func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason string, timeout float64) (*pyjson.Object, error) {
 	plat := doctorPlatformName()
-	verStatus, verValue := cliDriverVersion(env, binary)
-	probes, err := driveFallbackProbes(env, binary, timeout)
+	verStatus, verValue := cliDriverVersion(ctx, env, binary)
+	probes, err := driveFallbackProbes(ctx, env, binary, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +624,7 @@ func composeFallbackReport(env *tools.Env, binary, reason string, timeout float6
 	c := &doctorCtx{plat: plat, verStatus: verStatus, verMsg: verMsg, reasonShort: reasonShort, probes: probes,
 		perms: probes.permissions, permErr: probes.permissionsError,
 		axGranted: probes.permissions != nil && probes.permissions.Vals["accessibility"] == true,
-		doctorTxt: cliDoctorSnippet(env, binary)}
+		doctorTxt: cliDoctorSnippet(ctx, env, binary)}
 	checks := []any{}
 	for _, p := range fallbackProbeTable {
 		row := p.build(c)
@@ -830,7 +831,7 @@ func staleCuaExecReferences(configDir string) [][3]string {
 var doctorSysPlatform = func() string { return cuPlatform }
 
 // Liveness check per configured serve daemon unit on Linux, degrading an ok overall for a silent socket
-func applyDaemonLivenessGuard(env *tools.Env, report *pyjson.Object, binary string) *pyjson.Object {
+func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *pyjson.Object, binary string) *pyjson.Object {
 	checks, isList := report.Vals["checks"].([]any)
 	if doctorSysPlatform() != "linux" || !isList {
 		return report
@@ -843,7 +844,7 @@ func applyDaemonLivenessGuard(env *tools.Env, report *pyjson.Object, binary stri
 		if u.socket != nil {
 			sock = *u.socket
 		}
-		listening := cuaDaemonListening(env, binary, sock, 3)
+		listening := cuaDaemonListening(ctx, env, binary, sock, 3)
 		if listening == nil {
 			continue
 		}
@@ -1007,7 +1008,7 @@ func writerIsTTY(w io.Writer) bool {
 }
 
 // Doctor of the resolved cua-driver, exit 0 when ok, 1 when degraded or failed, 2 when missing or broken
-func runComputerUseDoctor(env *tools.Env, stdout, stderr io.Writer, driverCmd *string, include, skip []string, jsonOutput bool, color *bool) (int, error) {
+func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io.Writer, driverCmd *string, include, skip []string, jsonOutput bool, color *bool) (int, error) {
 	binary, err := resolveCuaDriverCmd(driverCmd)
 	if err != nil {
 		return 0, err
@@ -1020,10 +1021,10 @@ func runComputerUseDoctor(env *tools.Env, stdout, stderr io.Writer, driverCmd *s
 		fmt.Fprintf(stdout, "cua-driver: not installed (looked for %s).\n  Run: icebath computer-use install\n", pyrepr.Repr(shown))
 		return 2, nil
 	}
-	report, err := driveHealthReport(env, binary, include, skip, 12)
+	report, err := driveHealthReport(ctx, env, binary, include, skip, 12)
 	var unavailable *healthReportUnavailable
 	if errors.As(err, &unavailable) {
-		report, err = composeFallbackReport(env, binary, unavailable.msg, 12)
+		report, err = composeFallbackReport(ctx, env, binary, unavailable.msg, 12)
 	}
 	var spawn *spawnError
 	var rt *doctorRuntimeError
@@ -1044,8 +1045,8 @@ func runComputerUseDoctor(env *tools.Env, stdout, stderr io.Writer, driverCmd *s
 	report = applyDisplayCountGuard(report)
 	report = applyStaleTCCGuard(report)
 	report = applyStaleUnitGuard(report)
-	report = applyDaemonLivenessGuard(env, report, binary)
-	identity := buildIdentity(env, binary, report)
+	report = applyDaemonLivenessGuard(ctx, env, report, binary)
+	identity := buildIdentity(ctx, env, binary, report)
 	environment := waylandEnvironmentContext(report)
 	if jsonOutput {
 		payload := pyjson.NewObject()

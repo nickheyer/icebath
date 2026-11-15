@@ -3,9 +3,15 @@ package selfupdate
 import (
 	"context"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/bundled"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"os"
 	"strings"
@@ -15,6 +21,12 @@ import (
 
 // Hidden first argument that routes a re-executed test binary to one of its child stand-ins
 const cuChildEntry = "__selfupdate_test_child__"
+
+// Runs a re-executed prune child and arms the prune entry ahead of every init and TestMain child mode
+var _ = func() bool {
+	home.DispatchScratchPruneEntry(context.Background())
+	return true
+}()
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
@@ -52,7 +64,34 @@ func TestMain(m *testing.M) {
 	}
 	LoadCronJobsHook = testCronJobs
 	tools.GitlockRunGit = GitlockRunGit
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "selfupdate-home-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("ICEBATH_HOME", dir)
+	os.Setenv("ICEBATH_TEST_ISOLATION", dir)
+	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, processState)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// Clears the process wide state a test leaves behind, the per test resets of the hermes conftest
+func processState(t *testing.T) func() {
+	return func() {
+		if !gateway.FlushRuntimeStatus(30 * time.Second) {
+			t.Error("gateway runtime status was still being written 30s after the test")
+		}
+		provider.SetMultiplexActive(false)
+		home.PinProcess("", true)
+		provider.ResetLaunchEnvSnapshotForTests()
+		tools.ResetForegroundExitFenceForTests()
+		plugins.ResetPluginManagersForTests()
+		config.ResetActiveSkinsForTests()
+		logging.ResetQueuedHandlers()
+		state.CloseLeakedTestInstances()
+		state.CloseAll()
+	}
 }
 
 // Argv that re-executes this test binary as the named child stand-in

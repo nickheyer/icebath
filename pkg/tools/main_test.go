@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -40,8 +41,15 @@ func TestMain(m *testing.M) {
 	installGitlockDoubles()
 	installWorktreeDoubles()
 	installProfileStoreDoubles()
+	hermetic.AroundEachTest(m, mainContextState, isolatedPlatformDefault)
 	os.Exit(runUnderPrivateHome(m))
 }
+
+// Puts the main thread context back to its values before the test, as a fresh test process starts clean
+func mainContextState(*testing.T) func() { return pyctx.SnapshotMainForTests() }
+
+// Platform default home of each case inside its own temp dir, never the developer's real one
+func isolatedPlatformDefault(t *testing.T) func() { return home.PatchPlatformDefault(t.TempDir()) }
 
 // Runs the package cases under a private product home unless the caller named one, removing it afterwards
 func runUnderPrivateHome(m *testing.M) int {

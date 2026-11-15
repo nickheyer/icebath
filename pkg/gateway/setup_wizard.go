@@ -301,9 +301,14 @@ func promptUnauthorizedAccess(ctx context.Context, platformKey string) error {
 // Offers the managed bot QR flow, reporting whether the token was saved and the detected owner id
 func telegramAutoSetup(ctx context.Context, tokenVar string) (bool, string, error) {
 	setupPrintln("")
-	printInfoLines("  Telegram can be configured automatically with a managed bot:",
-		"  [1] Automatic (scan QR → confirm in Telegram → done)", "  [2] Manual BotFather token")
-	if pystr.Strip(gatewayFacade.prompt("  Choice [1/2]", "1", false)) != "1" {
+	choice, ran, _ := provider.SetupMenuAnswer("Telegram bot setup", []string{
+		"Automatic — scan a QR code, confirm in Telegram, done (managed bot)", "Manual — paste a BotFather token"}, []string{"1", "2"}, 0)
+	if !ran {
+		printInfoLines("  Telegram can be configured automatically with a managed bot:",
+			"  [1] Automatic (scan QR → confirm in Telegram → done)", "  [2] Manual BotFather token")
+		choice = pystr.Strip(gatewayFacade.prompt("  Choice [1/2]", "1", false))
+	}
+	if choice != "1" {
 		return false, "", nil
 	}
 	result, err := telegramAutoSetupFn(ctx, nil)

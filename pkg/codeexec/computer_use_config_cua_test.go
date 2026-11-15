@@ -34,7 +34,7 @@ func cuSetupConsole() (*cliui.Console, *bytes.Buffer) {
 // Contract status answering a fixed state for any binary
 func cuFixedContract(t *testing.T, fields map[string]any) {
 	t.Helper()
-	cuSwap(t, &cuaDriverContractStatus, func(*tools.Env, string) (*pyjson.Object, error) {
+	cuSwap(t, &cuaDriverContractStatus, func(context.Context, *tools.Env, string) (*pyjson.Object, error) {
 		o := pyjson.NewObject()
 		keys := make([]string, 0, len(fields))
 		for k := range fields {
@@ -82,7 +82,7 @@ func TestRuntimeContract(t *testing.T) {
 	for _, c := range cases {
 		cuFakeRun(t, func([]string) string { return cuRuntimeManifest(c.version, c.omit...) }, 0)
 		binary := filepath.Join(t.TempDir(), "cua-driver")
-		state, err := cuaDriverContractStatus(nil, binary)
+		state, err := cuaDriverContractStatus(context.Background(), nil, binary)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +187,7 @@ func TestAutostartUsesSelectedBinaryAndVerifiesRegistration(t *testing.T) {
 		})
 		cuSwap(t, &cuaSetupWhich, func(cmd string) (string, bool) { return cmd, true })
 		con, _ := cuSetupConsole()
-		if !repairCuaDriverAutostartWindows(nil, con, binary, false) {
+		if !repairCuaDriverAutostartWindows(context.Background(), nil, con, binary, false) {
 			t.Fatalf("old target %v: registration not verified", oldTarget)
 		}
 		spawned := 0
@@ -213,7 +213,7 @@ func TestAutostartDoesNotClaimSuccessWithoutRegisteredTask(t *testing.T) {
 		return &completedProcess{Args: argv}, nil
 	})
 	con, _ := cuSetupConsole()
-	if repairCuaDriverAutostartWindows(nil, con, "cua-driver.exe", false) {
+	if repairCuaDriverAutostartWindows(context.Background(), nil, con, "cua-driver.exe", false) {
 		t.Fatal("success claimed without a registered task")
 	}
 }
@@ -228,7 +228,7 @@ func TestRepairWithoutOptInSpawnsNoPowershell(t *testing.T) {
 		return nil, nil
 	})
 	con, _ := cuSetupConsole()
-	if !repairCuaDriverAutostartWindows(nil, con, "cua-driver.exe", false) {
+	if !repairCuaDriverAutostartWindows(context.Background(), nil, con, "cua-driver.exe", false) {
 		t.Fatal("the on demand default needs no repair")
 	}
 }
@@ -272,7 +272,7 @@ func TestInstallReadyTaskRequirementFollowsTheOptIn(t *testing.T) {
 		cuFixedContract(t, map[string]any{"ready": true, "version": "0.20.0", "binary": "/x/cua-driver", "reason": ""})
 		cuSwap(t, &cuaDriverAutostartRegisteredWindows, func(*tools.Env, string) bool { return false })
 		cuSwap(t, &cuaAutostartOptIn, func(*tools.Env) bool { return c.optIn })
-		if got, err := cuaDriverInstallReady(nil); err != nil || got != c.expected {
+		if got, err := cuaDriverInstallReady(context.Background(), nil); err != nil || got != c.expected {
 			t.Fatalf("opt in %v: ready %v err %v", c.optIn, got, err)
 		}
 	}
@@ -286,7 +286,7 @@ func TestSetupPreservesHostRegistrationFailure(t *testing.T) {
 		cuSwap(t, &cuaResolvedDriverCmd, func() (string, error) { return "cua-driver.exe", nil })
 		cuFixedContract(t, map[string]any{"ready": true})
 		var repairs []string
-		cuSwap(t, &repairCuaDriverAutostartWindows, func(_ *tools.Env, _ *cliui.Console, driverCmd string, verbose bool) bool {
+		cuSwap(t, &repairCuaDriverAutostartWindows, func(_ context.Context, _ *tools.Env, _ *cliui.Console, driverCmd string, verbose bool) bool {
 			if verbose {
 				t.Fatal("repair must run quiet")
 			}

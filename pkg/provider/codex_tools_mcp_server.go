@@ -61,16 +61,18 @@ var codexToolsExposedTools = []string{
 // CodexToolsExposedTools returns a copy of the curated tool names the codex tools server exposes
 func CodexToolsExposedTools() []string { return slices.Clone(codexToolsExposedTools) }
 
-// One keyword only parameter of a handler signature, an optional one defaults to None
+// One keyword only handler parameter, an optional one defaulting to Default when HasDefault is set, else None
 type codexToolsParam struct {
-	Name     string
-	PyType   string
-	Required bool
+	Name       string
+	PyType     string
+	Required   bool
+	Default    any
+	HasDefault bool
 }
 
 // Annotation renders the parameter annotation the way typing prints it
 func (p codexToolsParam) Annotation() string {
-	if p.Required {
+	if p.Required || p.HasDefault {
 		return p.PyType
 	}
 	return "Optional[" + p.PyType + "]"
@@ -155,13 +157,18 @@ func codexToolsInputSchema(toolName string, sig codexToolsSignature) *pyjson.Obj
 	for _, p := range sig.Params {
 		field := pyjson.NewObject()
 		inner := codexToolsTypeSchema(p.PyType)
-		if p.Required {
+		if p.Required || p.HasDefault {
 			for _, k := range inner.Keys {
 				field.Set(k, inner.Vals[k])
 			}
+			if p.HasDefault {
+				field.Set("default", p.Default)
+			}
 			field.Set("title", codexToolsTitle(p.Name))
 			field.Keys = codexSortedKeys(field.Keys)
-			required = append(required, p.Name)
+			if p.Required {
+				required = append(required, p.Name)
+			}
 		} else {
 			null := pyjson.NewObject()
 			null.Set("type", "null")
@@ -399,14 +406,17 @@ func codexToolsValidate(toolName string, sig codexToolsSignature, args *pyjson.O
 	for _, p := range sig.Params {
 		v, present := data.Vals[p.Name]
 		if !present {
-			if p.Required {
+			switch {
+			case p.Required:
 				verr.errors = append(verr.errors, codexToolsLineError{loc: p.Name, kind: "missing", input: data})
-			} else {
+			case p.HasDefault:
+				out.Set(p.Name, p.Default)
+			default:
 				out.Set(p.Name, nil)
 			}
 			continue
 		}
-		if v == nil && !p.Required {
+		if v == nil && !p.Required && !p.HasDefault {
 			out.Set(p.Name, nil)
 			continue
 		}
@@ -423,14 +433,15 @@ func codexToolsValidate(toolName string, sig codexToolsSignature, args *pyjson.O
 	return out, nil
 }
 
-// One tool the server lists and dispatches through the registry
+// One tool the server lists and dispatches, inputSchema replacing the signature schema in listings when set
 type codexToolsTool struct {
 	name, description string
 	sig               codexToolsSignature
+	inputSchema       any
 	handler           func(kwargs *pyjson.Object) string
 }
 
-// CodexToolsServer is a stdio MCP server over the curated icebath tool subset
+// Stdio MCP server over registered tools, a concurrent one running each call on its own worker
 type CodexToolsServer struct {
 	name         string
 	instructions string
@@ -438,6 +449,9 @@ type CodexToolsServer struct {
 	in           io.Reader
 	out          io.Writer
 	writeMu      sync.Mutex
+	concurrent   bool
+	workers      chan struct{}
+	inflight     sync.WaitGroup
 }
 
 type codexToolsRunner interface{ Run() error }
@@ -549,8 +563,12 @@ func (s *CodexToolsServer) handle(method string, params any) (any, int, string) 
 	case "tools/list":
 		var list []any
 		for _, t := range s.tools {
+			var input any = codexToolsInputSchema(t.name, t.sig)
+			if t.inputSchema != nil {
+				input = t.inputSchema
+			}
 			list = append(list, codexToolsObject("name", t.name, "description", t.description,
-				"inputSchema", codexToolsInputSchema(t.name, t.sig), "outputSchema", codexToolsOutputSchema(t.name)))
+				"inputSchema", input, "outputSchema", codexToolsOutputSchema(t.name)))
 		}
 		if list == nil {
 			list = []any{}
@@ -602,13 +620,32 @@ func (s *CodexToolsServer) callTool(params any) *pyjson.Object {
 	if err != nil {
 		return errResult(fmt.Sprintf("Error executing tool %s: %s", tool.name, err.Error()))
 	}
-	text := tool.handler(kwargs)
+	text, raised, failed := codexToolsRunHandler(tool, kwargs)
+	if failed {
+		return errResult(fmt.Sprintf("Error executing tool %s: %s", tool.name, raised))
+	}
 	return codexToolsObject("content", []any{codexToolsObject("type", "text", "text", text)},
 		"structuredContent", codexToolsObject("result", text), "isError", false)
 }
 
-// Serves newline delimited JSON-RPC on stdio until the client closes stdin
+// Runs a handler and returns its text, or the str of what it raised with failed set
+func codexToolsRunHandler(tool *codexToolsTool, kwargs *pyjson.Object) (text, raised string, failed bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			failed = true
+			if e, ok := r.(error); ok {
+				raised = e.Error()
+			} else {
+				raised = pyrepr.Str(r)
+			}
+		}
+	}()
+	return tool.handler(kwargs), "", false
+}
+
+// Serves newline delimited JSON-RPC on stdio until the client closes stdin, then lets running calls finish
 func (s *CodexToolsServer) Run() error {
+	defer s.inflight.Wait()
 	reader := bufio.NewReaderSize(s.in, 1<<20)
 	for {
 		line, err := reader.ReadString('\n')
@@ -634,6 +671,21 @@ func (s *CodexToolsServer) dispatchLine(line string) {
 	if !hasMethod || !cxHas(msg, "id") {
 		return
 	}
+	if s.concurrent && method == "tools/call" {
+		s.inflight.Add(1)
+		go func() {
+			defer s.inflight.Done()
+			s.workers <- struct{}{}
+			defer func() { <-s.workers }()
+			s.reply(msg, method)
+		}()
+		return
+	}
+	s.reply(msg, method)
+}
+
+// Answers one request message and writes the reply
+func (s *CodexToolsServer) reply(msg any, method string) {
 	id := cxGet(msg, "id")
 	result, code, message := s.handle(method, cxGet(msg, "params"))
 	reply := codexToolsObject("jsonrpc", "2.0", "id", id)
@@ -643,7 +695,7 @@ func (s *CodexToolsServer) dispatchLine(line string) {
 		reply.Set("result", result)
 	}
 	if err := s.send(reply); err != nil {
-		slog.Error("icebath-tools MCP server write failed", "error", err)
+		slog.Error(s.name+" MCP server write failed", "error", err)
 	}
 }
 

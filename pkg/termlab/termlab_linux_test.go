@@ -67,7 +67,7 @@ func newRigWithEnv(t *testing.T, emu Emulator, screen image.Point, settings map[
 		t.Fatal(err)
 	}
 	cfg := t.TempDir()
-	env := []string{"ICEBATH_CONFIG_DIR=" + cfg}
+	env := []string{"ICEBATH_HOME=" + cfg}
 	plain := map[string]string{}
 	for k, v := range settings {
 		if strings.HasPrefix(k, "ICEBATH_") {
@@ -560,7 +560,7 @@ func TestKonsoleResponsive(t *testing.T) {
 
 // Asserts the glyph display draws the world in konsole and sends no image of any protocol
 func TestKonsoleArenaGlyphs(t *testing.T) {
-	r := newRig(t, Konsole, konsoleScreen, map[string]string{"sprint.arena.display": "glyphs", "sprint.arena.glyphs": "shapes", "sprint.arena.pixels": "shapes"})
+	r := newRig(t, Konsole, konsoleScreen, map[string]string{"arena.display": "glyphs", "arena.glyphs": "shapes"})
 	r.waitBar()
 	frame := r.openArena()
 	img, ok := r.waitWorld(frame, false, 10*time.Second)
@@ -580,7 +580,7 @@ func TestKonsoleArenaGlyphs(t *testing.T) {
 
 // Asserts the image display streams direct kitty frames konsole draws while d stays answered within 300ms
 func TestKonsoleArenaImage(t *testing.T) {
-	r := newRig(t, Konsole, konsoleScreen, map[string]string{"sprint.arena.display": "image", "sprint.arena.pixels": "image"})
+	r := newRig(t, Konsole, konsoleScreen, map[string]string{"arena.display": "image"})
 	r.waitBar()
 	frame := r.openArena()
 	direct := func(g graphic) bool {
@@ -646,7 +646,7 @@ func arrival(chunks []Chunk, text string) (time.Time, bool) {
 
 // Asserts the image display sends sixel to a vt340 xterm and the world shows it
 func TestXtermSixel(t *testing.T) {
-	r := newRig(t, Xterm, xtermScreen, map[string]string{"sprint.arena.display": "image", "sprint.arena.pixels": "image"})
+	r := newRig(t, Xterm, xtermScreen, map[string]string{"arena.display": "image"})
 	r.waitBar()
 	frame := r.openArena()
 	err := r.s.WaitFor(sixelStart.Match, 15*time.Second)

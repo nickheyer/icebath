@@ -59,12 +59,49 @@ func autoProviderName(baseURL string) string {
 	return pystr.Capitalize(name)
 }
 
+// Custom provider api mode picked from an arrow key list on a terminal, ran false when the terminal draws none
+func customAPIModeFromMenu(detectedMode, defaultMode string) (value string, ran bool, err error) {
+	labels := make([]string, len(customAPIModes))
+	def := 0
+	for i, mode := range customAPIModes {
+		var markers []string
+		if detectedMode != "" && mode.value == detectedMode {
+			markers = append(markers, "detected")
+		}
+		if mode.value == defaultMode {
+			markers = append(markers, "current")
+			def = i
+		}
+		labels[i] = mode.label + " — " + mode.description
+		if len(markers) > 0 {
+			labels[i] += " [" + strings.Join(markers, " / ") + "]"
+		}
+	}
+	if !pickerConsoleFn().Interactive() {
+		return "", false, nil
+	}
+	idx, rerr := flowRadiolistFn("Select API compatibility mode", plainPickerRows(labels), PickerRadiolistOptions{Selected: def, CancelReturns: -1})
+	if rerr != nil {
+		return "", false, nil
+	}
+	if idx < 0 || idx >= len(customAPIModes) {
+		return "", true, errFlowCancelled
+	}
+	return customAPIModes[idx].value, true, nil
+}
+
 // Custom provider api mode from the menu, empty for auto detect, an error on Ctrl-C or EOF
 func promptCustomAPIModeSelection(r *ModelFlowRun, baseURL, currentAPIMode string) (string, error) {
 	detectedMode := string(detectAPIModeForURL(baseURL))
 	defaultMode := pystr.Lower(pystr.Strip(currentAPIMode))
 	if defaultMode == "" {
 		defaultMode = detectedMode
+	}
+	if value, ran, err := customAPIModeFromMenu(detectedMode, defaultMode); ran {
+		if err != nil {
+			fmt.Fprintln(r.Out, "\nCancelled.")
+		}
+		return value, err
 	}
 	flowSay(r.Out, "", "Select API compatibility mode:")
 	for idx, mode := range customAPIModes {

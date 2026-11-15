@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -22,14 +23,15 @@ type sideAgentThread struct{ name string }
 
 func sideLog() *slog.Logger { return slog.Default().With("logger", "gateway.session_tui_side") }
 
-// Runs body in the owning profile scope and frozen policy with the task's own session identity and workspace bound
+// Runs body in the owning profile scope and frozen policy with its secrets, the task session identity and workspace bound
 func SideScope(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, taskID string, body func(ctx context.Context, env *tools.Env) error) error {
 	profile := ""
 	if tools.IsRoutedHome(a.ProfileID) {
 		profile = servedProfileName(a.ProfileID)
 	}
 	return policyScope(ownerScope(ctx, a, true), policy, a, func(scoped context.Context) error {
-		env := &tools.Env{Home: home.Dir(scoped), Values: &sync.Map{}}
+		h := home.Dir(scoped)
+		env := &tools.Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 		tools.SetSessionVars(env, tools.SessionVars{SessionKey: taskID, SessionID: taskID, Cwd: policy.Cwd, Profile: profile, NoAsyncDelivery: true})
 		defer tools.ClearSessionVars(env)
 		defer tools.UnbindTurnWorkspace(env, taskID)

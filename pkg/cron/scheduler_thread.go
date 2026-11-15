@@ -33,7 +33,12 @@ func NewSupervisedTickerThread(target func(), stop <-chan struct{}, name string)
 	return &SupervisedTickerThread{target: target, stop: stop, name: name, log: slog.Default()}
 }
 
-// Runs target once, marking the ticker crashed and printing the escaping panic as threading.excepthook does
+// Process wide report of a failure escaping a cron goroutine, printed to stderr as threading.excepthook prints it
+var threadExceptHook = func(thread, report string) {
+	fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%s", thread, report)
+}
+
+// Runs target once, marking the ticker crashed and handing the escaping panic to the thread exception hook
 func (t *SupervisedTickerThread) run(done chan struct{}) {
 	defer close(done)
 	defer func() {
@@ -41,7 +46,7 @@ func (t *SupervisedTickerThread) run(done chan struct{}) {
 			t.mu.Lock()
 			t.crashed = true
 			t.mu.Unlock()
-			fmt.Fprintf(os.Stderr, "Exception in thread %s:\n%v\n%s", t.name, r, debug.Stack())
+			threadExceptHook(t.name, fmt.Sprintf("%v\n%s", r, debug.Stack()))
 		}
 	}()
 	t.target()

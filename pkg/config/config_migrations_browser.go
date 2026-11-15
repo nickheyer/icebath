@@ -181,7 +181,7 @@ func browserConfigDecided(key string, current any) bool {
 var browserBackendReasons = map[string]string{
 	"browser-use":   "browser_exec (Browser Use mode) is the only browser now",
 	"agent-browser": "agent-browser left icebath; browser_exec is the browser now",
-	"camofox":       "Camofox is now the camofox plugin (`icebath plugins install camofox`)",
+	"camofox":       "Camofox is now the built-in camofox toolset, set up with `icebath camofox setup`",
 	"local":         "browser_exec launches icebath's packaged Chromium itself (browser.cloud_provider: local)",
 	"browserbase":   "a cloud browser is chosen with browser.cloud_provider (`icebath tools` \u2192 Browser Automation)",
 	"firecrawl":     "a cloud browser is chosen with browser.cloud_provider (`icebath tools` \u2192 Browser Automation)",

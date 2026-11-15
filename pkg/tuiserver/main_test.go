@@ -2,18 +2,24 @@ package tuiserver
 
 import (
 	"context"
+	"maps"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 func TestMain(m *testing.M) {
@@ -71,9 +77,106 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("ICEBATH_HOME", dir)
 	hermesHome, hermesHomeAtImport = dir, dir
+	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, mainContextState, serverState, isolatedPlatformDefault)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// Puts back the process wide server state a case leaves behind, the per test resets of the hermes conftest
+func serverState(t *testing.T) func() {
+	methodsMu.RLock()
+	savedMethods := maps.Clone(methods)
+	methodsMu.RUnlock()
+	dbMu.Lock()
+	savedDB, savedDBError := sharedDB, dbError
+	dbMu.Unlock()
+	return func() {
+		for _, live := range tuigateway.LiveSessions() {
+			closeSessionByID(context.Background(), live.SID, "test_cleanup", nil)
+		}
+		stopNotificationPollers(t)
+		if !gateway.FlushRuntimeStatus(30 * time.Second) {
+			t.Error("gateway runtime status was still being written 30s after the test")
+		}
+		if provider.StopNousAuthKeepalive(30 * time.Second); provider.NousAuthKeepaliveRunning() {
+			t.Error("the Nous auth keepalive was still running 30s after the test stopped it")
+		}
+		tuigateway.ResetForTests()
+		tuigateway.ClearParked()
+		childMirrorsMu.Lock()
+		clear(childMirrors)
+		childMirrorsMu.Unlock()
+		activeChildRuns.Lock()
+		clear(activeChildRuns.at)
+		activeChildRuns.Unlock()
+		methodsMu.Lock()
+		methods = savedMethods
+		methodsMu.Unlock()
+		dbMu.Lock()
+		opened := sharedDB
+		sharedDB, dbError = savedDB, savedDBError
+		dbMu.Unlock()
+		if opened != nil && opened != savedDB {
+			_ = opened.Close()
+		}
+		servedProfileMu.Lock()
+		servedProfileHomes = map[string]bool{}
+		servedProfileMu.Unlock()
+		provider.SetMultiplexActive(false)
+		home.PinProcess("", true)
+		provider.ResetLaunchEnvSnapshotForTests()
+		tools.ResetForegroundExitFenceForTests()
+		tools.OnboardingDueResetForTests()
+		logging.ResetQueuedHandlers()
+	}
+}
+
+// Puts the main thread context back to its values before the test, as a fresh test process starts clean
+func mainContextState(*testing.T) func() { return pyctx.SnapshotMainForTests() }
+
+// Platform default home of each case inside its own temp dir, never the developer's real one
+func isolatedPlatformDefault(t *testing.T) func() { return home.PatchPlatformDefault(t.TempDir()) }
+
+// Stops every notification poller a case left running and waits for each to finish
+func stopNotificationPollers(t *testing.T) { joinNotificationPollers(t, nil) }
+
+// Stop events of the notification pollers registered so far
+func notificationPollerStops() map[*pythread.Event]bool {
+	notificationPollers.mu.Lock()
+	defer notificationPollers.mu.Unlock()
+	stops := make(map[*pythread.Event]bool, len(notificationPollers.pollers))
+	for _, p := range notificationPollers.pollers {
+		stops[p.stop] = true
+	}
+	return stops
+}
+
+// Stops every poller whose stop event is not in kept and waits for each to finish
+func joinNotificationPollers(t *testing.T, kept map[*pythread.Event]bool) {
+	notificationPollers.mu.Lock()
+	var pollers, staying []notificationPoller
+	for _, p := range notificationPollers.pollers {
+		if kept[p.stop] {
+			staying = append(staying, p)
+		} else {
+			pollers = append(pollers, p)
+		}
+	}
+	notificationPollers.pollers = staying
+	notificationPollers.mu.Unlock()
+	for _, p := range pollers {
+		p.stop.Set()
+	}
+	deadline := time.After(30 * time.Second)
+	for _, p := range pollers {
+		select {
+		case <-p.done:
+		case <-deadline:
+			t.Error("a notification poller was still running 30s after the test stopped it")
+			return
+		}
+	}
 }
 
 // Real agent on a dead loopback endpoint with the given route and reasoning config

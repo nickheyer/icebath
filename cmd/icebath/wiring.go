@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/builtin/langfuse"
 	"github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/commands"
@@ -61,6 +62,7 @@ var (
 // Assigns every package level hook the lower packages leave to the binary, before any entry dispatches
 func installProcessWiring() {
 	installSlashRegistryWiring()
+	installAgentImportWiring()
 	registerCommandArgv()
 	tools.RegisterNemoRelayBinding(relayhost.Load)
 	commands.BannerVersionLabel = app.FormatBannerVersionLabel
@@ -613,6 +615,7 @@ func runAtExit() {
 	}
 	run(state.RunTokenExitHooks)
 	run(func() { tools.CleanupAllEnvironments(processToolsEnv(context.Background())) })
+	run(tools.SweepSingularityScratchAtExit)
 	run(func() { tools.CleanupSafeSkillsCopy() })
 	run(func() { browser.AtexitCleanup(context.Background()) })
 	run(codeexec.ShutdownAllKernels)
@@ -627,6 +630,7 @@ func runAtExit() {
 	run(func() { provider.ShutdownLocalRuntime() })
 	run(func() { plugins.FlushOutboundWebhooks(5 * time.Second) })
 	run(func() { observability.ShutdownRuntimes(context.Background()) })
+	run(langfuse.AtExit)
 	run(gatewayrun.BootstrapAtExit)
 	run(gateway.HostRendezvousAtExit)
 	run(logging.Shutdown)

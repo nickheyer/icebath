@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -82,7 +83,7 @@ var keypadCaps = map[int]int{
 	terminfo.KeyF9: KeyF0 + 9, terminfo.KeyF10: KeyF0 + 10, terminfo.KeyF11: KeyF0 + 11, terminfo.KeyF12: KeyF0 + 12,
 }
 
-// Opens the full screen renderer like initscr with keypad on, failing when TERM has no terminfo entry
+// Opens the full screen renderer with keypad on, its modes cleared by the close or by any terminal restore
 func (c *Console) openANSIScreen() (Screen, func(), error) {
 	name, _ := c.getenv("TERM")
 	if name == "" {
@@ -92,7 +93,7 @@ func (c *Console) openANSIScreen() (Screen, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: setupterm: could not find terminal: %v", errCursesInit, err)
 	}
-	restore, err := c.makeRaw()
+	restore, err := c.holdRaw()
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", errCursesInit, err)
 	}
@@ -110,13 +111,17 @@ func (c *Console) openANSIScreen() (Screen, func(), error) {
 		s.sigCh = make(chan os.Signal, 1)
 		signal.Notify(s.sigCh, os.Interrupt)
 	}
-	io.WriteString(c.Out, string(ti.Strings[terminfo.EnterCaMode])+string(ti.Strings[terminfo.KeypadXmit]))
+	c.enterMode("altscreen", string(ti.Strings[terminfo.EnterCaMode])+string(ti.Strings[terminfo.KeypadXmit]),
+		"\x1b[0m"+string(ti.Strings[terminfo.CursorNormal])+string(ti.Strings[terminfo.KeypadLocal])+string(ti.Strings[terminfo.ExitCaMode]))
+	var once sync.Once
 	closeFn := func() {
-		if s.sigCh != nil {
-			signal.Stop(s.sigCh)
-		}
-		io.WriteString(c.Out, "\x1b[0m"+string(ti.Strings[terminfo.CursorNormal])+string(ti.Strings[terminfo.KeypadLocal])+string(ti.Strings[terminfo.ExitCaMode]))
-		restore()
+		once.Do(func() {
+			if s.sigCh != nil {
+				signal.Stop(s.sigCh)
+			}
+			c.leaveMode("altscreen")
+			restore()
+		})
 	}
 	return s, closeFn, nil
 }

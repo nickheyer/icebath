@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -281,21 +280,6 @@ func doctorFailingInstalls(t *testing.T) *[]string {
 }
 
 const doctorCopilotAuxConfig = "model:\n  provider: nous\nauxiliary:\n  vision:\n    provider: copilot\n    model: gpt-4.1\n"
-
-func TestDoctorInstallsNothingAndNamesTheInstall(t *testing.T) {
-	d, buf := doctorRawHome(t, doctorCopilotAuxConfig, "")
-	installs := doctorFailingInstalls(t)
-	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false, "ack": nil, "live": false}, doctorConfigFileEntry)
-	if len(*installs) != 0 {
-		t.Fatalf("installs = %q", *installs)
-	}
-	if _, err := os.Stat(filepath.Join(d.Home, "plugins", "github-copilot")); err == nil {
-		t.Fatal("the plugin was installed by a diagnostic")
-	}
-	if !strings.Contains(out, "icebath plugins install github-copilot") {
-		t.Fatalf("out = %q", out)
-	}
-}
 
 func TestDoctorInATerminalFrontEndLeavesKeptNoticesForTheNextAgent(t *testing.T) {
 	d, buf := doctorRawHome(t, doctorCopilotAuxConfig, "")

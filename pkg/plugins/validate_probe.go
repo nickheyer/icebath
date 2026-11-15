@@ -40,35 +40,59 @@ func probeOptions(manifest map[string]any) map[string]any {
 	return map[string]any{"kind": kind, "context_methods": pluginContextMethods()}
 }
 
-// Runs the recording probe in a scratch subprocess, the recorded registrations or the reason it gave none
-func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[string]any) (map[string]any, string) {
+// Python argv prefix and environment of the dependency environment the probe imports the plugin from
+type capabilityProbe struct {
+	argv []string
+	env  []string
+}
+
+// Name to value map of KEY=VALUE environment entries
+func environMapOf(entries []string) map[string]string {
+	env := map[string]string{}
+	for _, entry := range entries {
+		if key, value, ok := strings.Cut(entry, "="); ok {
+			env[key] = value
+		}
+	}
+	return env
+}
+
+// Runs the recording probe in a scratch subprocess on probe or this install's interpreter, the registrations or why none
+func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[string]any, probe *capabilityProbe) (map[string]any, string) {
 	scratch, err := os.MkdirTemp("", "icebath-validate-")
 	if err != nil {
 		return nil, "capability probe produced no result: " + pyrepr.ExceptionMessage(err)
 	}
 	defer os.RemoveAll(scratch)
-	python, err := probePython(ctx)
-	if err != nil {
+	var python string
+	var interpreterOptions []string
+	if probe != nil {
+		python, interpreterOptions = probe.argv[0], probe.argv[1:]
+	} else if python, err = probePython(ctx); err != nil {
 		return nil, "capability probe produced no result: " + err.Error()
 	}
 	options, err := json.Marshal(probeOptions(manifest))
 	if err != nil {
 		return nil, "capability probe produced no result: " + err.Error()
 	}
-	env := map[string]string{}
-	for _, entry := range os.Environ() {
-		if key, value, ok := strings.Cut(entry, "="); ok {
-			env[key] = value
-		}
+	base := os.Environ()
+	if probe != nil {
+		base = probe.env
 	}
+	env := environMapOf(base)
 	env["ICEBATH_HOME"] = scratch
-	env["PYTHONPATH"] = pm.RepoRoot()
-	if existing := os.Getenv("PYTHONPATH"); existing != "" {
-		env["PYTHONPATH"] += string(os.PathListSeparator) + existing
+	pythonPath := pm.RepoRoot()
+	if existing := env["PYTHONPATH"]; existing != "" {
+		if pythonPath != "" {
+			pythonPath += string(os.PathListSeparator)
+		}
+		pythonPath += existing
 	}
+	env["PYTHONPATH"] = pythonPath
 	runCtx, cancel := context.WithTimeout(ctx, probeTimeout*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, python, "-P", "-c", probeScript, pluginDir, probeSentinel, string(options))
+	argv := append(append([]string{"-P"}, interpreterOptions...), "-c", probeScript, pluginDir, probeSentinel, string(options))
+	cmd := exec.CommandContext(runCtx, python, argv...)
 	cmd.Env = envList(env)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -115,14 +139,14 @@ func recordedNames(recorded map[string]any, kind string) []string {
 	return out
 }
 
-// Probes actual registrations and compares them with the declared capabilities, nil when the probe gave none
-func checkCapabilities(ctx context.Context, report *ValidationReport, manifest map[string]any, pluginDir string) map[string]any {
+// Probes actual registrations through probe and compares them with the declared capabilities, nil when the probe gave none
+func checkCapabilities(ctx context.Context, report *ValidationReport, manifest map[string]any, pluginDir string, probe *capabilityProbe) map[string]any {
 	if !isFile(filepath.Join(pluginDir, "__init__.py")) {
 		report.warn("no __init__.py — capability probe skipped (manifest-only plugin)")
 		report.add("capability probe", true, "skipped (no __init__.py)")
 		return nil
 	}
-	recorded, reason := runCapabilityProbe(ctx, pluginDir, manifest)
+	recorded, reason := runCapabilityProbe(ctx, pluginDir, manifest, probe)
 	if recorded == nil {
 		report.add("capability probe", false, reason)
 		return nil

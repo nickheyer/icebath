@@ -12,6 +12,9 @@ func IsInteractiveStdin() bool {
 	return c.StdinIsTTY()
 }
 
+// InteractiveTerminal reports a terminal on both streams that draws the live setup prompts
+func InteractiveTerminal() bool { return console().Interactive() }
+
 // Prints the headless setup guidance with the config commands replacing the interactive wizard
 func PrintNoninteractiveSetupGuidance(reason string) {
 	c := console()

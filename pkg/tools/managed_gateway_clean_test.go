@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"sync"
 	"testing"
 )
@@ -16,7 +17,7 @@ func TestGatewayTokenCleaningAndDesktopRouting(t *testing.T) {
 		}
 	}
 	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "  tok  ")
-	if got := readUserTokenOverride(env); got != "tok" {
+	if got := readUserTokenOverride(context.Background(), env); got != "tok" {
 		t.Fatalf("override %q", got)
 	}
 

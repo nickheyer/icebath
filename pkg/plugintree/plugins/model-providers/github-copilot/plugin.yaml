@@ -1,0 +1,5 @@
+name: github-copilot-provider
+kind: model-provider
+version: 1.0.0
+description: GitHub Copilot (Copilot API and Copilot CLI over ACP)
+author: Nous Research

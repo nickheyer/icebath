@@ -28,7 +28,7 @@ func TestPortalWireValidatorsAndClientDefaults(t *testing.T) {
 		t.Fatalf("default bearer %q %v", token, err)
 	}
 	t.Setenv("TOOL_GATEWAY_USER_TOKEN", "")
-	if got := portalDefaultHeaderProvider(env); len(got) != 0 {
+	if got := portalDefaultHeaderProvider(context.Background(), env); len(got) != 0 {
 		t.Fatalf("no token must send no header %v", got)
 	}
 

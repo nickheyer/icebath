@@ -111,8 +111,8 @@ var runQuiet = func(argv []string, timeout float64, o runOpts) (*completedProces
 }
 
 // Runs a short cua-driver verb with the sanitized env and a hidden console window
-func runDriver(env *tools.Env, driverCmd string, timeout float64, args ...string) (*completedProcess, error) {
-	return runQuiet(append([]string{driverCmd}, args...), timeout, runOpts{Env: sanitizedCuaDriverEnv(env), HideWindow: true})
+func runDriver(ctx context.Context, env *tools.Env, driverCmd string, timeout float64, args ...string) (*completedProcess, error) {
+	return runQuiet(append([]string{driverCmd}, args...), timeout, runOpts{Env: sanitizedCuaDriverEnv(ctx, env), HideWindow: true})
 }
 
 // Active profile config through the writable loader, swapped by tests that pin a config
@@ -326,31 +326,31 @@ func sandboxMCPInvocation(ctx context.Context, env *tools.Env) (*mcpInvocation, 
 }
 
 // Driver child env with provider secrets stripped, the unsanitized env when the sanitizer fails
-func sanitizedCuaDriverEnv(env *tools.Env) map[string]string {
+func sanitizedCuaDriverEnv(ctx context.Context, env *tools.Env) map[string]string {
 	child := cuaDriverChildEnv(env, nil)
-	if out, err := sanitizeCuaEnv(env, child); err == nil {
+	if out, err := sanitizeCuaEnv(ctx, env, child); err == nil {
 		return out
 	}
 	return child
 }
 
 // Secret scrub of the terminal sanitizer, a panic in it counts as a failure like the suppressed exception
-func sanitizeCuaEnv(env *tools.Env, child map[string]string) (out map[string]string, err error) {
+func sanitizeCuaEnv(ctx context.Context, env *tools.Env, child map[string]string) (out map[string]string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			out, err = nil, fmt.Errorf("%v", r)
 		}
 	}()
-	return tools.SanitizeSubprocessEnv(env, child, nil)
+	return tools.SanitizeSubprocessEnv(ctx, env, child, nil)
 }
 
 // Socket liveness of a serve daemon, nil when the probe itself failed
-func cuaDaemonListening(env *tools.Env, driverCmd, socketPath string, timeout float64) *bool {
+func cuaDaemonListening(ctx context.Context, env *tools.Env, driverCmd, socketPath string, timeout float64) *bool {
 	args := []string{"status"}
 	if socketPath != "" {
 		args = append(args, "--socket", socketPath)
 	}
-	proc, err := runDriver(env, driverCmd, timeout, args...)
+	proc, err := runDriver(ctx, env, driverCmd, timeout, args...)
 	if err != nil {
 		return nil
 	}

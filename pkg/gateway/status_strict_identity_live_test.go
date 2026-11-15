@@ -4,7 +4,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +23,12 @@ import (
 )
 
 const lockHolderEnv = "ICEBATH_GATEWAY_TEST_LOCK_HOLDER"
+
+// Runs a re-executed prune child and arms the prune entry ahead of every init and TestMain child mode
+var _ = func() bool {
+	home.DispatchScratchPruneEntry(context.Background())
+	return true
+}()
 
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
@@ -37,7 +50,37 @@ func TestMain(m *testing.M) {
 	}
 	installCommandBusyPolicyDouble()
 	installS6SupervisorDouble()
-	os.Exit(m.Run())
+	dir, err := os.MkdirTemp("", "gateway-home-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("ICEBATH_HOME", dir)
+	os.Setenv("ICEBATH_TEST_ISOLATION", dir)
+	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, processState(plugins.InstalledServices()))
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// Clears the process wide state a gateway test leaves behind, the per test resets of the hermes conftest
+func processState(services *plugins.Services) hermetic.Fixture {
+	return func(t *testing.T) func() {
+		return func() {
+			if !FlushRuntimeStatus(30 * time.Second) {
+				t.Error("gateway runtime status was still being written 30s after the test")
+			}
+			provider.SetMultiplexActive(false)
+			home.PinProcess("", true)
+			provider.ResetLaunchEnvSnapshotForTests()
+			tools.ResetForegroundExitFenceForTests()
+			plugins.InstallServices(services)
+			plugins.ResetPluginManagersForTests()
+			config.ResetActiveSkinsForTests()
+			logging.ResetQueuedHandlers()
+			state.CloseLeakedTestInstances()
+			state.CloseAll()
+		}
+	}
 }
 
 // Takes the runtime lock, writes the pid file, prints the pid and holds both until stdin closes

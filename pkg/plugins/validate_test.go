@@ -1,14 +1,17 @@
 package plugins
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/pm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,7 +52,7 @@ func vtPlugin(t *testing.T, root string, manifest map[string]any, initPy string)
 // Every native check, the source audits and isolation audit included
 func vtNativeChecks(t *testing.T, dir string) *ValidationReport {
 	t.Helper()
-	report, err := validatePluginDir(context.Background(), dir)
+	report, err := validatePluginDir(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +98,7 @@ func TestPortableValidationFailsOrphanAndReportsAvailability(t *testing.T) {
 	defer InstallServices(nil)
 	tmp := t.TempDir()
 	orphan := vtPortable(t, filepath.Join(tmp, "orphan"), map[string]any{}, map[string]any{"worker": map[string]any{"requires": map[string]any{"app": false}}})
-	report, err := validatePluginDir(context.Background(), orphan)
+	report, err := validatePluginDir(context.Background(), orphan, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +108,7 @@ func TestPortableValidationFailsOrphanAndReportsAvailability(t *testing.T) {
 	declared := vtPortable(t, filepath.Join(tmp, "declared"), map[string]any{"worker": map[string]any{"type": "stdio", "command": "python"}},
 		map[string]any{"worker": map[string]any{"app": map[string]any{"darwin": map[string]any{"presence": "executable", "location": filepath.Join(tmp, "example-app")}},
 			"requires": map[string]any{"app": true}}})
-	report, err = validatePluginDir(context.Background(), declared)
+	report, err = validatePluginDir(context.Background(), declared, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,6 +301,122 @@ func TestValidateReportJSONKeyOrder(t *testing.T) {
 	want := `{"ok":true,"checks":[{"name":"manifest","ok":true,"detail":"plugin.yaml parses"}],"warnings":["w"],"isolation":{"verdict":"host","host_ready":true,"reasons":[],"notes":["n"],"ctx_methods":["register_tool"]}}`
 	if string(raw) != want || r.Isolation.Summary() != "runs in the plugin host (plugins.isolation: host)" {
 		t.Fatalf("%s", raw)
+	}
+}
+
+// Stands in a synced dependency environment for validate with install deps, every seam restored after the test
+func vtSyncedEnvironment(t *testing.T, sync func(context.Context, pm.SyncVenvOptions) error, python, venv string, env []string) *[][]string {
+	t.Helper()
+	savedSync, savedPython, savedVenv, savedCommand, savedEnv := syncVenv, projectPython, selectedVenv, venvCommand, activationEnvironment
+	t.Cleanup(func() {
+		syncVenv, projectPython, selectedVenv, venvCommand, activationEnvironment = savedSync, savedPython, savedVenv, savedCommand, savedEnv
+	})
+	commands := &[][]string{}
+	syncVenv = sync
+	projectPython = func(context.Context, string) (string, error) { return python, nil }
+	selectedVenv = func(context.Context, string) (string, error) { return venv, nil }
+	venvCommand = func(_ context.Context, _, gotVenv string, options []string) ([]string, error) {
+		*commands = append(*commands, append([]string{gotVenv}, options...))
+		return append([]string{python}, options...), nil
+	}
+	activationEnvironment = func(context.Context, string) ([]string, error) { return env, nil }
+	return commands
+}
+
+// Checks of a JSON validation report by name, a CommandExit accepted the way SystemExit is
+func vtJSONChecks(t *testing.T, out []byte, err error) map[string]map[string]any {
+	t.Helper()
+	var exit *CommandExit
+	if err != nil && !errors.As(err, &exit) {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Checks []map[string]any `json:"checks"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("report %q: %v", out, err)
+	}
+	checks := map[string]map[string]any{}
+	for _, c := range doc.Checks {
+		checks[c["name"].(string)] = c
+	}
+	return checks
+}
+
+// Process environment with PYTHONPATH replaced by the given entries
+func vtEnvironWithPythonPath(parts ...string) []string {
+	env := []string{"PYTHONPATH=" + strings.Join(parts, string(os.PathListSeparator))}
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "PYTHONPATH=") {
+			env = append(env, entry)
+		}
+	}
+	return env
+}
+
+func TestInstallDepsProbeImportsFromTheSyncedEnvironment(t *testing.T) {
+	tmp := t.TempDir()
+	deps := filepath.Join(tmp, "synced-site-packages")
+	vtWrite(t, filepath.Join(deps, "probe_only_dep.py"), "VALUE = 1\n")
+	plugin := vtPlugin(t, tmp, map[string]any{"name": "needs-dep", "version": "1.0.0", "description": "d"},
+		"import probe_only_dep\n\ndef register(ctx):\n    pass\n")
+	python := pubPython(t)
+	vtSyncedEnvironment(t, func(context.Context, pm.SyncVenvOptions) error { return nil }, python,
+		filepath.Join(tmp, "synced-venv"), vtEnvironWithPythonPath(pm.RepoRoot(), deps))
+	var out, errOut bytes.Buffer
+	err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut)
+	checks := vtJSONChecks(t, out.Bytes(), err)
+	if probe := checks["capability probe"]; probe == nil || probe["ok"] != true {
+		t.Fatalf("capability probe %v", probe)
+	}
+}
+
+// A failed sync prints the preparation failure to stderr and validation still runs on this install's interpreter
+func TestInstallDepsSyncFailureStillValidates(t *testing.T) {
+	tmp := t.TempDir()
+	plugin := vtPlugin(t, tmp, vtBaseManifest, "")
+	var synced []pm.SyncVenvOptions
+	commands := vtSyncedEnvironment(t, func(_ context.Context, opts pm.SyncVenvOptions) error {
+		synced = append(synced, opts)
+		return &pm.PyError{Class: "RuntimeError", Message: "resolver said no"}
+	}, pubPython(t), filepath.Join(tmp, "synced-venv"), os.Environ())
+	var out, errOut bytes.Buffer
+	err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut)
+	checks := vtJSONChecks(t, out.Bytes(), err)
+	if errOut.String() != "dependency preparation failed: resolver said no\n" {
+		t.Fatalf("stderr %q", errOut.String())
+	}
+	if probe := checks["capability probe"]; probe == nil || probe["ok"] != true || len(*commands) != 0 {
+		t.Fatalf("capability probe %v, venv commands %v", probe, *commands)
+	}
+	if len(synced) != 1 || synced[0].Stdout != &out || !reflect.DeepEqual(synced[0].Plugins, &pm.Candidates{Dirs: []string{plugin}}) {
+		t.Fatalf("sync calls %+v", synced)
+	}
+}
+
+// A synced install whose selected interpreter is missing probes this install's interpreter without a venv command
+func TestInstallDepsWithoutACommittedInterpreterProbesInProcessEnvironment(t *testing.T) {
+	tmp := t.TempDir()
+	plugin := vtPlugin(t, tmp, vtBaseManifest, "")
+	commands := vtSyncedEnvironment(t, func(context.Context, pm.SyncVenvOptions) error { return nil },
+		filepath.Join(tmp, "no-venv", "bin", "python"), filepath.Join(tmp, "no-venv"), nil)
+	var out, errOut bytes.Buffer
+	err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut)
+	checks := vtJSONChecks(t, out.Bytes(), err)
+	if probe := checks["capability probe"]; probe == nil || probe["ok"] != true || len(*commands) != 0 || errOut.Len() != 0 {
+		t.Fatalf("capability probe %v, venv commands %v, stderr %q", probe, *commands, errOut.String())
+	}
+}
+
+// An interrupted sync escapes validation the way KeyboardInterrupt escapes except Exception
+func TestInstallDepsInterruptedSyncEscapes(t *testing.T) {
+	tmp := t.TempDir()
+	plugin := vtPlugin(t, tmp, vtBaseManifest, "")
+	vtSyncedEnvironment(t, func(context.Context, pm.SyncVenvOptions) error { return ErrUserInterrupt },
+		pubPython(t), filepath.Join(tmp, "synced-venv"), os.Environ())
+	var out, errOut bytes.Buffer
+	if err := CmdValidate(context.Background(), plugin, true, true, &out, &errOut); !errors.Is(err, ErrUserInterrupt) || out.Len() != 0 || errOut.Len() != 0 {
+		t.Fatalf("err %v, stdout %q, stderr %q", err, out.String(), errOut.String())
 	}
 }
 

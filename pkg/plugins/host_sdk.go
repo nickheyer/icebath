@@ -84,7 +84,7 @@ func sdkGetEnvValue(ctx context.Context, h *PluginHost, args []any, kwargs map[s
 	return value, nil
 }
 
-// Environment of a helper child the plugin starts, built from the child env it sent
+// Environment of a plugin helper child, built as its host child would from the sent env or its own
 func sdkBuildSubprocessEnv(ctx context.Context, h *PluginHost, args []any, kwargs map[string]any) (any, error) {
 	a, _, err := bindPy("build_subprocess_env", []pyParam{opt("base", nil), kwo("inherit_profile_home", true),
 		kwo("scrub_secrets", true), kwo("extra", nil), kwo("strip_launch_profile", false)}, args, kwargs)
@@ -101,9 +101,15 @@ func sdkBuildSubprocessEnv(ctx context.Context, h *PluginHost, args []any, kwarg
 		}
 		return out
 	}
-	env, err := tools.BuildSubprocessEnv(ctx, &tools.Env{Home: h.home}, tools.SubprocessEnvOptions{Base: strs(a["base"]),
+	base := strs(a["base"])
+	if base == nil {
+		if base, err = h.childEnviron(); err != nil {
+			return nil, err
+		}
+	}
+	env, err := tools.BuildSubprocessEnv(ctx, &tools.Env{Home: h.home}, tools.SubprocessEnvOptions{Base: base,
 		InheritProfileHome: config.PyTruthy(a["inherit_profile_home"]), ScrubSecrets: config.PyTruthy(a["scrub_secrets"]),
-		Extra: strs(a["extra"]), StripLaunchProfile: config.PyTruthy(a["strip_launch_profile"])})
+		Extra: strs(a["extra"]), StripLaunchProfile: config.PyTruthy(a["strip_launch_profile"]), SeparateProcess: true})
 	if err != nil {
 		return nil, err
 	}

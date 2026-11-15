@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	xterm "github.com/charmbracelet/x/term"
+	"github.com/nickheyer/icebath/pkg/cliui"
 )
 
 // ErrSecretPromptInterrupted is the Ctrl+C a masked secret prompt raises as KeyboardInterrupt
@@ -22,39 +23,7 @@ var (
 	secretGetpass      = getpass
 )
 
-// Reads one secret line writing a mask per typed char, Ctrl+C interrupting and EOF raising io.EOF
-func collectMaskedInput(readChar func() string, write func(string), prompt, mask string) (string, error) {
-	var value []string
-	write(prompt)
-	for {
-		ch := readChar()
-		switch ch {
-		case "\r", "\n":
-			write("\r\n")
-			return strings.Join(value, ""), nil
-		case "\x03":
-			write("\r\n")
-			return "", ErrSecretPromptInterrupted
-		case "\x04", "\x1a", "":
-			write("\r\n")
-			return "", io.EOF
-		case "\b", "\x7f":
-			if len(value) > 0 {
-				value = value[:len(value)-1]
-				write("\b \b")
-			}
-			continue
-		case "\x1b":
-			continue
-		}
-		value = append(value, ch)
-		if mask != "" {
-			write(mask)
-		}
-	}
-}
-
-// Prompts for a secret with asterisk feedback, getpass when either stream is not a terminal
+// Prompts for a secret with one mask mark per character, getpass when either stream is not a terminal
 func maskedSecretPrompt(prompt string) (string, error) {
 	return maskedSecretPromptMask(prompt, "*")
 }
@@ -62,76 +31,30 @@ func maskedSecretPrompt(prompt string) (string, error) {
 // Masked terminal prompt for a secret value, the exported form plugins reach through Services
 func MaskedSecretPrompt(prompt string) (string, error) { return maskedSecretPrompt(prompt) }
 
-// Masked secret prompt with a chosen mask, raw terminal failures falling back to getpass
+// Masked secret prompt with a chosen mask in an inline field, getpass when the terminal cannot draw one
 func maskedSecretPromptMask(prompt, mask string) (string, error) {
 	stdin, stdout := secretPromptStdin(), secretPromptStdout()
 	if !streamIsTTY(stdin) || !streamIsTTY(stdout) {
 		return secretGetpass(prompt)
 	}
-	value, err := maskedSecretPromptRaw(stdin, stdout, prompt, mask)
-	if err == nil || errors.Is(err, ErrSecretPromptInterrupted) || errors.Is(err, io.EOF) {
-		return value, err
+	value, err := secretFieldFn(prompt, mask)
+	switch {
+	case err == nil:
+		return value, nil
+	case errors.Is(err, cliui.ErrInterrupt):
+		return "", ErrSecretPromptInterrupted
+	case errors.Is(err, cliui.ErrEOF):
+		return "", io.EOF
 	}
 	return secretGetpass(prompt)
 }
 
+// Inline masked field on the process console, swapped by tests
+var secretFieldFn = func(prompt, mask string) (string, error) { return cliui.Default().SecretLine(prompt, mask) }
+
 // True when the stream is an open terminal
 func streamIsTTY(f *os.File) bool {
 	return f != nil && xterm.IsTerminal(f.Fd())
-}
-
-// Raw mode masked read restoring the terminal state, special keys swallowed whole on Windows consoles
-func maskedSecretPromptRaw(stdin, stdout *os.File, prompt, mask string) (string, error) {
-	fd := stdin.Fd()
-	oldState, err := xterm.MakeRaw(fd)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = xterm.Restore(fd, oldState) }()
-	reader := bufio.NewReader(stdin)
-	write := func(text string) { _, _ = io.WriteString(stdout, text); _ = stdout.Sync() }
-	readChar := func() string { return readSecretRune(reader) }
-	if runtime.GOOS == "windows" {
-		readChar = func() string {
-			ch := readSecretRune(reader)
-			if ch == "\x1b" || ch == "\x00" || ch == "\u00e0" {
-				skipKeySequence(reader, ch)
-				return "\x1b"
-			}
-			return ch
-		}
-	}
-	return collectMaskedInput(readChar, write, prompt, mask)
-}
-
-// One decoded character from the stream, empty once it is closed
-func readSecretRune(reader *bufio.Reader) string {
-	r, _, err := reader.ReadRune()
-	if err != nil {
-		return ""
-	}
-	return string(r)
-}
-
-// Consumes the rest of a special key, its scan code or the CSI or SS3 escape tail
-func skipKeySequence(reader *bufio.Reader, lead string) {
-	if lead != "\x1b" {
-		_, _, _ = reader.ReadRune()
-		return
-	}
-	if reader.Buffered() == 0 {
-		return
-	}
-	next, _, err := reader.ReadRune()
-	if err != nil || (next != '[' && next != 'O') {
-		return
-	}
-	for reader.Buffered() > 0 {
-		b, err := reader.ReadByte()
-		if err != nil || (b >= 0x40 && b <= 0x7e) {
-			return
-		}
-	}
 }
 
 // Echo free line read on the controlling terminal, stdin with an echo warning when there is none

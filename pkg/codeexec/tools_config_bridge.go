@@ -12,7 +12,7 @@ func init() {
 	hooks := &tools.ToolsConfigHooks
 	hooks.ComputerUseProviders = discoverComputerUseProviders
 	hooks.ComputerUseDefaultBackend = func() string { return defaultComputerUseBackend }
-	hooks.CuaDriverInstallReady = func(env *tools.Env) (bool, error) { return cuaDriverInstallReady(env) }
+	hooks.CuaDriverInstallReady = func(env *tools.Env) (bool, error) { return cuaDriverInstallReady(context.Background(), env) }
 	hooks.InstallCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Console) (bool, error) {
 		return installCuaDriver(ctx, env, con, true)
 	}

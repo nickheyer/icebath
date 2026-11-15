@@ -408,7 +408,7 @@ func (s *sshEnv) beforeExecute(ctx context.Context) error {
 
 // Forwards the passthrough allowlist by SendEnv names with values on the client env, unsetting scoped names remotely
 func (s *sshEnv) runBash(ctx context.Context, cmd string, login bool, timeout int, stdinData *string) (ProcessHandle, error) {
-	values, unsetNames, err := resolvePassthroughEnv(s.env, nil)
+	values, unsetNames, err := resolvePassthroughEnv(ctx, s.env, nil)
 	if err != nil {
 		return nil, err
 	}

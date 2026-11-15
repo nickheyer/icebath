@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -352,7 +353,7 @@ func TestThePrefillFileIsReadByTheOffLoopCommitNotWhileStaging(t *testing.T) {
 
 func TestOverlappingExactCreatesKeepTheCommittedAttemptsPrefill(t *testing.T) {
 	for _, winner := range []int{0, 1} {
-		t.Run("winner_"+strconv.Itoa(winner), func(t *testing.T) {
+		hermetic.Run(t, "winner_"+strconv.Itoa(winner), func(t *testing.T) {
 			o := newConfigLoadersOwner(t, "prefill_messages_file: prefill.json\n")
 			staged := []*state.LocalCreateReceipt{o.stage(t, o.home, "overlap"), o.stage(t, o.home, "overlap")}
 			ordered := staged

@@ -1,6 +1,7 @@
 package codeexec
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -43,23 +44,23 @@ func staleTCCGrantHint(missing ...string) string {
 }
 
 // Driver child env with secrets stripped, the process env when building it fails
-func permissionsChildEnv(env *tools.Env) (out map[string]string) {
+func permissionsChildEnv(ctx context.Context, env *tools.Env) (out map[string]string) {
 	defer func() {
 		if r := recover(); r != nil {
 			out = environMap()
 		}
 	}()
-	return sanitizedCuaDriverEnv(env)
+	return sanitizedCuaDriverEnv(ctx, env)
 }
 
 // Runs one driver verb with captured text output and the sanitized env, swapped by tests
-var permissionsRun = func(env *tools.Env, binary string, timeout float64, args ...string) (*completedProcess, error) {
-	return runQuiet(append([]string{binary}, args...), timeout, runOpts{Env: permissionsChildEnv(env), HideWindow: true})
+var permissionsRun = func(ctx context.Context, env *tools.Env, binary string, timeout float64, args ...string) (*completedProcess, error) {
+	return runQuiet(append([]string{binary}, args...), timeout, runOpts{Env: permissionsChildEnv(ctx, env), HideWindow: true})
 }
 
 // Decoded JSON stdout of a driver verb, nil on empty output
-func permissionsJSONOut(env *tools.Env, binary string, timeout float64, args ...string) (any, error) {
-	proc, err := permissionsRun(env, binary, timeout, args...)
+func permissionsJSONOut(ctx context.Context, env *tools.Env, binary string, timeout float64, args ...string) (any, error) {
+	proc, err := permissionsRun(ctx, env, binary, timeout, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +72,8 @@ func permissionsJSONOut(env *tools.Env, binary string, timeout float64, args ...
 }
 
 // Doctor verdict and its label status message checks, nil on any failure
-func permissionsDoctor(env *tools.Env, binary string) (ok bool, checks []any, found bool) {
-	data, err := permissionsJSONOut(env, binary, 12, "doctor", "--json")
+func permissionsDoctor(ctx context.Context, env *tools.Env, binary string) (ok bool, checks []any, found bool) {
+	data, err := permissionsJSONOut(ctx, env, binary, 12, "doctor", "--json")
 	obj, isObj := data.(*pyjson.Object)
 	if err != nil || !isObj {
 		return false, nil, false
@@ -106,8 +107,8 @@ func permissionsDoctor(env *tools.Env, binary string) (ok bool, checks []any, fo
 }
 
 // Folds the macOS permissions status booleans and source into out
-func macPermissions(env *tools.Env, binary string, out *pyjson.Object) {
-	data, err := permissionsJSONOut(env, binary, 10, "permissions", "status", "--json")
+func macPermissions(ctx context.Context, env *tools.Env, binary string, out *pyjson.Object) {
+	data, err := permissionsJSONOut(ctx, env, binary, 10, "permissions", "status", "--json")
 	var te *subprocessTimeout
 	switch {
 	case errors.As(err, &te):
@@ -131,7 +132,7 @@ func macPermissions(env *tools.Env, binary string, out *pyjson.Object) {
 }
 
 // OS aware readiness payload for the desktop card, the permissions CLI and the status route in contract key order
-func computerUseStatus(env *tools.Env, driverCmd *string) (*pyjson.Object, error) {
+func computerUseStatus(ctx context.Context, env *tools.Env, driverCmd *string) (*pyjson.Object, error) {
 	plat, name := cuPlatform, configuredBackendName(env)
 	binary := ""
 	if name == defaultComputerUseBackend {
@@ -178,17 +179,17 @@ func computerUseStatus(env *tools.Env, driverCmd *string) (*pyjson.Object, error
 	if binary == "" {
 		return out, nil
 	}
-	if proc, err := permissionsRun(env, binary, 5, "--version"); err == nil {
+	if proc, err := permissionsRun(ctx, env, binary, 5, "--version"); err == nil {
 		if v := pystr.Strip(proc.Stdout); v != "" {
 			out.Set("version", v)
 		}
 	}
-	doctorOK, checks, found := permissionsDoctor(env, binary)
+	doctorOK, checks, found := permissionsDoctor(ctx, env, binary)
 	if found {
 		out.Set("checks", checks)
 	}
 	if plat == "darwin" {
-		macPermissions(env, binary, out)
+		macPermissions(ctx, env, binary, out)
 		if errVal, _ := out.Get("error"); errVal == nil {
 			a, _ := out.Get("accessibility")
 			s, _ := out.Get("screen_recording")
@@ -201,9 +202,9 @@ func computerUseStatus(env *tools.Env, driverCmd *string) (*pyjson.Object, error
 }
 
 // Grant command runner with the terminal attached, swapped by tests
-var permissionsGrantRun = func(env *tools.Env, binary string) (int, error) {
+var permissionsGrantRun = func(ctx context.Context, env *tools.Env, binary string) (int, error) {
 	cmd := exec.Command(binary, "permissions", "grant")
-	cmd.Env = envList(permissionsChildEnv(env))
+	cmd.Env = envList(permissionsChildEnv(ctx, env))
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	err := cmd.Run()
 	var exitErr *exec.ExitError
@@ -220,7 +221,7 @@ var permissionsGrantRun = func(env *tools.Env, binary string) (int, error) {
 }
 
 // Runs the macOS grant flow, 2 when the driver is missing and 64 off macOS
-func requestPermissionsGrant(env *tools.Env, driverCmd *string) (int, error) {
+func requestPermissionsGrant(ctx context.Context, env *tools.Env, driverCmd *string) (int, error) {
 	if cuPlatform != "darwin" {
 		fmt.Fprintln(cuStdout, "Computer Use permissions are a macOS concept; nothing to grant here.")
 		return 64, nil
@@ -235,7 +236,7 @@ func requestPermissionsGrant(env *tools.Env, driverCmd *string) (int, error) {
 	}
 	fmt.Fprintln(cuStdout, "Requesting Accessibility + Screen Recording for CuaDriver.\n"+
 		"macOS will show a dialog attributed to CuaDriver ("+cuaDriverBundleID+") — approve it, then return here.")
-	code, err := permissionsGrantRun(env, binary)
+	code, err := permissionsGrantRun(ctx, env, binary)
 	if err != nil {
 		fmt.Fprintf(cuStderr, "cua-driver permissions grant failed: %s\n", err)
 		return 2, nil

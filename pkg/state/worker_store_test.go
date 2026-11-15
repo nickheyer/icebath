@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-// Installs the wiring doubles and a private home the package tests reach before any test runs
+// Installs the wiring doubles and a private home before any test runs, the guard child keeping the home it was given
 func TestMain(m *testing.M) {
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
@@ -19,6 +19,9 @@ func TestMain(m *testing.M) {
 	}
 	installAutomationCodecDoubles()
 	installRouteBuilderDoubles()
+	if os.Getenv(sessionDBChildHelperEnv) == "1" {
+		os.Exit(m.Run())
+	}
 	home, err := os.MkdirTemp("", "icebath-state-home")
 	if err != nil {
 		panic(err)

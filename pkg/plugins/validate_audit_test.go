@@ -86,7 +86,7 @@ func piPlugin(t *testing.T, root string, files map[string]string) string {
 
 func piValidate(t *testing.T, dir string) *ValidationReport {
 	t.Helper()
-	report, err := validatePluginDir(context.Background(), dir)
+	report, err := validatePluginDir(context.Background(), dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

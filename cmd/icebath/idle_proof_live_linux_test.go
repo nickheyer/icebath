@@ -8,14 +8,31 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Session token the pooled desktop children of the idle proof case accept
 const idleProofToken = "idle-proof-live-token"
+
+// Desktop child that holds a cron run in its running job ledger before it serves
+const idleProofBusyMode = "idle-proof-busy"
+
+// Cron job the busy child of the idle proof case holds in flight
+const idleProofJobID = "live-idle-proof-job"
+
+func init() { childModes[idleProofBusyMode] = holdIdleProofCronRun }
+
+// Registers the held cron run in this process's running job ledger and returns to the server start
+func holdIdleProofCronRun() {
+	cron.HoldInflightRun(idleProofJobID, os.Getenv(home.EnvHome))
+}
 
 // Desktop shaped headless server start in its own home on an ephemeral port, busy holding a cron run first
 func spawnDesktopChild(t *testing.T, tmp, name string, busy bool) (*exec.Cmd, string) {
@@ -36,7 +53,7 @@ func spawnDesktopChild(t *testing.T, tmp, name string, busy bool) (*exec.Cmd, st
 	child.Env = append(child.Env, "ICEBATH_HOME="+h, "ICEBATH_SERVE_HEADLESS=1", "ICEBATH_DESKTOP=1",
 		"ICEBATH_DASHBOARD_SESSION_TOKEN="+idleProofToken, startServerProbeEnv+"=0")
 	if busy {
-		child.Env = append(child.Env, childModeEnv+"=idle-proof-busy")
+		child.Env = append(child.Env, childModeEnv+"="+idleProofBusyMode)
 	}
 	stdout := filepath.Join(tmp, name+".out")
 	out, err := os.Create(stdout)
@@ -108,5 +125,48 @@ func probeIdleUntil(t *testing.T, port int, window time.Duration, accept func(ma
 		if accept(body) || time.Now().After(deadline) {
 			return status, body, seen
 		}
+	}
+}
+
+// One answer of the idle probe, its status and body
+type idleVerdict struct {
+	status int
+	body   map[string]any
+}
+
+func TestLivePooledChildrenProveIdleOrBusyOverTheDesktopProbe(t *testing.T) {
+	tmp := t.TempDir()
+	names := []string{"resident-a", "resident-b", "cron-busy"}
+	stdouts := map[string]string{}
+	for _, name := range names {
+		_, stdouts[name] = spawnDesktopChild(t, tmp, name, name == "cron-busy")
+	}
+	ports := map[string]int{}
+	for _, name := range names {
+		ports[name] = awaitReadyPort(t, name, stdouts[name])
+	}
+	verdicts := map[string]idleVerdict{}
+	for _, name := range names[:2] {
+		status, body, _ := probeIdleUntil(t, ports[name], 20*time.Second, func(body map[string]any) bool { return body["idle"] == true })
+		verdicts[name] = idleVerdict{status, body}
+	}
+	status, body, busySeen := probeIdleUntil(t, ports["cron-busy"], 60*time.Second, func(body map[string]any) bool {
+		detail, _ := body["detail"].(string)
+		return strings.HasPrefix(detail, "cron:")
+	})
+	verdicts["cron-busy"] = idleVerdict{status, body}
+	idle := idleVerdict{http.StatusOK, map[string]any{"ok": true, "idle": true, "reason": nil}}
+	busy := idleVerdict{http.StatusOK, map[string]any{"ok": true, "idle": false, "reason": "turn_in_flight", "detail": "cron:" + idleProofJobID}}
+	if !reflect.DeepEqual(verdicts["resident-a"], idle) || !reflect.DeepEqual(verdicts["resident-b"], idle) || !reflect.DeepEqual(verdicts["cron-busy"], busy) {
+		t.Fatalf("verdicts = %v", verdicts)
+	}
+	for _, seen := range busySeen {
+		if seen["idle"] != false {
+			t.Fatalf("the busy child claimed idle: %v", busySeen)
+		}
+	}
+	status, body = probeIdle(t, ports["resident-a"], "")
+	if _, leaked := body["idle"]; status != http.StatusUnauthorized || leaked {
+		t.Fatalf("unauthenticated probe = %d %v", status, body)
 	}
 }

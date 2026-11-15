@@ -27,7 +27,7 @@ func useSharedDB(t *testing.T, db *state.DB) {
 	})
 }
 
-// Isolated home with synthetic agent builds and a fresh launch store, dropping every session the case created
+// Isolated home with synthetic agent builds, dropping the sessions and joining the notification pollers the case started
 func sessionCaseScope(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
@@ -37,12 +37,14 @@ func sessionCaseScope(t *testing.T) string {
 	for _, live := range tuigateway.LiveSessions() {
 		before[live.SID] = true
 	}
+	pollersBefore := notificationPollerStops()
 	t.Cleanup(func() {
 		for _, live := range tuigateway.LiveSessions() {
 			if !before[live.SID] {
 				tuigateway.SetSessionRecord(live.SID, nil)
 			}
 		}
+		joinNotificationPollers(t, pollersBefore)
 		sessionsLock.Lock()
 		clear(idempotencyKeys)
 		sessionsLock.Unlock()

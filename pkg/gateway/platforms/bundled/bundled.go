@@ -9,6 +9,7 @@ import (
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/discord"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/email"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/feishu"
+	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/homeassistant"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/irc"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/line"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/matrix"

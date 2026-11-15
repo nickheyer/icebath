@@ -63,7 +63,8 @@ func init() {
 
 // Routing keys scrubbed at load when the profile .env does not define them
 func profileManagedEnvKeys() []string {
-	return append([]string{"ICEBATH_ACP_AUTH_METHOD", "ICEBATH_ACP_AUTO_APPROVE"}, leftCoreProfileEnv()...)
+	keys := append([]string{"ICEBATH_ACP_AUTH_METHOD", "ICEBATH_ACP_AUTO_APPROVE"}, copilotProfileEnv...)
+	return append(keys, leftCoreProfileEnv()...)
 }
 
 // Names a dotenv file assigns through the profile scope tokenizer, empty keys included

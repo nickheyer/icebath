@@ -39,6 +39,9 @@ func TestHousekeepingRestartsADeadTicker(t *testing.T) {
 	}, stop, "")
 	logs := &bytes.Buffer{}
 	ticker.log = slog.New(slog.NewTextHandler(logs, nil))
+	savedHook := threadExceptHook
+	threadExceptHook = func(string, string) {}
+	t.Cleanup(func() { threadExceptHook = savedHook })
 	if err := ticker.Start(); err != nil {
 		t.Fatal(err)
 	}

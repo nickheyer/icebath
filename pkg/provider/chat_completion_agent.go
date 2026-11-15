@@ -333,6 +333,13 @@ func agentRequestSurface(agent ChatCompletionAgent) func(StreamEvent) {
 // Stale watchdog timer seam the inline call tests swap the way hermes tests patch threading.Timer
 var directWatchdogArmFn = time.AfterFunc
 
+// Replaces the inline stale watchdog timer for a test in another package, the returned function restoring it
+func SwapDirectWatchdogArmForTests(arm func(time.Duration, func()) *time.Timer) func() {
+	prev := directWatchdogArmFn
+	directWatchdogArmFn = arm
+	return func() { directWatchdogArmFn = prev }
+}
+
 // Runs the agent's blocking call on the calling goroutine with a heartbeat, one shot stale kill and socket backstop
 func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any) (resp any, err error) {
 	if err := checkStaleGiveup(agent.RetrySession()); err != nil {

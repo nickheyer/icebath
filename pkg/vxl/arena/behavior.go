@@ -1,5 +1,3 @@
-//go:build ignore
-
 package arena
 
 import (
@@ -457,6 +455,35 @@ func (sc *scene) bystanders(at vxl.Vec3, reach float64) []*actor {
 	return out
 }
 
+// Words on what an actor off duty does by the behavior it took up, empty while a duty holds it
+func ambientText(a *actor) string {
+	if a.gone || a.duty.kind != dutyIdle && a.duty.kind != dutyGather {
+		return ""
+	}
+	switch a.ambient {
+	case "wander":
+		return "pacing the deck"
+	case "watch":
+		return "watching the crew work"
+	case "gaze":
+		return "staring out past the wall"
+	case "huddle":
+		if a.partner != nil {
+			return "talking with " + a.partner.name
+		}
+		return "looking for company"
+	case "inspect":
+		return "inspecting a core"
+	case "perch":
+		return "sitting at the edge"
+	}
+	if a.duty.kind == dutyGather {
+		return "waiting at the uplink"
+	}
+	return "standing by"
+}
+
+// One for true and zero for false
 func flagF(b bool) float64 {
 	if b {
 		return 1

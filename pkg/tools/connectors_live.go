@@ -128,9 +128,16 @@ func LiveClose(op *ConnectionOperation) {
 	liveMu.Unlock()
 }
 
-// Empties the live table between tests
+// Settles every live operation as interrupted so its driver ends, then empties the live table between tests
 func LiveResetForTests() {
 	liveMu.Lock()
+	open := make([]*ConnectionOperation, 0, len(liveOpen))
+	for _, op := range liveOpen {
+		open = append(open, op)
+	}
 	clear(liveOpen)
 	liveMu.Unlock()
+	for _, op := range open {
+		op.Settle(SettleInterrupt)
+	}
 }

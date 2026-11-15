@@ -35,7 +35,7 @@ func TestMacosRefreshRegistersPostEnsureSignedApp(t *testing.T) {
 			return nil
 		})
 		var contracted []string
-		cuSwap(t, &cuaDriverContractStatus, func(_ *tools.Env, b string) (*pyjson.Object, error) {
+		cuSwap(t, &cuaDriverContractStatus, func(_ context.Context, _ *tools.Env, b string) (*pyjson.Object, error) {
 			contracted = append(contracted, b)
 			state := pyjson.NewObject()
 			state.Set("ready", true)

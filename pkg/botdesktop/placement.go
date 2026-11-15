@@ -110,6 +110,12 @@ func pluginHostIsolated(env *tools.Env) bool {
 	return plugins.IsolationMode(envCtx(env), m) == plugins.IsolationHost
 }
 
+// True when the backend declares its environments live in this process whatever the plugin isolation
+func backendInProcess(backend string) bool {
+	hosted, ok := tools.GetTerminalBackend(backend).(tools.HostedBackend)
+	return ok && !hosted.RunsInPluginHost()
+}
+
 // Gateway, terminal or refused from config and backend class alone, never starting a sandbox
 func Resolve(env *tools.Env) (Placement, error) {
 	backend, err := terminalBackend(env)
@@ -130,7 +136,7 @@ func Resolve(env *tools.Env) (Placement, error) {
 		return Placement{Where: Terminal, Backend: backend}, nil
 	}
 	if pluginStreams(backend) {
-		if !pluginHostIsolated(env) {
+		if backendInProcess(backend) || !pluginHostIsolated(env) {
 			return Placement{Where: Terminal, Backend: backend}, nil
 		}
 		return Placement{Refused, backend, fmt.Sprintf("terminal.backend is %s, a plugin that runs in the plugin host (plugins.isolation: host), "+

@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -21,12 +23,16 @@ type ManagedToolGatewayConfig struct {
 	ManagedMode   bool
 }
 
-// Reads the TOOL_GATEWAY_USER_TOKEN override through the secret scope then the process env
-func readUserTokenOverride(env *Env) string {
-	if v := cleanGatewayValue(secretValue(env, "TOOL_GATEWAY_USER_TOKEN")); v != "" {
-		return v
+// TOOL_GATEWAY_USER_TOKEN override through the bound secret scope, the process env only for an unscoped multiplex read
+func readUserTokenOverride(ctx context.Context, env *Env) string {
+	value, err := secretThroughScope(ctx, env, "TOOL_GATEWAY_USER_TOKEN")
+	if errors.Is(err, ErrUnscopedSecret) {
+		return cleanGatewayValue(os.Getenv("TOOL_GATEWAY_USER_TOKEN"))
 	}
-	return cleanGatewayValue(os.Getenv("TOOL_GATEWAY_USER_TOKEN"))
+	if value == nil {
+		return ""
+	}
+	return cleanGatewayValue(*value)
 }
 
 // Value stripped when it is a non blank string, empty for a blank string or any other value
@@ -38,9 +44,9 @@ func cleanGatewayValue(value any) string {
 	return pystr.Strip(s)
 }
 
-// Cheap token probe with no expiry check and no network
+// Cheap token probe with no expiry check and no network, reading the override through the env's own secrets
 func peekNousAccessToken(env *Env) string {
-	if v := readUserTokenOverride(env); v != "" {
+	if v := readUserTokenOverride(context.Background(), env); v != "" {
 		return v
 	}
 	if NousAccount == nil {
@@ -52,12 +58,19 @@ func peekNousAccessToken(env *Env) string {
 // Stored Nous access token read without a refresh, empty when none
 func PeekNousAccessToken(env *Env) string { return peekNousAccessToken(env) }
 
-// Nous Subscriber access token refreshed through the account source, empty with no identity
-func ReadNousAccessToken(env *Env) string { return readNousAccessToken(env) }
+// Nous Subscriber access token of the context's profile refreshed through the account source, empty with no identity
+func ReadNousAccessToken(ctx context.Context, env *Env) string {
+	return readScopedNousAccessToken(ctx, env)
+}
 
-// Reads a Nous Subscriber access token, refreshing through the account source when needed
+// Nous Subscriber access token with the override read through the env's own secrets, the reader managed gateways take
 func readNousAccessToken(env *Env) string {
-	if v := readUserTokenOverride(env); v != "" {
+	return readScopedNousAccessToken(context.Background(), env)
+}
+
+// Reads a Nous Subscriber access token, the override through the call's bound scope, refreshing when needed
+func readScopedNousAccessToken(ctx context.Context, env *Env) string {
+	if v := readUserTokenOverride(ctx, env); v != "" {
 		return v
 	}
 	if NousAccount == nil {

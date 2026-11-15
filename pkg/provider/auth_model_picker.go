@@ -1,13 +1,10 @@
 package provider
 
 import (
-	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -68,21 +65,16 @@ var (
 	pickerSelectionWarningsFn = modelSelectionWarnings
 )
 
-var (
-	pickerStdinOnce sync.Once
-	pickerStdin     *bufio.Reader
-	modelChoiceSave atomic.Int64
-)
+var modelChoiceSave atomic.Int64
 
-// Writes the prompt and reads one line of standard input without its newline
+// Reads one answer line, in an inline field on a terminal and after the printed prompt otherwise
 func pickerStdinInput(out io.Writer, prompt string) (string, error) {
-	fmt.Fprint(out, prompt)
-	pickerStdinOnce.Do(func() { pickerStdin = bufio.NewReader(os.Stdin) })
-	line, err := pickerStdin.ReadString('\n')
-	if err != nil && line == "" {
-		return "", err
+	c := pickerConsoleFn()
+	if c.Interactive() {
+		return c.LineInput(prompt)
 	}
-	return strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r"), nil
+	fmt.Fprint(out, prompt)
+	return c.ReadLine()
 }
 
 // Asks once before a model that trips any selection guard, true to proceed
@@ -96,6 +88,9 @@ func confirmSelectionGuards(env PoolEnv, out io.Writer, modelID, provider, baseU
 	fmt.Fprintln(out, rule)
 	fmt.Fprintln(out, combinedSelectionMessage(warnings))
 	fmt.Fprintln(out, rule)
+	if answer, ran, cancelled := flowMenuAnswer("Switch anyway?", []string{"No", "Yes"}, []string{"n", "y"}, 0); ran {
+		return !cancelled && answer == "y"
+	}
 	response, err := pickerInputFn(out, "Switch anyway? [y/N]: ")
 	if err != nil {
 		fmt.Fprintln(out)

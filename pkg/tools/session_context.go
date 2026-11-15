@@ -31,7 +31,9 @@ var sessionVarMap = setOf(SessionContextEnvVars...)
 func SessionContextEngaged() bool { return sessionContextLatch.Load() }
 
 // Session variables of one forked context, writes never reaching the context it was forked from
-type sessionVarStore struct{ vars atomic.Pointer[map[string]string] }
+type sessionVarStore struct {
+	vars atomic.Pointer[map[string]string]
+}
 
 // Copy of the env whose session variables start as the bound ones and change apart from them afterwards
 func ForkSessionContext(env *Env) *Env {

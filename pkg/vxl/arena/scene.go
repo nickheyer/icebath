@@ -1,5 +1,3 @@
-//go:build ignore
-
 package arena
 
 import (
@@ -24,27 +22,31 @@ const (
 	kindOther
 )
 
-// Class of a tool by name
+// Class of a tool of the harness by name
 func classify(name string) toolKind {
 	switch {
 	case name == "":
 		return kindNone
-	case strings.HasPrefix(name, "Sprint"):
-		return kindCall
-	case strings.HasPrefix(name, "mcp__"):
+	case strings.HasPrefix(name, "mcp_"):
 		return kindOther
+	case strings.HasPrefix(name, "browser_"):
+		return kindFetch
+	case strings.HasPrefix(name, "kanban_"):
+		return kindCall
 	}
 	switch name {
-	case "Read", "Glob", "Grep", "Outline":
+	case "read_file", "search_files", "session_search", "skills_list", "skill_view", "vision_analyze", "read_terminal":
 		return kindRead
-	case "Edit", "Write":
+	case "write_file", "patch", "skill_manage":
 		return kindEdit
-	case "Shell", "ShellOutput", "KillShell":
+	case "terminal", "process_manage", "execute_code", "close_terminal":
 		return kindShell
-	case "WebFetch":
+	case "web_search", "web_extract", "computer_use":
 		return kindFetch
-	case "Agent":
+	case "delegate_task":
 		return kindAgent
+	case "todo_list", "clarify", "memory", "cronjob_manage", "send_message", "manage_connections":
+		return kindCall
 	}
 	return kindOther
 }
@@ -73,23 +75,23 @@ type toolTally struct {
 	reads, edits, shells, fetches, agents, calls, others int
 }
 
-// Records one tool start
-func (t *toolTally) add(name string) {
+// Records n starts of a tool
+func (t *toolTally) addN(name string, n int) {
 	switch classify(name) {
 	case kindRead:
-		t.reads++
+		t.reads += n
 	case kindEdit:
-		t.edits++
+		t.edits += n
 	case kindShell:
-		t.shells++
+		t.shells += n
 	case kindFetch:
-		t.fetches++
+		t.fetches += n
 	case kindAgent:
-		t.agents++
+		t.agents += n
 	case kindCall:
-		t.calls++
+		t.calls += n
 	case kindOther:
-		t.others++
+		t.others += n
 	}
 }
 
@@ -109,9 +111,8 @@ type liveState struct {
 	tally    toolTally
 	// Share of the token budget spent, of a nominal budget when none is set
 	heat float64
-	// Moment the current exchange began and how long it may take
+	// Moment the member started working
 	since time.Time
-	limit time.Duration
 	// Tokens in the context window of the session, the window it may fill and the dollars it has cost
 	context      int
 	contextLimit int
@@ -272,6 +273,7 @@ func (sc *scene) sync(snap *Snapshot, live map[string]liveState, cfg Config) {
 	if sc.sprintID != snap.ID {
 		sc.reset(snap.ID)
 	}
+	sc.lastSeq = max(sc.lastSeq, snap.Since)
 	sc.lobby = nil
 	if cfg.Arena.World != "off" {
 		sc.setWorld(worldFor(cfg.Arena.World))
@@ -288,7 +290,8 @@ func (sc *scene) sync(snap *Snapshot, live map[string]liveState, cfg Config) {
 			a = sc.spawn(m, cfg)
 		}
 		look := cfg.LookOf(m.Role, m.Index)
-		if dye(look.Color) != a.col || look.Hat != a.rig {
+		if a.role != m.Role || dye(look.Color) != a.col || look.Hat != a.rig {
+			a.role, a.index = m.Role, m.Index
 			a.dress(look)
 		}
 	}
@@ -446,7 +449,7 @@ func (sc *scene) direct(snap *Snapshot, m Member, st liveState) {
 		}
 	case RoleReviewer:
 		d = duty{kind: dutySpire, at: sc.lay.spireTop(), face: 0, rest: stateIdle}
-		if strings.HasPrefix(m.Task, "reviewing") || st.running {
+		if st.running || snap.inReview() {
 			d.rest = stateReview
 		}
 	case RoleBuilder:
@@ -475,11 +478,6 @@ func (sc *scene) direct(snap *Snapshot, m Member, st liveState) {
 		}
 	}
 	a.heat = st.heat
-	if st.limit > 0 && !st.since.IsZero() && st.running {
-		a.clock = time.Since(st.since).Seconds() / st.limit.Seconds()
-	} else {
-		a.clock = 0
-	}
 	a.frozen += (flagF(st.approval) - a.frozen) * min(sc.lastStep*3, 1)
 	if st.approval && a.emote == "" {
 		a.emote, a.emoteT = "!", 0.6
@@ -546,7 +544,7 @@ func (sc *scene) syncMessages(snap *Snapshot) {
 		case MsgChat:
 			var dests []*actor
 			switch {
-			case m.To == "team":
+			case m.To == Team:
 				for _, b := range sc.actors {
 					if b != from && !b.gone {
 						dests = append(dests, b)
@@ -1009,7 +1007,6 @@ func (sc *scene) drawDynamic(r *vxl.Raster) {
 	sc.drawBeacons(r)
 	sc.drawTethers(r)
 	sc.drawTalk(r)
-	sc.drawClocks(r)
 	sc.parts.Draw(r)
 }
 
@@ -1153,36 +1150,6 @@ func (sc *scene) drawTalk(r *vxl.Raster) {
 			p := from.Lerp(to, s)
 			p.Y += math.Sin(s*math.Pi) * 0.8
 			r.Billboard(p, 0.22+0.1*math.Sin(s*math.Pi), a.col, 0.7, true)
-		}
-	}
-}
-
-// Queues the ring under each builder draining with the time its exchange has left, red once the limit passed
-func (sc *scene) drawClocks(r *vxl.Raster) {
-	for _, a := range sc.actors {
-		if a.clock <= 0 || a.gone || a.duty.kind != dutyNode {
-			continue
-		}
-		share := min(a.clock, 1)
-		col := colIce.Mix(colAmber, share)
-		if a.clock >= 1 {
-			col = colRed.Scale(0.6 + 0.4*math.Abs(math.Sin(sc.t*6)))
-		}
-		segs := 24
-		w := vxl.Grey(1)
-		for k := range segs {
-			if float64(k)/float64(segs) < share && a.clock < 1 {
-				continue
-			}
-			ang := float64(k) / float64(segs) * 2 * math.Pi
-			s, c := math.Sincos(ang)
-			center := a.pos.Add(vxl.V(1.5*c, 0.03, 1.5*s))
-			dx, dz := -s*0.16, c*0.16
-			nx, nz := c*0.1, s*0.1
-			q := vxl.Quad{Color: col, Alpha: 0.8, Additive: true, TwoSided: true}
-			q.Light = [4]vxl.RGB{w, w, w, w}
-			q.P = [4]vxl.Vec3{center.Add(vxl.V(-dx-nx, 0, -dz-nz)), center.Add(vxl.V(-dx+nx, 0, -dz+nz)), center.Add(vxl.V(dx+nx, 0, dz+nz)), center.Add(vxl.V(dx-nx, 0, dz-nz))}
-			r.Quad(q)
 		}
 	}
 }

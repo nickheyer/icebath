@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -97,11 +99,56 @@ var (
 	setupEnsureGatewayService = gateway.EnsureGatewayService
 )
 
+// Brand art of a setup screen, the wordmark when the terminal fits it, with the screen title beneath
+func setupBrand(c *cliui.Console, title string) {
+	t := cliui.ActiveTheme()
+	ink := "#e6f5fb"
+	if detectLightMode() {
+		ink = ""
+	}
+	var wide []string
+	for _, line := range strings.Split(icebathAgentLogo, "\n") {
+		var b strings.Builder
+		for _, span := range brandSpanRe.FindAllStringSubmatch(line, -1) {
+			tone := t.Accent
+			if strings.EqualFold(span[1], "#e6f5fb") {
+				tone = ink
+			}
+			b.WriteString(c.Tint(span[2], tone, false))
+		}
+		wide = append(wide, b.String())
+	}
+	compact := c.Tint("ice", ink, true) + c.Tint("┃", t.Accent, true) + c.Tint("bath", ink, true)
+	c.Banner(wide, compact, title)
+}
+
+var brandSpanRe = regexp.MustCompile(`\[(#[0-9a-fA-F]{6})\]([^\[]*)\[/\]`)
+
+func init() { provider.SetupBrand = setupBrand }
+
+// Console the wizard draws on, the setup presentation over the app console on a terminal
+func setupFlowConsole() (*cliui.Console, func()) {
+	base := console()
+	flow := base.Flow()
+	if flow == base {
+		return base, func() {}
+	}
+	theme := cliui.ThemeDark
+	if detectLightMode() {
+		theme = cliui.ThemeLight
+	}
+	cliui.SetTheme(theme)
+	return flow, cliui.SwapDefault(flow)
+}
+
 // RunSetupWizard runs icebath setup with Escape and Left arrow navigation scoped to this invocation
 func RunSetupWizard(ctx context.Context, ns map[string]any) (code int, err error) {
-	defer provider.WithSetupConsole(console())()
+	flow, restoreDefault := setupFlowConsole()
+	defer restoreDefault()
+	defer cliui.RestoreTerminal()
+	defer provider.WithSetupConsole(flow)()
 	defer provider.RecoverSetupExit(&code)
-	err = provider.RunWithSetupNavigation(func() error { return runSetupWizardImpl(ctx, ns) },
+	err = provider.RunWizardWithSetupNavigation(func() error { return runSetupWizardImpl(ctx, ns) },
 		"Setup cancelled. Remaining sections were not changed.")
 	if exitCode, message, exit := provider.SetupSystemExit(err); exit {
 		if message != "" {
@@ -133,7 +180,7 @@ func runSetupSection(ctx context.Context, cfg config.Tree, section string) error
 		provider.SetupPrintInfo("Available sections: " + strings.Join(keys, ", "))
 		return nil
 	}
-	provider.PrintSetupBanner("│     ☤ Icebath Setup — " + pystr.Ljust(entry.label, 33) + " │")
+	provider.PrintSetupTitle("Setup · "+entry.label, "│     ☤ Icebath Setup — "+pystr.Ljust(entry.label, 33)+" │")
 	if err := provider.RunSetupSteps([]provider.SetupStep{{Label: entry.label, Action: func() error { return entry.run(ctx, cfg) }}}); err != nil {
 		return err
 	}
@@ -283,7 +330,8 @@ func runSetupWizardImpl(ctx context.Context, ns map[string]any) error {
 	if err != nil {
 		return err
 	}
-	provider.PrintSetupBanner("│             ☤ Icebath Agent Setup Wizard               │",
+	provider.PrintSetupTitle("Setup · ctrl+c exits at any time and keeps what is already saved",
+		"│             ☤ Icebath Agent Setup Wizard               │",
 		"├─────────────────────────────────────────────────────────┤",
 		"│  Let's configure your Icebath Agent installation.      │",
 		"│  Press Ctrl+C at any time to exit.                     │")

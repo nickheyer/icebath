@@ -105,7 +105,7 @@ func modelFlowBedrockAPIKey(r *ModelFlowRun, region string) error {
 		fmt.Fprintln(r.Out, "  ✓ API key saved.")
 	}
 	fmt.Fprintln(r.Out)
-	modelList := providerModels["bedrock"]
+	modelList := staticCatalogModels("bedrock")
 	fmt.Fprintf(r.Out, "  Showing %d curated models\n", len(modelList))
 	selected, _ := pickModelOrPromptFn(r.Env, r.Out, modelList, "  Model ID: ",
 		ModelSelectionPrompt{CurrentModel: r.CurrentModel, ConfirmProvider: "custom", ConfirmBaseURL: mantleBaseURL, ConfirmAPIKey: existingKey})
@@ -228,13 +228,21 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 	if region == "" {
 		region = currentRegion
 	}
-	flowSay(r.Out, "  Choose authentication method:", "", "    1. IAM credential chain (recommended)",
-		"       Works with EC2 instance roles, SSO, env vars, aws configure", "    2. Bedrock API Key",
-		"       Enter your Bedrock API Key directly — also supports",
-		"       team scenarios where an admin distributes keys", "")
-	authChoice, ok := flowAskFn(r.Out, "  Choice [1]: ", flowAskOptions{Raw: true, CancelMsg: optStr("")})
-	if !ok {
+	authChoice, ran, cancelled := flowMenuAnswer("Choose authentication method", []string{
+		"IAM credential chain (recommended) — EC2 instance roles, SSO, env vars, aws configure",
+		"Bedrock API Key — enter a key directly, also for teams whose admin distributes keys"}, []string{"1", "2"}, 0)
+	if cancelled {
 		return nil
+	}
+	if !ran {
+		flowSay(r.Out, "  Choose authentication method:", "", "    1. IAM credential chain (recommended)",
+			"       Works with EC2 instance roles, SSO, env vars, aws configure", "    2. Bedrock API Key",
+			"       Enter your Bedrock API Key directly — also supports",
+			"       team scenarios where an admin distributes keys", "")
+		var ok bool
+		if authChoice, ok = flowAskFn(r.Out, "  Choice [1]: ", flowAskOptions{Raw: true, CancelMsg: optStr("")}); !ok {
+			return nil
+		}
 	}
 	if authChoice == "2" {
 		return modelFlowBedrockAPIKey(r, region)
@@ -246,7 +254,7 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 		modelList = bedrockTextModelIDs(liveModels, region)
 		fmt.Fprintf(r.Out, "  Found %d text model(s) (filtered from %d total)\n", len(modelList), len(liveModels))
 	} else {
-		modelList = providerModels["bedrock"]
+		modelList = staticCatalogModels("bedrock")
 		if len(modelList) == 0 {
 			fmt.Fprintln(r.Out, "  No models found. Check IAM permissions for bedrock:ListFoundationModels.")
 			noteSetupFailure("no_models")

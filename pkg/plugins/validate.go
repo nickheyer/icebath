@@ -577,9 +577,9 @@ func jsonObjectKeyOrder(file string, path ...string) []string {
 	return nil
 }
 
-// Runs every admission check against a plugin directory and returns the report
-func validatePluginDir(ctx context.Context, path string) (*ValidationReport, error) {
-	report, manifest, err := validateManifestAndProbe(ctx, path)
+// Runs every admission check against a plugin directory, the capability probe on probe when given, and returns the report
+func validatePluginDir(ctx context.Context, path string, probe *capabilityProbe) (*ValidationReport, error) {
+	report, manifest, err := validateManifestAndProbe(ctx, path, probe)
 	if err != nil || manifest == nil {
 		return report, err
 	}
@@ -600,7 +600,7 @@ func validatePluginDir(ctx context.Context, path string) (*ValidationReport, err
 }
 
 // Manifest, dependency, probe and scan checks of a native plugin, a nil manifest when the report is final
-func validateManifestAndProbe(ctx context.Context, path string) (*ValidationReport, map[string]any, error) {
+func validateManifestAndProbe(ctx context.Context, path string, probe *capabilityProbe) (*ValidationReport, map[string]any, error) {
 	report := &ValidationReport{}
 	if !isDir(path) {
 		report.add("plugin directory", false, fmt.Sprintf("%s is not a directory", pypath.PurePathStr(path)))
@@ -646,7 +646,7 @@ func validateManifestAndProbe(ctx context.Context, path string) (*ValidationRepo
 	checkLoadable(report, path, manifest)
 	checkPythonDependencies(report, path)
 	checkPluginForm(report, manifest, path)
-	recorded := checkCapabilities(ctx, report, manifest, path)
+	recorded := checkCapabilities(ctx, report, manifest, path, probe)
 	checkBuiltinCollisionsWith(report, manifest, recorded)
 	if err := checkTrustedInbound(report, recorded); err != nil {
 		return nil, nil, err

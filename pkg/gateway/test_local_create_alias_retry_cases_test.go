@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -142,7 +143,7 @@ func TestExactAliasRetryAfterAnOwnerKeyRotationReturnsTheOriginal(t *testing.T) 
 func TestExactAliasRetryAfterAnEndpointRotationReturnsTheOriginal(t *testing.T) {
 	for _, alias := range []string{"same-name", "alias-key"} {
 		for _, order := range []string{"sequential", "overlap-first-wins", "overlap-second-wins"} {
-			t.Run(alias+"/"+order, func(t *testing.T) {
+			hermetic.Run(t, alias+"/"+order, func(t *testing.T) {
 				o := newAliasRetryOwner(t)
 				params := func() map[string]any { return o.params(map[string]any{"model": alias}) }
 				var ref SessionRef
@@ -205,7 +206,7 @@ func aliasRetryRotateKey(t *testing.T, home string) {
 
 func TestAnOverlappingExactAliasRetryAfterAKeyRotationReusesTheHeldKey(t *testing.T) {
 	for _, order := range []string{"first-wins", "second-wins"} {
-		t.Run(order, func(t *testing.T) {
+		hermetic.Run(t, order, func(t *testing.T) {
 			o := newAliasRetryOwner(t)
 			params := func() map[string]any { return o.params(map[string]any{"model": "alias-key"}) }
 			staged := []*state.LocalCreateReceipt{o.stage(t, params())}

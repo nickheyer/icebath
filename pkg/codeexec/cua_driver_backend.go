@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -28,6 +29,7 @@ type CuaDriverBackend struct {
 	lastTarget     *pyjson.Object
 	snapshotTokens map[int]string
 	sessionID      string
+	callCtx        atomic.Pointer[context.Context]
 }
 
 // Ensures a PM package on demand, swapped by tests
@@ -55,6 +57,7 @@ func newCuaDriverBackend(env *tools.Env, permissionMode string) (*CuaDriverBacke
 	}
 	b.bridge = &cuaAsyncBridge{}
 	b.session = newCuaDriverSession(env, b.bridge, b.embeddedDaemon)
+	b.session.callContext = b.callContext
 	b.clearActiveTarget()
 	b.sessionID = "icebath-" + cuaToken()
 	b.session.setTransportResetCallback(b.handleTransportReset)
@@ -64,9 +67,24 @@ func newCuaDriverBackend(env *tools.Env, permissionMode string) (*CuaDriverBacke
 // Invalidates every capability minted by the replaced transport
 func (b *CuaDriverBackend) handleTransportReset() { b.clearActiveTarget() }
 
+// Binds the calling tool context's values for the driver children this backend starts until the release runs
+func (b *CuaDriverBackend) bindCallContext(ctx context.Context) func() {
+	bound := context.WithoutCancel(ctx)
+	prev := b.callCtx.Swap(&bound)
+	return func() { b.callCtx.Store(prev) }
+}
+
+// Context the backend's driver children read their secret scope from, the bound caller's or the lifecycle root
+func (b *CuaDriverBackend) callContext() context.Context {
+	if bound := b.callCtx.Load(); bound != nil {
+		return *bound
+	}
+	return cuaSessionContext()
+}
+
 // Checks the runtime contract, starts the private daemon and the session, then declares this run's identity
 func (b *CuaDriverBackend) Start() error {
-	ctx := context.Background()
+	ctx := b.callContext()
 	sandbox, _, err := sandboxMCPInvocation(ctx, b.env)
 	if err != nil {
 		return err
@@ -79,7 +97,7 @@ func (b *CuaDriverBackend) Start() error {
 				return err
 			}
 		}
-		contract, err := cuaDriverRuntimeContractStatus(b.env, "")
+		contract, err := cuaDriverRuntimeContractStatus(ctx, b.env, "")
 		if err != nil {
 			return err
 		}
@@ -98,7 +116,7 @@ func (b *CuaDriverBackend) Start() error {
 	}
 	if b.embeddedDaemon != nil {
 		if err := b.embeddedDaemon.start(tools.WithEnvHome(ctx, b.env)); err != nil {
-			if serr := b.embeddedDaemon.stop(); serr != nil {
+			if serr := b.embeddedDaemon.stop(tools.WithEnvHome(ctx, b.env)); serr != nil {
 				return serr
 			}
 			return err
@@ -106,7 +124,7 @@ func (b *CuaDriverBackend) Start() error {
 	}
 	if err := b.session.start(); err != nil {
 		if b.embeddedDaemon != nil {
-			if serr := b.embeddedDaemon.stop(); serr != nil {
+			if serr := b.embeddedDaemon.stop(tools.WithEnvHome(ctx, b.env)); serr != nil {
 				return serr
 			}
 		}
@@ -148,7 +166,7 @@ func (b *CuaDriverBackend) Stop() error {
 	b.session.stop()
 	b.bridge.stop()
 	if b.embeddedDaemon != nil {
-		return b.embeddedDaemon.stop()
+		return b.embeddedDaemon.stop(tools.WithEnvHome(b.callContext(), b.env))
 	}
 	return nil
 }

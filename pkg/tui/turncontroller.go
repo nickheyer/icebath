@@ -1063,7 +1063,7 @@ func (c *turnController) upsertSubagent(p map[string]any, patch func(base subage
 			next.OutputTail = append(next.OutputTail, subagentOutput{IsError: truthyJS(entry["is_error"]), Preview: preview, Tool: tool})
 		}
 	}
-	for k, dst := range map[string]**float64{"api_calls": &next.APICalls, "input_tokens": &next.InputTokens, "output_tokens": &next.OutputTokens, "reasoning_tokens": &next.ReasoningTokens} {
+	for k, dst := range map[string]**float64{"api_calls": &next.APICalls, "cost_usd": &next.CostUSD, "input_tokens": &next.InputTokens, "output_tokens": &next.OutputTokens, "reasoning_tokens": &next.ReasoningTokens} {
 		if v := payloadNumber(p, k); v != nil {
 			*dst = v
 		}

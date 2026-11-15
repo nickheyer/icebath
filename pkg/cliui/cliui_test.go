@@ -4,159 +4,93 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/nickheyer/icebath/pkg/term"
-
-	"github.com/xo/terminfo"
 )
 
-// Replays queued key codes, minus one once the queue is empty unless exhausting
-type fakeScreen struct {
-	keys       []int
-	exhausting bool
-	timeouts   []int
-	heights    []int
-	height     int
-	rows       map[int]string
-	frames     []map[int]string
-	initErr    error
+// Console over scripted input drawing on the project terminal emulator
+type rig struct {
+	c    *Console
+	emu  *term.Emulator
+	mu   sync.Mutex
+	rows int
+	cols int
+	env  map[string]string
 }
 
-func (f *fakeScreen) Getch() (int, error) {
-	if len(f.keys) == 0 {
-		if f.exhausting {
-			return 0, errors.New("menu requested another key after the scripted keys")
+// Writer turning a bare line feed into a carriage return and line feed, as a cooked terminal does
+type cookedOut struct {
+	w    io.Writer
+	last byte
+}
+
+func (o *cookedOut) Write(p []byte) (int, error) {
+	var b bytes.Buffer
+	for _, c := range p {
+		if c == '\n' && o.last != '\r' {
+			b.WriteByte('\r')
 		}
-		return -1, nil
+		b.WriteByte(c)
+		o.last = c
 	}
-	k := f.keys[0]
-	f.keys = f.keys[1:]
-	return k, nil
-}
-func (f *fakeScreen) Timeout(ms int) { f.timeouts = append(f.timeouts, ms) }
-func (f *fakeScreen) Clear()         { f.rows = map[int]string{} }
-func (f *fakeScreen) GetMaxYX() (int, int) {
-	if f.height == 0 {
-		f.height = 24
-	}
-	if len(f.heights) > 0 {
-		f.height, f.heights = f.heights[0], f.heights[1:]
-	}
-	return f.height, 100
-}
-func (f *fakeScreen) AddNStr(y, x int, text string, n int, _ Attr) error {
-	if y < 0 || y >= f.height {
-		panic(fmt.Sprintf("off-screen write at row %d", y))
-	}
-	rs := []rune(text)
-	if len(rs) > n {
-		rs = rs[:max(n, 0)]
-	}
-	f.rows[y] += string(rs)
-	return nil
-}
-func (f *fakeScreen) Refresh() error {
-	frame := map[int]string{}
-	for k, v := range f.rows {
-		frame[k] = v
-	}
-	f.frames = append(f.frames, frame)
-	return nil
-}
-func (f *fakeScreen) HasColors() bool             { return false }
-func (f *fakeScreen) InitColors(bool) error       { return f.initErr }
-func (f *fakeScreen) InitPairs(map[int]int) error { return f.initErr }
-func (f *fakeScreen) Colors() int                 { return 0 }
-
-func keys(s string) []int {
-	out := make([]int, 0, len(s))
-	for _, b := range []byte(s) {
-		out = append(out, int(b))
-	}
-	return out
+	_, err := o.w.Write(b.Bytes())
+	return len(p), err
 }
 
-// Console over scripted input that claims a terminal on both streams
-func testConsole(input string, scr Screen) (*Console, *bytes.Buffer) {
-	out := &bytes.Buffer{}
-	c := &Console{In: strings.NewReader(input), Out: out,
-		Getenv:   func(string) (string, bool) { return "", false },
-		StdinTTY: func() bool { return true }, StdoutTTY: func() bool { return true },
-	}
-	if scr != nil {
-		c.OpenScreen = func() (Screen, func(), error) { return scr, func() {}, nil }
-	}
-	return c, out
+func newRig(input io.Reader, cols, rows int) *rig {
+	r := &rig{emu: term.New(cols, rows, term.Options{Scrollback: 500}), rows: rows, cols: cols,
+		env: map[string]string{"TERM": "xterm-256color", "LANG": "en_US.UTF-8"}}
+	r.c = &Console{In: input, Out: &cookedOut{w: r.emu},
+		Getenv:    func(k string) (string, bool) { v, ok := r.env[k]; return v, ok },
+		StdinTTY:  func() bool { return true },
+		StdoutTTY: func() bool { return true },
+		TermSize: func() (int, int, error) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			return r.rows, r.cols, nil
+		}}
+	return r
 }
 
-func readKey(t *testing.T, ks []int) string {
-	t.Helper()
-	a, err := ReadMenuKey(&fakeScreen{keys: ks})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return a
-}
+func keysRig(input string) *rig { return newRig(strings.NewReader(input), 100, 30) }
 
-func TestRawSS3ArrowKeysDecode(t *testing.T) {
-	if readKey(t, keys("\x1bOA")) != NavUp || readKey(t, keys("\x1bOB")) != NavDown {
-		t.Fatal("ss3 arrows")
-	}
-}
-
-func TestLeftArrowDecodesToBack(t *testing.T) {
-	if readKey(t, []int{KeyLeft}) != NavBack || readKey(t, keys("\x1b[D")) != NavBack || readKey(t, keys("\x1bOD")) != NavBack {
-		t.Fatal("left arrow")
-	}
-}
-
-func TestEnhancedKeyboardSequencesDecode(t *testing.T) {
-	cases := map[string]string{
-		"\x1b[13u": NavSelect, "\x1b[13;1u": NavSelect, "\x1b[27u": NavCancel, "\x1b[32u": NavToggle,
-		"\x1b[99;5u": NavInterrupt, "\x1b[1;1D": NavBack, "\x1b[27;1;13~": NavSelect, "\x1b[27;5;99~": NavInterrupt,
-		"\x1b[13;1:3u": NavNone,
-	}
-	for seq, want := range cases {
-		if got := readKey(t, keys(seq)); got != want {
-			t.Errorf("%q got %s want %s", seq, got, want)
+// Rows the emulator shows, scrollback first, each without trailing blanks
+func (r *rig) text() string {
+	var b strings.Builder
+	base := r.emu.Base()
+	_, h := r.emu.Size()
+	first := base - uint64(r.emu.ScrollbackLen())
+	for abs := first; abs < base+uint64(h); abs++ {
+		line, ok := r.emu.Row(abs)
+		if !ok {
+			continue
 		}
-	}
-}
-
-func TestRawCtrlCCancels(t *testing.T) {
-	if readKey(t, []int{3}) != NavInterrupt {
-		t.Fatal("ctrl c")
-	}
-}
-
-func TestCtrlDLeavesAMenuLikeEsc(t *testing.T) {
-	for _, ks := range [][]int{{4}, keys("\x1b[100;5u"), keys("\x1b[27;5;100~")} {
-		if got := readKey(t, ks); got != NavCancel {
-			t.Errorf("%v got %s", ks, got)
+		var row strings.Builder
+		for _, cell := range line.Cells {
+			switch {
+			case cell.Content != "":
+				row.WriteString(cell.Content)
+			case cell.Width != 0:
+				row.WriteByte(' ')
+			}
 		}
+		b.WriteString(strings.TrimRight(row.String(), " "))
+		b.WriteByte('\n')
 	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
-func TestLoneEscapeIsCancel(t *testing.T) {
-	f := &fakeScreen{keys: []int{27}}
-	if a, _ := ReadMenuKey(f); a != NavCancel || !reflect.DeepEqual(f.timeouts, []int{60, -1}) {
-		t.Fatalf("got %s timeouts %v", a, f.timeouts)
-	}
-}
-
-func TestEnterVariantsSelect(t *testing.T) {
-	for _, k := range []int{10, 13, KeyEnter} {
-		if readKey(t, []int{k}) != NavSelect {
-			t.Fatalf("%d", k)
-		}
-	}
+func (r *rig) resize(cols, rows int) {
+	r.mu.Lock()
+	r.rows, r.cols = rows, cols
+	r.mu.Unlock()
+	r.emu.Resize(cols, rows)
 }
 
 func items(labels ...string) []RadioItem {
@@ -167,220 +101,1049 @@ func items(labels ...string) []RadioItem {
 	return out
 }
 
-func TestEnhancedEnterSelectsFilteredModelWhileSearchIsActive(t *testing.T) {
-	f := &fakeScreen{keys: keys("/g\x1b[13u"), exhausting: true}
-	c, _ := testConsole("", f)
-	got, err := c.CursesRadiolist(context.Background(), "Pick", items("alpha", "gpt"), 0, RadiolistOptions{Searchable: true, SearchLabels: []string{"alpha", "gpt"}})
-	if err != nil || got != 1 {
-		t.Fatalf("got %d err %v", got, err)
+func radio(t *testing.T, r *rig, selected int, opts RadiolistOptions, labels ...string) int {
+	t.Helper()
+	got, err := r.c.CursesRadiolist(context.Background(), "Pick one:", items(labels...), selected, opts)
+	if err != nil {
+		t.Fatalf("radiolist: %v\n%s", err, r.text())
+	}
+	return got
+}
+
+func cancelAt(n int) RadiolistOptions { return RadiolistOptions{CancelReturns: &n} }
+
+func TestArrowAndViKeysMoveTheCursorAndEnterSelects(t *testing.T) {
+	for keys, want := range map[string]int{"\r": 0, "\x1b[B\r": 1, "\x1b[B\x1b[B\r": 2, "\x1b[A\r": 2, "jj\r": 2, "jk\r": 0,
+		"\x1bOB\r": 1, "\x1bOA\r": 2, "\x1b[B ": 1, "\x1b[B\n": 1, "\x1b[6~\r": 2, "\x1b[F\x1b[H\r": 0} {
+		r := keysRig(keys)
+		if got := radio(t, r, 0, cancelAt(-1), "a", "b", "c"); got != want {
+			t.Fatalf("keys %q picked %d, want %d", keys, got, want)
+		}
+		name := []string{"a", "b", "c"}[want]
+		if !strings.Contains(r.text(), "› Pick one  "+name) {
+			t.Fatalf("keys %q left no answer line for %s:\n%s", keys, name, r.text())
+		}
 	}
 }
 
-var errDispatched = errors.New("navigation dispatched")
-
-func TestEnhancedControlKeysDispatchWhileSearchIsActive(t *testing.T) {
-	for seq, expected := range map[string]MenuNavigationEvent{"\x1b[99;5u": NavEventCancel, "\x1b[1;1D": NavEventBack} {
-		var events []MenuNavigationEvent
-		h := func(ev MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
-			events = append(events, ev)
-			if ev == expected {
-				return nil, errDispatched
+func TestCancelKeysReturnTheCancelValue(t *testing.T) {
+	for _, keys := range []string{"\x1b", "q", "\x03", "\x04", "\x1b[27u", "\x1b[99;5u", ""} {
+		r := keysRig(keys)
+		got, err := r.c.CursesRadiolist(context.Background(), "Pick one:", items("a", "b"), 1, cancelAt(-7))
+		if keys == "" {
+			if !errors.Is(err, ErrEOF) {
+				t.Fatalf("closed input gave %d, %v", got, err)
 			}
-			if ev == NavEventBegin {
-				return &MenuNavigationStart{AllowBack: true}, nil
-			}
-			return nil, nil
+			continue
 		}
-		c, _ := testConsole("", &fakeScreen{keys: keys("/g" + seq)})
-		ctx := WithMenuNavigationHandler(context.Background(), h)
-		_, err := c.CursesRadiolist(ctx, "Pick", items("alpha", "gpt"), 0, RadiolistOptions{Searchable: true, SearchLabels: []string{"alpha", "gpt"}})
-		if !errors.Is(err, errDispatched) || !reflect.DeepEqual(events, []MenuNavigationEvent{NavEventBegin, expected}) {
-			t.Fatalf("%q err %v events %v", seq, err, events)
+		if err != nil || got != -7 {
+			t.Fatalf("keys %q gave %d, %v", keys, got, err)
+		}
+		if !strings.Contains(r.text(), "› Pick one  cancelled") {
+			t.Fatalf("keys %q left no cancelled line:\n%s", keys, r.text())
 		}
 	}
 }
 
-func TestNumberedFallbackCtrlCDispatchesScopedCancel(t *testing.T) {
-	cancelled := errors.New("cancelled")
-	c, _ := testConsole("\x1b[99;5u", nil)
-	c.OpenScreen = func() (Screen, func(), error) { return nil, nil, errors.New("terminal unavailable") }
-	h := func(ev MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
-		if ev == NavEventCancel {
-			return nil, cancelled
-		}
-		if ev == NavEventBegin {
-			return &MenuNavigationStart{}, nil
-		}
-		return nil, nil
-	}
-	cancel := -1
-	_, err := c.CursesRadiolist(WithMenuNavigationHandler(context.Background(), h), "Pick", items("a", "b"), 0, RadiolistOptions{CancelReturns: &cancel})
-	if !errors.Is(err, cancelled) {
-		t.Fatalf("err %v", err)
+func TestEnhancedKeyboardEnterSelects(t *testing.T) {
+	r := keysRig("\x1b[B\x1b[13u")
+	if got := radio(t, r, 0, cancelAt(-1), "a", "b"); got != 1 {
+		t.Fatalf("picked %d", got)
 	}
 }
 
-func TestNavigationHandlerProgrammingErrorIsNotHiddenByFallback(t *testing.T) {
-	mismatch := errors.New("navigation contract mismatch")
-	c, _ := testConsole("", &fakeScreen{keys: []int{13}})
-	h := func(ev MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
-		if ev == NavEventResolve {
-			return nil, mismatch
-		}
-		return &MenuNavigationStart{}, nil
-	}
-	if _, err := c.CursesRadiolist(WithMenuNavigationHandler(context.Background(), h), "Pick", items("a", "b"), 0, RadiolistOptions{}); !errors.Is(err, mismatch) {
-		t.Fatalf("err %v", err)
-	}
-}
-
-func TestRadiolistDispatchesContextualBackAndEscape(t *testing.T) {
-	for _, tc := range []struct {
-		ks   []int
-		want MenuNavigationEvent
-	}{{[]int{KeyLeft}, NavEventBack}, {keys("\x1b"), NavEventCancel}} {
-		var events []MenuNavigationEvent
-		var resolved any
-		h := func(ev MenuNavigationEvent, v ...any) (*MenuNavigationStart, error) {
-			events = append(events, ev)
-			if ev == NavEventResolve {
-				resolved = v[0]
-			}
-			return &MenuNavigationStart{AllowBack: true}, nil
-		}
-		c, _ := testConsole("", &fakeScreen{keys: tc.ks})
-		got, err := c.CursesRadiolist(WithMenuNavigationHandler(context.Background(), h), "Pick", items("a", "b"), 1, RadiolistOptions{})
-		if err != nil || got != 1 || resolved != 1 || !reflect.DeepEqual(events, []MenuNavigationEvent{NavEventBegin, tc.want, NavEventResolve}) {
-			t.Fatalf("%v got %d err %v events %v", tc.ks, got, err, events)
-		}
-	}
-}
-
-func TestReplayValueResolvesWithoutDrawing(t *testing.T) {
-	h := func(ev MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
-		return &MenuNavigationStart{Replay: true, ReplayValue: 1}, nil
-	}
-	c, _ := testConsole("", nil)
-	c.OpenScreen = func() (Screen, func(), error) { t.Fatal("screen opened"); return nil, nil, nil }
-	if got, err := c.CursesRadiolist(WithMenuNavigationHandler(context.Background(), h), "Pick", items("a", "b"), 0, RadiolistOptions{}); err != nil || got != 1 {
-		t.Fatalf("got %d err %v", got, err)
+func TestCancelDefaultsToTheSelection(t *testing.T) {
+	r := keysRig("\x1b[B\x1b")
+	if got := radio(t, r, 2, RadiolistOptions{}, "a", "b", "c"); got != 2 {
+		t.Fatalf("cancel returned %d, want the selection 2", got)
 	}
 }
 
 func TestNonTTYStdinReturnsCancelValue(t *testing.T) {
-	c, _ := testConsole("", nil)
-	c.StdinTTY = func() bool { return false }
-	got, ok, err := c.CursesSingleSelect(context.Background(), "Pick", []string{"a"}, 0, "Cancel", false)
-	if err != nil || ok || got != 0 {
-		t.Fatalf("got %d %v %v", got, ok, err)
+	r := keysRig("\r")
+	r.c.StdinTTY = func() bool { return false }
+	if got := radio(t, r, 0, cancelAt(-3), "a", "b"); got != -3 {
+		t.Fatalf("got %d", got)
+	}
+	if r.text() != "" {
+		t.Fatalf("drew without a terminal:\n%s", r.text())
 	}
 }
 
-const longDescription = "Unavailable model 0"
-
-func viewportRun(t *testing.T, ks []int, heights []int, description string, selected int) (int, []map[int]string) {
-	t.Helper()
-	labels := make([]string, 20)
-	for i := range labels {
-		labels[i] = fmt.Sprintf("model-%02d", i)
+func TestSearchFiltersAndSelectsTheBestMatch(t *testing.T) {
+	r := keysRig("/son\r")
+	got := radio(t, r, 0, RadiolistOptions{CancelReturns: new(int), Searchable: true}, "gpt-4o", "claude-opus", "claude-sonnet", "gemini")
+	if got != 2 {
+		t.Fatalf("picked %d", got)
 	}
-	f := &fakeScreen{keys: ks, heights: heights}
-	c, _ := testConsole("", f)
-	got, err := c.CursesRadiolist(context.Background(), "Select default model:", items(labels...), selected, RadiolistOptions{Description: description, Searchable: true})
+}
+
+func TestSearchUsesTheGivenLabelsAndEditingKeys(t *testing.T) {
+	opts := RadiolistOptions{CancelReturns: new(int), Searchable: true, SearchLabels: []string{"alpha one", "beta two", "gamma three"}}
+	r := keysRig("/twox\x7f\r")
+	if got := radio(t, r, 0, opts, "a", "b", "c"); got != 1 {
+		t.Fatalf("backspace edit picked %d", got)
+	}
+	r = keysRig("/zzz\x15three\r")
+	if got := radio(t, r, 0, opts, "a", "b", "c"); got != 2 {
+		t.Fatalf("ctrl u edit picked %d", got)
+	}
+	r = keysRig("/zzz\r\x15\x1b[B\r")
+	if got := radio(t, r, 0, opts, "a", "b", "c"); got != 1 {
+		t.Fatalf("enter with no match then a cleared query and down picked %d", got)
+	}
+}
+
+func TestSearchKeepsViKeysAsQueryText(t *testing.T) {
+	r := keysRig("/jk\x1b[B\r")
+	got := radio(t, r, 0, RadiolistOptions{CancelReturns: new(int), Searchable: true}, "jkl", "xjkx", "none")
+	if got != 1 {
+		t.Fatalf("picked %d", got)
+	}
+}
+
+func TestHeadingsAreDrawnButNeverSelected(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan int, 1)
+	go func() {
+		got, _ := r.c.CursesRadiolist(context.Background(), "Models", items("a", "b", "c"), 0,
+			RadiolistOptions{CancelReturns: new(int), Headings: map[int]string{0: "Fast", 2: "Large"}})
+		done <- got
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "Fast") && strings.Contains(s, "Large") })
+	io.WriteString(pipeOut, "\x1b[B\x1b[B\r")
+	if got := <-done; got != 2 {
+		t.Fatalf("picked %d", got)
+	}
+}
+
+// Waits until the screen satisfies cond
+func waitFor(t *testing.T, r *rig, cond func(string) bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond(r.text()) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("screen never matched:\n%s", r.text())
+}
+
+func TestLabelsSplitIntoNameExplanationAndStateMark(t *testing.T) {
+	for label, want := range map[string][3]string{
+		"Anthropic (Claude models via API key)":                     {"Anthropic", "Claude models via API key", ""},
+		"Quick Setup (Nous Portal) — free login (recommended)":      {"Quick Setup (Nous Portal)", "free login (recommended)", ""},
+		"Local - run directly on this machine (default)":            {"Local", "run directly on this machine (default)", ""},
+		"claude-fable-5.1  ← currently in use":                      {"claude-fable-5.1", "", "currently in use"},
+		"Anthropic (Claude models via API key)  ← currently active": {"Anthropic", "Claude models via API key", "currently active"},
+		"Hugging Face Inference Providers":                          {"Hugging Face Inference Providers", "", ""},
+		"a (b) (c)":                                                 {"a (b)", "c", ""},
+		"🎬 Video Analysis (video_analyze (requires a video model))": {"🎬 Video Analysis", "video_analyze (requires a video model)", ""},
+		"Local models (run open models here — no account)":          {"Local models", "run open models here — no account", ""},
+	} {
+		name, explanation, tag := splitLabel(label)
+		if got := [3]string{name, explanation, tag}; got != want {
+			t.Fatalf("%q split into %q", label, got)
+		}
+	}
+}
+
+func TestRowsShowNamesInOneColumnWithExplanationsBeside(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesRadiolist(context.Background(), "Backend", items("Local - on this machine", "Docker/Podman - in a container"), 0, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "❯ Local          on this machine") && strings.Contains(s, "  Docker/Podman  in a container")
+	})
+	io.WriteString(pipeOut, "\r")
+	<-done
+	if !strings.Contains(r.text(), "› Backend  Local") {
+		t.Fatalf("answer line names more than the choice:\n%s", r.text())
+	}
+}
+
+func TestLongListScrollsWithCountsOfHiddenRows(t *testing.T) {
+	labels := make([]string, 30)
+	for i := range labels {
+		labels[i] = "row" + string(rune('A'+i%26)) + string(rune('0'+i/26))
+	}
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan int, 1)
+	go func() {
+		got, _ := r.c.CursesRadiolist(context.Background(), "Many", items(labels...), 0, cancelAt(-1))
+		done <- got
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "↓ 18 more") && strings.Count(s, " more") == 1 })
+	io.WriteString(pipeOut, strings.Repeat("\x1b[B", 14))
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "↑ 3 more") && strings.Contains(s, "↓ 15 more") })
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != 14 {
+		t.Fatalf("picked %d", got)
+	}
+}
+
+func TestLongDescriptionKeepsChoicesAndHintOnAShortTerminal(t *testing.T) {
+	var desc []string
+	for i := 0; i < 40; i++ {
+		desc = append(desc, "description line")
+	}
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 14)
+	done := make(chan int, 1)
+	go func() {
+		got, _ := r.c.CursesRadiolist(context.Background(), "Pick", items("a", "b", "c", "d", "e", "f", "g"), 6,
+			RadiolistOptions{CancelReturns: new(int), Description: strings.Join(desc, "\n")})
+		done <- got
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "more description lines (enlarge terminal)") && strings.Contains(s, "❯ g") && strings.Contains(s, "enter select")
+	})
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != 6 {
+		t.Fatalf("picked %d", got)
+	}
+}
+
+func TestFrameNeverExceedsTheTerminalAndLeavesNoRowsBehind(t *testing.T) {
+	labels := make([]string, 40)
+	for i := range labels {
+		labels[i] = "choice"
+	}
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 60, 8)
+	io.WriteString(r.c.Out, "earlier output\n")
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesRadiolist(context.Background(), "Tight", items(labels...), 0, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "● Tight") })
+	io.WriteString(pipeOut, strings.Repeat("\x1b[B", 30)+"\r")
+	<-done
+	if got := r.text(); got != "earlier output\n  › Tight  choice" {
+		t.Fatalf("screen after the prompt:\n%q", got)
+	}
+}
+
+func TestResizeRepaintsFromTheRegionTopWithoutLeftovers(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	io.WriteString(r.c.Out, "before\n")
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesRadiolist(context.Background(), "Resizable", items("Alpha - the first long explanation of a choice", "Beta - the second long explanation"), 0, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "the first long explanation of a choice") })
+	r.resize(34, 30)
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "…") && strings.Count(s, "● Resizable") == 1 })
+	r.resize(100, 30)
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "the first long explanation of a choice") && strings.Count(s, "● Resizable") == 1
+	})
+	io.WriteString(pipeOut, "\r")
+	<-done
+	if got := r.text(); got != "before\n  › Resizable  Alpha" {
+		t.Fatalf("screen after resizes:\n%q", got)
+	}
+}
+
+func TestChecklistTogglesConfirmsAndCancels(t *testing.T) {
+	r := keysRig(" \x1b[B\x1b[B \r")
+	got, err := r.c.CursesChecklist(context.Background(), "Tools", []string{"web", "image", "tts"}, map[int]bool{1: true}, nil,
+		func(set map[int]bool) string { return "picked " + string(rune('0'+len(set))) })
+	if err != nil || !reflect.DeepEqual(got, map[int]bool{0: true, 1: true, 2: true}) {
+		t.Fatalf("got %v %v", got, err)
+	}
+	if !strings.Contains(r.text(), "› Tools  web, image, tts") {
+		t.Fatalf("answer line:\n%s", r.text())
+	}
+	r = keysRig(" \x1b")
+	got, err = r.c.CursesChecklist(context.Background(), "Tools", []string{"web", "image"}, map[int]bool{1: true}, nil, nil)
+	if err != nil || !reflect.DeepEqual(got, map[int]bool{1: true}) {
+		t.Fatalf("cancel got %v %v", got, err)
+	}
+	r = keysRig(" \x1b")
+	got, _ = r.c.CursesChecklist(context.Background(), "Tools", []string{"web"}, nil, map[int]bool{9: true}, nil)
+	if !reflect.DeepEqual(got, map[int]bool{9: true}) {
+		t.Fatalf("cancel with explicit value got %v", got)
+	}
+}
+
+func TestChecklistShowsItsStatusLine(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesChecklist(context.Background(), "Tools", []string{"web", "image"}, nil, nil,
+			func(set map[int]bool) string { return "est. " + string(rune('0'+len(set))) + " tokens" })
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "est. 0 tokens") && strings.Contains(s, "[ ] web") })
+	io.WriteString(pipeOut, " ")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "est. 1 tokens") && strings.Contains(s, "[✓] web") })
+	io.WriteString(pipeOut, "\r")
+	<-done
+}
+
+func TestSingleSelectPicksAnItemOrTheCancelRow(t *testing.T) {
+	r := keysRig("\x1b[B\r")
+	idx, ok, err := r.c.CursesSingleSelect(context.Background(), "One", []string{"a", "b"}, 0, "Cancel", false)
+	if err != nil || !ok || idx != 1 {
+		t.Fatalf("got %d %v %v", idx, ok, err)
+	}
+	r = keysRig("\x1b[B\x1b[B\r")
+	if _, ok, _ := r.c.CursesSingleSelect(context.Background(), "One", []string{"a", "b"}, 0, "Cancel", false); ok {
+		t.Fatal("the cancel row counted as a pick")
+	}
+	r = keysRig("q")
+	if _, ok, _ := r.c.CursesSingleSelect(context.Background(), "One", []string{"a", "b"}, 0, "Cancel", false); ok {
+		t.Fatal("q counted as a pick")
+	}
+	r = keysRig("/b\r")
+	if idx, ok, _ := r.c.CursesSingleSelect(context.Background(), "One", []string{"apple", "berry"}, 0, "Cancel", true); !ok || idx != 1 {
+		t.Fatalf("search picked %d %v", idx, ok)
+	}
+}
+
+func TestYesNoListTakesTheLetterKeys(t *testing.T) {
+	r := keysRig("n")
+	if got := radioOf(t, r, "Proceed?", 0, "Yes", "No"); got != 1 {
+		t.Fatalf("n picked %d", got)
+	}
+	r = keysRig("y")
+	if got := radioOf(t, r, "Proceed?", 1, "Yes", "No"); got != 0 {
+		t.Fatalf("y picked %d", got)
+	}
+	r = keysRig("y\r")
+	if got := radioOf(t, r, "Other?", 1, "Maybe", "No"); got != 1 {
+		t.Fatalf("y on a list without yes and no picked %d", got)
+	}
+}
+
+func radioOf(t *testing.T, r *rig, title string, selected int, labels ...string) int {
+	t.Helper()
+	got, err := r.c.CursesRadiolist(context.Background(), title, items(labels...), selected, cancelAt(-1))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return got, f.frames
+	return got
 }
 
-func longDesc() string {
-	lines := make([]string, 40)
-	for i := range lines {
-		lines[i] = fmt.Sprintf("Unavailable model %d", i)
+// Navigation handler recording its events, answering begin with the given start
+type navLog struct {
+	events []string
+	values []any
+	start  MenuNavigationStart
+}
+
+func (n *navLog) handle(event MenuNavigationEvent, value ...any) (*MenuNavigationStart, error) {
+	n.events = append(n.events, string(event))
+	if len(value) > 0 {
+		n.values = append(n.values, value[0])
 	}
-	return strings.Join(lines, "\n")
-}
-
-func anyRow(frame map[int]string, pred func(string) bool) bool {
-	for _, r := range frame {
-		if pred(r) {
-			return true
-		}
+	if event == NavEventBegin {
+		s := n.start
+		return &s, nil
 	}
-	return false
+	return nil, nil
 }
 
-func TestLongDescriptionKeepsSelectedChoiceAndHintVisible(t *testing.T) {
-	for _, height := range []int{5, 8, 12, 24, 50} {
-		got, frames := viewportRun(t, []int{10}, []int{height}, longDesc(), 19)
-		f := frames[0]
-		if got != 19 || !anyRow(f, func(r string) bool { return strings.Contains(r, "model-19") && strings.Contains(r, "→") }) || !anyRow(f, func(r string) bool { return strings.Contains(r, "/ search") }) {
-			t.Fatalf("height %d frame %v", height, f)
+func scoped(n *navLog) context.Context {
+	return WithMenuNavigationHandler(context.Background(), n.handle)
+}
+
+func TestScopedListSendsBeginWithItsTitleThenResolve(t *testing.T) {
+	n := &navLog{}
+	r := keysRig("\x1b[B\r")
+	got, err := r.c.CursesRadiolist(scoped(n), "  Pick one:", items("a", "b"), 0, cancelAt(-1))
+	if err != nil || got != 1 {
+		t.Fatalf("got %d %v", got, err)
+	}
+	if !reflect.DeepEqual(n.events, []string{"begin", "resolve"}) || !reflect.DeepEqual(n.values, []any{"Pick one", 1}) {
+		t.Fatalf("events %v values %v", n.events, n.values)
+	}
+}
+
+func TestScopedLeftArrowGoesBackOnlyWhenAllowed(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{AllowBack: true}}
+	r := keysRig("\x1b[D")
+	got, err := r.c.CursesRadiolist(scoped(n), "Pick", items("a", "b"), 0, cancelAt(-1))
+	if err != nil || got != -1 || !reflect.DeepEqual(n.events, []string{"begin", "back", "resolve"}) {
+		t.Fatalf("got %d %v events %v", got, err, n.events)
+	}
+	if strings.Contains(r.text(), "Pick") {
+		t.Fatalf("going back left a line behind:\n%s", r.text())
+	}
+	n = &navLog{}
+	r = keysRig("\x1b[D\r")
+	got, _ = r.c.CursesRadiolist(scoped(n), "Pick", items("a", "b"), 0, cancelAt(-1))
+	if got != 0 || !reflect.DeepEqual(n.events, []string{"begin", "resolve"}) {
+		t.Fatalf("left without back allowed gave %d events %v", got, n.events)
+	}
+}
+
+func TestScopedEscapeCancelsOnlyOnTheSecondPress(t *testing.T) {
+	single := &navLog{}
+	if got, _ := keysRig("\x1b").c.CursesRadiolist(scoped(single), "Pick", items("a", "b"), 0, cancelAt(-1)); got != -1 ||
+		!reflect.DeepEqual(single.events, []string{"begin", "cancel", "resolve"}) {
+		t.Fatalf("one escape without the guard gave %d events %v", got, single.events)
+	}
+	pipeIn, pipeOut := io.Pipe()
+	n := &navLog{start: MenuNavigationStart{GuardCancel: true}}
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan int, 1)
+	go func() {
+		got, _ := r.c.CursesRadiolist(scoped(n), "Pick", items("a", "b"), 0, cancelAt(-1))
+		done <- got
+	}()
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "esc cancel") })
+	io.WriteString(pipeOut, "\x1b")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "press esc again to cancel") })
+	io.WriteString(pipeOut, "\x1b[B")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "❯ b") && strings.Contains(s, "esc cancel") })
+	io.WriteString(pipeOut, "\x1b")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "press esc again to cancel") })
+	io.WriteString(pipeOut, "\x1b")
+	if got := <-done; got != -1 || !reflect.DeepEqual(n.events, []string{"begin", "cancel", "resolve"}) {
+		t.Fatalf("got %d events %v", got, n.events)
+	}
+}
+
+func TestReplayedAnswerResolvesWithoutAsking(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{Replay: true, ReplayValue: 1}}
+	r := keysRig("")
+	got, err := r.c.CursesRadiolist(scoped(n), "Pick", items("a", "b"), 0, cancelAt(-1))
+	if err != nil || got != 1 || !reflect.DeepEqual(n.events, []string{"begin", "resolve"}) {
+		t.Fatalf("got %d %v events %v", got, err, n.events)
+	}
+	if r.text() != "  › Pick  b" {
+		t.Fatalf("replay drew:\n%q", r.text())
+	}
+}
+
+func TestReplayValueOfTheWrongTypeIsAnError(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{Replay: true, ReplayValue: "text"}}
+	if _, err := keysRig("").c.CursesRadiolist(scoped(n), "Pick", items("a"), 0, cancelAt(-1)); err == nil {
+		t.Fatal("a text replay value passed as a row index")
+	}
+}
+
+func TestNavigationHandlerErrorAbortsTheList(t *testing.T) {
+	boom := errors.New("handler broke")
+	ctx := WithMenuNavigationHandler(context.Background(), func(MenuNavigationEvent, ...any) (*MenuNavigationStart, error) { return nil, boom })
+	if _, err := keysRig("\r").c.CursesRadiolist(ctx, "Pick", items("a"), 0, cancelAt(-1)); !errors.Is(err, boom) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestHandlerPanicOnBackLeavesTheCursorShownAndNoHold(t *testing.T) {
+	r := keysRig("\x1b[D")
+	ctx := WithMenuNavigationHandler(context.Background(), func(event MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
+		if event == NavEventBack {
+			panic("back")
 		}
-		choices := 0
-		for _, r := range f {
-			if strings.Contains(r, "model-") {
-				choices++
+		return &MenuNavigationStart{AllowBack: true}, nil
+	})
+	func() {
+		defer func() {
+			if recover() != "back" {
+				t.Fatal("the back panic did not unwind")
 			}
-		}
-		if choices < min(5, height-4) {
-			t.Fatalf("height %d choices %d", height, choices)
-		}
-		desc := anyRow(f, func(r string) bool { return strings.Contains(r, "Unavailable model") })
-		more := anyRow(f, func(r string) bool { return strings.Contains(r, "more description lines") })
-		if (height < 12 && (desc || more)) || (height >= 12 && height < 50 && !more) {
-			t.Fatalf("height %d desc %v more %v", height, desc, more)
-		}
-		if height == 50 {
-			for i := 0; i < 40; i++ {
-				if !anyRow(f, func(r string) bool { return r == fmt.Sprintf("Unavailable model %d", i) }) {
-					t.Fatalf("missing description %d", i)
-				}
-			}
+		}()
+		r.c.CursesRadiolist(ctx, "Pick", items("a", "b"), 0, cancelAt(-1))
+	}()
+	g := r.c.termGuard()
+	if g.holds != 0 || len(g.modes) != 0 {
+		t.Fatalf("holds %d modes %v after the panic", g.holds, g.modes)
+	}
+	if !r.emu.Cursor().Visible {
+		t.Fatal("cursor still hidden after the panic")
+	}
+}
+
+func dumb(input string) *rig {
+	r := keysRig(input)
+	r.env["TERM"] = "dumb"
+	return r
+}
+
+func TestDumbTerminalUsesTheNumberedLists(t *testing.T) {
+	r := dumb("2\n")
+	if got := radio(t, r, 0, cancelAt(-1), "a", "b"); got != 1 {
+		t.Fatalf("radio picked %d", got)
+	}
+	if !strings.Contains(r.text(), "Select by number, Enter to confirm.") || !strings.Contains(r.text(), "(●)  1. a") {
+		t.Fatalf("numbered radio:\n%s", r.text())
+	}
+	if got := radio(t, dumb("\n"), 1, cancelAt(-1), "a", "b"); got != 1 {
+		t.Fatalf("blank line picked %d", got)
+	}
+	if got := radio(t, dumb("x\n"), 1, cancelAt(-9), "a", "b"); got != -9 {
+		t.Fatalf("junk picked %d", got)
+	}
+	if got := radio(t, dumb(""), 1, cancelAt(-9), "a", "b"); got != -9 {
+		t.Fatalf("closed input picked %d", got)
+	}
+	set, err := dumb("1\n3\n1\n\n").c.CursesChecklist(context.Background(), "Tools", []string{"a", "b", "c"}, nil, nil, nil)
+	if err != nil || !reflect.DeepEqual(set, map[int]bool{2: true}) {
+		t.Fatalf("checklist got %v %v", set, err)
+	}
+	idx, ok, _ := dumb("2\n").c.CursesSingleSelect(context.Background(), "One", []string{"a", "b"}, 0, "Cancel", false)
+	if !ok || idx != 1 {
+		t.Fatalf("single got %d %v", idx, ok)
+	}
+	if _, ok, _ := dumb("3\n").c.CursesSingleSelect(context.Background(), "One", []string{"a", "b"}, 0, "Cancel", false); ok {
+		t.Fatal("the numbered cancel row counted as a pick")
+	}
+}
+
+func TestNumberedListSendsScopedCancelOnClosedInput(t *testing.T) {
+	n := &navLog{}
+	got, err := dumb("").c.CursesRadiolist(scoped(n), "Pick", items("a", "b"), 0, cancelAt(-1))
+	if err != nil || got != -1 || !reflect.DeepEqual(n.events, []string{"begin", "cancel", "resolve"}) {
+		t.Fatalf("got %d %v events %v", got, err, n.events)
+	}
+}
+
+func TestNumberedHeadingsArePrintedAndNeverNumbered(t *testing.T) {
+	r := dumb("2\n")
+	got, _ := r.c.CursesRadiolist(context.Background(), "Models", items("a", "b"), 0,
+		RadiolistOptions{CancelReturns: new(int), Headings: map[int]string{1: "Large"}})
+	if got != 1 || !strings.Contains(r.text(), "  Large\n  (○)  2. b") {
+		t.Fatalf("picked %d:\n%s", got, r.text())
+	}
+}
+
+func lineOf(t *testing.T, input string) (string, *rig) {
+	t.Helper()
+	r := keysRig(input)
+	got, err := r.c.LineInput("Name: ")
+	if err != nil {
+		t.Fatalf("line input: %v", err)
+	}
+	return got, r
+}
+
+func TestLineInputSupportsCursorAndEmacsEditing(t *testing.T) {
+	for keys, want := range map[string]string{
+		"hello\r":                            "hello",
+		"helo\x1b[Dl\r":                      "hello",
+		"world\x01hello \r":                  "hello world",
+		"abc\x1b[H\x1b[3~\r":                 "bc",
+		"abc\x7f\x7fx\r":                     "ax",
+		"one two\x17three\r":                 "one three",
+		"abc\x01\x0b\x19\x19\r":              "abcabc",
+		"abcdef\x01\x06\x06\x15\r":           "cdef",
+		"ab\x14\r":                           "ba",
+		"one two\x1bbX\r":                    "one Xtwo",
+		"x\x1b[200~pasted\ntext\x1b[201~y\r": "xpasted texty",
+		"caf\xc3\xa9\x7f\xc3\xa8\r":          "cafè",
+	} {
+		if got, _ := lineOf(t, keys); got != want {
+			t.Fatalf("keys %q gave %q, want %q", keys, got, want)
 		}
 	}
 }
 
-func TestChoiceScrollsAfterTerminalShrinks(t *testing.T) {
-	ks := append(repeat(KeyDown, 19), 10)
-	got, frames := viewportRun(t, ks, []int{50, 12}, longDesc(), 0)
-	if got != 19 {
-		t.Fatalf("got %d", got)
+func TestLineInputLeavesItsAnswerAndRestoresTheCursor(t *testing.T) {
+	got, r := lineOf(t, "  icebath \r")
+	if got != "  icebath " {
+		t.Fatalf("got %q", got)
 	}
-	for i, f := range frames {
-		want := fmt.Sprintf("model-%02d", i)
-		if !anyRow(f, func(r string) bool { return strings.Contains(r, want) && strings.Contains(r, "→") }) {
-			t.Fatalf("frame %d lost the cursor %v", i, f)
-		}
+	if r.text() != "  › Name  icebath" {
+		t.Fatalf("screen:\n%q", r.text())
 	}
-}
-
-func repeat(k, n int) []int {
-	out := make([]int, n)
-	for i := range out {
-		out[i] = k
-	}
-	return out
-}
-
-func TestSearchResultStaysVisibleWithLongDescription(t *testing.T) {
-	got, frames := viewportRun(t, keys("/19\n"), []int{12}, longDesc(), 0)
-	last := frames[len(frames)-1]
-	if got != 19 || !anyRow(last, func(r string) bool { return strings.Contains(r, "Search: 19") }) || !anyRow(last, func(r string) bool { return strings.Contains(r, "model-19") && strings.Contains(r, "→") }) {
-		t.Fatalf("got %d frame %v", got, last)
+	if !r.emu.Cursor().Visible || r.emu.BracketedPaste() {
+		t.Fatal("cursor hidden or bracketed paste left on")
 	}
 }
 
-func TestShortDescriptionLayoutIsUnchanged(t *testing.T) {
-	for _, desc := range []string{"", "First line\nSecond line"} {
-		got, frames := viewportRun(t, []int{10}, []int{24}, desc, 0)
-		start := 3
-		if desc != "" {
-			start += 2
-		}
-		if got != 0 || !strings.Contains(frames[0][start], "model-00") || anyRow(frames[0], func(r string) bool { return strings.Contains(r, "more description lines") }) {
-			t.Fatalf("desc %q frame %v", desc, frames[0])
-		}
+func TestLineInputShowsTheDefaultAndKeepsItOnEnter(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan string, 1)
+	go func() {
+		got, _ := r.c.LineInputDefault("Max iterations [150]: ", "Max iterations", "150")
+		done <- got
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "● Max iterations") && strings.Contains(s, "enter keeps 150")
+	})
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != "" {
+		t.Fatalf("got %q", got)
+	}
+	if r.text() != "  › Max iterations  150" {
+		t.Fatalf("screen:\n%q", r.text())
+	}
+}
+
+func TestLineInputInterruptAndEndOfInput(t *testing.T) {
+	r := keysRig("abc\x03")
+	if _, err := r.c.LineInput("Name: "); !errors.Is(err, ErrInterrupt) {
+		t.Fatalf("ctrl c gave %v", err)
+	}
+	if !strings.Contains(r.text(), "› Name  cancelled") {
+		t.Fatalf("screen:\n%s", r.text())
+	}
+	if _, err := keysRig("\x04").c.LineInput("Name: "); !errors.Is(err, ErrEOF) {
+		t.Fatalf("ctrl d on an empty field gave %v", err)
+	}
+	if got, err := keysRig("ab\x01\x04\r").c.LineInput("Name: "); err != nil || got != "b" {
+		t.Fatalf("ctrl d inside text gave %q %v", got, err)
+	}
+	if got, err := keysRig("partial").c.LineInput("Name: "); err != nil || got != "partial" {
+		t.Fatalf("closed input with text gave %q %v", got, err)
+	}
+	if _, err := keysRig("").c.LineInput("Name: "); !errors.Is(err, ErrEOF) {
+		t.Fatalf("closed input gave %v", err)
+	}
+}
+
+func TestLineInputReadsPlainlyOffATerminal(t *testing.T) {
+	var out bytes.Buffer
+	c := &Console{In: strings.NewReader("typed\nrest"), Out: &out}
+	got, err := c.LineInput("Name: ")
+	if err != nil || got != "typed" || out.String() != "Name: " {
+		t.Fatalf("got %q %v out %q", got, err, out.String())
+	}
+	r := dumb("typed\n")
+	if got, err := r.c.LineInput("Name: "); err != nil || got != "typed" || !strings.Contains(r.text(), "Name:") {
+		t.Fatalf("dumb terminal got %q %v:\n%s", got, err, r.text())
+	}
+}
+
+func TestSecretLineMasksEveryCharacterAndReportsTheLength(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan string, 1)
+	go func() {
+		got, _ := r.c.SecretLine("  API key (sk-...): ", "*")
+		done <- got
+	}()
+	io.WriteString(pipeOut, "sk-secret\x7f")
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "❯ ••••••••") && strings.Contains(s, "8 characters") && !strings.Contains(s, "secre")
+	})
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != "sk-secre" {
+		t.Fatalf("got %q", got)
+	}
+	if r.text() != "  › API key (sk-...)  •••••••• (8 characters)" {
+		t.Fatalf("screen:\n%q", r.text())
+	}
+}
+
+func TestSecretLineWithAnEmptyMaskShowsNothing(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan string, 1)
+	go func() {
+		got, _ := r.c.SecretLine("Token: ", "")
+		done <- got
+	}()
+	io.WriteString(pipeOut, "hidden")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "6 characters") })
+	if strings.Contains(r.text(), "•") || strings.Contains(r.text(), "hidden") {
+		t.Fatalf("an empty mask drew the secret:\n%s", r.text())
+	}
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != "hidden" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSecretLineNeedsATerminalThatDraws(t *testing.T) {
+	if _, err := dumb("x\n").c.SecretLine("Token: ", "*"); !errors.Is(err, ErrNoEditor) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestLongTextScrollsSidewaysInsideTheField(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 30, 10)
+	done := make(chan string, 1)
+	go func() {
+		got, _ := r.c.LineInput("Path: ")
+		done <- got
+	}()
+	text := "/a/very/long/path/that/does/not/fit/in/thirty/columns/tail"
+	io.WriteString(pipeOut, text)
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "columns/tail") && !strings.Contains(s, "/a/very") })
+	io.WriteString(pipeOut, "\x01")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "/a/very") && !strings.Contains(s, "columns/tail") })
+	io.WriteString(pipeOut, "\r")
+	if got := <-done; got != text {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func setNav(t *testing.T, n *navLog) {
+	t.Helper()
+	tok := SetMenuNavigationHandler(n.handle)
+	t.Cleanup(func() { ResetMenuNavigationHandler(tok) })
+}
+
+func TestScopedTextFieldReportsItsAnswerAndGoesBackWhenEmpty(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{AllowBack: true}}
+	setNav(t, n)
+	if got, err := keysRig("abc\x1b[D\x1b[Dx\r").c.LineInput("Name: "); err != nil || got != "axbc" {
+		t.Fatalf("left arrow inside text gave %q %v", got, err)
+	}
+	if !reflect.DeepEqual(n.events, []string{"begin", "resolve"}) || !reflect.DeepEqual(n.values, []any{"Name", "axbc"}) {
+		t.Fatalf("events %v values %v", n.events, n.values)
+	}
+	n.events, n.values = nil, nil
+	if _, err := keysRig("\x1b[D").c.LineInput("Name: "); !errors.Is(err, ErrInterrupt) {
+		t.Fatalf("left arrow on an empty field gave %v", err)
+	}
+	if !reflect.DeepEqual(n.events, []string{"begin", "back"}) {
+		t.Fatalf("events %v", n.events)
+	}
+}
+
+func TestScopedTextFieldCancelsOnTheSecondEscape(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{GuardCancel: true}}
+	setNav(t, n)
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	done := make(chan string, 1)
+	go func() {
+		got, _ := r.c.LineInput("Name: ")
+		done <- got
+	}()
+	io.WriteString(pipeOut, "ab\x1b")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "press esc again to cancel") })
+	io.WriteString(pipeOut, "c\r")
+	if got := <-done; got != "abc" {
+		t.Fatalf("one escape then typing gave %q", got)
+	}
+	n.events = nil
+	if _, err := keysRig("ab\x1b\x1b").c.LineInput("Name: "); !errors.Is(err, ErrInterrupt) {
+		t.Fatalf("two escapes gave %v", err)
+	}
+	if !reflect.DeepEqual(n.events, []string{"begin", "cancel"}) {
+		t.Fatalf("events %v", n.events)
+	}
+	n.start, n.events = MenuNavigationStart{}, nil
+	if _, err := keysRig("ab\x1b").c.LineInput("Name: "); !errors.Is(err, ErrInterrupt) || !reflect.DeepEqual(n.events, []string{"begin", "cancel"}) {
+		t.Fatalf("one escape without the guard gave %v events %v", err, n.events)
+	}
+}
+
+func TestScopedTextFieldReplaysItsRecordedAnswer(t *testing.T) {
+	n := &navLog{start: MenuNavigationStart{Replay: true, ReplayValue: "kept"}}
+	setNav(t, n)
+	r := keysRig("")
+	if got, err := r.c.LineInput("Name: "); err != nil || got != "kept" {
+		t.Fatalf("got %q %v", got, err)
+	}
+	if r.text() != "  › Name  kept" {
+		t.Fatalf("screen:\n%q", r.text())
+	}
+	r = keysRig("")
+	if got, _ := r.c.SecretLine("Key: ", "*"); got != "kept" || strings.Contains(r.text(), "kept") {
+		t.Fatalf("secret replay got %q:\n%s", got, r.text())
+	}
+}
+
+func TestUnusedKeysStayForTheNextPrompt(t *testing.T) {
+	r := keysRig("\x1b[B\rtyped\r\x1b[B\x1b[B\r")
+	if got := radio(t, r, 0, cancelAt(-1), "a", "b", "c"); got != 1 {
+		t.Fatalf("first list picked %d", got)
+	}
+	if got, err := r.c.LineInput("Name: "); err != nil || got != "typed" {
+		t.Fatalf("field got %q %v", got, err)
+	}
+	if got := radio(t, r, 0, cancelAt(-1), "a", "b", "c"); got != 2 {
+		t.Fatalf("second list picked %d", got)
+	}
+}
+
+func TestAnswersStackTightAndTextKeepsOneBlankLine(t *testing.T) {
+	r := keysRig("\r\rname\r")
+	flow := r.c.Flow()
+	if !flow.IsFlow() || flow.Flow() != flow {
+		t.Fatal("flow console")
+	}
+	io.WriteString(flow.Out, "\n\n\nIntro line\n")
+	flow.CursesRadiolist(context.Background(), "First", items("a", "b"), 0, cancelAt(-1))
+	io.WriteString(flow.Out, "\n")
+	flow.CursesRadiolist(context.Background(), "Second", items("c", "d"), 0, cancelAt(-1))
+	flow.LineInput("Third: ")
+	io.WriteString(flow.Out, "\n\n   indented detail\n✓ saved\n\x1b[32m✓ green saved\x1b[0m\n⚠ careful\n✗ failed\n\n◆ Section\nbody\n◆ Next\n")
+	want := strings.Join([]string{
+		"  Intro line",
+		"",
+		"  › First  a",
+		"  › Second  c",
+		"  › Third  name",
+		"",
+		"   indented detail",
+		"  ✓ saved",
+		"  ✓ green saved",
+		"  ⚠ careful",
+		"  ✗ failed",
+		"",
+		"  ◆ Section",
+		"  body",
+		"",
+		"  ◆ Next",
+	}, "\n")
+	if got := r.text(); got != want {
+		t.Fatalf("flow output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestFlowWriterHandlesSplitWritesAndCarriageReturns(t *testing.T) {
+	r := keysRig("")
+	flow := r.c.Flow()
+	for _, chunk := range []string{"par", "tial ", "li", "ne\n", "\x1b[2", "m  dim\x1b[0m\n", "caf\xc3", "\xa9\n", "spin 1\rspin 2\n"} {
+		io.WriteString(flow.Out, chunk)
+	}
+	if got := r.text(); got != "  partial line\n  dim\n  café\n  spin 2" {
+		t.Fatalf("got:\n%q", got)
+	}
+}
+
+func TestFlowNestsStatusMarksRestylesRulesAndWrapsAtSpaces(t *testing.T) {
+	r := newRig(strings.NewReader(""), 50, 30)
+	flow := r.c.Flow()
+	for _, line := range []string{
+		"✓   Browser set to local mode",
+		"✓     browser_exec ready",
+		"   ✗ Web Search (missing EXA_API_KEY, PARALLEL_API_KEY, or SEARXNG_URL)",
+		"--- 🌐 Browser Automation - Choose a provider ---",
+		"  ─── Keys ───",
+		"☤ Icebath Tool Configuration",
+		"Guide: https://example.com/a/very-long/path-that-must-stay/in-one-piece#anchor-part",
+		"Without a service, scheduled jobs and messaging stop at logout",
+		"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+		"│ a box row that is wider than the terminal stays as it was printed │",
+	} {
+		io.WriteString(flow.Out, line+"\n")
+	}
+	flow.Done("Setup complete")
+	want := strings.Join([]string{
+		"    ✓ Browser set to local mode",
+		"      ✓ browser_exec ready",
+		"   ✗ Web Search (missing EXA_API_KEY,",
+		"     PARALLEL_API_KEY, or SEARXNG_URL)",
+		"",
+		"  ━━ 🌐 Browser Automation - Choose a provider",
+		"",
+		"  ━━ Keys",
+		"",
+		"  ◆ Icebath Tool Configuration",
+		"  Guide:",
+		"  https://example.com/a/very-long/path-that-must-s",
+		"tay/in-one-piece#anchor-part",
+		"  Without a service, scheduled jobs and messaging",
+		"  stop at logout",
+		"  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+		"  │ a box row that is wider than the terminal stay",
+		"s as it was printed │",
+		"",
+		"  ━━━━━━╱━━━  ✓ Setup complete",
+	}, "\n")
+	if got := r.text(); got != want {
+		t.Fatalf("flow output:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestFlowSwapsBasicColorsForPaletteTones(t *testing.T) {
+	var out bytes.Buffer
+	r := keysRig("")
+	r.c.Out = &out
+	r.env["COLORTERM"] = "truecolor"
+	flow := r.c.Flow()
+	io.WriteString(flow.Out, "\x1b[36m\x1b[1mTo edit\x1b[0m \x1b[32micebath setup\x1b[0m \x1b[38;5;36mkept\x1b[0m \x1b[2mdim\x1b[0m\n")
+	want := "  \x1b[38;2;155;220;247m\x1b[1mTo edit\x1b[0m \x1b[38;2;98;211;148micebath setup\x1b[0m \x1b[38;5;36mkept\x1b[0m \x1b[2mdim\x1b[0m\n"
+	if out.String() != want {
+		t.Fatalf("got %q", out.String())
+	}
+}
+
+func TestInputInsideAFlowIsAYesNoListOrAField(t *testing.T) {
+	r := keysRig("\ry")
+	flow := r.c.Flow()
+	if got, err := flow.Input("Log in to Nous Portal now? [Y/n]: "); err != nil || got != "y" {
+		t.Fatalf("enter on a default yes gave %q %v", got, err)
+	}
+	if got, err := flow.Input("Switch anyway? [y/N]: "); err != nil || got != "y" {
+		t.Fatalf("the y key gave %q %v", got, err)
+	}
+	if got, err := keysRig("\r").c.Flow().Input("Overwrite (y/N) "); err != nil || got != "n" {
+		t.Fatalf("enter on a default no gave %q %v", got, err)
+	}
+	if _, err := keysRig("\x1b").c.Flow().Input("Proceed? [Y/n]: "); !errors.Is(err, ErrInterrupt) {
+		t.Fatalf("escape gave %v", err)
+	}
+	field := keysRig("typed\r")
+	if got, err := field.c.Flow().Input("Name: "); err != nil || got != "typed" || field.text() != "  › Name  typed" {
+		t.Fatalf("field got %q %v:\n%s", got, err, field.text())
+	}
+	var out bytes.Buffer
+	plain := &Console{In: strings.NewReader("y\n"), Out: &out}
+	if got, err := plain.Input("Proceed? [Y/n]: "); err != nil || got != "y" || out.String() != "Proceed? [Y/n]: " {
+		t.Fatalf("outside a flow got %q %v out %q", got, err, out.String())
+	}
+}
+
+func TestLongTitleWrapsWhileLiveAndSharesTheAnswerRow(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 50, 20)
+	done := make(chan struct{})
+	title := "Install the gateway service so Icebath starts automatically at login?"
+	go func() {
+		r.c.CursesRadiolist(context.Background(), title, items("Yes", "No"), 1, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "● Install the gateway service so Icebath starts\n    automatically at login?")
+	})
+	io.WriteString(pipeOut, "\r")
+	<-done
+	if got := r.text(); got != "  › Install the gateway service so Icebath s…  No" {
+		t.Fatalf("answer row:\n%q", got)
+	}
+}
+
+func TestBracketedNotesGetTheirOwnColumn(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 20)
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesRadiolist(context.Background(), "Choose a provider", items("Local Browser [★ recommended · free] - Headless Chromium",
+			"Browserbase [paid] - Cloud browser", "Skip - keep defaults"), 0, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "❯ Local Browser  ★ recommended · free  Headless Chromium") &&
+			strings.Contains(s, "  Browserbase    paid                  Cloud browser") &&
+			strings.Contains(s, "  Skip                                 keep defaults")
+	})
+	io.WriteString(pipeOut, "\r")
+	<-done
+	if got := r.text(); got != "  › Choose a provider  Local Browser" {
+		t.Fatalf("answer row:\n%q", got)
+	}
+}
+
+func TestLargeSelectionIsSummarizedByItsCount(t *testing.T) {
+	r := keysRig("\r")
+	r.c.CursesChecklist(context.Background(), "Tools", []string{"a", "b", "c", "d"}, map[int]bool{0: true, 1: true, 2: true, 3: true}, nil, nil)
+	if got := r.text(); got != "  › Tools  4 selected" {
+		t.Fatalf("answer row:\n%q", got)
+	}
+}
+
+func TestFlowIsTheSameConsoleOffATerminal(t *testing.T) {
+	c := &Console{In: strings.NewReader(""), Out: &bytes.Buffer{}}
+	if c.Flow() != c || c.IsFlow() {
+		t.Fatal("a buffer console became a flow")
+	}
+	if d := dumb(""); d.c.Flow() != d.c {
+		t.Fatal("a dumb terminal became a flow")
+	}
+}
+
+func TestBannerPicksTheArtThatFitsAndStepNumbersItsRule(t *testing.T) {
+	r := keysRig("")
+	flow := r.c.Flow()
+	flow.Banner([]string{"WIDE ART ROW ONE", "WIDE ART ROW TWO"}, "compact", "Setup")
+	flow.Step(2, 4, "Terminal Backend")
+	flow.Step(1, 1, "Agent Settings")
+	want := "\n  WIDE ART ROW ONE\n  WIDE ART ROW TWO\n\n  Setup\n\n  ━━━━━━╱━━━  2 / 4  Terminal Backend\n\n  ━━━━━━╱━━━  Agent Settings"
+	if got := r.text(); got != want {
+		t.Fatalf("got:\n%q", got)
+	}
+	narrow := newRig(strings.NewReader(""), 12, 10)
+	narrow.c.Flow().Banner([]string{"WIDE ART ROW ONE"}, "compact", "")
+	if got := narrow.text(); got != "\n  compact" {
+		t.Fatalf("narrow banner:\n%q", got)
+	}
+}
+
+func TestAwaitSpinsUntilOutputArrives(t *testing.T) {
+	r := keysRig("")
+	flow := r.c.Flow()
+	stop := flow.Await("Checking providers")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "Checking providers") })
+	io.WriteString(flow.Out, "first line\n")
+	time.Sleep(200 * time.Millisecond)
+	if got := r.text(); got != "  first line" {
+		t.Fatalf("spinner outlived the output:\n%q", got)
+	}
+	stop()
+	stop()
+	if !r.emu.Cursor().Visible {
+		t.Fatal("cursor hidden after the spinner")
+	}
+	r = keysRig("\r")
+	flow = r.c.Flow()
+	stop = flow.Await("Loading")
+	waitFor(t, r, func(s string) bool { return strings.Contains(s, "Loading") })
+	flow.CursesRadiolist(context.Background(), "Pick", items("a"), 0, cancelAt(-1))
+	stop()
+	if got := r.text(); got != "  › Pick  a" {
+		t.Fatalf("spinner outlived the prompt:\n%q", got)
+	}
+	plain := keysRig("")
+	plain.c.Await("Nothing")()
+	if plain.text() != "" {
+		t.Fatalf("a console outside a flow drew a spinner:\n%q", plain.text())
+	}
+}
+
+func TestASCIITerminalDrawsWithoutUnicodeMarks(t *testing.T) {
+	pipeIn, pipeOut := io.Pipe()
+	r := newRig(pipeIn, 100, 30)
+	r.env["LANG"] = "C"
+	done := make(chan struct{})
+	go func() {
+		r.c.CursesRadiolist(context.Background(), "Pick", items("a", "b"), 0, cancelAt(-1))
+		close(done)
+	}()
+	waitFor(t, r, func(s string) bool {
+		return strings.Contains(s, "* Pick") && strings.Contains(s, "> a") && strings.Contains(s, "up/down move")
+	})
+	io.WriteString(pipeOut, "\r")
+	<-done
+	if r.text() != "  > Pick  a" {
+		t.Fatalf("screen:\n%q", r.text())
+	}
+}
+
+func TestColorDepthFollowsTheTerminal(t *testing.T) {
+	r := keysRig("")
+	if got := r.c.Tint("x", "#f50325", true); got != "\x1b[1;38;5;196mx\x1b[0m" {
+		t.Fatalf("256 colors: %q", got)
+	}
+	r.env["COLORTERM"] = "truecolor"
+	if got := r.c.Tint("x", "#f50325", false); got != "\x1b[38;2;245;3;37mx\x1b[0m" {
+		t.Fatalf("truecolor: %q", got)
+	}
+	delete(r.env, "COLORTERM")
+	r.env["TERM"] = "xterm"
+	if got := r.c.Tint("x", "#f50325", false); got != "\x1b[91mx\x1b[0m" {
+		t.Fatalf("16 colors: %q", got)
+	}
+	r.env["NO_COLOR"] = "1"
+	if got := r.c.Tint("x", "#f50325", true); got != "\x1b[1mx\x1b[0m" {
+		t.Fatalf("no color keeps bold only: %q", got)
+	}
+	r.env["TERM"] = "dumb"
+	if got := r.c.Tint("x", "#f50325", true); got != "x" {
+		t.Fatalf("dumb: %q", got)
 	}
 }
 
@@ -390,16 +1153,6 @@ func TestReconcileCursorMovesToFirstVisibleMatch(t *testing.T) {
 	}
 	if c, p := ReconcileCursor([]int{2, 4}, 4); c != 4 || p != 1 {
 		t.Fatal("kept cursor")
-	}
-}
-
-func TestActiveSearchConsumesQueryEditingAndConfirmKeys(t *testing.T) {
-	s := &SearchState{Active: true, Query: "op"}
-	if h, c, ch := HandleActiveSearchKey('u', s); !h || c || !ch || s.Query != "opu" {
-		t.Fatal("typing")
-	}
-	if h, c, ch := HandleActiveSearchKey(KeyEnter, s); !h || !c || ch {
-		t.Fatal("confirm")
 	}
 }
 
@@ -413,17 +1166,6 @@ func TestScorerRanksPrefixAndBoundaryMatchesHigher(t *testing.T) {
 	}
 	if _, ok := FuzzyScore("gpt-4o", "zzz"); ok {
 		t.Fatal("non subsequence matched")
-	}
-}
-
-func TestEscClearsQueryAndSignalsChanged(t *testing.T) {
-	s := &SearchState{Active: true, Query: "gpt"}
-	if h, c, ch := HandleActiveSearchKey(27, s); !h || c || !ch || s.Active || s.Query != "" {
-		t.Fatal("esc with query")
-	}
-	s2 := &SearchState{Active: true}
-	if h, c, ch := HandleActiveSearchKey(27, s2); !h || c || ch {
-		t.Fatal("esc without query")
 	}
 }
 
@@ -454,7 +1196,7 @@ func TestUnrelatedBracketsStayPlain(t *testing.T) {
 }
 
 func TestColorizeAndFormatANSI(t *testing.T) {
-	c, _ := testConsole("", nil)
+	c := keysRig("").c
 	if got := c.ColorizeGaugeBarsANSI("x " + bar(0.9)); got != "x "+Red+bar(0.9)+Reset {
 		t.Fatalf("got %q", got)
 	}
@@ -468,241 +1210,31 @@ func TestColorizeAndFormatANSI(t *testing.T) {
 	}
 }
 
-func TestLineInputSupportsCursorAndEmacsNavigation(t *testing.T) {
-	c, out := testConsole("ac\x1b[Db\x1b[Cd\x01X\x05Y\r", nil)
-	got, err := c.LineInput("Enter model name: ")
-	if err != nil || got != "XabcdY" || !strings.Contains(out.String(), "Enter model name: ") {
-		t.Fatalf("got %q err %v", got, err)
+func TestPromptAndYesNoReadThroughTheField(t *testing.T) {
+	r := keysRig("  typed  \r\r")
+	if got := r.c.Prompt("Name", "", false); got != "typed" {
+		t.Fatalf("got %q", got)
 	}
-	c2, _ := testConsole("abc def\x17\x7fX\x0bZ\x15Q\r", nil)
-	if got, _ := c2.LineInput("> "); got != "Q" {
-		t.Fatalf("kill keys got %q", got)
+	if got := r.c.Prompt("Name", "fallback", false); got != "fallback" {
+		t.Fatalf("default got %q", got)
 	}
-	c3, _ := testConsole("\x03", nil)
-	if _, err := c3.LineInput("> "); !errors.Is(err, ErrInterrupt) {
-		t.Fatalf("ctrl c err %v", err)
+	r = keysRig("")
+	r.c.MaskedSecretPrompt = func(prompt string) (string, error) { return " secret ", nil }
+	if got := r.c.Prompt("Key", "", true); got != "secret" {
+		t.Fatalf("password got %q", got)
 	}
-	c4, _ := testConsole("\x04", nil)
-	if _, err := c4.LineInput("> "); !errors.Is(err, ErrEOF) {
-		t.Fatalf("ctrl d err %v", err)
-	}
-}
-
-func TestLineInputPreservesBuiltinInputForRedirectedStdin(t *testing.T) {
-	c, out := testConsole("typed model\n", nil)
-	c.StdinTTY = func() bool { return false }
-	got, err := c.LineInput("Enter model name: ")
-	if err != nil || got != "typed model" || out.String() != "Enter model name: " {
-		t.Fatalf("got %q err %v out %q", got, err, out.String())
-	}
-}
-
-func TestLineInputFallsBackToInputOnEditorFailure(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	io.WriteString(w, "fallback text\n")
-	w.Close()
-	c, _ := testConsole("", nil)
-	c.In = r
-	if got, err := c.LineInput("Enter model name: "); err != nil || got != "fallback text" {
-		t.Fatalf("got %q err %v", got, err)
-	}
-}
-
-func TestPasswordPromptUsesMaskedSecretPrompt(t *testing.T) {
-	c, _ := testConsole("", nil)
-	var seen string
-	c.MaskedSecretPrompt = func(display string) (string, error) { seen = display; return " secret ", nil }
-	if got := c.Prompt("API key", "old", true); got != "secret" || !strings.Contains(seen, "API key [old]") {
-		t.Fatalf("got %q seen %q", got, seen)
-	}
-	c.MaskedSecretPrompt = func(string) (string, error) { return "", nil }
-	if got := c.Prompt("API key", "old", true); got != "old" {
-		t.Fatalf("empty got %q", got)
-	}
-	c.MaskedSecretPrompt = func(string) (string, error) { return "", ErrInterrupt }
-	if got := c.Prompt("API key", "old", true); got != "" {
+	if got := keysRig("\x03").c.Prompt("Name", "x", false); got != "" {
 		t.Fatalf("interrupt got %q", got)
 	}
-}
-
-func TestPromptYesNo(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	ctx := context.Background()
-	for input, want := range map[string]bool{"\n": true, "n\n": false, "yes\n": true, "nope\n": false} {
-		c, _ := testConsole(input, nil)
-		c.StdinTTY = func() bool { return false }
-		if got := c.PromptYesNo(ctx, "Continue?", true); got != want {
-			t.Fatalf("%q got %v", input, got)
-		}
-	}
-}
-
-func TestScopedNumberedInputHandlesNavigationKeys(t *testing.T) {
-	h := func(ev MenuNavigationEvent, _ ...any) (*MenuNavigationStart, error) {
-		return &MenuNavigationStart{AllowBack: true}, nil
-	}
-	ctx := context.WithValue(WithMenuNavigationHandler(context.Background(), h), numberedBackKey{}, true)
-	for seq, want := range map[string]numberedNav{"\x1b[27u": navCancelKey, "\x1b[D": navBackKey, "\x1b[99;5u": navCancelKey} {
-		c, _ := testConsole(seq, nil)
-		if _, nav, err := c.readNumberedInput(ctx, "Choice: "); err != nil || nav != want {
-			t.Fatalf("%q nav %v err %v", seq, nav, err)
-		}
-	}
-}
-
-func TestNumberedFallbacks(t *testing.T) {
-	ctx := context.Background()
-	c, out := testConsole("2\n\n", nil)
-	c.StdinTTY = func() bool { return false }
-	res, err := c.numberedFallback(ctx, "Tools", []string{"a", "b"}, map[int]bool{0: true}, map[int]bool{}, func(s map[int]bool) string { return fmt.Sprintf("%d on", len(s)) })
-	if err != nil || !reflect.DeepEqual(res, map[int]bool{0: true, 1: true}) || !strings.Contains(out.String(), "2 on") {
-		t.Fatalf("checklist %v %v", res, err)
-	}
-	c, _ = testConsole("9\n", nil)
-	if res, _ := c.radioNumberedFallback(ctx, "Pick", items("a", "b"), 1, -1, map[int]string{0: "Head"}); res != 1 {
-		t.Fatalf("radio out of range %v", res)
-	}
-	c, _ = testConsole("x\n", nil)
-	if res, _ := c.radioNumberedFallback(ctx, "Pick", items("a", "b"), 1, -1, nil); res != -1 {
-		t.Fatalf("radio junk %v", res)
-	}
-	c, _ = testConsole("2\n", nil)
-	if res, _ := c.numberedSingleFallback(ctx, "Pick", []string{"a", "Cancel"}, 1); res != nil {
-		t.Fatalf("single cancel row %v", res)
-	}
-	c, _ = testConsole("١\n", nil)
-	if res, _ := c.numberedSingleFallback(ctx, "Pick", []string{"a", "Cancel"}, 1); res != 0 {
-		t.Fatalf("arabic digit %v", res)
-	}
-}
-
-func TestChecklistAndSingleSelectThroughScreen(t *testing.T) {
-	ctx := context.Background()
-	c, _ := testConsole("", &fakeScreen{keys: []int{' ', KeyDown, ' ', 10}})
-	got, err := c.CursesChecklist(ctx, "Tools", []string{"a", "b", "c"}, map[int]bool{0: true}, nil, func(s map[int]bool) string { return "status" })
-	if err != nil || !reflect.DeepEqual(got, map[int]bool{1: true}) {
-		t.Fatalf("checklist %v %v", got, err)
-	}
-	c, _ = testConsole("", &fakeScreen{keys: []int{'q'}})
-	got, _ = c.CursesChecklist(ctx, "Tools", []string{"a"}, map[int]bool{0: true}, nil, nil)
-	if !reflect.DeepEqual(got, map[int]bool{0: true}) {
-		t.Fatalf("cancel %v", got)
-	}
-	c, _ = testConsole("", &fakeScreen{keys: []int{KeyDown, KeyDown, 10}})
-	if n, ok, err := c.CursesSingleSelect(ctx, "Pick", []string{"a", "b"}, 0, "Cancel", false); ok || err != nil || n != 0 {
-		t.Fatalf("cancel row %d %v %v", n, ok, err)
-	}
-	c, _ = testConsole("", &fakeScreen{keys: []int{KeyUp, KeyUp, 10}})
-	if n, ok, _ := c.CursesSingleSelect(ctx, "Pick", []string{"a", "b"}, 0, "Cancel", false); !ok || n != 1 {
-		t.Fatalf("wrap %d %v", n, ok)
-	}
-	c, _ = testConsole("2\n", &fakeScreen{initErr: errors.New("curs_set() returned ERR")})
-	if n, ok, _ := c.CursesSingleSelect(ctx, "Pick", []string{"a", "b"}, 0, "Cancel", false); !ok || n != 1 {
-		t.Fatalf("init failure fallback %d %v", n, ok)
-	}
-}
-
-func TestHeadingsAreDrawnButNeverSelected(t *testing.T) {
-	f := &fakeScreen{keys: []int{KeyDown, 10}}
-	c, _ := testConsole("", f)
-	got, err := c.CursesRadiolist(context.Background(), "Pick", items("a", "b"), 0, RadiolistOptions{Headings: map[int]string{0: "First", 1: "Second"}})
-	if err != nil || got != 1 || !anyRow(f.frames[0], func(r string) bool { return r == "   Second" }) {
-		t.Fatalf("got %d err %v frame %v", got, err, f.frames[0])
+	if !keysRig("yes\r").c.PromptYesNo(context.Background(), "Go", false) || keysRig("\r").c.PromptYesNo(context.Background(), "Go", false) {
+		t.Fatal("yes no answers")
 	}
 }
 
 func TestFlushStdinIsTTYGated(t *testing.T) {
-	c, _ := testConsole("leftover", nil)
-	c.StdinTTY = func() bool { return false }
+	c := &Console{In: strings.NewReader("leftover\n"), Out: &bytes.Buffer{}}
 	c.FlushStdin()
 	if got, _ := c.input(""); got != "leftover" {
 		t.Fatalf("non tty flush consumed %q", got)
-	}
-}
-
-// Writer feeding a terminal emulator that snapshots the visible rows after every synchronized frame
-type emulatorOut struct {
-	emu    *term.Emulator
-	frames [][]string
-}
-
-func (e *emulatorOut) Write(p []byte) (int, error) {
-	e.emu.Write(p)
-	if bytes.Contains(p, []byte("\x1b[?2026l")) {
-		_, h := e.emu.Size()
-		rows := make([]string, h)
-		for y := 0; y < h; y++ {
-			line, _ := e.emu.Row(e.emu.Base() + uint64(y))
-			var b strings.Builder
-			for _, cell := range line.Cells {
-				b.WriteString(cell.Content)
-			}
-			rows[y] = strings.TrimRight(b.String(), " ")
-		}
-		e.frames = append(e.frames, rows)
-	}
-	return len(p), nil
-}
-
-func TestFullScreenRendererDrawsAndReadsKeypadKeys(t *testing.T) {
-	emu := term.New(60, 12, term.Options{})
-	out := &emulatorOut{emu: emu}
-	down := string(emu.Key(term.Key{Code: uv.KeyDown}))
-	c := &Console{In: strings.NewReader(""), Out: out,
-		Getenv: func(k string) (string, bool) {
-			return map[string]string{"TERM": "xterm-256color", "ESCDELAY": "25"}[k], k == "TERM" || k == "ESCDELAY"
-		},
-		StdinTTY: func() bool { return true }, StdoutTTY: func() bool { return true },
-		TermSize: func() (int, int, error) { return 12, 60, nil },
-	}
-	c.In = strings.NewReader(down + "\x1bOB" + "\r")
-	got, err := c.CursesRadiolist(context.Background(), "Pick a model", items("alpha", "beta", "gamma"), 0, RadiolistOptions{Searchable: true})
-	if err != nil || got != 2 {
-		t.Fatalf("got %d err %v", got, err)
-	}
-	first := out.frames[0]
-	if first[0] != "Pick a model" || !strings.Contains(first[1], "/ search") || first[3] != " → (●) alpha" || first[4] != "   (○) beta" {
-		t.Fatalf("first frame %q", first)
-	}
-	if last := out.frames[len(out.frames)-1]; last[5] != " → (○) gamma" {
-		t.Fatalf("last frame %q", last)
-	}
-	if emu.AltScreen() {
-		t.Fatal("alternate screen left on")
-	}
-}
-
-func TestMissingTerminfoFallsBackToNumberedList(t *testing.T) {
-	c, out := testConsole("2\n", nil)
-	c.OpenScreen = nil
-	got, err := c.CursesRadiolist(context.Background(), "Pick", items("a", "b"), 0, RadiolistOptions{})
-	if err != nil || got != 1 || !strings.Contains(out.String(), "Select by number") {
-		t.Fatalf("got %d err %v out %q", got, err, out.String())
-	}
-}
-
-func TestInitPairsHidesTheCursorAndMapsCursesColors(t *testing.T) {
-	var out bytes.Buffer
-	c := &Console{Out: &out}
-	ti := &terminfo.Terminfo{Strings: map[int][]byte{terminfo.CursorInvisible: []byte("\x1b[?25l"), terminfo.SetAForeground: []byte("\x1b[3%p1%dm")}, Nums: map[int]int{}}
-	s := &ansiScreen{c: c, ti: ti, colors: 256, pairs: map[int]string{}}
-	if err := s.InitPairs(map[int]int{1: ColorGreen, 3: ColorCyan, 4: 8, 5: 200}); err != nil {
-		t.Fatal(err)
-	}
-	if out.String() != "\x1b[?25l" || s.pairs[1] != "32" || s.pairs[3] != "36" || s.pairs[4] != "90" || s.pairs[5] != "38;5;200" || s.Colors() != 256 {
-		t.Fatalf("out %q pairs %v", out.String(), s.pairs)
-	}
-	bare := &ansiScreen{c: c, ti: &terminfo.Terminfo{Strings: map[int][]byte{}, Nums: map[int]int{}}, pairs: map[int]string{}}
-	if err := bare.InitPairs(map[int]int{1: ColorGreen}); err == nil || err.Error() != "curs_set() returned ERR" {
-		t.Fatalf("limited terminal %v", err)
-	}
-	opened := 0
-	c.OpenScreen = func() (Screen, func(), error) { opened++; return &fakeScreen{}, func() {}, nil }
-	if scr, _, err := c.OpenFullScreen(); err != nil || scr == nil || opened != 1 {
-		t.Fatalf("injected opener %v %d", err, opened)
 	}
 }

@@ -51,6 +51,7 @@ func init() {
 	bundledPluginPorts["arcee"] = arceePluginProfiles
 	bundledPluginPorts["stepfun"] = stepfunPluginProfiles
 	bundledPluginPorts["openai-codex"] = openaiCodexPluginProfiles
+	bundledPluginPorts["github-copilot"] = copilotPluginProfiles
 }
 
 // Profiles of a ported bundled model provider plugin directory in register order, nil for a dir still read from rows

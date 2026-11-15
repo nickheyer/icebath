@@ -2085,7 +2085,7 @@ func getSecret(ctx context.Context, env *tools.Env, name string) (string, bool, 
 	if v, ok := os.LookupEnv(name); ok {
 		fallback = &v
 	}
-	p, err := tools.ResolvePassthroughValue(env, name, fallback)
+	p, err := tools.ResolvePassthroughValue(ctx, env, name, fallback)
 	if err != nil {
 		return "", false, err
 	}

@@ -22,6 +22,8 @@ const nativeAuditEnv = "ICEBATH_TEST_AUDIT"
 
 var nativeAuditMu sync.Mutex
 
+func init() { siteHooks[nativeAuditSite] = installNativeAudit }
+
 // Appends one record of this process to the audit file
 func nativeAuditRecord(kind string, fields map[string]any) {
 	fields["kind"], fields["pid"] = kind, os.Getpid()

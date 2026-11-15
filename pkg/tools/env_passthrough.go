@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -329,35 +330,145 @@ func isMultiplexActive(env *Env) bool {
 	return multiplexActiveFlag.Load() || sessionFlag(env, "multiplex", "ICEBATH_MULTIPLEX_ACTIVE")
 }
 
-// ResolvePassthroughValue resolves an allowlisted variable through the profile secret scope
-func ResolvePassthroughValue(env *Env, name string, fallback *string) (*string, error) {
+// Whether one call runs under multiplex semantics, from the process flag, the tool env or the context
+func MultiplexActiveFor(ctx context.Context, env *Env) bool {
+	return isMultiplexActive(env) || (config.IsMultiplexActive != nil && config.IsMultiplexActive(ctx))
+}
+
+// Reader of the secret mapping a context binds, nil when none, installed by pkg/provider
+var BoundSecretScope func(ctx context.Context) map[string]string
+
+// Home the context's bound secret scope was built for, installed by pkg/provider
+var BoundSecretScopeHome func(ctx context.Context) string
+
+// Launch mapping of a body entered before multiplexing began, nil outside one, installed by pkg/provider
+var LaunchBodySecretScope func(ctx context.Context) map[string]string
+
+// Mapping the context binds, read through the installed secret source and else through pkg/provider's own reader
+func contextSecretScope(ctx context.Context) map[string]string {
+	if ProfileSecrets != nil {
+		return ProfileSecrets.CurrentSecretScope(ctx)
+	}
+	if BoundSecretScope != nil {
+		return BoundSecretScope(ctx)
+	}
+	return nil
+}
+
+// Mapping a secret read resolves against with its home, the context's bound scope before the tool env's secrets
+func passthroughScope(ctx context.Context, env *Env) (map[string]string, string, bool) {
+	if scope := contextSecretScope(ctx); scope != nil {
+		scopeHome := ""
+		if BoundSecretScopeHome != nil {
+			scopeHome = BoundSecretScopeHome(ctx)
+		}
+		return scope, scopeHome, true
+	}
+	if env != nil && env.Secrets != nil {
+		return env.Secrets.File(), filepath.Dir(env.Secrets.Path()), true
+	}
+	return nil, "", false
+}
+
+// Whether a scoped miss returns the default rather than the process env, the serves_routed_profile verdict of a call
+func passthroughServesRouted(ctx context.Context, env *Env, scopeHome string) bool {
+	if MultiplexActiveFor(ctx, env) {
+		return true
+	}
+	own := home.Key(home.RoutingProcess())
+	if scopeHome != "" && home.Key(scopeHome) != own {
+		return true
+	}
+	override := home.Override(ctx)
+	return override != "" && home.Key(override) != own
+}
+
+// Value of an allowlisted variable through the bound profile secret scope as hermes resolves it
+func ResolvePassthroughValue(ctx context.Context, env *Env, name string, fallback *string) (*string, error) {
 	global := IsGlobalEnv(name)
 	if global && fallback != nil {
 		return fallback, nil
 	}
-	if global {
-		return processEnvValue(name), nil
-	}
-	multiplex := isMultiplexActive(env)
-	if env == nil || env.Secrets == nil {
-		if multiplex {
-			return nil, ErrUnscopedSecret
+	multiplex := MultiplexActiveFor(ctx, env)
+	scope, scopeHome, bound := passthroughScope(ctx, env)
+	if !bound {
+		if !multiplex {
+			return fallback, nil
 		}
-		return fallback, nil
+		return unscopedMultiplexSecret(ctx, name)
 	}
-	if value, ok := env.Secrets.File()[name]; ok {
+	def := fallback
+	if multiplex {
+		def = nil
+	}
+	if global {
+		return processEnvOr(name, def), nil
+	}
+	if value, ok := scope[name]; ok {
 		return &value, nil
 	}
-	if multiplex {
-		return nil, nil
+	if passthroughServesRouted(ctx, env, scopeHome) {
+		return def, nil
 	}
-	if servesRoutedEnv(env) {
-		return fallback, nil
+	return processEnvOr(name, def), nil
+}
+
+// get_secret of one name through the call's bound scope, the tool env's secrets standing in when the context binds none
+func secretThroughScope(ctx context.Context, env *Env, name string) (*string, error) {
+	if IsGlobalEnv(name) {
+		return processEnvValue(name), nil
 	}
-	if value := processEnvValue(name); value != nil {
-		return value, nil
+	if scope := contextSecretScope(ctx); scope != nil {
+		if value, ok := scope[name]; ok {
+			return &value, nil
+		}
+		scopeHome := ""
+		if BoundSecretScopeHome != nil {
+			scopeHome = BoundSecretScopeHome(ctx)
+		}
+		if passthroughServesRouted(ctx, env, scopeHome) {
+			return nil, nil
+		}
+		return processEnvValue(name), nil
 	}
-	return fallback, nil
+	if env != nil && env.Secrets != nil {
+		return envSecretsValue(ctx, env, name), nil
+	}
+	if MultiplexActiveFor(ctx, env) {
+		return unscopedMultiplexSecret(ctx, name)
+	}
+	return processEnvValue(name), nil
+}
+
+// Value from the tool env's own secrets, a launch profile's mapping holding the process env under its env file
+func envSecretsValue(ctx context.Context, env *Env, name string) *string {
+	if value, ok := env.Secrets.File()[name]; ok {
+		return &value
+	}
+	own := home.Key(home.RoutingProcess())
+	if home.Key(filepath.Dir(env.Secrets.Path())) != own {
+		return nil
+	}
+	if override := home.Override(ctx); override != "" && home.Key(override) != own {
+		return nil
+	}
+	return processEnvValue(name)
+}
+
+// Unscoped read under multiplexing, the launch body mapping when one is bound and the fail closed error otherwise
+func unscopedMultiplexSecret(ctx context.Context, name string) (*string, error) {
+	if IsGlobalEnv(name) {
+		return processEnvValue(name), nil
+	}
+	if LaunchBodySecretScope != nil {
+		if body := LaunchBodySecretScope(ctx); body != nil {
+			if value, ok := body[name]; ok {
+				return &value, nil
+			}
+			return nil, nil
+		}
+	}
+	return nil, ErrUnscopedSecret
 }
 
 // Reports whether the bound secret scope belongs to a profile other than the routing launch home
@@ -374,14 +485,18 @@ func servesRoutedEnv(env *Env) bool {
 	return scopeHome != "" && home.Key(scopeHome) != home.Key(home.RoutingProcess())
 }
 
-// ScopedPassthroughAdditions returns declared names the profile scope supplies but the filtered env lacks
-func ScopedPassthroughAdditions(env *Env, present map[string]bool) map[string]string {
+// Declared names the bound profile scope supplies but the filtered env lacks
+func ScopedPassthroughAdditions(ctx context.Context, env *Env, present map[string]bool) map[string]string {
 	additions := map[string]string{}
-	if env == nil || env.Secrets == nil {
+	names := AllPassthrough(env)
+	if len(names) == 0 {
 		return additions
 	}
-	scope := env.Secrets.File()
-	for name := range AllPassthrough(env) {
+	scope, _, bound := passthroughScope(ctx, env)
+	if !bound || len(scope) == 0 {
+		return additions
+	}
+	for name := range names {
 		if present[name] || IsGlobalEnv(name) {
 			continue
 		}
@@ -416,4 +531,12 @@ func processEnvValue(name string) *string {
 		return nil
 	}
 	return &v
+}
+
+// Process env value of the name, the default when it is unset
+func processEnvOr(name string, def *string) *string {
+	if value := processEnvValue(name); value != nil {
+		return value
+	}
+	return def
 }

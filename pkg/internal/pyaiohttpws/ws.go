@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,8 +35,9 @@ const (
 func (t MsgType) String() string { return strconv.Itoa(int(t)) }
 
 const (
-	closeOK       = 1000
-	closeAbnormal = 1006
+	closeOK            = 1000
+	closeAbnormal      = 1006
+	closeMessageTooBig = 1009
 )
 
 // One received message, Data a string for text, bytes for binary, the close code for close and the error for error
@@ -59,13 +61,33 @@ type Options struct {
 	Header    http.Header
 	// Text aiohttp prints for the ssl argument in a connect error, default when empty
 	SSLLabel string
+	// Message size refused as too big at or over this many bytes, zero for no limit
+	MaxMsgSize int64
 }
 
-// ClientConnectorError of a websocket that could not connect
-type ConnectorError struct{ Text string }
+// ClientConnectorError of a websocket that could not connect, Err the os_error behind it
+type ConnectorError struct {
+	Text string
+	Err  error
+}
 
 func (e *ConnectorError) Error() string      { return e.Text }
 func (e *ConnectorError) PyTypeName() string { return "ClientConnectorError" }
+func (e *ConnectorError) Unwrap() error      { return e.Err }
+
+// WebSocketError of a received message at or over the max_msg_size limit
+type MessageTooBigError struct {
+	Size  int64
+	Limit int64
+}
+
+func (e *MessageTooBigError) Error() string {
+	return fmt.Sprintf("Message size %d exceeds limit %d", e.Size, e.Limit)
+}
+func (e *MessageTooBigError) PyTypeName() string { return "WebSocketError" }
+func (e *MessageTooBigError) PyRepr() string {
+	return fmt.Sprintf("WebSocketError(<WSCloseCode.MESSAGE_TOO_BIG: 1009>, %s)", pyrepr.Repr(e.Error()))
+}
 
 // WSServerHandshakeError of an upgrade the server refused
 type HandshakeError struct {
@@ -97,6 +119,7 @@ type Conn struct {
 	ws           *websocket.Conn
 	heartbeat    time.Duration
 	closeTimeout time.Duration
+	maxMsgSize   int64
 
 	writeMu sync.Mutex
 	mu      sync.Mutex
@@ -180,9 +203,9 @@ func Connect(ctx context.Context, rawURL string, opts Options) (*Conn, error) {
 		if label == "" {
 			label = "default"
 		}
-		return nil, &ConnectorError{Text: fmt.Sprintf("Cannot connect to host %s:%s ssl:%s [%s]", host, port, label, connectReason(err))}
+		return nil, &ConnectorError{Text: fmt.Sprintf("Cannot connect to host %s:%s ssl:%s [%s]", host, port, label, connectReason(err)), Err: err}
 	}
-	c := &Conn{ws: ws, heartbeat: opts.Heartbeat, closeTimeout: opts.CloseTimeout, msgs: make(chan Message, 64),
+	c := &Conn{ws: ws, heartbeat: opts.Heartbeat, closeTimeout: opts.CloseTimeout, maxMsgSize: opts.MaxMsgSize, msgs: make(chan Message, 64),
 		done: make(chan struct{}), quit: make(chan struct{})}
 	if c.closeTimeout == 0 {
 		c.closeTimeout = 10 * time.Second
@@ -232,11 +255,48 @@ func (c *Conn) teardown() {
 	c.ws.Close()
 }
 
+// Next message under the max_msg_size check, a message at or over the limit read out and reported with its size
+func (c *Conn) readMessage() (int, []byte, *MessageTooBigError, error) {
+	if c.maxMsgSize <= 0 {
+		kind, data, err := c.ws.ReadMessage()
+		return kind, data, nil, err
+	}
+	kind, r, err := c.ws.NextReader()
+	if err != nil {
+		return kind, nil, nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(r, c.maxMsgSize))
+	if err != nil {
+		return kind, nil, nil, err
+	}
+	if int64(len(data)) < c.maxMsgSize {
+		return kind, data, nil, nil
+	}
+	rest, err := io.Copy(io.Discard, r)
+	if err != nil {
+		return kind, nil, nil, err
+	}
+	return kind, nil, &MessageTooBigError{Size: int64(len(data)) + rest, Limit: c.maxMsgSize}, nil
+}
+
 // Reads frames until the connection ends, turning the end into its close, closed or error message
 func (c *Conn) readLoop() {
 	defer close(c.done)
 	for {
-		kind, data, err := c.ws.ReadMessage()
+		kind, data, tooBig, err := c.readMessage()
+		if err == nil && tooBig != nil {
+			c.stopHeartbeat()
+			c.mu.Lock()
+			wasClosed := c.closed
+			c.closed, c.code = true, closeMessageTooBig
+			c.mu.Unlock()
+			if !wasClosed {
+				c.writeClose(closeMessageTooBig)
+			}
+			c.finish(Message{Type: Error, Data: tooBig})
+			c.teardown()
+			return
+		}
 		if err == nil {
 			c.resetHeartbeat()
 			if kind == websocket.TextMessage {

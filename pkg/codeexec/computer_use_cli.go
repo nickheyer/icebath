@@ -143,7 +143,7 @@ func cuInstall(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int
 }
 
 // Selected driver, its origin and runtime contract, and dead serve units on Linux
-func cuStatus(_ context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, error) {
+func cuStatus(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, error) {
 	if rc, exited, err := exitIfPluginBackend(cli, false); exited || err != nil {
 		return rc, err
 	}
@@ -157,7 +157,7 @@ func cuStatus(_ context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, e
 		cli.println("  Run: icebath computer-use install")
 		return 1, nil
 	}
-	contract, err := cuaDriverContractStatus(cli.Env, path)
+	contract, err := cuaDriverContractStatus(ctx, cli.Env, path)
 	if err != nil {
 		return 0, err
 	}
@@ -198,7 +198,7 @@ func cuStatus(_ context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, e
 			if u.socket != nil {
 				sock = *u.socket
 			}
-			if l := cuaDaemonListening(cli.Env, path, sock, 3); l != nil && !*l {
+			if l := cuaDaemonListening(ctx, cli.Env, path, sock, 3); l != nil && !*l {
 				where := sock
 				if where == "" {
 					where = "the default socket"
@@ -218,13 +218,13 @@ func cuStatus(_ context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, e
 }
 
 // Health report of the selected backend through its doctor or the cua-driver check matrix
-func cuDoctor(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int, error) {
+func cuDoctor(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int, error) {
 	if rc, exited, err := exitIfPluginBackend(cli, true); exited || err != nil {
 		return rc, err
 	}
 	include := append([]string{}, ns.Include...)
 	skip := append([]string{}, ns.Skip...)
-	return runComputerUseDoctor(cli.Env, cli.Console.Out, cli.Stderr, nil, include, skip, ns.JSON, nil)
+	return runComputerUseDoctor(ctx, cli.Env, cli.Console.Out, cli.Stderr, nil, include, skip, ns.JSON, nil)
 }
 
 // Field of a status check row, dict or ordered object alike
@@ -250,13 +250,13 @@ func cuGrantGlyph(v any) string {
 }
 
 // Grant state of the selected backend as JSON or the human readable checklist
-func cuPermsStatus(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int, error) {
+func cuPermsStatus(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int, error) {
 	if !ns.JSON {
 		if rc, exited, err := exitIfPluginBackend(cli, false); exited || err != nil {
 			return rc, err
 		}
 	}
-	st, err := cliComputerUseStatus(cli.Env, nil)
+	st, err := cliComputerUseStatus(ctx, cli.Env, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -318,11 +318,11 @@ func cuPermsStatus(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (
 }
 
 // Opens the grant dialog attributed to the driver process
-func cuPermsGrant(_ context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, error) {
+func cuPermsGrant(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int, error) {
 	if rc, exited, err := exitIfPluginBackend(cli, false); exited || err != nil {
 		return rc, err
 	}
-	return requestPermissionsGrant(cli.Env, nil)
+	return requestPermissionsGrant(ctx, cli.Env, nil)
 }
 
 // Dispatcher of the computer-use tree, help for a missing action at the parser that lacks it

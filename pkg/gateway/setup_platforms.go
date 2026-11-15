@@ -276,15 +276,21 @@ func telegramAllowlistNudge(ctx context.Context) error {
 
 // Token and setup result, the automatic flow first when chosen and the manual paste otherwise
 func obtainTelegramToken(ctx context.Context) (string, *TelegramBotSetupResult, error) {
-	WizardSetup.Info("How would you like to create your Telegram bot?", nil,
-		"  [1] Automatic (recommended)",
-		"      Scan a QR code → confirm in Telegram → done.",
-		"      No token copy-paste needed.", nil,
-		"  [2] Manual",
-		"      Create a bot via @BotFather yourself and paste the token.", nil)
+	choice, ran, _ := provider.SetupMenuAnswer("How would you like to create your Telegram bot?", []string{
+		"Automatic (recommended) — scan a QR code, confirm in Telegram, no token to paste",
+		"Manual — create a bot via @BotFather yourself and paste the token"}, []string{"1", "2"}, 0)
+	if !ran {
+		WizardSetup.Info("How would you like to create your Telegram bot?", nil,
+			"  [1] Automatic (recommended)",
+			"      Scan a QR code → confirm in Telegram → done.",
+			"      No token copy-paste needed.", nil,
+			"  [2] Manual",
+			"      Create a bot via @BotFather yourself and paste the token.", nil)
+		choice = pystr.Strip(WizardSetup.Prompt("Choice [1/2]", "1", false))
+	}
 	token := ""
 	var result *TelegramBotSetupResult
-	if pystr.Strip(WizardSetup.Prompt("Choice [1/2]", "1", false)) == "1" {
+	if choice == "1" {
 		var err error
 		if result, err = setupTelegramAutoResult(ctx); err != nil {
 			return "", nil, err

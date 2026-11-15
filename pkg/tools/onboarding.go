@@ -78,8 +78,7 @@ func ToolProgressHintCLI() string {
 // Banner shown the first time a legacy OpenClaw directory is found, migrate first and clean up after
 func OpenclawResidueHintCLI() string {
 	return "A legacy OpenClaw directory was detected at ~/.openclaw/.\n" +
-		"To port your config, memory, and skills over to Icebath, run `icebath import-agent openclaw` " +
-		"(from the agent-importers plugin: `icebath plugins install agent-importers`).\n" +
+		"To port your config, memory, and skills over to Icebath, run `icebath import-agent openclaw`.\n" +
 		"If you've already migrated and want to archive the old directory, run `icebath claw cleanup` " +
 		"(renames it to ~/.openclaw.pre-migration — OpenClaw will stop working after this).\n" +
 		"This tip only shows once."

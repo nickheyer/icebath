@@ -66,6 +66,8 @@ type Response struct {
 	Status int
 	Header http.Header
 	Body   []byte
+	// Final URL after redirects, the url raise_for_status names
+	URL string
 }
 
 // HTTPError requests raise_for_status raises for a client or server error status, nil for any other
@@ -163,6 +165,16 @@ func transportFor(base *http.Transport, t Timeout) *http.Transport {
 
 // Send performs one requests call, every transport failure raised as the requests exception it maps to
 func Send(ctx context.Context, base *http.Transport, t Timeout, req *http.Request) (*Response, error) {
+	return sendWith(ctx, base, t, req, checkRedirect)
+}
+
+// SendNoRedirects is Send with allow_redirects False, a redirect answer returned as the response
+func SendNoRedirects(ctx context.Context, base *http.Transport, t Timeout, req *http.Request) (*Response, error) {
+	return sendWith(ctx, base, t, req, func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse })
+}
+
+// One requests call following redirects as redirect decides
+func sendWith(ctx context.Context, base *http.Transport, t Timeout, req *http.Request, redirect func(*http.Request, []*http.Request) error) (*Response, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var at atomic.Int32
@@ -177,7 +189,7 @@ func Send(ctx context.Context, base *http.Transport, t Timeout, req *http.Reques
 	if tr.Proxy != nil {
 		proxy, _ = tr.Proxy(req)
 	}
-	resp, err := (&http.Client{Transport: tr, CheckRedirect: checkRedirect}).Do(req)
+	resp, err := (&http.Client{Transport: tr, CheckRedirect: redirect}).Do(req)
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.Canceled) {
 			return nil, err
@@ -229,7 +241,11 @@ func Send(ctx context.Context, base *http.Transport, t Timeout, req *http.Reques
 			return nil, bodyError(resp, buf.Len(), rerr)
 		}
 	}
-	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: buf.Bytes()}, nil
+	final := req.URL
+	if resp.Request != nil && resp.Request.URL != nil {
+		final = resp.Request.URL
+	}
+	return &Response{Status: resp.StatusCode, Header: resp.Header, Body: buf.Bytes(), URL: final.String()}, nil
 }
 
 var errTooManyRedirects = errors.New("Exceeded 30 redirects.")

@@ -197,18 +197,6 @@ func TestPluginParserAndValidatorOutcomes(t *testing.T) {
 	}
 }
 
-func TestUnknownPlatformThatLeftCoreNamesItsInstallCommand(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	patchChannelDirectory(t, "", nil)
-	_, _, errText := ResolveSendTarget(context.Background(), "homeassistant", "living room", false)
-	if !strings.Contains(errText, "unregistered plugin platform: homeassistant") || !strings.Contains(errText, "`icebath plugins install homeassistant`") {
-		t.Fatal(errText)
-	}
-	if got := UnknownPlatformError(context.Background(), "nosuchplatform"); got != "Unknown or unregistered plugin platform: nosuchplatform" {
-		t.Fatal(got)
-	}
-}
-
 func TestParseTargetRefExportedMatchesRules(t *testing.T) {
 	chat, thread, explicit := ParseTargetRef(context.Background(), "photon", "+15551234567")
 	if !explicit || chat == nil || *chat != "+15551234567" || thread != nil {

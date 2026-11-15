@@ -963,7 +963,7 @@ func toolsRouter() *APIRouter {
 		Params: []Param{optProfile},
 		Handle: func(ctx context.Context, c *Call) (any, error) {
 			return scopedToThread(ctx, profileQuery(c), func(sctx context.Context) (any, error) {
-				return codeexec.ComputerUseStatus(toolsRouteEnv(sctx, nil))
+				return codeexec.ComputerUseStatus(sctx, toolsRouteEnv(sctx, nil))
 			})
 		}})
 	r.Post("/api/tools/computer-use/permissions/grant", &Endpoint{Name: "grant_computer_use_permissions",

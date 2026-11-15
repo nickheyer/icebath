@@ -96,6 +96,11 @@ func TestSessionContextPredicates(t *testing.T) {
 		t.Fatal("cron is never a gateway context")
 	}
 	env.Values.Delete("session.cron")
+	RestoreSessionVar(env, "ICEBATH_CRON_SESSION", "1", true)
+	if IsGatewayApprovalContext(env) || !isCronApprovalContext(env) {
+		t.Fatal("the session variable a cron run binds marks the cron context")
+	}
+	RestoreSessionVar(env, "ICEBATH_CRON_SESSION", "", false)
 	t.Setenv("ICEBATH_SESSION_KEY", "proc-key")
 	if getCurrentSessionKey(env, "default") != "proc-key" {
 		t.Fatal("process env session key")

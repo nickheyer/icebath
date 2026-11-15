@@ -177,7 +177,7 @@ func connectorsCatalog(ctx context.Context, env *tools.Env, rid any, _ *pydantic
 	client := tools.NewPortalConnectorClient(ctx, env, tools.PortalOptions{})
 	var catalog tools.ConnectorCatalogResponse
 	var err error
-	if tools.ReadNousAccessToken(env) != "" {
+	if tools.ReadNousAccessToken(ctx, env) != "" {
 		catalog, err = client.Catalog()
 	} else {
 		catalog, err = client.PublicCatalog()
@@ -217,7 +217,7 @@ func accountRow(account map[string]any) (map[string]any, error) {
 // The member's Portal accounts, filtered to one connector when asked, none without a bearer
 func connectorsAccounts(ctx context.Context, env *tools.Env, rid any, request *pydantic.Instance) (map[string]any, error) {
 	accounts := []map[string]any{}
-	if tools.ReadNousAccessToken(env) != "" {
+	if tools.ReadNousAccessToken(ctx, env) != "" {
 		listed, err := tools.NewPortalConnectorClient(ctx, env, tools.PortalOptions{}).ListAccounts()
 		if err != nil {
 			return nil, err

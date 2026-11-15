@@ -73,7 +73,7 @@ func pluginsAction(ctx context.Context, cmd *cobra.Command, verb string, args []
 	case "browse":
 		return plugins.CmdSearch(ctx, "", false, out)
 	case "validate":
-		return plugins.CmdValidate(ctx, arg(""), flag("json"), out, errOut)
+		return plugins.CmdValidate(ctx, arg(""), flag("json"), flag("install-deps"), out, errOut)
 	case "update":
 		if name := arg(""); name != "" {
 			if flag("yes") {

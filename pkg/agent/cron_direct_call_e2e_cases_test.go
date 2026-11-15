@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -15,7 +17,6 @@ type e2eStallingWire struct {
 	requestStarted, socketsShutDown chan struct{}
 	startOnce, shutOnce             sync.Once
 	closeCalls                      atomic.Int32
-	timeout                         atomic.Value
 }
 
 func newE2eStallingWire() *e2eStallingWire {
@@ -23,9 +24,6 @@ func newE2eStallingWire() *e2eStallingWire {
 }
 
 func (w *e2eStallingWire) CreateChatCompletion(ctx context.Context, kw map[string]any) (any, error) {
-	if kw["timeout"] != nil {
-		w.timeout.Store(kw["timeout"])
-	}
 	w.startOnce.Do(func() { close(w.requestStarted) })
 	<-w.socketsShutDown
 	return nil, errors.New("ConnectionError: socket shut down")
@@ -49,13 +47,26 @@ func TestE2eCronTurnIsBoundedThroughTheRealAgentRouting(t *testing.T) {
 	openAIClientConstructor = func(map[string]any) (any, error) { return wire, nil }
 	forceCloseTCPSockets = func(any) int { wire.shutDown(); return 1 }
 	t.Cleanup(func() { openAIClientConstructor, forceCloseTCPSockets = prevCtor, prevClose })
+	var timerIntervals []time.Duration
+	t.Cleanup(provider.SwapDirectWatchdogArmForTests(func(interval time.Duration, fire func()) *time.Timer {
+		timerIntervals = append(timerIntervals, interval)
+		timer := time.AfterFunc(time.Hour, fire)
+		go func() {
+			select {
+			case <-wire.requestStarted:
+				timer.Reset(0)
+			case <-t.Context().Done():
+			}
+		}()
+		return timer
+	}))
 	_, err := a.InterruptibleAPICall(context.Background(), map[string]any{"model": a.model, "messages": []any{}})
 	var te *provider.TimeoutPhaseError
 	if !errors.As(err, &te) {
 		t.Fatalf("err %v", err)
 	}
-	if wire.timeout.Load() != 0.3 {
-		t.Fatalf("stale budget reached the wire as %v", wire.timeout.Load())
+	if len(timerIntervals) != 1 || math.Abs(timerIntervals[0].Seconds()-0.3) > 3e-7 {
+		t.Fatalf("watchdog timer intervals %v", timerIntervals)
 	}
 	select {
 	case <-wire.requestStarted:

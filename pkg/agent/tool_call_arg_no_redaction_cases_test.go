@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -24,7 +25,8 @@ func TestPgpasswordPreservedVerbatim(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("tool calls %v", row["tool_calls"])
 	}
-	fn, _ := calls[0].(map[string]any)["function"].(map[string]any)
+	call, _ := pyjson.Dict(calls[0])
+	fn, _ := pyjson.Dict(call["function"])
 	got, _ := fn["arguments"].(string)
 	if got != args {
 		t.Fatalf("arguments %q want %q", got, args)

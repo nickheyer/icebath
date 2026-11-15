@@ -477,10 +477,11 @@ func queuePreCommand(ctx context.Context, a *SessionAuthority, ref SessionRef, c
 	sessionKey, platform := ref.SessionID, "cli"
 	fire := func() {
 		scoped := profileRuntimeScope(base, a.ProfileID, true)
-		env := &tools.Env{}
-		if current := tools.ToolEnvFrom(scoped); current != nil {
-			env = tools.CopySessionContext(current)
+		var current *tools.Env
+		if bound := tools.ToolEnvFrom(scoped); bound != nil {
+			current = tools.CopySessionContext(bound)
 		}
+		env := tools.EnvForProfileHome(scoped, current, home.Dir(scoped))
 		restore := tools.ScopedSessionKey(env, live.Route)
 		defer restore()
 		plugins.FirePreCommandHook(tools.WithToolEnv(scoped, env), "cli", canonical, alias, arg, &sessionKey, &platform)

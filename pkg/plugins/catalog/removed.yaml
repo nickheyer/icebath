@@ -10,3 +10,9 @@ removed:
 - name: or-picker
   reason: "Folded into openrouter-picker. Installing the provider alone left the picker broken. Install openrouter-picker."
   date: "2026-09-28"
+- name: github-copilot
+  reason: "Built into icebath: the copilot and copilot-acp providers ship with icebath itself, so there is nothing to install. Uninstall this copy; your Copilot logins and settings keep working."
+  date: "2026-11-15"
+- name: mcp-serve
+  reason: "Built into icebath: `icebath mcp-serve` ships with icebath itself, so there is nothing to install. Uninstall this copy; MCP client configs with args [\"mcp-serve\"] keep working."
+  date: "2026-11-15"

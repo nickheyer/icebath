@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -378,9 +379,9 @@ func (s *Store) runJobScript(ctx context.Context, scriptPath, workdir string, ca
 	return ok, output, nil
 }
 
-// Tool environment of the store home, flagged multiplex when the fire runs under multiplex semantics
+// Tool environment of the store home bound to its own profile secrets, flagged multiplex under multiplex semantics
 func (s *Store) scriptToolEnv(ctx context.Context) *tools.Env {
-	env := &tools.Env{Home: s.Home(), Values: &sync.Map{}}
+	env := &tools.Env{Home: s.Home(), Secrets: config.NewSecrets(s.Home()), Values: &sync.Map{}}
 	if provider.IsMultiplexActive(ctx) {
 		env.Values.Store("session.multiplex", true)
 	}

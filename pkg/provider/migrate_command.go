@@ -30,7 +30,7 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 		}
 		return 0, nil
 	case migrateType == "":
-		return MigrateFromAgents(ctx, h, "", nil)
+		return MigrateFromAgents(ctx, h, "", AgentImportOptions{})
 	case IsImportSourceName(migrateType):
 		return cmdMigrateAgent(ctx, h, ns)
 	}
@@ -38,29 +38,18 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 	return 2, nil
 }
 
-// Flags of icebath migrate <agent> forwarded to icebath import-agent <agent>, as dest and flag
-var agentImportFlags = [][2]string{{"dry_run", "--dry-run"}, {"overwrite", "--overwrite"}, {"yes", "--yes"},
-	{"activate_routines", "--activate-routines"}, {"migrate_secrets", "--migrate-secrets"}}
-
-// Installs the agent-importers plugin when missing, then runs its import for the named agent with the flags given
+// Runs the native import for the named agent with the icebath migrate <agent> flags
 func cmdMigrateAgent(ctx context.Context, h string, ns map[string]any) (int, error) {
-	var extra []string
-	for _, pair := range agentImportFlags {
-		if nsFlag(ns, pair[0]) {
-			extra = append(extra, pair[1])
-		}
-	}
+	opts := AgentImportOptions{DryRun: nsFlag(ns, "dry_run"), Overwrite: nsFlag(ns, "overwrite"), Yes: nsFlag(ns, "yes"),
+		ActivateRoutines: nsFlag(ns, "activate_routines"), MigrateSecrets: nsFlag(ns, "migrate_secrets"), Bot: nsStringsOf(ns, "bot")}
 	if pyrepr.Truthy(ns["source"]) {
-		extra = append(extra, "--source", expandUserPath(pyrepr.Str(ns["source"])))
-	}
-	for _, name := range nsStringsOf(ns, "bot") {
-		extra = append(extra, "--bot", name)
+		opts.Source = expandUserPath(pyrepr.Str(ns["source"]))
 	}
 	agent := pyrepr.Str(ns["migrate_agent"])
 	if !pyrepr.Truthy(ns["migrate_agent"]) {
 		agent = pyrepr.Str(ns["migrate_type"])
 	}
-	return MigrateFromAgents(ctx, h, agent, extra)
+	return MigrateFromAgents(ctx, h, agent, opts)
 }
 
 // Prints a red cross failure line on stderr and returns exit 1

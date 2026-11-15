@@ -79,27 +79,6 @@ func mkPluginDir(t *testing.T, h, plugin string) {
 	}
 }
 
-func TestMigrateHomeInstallsTheCatalogPluginOnce(t *testing.T) {
-	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n", "")
-	var calls, said []string
-	install := func(name string) (map[string]any, error) {
-		calls = append(calls, name)
-		mkPluginDir(t, h, name)
-		return map[string]any{"ok": true}, nil
-	}
-	say := func(m string) { said = append(said, m) }
-	if got := MigrateLeftCoreHome(context.Background(), h, install, say, false); len(got) != 1 || got[0] != "homeassistant" {
-		t.Fatalf("installed %v", got)
-	}
-	if len(calls) != 1 || !strings.Contains(said[0], "\u2713 Home Assistant moved out of core") {
-		t.Fatalf("calls %v said %v", calls, said)
-	}
-	said = nil
-	if got := MigrateLeftCoreHome(context.Background(), h, install, say, false); len(got) != 0 || len(calls) != 1 || len(said) != 0 {
-		t.Fatalf("second pass installed %v calls %v said %v", got, calls, said)
-	}
-}
-
 func TestLeftCoreMigrationKeepsAToolsetOffWhereCoreHadItOff(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n",
 		"platform_toolsets:\n  telegram: [web, terminal, file]\n  discord: [icebath-discord]\n  slack: [web, homeassistant]\n")
@@ -114,18 +93,6 @@ func TestLeftCoreMigrationKeepsAToolsetOffWhereCoreHadItOff(t *testing.T) {
 	want := map[string]bool{"telegram": true, "webhook": true, "acp": true}
 	if len(off) != len(want) || !off["telegram"] || !off["webhook"] || !off["acp"] {
 		t.Fatalf("homeassistant off for %v, want %v", off, want)
-	}
-}
-
-func TestMigrateHomeReportsAFailedInstallWithTheCommand(t *testing.T) {
-	h := leftCoreHome(t, t.TempDir(), "home", "HASS_TOKEN=abc\n", "")
-	var said []string
-	got := MigrateLeftCoreHome(context.Background(), h, func(string) (map[string]any, error) {
-		return map[string]any{"ok": false, "error": "network down"}, nil
-	}, func(m string) { said = append(said, m) }, false)
-	if len(got) != 0 || !strings.Contains(said[0], "could not be installed automatically: network down") ||
-		!strings.Contains(said[0], "plugins install homeassistant") {
-		t.Fatalf("installed %v said %v", got, said)
 	}
 }
 
@@ -216,133 +183,6 @@ func TestLeftCoreReplacedToolsetsTurnOffEverywhere(t *testing.T) {
 	leftCoreTurnOffReplaced(cfg, f)
 	if got := pyStrList(anyMap(cfg["agent"])["disabled_toolsets"].([]any)); strings.Join(got, ",") != "browser,camofox" {
 		t.Fatalf("an already disabled browser disables camofox too, got %v", got)
-	}
-}
-
-func TestSpotifyInUseIsAStoredLoginOrTheToolset(t *testing.T) {
-	cases := []struct {
-		auth, cfg string
-		inUse     bool
-	}{
-		{`{"providers": {"spotify": {"refresh_token": "r"}}}`, "", true},
-		{`{"providers": {"spotify": {"access_token": "a"}}}`, "", true},
-		{"", "platform_toolsets:\n  cli: [icebath-cli, spotify]\n", true},
-		{`{"providers": {"spotify": {"client_id": "only-the-app"}}}`, "", false},
-		{`{"providers": {"nous": {"access_token": "a"}}}`, "platform_toolsets:\n  cli: [icebath-cli]\n", false},
-	}
-	for i, c := range cases {
-		h := leftCoreHome(t, t.TempDir(), "home", "", c.cfg)
-		if c.auth != "" {
-			writeLeftCoreFile(t, filepath.Join(h, "auth.json"), c.auth)
-		}
-		if got := spotifyInUse(h, false); got != c.inUse {
-			t.Fatalf("case %d in use %v", i, got)
-		}
-	}
-}
-
-func TestOldSpotifyCommandsPointAtThePlugin(t *testing.T) {
-	h, ctx := leftCoreProfileHome(t)
-	hint := MovedCommandHint(ctx, "icebath auth", "spotify", "status")
-	if !strings.Contains(hint, "`icebath auth status spotify` is now `icebath spotify status`") || !strings.Contains(hint, "plugins install spotify") {
-		t.Fatalf("auth hint %q", hint)
-	}
-	if !strings.Contains(MovedCommandHint(ctx, "icebath", "spotify", ""), "plugins install spotify") {
-		t.Fatal("bare command names the install")
-	}
-	mkPluginDir(t, h, "spotify")
-	if !strings.Contains(MovedCommandHint(ctx, "icebath", "spotify", ""), "plugins enable spotify") {
-		t.Fatal("installed but disabled names the enable command")
-	}
-	if MovedCommandHint(ctx, "icebath", "honcho", "") != "" {
-		t.Fatal("honcho never left core through this table")
-	}
-}
-
-func TestLeftCoreOldMCPServeSpellingNamesThePluginCommand(t *testing.T) {
-	h, ctx := leftCoreProfileHome(t)
-	hint := MovedCommandHint(ctx, "icebath mcp", "serve", "")
-	if !strings.Contains(hint, "`icebath mcp serve` is now `icebath mcp-serve`") || !strings.Contains(hint, "plugins install mcp-serve") {
-		t.Fatalf("hint %q", hint)
-	}
-	mkPluginDir(t, h, "mcp-serve")
-	hint = MovedCommandHint(ctx, "icebath mcp", "serve", "")
-	if !strings.Contains(hint, "is now `icebath mcp-serve`") || strings.Contains(hint, "install") {
-		t.Fatalf("installed hint %q", hint)
-	}
-	if got := MovedCommandHint(ctx, "icebath", "claw", ""); !strings.HasPrefix(got, "`icebath claw` moved out of core into the 'agent-importers' plugin") {
-		t.Fatalf("old cli hint %q", got)
-	}
-}
-
-func TestLangfuseInUseIsTheBundledPluginEnabled(t *testing.T) {
-	cases := []struct {
-		cfg, managed string
-		inUse        bool
-	}{
-		{"plugins:\n  enabled: [observability/langfuse]\n", "", true},
-		{"plugins:\n  enabled: [langfuse]\n", "", true},
-		{"plugins:\n  enabled: [observability/langfuse]\n  disabled: [langfuse]\n", "", false},
-		{"plugins:\n  enabled: [other]\n", "", false},
-		{"", "", false},
-		{"", "plugins:\n  enabled: [observability/langfuse]\n", true},
-	}
-	for i, c := range cases {
-		root := t.TempDir()
-		h := leftCoreHome(t, root, "home", "ICEBATH_LANGFUSE_PUBLIC_KEY=pk-lf-x\nICEBATH_LANGFUSE_SECRET_KEY=sk-lf-x\n", c.cfg)
-		managed := filepath.Join(root, "managed")
-		if err := os.MkdirAll(managed, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if c.managed != "" {
-			writeLeftCoreFile(t, filepath.Join(managed, "config.yaml"), c.managed)
-		}
-		t.Setenv(config.EnvManagedDir, managed)
-		config.InvalidateManagedCache()
-		if got := langfuseInUse(h, false); got != c.inUse {
-			t.Fatalf("case %d in use %v", i, got)
-		}
-	}
-	config.InvalidateManagedCache()
-}
-
-func TestLeftCoreOldLangfusePluginKeyKeepsNamingTheCatalogPlugin(t *testing.T) {
-	_, ctx := leftCoreProfileHome(t)
-	for _, name := range []string{"observability/langfuse", "langfuse"} {
-		msg := MovedPluginHint(ctx, name)
-		if !strings.Contains(msg, "moved out of core into the 'langfuse' plugin") || !strings.Contains(msg, "icebath -p work plugins install langfuse") {
-			t.Fatalf("%s hint %q", name, msg)
-		}
-	}
-	if MovedPluginHint(ctx, "nonexistent") != "" {
-		t.Fatal("unknown plugin names nothing")
-	}
-	if LegacyPluginAlias("observability/langfuse") != "langfuse" || !LegacyPluginKeys("langfuse")["observability/langfuse"] {
-		t.Fatal("bundled key aliases the catalog plugin")
-	}
-}
-
-func TestLeftCoreProviderInstallHintNamesInstallEnableOrUpdate(t *testing.T) {
-	h, ctx := leftCoreProfileHome(t)
-	if ProviderInstallHint(ctx, "openrouter") != "" {
-		t.Fatal("openrouter never left core")
-	}
-	want := "GitHub Copilot moved out of core into the 'github-copilot' plugin: install it with `icebath -p work plugins install github-copilot`."
-	if got := ProviderInstallHint(ctx, " Copilot "); got != want {
-		t.Fatalf("absent %q", got)
-	}
-	mkPluginDir(t, h, "github-copilot")
-	writeLeftCoreFile(t, filepath.Join(h, "config.yaml"), "plugins:\n  disabled: [github-copilot]\n")
-	if got := ProviderInstallHint(ctx, "copilot-acp"); !strings.HasSuffix(got, "installed but disabled: run `icebath -p work plugins enable github-copilot`.") {
-		t.Fatalf("disabled %q", got)
-	}
-	writeLeftCoreFile(t, filepath.Join(h, "config.yaml"), "{}\n")
-	withPluginHooks(t, func(hk *PluginManagerHooks) {
-		hk.LoadError = func(plugin string) string { return "ImportError: no module named x" }
-	})
-	got := ProviderInstallHint(ctx, "github")
-	if !strings.Contains(got, "installed but failed to load (ImportError: no module named x): run `icebath -p work plugins update github-copilot`") {
-		t.Fatalf("failed load %q", got)
 	}
 }
 
@@ -486,24 +326,6 @@ func TestLeftCoreRecoverProviderStopsBeforeAnyReadForOtherNames(t *testing.T) {
 	recoverLeftCoreProvider(context.Background(), h, "copilot")
 	if _, err := os.Stat(leftCoreNoticeFile(h)); !os.IsNotExist(err) {
 		t.Fatal("no notice is kept for a provider that needs no recovery")
-	}
-}
-
-func TestLeftCoreSingularityAndImportsInUseFromTheirConfig(t *testing.T) {
-	h := leftCoreHome(t, t.TempDir(), "home", "", "terminal:\n  backend: Singularity\n")
-	if !singularityInUse(h, false) {
-		t.Fatal("terminal.backend selects singularity")
-	}
-	h = leftCoreHome(t, t.TempDir(), "home", "", "terminal:\n  backend: ''\n  env_type: singularity\n")
-	if !singularityInUse(h, false) {
-		t.Fatal("legacy env_type selects singularity")
-	}
-	if agentImportsInUse(h, false) {
-		t.Fatal("no import-sync.json, no use")
-	}
-	writeLeftCoreFile(t, filepath.Join(h, "import-sync.json"), "{}")
-	if !agentImportsInUse(h, false) {
-		t.Fatal("a registered sync source is use")
 	}
 }
 

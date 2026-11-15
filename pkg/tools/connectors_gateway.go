@@ -750,7 +750,7 @@ func ManagedGatewayAuthHeaders(ctx context.Context, env *Env, raw string) (map[s
 	if !IsManagedNousGatewayURL(raw) {
 		return map[string]string{}, nil
 	}
-	token := readNousAccessToken(env)
+	token := readScopedNousAccessToken(ctx, env)
 	if token == "" {
 		return map[string]string{}, nil
 	}

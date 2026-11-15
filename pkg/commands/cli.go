@@ -197,6 +197,7 @@ func NewCLI() *CLI {
 	c.addTreeB(root)
 	c.addTreeC(root)
 	c.addPM(root)
+	c.addMCPServe(root)
 	c.bindMCP()
 	c.bindWebhook()
 	c.bindMoA()

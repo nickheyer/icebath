@@ -82,33 +82,3 @@ func TestGateManifestLogsTheHermesMessages(t *testing.T) {
 	}
 }
 
-// test_left_core_migration.py test_old_langfuse_plugin_key_keeps_naming_the_catalog_plugin, the plugins half
-func TestOldLangfusePluginKeyKeepsNamingTheCatalogPlugin(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	for _, name := range []string{"observability/langfuse", "langfuse"} {
-		msg := unknownPluginMessage(name, false)
-		if !strings.Contains(msg, "moved out of core into the 'langfuse' plugin") || !strings.Contains(msg, "icebath plugins install langfuse") {
-			t.Fatalf("%s message %q", name, msg)
-		}
-	}
-	if strings.Contains(unknownPluginMessage("nonexistent", false), "moved out of core") {
-		t.Fatal("an unknown plugin names the moved plugin")
-	}
-	dir := filepath.Join(h, "plugins", "langfuse")
-	writeTree(t, dir, map[string]string{"plugin.yaml": "name: langfuse\nversion: 2.0.0\n", "__init__.py": "def register(ctx):\n    pass\n"})
-	entry, err := FindPluginEntry(h, "observability/langfuse")
-	if err != nil || entry == nil || entry.Key != "langfuse" {
-		t.Fatalf("old key entry = %+v %v", entry, err)
-	}
-	mf := &Manifest{Name: "langfuse", Source: "user", Path: dir, Key: "langfuse"}
-	if g := GateManifest(h, mf, map[string]bool{}, map[string]bool{"observability/langfuse": true}, true); g.Action != "load" {
-		t.Fatalf("old key enabled gate = %+v", g)
-	}
-	if g := GateManifest(h, mf, map[string]bool{"observability/langfuse": true}, map[string]bool{"langfuse": true}, true); g.Error != InBothLists {
-		t.Fatalf("old key disabled, new key enabled gate = %+v", g)
-	}
-	if g := GateManifest(h, mf, map[string]bool{"observability/langfuse": true}, nil, false); g.Error != "disabled via config" {
-		t.Fatalf("old key disabled gate = %+v", g)
-	}
-}

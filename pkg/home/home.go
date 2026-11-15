@@ -108,8 +108,23 @@ func PatchUserHome(dir string) (restore func()) {
 	return func() { userHomeLookup.Store(prev) }
 }
 
+// Directory standing in for the parent of the native platform default home, nil while the real one serves
+var platformDefaultParent atomic.Pointer[string]
+
+// Serves the platform default home under dir keeping its name, as hermes test isolation does, returning the restore
+func PatchPlatformDefault(dir string) (restore func()) {
+	prev := platformDefaultParent.Swap(&dir)
+	return func() { platformDefaultParent.Store(prev) }
+}
+
 // Platform default home of the process, the Path.home RuntimeError when no user home is known
-func platformDefaultHome() (string, error) { return platformDefault(os.Getenv, UserHome) }
+func platformDefaultHome() (string, error) {
+	native, err := platformDefault(os.Getenv, UserHome)
+	if parent := platformDefaultParent.Load(); parent != nil && err == nil && userHomeLookup.Load() == nil {
+		return filepath.Join(*parent, filepath.Base(native)), nil
+	}
+	return native, err
+}
 
 // Platform default home of the running process, panicking with the RuntimeError Python raises without a user home
 func PlatformDefault() string {

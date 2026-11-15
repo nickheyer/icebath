@@ -1,5 +1,3 @@
-//go:build ignore
-
 package arena
 
 import (
@@ -19,7 +17,7 @@ const (
 	dragPitch = 0.045
 )
 
-// Routes a press to the toolbar, the panel edges, the dock rows, the inspector, the approval or the floor
+// Routes a press to the toolbar, panel edges, dock rows, timeline, inspector, member windows or the floor
 func (a *arena) click(msg tea.MouseClickMsg) tea.Cmd {
 	x, y := msg.X, msg.Y
 	if a.showHelp {
@@ -30,90 +28,49 @@ func (a *arena) click(msg tea.MouseClickMsg) tea.Cmd {
 		switch {
 		case a.lay.insp.w > 0 && !a.lay.full && x == a.lay.insp.x && y >= a.lay.insp.y:
 			a.drag = &drag{kind: dragInspector, x: x, y: y, base: float64(a.lay.insp.w)}
-			return a.setTyping(false)
+			return nil
 		case a.onDock(x, y) && x == a.lay.dock.x+a.lay.dock.w-1:
 			a.drag = &drag{kind: dragDock, x: x, y: y, base: float64(a.lay.dock.w)}
-			return a.setTyping(false)
+			return nil
 		case a.onDock(x, y) && y == a.secs.Split():
 			a.drag = &drag{kind: dragSplit, x: x, y: y, base: 1 - a.secs.Share}
+			return nil
+		case a.lay.tape.w > 0 && a.track().contains(x, y):
+			a.drag = &drag{kind: dragTape, x: x, y: y}
+			a.seekTape(x)
 			return nil
 		}
 	}
 	if a.off() && a.lay.world.contains(x, y) {
 		return a.clickTile(msg)
 	}
-	if id, ok := a.hitAt(x, y); ok && msg.Button == tea.MouseLeft && !a.lay.insp.contains(x, y) {
+	if id, ok := a.hitAt(x, y); ok && msg.Button == tea.MouseLeft {
 		return a.press(id)
 	}
-	if a.lay.insp.contains(x, y) {
-		if id, ok := a.hitAt(x, y); ok && msg.Button == tea.MouseLeft {
-			return a.press(id)
-		}
-		s := a.inspected()
-		if s == nil || y < a.lay.insp.y+a.inspHead {
-			return nil
-		}
-		shifted := tea.MouseClickMsg{X: x - a.inspX(), Y: y - a.lay.insp.y - a.inspHead, Button: msg.Button, Mod: msg.Mod}
-		var cmds []tea.Cmd
-		if !a.typing && msg.Button == tea.MouseLeft {
-			cmds = append(cmds, a.setTyping(true))
-		}
-		_, cmd := s.Update(shifted)
-		return tea.Batch(append(cmds, cmd)...)
-	}
-	if r, ok := a.approvalRect(); ok && r.contains(x, y) {
-		if ap := a.approval(); ap != nil {
-			_, cmd := ap.Update(tea.MouseClickMsg{X: x - r.x - 2, Y: y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
+	if a.lay.insp.contains(x, y) || a.onDock(x, y) || a.lay.bar.contains(x, y) || a.lay.tape.contains(x, y) || !a.lay.world.contains(x, y) {
 		return nil
 	}
-	if a.onDock(x, y) || a.lay.bar.contains(x, y) {
-		return nil
-	}
-	if !a.lay.world.contains(x, y) {
-		return nil
-	}
-	cmd := a.setTyping(false)
 	if msg.Button == tea.MouseLeft {
 		a.drag = &drag{kind: dragCamera, x: x, y: y}
 	}
-	return cmd
+	return nil
 }
 
-// Routes a press on the session windows, selecting its member and handing presses under the header to the session
+// Routes a press on the member windows, selecting the member a window shows and clearing it on its header
 func (a *arena) clickTile(msg tea.MouseClickMsg) tea.Cmd {
-	if r, ok := a.approvalRect(); ok && r.contains(msg.X, msg.Y) {
-		if ap := a.approval(); ap != nil {
-			_, cmd := ap.Update(tea.MouseClickMsg{X: msg.X - r.x - 2, Y: msg.Y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
+	tl, ok := a.tileAt(msg.X, msg.Y)
+	if !ok || msg.Button != tea.MouseLeft {
 		return nil
 	}
-	tl, ok := a.tileAt(msg.X, msg.Y)
-	if !ok {
-		return a.setTyping(false)
+	if msg.Y == tl.r.y && tl.name == a.sel {
+		a.sel = ""
+		a.markFloor()
+		return nil
 	}
-	var cmds []tea.Cmd
-	if tl.name != a.sel {
-		cmds = append(cmds, a.selectMember(tl.name))
-	}
-	if msg.Button != tea.MouseLeft {
-		return tea.Batch(cmds...)
-	}
-	if msg.Y == tl.r.y {
-		return tea.Batch(append(cmds, a.setTyping(!a.typing || tl.name != a.sel))...)
-	}
-	s := a.sessionOf(tl.name)
-	if s == nil {
-		return tea.Batch(cmds...)
-	}
-	cmds = append(cmds, a.setTyping(true))
-	_, cmd := s.Update(tea.MouseClickMsg{X: msg.X - tl.r.x, Y: msg.Y - tl.r.y - 1, Button: msg.Button, Mod: msg.Mod})
-	return tea.Batch(append(cmds, cmd)...)
+	return a.selectMember(tl.name)
 }
 
-// Hands a pointer message to the session of the window under it, in the coordinates of the window
+// Hands a pointer message to the sheet of the member window under it, in the coordinates of the sheet
 func (a *arena) forwardTile(x, y int, shift func(dx, dy int) tea.Msg) tea.Cmd {
 	tl, ok := a.tileAt(x, y)
 	if !ok || y == tl.r.y {
@@ -123,7 +80,7 @@ func (a *arena) forwardTile(x, y int, shift func(dx, dy int) tea.Msg) tea.Cmd {
 	if s == nil {
 		return nil
 	}
-	_, cmd := s.Update(shift(tl.r.x, tl.r.y+1))
+	_, cmd := s.Update(shift(tl.r.x+1, tl.r.y+1))
 	return cmd
 }
 
@@ -145,14 +102,12 @@ func (a *arena) press(id string) tea.Cmd {
 				return a.toggleSection(s)
 			}
 		}
+		return nil
 	case "sprint":
 		a.sprintFull = !a.sprintFull
 		a.secs.Top(secSprint.String())
 		return nil
-	case "member", "log":
-		if rest == "" {
-			return nil
-		}
+	case "member", "log", "tile":
 		if _, ok := a.snap.Member(rest); !ok {
 			return nil
 		}
@@ -167,20 +122,28 @@ func (a *arena) press(id string) tea.Cmd {
 			return nil
 		}
 		a.selTicket = rest
-		a.markFloor()
 		if tk, ok := a.snap.Ticket(rest); ok && tk.Builder != "" {
 			if _, ok := a.snap.Member(tk.Builder); ok {
-				return a.selectMember(tk.Builder)
+				a.sel = tk.Builder
 			}
 		}
+		a.markFloor()
 		return nil
 	case "inspector":
 		return a.toggleInspect()
+	case "tape":
+		switch {
+		case rest == "speed" && a.replay != nil:
+			return a.act(ActSpeed)
+		case rest == "live":
+			return a.act(ActLive)
+		}
+		return a.act(ActReplay)
 	}
 	return a.act(id)
 }
 
-// Ends a drag, a press on the floor that never moved picking the actor or the node under it
+// Ends a drag, a press on the floor that never moved picking the actor or the core under it
 func (a *arena) release(msg tea.MouseReleaseMsg) tea.Cmd {
 	d := a.drag
 	a.drag = nil
@@ -188,29 +151,9 @@ func (a *arena) release(msg tea.MouseReleaseMsg) tea.Cmd {
 		return nil
 	}
 	if a.off() && a.lay.world.contains(msg.X, msg.Y) {
-		if r, ok := a.approvalRect(); ok && r.contains(msg.X, msg.Y) {
-			if ap := a.approval(); ap != nil {
-				_, cmd := ap.Update(tea.MouseReleaseMsg{X: msg.X - r.x - 2, Y: msg.Y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-				return cmd
-			}
-			return nil
-		}
 		return a.forwardTile(msg.X, msg.Y, func(dx, dy int) tea.Msg {
 			return tea.MouseReleaseMsg{X: msg.X - dx, Y: msg.Y - dy, Button: msg.Button, Mod: msg.Mod}
 		})
-	}
-	if a.lay.insp.contains(msg.X, msg.Y) {
-		if s := a.inspected(); s != nil && msg.Y >= a.lay.insp.y+a.inspHead {
-			_, cmd := s.Update(tea.MouseReleaseMsg{X: msg.X - a.inspX(), Y: msg.Y - a.lay.insp.y - a.inspHead, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
-		return nil
-	}
-	if r, ok := a.approvalRect(); ok && r.contains(msg.X, msg.Y) {
-		if ap := a.approval(); ap != nil {
-			_, cmd := ap.Update(tea.MouseReleaseMsg{X: msg.X - r.x - 2, Y: msg.Y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
 	}
 	if d == nil || d.moved {
 		return nil
@@ -227,7 +170,7 @@ func (a *arena) release(msg tea.MouseReleaseMsg) tea.Cmd {
 	return nil
 }
 
-// Turns the camera or resizes a panel while a drag goes, else tracks what the pointer is over
+// Turns the camera, resizes a panel or scrubs the timeline during a drag, else tracks what the pointer is over
 func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 	if d := a.drag; d != nil && msg.Button == tea.MouseLeft {
 		dx, dy := msg.X-d.x, msg.Y-d.y
@@ -249,6 +192,8 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 			if rows := float64(tickets.H - 1 + log.H - 1); tickets.H > 1 && rows > 0 {
 				a.secs.Share = 1 - min(max(d.base-float64(dy)/rows, 0.2), 0.8)
 			}
+		case dragTape:
+			a.seekTape(msg.X)
 		}
 		return nil
 	}
@@ -282,39 +227,14 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 		case "ticket":
 			a.hoverTicket = rest
 		}
-		if !a.lay.insp.contains(x, y) {
-			return nil
-		}
+		return nil
 	}
-	if a.off() && a.lay.world.contains(x, y) {
-		if r, ok := a.approvalRect(); ok && r.contains(x, y) {
-			if ap := a.approval(); ap != nil {
-				_, cmd := ap.Update(tea.MouseMotionMsg{X: x - r.x - 2, Y: y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-				return cmd
-			}
-			return nil
-		}
+	switch {
+	case a.off() && a.lay.world.contains(x, y):
 		if tl, ok := a.tileAt(x, y); ok {
 			a.hover = tl.name
 		}
-		return a.forwardTile(x, y, func(dx, dy int) tea.Msg {
-			return tea.MouseMotionMsg{X: x - dx, Y: y - dy, Button: msg.Button, Mod: msg.Mod}
-		})
-	}
-	if a.lay.insp.contains(x, y) {
-		if s := a.inspected(); s != nil && y >= a.lay.insp.y+a.inspHead {
-			_, cmd := s.Update(tea.MouseMotionMsg{X: x - a.inspX(), Y: y - a.lay.insp.y - a.inspHead, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
-		return nil
-	}
-	if r, ok := a.approvalRect(); ok && r.contains(x, y) {
-		if ap := a.approval(); ap != nil {
-			_, cmd := ap.Update(tea.MouseMotionMsg{X: x - r.x - 2, Y: y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
-	}
-	if a.lay.world.contains(x, y) {
+	case a.lay.world.contains(x, y):
 		a.hover, _ = a.actorAt(x, y)
 		if a.hover == "" {
 			a.hoverTicket, _ = a.nodeAt(x, y)
@@ -323,7 +243,7 @@ func (a *arena) motion(msg tea.MouseMotionMsg) tea.Cmd {
 	return nil
 }
 
-// Zooms the camera over the floor, scrolls the section of the dock, the inspector or the approval dialog under the pointer
+// Zooms the camera over the floor, scrolls the dock section, inspector or member window under the pointer
 func (a *arena) wheel(msg tea.MouseWheelMsg) tea.Cmd {
 	if a.lay.insp.contains(msg.X, msg.Y) {
 		if s := a.inspected(); s != nil {
@@ -332,18 +252,15 @@ func (a *arena) wheel(msg tea.MouseWheelMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if r, ok := a.approvalRect(); ok && r.contains(msg.X, msg.Y) {
-		if ap := a.approval(); ap != nil {
-			_, cmd := ap.Update(tea.MouseWheelMsg{X: msg.X - r.x - 2, Y: msg.Y - r.y - 1, Button: msg.Button, Mod: msg.Mod})
-			return cmd
-		}
-	}
 	if a.onDock(msg.X, msg.Y) {
 		step := 3
 		if msg.Button == tea.MouseWheelUp {
 			step = -3
 		}
 		if id, ok := a.secs.At(msg.X, msg.Y); ok {
+			if id == secLog.String() {
+				step = -step
+			}
 			a.scrollSection(id, step)
 		}
 		return nil

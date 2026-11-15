@@ -3,6 +3,7 @@
 package codeexec
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -14,7 +15,7 @@ import (
 func TestChildCanCreateSocketWithScrubbedEnv(t *testing.T) {
 	rt := hostRuntime(t)
 	env := testEnv(t)
-	scrubbed, err := scrubChildEnv(env, environMap(), scrubOptions{isPassthrough: func(string) bool { return false }})
+	scrubbed, err := scrubChildEnv(context.Background(), env, environMap(), scrubOptions{isPassthrough: func(string) bool { return false }})
 	if err != nil {
 		t.Fatal(err)
 	}

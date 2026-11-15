@@ -192,7 +192,11 @@ func (s *shellFileOps) runRgNative(argv []string, fetchLimit, timeout int, merge
 	if ce, ok := s.terminalEnv.(interface{ ChildEnv() map[string]string }); ok {
 		childEnv = ce.ChildEnv()
 	}
-	runEnv, err := makeRunEnv(s.env, childEnv)
+	parent := s.ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	runEnv, err := makeRunEnv(parent, s.env, childEnv)
 	if err != nil {
 		panic(err)
 	}
@@ -290,10 +294,6 @@ func (s *shellFileOps) runRgNative(argv []string, fetchLimit, timeout int, merge
 			defer close(errDone)
 			drainStderrCapped(stderrR, &errChunks, &errOmitted)
 		}()
-	}
-	parent := s.ctx
-	if parent == nil {
-		parent = context.Background()
 	}
 	runCtx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Second)
 	defer cancel()

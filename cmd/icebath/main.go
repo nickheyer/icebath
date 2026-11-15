@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/app"
+	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -135,5 +136,6 @@ func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error 
 // Runs the registered exit hooks and ends the process with code
 func exit(code int) {
 	runAtExit()
+	cliui.RestoreTerminal()
 	os.Exit(code)
 }

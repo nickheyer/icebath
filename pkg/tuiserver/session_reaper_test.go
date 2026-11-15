@@ -16,13 +16,14 @@ import (
 
 const reaperIdleS = 6 * 3600
 
-// Fresh session store under a temp dir
+// Fresh session store under a temp dir, closed when the case ends before the dir is removed
 func reaperTestDB(t *testing.T) *state.DB {
 	t.Helper()
 	db, err := state.NewSessionDB(context.Background(), filepath.Join(t.TempDir(), "state.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

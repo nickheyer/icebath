@@ -8,13 +8,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Blocks external HTTP, installs the wiring hooks, keeps the model inventory offline and isolates the home for the suite
+// Dispatches the scratch prune child, blocks external HTTP, installs the wiring hooks and isolates the home for the suite
 func TestMain(m *testing.M) {
+	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
 	NewSurfaceLabelReader = func(db *state.SessionDB) RichSessionLister { return gatewaycli.NewSurfaceLabelReader(db) }

@@ -48,7 +48,7 @@ func childPathParts(env map[string]string) []string {
 // Builds the terminal run env over childEnv and fails the test on error
 func sessionRunEnv(t *testing.T, env *Env, childEnv map[string]string) map[string]string {
 	t.Helper()
-	out, err := makeRunEnv(env, childEnv)
+	out, err := makeRunEnv(context.Background(), env, childEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func sessionRunEnv(t *testing.T, env *Env, childEnv map[string]string) map[strin
 // Builds the background process env and fails the test on error
 func mustSpawnEnv(t *testing.T, env *Env) map[string]string {
 	t.Helper()
-	out, err := (&ProcessRegistry{}).spawnEnv(env, map[string]string{})
+	out, err := (&ProcessRegistry{}).spawnEnv(context.Background(), env, map[string]string{})
 	if err != nil {
 		t.Fatal(err)
 	}

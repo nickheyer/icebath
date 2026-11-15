@@ -180,7 +180,12 @@ func TestLSPOperatorWorkspaceRootsFollowTheSurfaceButNotScheduledWork(t *testing
 	if trusted() {
 		t.Fatal("a cron job's workdir is scheduled by the model")
 	}
-	env.Values.Store("session.cron", false)
+	env.Values.Delete("session.cron")
+	RestoreSessionVar(env, "ICEBATH_CRON_SESSION", "1", true)
+	if trusted() {
+		t.Fatal("a cron run binds its marker as a session variable")
+	}
+	RestoreSessionVar(env, "ICEBATH_CRON_SESSION", "", false)
 	t.Setenv("ICEBATH_KANBAN_TASK", "t_1")
 	if trusted() {
 		t.Fatal("a kanban task's workspace is scheduled by the model")

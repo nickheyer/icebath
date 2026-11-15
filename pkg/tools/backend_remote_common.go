@@ -82,8 +82,8 @@ func loadIcebathEnvVars(env *Env) map[string]string {
 }
 
 // Values to forward into a remote shell plus the scoped names that must be unset there
-func resolvePassthroughEnv(env *Env, explicitForward []string) (map[string]string, map[string]bool, error) {
-	multiplex := isMultiplexActive(env)
+func resolvePassthroughEnv(ctx context.Context, env *Env, explicitForward []string) (map[string]string, map[string]bool, error) {
+	multiplex := MultiplexActiveFor(ctx, env)
 	forward := map[string]bool{}
 	for _, k := range explicitForward {
 		forward[k] = true
@@ -112,7 +112,7 @@ func resolvePassthroughEnv(env *Env, explicitForward []string) (map[string]strin
 		} else if v, ok := dotenv[key]; ok {
 			fallback = &v
 		}
-		value, err := ResolvePassthroughValue(env, key, fallback)
+		value, err := ResolvePassthroughValue(ctx, env, key, fallback)
 		if err != nil {
 			return nil, nil, err
 		}

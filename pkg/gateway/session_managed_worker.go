@@ -347,7 +347,7 @@ func workerEnv(ctx context.Context, a *SessionAuthority) ([]string, error) {
 	if !routed && !provider.IsMultiplexActive(ctx) {
 		return nil, nil
 	}
-	env, err := tools.BuildSubprocessEnv(ctx, nil, tools.SubprocessEnvOptions{
+	env, err := tools.BuildSubprocessEnv(ctx, tools.EnvForProfileHome(ctx, nil, profileHome), tools.SubprocessEnvOptions{
 		Base: tools.StripLaunchProfileEnv(nil, tools.EnvironMap(), profileHome), InheritProfileHome: true, ScrubSecrets: true})
 	if err != nil {
 		return nil, err

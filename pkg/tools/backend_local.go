@@ -393,8 +393,8 @@ func isTerminalFirstPartyEnv(env *Env, name string) bool {
 // Prefix a caller uses to force a managed name through the secret filter
 const providerEnvForcePrefix = "_ICEBATH_FORCE_"
 
-// Copies items into out dropping managed secrets, unwrapping forced names when allowed
-func filterSecretEnv(env *Env, items, out map[string]string, unwrapForce bool, pluginStrip map[string]bool) error {
+// Copies items into out dropping managed secrets, unwrapping forced names and resolving passthrough values when asked
+func filterSecretEnv(ctx context.Context, env *Env, items, out map[string]string, unwrapForce bool, pluginStrip map[string]bool, resolve bool) error {
 	stripFolded := map[string]bool{}
 	for k := range pluginStrip {
 		stripFolded[strings.ToUpper(k)] = true
@@ -425,8 +425,8 @@ func filterSecretEnv(env *Env, items, out map[string]string, unwrapForce bool, p
 			continue
 		}
 		resolved := &value
-		if passthrough && !firstParty {
-			r, err := ResolvePassthroughValue(env, key, &value)
+		if passthrough && !firstParty && resolve {
+			r, err := ResolvePassthroughValue(ctx, env, key, &value)
 			if err != nil {
 				return err
 			}
@@ -577,22 +577,24 @@ type envPart struct {
 	unwrapForce bool
 }
 
-// Filters every part into one env, rewrites PATH and applies the shared guards
-func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) string, order *envOrder) (map[string]string, error) {
+// Filters every part into one env, resolving passthrough through the bound scope when asked, then applies the shared guards
+func scrubbedEnv(ctx context.Context, env *Env, parts []envPart, pluginStrip map[string]bool, fixPath func(string) string, order *envOrder, resolve bool) (map[string]string, error) {
 	out := map[string]string{}
 	for _, p := range parts {
-		if err := filterSecretEnv(env, p.items, out, p.unwrapForce, pluginStrip); err != nil {
+		if err := filterSecretEnv(ctx, env, p.items, out, p.unwrapForce, pluginStrip, resolve); err != nil {
 			return nil, err
 		}
 		order.note(out)
 	}
-	present := map[string]bool{}
-	for k := range out {
-		present[k] = true
-	}
-	for k, v := range ScopedPassthroughAdditions(env, present) {
-		if !pluginStrip[k] {
-			out[k] = v
+	if resolve {
+		present := map[string]bool{}
+		for k := range out {
+			present[k] = true
+		}
+		for k, v := range ScopedPassthroughAdditions(ctx, env, present) {
+			if !pluginStrip[k] {
+				out[k] = v
+			}
 		}
 	}
 	order.note(out)
@@ -604,8 +606,8 @@ func scrubbedEnv(env *Env, parts []envPart, pluginStrip map[string]bool, fixPath
 }
 
 // SanitizeSubprocessEnv filters managed secrets from a background, PTY, worker or script child environment
-func SanitizeSubprocessEnv(env *Env, base, extra map[string]string) (map[string]string, error) {
-	return scrubbedEnv(env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, nil)
+func SanitizeSubprocessEnv(ctx context.Context, env *Env, base, extra map[string]string) (map[string]string, error) {
+	return scrubbedEnv(ctx, env, []envPart{{base, false}, {extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, nil, true)
 }
 
 // Env with the user's tools first on PATH for background commands
@@ -686,6 +688,8 @@ type SubprocessEnvOptions struct {
 	ScrubSecrets       bool
 	Extra              map[string]string
 	StripLaunchProfile bool
+	// Builds as the separate single profile process the base belongs to, its values kept as given and no launch strip
+	SeparateProcess bool
 }
 
 // ChildEnv is a child process environment with its names in the insertion order of the hermes dict
@@ -725,9 +729,9 @@ func BuildSubprocessEnvOrdered(ctx context.Context, env *Env, o SubprocessEnvOpt
 		child = environMap()
 		order = environOrder()
 	}
-	if o.StripLaunchProfile {
+	if o.StripLaunchProfile && !o.SeparateProcess {
 		StripLaunchProfileEnv(env, child, "")
-		if isMultiplexActive(env) {
+		if MultiplexActiveFor(ctx, env) {
 			for k, v := range profileSecrets().CurrentSecretScope(ctx) {
 				child[k] = v
 			}
@@ -737,7 +741,7 @@ func BuildSubprocessEnvOrdered(ctx context.Context, env *Env, o SubprocessEnvOpt
 		order.note(child)
 	}
 	if o.ScrubSecrets {
-		out, err := scrubbedEnv(env, []envPart{{child, false}, {o.Extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, order)
+		out, err := scrubbedEnv(ctx, env, []envPart{{child, false}, {o.Extra, true}}, pluginTerminalEnvStripKeys(), func(p string) string { return p }, order, !o.SeparateProcess)
 		if err != nil {
 			return nil, err
 		}
@@ -788,7 +792,7 @@ func ServedProfileChildEnv(ctx context.Context, env *Env, base map[string]string
 			secrets = profileSecrets().BuildProfileSecretScope(target)
 		} else {
 			secrets = profileSecrets().CurrentSecretScope(ctx)
-			if secrets == nil && isMultiplexActive(env) {
+			if secrets == nil && MultiplexActiveFor(ctx, env) {
 				return nil, fmt.Errorf("%w: served_profile_child_env(inherit_credentials=True) called with no target home and no profile secret scope bound while multiplexing is on; the child would inherit the launch profile's credentials. Bind the profile scope (or pass target_home) at the spawn site.", ErrUnscopedSecret)
 			}
 		}
@@ -1341,7 +1345,7 @@ var SessionToolEnv func(env *Env) map[string]string
 var BotDesktopPublishedEnv func(env *Env) map[string]string
 
 // Run environment with a sane PATH, provider var stripping and the backend's own env on top
-func makeRunEnv(env *Env, childEnv map[string]string) (map[string]string, error) {
+func makeRunEnv(ctx context.Context, env *Env, childEnv map[string]string) (map[string]string, error) {
 	base := StripLaunchProfileEnv(env, environMap(), "")
 	if SessionToolchainEnviron != nil {
 		base = SessionToolchainEnviron(env, base)
@@ -1349,9 +1353,9 @@ func makeRunEnv(env *Env, childEnv map[string]string) (map[string]string, error)
 	for k, v := range childEnv {
 		base[k] = v
 	}
-	runEnv, err := scrubbedEnv(env, []envPart{{base, true}}, map[string]bool{}, func(p string) string {
+	runEnv, err := scrubbedEnv(ctx, env, []envPart{{base, true}}, map[string]bool{}, func(p string) string {
 		return userToolsFirst(appendMissingSanePathEntries(env, p))
-	}, nil)
+	}, nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1589,7 +1593,7 @@ func (l *localEnv) runBash(ctx context.Context, cmd string, login bool, timeout 
 	if err != nil {
 		return nil, err
 	}
-	runEnv, err := makeRunEnv(l.env, l.childEnv)
+	runEnv, err := makeRunEnv(ctx, l.env, l.childEnv)
 	if err != nil {
 		return nil, err
 	}

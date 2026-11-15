@@ -386,8 +386,12 @@ func printSetupSummary(ctx context.Context, cfg config.Tree, icebathHome string)
 		setupPrintln("")
 	}
 	setupPrintln("")
-	for _, line := range setupDoneBanner {
-		setupPrintln(setupColor(line, cliui.Green))
+	if ui := provider.SetupConsole(); ui.IsFlow() {
+		ui.Done("Setup complete")
+	} else {
+		for _, line := range setupDoneBanner {
+			setupPrintln(setupColor(line, cliui.Green))
+		}
 	}
 	setupPrintln("")
 	setupPrintln(setupColor("📁 All your files are in "+display+"/:", cliui.Cyan, cliui.Bold) + "\n")

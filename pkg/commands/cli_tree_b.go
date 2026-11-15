@@ -630,6 +630,7 @@ func (c *CLI) addPlugins(root *cobra.Command) {
 	c.newCmd(plugins, "browse", "List every curated plugin catalog entry", "")
 	validate := c.newCmd(plugins, "validate", "Validate a plugin directory for catalog admission (CI gate)", "")
 	c.pos(validate, p("path").withHelp("Path to the plugin directory"))
+	bf(validate, "install-deps", "", "Install the plugin's declared Python dependencies (pyproject/python_dependencies) into this venv before the capability probe, exactly as `plugins install` would — the catalog CI gate")
 	jsonFlag(validate, "Print machine-readable JSON (for CI)")
 	update := c.newCmd(plugins, "update", "Update an installed plugin, or with no name every plugin that has an update", "")
 	c.pos(update, pOpt("name").withHelp("Plugin name to update (default: list every plugin with an update and offer them all)"))

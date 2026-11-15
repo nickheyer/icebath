@@ -17,9 +17,13 @@ import (
 // Portal models offered when the live Qwen catalog is unavailable
 var defaultQwenPortalModels = []string{"qwen3-coder-plus", "qwen3-coder"}
 
-// CursesPromptChoice is the single select curses menu, -1 when cancelled, an error when curses is unavailable
+// Choices past which a plain list offers its slash filter
+const searchableChoiceCount = 10
+
+// CursesPromptChoice is the single choice list, -1 when cancelled, an error when the terminal cannot draw it
 func CursesPromptChoice(question string, choices []string, def int, description string) (int, error) {
-	return flowRadiolistFn(question, plainPickerRows(choices), PickerRadiolistOptions{Selected: def, CancelReturns: -1, Description: description})
+	return flowRadiolistFn(question, plainPickerRows(choices), PickerRadiolistOptions{Selected: def, CancelReturns: -1, Description: description,
+		Searchable: len(choices) > searchableChoiceCount})
 }
 
 // Display name of a provider config, the id when none is set
@@ -161,8 +165,19 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 	if poolBacked {
 		menu = "  [K]eep / [R]eplace (default K): "
 	}
-	choice, ok := flowAsk(out, menu, flowAskOptions{Raw: true, CancelMsg: optStr("")})
-	if !ok {
+	labels, answers := []string{"Keep", "Replace", "Clear"}, []string{"k", "r", "c"}
+	if poolBacked {
+		labels, answers = labels[:2], answers[:2]
+	}
+	choice, ran, _ := flowMenuAnswer(fmt.Sprintf("%s API key", name), labels, answers, 0)
+	if !ran {
+		var ok bool
+		choice, ok = flowAsk(out, menu, flowAskOptions{Raw: true, CancelMsg: optStr("")})
+		if !ok {
+			choice = "k"
+		}
+	}
+	if choice == "" {
 		choice = "k"
 	}
 	choice = strings.ToLower(choice)

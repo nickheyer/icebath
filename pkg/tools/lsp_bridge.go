@@ -126,7 +126,7 @@ func lspOperatorWorkspaceRoots(env *Env) map[string]bool {
 		return map[string]bool{}
 	}
 	anchors := []func() (string, error){os.Getwd}
-	if !truthyEnvValue(GetSessionEnv(env, "ICEBATH_CRON_SESSION", "")) {
+	if !isCronSession(env) {
 		anchors = append(anchors, func() (string, error) { return ResolveAgentCwd(env) })
 	}
 	return lsp.OperatorWorkspaceRoots(anchors)

@@ -1131,12 +1131,12 @@ func (r *ProcessRegistry) scopeArgv(s *ProcessSession, safeCommand, unitSuffix, 
 }
 
 // Sanitized child env from the session's client toolchain with PYTHONUNBUFFERED so poll sees progress
-func (r *ProcessRegistry) spawnEnv(env *Env, envVars map[string]string) (map[string]string, error) {
+func (r *ProcessRegistry) spawnEnv(ctx context.Context, env *Env, envVars map[string]string) (map[string]string, error) {
 	base := environMap()
 	if SessionToolchainEnviron != nil {
 		base = SessionToolchainEnviron(env, base)
 	}
-	child, err := SanitizeSubprocessEnv(env, base, envVars)
+	child, err := SanitizeSubprocessEnv(ctx, env, base, envVars)
 	if err != nil {
 		return nil, err
 	}
@@ -1169,7 +1169,7 @@ func (r *ProcessRegistry) spawnLocalPty(ctx context.Context, s *ProcessSession, 
 	if err != nil {
 		return nil, err
 	}
-	ptyEnv, err := r.spawnEnv(s.env, envVars)
+	ptyEnv, err := r.spawnEnv(ctx, s.env, envVars)
 	if err != nil {
 		return nil, err
 	}
@@ -1212,7 +1212,7 @@ type SpawnLocalOptions struct {
 func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command string, o SpawnLocalOptions) (*ProcessSession, error) {
 	parentPath := ""
 	if o.RestoreLoginPath {
-		spawnEnv, err := r.spawnEnv(env, o.EnvVars)
+		spawnEnv, err := r.spawnEnv(ctx, env, o.EnvVars)
 		if err != nil {
 			return nil, err
 		}
@@ -1259,7 +1259,7 @@ func (r *ProcessRegistry) SpawnLocal(ctx context.Context, env *Env, command stri
 	if err != nil {
 		return nil, err
 	}
-	spawnEnv, err := r.spawnEnv(env, o.EnvVars)
+	spawnEnv, err := r.spawnEnv(ctx, env, o.EnvVars)
 	if err != nil {
 		return nil, err
 	}
