@@ -456,8 +456,11 @@ func ensureConfigFile(icebathHome string) error {
 	return config.Save(icebathHome, tree)
 }
 
-// Prints the import banner
+// Prints the import banner, none inside a setup presentation whose own header already names the import
 func printBanner(c *cliui.Console) {
+	if c.IsFlow() {
+		return
+	}
 	fmt.Fprintln(c.Out)
 	fmt.Fprintln(c.Out, color(c, "┌─────────────────────────────────────────────────────────┐", ansiMagenta))
 	fmt.Fprintln(c.Out, color(c, "│          ☤ Icebath — Import From Another Agent         │", ansiMagenta))

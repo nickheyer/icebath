@@ -166,7 +166,7 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 
 // GitHub Copilot model flow through env tokens or the device code login, inside a user started Copilot flow
 func modelFlowCopilot(r *ModelFlowRun) error {
-	return withCopilotUserFlow(func() error { return copilotModelFlowBody(r) })
+	return copilotModelFlowBody(copilotUserFlowRun(r))
 }
 
 func copilotModelFlowBody(r *ModelFlowRun) error {

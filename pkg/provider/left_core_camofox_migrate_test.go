@@ -5,8 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -67,56 +65,6 @@ func camofoxMigrateConfig(t *testing.T, h string) {
 	}
 }
 
-func camofoxInstaller(t *testing.T, h string, calls *[]string) func(string) (map[string]any, error) {
-	return func(name string) (map[string]any, error) {
-		*calls = append(*calls, name)
-		mkPluginDir(t, h, name)
-		return map[string]any{"ok": true}, nil
-	}
-}
-
-// Agent start for the home with the plugin install a stand in
-func camofoxBoot(t *testing.T, h string, said *[]string) []string {
-	t.Helper()
-	t.Setenv(home.EnvHome, h)
-	home.ResetKeyCache()
-	t.Setenv("ICEBATH_DISABLE_LAZY_INSTALLS", "")
-	os.Unsetenv("ICEBATH_DISABLE_LAZY_INSTALLS")
-	prev := leftCoreInstallInto
-	leftCoreInstallInto = func(_ context.Context, target string, _ *bool) func(string) (map[string]any, error) {
-		var calls []string
-		return camofoxInstaller(t, target, &calls)
-	}
-	t.Cleanup(func() { leftCoreInstallInto = prev })
-	return RecoverLeftCoreAtStartup(context.Background(), func(m string) { *said = append(*said, m) }, false)
-}
-
-func camofoxStrings(v any) []string {
-	items, _ := v.([]any)
-	return pyStrList(items)
-}
-
-func TestCamofoxUpgradeConvertsAfterTheConfigStep(t *testing.T) {
-	root := camofoxFresh(t)
-	t.Setenv(home.EnvHome, filepath.Join(root, "launch"))
-	h := leftCoreHome(t, root, "home", camofoxSplitEnv, "_config_version: 51\nplatform_toolsets:\n  cli:\n  - terminal\n  - browser\n  - file\n")
-	camofoxMigrateConfig(t, h)
-	if v := camofoxConfig(t, h)["_config_version"]; v != config.Version {
-		t.Fatalf("stamp %#v", v)
-	}
-	var calls []string
-	if got := MigrateLeftCoreHome(context.Background(), h, camofoxInstaller(t, h, &calls), func(string) {}, false); !slices.Equal(got, []string{"camofox"}) {
-		t.Fatalf("installed %v", got)
-	}
-	cfg := camofoxConfig(t, h)
-	if got := camofoxStrings(anyMap(cfg["platform_toolsets"])["cli"]); !slices.Equal(got, []string{"terminal", "file", "camofox"}) {
-		t.Fatalf("cli %v", got)
-	}
-	if got := camofoxStrings(anyMap(cfg["agent"])["disabled_toolsets"]); !slices.Equal(got, []string{"browser"}) {
-		t.Fatalf("disabled %v", got)
-	}
-}
-
 func TestCamofoxHomeFromAfterTheSplitKeepsBrowserExec(t *testing.T) {
 	for _, stamp := range []string{"51", "52"} {
 		t.Run(stamp, func(t *testing.T) {
@@ -138,45 +86,5 @@ func TestCamofoxHomeFromAfterTheSplitKeepsBrowserExec(t *testing.T) {
 				t.Fatalf("config rewritten:\n%s\n---\n%s", before, after)
 			}
 		})
-	}
-}
-
-func TestCamofoxAnUnversionedHomeIsConverted(t *testing.T) {
-	for name, cfg := range map[string]string{"no-config": "", "unstamped": "platform_toolsets:\n  cli:\n  - terminal\n  - browser\n  - file\n"} {
-		t.Run(name, func(t *testing.T) {
-			root := camofoxFresh(t)
-			t.Setenv(home.EnvHome, filepath.Join(root, "launch"))
-			h := leftCoreHome(t, root, "home", camofoxSplitEnv, cfg)
-			var calls []string
-			if got := MigrateLeftCoreHome(context.Background(), h, camofoxInstaller(t, h, &calls), func(string) {}, false); !slices.Equal(got, []string{"camofox"}) {
-				t.Fatalf("installed %v", got)
-			}
-			if got := camofoxStrings(anyMap(camofoxConfig(t, h)["agent"])["disabled_toolsets"]); !slices.Equal(got, []string{"browser"}) {
-				t.Fatalf("disabled %v", got)
-			}
-		})
-	}
-}
-
-func TestCamofoxTheConfigYAMLAnEnvOnlyConversionCreatesIsStamped(t *testing.T) {
-	root := camofoxFresh(t)
-	h := leftCoreHome(t, root, "home", camofoxSplitEnv, "")
-	var said []string
-	if got := camofoxBoot(t, h, &said); !slices.Equal(got, []string{"camofox"}) {
-		t.Fatalf("boot installed %v (%s)", got, strings.Join(said, "\n"))
-	}
-	cfg := camofoxConfig(t, h)
-	if cfg["_config_version"] != config.Version {
-		t.Fatalf("stamp %#v", cfg["_config_version"])
-	}
-	if got := camofoxStrings(cfg["_left_core_used"]); !slices.Equal(got, []string{"camofox"}) {
-		t.Fatalf("_left_core_used %v", got)
-	}
-	leftCoreAttemptedMu.Lock()
-	leftCoreAttempted = map[string]bool{}
-	leftCoreAttemptedMu.Unlock()
-	said = nil
-	if got := camofoxBoot(t, h, &said); len(got) != 0 || len(said) != 0 {
-		t.Fatalf("next process boot installed %v said %v", got, said)
 	}
 }

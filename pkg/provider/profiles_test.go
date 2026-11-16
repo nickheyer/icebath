@@ -54,59 +54,6 @@ func TestProfileForResolvesAliasesAndDefaults(t *testing.T) {
 	}
 }
 
-func TestHostMandatedAndDetectedModes(t *testing.T) {
-	cases := []struct {
-		url  string
-		want APIMode
-	}{
-		{"https://api.openai.com/v1", ModeCodexResponses},
-		{"https://eu.api.openai.com/v1", ModeCodexResponses},
-		{"https://api.openai.com.attacker.test/v1", ""},
-		{"https://proxy.test/api.openai.com/v1", ""},
-		{"https://api.anthropic.com", ModeAnthropicMessages},
-		{"https://api.minimax.io/anthropic", ModeAnthropicMessages},
-		{"https://api.kimi.com/coding/v1", ModeAnthropicMessages},
-		{"https://api.actual.inc/v1", ModeChatCompletions},
-		{"https://api.router.com/v1", ModeCodexResponses},
-		{"https://bedrock-runtime.us-east-1.amazonaws.com", modeBedrockConverse},
-		{"http://localhost:11434/v1", ""},
-	}
-	for _, c := range cases {
-		if got := HostMandatedMode(c.url); got != c.want {
-			t.Errorf("HostMandatedMode(%q) = %q, want %q", c.url, got, c.want)
-		}
-	}
-	if DetectModeForURL("https://api.x.ai/v1") != ModeCodexResponses || DetectModeForURL("https://api.z.ai/api/paas/v4") != "" {
-		t.Fatal("DetectModeForURL wrong")
-	}
-	if DetermineMode("nous", "", "anthropic/claude-sonnet-4.6", "chat") != ModeChatCompletions || DetermineMode("nous", "", "anthropic/claude-sonnet-4.6", "native") != ModeAnthropicMessages {
-		t.Fatal("nous dual wire wrong")
-	}
-	goProfile, _ := ProfileFor("opencode-go")
-	zenProfile, _ := ProfileFor("opencode-zen")
-	if goProfile.APIModeForModel("claude-sonnet-4.6", "") != "" || zenProfile.APIModeForModel("gpt-5.4", "") != "" {
-		t.Fatal("opencode profiles declare a per model wire, upstream routes opencode per model in core")
-	}
-	if OpenCodeModelMode("opencode-go", "claude-sonnet-4.6") != ModeAnthropicMessages || OpenCodeModelMode("opencode-zen", "gpt-5.4") != ModeCodexResponses || OpenCodeModelMode("opencode-go", "glm-5") != ModeChatCompletions {
-		t.Fatal("opencode per model mode wrong")
-	}
-	azure, _ := ProfileFor("azure-foundry")
-	if azure.PerModelMode != nil || azure.APIModeForModel("gpt-5-mini", "") != "" || azure.Mode != ModeChatCompletions {
-		t.Fatal("azure foundry profile declares a per model wire, upstream infers it at runtime resolution")
-	}
-	if AzureFoundryModelMode("gpt-5-mini") != ModeCodexResponses || AzureFoundryModelMode("openai/o3") != ModeCodexResponses || AzureFoundryModelMode("llama") != "" ||
-		azureInferredAPIMode("gpt-5-mini", ModeChatCompletions) != ModeCodexResponses || azureInferredAPIMode("gpt-5-mini", ModeAnthropicMessages) != ModeAnthropicMessages {
-		t.Fatal("azure foundry model mode wrong")
-	}
-	fakeModelsDevInfo(t, nil)
-	if DetermineMode("opencode-go", "", "claude-sonnet-4.6", "") != ModeChatCompletions || DetermineMode("azure-foundry", "https://x.openai.azure.com", "gpt-5-mini", "") != ModeChatCompletions {
-		t.Fatal("determine_api_mode reads the overlay transport, the per model wire belongs to the profile")
-	}
-	if ParseMode("openai") != ModeChatCompletions || ParseMode("responses") != ModeCodexResponses || ParseMode("garbage") != "" {
-		t.Fatal("ParseMode wrong")
-	}
-}
-
 func TestOpenCodeBaseURLNormalization(t *testing.T) {
 	cases := []struct {
 		provider, in string

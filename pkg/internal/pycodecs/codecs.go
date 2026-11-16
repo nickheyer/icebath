@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math/big"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
@@ -15,40 +16,81 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 )
 
-// LookupError is the codecs.lookup failure for a name no codec answers
-type LookupError struct{ Name string }
+// LookupError is the codecs.lookup failure for an unknown name, or a bytes codec refused by the NotText operation
+type LookupError struct {
+	Name    string
+	NotText string
+}
 
-func (e *LookupError) Error() string { return "unknown encoding: " + e.Name }
+func (e *LookupError) Error() string {
+	if e.NotText != "" {
+		return fmt.Sprintf("'%s' is not a text encoding; use codecs.%s() to handle arbitrary codecs", e.Name, e.NotText)
+	}
+	return "unknown encoding: " + e.Name
+}
 
-// UnicodeDecodeError is the strict decode failure with the CPython message
+// CodecInfo name codecs.lookup gives for a name, false when no codec answers it
+func InfoName(name string) (string, bool) {
+	mod, ok := Lookup(name)
+	if !ok {
+		return "", false
+	}
+	return codecInfoNames[mod], true
+}
+
+// UnicodeDecodeError is the strict decode failure over bytes Pos to End of input Len long, End zero meaning one
 type UnicodeDecodeError struct {
 	Codec  string
 	Byte   byte
 	Pos    int
 	Reason string
+	End    int
+	Len    int
+	// Positions past the int range a punycode error can carry, used instead of Pos and End when set
+	BigPos, BigEnd *big.Int
 }
 
 func (e *UnicodeDecodeError) Error() string {
-	return fmt.Sprintf("'%s' codec can't decode byte 0x%02x in position %d: %s", e.Codec, e.Byte, e.Pos, e.Reason)
+	if e.BigPos != nil {
+		return fmt.Sprintf("'%s' codec can't decode bytes in position %s-%s: %s", e.Codec, e.BigPos, new(big.Int).Sub(e.BigEnd, big.NewInt(1)), e.Reason)
+	}
+	if e.End == 0 || (e.Pos >= 0 && e.Pos < e.Len && e.End <= e.Len && e.End == e.Pos+1) {
+		return fmt.Sprintf("'%s' codec can't decode byte 0x%02x in position %d: %s", e.Codec, e.Byte, e.Pos, e.Reason)
+	}
+	return fmt.Sprintf("'%s' codec can't decode bytes in position %d-%d: %s", e.Codec, e.Pos, e.End-1, e.Reason)
 }
 
-// UnportedCodecError names a CPython text codec whose decoder has no Go port in this package
-type UnportedCodecError struct{ Module string }
-
-func (e *UnportedCodecError) Error() string {
-	return "codec encodings." + e.Module + " has no Go decoder"
+// Decode failure over start to end of the input, naming the byte at start when the range is one byte
+func decodeErr(codec string, data []byte, start, end int, reason string) *UnicodeDecodeError {
+	e := &UnicodeDecodeError{Codec: codec, Pos: start, Reason: reason, End: end, Len: len(data)}
+	if start >= 0 && start < len(data) {
+		e.Byte = data[start]
+	}
+	return e
 }
 
-var unportedModules = map[string]bool{
-	"utf_7": true, "unicode_escape": true, "raw_unicode_escape": true, "idna": true, "punycode": true, "johab": true,
-	"euc_jis_2004": true, "euc_jisx0213": true, "shift_jis_2004": true, "shift_jisx0213": true, "iso2022_jp_1": true,
-	"iso2022_jp_2": true, "iso2022_jp_2004": true, "iso2022_jp_3": true, "iso2022_jp_ext": true, "iso2022_kr": true,
+// UnicodeError of a codec refusing an operation outright
+type UnicodeError struct{ Msg string }
+
+func (e *UnicodeError) Error() string      { return e.Msg }
+func (e *UnicodeError) PyTypeName() string { return "UnicodeError" }
+
+// RuntimeError a CJK codec raises for a state its tables cannot serve
+type codecRuntimeError struct{ msg string }
+
+func (e *codecRuntimeError) Error() string      { return e.msg }
+func (e *codecRuntimeError) PyTypeName() string { return "RuntimeError" }
+
+// Codecs ported from CPython's algorithms or probed tables rather than served by a charmap or x/text
+var portedModules = map[string]bool{
+	"utf_7": true, "unicode_escape": true, "raw_unicode_escape": true, "idna": true, "punycode": true, "charmap": true,
+	"undefined": true, "hz": true,
 }
 
 var multiByte = map[string]encoding.Encoding{
-	"euc_jp": japanese.EUCJP, "shift_jis": japanese.ShiftJIS, "cp932": japanese.ShiftJIS, "iso2022_jp": japanese.ISO2022JP,
+	"euc_jp": japanese.EUCJP, "shift_jis": japanese.ShiftJIS, "cp932": japanese.ShiftJIS,
 	"euc_kr": korean.EUCKR, "cp949": korean.EUCKR, "gb2312": simplifiedchinese.GBK, "gbk": simplifiedchinese.GBK,
-	"gb18030": simplifiedchinese.GB18030, "hz": simplifiedchinese.HZGB2312, "big5": traditionalchinese.Big5,
+	"gb18030": simplifiedchinese.GB18030, "big5": traditionalchinese.Big5,
 	"cp950": traditionalchinese.Big5, "big5hkscs": traditionalchinese.Big5,
 }
 
@@ -108,7 +150,7 @@ func knownModule(mod string) bool {
 	case "mbcs", "oem", "cp65001":
 		return platformCodePage(mod) != ""
 	}
-	return unportedModules[mod]
+	return portedModules[mod] || isoVariants[mod] != nil || statelessModules[mod] || nonTextModules[mod]
 }
 
 // bytes.decode with errors strict through the CPython codec registry
@@ -128,11 +170,11 @@ func Decode(data []byte, name string) (string, error) {
 	case "ascii":
 		for i, c := range data {
 			if c >= 0x80 {
-				return "", &UnicodeDecodeError{"ascii", c, i, "ordinal not in range(128)"}
+				return "", &UnicodeDecodeError{Codec: "ascii", Byte: c, Pos: i, Reason: "ordinal not in range(128)"}
 			}
 		}
 		return string(data), nil
-	case "latin_1":
+	case "latin_1", "charmap":
 		rs := make([]rune, len(data))
 		for i, c := range data {
 			rs[i] = rune(c)
@@ -142,13 +184,36 @@ func Decode(data []byte, name string) (string, error) {
 		return decodeUTF16(data, mod)
 	case "utf_32", "utf_32_le", "utf_32_be":
 		return decodeUTF32(data, mod)
+	case "utf_7":
+		return decodeUTF7(data, false)
+	case "unicode_escape":
+		return decodeUnicodeEscape(data, false)
+	case "raw_unicode_escape":
+		return decodeRawUnicodeEscape(data, false)
+	case "punycode":
+		return decodePunycode(data, true)
+	case "idna":
+		return decodeIDNA(data)
+	case "undefined":
+		return "", &UnicodeError{Msg: "undefined encoding"}
+	case "hz":
+		return decodeHZ(data, false)
+	}
+	if v := isoVariants[mod]; v != nil {
+		return v.decode(data, false)
+	}
+	if statelessModules[mod] {
+		return loadStateless(mod).decode(data, false)
+	}
+	if nonTextModules[mod] {
+		return "", &LookupError{Name: name, NotText: "decode"}
 	}
 	if table, ok := charmapTables[mod]; ok {
 		rs := []rune(table)
 		var b strings.Builder
 		for i, c := range data {
 			if rs[c] == 0xfffe {
-				return "", &UnicodeDecodeError{"charmap", c, i, "character maps to <undefined>"}
+				return "", &UnicodeDecodeError{Codec: "charmap", Byte: c, Pos: i, Reason: "character maps to <undefined>"}
 			}
 			b.WriteRune(rs[c])
 		}
@@ -157,7 +222,7 @@ func Decode(data []byte, name string) (string, error) {
 	if enc, ok := multiByte[mod]; ok {
 		return decodeMultiByte(enc, data, mod)
 	}
-	return "", &UnportedCodecError{Module: mod}
+	panic("pycodecs: module " + mod + " is known but has no decoder")
 }
 
 // Strict UTF-8 with the CPython reason for the first bad sequence at its start byte
@@ -170,7 +235,7 @@ func decodeUTF8(data []byte, codec string) (string, error) {
 		}
 		c := data[i]
 		if c < 0xc2 || c > 0xf4 {
-			return "", &UnicodeDecodeError{codec, c, i, "invalid start byte"}
+			return "", &UnicodeDecodeError{Codec: codec, Byte: c, Pos: i, Reason: "invalid start byte"}
 		}
 		need := 2
 		if c >= 0xf0 {
@@ -198,7 +263,7 @@ func decodeUTF8(data []byte, codec string) (string, error) {
 				break
 			}
 		}
-		return "", &UnicodeDecodeError{codec, c, i, reason}
+		return "", &UnicodeDecodeError{Codec: codec, Byte: c, Pos: i, Reason: reason}
 	}
 	return string(data), nil
 }
@@ -215,7 +280,7 @@ func decodeUTF16(data []byte, mod string) (string, error) {
 	}
 	codec := strings.ReplaceAll(mod, "_", "-")
 	if len(data)%2 != 0 {
-		return "", &UnicodeDecodeError{codec, data[len(data)-1], len(data) - 1, "truncated data"}
+		return "", &UnicodeDecodeError{Codec: codec, Byte: data[len(data)-1], Pos: len(data) - 1, Reason: "truncated data"}
 	}
 	units := make([]uint16, len(data)/2)
 	for i := range units {
@@ -235,7 +300,7 @@ func decodeUTF16(data []byte, mod string) (string, error) {
 					reason = "illegal UTF-16 surrogate"
 				}
 			}
-			return "", &UnicodeDecodeError{codec, data[2*i], 2 * i, reason}
+			return "", &UnicodeDecodeError{Codec: codec, Byte: data[2*i], Pos: 2 * i, Reason: reason}
 		}
 	}
 	return string(utf16.Decode(units)), nil
@@ -255,7 +320,7 @@ func decodeUTF32(data []byte, mod string) (string, error) {
 	var b strings.Builder
 	for i := 0; i < len(data); i += 4 {
 		if i+4 > len(data) {
-			return "", &UnicodeDecodeError{codec, data[i], i, "truncated data"}
+			return "", &UnicodeDecodeError{Codec: codec, Byte: data[i], Pos: i, Reason: "truncated data"}
 		}
 		r := order.Uint32(data[i:])
 		if r > 0x10ffff || r >= 0xd800 && r < 0xe000 {
@@ -263,7 +328,7 @@ func decodeUTF32(data []byte, mod string) (string, error) {
 			if r >= 0xd800 && r < 0xe000 {
 				reason = "code point in surrogate code point range(0xd800, 0xe000)"
 			}
-			return "", &UnicodeDecodeError{codec, data[i], i, reason}
+			return "", &UnicodeDecodeError{Codec: codec, Byte: data[i], Pos: i, Reason: reason}
 		}
 		b.WriteRune(rune(r))
 	}
@@ -274,7 +339,7 @@ func decodeUTF32(data []byte, mod string) (string, error) {
 func decodeMultiByte(enc encoding.Encoding, data []byte, mod string) (string, error) {
 	out, err := enc.NewDecoder().Bytes(data)
 	if err != nil {
-		return "", &UnicodeDecodeError{mod, data[0], 0, "illegal multibyte sequence"}
+		return "", &UnicodeDecodeError{Codec: mod, Byte: data[0], Pos: 0, Reason: "illegal multibyte sequence"}
 	}
 	pos := 0
 	for _, r := range string(out) {
@@ -283,7 +348,7 @@ func decodeMultiByte(enc encoding.Encoding, data []byte, mod string) (string, er
 			if pos >= len(data) {
 				pos = len(data) - 1
 			}
-			return "", &UnicodeDecodeError{mod, data[pos], pos, "illegal multibyte sequence"}
+			return "", &UnicodeDecodeError{Codec: mod, Byte: data[pos], Pos: pos, Reason: "illegal multibyte sequence"}
 		}
 		pos += len(want)
 	}

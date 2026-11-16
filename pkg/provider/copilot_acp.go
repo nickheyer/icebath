@@ -213,19 +213,19 @@ func copilotACPLiveContextLength(ctx context.Context, model, apiKey, baseURL str
 	return copilot.LiveContextLength(ctx, model, apiKey, baseURL)
 }
 
-// Copilot id space, the ACP marker key never reaching the HTTP catalog
-func copilotACPNormalizeModelID(model, _ string) string {
-	copilot := getProviderProfile(context.Background(), "copilot")
+// Copilot id space of the call's home registry, the ACP marker key never reaching the HTTP catalog
+func copilotACPNormalizeModelID(ctx context.Context, model, _ string) string {
+	copilot := getProviderProfile(ctx, "copilot")
 	if copilot == nil {
 		return ""
 	}
-	return copilot.NormalizeModelID(model, "")
+	return copilot.NormalizeModelID(ctx, model, "")
 }
 
 // Accounts card status, signed in only on env token evidence and managed by the CLI otherwise
 func copilotACPAccountStatus(ctx context.Context) (any, error) {
 	creds, cliErr := copilotACPCLIStatus(ctx)
-	verified, authSource, _ := copilotCLIAuthEvidence()
+	verified, authSource, _ := copilotCLIAuthEvidence(ctx)
 	configured := cliErr == nil
 	var label string
 	switch {
@@ -249,7 +249,7 @@ func copilotACPAccountStatus(ctx context.Context) (any, error) {
 
 // GitHub Copilot ACP model flow through the local Copilot CLI, inside a user started Copilot flow
 func modelFlowCopilotACP(r *ModelFlowRun) error {
-	return withCopilotUserFlow(func() error { return copilotACPModelFlowBody(r) })
+	return copilotACPModelFlowBody(copilotUserFlowRun(r))
 }
 
 func copilotACPModelFlowBody(r *ModelFlowRun) error {

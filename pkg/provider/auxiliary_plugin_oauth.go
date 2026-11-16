@@ -49,7 +49,7 @@ func auxResolvePluginOAuthClient(ctx context.Context, req auxResolveRequest) aux
 	if model == "" {
 		model = auxGetAuxModelForProvider(ctx, provider)
 	}
-	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(model, provider))
+	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(ctx, model, provider))
 }
 
 // Python truthiness of a normalized key, a non empty string or a key provider

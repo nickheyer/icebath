@@ -161,6 +161,9 @@ func isGlobalEnv(name string) bool {
 	return false
 }
 
+// Call context profile hooks read through, the resolver's home bound onto its context
+func (r *resolver) hookCtx() context.Context { return ctxForHome(r.ctx, r.home) }
+
 // Process environment value under the get_secret rules, a scoped routed profile never reading another profile's value
 func (r *resolver) processEnv(name string) string {
 	if boundScope(r.ctx) != nil && !isGlobalEnv(name) && r.servesRoutedProfile() {
@@ -511,8 +514,8 @@ func effectiveModel(modelCfg map[string]any, targetModel string) string {
 	return cfgString(modelCfg["default"])
 }
 
-// PerModelAPIModeHook is a provider profile hook answering the wire for one model, empty for the declared mode
-type PerModelAPIModeHook func(model, apiKey string) APIMode
+// PerModelAPIModeHook answers the wire for one model with a key or no key, empty for the declared mode
+type PerModelAPIModeHook func(model string, apiKey *string) APIMode
 
 var (
 	perModelHooksMu sync.RWMutex
@@ -570,7 +573,7 @@ var (
 )
 
 // The profile's per model wire answer, a raising hook answering the declared mode and warning once per provider
-func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model, apiKey string) (mode APIMode) {
+func modelAPIMode(ctx context.Context, profile *perModelHookProfile, model string, apiKey *string) (mode APIMode) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			apiModeWarnedMu.Lock()
@@ -596,7 +599,7 @@ func ProfileModelAPIMode(ctx context.Context, profile Profile, model string) (st
 		perModelHooksMu.RUnlock()
 	}
 	if hook == nil && profile.PerModelMode != nil {
-		hook = func(m, _ string) APIMode { return profile.PerModelMode(m) }
+		hook = func(m string, _ *string) APIMode { return profile.PerModelMode(m) }
 	}
 	if hook == nil {
 		return "", false
@@ -605,7 +608,7 @@ func ProfileModelAPIMode(ctx context.Context, profile Profile, model string) (st
 	if declared == "" {
 		declared = ModeChatCompletions
 	}
-	mode := modelAPIMode(ctx, &perModelHookProfile{name: profile.Name, mode: declared, hook: hook}, model, "")
+	mode := modelAPIMode(ctx, &perModelHookProfile{name: profile.Name, mode: declared, hook: hook}, model, nil)
 	return string(mode), mode != ""
 }
 
@@ -615,7 +618,7 @@ func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]an
 	configured := r.configuredAPIMode(provider, modelCfg)
 	modelName := strings.TrimSpace(effectiveModel(modelCfg, targetModel))
 	if configured != "" {
-		if configured == ModeCodexResponses && modelName != "" && profile != nil && modelAPIMode(r.ctx, profile, modelName, "") == ModeChatCompletions {
+		if configured == ModeCodexResponses && modelName != "" && profile != nil && modelAPIMode(r.ctx, profile, modelName, nil) == ModeChatCompletions {
 			return ModeChatCompletions
 		}
 		return configured
@@ -624,7 +627,7 @@ func (r *resolver) profileRuntimeAPIMode(provider string, modelCfg map[string]an
 		return ModeChatCompletions
 	}
 	if modelName != "" {
-		if m := modelAPIMode(r.ctx, profile, modelName, apiKey); m != "" {
+		if m := modelAPIMode(r.ctx, profile, modelName, &apiKey); m != "" {
 			return m
 		}
 	}
@@ -1047,10 +1050,10 @@ func (r *resolver) modelLevelKeyEnv(providerID string) string {
 }
 
 // APIKeySecretResolver is a provider owned credential resolution returning the runtime key and its source
-type APIKeySecretResolver func() (apiKey, source string, ok bool)
+type APIKeySecretResolver func(ctx context.Context) (apiKey, source string, ok bool)
 
 // RuntimeBaseURLResolver is a provider owned base URL derived from the credential, empty for env or default
-type RuntimeBaseURLResolver func(apiKey, defaultURL, envURL string) string
+type RuntimeBaseURLResolver func(ctx context.Context, apiKey, defaultURL, envURL string) string
 
 var (
 	credentialSeamsMu   sync.RWMutex
@@ -1089,7 +1092,7 @@ func (r *resolver) apiKeyProviderSecret(providerID string, pconfig Profile) (str
 	}
 	credentialSeamsMu.RUnlock()
 	if owned != nil {
-		if key, source, ok := owned(); ok {
+		if key, source, ok := owned(r.hookCtx()); ok {
 			return key, source, nil
 		}
 	}
@@ -1189,7 +1192,7 @@ func (r *resolver) apiKeyProviderCredentials(providerID string) (apiKeyCreds, er
 	credentialSeamsMu.RUnlock()
 	baseURL := ""
 	if urlSeam != nil {
-		baseURL = urlSeam(apiKey, pconfig.BaseURL, envURL)
+		baseURL = urlSeam(r.hookCtx(), apiKey, pconfig.BaseURL, envURL)
 	}
 	if baseURL == "" {
 		baseURL = r.apiKeyProviderBaseURL(providerID, apiKey, pconfig, envURL)
@@ -1628,7 +1631,7 @@ func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg 
 	}
 	if p := getProviderProfile(r.ctx, provider); provider != "nous" && p != nil && p.PreparePoolEntryHook != nil {
 		entry := PooledCredential{Provider: provider, AuthType: AuthTypeAPIKey, AccessToken: cred.APIKey, BaseURL: cred.BaseURL}
-		cred.APIKey = p.PreparePoolEntry(&entry, cred.APIKey)
+		cred.APIKey = p.PreparePoolEntry(r.hookCtx(), &entry, cred.APIKey)
 		cred.BaseURL = entry.RuntimeBaseURL()
 	}
 	if cred.TokenSource == nil && !hasUsableSecret(cred.APIKey) {

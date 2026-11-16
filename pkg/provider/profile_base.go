@@ -498,8 +498,8 @@ func (p Profile) SupportedReasoningEfforts(ctx context.Context, model string) ([
 	return nil, false, nil
 }
 
-// APIModeForModel returns the per model wire, empty for the profile mode
-func (p Profile) APIModeForModel(model, apiKey string) APIMode {
+// APIModeForModel returns the per model wire for a key or no key, empty for the profile mode
+func (p Profile) APIModeForModel(model string, apiKey *string) APIMode {
 	if p.APIModeForModelHook != nil {
 		return p.APIModeForModelHook(model, apiKey)
 	}
@@ -648,41 +648,41 @@ func (p Profile) LiveContextLength(ctx context.Context, model, apiKey, baseURL s
 }
 
 // NormalizeModelID returns the provider native id, empty for the generic normalization
-func (p Profile) NormalizeModelID(model, apiKey string) string {
+func (p Profile) NormalizeModelID(ctx context.Context, model, apiKey string) string {
 	if p.NormalizeModelIDHook != nil {
-		return p.NormalizeModelIDHook(model, apiKey)
+		return p.NormalizeModelIDHook(ctx, model, apiKey)
 	}
 	return ""
 }
 
 // ResolveAPIKeySecret returns the provider owned runtime key and source, false for the generic ladder
-func (p Profile) ResolveAPIKeySecret() (string, string, bool) {
+func (p Profile) ResolveAPIKeySecret(ctx context.Context) (string, string, bool) {
 	if p.ResolveAPIKeySecretHook != nil {
-		return p.ResolveAPIKeySecretHook()
+		return p.ResolveAPIKeySecretHook(ctx)
 	}
 	return "", "", false
 }
 
 // RuntimeBaseURL returns the credential derived base url, empty for the env or default url
-func (p Profile) RuntimeBaseURL(apiKey, def, envURL string) string {
+func (p Profile) RuntimeBaseURL(ctx context.Context, apiKey, def, envURL string) string {
 	if p.RuntimeBaseURLHook != nil {
-		return p.RuntimeBaseURLHook(apiKey, def, envURL)
+		return p.RuntimeBaseURLHook(ctx, apiKey, def, envURL)
 	}
 	return ""
 }
 
 // PreparePoolEntry turns the selected pool row secret into the runtime key, unchanged by default
-func (p Profile) PreparePoolEntry(entry *PooledCredential, apiKey string) string {
+func (p Profile) PreparePoolEntry(ctx context.Context, entry *PooledCredential, apiKey string) string {
 	if p.PreparePoolEntryHook != nil {
-		return p.PreparePoolEntryHook(entry, apiKey)
+		return p.PreparePoolEntryHook(ctx, entry, apiKey)
 	}
 	return apiKey
 }
 
 // SeedPoolCredentials returns rows the provider seeds itself, nil keeps generic env seeding
-func (p Profile) SeedPoolCredentials(suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any {
+func (p Profile) SeedPoolCredentials(ctx context.Context, suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any {
 	if p.SeedPoolCredentialsHook != nil {
-		return p.SeedPoolCredentialsHook(suppressedSources, explicitlyConfigured)
+		return p.SeedPoolCredentialsHook(ctx, suppressedSources, explicitlyConfigured)
 	}
 	return nil
 }
@@ -728,9 +728,9 @@ func (p Profile) RequestRejectionHint(statusCode int, baseURL string) []string {
 }
 
 // ExternalAuthEvidence returns subprocess free login evidence, false when the binary decides
-func (p Profile) ExternalAuthEvidence() (bool, string, bool) {
+func (p Profile) ExternalAuthEvidence(ctx context.Context) (bool, string, bool) {
 	if p.ExternalAuthEvidenceHook != nil {
-		return p.ExternalAuthEvidenceHook()
+		return p.ExternalAuthEvidenceHook(ctx)
 	}
 	return false, "", false
 }

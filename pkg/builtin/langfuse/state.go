@@ -136,13 +136,16 @@ func goroutineID() string {
 	return fields[0]
 }
 
-// In process key of one turn's trace, the turn id winning over the request id so turn and request hooks meet
+// In process key of one turn's trace, the turn id winning over the request id so both hook kinds meet
 func traceKey(taskID, sessionID, turnID, apiRequestID string) string {
-	scope := "thread:" + goroutineID()
-	if taskID != "" {
+	var scope string
+	switch {
+	case taskID != "":
 		scope = "task:" + taskID
-	} else if sessionID != "" {
+	case sessionID != "":
 		scope = "session:" + sessionID
+	default:
+		scope = "thread:" + goroutineID()
 	}
 	if turnID != "" {
 		return scope + ":turn:" + turnID
@@ -507,7 +510,7 @@ func popGeneration(key string, apiCallCount any) (*traceState, *observation, str
 	return state, gen, model
 }
 
-// Live state of a key, a new root opened first when absent after evicting the least recently updated, the caller holding the lock
+// Live state of a key, opening a root after evicting the stalest when absent, the caller holding the lock
 func getOrStartStateLocked(ctx context.Context, c *lfClient, key string, a rootArgs) *traceState {
 	state, ok := traceStates.get(key)
 	if !ok {

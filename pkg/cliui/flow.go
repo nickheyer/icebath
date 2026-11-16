@@ -338,7 +338,10 @@ func (c *Console) Banner(wide []string, compact string, tagline string) {
 		io.WriteString(out, margin+line+"\n")
 	}
 	if tagline != "" {
-		io.WriteString(out, "\n"+margin+c.paint(c.clip(tagline, cols-flowMargin-1), textStyle{color: activeTheme().Muted})+"\n")
+		io.WriteString(out, "\n")
+		for _, row := range c.textRows(tagline, textStyle{color: activeTheme().Muted}, cols-flowMargin-1) {
+			io.WriteString(out, margin+row+"\n")
+		}
 	}
 	if f := c.flow(); f != nil {
 		f.settle()

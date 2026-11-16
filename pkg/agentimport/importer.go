@@ -249,7 +249,7 @@ func ClaudeRuleToCommandPattern(rule string) string {
 	if m == nil {
 		return ""
 	}
-	inner := pystr.Strip(m.GroupByName("inner").String())
+	inner := pystr.Strip(m.GroupByNumber(1).String())
 	if strings.HasSuffix(inner, ":*") {
 		return inner[:len(inner)-2] + "*"
 	}

@@ -33,7 +33,7 @@ var lowercaseModelProviders = map[string]bool{"xiaomi": true}
 var deepseekRetiredAliases = map[string]string{"deepseek-chat": "deepseek-flash", "deepseek-reasoner": "deepseek-flash"}
 
 // ModelIDNormalizer is a provider profile hook that returns the native id for a model or empty for generic rules
-type ModelIDNormalizer func(model, apiKey string) string
+type ModelIDNormalizer func(ctx context.Context, model, apiKey string) string
 
 var (
 	modelIDNormalizersMu sync.RWMutex
@@ -52,10 +52,10 @@ func RegisterModelIDNormalizer(provider string, fn ModelIDNormalizer) {
 }
 
 // Native id from the provider profile hook, empty when no hook exists or it declines
-func profileNormalizeModelID(provider, model string) (out string) {
+func profileNormalizeModelID(ctx context.Context, provider, model string) (out string) {
 	modelIDNormalizersMu.RLock()
 	fn := modelIDNormalizers[provider]
-	if p := getProviderProfile(context.Background(), provider); p != nil && p.NormalizeModelIDHook != nil {
+	if p := getProviderProfile(ctx, provider); p != nil && p.NormalizeModelIDHook != nil {
 		fn = p.NormalizeModelIDHook
 	}
 	modelIDNormalizersMu.RUnlock()
@@ -67,7 +67,7 @@ func profileNormalizeModelID(provider, model string) (out string) {
 			out = ""
 		}
 	}()
-	return fn(model, "")
+	return fn(ctx, model, "")
 }
 
 // Folds retired DeepSeek aliases onto their replacement and lowercases everything else
@@ -200,8 +200,13 @@ func SuggestPrefixedModelID(provider, model string) string {
 	return repaired
 }
 
-// NormalizeModelForProvider rewrites a bare, vendor prefixed, or native model name into the target provider's form
+// NormalizeModelForProvider is NormalizeModelForProviderCtx for a caller holding no context
 func NormalizeModelForProvider(model, targetProvider string) string {
+	return NormalizeModelForProviderCtx(context.Background(), model, targetProvider)
+}
+
+// NormalizeModelForProviderCtx rewrites a model name into the target provider's form, profile hooks reading the call's home
+func NormalizeModelForProviderCtx(ctx context.Context, model, targetProvider string) string {
 	name := strings.TrimSpace(model)
 	if name == "" {
 		return name
@@ -228,7 +233,7 @@ func NormalizeModelForProvider(model, targetProvider string) string {
 		}
 		return dotsToHyphens(bare)
 	}
-	if native := profileNormalizeModelID(provider, name); native != "" {
+	if native := profileNormalizeModelID(ctx, provider, name); native != "" {
 		return native
 	}
 	if stripVendorOnlyProviders[provider] {

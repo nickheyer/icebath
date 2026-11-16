@@ -266,7 +266,9 @@ func (h *toolHandlers) permissionsRespond(kw *pyjson.Object) string {
 }
 
 // Keyword parameter of a bridge handler signature
-func reqStr(name string) provider.MCPToolParam { return provider.MCPToolParam{Name: name, Type: "str", Required: true} }
+func reqStr(name string) provider.MCPToolParam {
+	return provider.MCPToolParam{Name: name, Type: "str", Required: true}
+}
 func optionalStr(name string) provider.MCPToolParam {
 	return provider.MCPToolParam{Name: name, Type: "str"}
 }

@@ -427,7 +427,7 @@ func (c *Chain) shouldSkipCandidate(ctx context.Context, fb Route, key [3]string
 	if provider == "" || model == "" {
 		return true
 	}
-	if c.cooldown.IsEntitlementRejected(provider, model) {
+	if c.cooldown.IsEntitlementRejected(ctx, provider, model) {
 		c.opts.Log.Info(fmt.Sprintf("Fallback skip: %s/%s was rejected as unentitled for this account", provider, model))
 		return true
 	}
@@ -518,7 +518,7 @@ func (c *Chain) TryActivateFallback(ctx context.Context, reason FailoverReason, 
 		next := fb
 		next.Provider = provider
 		if provider != "moa" {
-			next.Model = NormalizeModelForProvider(model, provider)
+			next.Model = NormalizeModelForProviderCtx(ctx, model, provider)
 		} else {
 			next.Model = model
 		}
@@ -654,7 +654,7 @@ func (c *Chain) RestorePrimary(ctx context.Context) (Route, bool) {
 	}
 	primaryProvider := strings.ToLower(strings.TrimSpace(c.primary.Provider))
 	primaryModel := strings.TrimSpace(c.primary.Model)
-	if primaryModel != "" && (c.cooldown.IsEntitlementRejected(primaryProvider, primaryModel) || IsKnownNonChatModel(primaryModel)) {
+	if primaryModel != "" && (c.cooldown.IsEntitlementRejected(ctx, primaryProvider, primaryModel) || IsKnownNonChatModel(primaryModel)) {
 		return c.current, false
 	}
 	if c.primaryQuotaReopenedEarly(ctx, primaryProvider, primaryModel) {

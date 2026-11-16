@@ -98,32 +98,48 @@ func (r *liveRegion) close(final []string) {
 	}
 }
 
-// Line a finished prompt leaves behind, its title dimmed beside the answer, both cut to share the row
-func (c *Console) answerLine(title, answer string, tone textStyle) string {
+// Columns a live prompt draws its text in, the terminal width less the margin and the spare last column
+func bodyWidth(cols int) int { return max(cols-5, 10) }
+
+// Lines a finished prompt leaves behind, its title dimmed before the answer and a faint note, wrapped under the title
+func (c *Console) answerLines(title, answer string, tone textStyle, note string) []string {
 	g, t := c.glyphs(), activeTheme()
 	_, cols, err := c.termSize()
 	if err != nil || cols <= 0 {
 		cols = 80
 	}
-	room := max(cols-1-flowMargin-4, 16)
-	title = c.clip(title, max(room-min(ansi.StringWidth(answer), room/2), 8))
-	answer = c.clip(answer, max(room-ansi.StringWidth(title), 4))
-	return strings.Repeat(" ", flowMargin) + c.paint(g.answered, textStyle{color: t.Faint}) + " " +
-		c.paint(title, textStyle{color: t.Muted}) + "  " + c.paint(answer, tone)
+	spans := []span{{title, textStyle{color: t.Muted}}, {"  ", textStyle{}}, {answer, tone}}
+	if note != "" {
+		spans = append(spans, span{" ", textStyle{}}, span{note, textStyle{color: t.Faint}})
+	}
+	margin := strings.Repeat(" ", flowMargin)
+	return hung(c.spanRows(measureSpans(spans), spans, bodyWidth(cols)), margin+c.paint(g.answered, textStyle{color: t.Faint})+" ", margin+"  ")
 }
 
 // Title rows of a live prompt, the mark on the first and a long title wrapped under its text
 func (c *Console) titleLines(title string, body int) []string {
 	g, t := c.glyphs(), activeTheme()
-	var lines []string
-	for i, part := range wrapWords(title, max(body, 12)) {
-		lead := "    "
-		if i == 0 {
-			lead = strings.Repeat(" ", flowMargin) + c.paint(g.active, textStyle{color: t.Accent}) + " "
+	mark := strings.Repeat(" ", flowMargin) + c.paint(g.active, textStyle{color: t.Accent}) + " "
+	return hung(c.textRows(title, textStyle{bold: true}, body), mark, "    ")
+}
+
+// Key hint rows under a prompt, joined by the separator, a hint starting a new row when one is full
+func (c *Console) hintRows(parts []string, body int, tone string) []string {
+	sep := "  " + c.glyphs().sep + "  "
+	var rows []string
+	for _, part := range parts {
+		for _, piece := range measure(part).rows(body) {
+			if n := len(rows); n > 0 && ansi.StringWidth(rows[n-1]+sep+piece) <= body {
+				rows[n-1] += sep + piece
+			} else {
+				rows = append(rows, piece)
+			}
 		}
-		lines = append(lines, lead+c.paint(c.clip(part, body), textStyle{bold: true}))
 	}
-	return lines
+	for i, row := range rows {
+		rows[i] = "    " + c.paint(row, textStyle{color: tone})
+	}
+	return rows
 }
 
 // Prompt title as shown, without surrounding space, color codes or a trailing colon

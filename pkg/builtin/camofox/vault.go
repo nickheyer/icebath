@@ -57,7 +57,7 @@ func (b *pageBackend) HasPage(taskID string) bool {
 	return ss != nil && ss.hasTab()
 }
 
-// Evaluates on the task's tab over the REST API, a secret script sent only to loopback or HTTPS with no proxy or redirect
+// Evaluates on the task tab over REST, a secret script sent only to loopback or HTTPS without proxy or redirect
 func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, error) {
 	s := b.scope()
 	ss := s.trackedSession(taskID)

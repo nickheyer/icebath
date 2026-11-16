@@ -38,7 +38,7 @@ func (a *AIAgent) finalizeRouting(ctx context.Context, apiMode string) {
 	}
 	finalizeRoutingPanics(func() {
 		if !modelNormalizeAggregators[a.provider] {
-			a.model = provider.NormalizeModelForProvider(a.model, a.provider)
+			a.model = provider.NormalizeModelForProviderCtx(ctx, a.model, a.provider)
 			a.modelNone = false
 		}
 	})

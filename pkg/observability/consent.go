@@ -37,12 +37,12 @@ const (
 )
 
 var offerDescription = strings.Join([]string{
-	"Shared metrics are bounded counters: activity, outcomes, error classes (with a",
-	"fixed-list reason when a memory write, compression, update or install fails),",
-	"model routes, token totals, feature use and coarse machine facts. Never prompts,",
-	"files, paths, setting values or error text. Sharing sends them to Nous once a",
-	"day. Apart from a one-time install note, data from before you opt in is never",
-	"sent.",
+	"Shared metrics are bounded counters: activity, outcomes, error classes (with a " +
+		"fixed-list reason when a memory write, compression, update or install fails), " +
+		"model routes, token totals, feature use and coarse machine facts. Never prompts, " +
+		"files, paths, setting values or error text. Sharing sends them to Nous once a " +
+		"day. Apart from a one-time install note, data from before you opt in is never " +
+		"sent.",
 	"Details: " + DocsURL,
 	"Change it any time: icebath setup telemetry",
 }, "\n")

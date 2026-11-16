@@ -79,7 +79,7 @@ func (c *Console) replayedAnswer(title, answer string) {
 		return
 	}
 	region := c.openRegion()
-	region.close([]string{c.answerLine(title, answer, textStyle{})})
+	region.close(c.answerLines(title, answer, textStyle{}, ""))
 }
 
 // Name the answer line gives a replayed choice index, cancelled when it is none of the rows

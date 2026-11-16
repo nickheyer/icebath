@@ -75,7 +75,7 @@ func auxResolveMinimaxOAuthArm(ctx context.Context, req auxResolveRequest) (auxR
 		if model == "" {
 			model = "MiniMax-M3"
 		}
-		return auxNormalizeResolvedModel(model, req.Provider)
+		return auxNormalizeResolvedModel(ctx, model, req.Provider)
 	}
 	if auxProbeActive(ctx) {
 		state, err := auxProviderAuthStateFn(env, "minimax-oauth")

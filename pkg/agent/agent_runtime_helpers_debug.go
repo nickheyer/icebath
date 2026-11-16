@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -163,7 +162,7 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintln(os.Stdout, echo)
+		fmt.Fprintln(statusStdout, echo)
 	}
 	return dumpFile, nil
 }

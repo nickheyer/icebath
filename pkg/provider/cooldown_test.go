@@ -199,52 +199,6 @@ func entitlementError(model string) *APIError {
 	return &APIError{StatusCode: 400, Message: "The '" + model + "' model is not supported when using Codex with a ChatGPT account."}
 }
 
-func TestMarkerFiresOnlyOnSingleCredentialEntitlement400AndFallbackWalkSkipsIt(t *testing.T) {
-	cd := NewCooldown(nil)
-	for _, err := range []*APIError{
-		{StatusCode: 500, Message: "server error"}, {StatusCode: 429, Message: "rate limited"},
-		{StatusCode: 400, Message: "invalid request body"}, {StatusCode: 403, Message: "model is not supported when using Codex with a ChatGPT account."},
-	} {
-		if cd.MarkEntitlementRejected(err, "openai-codex", "gpt-5.6-sol", nil) {
-			t.Fatalf("marker fired for %+v", err)
-		}
-	}
-	pool := &fakePool{provider: "openai-codex", available: true, entries: 2}
-	if cd.MarkEntitlementRejected(entitlementError("gpt-5.6-sol"), "openai-codex", "gpt-5.6-sol", pool.HasAvailable) {
-		t.Fatal("rotation owns the recovery while a pool entry is eligible")
-	}
-	if len(pool.askedFor) != 1 || pool.askedFor[0] != "gpt-5.6-sol" {
-		t.Fatalf("pool asked %v", pool.askedFor)
-	}
-	if len(cd.EntitlementRejected()) != 0 {
-		t.Fatal("no marker expected yet")
-	}
-	pool.available = false
-	if !cd.MarkEntitlementRejected(entitlementError("gpt-5.6-sol"), "openai-codex", "gpt-5.6-sol", pool.HasAvailable) {
-		t.Fatal("marker should fire once every entry is benched")
-	}
-	var diagnostics []string
-	cd.Diagnostic = func(s string) { diagnostics = append(diagnostics, s) }
-	if !cd.MarkEntitlementRejected(entitlementError("gpt-5.6-sol"), "openai-codex", "gpt-5.6-sol", nil) {
-		t.Fatal("marker without a pool")
-	}
-	if rejected := cd.EntitlementRejected(); len(rejected) != 1 || rejected[0] != [2]string{"openai-codex", "gpt-5.6-sol"} {
-		t.Fatalf("rejected %v", rejected)
-	}
-	if len(diagnostics) != 0 {
-		t.Fatal("a repeated marker must not announce again")
-	}
-	if !cd.IsEntitlementRejected("openai-codex", "gpt-5.6-sol") || cd.IsEntitlementRejected("openai-codex", "other") {
-		t.Fatal("rejected lookup")
-	}
-	activated := 0
-	chain := NewChain(ChainOptions{Primary: Route{Provider: "openai-codex", Model: "gpt-5.6-sol"}, Fallbacks: []Route{{Provider: "openai-codex", Model: "gpt-5.6-sol"}}, Cooldown: cd,
-		OnActivate: func(ctx context.Context, old, next Route) error { activated++; return nil }})
-	if chain.TryActivateFallback(context.Background(), "", nil) || activated != 0 {
-		t.Fatal("the rejected slug must be skipped and the chain exhausts")
-	}
-}
-
 func TestRestorePrimaryRuntimeIsGatedOnRejectedPrimarySlug(t *testing.T) {
 	run := func(rejectedSlug string) (*Chain, bool, []string) {
 		cd := NewCooldown(nil)

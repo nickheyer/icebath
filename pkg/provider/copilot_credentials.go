@@ -895,8 +895,7 @@ var copilotRuntimeRefreshers = map[string]func(ctx context.Context) (string, str
 }
 
 // Exchanged Copilot token and source, the raw env token without a GitHub call for a home that never chose Copilot
-func copilotResolveAPIKeySecret() (string, string, bool) {
-	ctx := context.Background()
+func copilotResolveAPIKeySecret(ctx context.Context) (string, string, bool) {
 	token, source, err := resolveCopilotToken(ctx)
 	if err == nil && token != "" {
 		if !githubCallsAllowed(ctx) {
@@ -909,8 +908,7 @@ func copilotResolveAPIKeySecret() (string, string, bool) {
 }
 
 // Account base url from the exchange, else the env override, else the registry default
-func copilotRuntimeBaseURL(_ string, def, envURL string) string {
-	ctx := context.Background()
+func copilotRuntimeBaseURL(ctx context.Context, _ string, def, envURL string) string {
 	baseURL := def
 	if envURL != "" {
 		baseURL = strings.TrimRight(envURL, "/")
@@ -930,14 +928,14 @@ func copilotRuntimeBaseURL(_ string, def, envURL string) string {
 }
 
 // Exchanges a raw GitHub token still sitting in the selected pool row, warning once when it stays raw
-func copilotPreparePoolEntry(entry *PooledCredential, apiKey string) string {
+func copilotPreparePoolEntry(ctx context.Context, entry *PooledCredential, apiKey string) string {
 	if apiKey == "" {
 		return apiKey
 	}
 	if valid, _ := validateCopilotToken(apiKey); !valid {
 		return apiKey
 	}
-	apiToken, enterpriseBase := getCopilotAPIToken(context.Background(), apiKey)
+	apiToken, enterpriseBase := getCopilotAPIToken(ctx, apiKey)
 	if apiToken == apiKey && enterpriseBase == "" {
 		copilotWarnRawDegradationOnce(apiKey)
 		return apiKey
@@ -950,8 +948,7 @@ func copilotPreparePoolEntry(entry *PooledCredential, apiKey string) string {
 }
 
 // Pool row of the env token, exchanged only for a home that chose Copilot, nothing when its source is suppressed
-func copilotSeedPoolCredentials(suppressed map[string]bool, _ bool) []map[string]any {
-	ctx := context.Background()
+func copilotSeedPoolCredentials(ctx context.Context, suppressed map[string]bool, _ bool) []map[string]any {
 	all := true
 	for _, s := range copilotPoolSources {
 		if !suppressed[s] {
@@ -1046,8 +1043,7 @@ func copilotRequestRejectionHint(statusCode int, baseURL string) []string {
 func copilotMissingCredentialsHint() any { return "Run `icebath auth add copilot` to sign in." }
 
 // Sign in evidence for copilot-acp from a supported env token only, the CLI's own files never read
-func copilotCLIAuthEvidence() (bool, string, bool) {
-	ctx := context.Background()
+func copilotCLIAuthEvidence(ctx context.Context) (bool, string, bool) {
 	for _, envVar := range copilotEnvVars {
 		raw, _, err := GetSecret(ctx, envVar)
 		if err != nil {

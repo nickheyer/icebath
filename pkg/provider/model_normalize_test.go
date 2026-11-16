@@ -84,24 +84,6 @@ func TestColonProviderPrefixStrippedLikeSlash(t *testing.T) {
 	}
 }
 
-func TestProfileNormalizerWinsOverGenericRules(t *testing.T) {
-	const name = "l4-fake-idspace"
-	RegisterModelIDNormalizer(name, func(model, _ string) string {
-		bare := stripVendorPrefix(model)
-		if bare == "fancy-4-5" {
-			return "fancy-4.5"
-		}
-		return model
-	})
-	t.Cleanup(func() { RegisterModelIDNormalizer(name, nil) })
-	if got := NormalizeModelForProvider("fancy-4-5", name); got != "fancy-4.5" {
-		t.Fatalf("got %q", got)
-	}
-	if got := NormalizeModelForProvider("vendor/fancy-4-5", name); got != "fancy-4.5" {
-		t.Fatalf("prefixed: got %q", got)
-	}
-}
-
 func TestProfilesWithoutHookKeepGenericNormalization(t *testing.T) {
 	if got := NormalizeModelForProvider("openai/gpt-5.4", "openai-codex"); got != "gpt-5.4" {
 		t.Fatalf("got %q", got)

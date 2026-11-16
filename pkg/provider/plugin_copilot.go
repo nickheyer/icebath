@@ -108,15 +108,15 @@ func copilotBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (extra
 	return map[string]any{"reasoning": map[string]any{"effort": effort}}, map[string]any{}
 }
 
-// Per model wire, the id pattern alone without a key and the catalog normalized id with one
-func copilotAPIModeForModel(model, apiKey string) APIMode {
-	if apiKey == "" {
+// Per model wire, the raw id pattern without a key and the normalized id with any key, empty included
+func copilotAPIModeForModel(model string, apiKey *string) APIMode {
+	if apiKey == nil {
 		if copilotRequiresResponsesAPI(model) {
 			return ModeCodexResponses
 		}
 		return ModeChatCompletions
 	}
-	return copilotModelAPIMode(context.Background(), model, nil, apiKey)
+	return copilotModelAPIMode(context.Background(), model, nil, *apiKey)
 }
 
 // Editor attribution headers for a Copilot host, nil elsewhere
@@ -180,6 +180,6 @@ func copilotLiveContextLength(ctx context.Context, model, apiKey, _ string) int 
 }
 
 // Copilot native id of a model, the catalog consulted when a key is given
-func copilotNormalizeModelID(model, apiKey string) string {
-	return normalizeCopilotModelID(context.Background(), model, nil, apiKey)
+func copilotNormalizeModelID(ctx context.Context, model, apiKey string) string {
+	return normalizeCopilotModelID(ctx, model, nil, apiKey)
 }

@@ -478,7 +478,7 @@ func GetAPIKeyProviderStatus(env PoolEnv, providerID string) map[string]any {
 // Positive evidence that an external process CLI is authed, the binary resolving being the generic proof
 func externalProcessAuthEvidence(ctx context.Context, providerID, resolvedCommand string) (bool, string) {
 	if p := getProviderProfile(ctx, providerID); p != nil {
-		if verified, source, ok := p.ExternalAuthEvidence(); ok {
+		if verified, source, ok := p.ExternalAuthEvidence(ctx); ok {
 			return verified, source
 		}
 	}
@@ -496,7 +496,7 @@ func GetExternalProcessProviderStatus(env PoolEnv, providerID string) map[string
 	}
 	command, args, baseURL, resolvedCommand, _ := authResolver(env).externalProcessSpec(pconfig)
 	available := resolvedCommand != "" || strings.HasPrefix(baseURL, "acp+tcp://")
-	authVerified, authSource := externalProcessAuthEvidence(env.ctx(), providerID, resolvedCommand)
+	authVerified, authSource := externalProcessAuthEvidence(env.hookContext(), providerID, resolvedCommand)
 	var resolved, source any
 	if resolvedCommand != "" {
 		resolved = resolvedCommand

@@ -343,7 +343,18 @@ func TestResizeRepaintsFromTheRegionTopWithoutLeftovers(t *testing.T) {
 	}()
 	waitFor(t, r, func(s string) bool { return strings.Contains(s, "the first long explanation of a choice") })
 	r.resize(34, 30)
-	waitFor(t, r, func(s string) bool { return strings.Contains(s, "…") && strings.Count(s, "● Resizable") == 1 })
+	waitFor(t, r, func(s string) bool {
+		return strings.Count(s, "● Resizable") == 1 && strings.Contains(s, strings.Join([]string{
+			"    ❯ Alpha  the first long",
+			"             explanation of a",
+			"             choice",
+			"      Beta   the second long",
+			"             explanation",
+			"",
+			"    ↑↓ move  ·  enter select",
+			"    esc cancel",
+		}, "\n"))
+	})
 	r.resize(100, 30)
 	waitFor(t, r, func(s string) bool {
 		return strings.Contains(s, "the first long explanation of a choice") && strings.Count(s, "● Resizable") == 1
@@ -998,7 +1009,7 @@ func TestInputInsideAFlowIsAYesNoListOrAField(t *testing.T) {
 	}
 }
 
-func TestLongTitleWrapsWhileLiveAndSharesTheAnswerRow(t *testing.T) {
+func TestLongTitleWrapsWhileLiveAndInItsAnswer(t *testing.T) {
 	pipeIn, pipeOut := io.Pipe()
 	r := newRig(pipeIn, 50, 20)
 	done := make(chan struct{})
@@ -1012,8 +1023,8 @@ func TestLongTitleWrapsWhileLiveAndSharesTheAnswerRow(t *testing.T) {
 	})
 	io.WriteString(pipeOut, "\r")
 	<-done
-	if got := r.text(); got != "  › Install the gateway service so Icebath s…  No" {
-		t.Fatalf("answer row:\n%q", got)
+	if got := r.text(); got != "  › Install the gateway service so Icebath starts\n    automatically at login?  No" {
+		t.Fatalf("answer rows:\n%q", got)
 	}
 }
 

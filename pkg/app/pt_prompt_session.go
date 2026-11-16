@@ -108,6 +108,7 @@ type ptStdoutProxy struct {
 	mu     sync.Mutex
 	app    func() *ptApplication
 	out    io.Writer
+	above  func(text string)
 	buffer bytes.Buffer
 }
 
@@ -129,40 +130,49 @@ func (p *ptStdoutProxy) Fd() uintptr {
 	return ^uintptr(0)
 }
 
-// Buffers text and writes everything up to its last newline
+// Reports whether the writer is the function the running prompt handed the terminal to
+func (p *ptStdoutProxy) holdsTerminal() bool {
+	a := p.app()
+	return a != nil && a.IsRunning() && a.TerminalReleased() && a.OnLoop()
+}
+
+// Buffers text and writes everything up to its last newline, a partial line too for the holder of the terminal
 func (p *ptStdoutProxy) Write(data []byte) (int, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.buffer.Write(data)
 	text := p.buffer.String()
-	if i := strings.LastIndex(text, "\n"); i >= 0 {
-		p.buffer.Reset()
-		p.buffer.WriteString(text[i+1:])
-		p.emit(text[:i+1])
+	cut := strings.LastIndex(text, "\n") + 1
+	if p.holdsTerminal() {
+		cut = len(text)
 	}
+	p.buffer.Reset()
+	p.buffer.WriteString(text[cut:])
+	p.mu.Unlock()
+	p.emit(text[:cut])
 	return len(data), nil
 }
 
 // Writes whatever is buffered, a partial line included
 func (p *ptStdoutProxy) Flush() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.buffer.Len() > 0 {
-		text := p.buffer.String()
-		p.buffer.Reset()
-		p.emit(text)
-	}
+	text := p.buffer.String()
+	p.buffer.Reset()
+	p.mu.Unlock()
+	p.emit(text)
 }
 
-// Prints text above the running prompt or writes it to the terminal when no prompt runs
+// Prints text above the running prompt, or straight to the terminal with no prompt running or for its holder
 func (p *ptStdoutProxy) emit(text string) {
-	if a := p.app(); a != nil && a.IsRunning() {
-		if strings.HasSuffix(text, "\n") {
-			a.PrintAbove(strings.TrimSuffix(text, "\n"))
-		} else {
-			a.PrintRaw(text)
-		}
-		return
+	a := p.app()
+	switch {
+	case text == "":
+	case a == nil || !a.IsRunning() || p.holdsTerminal():
+		_, _ = io.WriteString(p.out, text)
+	case !strings.HasSuffix(text, "\n"):
+		a.PrintRaw(text)
+	case p.above != nil:
+		p.above(strings.TrimSuffix(text, "\n"))
+	default:
+		a.PrintAbove(strings.TrimSuffix(text, "\n"))
 	}
-	_, _ = io.WriteString(p.out, text)
 }

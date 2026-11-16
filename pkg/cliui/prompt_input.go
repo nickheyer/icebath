@@ -159,17 +159,22 @@ func (p *inputPrompt) cell(r rune) string {
 	return string(r)
 }
 
-// Painted field row with the caret, scrolled sideways so the caret stays within the room
+// Painted rows of the field, the fallback wrapped beside the caret while nothing is typed
+func (p *inputPrompt) fieldLines(room int) []string {
+	if len(p.ed.buf) > 0 {
+		return []string{p.field(room)}
+	}
+	caret := p.c.paint(" ", textStyle{reverse: true})
+	return hung(p.c.textRows(p.spec.fallback, textStyle{color: activeTheme().Faint}, room-1), caret, " ")
+}
+
+// Painted row of typed text with the caret, scrolled sideways so the caret stays within the room
 func (p *inputPrompt) field(room int) string {
-	t := activeTheme()
 	caret := func(s string) string {
 		if s == "" {
 			s = " "
 		}
 		return p.c.paint(s, textStyle{reverse: true})
-	}
-	if len(p.ed.buf) == 0 {
-		return caret("") + p.c.paint(p.c.clip(p.spec.fallback, room-1), textStyle{color: t.Faint})
 	}
 	if p.spec.secret && p.spec.mask == "" {
 		return caret("")
@@ -208,11 +213,11 @@ func (p *inputPrompt) field(room int) string {
 	return b.String()
 }
 
-// Key hints for the state the field is in
-func (p *inputPrompt) hint() string {
+// Key hint rows for the state the field is in
+func (p *inputPrompt) hintLines(body int) []string {
 	g, t := p.c.glyphs(), activeTheme()
 	if p.escArmed {
-		return "    " + p.c.paint("press esc again to cancel", textStyle{color: t.Warn})
+		return p.c.hintRows([]string{"press esc again to cancel"}, body, t.Warn)
 	}
 	empty := len(p.ed.buf) == 0
 	parts := []string{"enter confirm"}
@@ -228,20 +233,21 @@ func (p *inputPrompt) hint() string {
 	if p.spec.cancel {
 		parts = append(parts, "esc cancel")
 	}
-	return "    " + p.c.paint(strings.Join(parts, "  "+g.sep+"  "), textStyle{color: t.Faint})
+	return p.c.hintRows(parts, body, t.Faint)
 }
 
 // Lines of the field for a terminal of maxRows by cols
 func (p *inputPrompt) frame(maxRows, cols int) []string {
 	g, t := p.c.glyphs(), activeTheme()
-	body := max(min(cols-1, 112)-4, 12)
+	body := bodyWidth(cols)
+	field := hung(p.fieldLines(body-2), "    "+p.c.paint(g.cursor, textStyle{color: t.Accent, bold: true})+" ", "      ")
 	lines := p.c.titleLines(p.spec.title, body)
-	if len(lines) > maxRows-1 {
-		lines = lines[:max(maxRows-1, 1)]
+	if most := max(maxRows-len(field), 1); len(lines) > most {
+		lines = lines[:most]
 	}
-	lines = append(lines, "    "+p.c.paint(g.cursor, textStyle{color: t.Accent, bold: true})+" "+p.field(body-2))
-	if len(lines) < maxRows {
-		lines = append(lines, p.hint())
+	lines = append(lines, field...)
+	if hint := p.hintLines(body); len(lines)+len(hint) <= maxRows {
+		lines = append(lines, hint...)
 	}
 	return lines
 }
@@ -254,17 +260,16 @@ func (p *inputPrompt) answer(outcome inputOutcome, failed bool) []string {
 	case outcome == inputBack:
 		return nil
 	case failed || outcome == inputCancelled:
-		return []string{p.c.answerLine(p.spec.title, "cancelled", textStyle{color: t.Faint})}
+		return p.c.answerLines(p.spec.title, "cancelled", textStyle{color: t.Faint}, "")
 	case strings.TrimSpace(text) == "" && p.spec.fallback != "":
-		return []string{p.c.answerLine(p.spec.title, p.spec.fallback, textStyle{})}
+		return p.c.answerLines(p.spec.title, p.spec.fallback, textStyle{}, "")
 	case strings.TrimSpace(text) == "":
-		return []string{p.c.answerLine(p.spec.title, "skipped", textStyle{color: t.Faint})}
+		return p.c.answerLines(p.spec.title, "skipped", textStyle{color: t.Faint}, "")
 	case p.spec.secret:
 		shown := strings.Repeat(g.mask, min(len(p.ed.buf), 12))
-		return []string{p.c.answerLine(p.spec.title, shown, textStyle{}) + " " +
-			p.c.paint(fmt.Sprintf("(%d characters)", len(p.ed.buf)), textStyle{color: t.Faint})}
+		return p.c.answerLines(p.spec.title, shown, textStyle{}, fmt.Sprintf("(%d characters)", len(p.ed.buf)))
 	}
-	return []string{p.c.answerLine(p.spec.title, strings.TrimSpace(text), textStyle{})}
+	return p.c.answerLines(p.spec.title, strings.TrimSpace(text), textStyle{}, "")
 }
 
 // Runs the field until Enter, a navigation key or the end of input, leaving one answer line in its place

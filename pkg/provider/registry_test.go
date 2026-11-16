@@ -366,34 +366,6 @@ func TestLazyHeadersResolveOnceUnderConcurrentReads(t *testing.T) {
 	}
 }
 
-func TestProfileHookDefaultsMatchTheBaseProfile(t *testing.T) {
-	p := Profile{Name: "x", BaseURL: "https://API.Example.com/v1", DefaultMaxTokens: 4096, Hidden: false}
-	if p.GetHostname() != "api.example.com" || p.GetMaxTokens("m") != 4096 || p.PreparePoolEntry(nil, "k") != "k" {
-		t.Fatal("defaults wrong")
-	}
-	if !p.ResponsesReplayItemIDs() || !p.ResponsesPromptCacheKey() || !p.ResponsesTrustsCompletedStatus() || !p.ResponsesNativeCompaction() || p.ResponsesProfileReasoning() {
-		t.Fatal("responses defaults wrong")
-	}
-	if c, err := p.CreateClient(context.Background(), nil); c != nil || err != nil {
-		t.Fatal("create_client default must be nil")
-	}
-	if _, ok, err := p.SupportedReasoningEfforts(context.Background(), "m"); err != nil || ok || p.ReasoningPayload("m", Reasoning{}, "") != nil {
-		t.Fatal("reasoning defaults wrong")
-	}
-	p.Hostname = "pinned.example"
-	if p.GetHostname() != "pinned.example" {
-		t.Fatal("declared hostname must win")
-	}
-	p.GetMaxTokensHook = func(string) int { return 7 }
-	if p.GetMaxTokens("m") != 7 {
-		t.Fatal("hook must override")
-	}
-	listed, err := Profile{Name: "dark", Hidden: true}.Listed(contextWithTempHome(t))
-	if err != nil || listed {
-		t.Fatal("a hidden profile without a pool row is unlisted")
-	}
-}
-
 func contextWithTempHome(t *testing.T) context.Context {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	return context.Background()

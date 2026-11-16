@@ -48,7 +48,10 @@ func newPtyRig(t *testing.T) *ptyRig {
 	go io.Copy(p.emu, master)
 	env := map[string]string{"TERM": "xterm-256color", "LANG": "en_US.UTF-8"}
 	p.c = &Console{In: slave, Out: slave, Getenv: func(k string) (string, bool) { v, ok := env[k]; return v, ok }}
+	guard := p.c.termGuard()
 	t.Cleanup(func() {
+		guard.mu.Lock()
+		defer guard.mu.Unlock()
 		slave.Close()
 		master.Close()
 	})

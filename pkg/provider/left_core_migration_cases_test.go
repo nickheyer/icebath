@@ -4,12 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -194,4 +192,3 @@ func TestAPreinstalledPluginGetsTheScopeConversionOnce(t *testing.T) {
 		t.Fatalf("after the user's later choice %v", got)
 	}
 }
-

@@ -247,17 +247,6 @@ func ReconcileCursor(filtered []int, cursor int) (int, int) {
 	return filtered[0], 0
 }
 
-// ScrollForCursor clamps the scroll offset so the cursor row stays visible
-func ScrollForCursor(offset, cursorPos, visible, total int) int {
-	visible = max(1, visible)
-	if cursorPos < offset {
-		offset = cursorPos
-	} else if cursorPos >= offset+visible {
-		offset = cursorPos - visible + 1
-	}
-	return max(0, min(offset, max(0, total-visible)))
-}
-
 // errCursesInit is a terminal that cannot open a full screen surface
 var errCursesInit = errors.New("curses error")
 

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -311,7 +312,7 @@ func (a *GatewayAgent) emitPrint(text string) {
 		printFn(text)
 		return
 	}
-	fmt.Println(text)
+	fmt.Fprintln(pysys.Stdout, text)
 }
 
 // Answers a dangerous command approval through the CLI's approval panel, deny when it has none

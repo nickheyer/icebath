@@ -381,7 +381,6 @@ func installProcessWiring() {
 	agent.ResetScreenshotDedup = codeexec.ResetScreenshotDedup
 	tools.DiagnosticProcessEvent = agent.DiagnosticProcessEvent
 	tools.MediaDeliveryPathValidator = mediaDeliveryPathValidator
-	tools.TerminalBackendInstallHint = provider.TerminalBackendInstallHint
 	tools.GitlockRunGit = selfupdate.GitlockRunGit
 	tools.AsyncDelegationOwnerProbes.PidExists = kanban.GatewayStatusProbes.PidExists
 	tools.AsyncDelegationOwnerProbes.ProcessStartTime = gatewayProcessStartTime

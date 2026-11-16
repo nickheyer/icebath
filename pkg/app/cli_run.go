@@ -3,11 +3,14 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/cliui"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/observability"
 )
 
@@ -66,8 +69,8 @@ func (c *CLI) run() {
 			app.onStart = append(app.onStart, func() { enableExtendedEnterKeys(app, nil) })
 		}
 		c.petStartAnim()
-		proxy := &ptStdoutProxy{app: func() *ptApplication { return app }, out: tuiStdout()}
-		restoreStdout := agent.PatchStatusStdout(proxy)
+		proxy := cliStdoutProxy(app, tuiStdout())
+		restoreStdout := c.patchStdout(proxy)
 		defer func() {
 			proxy.Flush()
 			restoreStdout()
@@ -83,6 +86,35 @@ func (c *CLI) run() {
 	}()
 	if len(c.pendingRelaunch) > 0 {
 		relaunch(c.pendingRelaunch, false)
+	}
+}
+
+// Proxy over the application whose lines take the paint path of every other CLI print
+func cliStdoutProxy(app *ptApplication, out io.Writer) *ptStdoutProxy {
+	return &ptStdoutProxy{app: func() *ptApplication { return app }, out: out, above: func(text string) {
+		if live := tuiApp(); live != nil && live.IsRunning() {
+			paintThroughTUIApp(text)
+			return
+		}
+		app.PrintAbove(text)
+	}}
+}
+
+// Routes every stdout and stderr print of the process through the proxy until the returned restore runs
+func (c *CLI) patchStdout(proxy *ptStdoutProxy) (restore func()) {
+	base := console()
+	patched := &cliui.Console{In: base.In, Out: &utf8ReplaceWriter{w: proxy}, Getenv: base.Getenv,
+		StdinTTY: base.StdinIsTTY, StdoutTTY: base.StdoutIsTTY, TermSize: base.Size,
+		MaskedSecretPrompt: base.MaskedSecretPrompt, OpenScreen: base.OpenScreen}
+	restores := []func(){agent.PatchStatusStdout(proxy), pysys.Patch(proxy, proxy),
+		cliui.SwapDefault(patched), SetStreams(patched, &utf8ReplaceWriter{w: proxy})}
+	saved := c.console
+	c.console = patched
+	return func() {
+		c.console = saved
+		for i := len(restores) - 1; i >= 0; i-- {
+			restores[i]()
+		}
 	}
 }
 

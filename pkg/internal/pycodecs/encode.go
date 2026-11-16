@@ -9,16 +9,28 @@ import (
 	"unicode/utf8"
 )
 
-// UnicodeEncodeError is the strict encode failure over characters Start to End with the CPython message
+// UnicodeEncodeError is the strict encode failure over characters Start to End, Len the text length when known
 type UnicodeEncodeError struct {
 	Codec      string
 	Char       rune
 	Start, End int
 	Reason     string
+	Len        int
+}
+
+// Encode failure over start to end of the characters, the character at start named when the range is that one
+func encodeErr(codec string, runes []rune, start, end int, reason string) *UnicodeEncodeError {
+	e := &UnicodeEncodeError{Codec: codec, Start: start, End: end, Reason: reason, Len: len(runes)}
+	if start >= 0 && start < len(runes) {
+		e.Char = runes[start]
+	} else {
+		e.Len = -1
+	}
+	return e
 }
 
 func (e *UnicodeEncodeError) Error() string {
-	if e.End-e.Start != 1 {
+	if e.End-e.Start != 1 || e.Len < 0 || (e.Len > 0 && e.End > e.Len) {
 		return fmt.Sprintf("'%s' codec can't encode characters in position %d-%d: %s", e.Codec, e.Start, e.End-1, e.Reason)
 	}
 	var char string
@@ -55,7 +67,7 @@ func encodeRun(codec string, runes []rune, i int, bad func(rune) bool, reason st
 	for end < len(runes) && bad(runes[end]) {
 		end++
 	}
-	return &UnicodeEncodeError{codec, runes[i], i, end, reason}
+	return &UnicodeEncodeError{Codec: codec, Char: runes[i], Start: i, End: end, Reason: reason}
 }
 
 var charmapReverse sync.Map
@@ -97,9 +109,9 @@ func Encode(text, name string) (string, error) {
 			return "\xef\xbb\xbf" + text, nil
 		}
 		return text, nil
-	case "ascii", "latin_1":
+	case "ascii", "latin_1", "charmap":
 		limit, codec, reason := rune(0x80), "ascii", "ordinal not in range(128)"
-		if mod == "latin_1" {
+		if mod != "ascii" {
 			limit, codec, reason = 0x100, "latin-1", "ordinal not in range(256)"
 		}
 		out := make([]byte, len(runes))
@@ -112,6 +124,29 @@ func Encode(text, name string) (string, error) {
 		return string(out), nil
 	case "utf_16", "utf_16_le", "utf_16_be", "utf_32", "utf_32_le", "utf_32_be":
 		return encodeWide(runes, mod)
+	case "utf_7":
+		return encodeUTF7(text), nil
+	case "unicode_escape":
+		return encodeUnicodeEscape(text), nil
+	case "raw_unicode_escape":
+		return encodeRawUnicodeEscape(text), nil
+	case "punycode":
+		return encodePunycode(text), nil
+	case "idna":
+		return encodeIDNA(text)
+	case "undefined":
+		return "", &UnicodeError{Msg: "undefined encoding"}
+	case "hz":
+		return encodeHZ(text)
+	}
+	if v := isoVariants[mod]; v != nil {
+		return v.encode(text)
+	}
+	if statelessModules[mod] {
+		return loadStateless(mod).encode(text)
+	}
+	if nonTextModules[mod] {
+		return "", &LookupError{Name: name, NotText: "encode"}
 	}
 	if _, ok := charmapTables[mod]; ok {
 		reverse := reverseCharmap(mod)
@@ -128,12 +163,12 @@ func Encode(text, name string) (string, error) {
 	if enc, ok := multiByte[mod]; ok {
 		for i, r := range runes {
 			if _, err := enc.NewEncoder().String(string(r)); isSurrogate(r) || err != nil {
-				return "", &UnicodeEncodeError{mod, r, i, i + 1, "illegal multibyte sequence"}
+				return "", &UnicodeEncodeError{Codec: mod, Char: r, Start: i, End: i + 1, Reason: "illegal multibyte sequence"}
 			}
 		}
 		return enc.NewEncoder().String(text)
 	}
-	return "", &UnportedCodecError{Module: mod}
+	panic("pycodecs: module " + mod + " is known but has no encoder")
 }
 
 // UTF-16 and UTF-32 in the byte order the module names, the plain forms in native order after a BOM
@@ -155,7 +190,7 @@ func encodeWide(runes []rune, mod string) (string, error) {
 	}
 	for i, r := range runes {
 		if isSurrogate(r) {
-			return "", &UnicodeEncodeError{codec, r, i, i + 1, "surrogates not allowed"}
+			return "", &UnicodeEncodeError{Codec: codec, Char: r, Start: i, End: i + 1, Reason: "surrogates not allowed"}
 		}
 		if wide {
 			out = order.AppendUint32(out, uint32(r))

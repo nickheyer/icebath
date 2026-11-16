@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/spf13/cobra"
@@ -271,12 +272,12 @@ func (c *CLI) handleJourneyCommand(cmdOriginal string) {
 	tree.Root.SetOut(&help)
 	execErr := tree.Execute(append([]string{"journey"}, args...))
 	if help.Len() > 0 {
-		fmt.Fprint(os.Stdout, strings.ReplaceAll(help.String(), "icebath journey", "/journey"))
+		fmt.Fprint(pysys.Stdout, strings.ReplaceAll(help.String(), "icebath journey", "/journey"))
 	}
 	if execErr != nil && !ran {
 		var ae *commands.ArgparseError
 		if errors.As(execErr, &ae) {
-			fmt.Fprintln(os.Stderr, strings.ReplaceAll(ae.Stderr(), "icebath journey", "/journey"))
+			fmt.Fprintln(pysys.Stderr, strings.ReplaceAll(ae.Stderr(), "icebath journey", "/journey"))
 		}
 		return
 	}

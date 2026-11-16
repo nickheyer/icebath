@@ -15,10 +15,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
 // Colored CLI line printer of the worktree setup, the cli _cprint the app replaces with its renderer
-var WorktreeCprint = func(text string) { fmt.Println(text) }
+var WorktreeCprint = func(text string) { fmt.Fprintln(pysys.Stdout, text) }
 
 // Sweeps the partial dir, the locked admin entry and the branch a failed worktree creation left behind
 func cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName string) {
@@ -274,7 +275,7 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 	}
 	if repoRoot == "" {
 		WorktreeCprint("\x1b[31m✗ --worktree requires being inside a git repository.\x1b[0m")
-		fmt.Println("  cd into your project repo first, then run icebath -w")
+		fmt.Fprintln(pysys.Stdout, "  cd into your project repo first, then run icebath -w")
 		return nil
 	}
 	wtName := ""
@@ -293,7 +294,7 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 	wtPath := filepath.Join(worktreesDir, wtName)
 	if _, err := os.Lstat(wtPath); name != "" && err == nil {
 		WorktreeCprint(fmt.Sprintf("\x1b[31m✗ Worktree already exists: %s\x1b[0m", wtPath))
-		fmt.Printf("  Pick a different name, or remove it with: git worktree remove %s\n", wtPath)
+		fmt.Fprintf(pysys.Stdout, "  Pick a different name, or remove it with: git worktree remove %s\n", wtPath)
 		return nil
 	}
 	ensureWorktreesGitignored(repoRoot)
@@ -320,7 +321,7 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 		RecordTUIWorktree(ctx, map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot})
 	}
 	WorktreeCprint(fmt.Sprintf("\x1b[32m✓ Worktree created:\x1b[0m %s", wtPath))
-	fmt.Printf("  Branch: %s\n", branchName)
-	fmt.Printf("  Base:   %s\n", baseLabel)
+	fmt.Fprintf(pysys.Stdout, "  Branch: %s\n", branchName)
+	fmt.Fprintf(pysys.Stdout, "  Base:   %s\n", baseLabel)
 	return map[string]string{"path": wtPath, "branch": branchName, "repo_root": repoRoot, "base": baseRef}
 }

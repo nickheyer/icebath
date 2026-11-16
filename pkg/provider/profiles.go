@@ -140,14 +140,14 @@ type Profile struct {
 	NormalizeModelIDHook                ModelIDNormalizer
 	ResolveAPIKeySecretHook             APIKeySecretResolver
 	RuntimeBaseURLHook                  RuntimeBaseURLResolver
-	PreparePoolEntryHook                func(entry *PooledCredential, apiKey string) string
-	SeedPoolCredentialsHook             func(suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any
+	PreparePoolEntryHook                func(ctx context.Context, entry *PooledCredential, apiKey string) string
+	SeedPoolCredentialsHook             func(ctx context.Context, suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any
 	RemoveCredentialSourceHook          func(source string) ([]string, []string, bool)
 	RefreshRuntimeCredentialsHook       func(ctx context.Context, reason string) (apiKey, baseURL string, ok bool, err error)
 	IsStaleCredentialErrorHook          func(statusCode int, message string) bool
 	CredentialRefreshNoticeHook         func(reason string) string
 	RequestRejectionHintHook            func(statusCode int, baseURL string) []string
-	ExternalAuthEvidenceHook            func() (verified bool, source string, ok bool)
+	ExternalAuthEvidenceHook            func(ctx context.Context) (verified bool, source string, ok bool)
 	MissingCredentialsHintHook          func() any
 	ReasoningPayloadHook                func(model string, r Reasoning, baseURL string) map[string]any
 	ReplayMessageCarriersHook           func(values map[string]any, model, baseURL string) map[string]any

@@ -231,7 +231,7 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 	}
 	region := resolveBedrockRuntimeRegionCtx(ctx)
 	const defaultModel = "anthropic.claude-haiku-4-5-20251001-v1:0"
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, defaultModel), provider)
+	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, defaultModel), provider)
 	if finalModel == "" {
 		finalModel = defaultModel
 	}
@@ -282,7 +282,7 @@ func auxBuildVertexClient(ctx context.Context, provider, model string) (AuxClien
 		slog.Warn("resolve_provider_client: vertex requested but could not mint token / resolve project")
 		return nil, ""
 	}
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, "google/gemini-3-flash-preview"), provider)
+	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, "google/gemini-3-flash-preview"), provider)
 	slog.Debug(fmt.Sprintf("resolve_provider_client: vertex (%s)", finalModel))
 	return newAuxOpenAIClient(token, baseURL, auxOpenAIOptions{}), finalModel
 }
@@ -403,7 +403,7 @@ func auxRouteOrWarn(ctx context.Context, req auxResolveRequest, client AuxClient
 		slog.Warn(unavailable)
 		return auxResolveResult{}
 	}
-	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(auxFirstNonEmpty(req.Model, def), req.Provider))
+	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, def), req.Provider))
 }
 
 // Full auto detection chain with the selected provider stamped on the client
@@ -438,7 +438,7 @@ func auxResolveOpenRouterBranch(ctx context.Context, req auxResolveRequest) (aux
 		slog.Warn("resolve_provider_client: openrouter requested but " + why)
 		return auxResolveResult{}, nil
 	}
-	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(auxFirstNonEmpty(req.Model, def), req.Provider)), nil
+	return auxRouteClient(ctx, req, client, auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, def), req.Provider)), nil
 }
 
 // Nous Portal on the wire its catalog model rides, Messages for anthropic models on the native route
@@ -456,7 +456,7 @@ func auxResolveNousBranch(ctx context.Context, req auxResolveRequest) (auxResolv
 		slog.Warn("resolve_provider_client: nous requested but Nous Portal not configured (run: icebath auth)")
 		return auxResolveResult{}, nil
 	}
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, def), req.Provider)
+	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, def), req.Provider)
 	cfg, _ := auxLoadConfigReadonlyFn(ctx)
 	wire := NousMode(finalModel, newResolver(ctx, cfg, nil, "", nil).nousAnthropicWire())
 	wrapped, err := auxMaybeWrapAnthropic(ctx, client, finalModel, client.APIKey(), client.BaseURL(), string(wire))
@@ -484,7 +484,7 @@ func auxResolveOpenAICodexBranch(ctx context.Context, req auxResolveRequest) (au
 			return auxResolveResult{}, nil
 		}
 		raw := auxCreateOpenAIClient(ctx, token, baseURL, auxOpenAIOptions{DefaultHeaders: codexCloudflareHeaders(token, baseURL)})
-		return auxResolveResult{Client: raw, Model: auxNormalizeResolvedModel(model, req.Provider)}, nil
+		return auxResolveResult{Client: raw, Model: auxNormalizeResolvedModel(ctx, model, req.Provider)}, nil
 	}
 	client, def, err := auxBuildCodexClientFn(ctx, model)
 	if err != nil {
@@ -567,7 +567,7 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 		if mainRuntime != nil {
 			mainModel = cfgString(mainRuntime["model"])
 		}
-		finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, mainModel, "gpt-4o-mini"), provider)
+		finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, mainModel, "gpt-4o-mini"), provider)
 		cleanBase, query, err := auxExtractURLQueryParams(customBase)
 		if err != nil {
 			return auxResolveResult{}, err
@@ -602,7 +602,7 @@ func auxResolveCustomBranch(ctx context.Context, req auxResolveRequest) (auxReso
 		if client == nil {
 			continue
 		}
-		finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, def), provider)
+		finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, def), provider)
 		wrapped, err := auxWrapTransport(ctx, req, client, finalModel, client.BaseURL(), client.APIKey())
 		if err != nil {
 			return auxResolveResult{}, err
@@ -684,7 +684,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 	if model == "" {
 		model = auxReadMainModelForAux(ctx)
 	}
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(model, "gpt-4o-mini"), provider)
+	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, "gpt-4o-mini"), provider)
 	if mode, base := OpencodeTransport(ctx, provider, finalModel, customBase); mode != "" {
 		entryAPIMode, customBase = string(mode), base
 	}
@@ -789,7 +789,7 @@ func auxResolveAPIKeyBranch(ctx context.Context, req auxResolveRequest, pconfig 
 	if req.ExplicitBaseURL != "" && provider != "actual" {
 		baseURL = auxToOpenAIBaseURL(strings.TrimRight(strings.TrimSpace(req.ExplicitBaseURL), "/"))
 	}
-	finalModel := auxNormalizeResolvedModel(auxFirstNonEmpty(req.Model, auxGetAuxModelForProviderFn(ctx, provider)), provider)
+	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(req.Model, auxGetAuxModelForProviderFn(ctx, provider)), provider)
 	if profileClient := auxAPIKeyProfileSuppliedClient(ctx, provider, apiKey, baseURL); profileClient != nil {
 		slog.Debug(fmt.Sprintf("resolve_provider_client: %s native client from provider profile (%s)", provider, finalModel))
 		return auxRouteClient(ctx, req, profileClient, finalModel), nil
@@ -835,7 +835,7 @@ func auxResolveExternalProcessBranch(ctx context.Context, req auxResolveRequest,
 	if model == "" {
 		model = auxReadMainModelForAux(ctx)
 	}
-	finalModel := auxNormalizeResolvedModel(model, provider)
+	finalModel := auxNormalizeResolvedModel(ctx, model, provider)
 	var profile *Profile
 	_ = auxRecoverRaise(func() { profile = getProviderProfile(ctx, provider) })
 	if profile != nil {

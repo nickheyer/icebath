@@ -236,8 +236,10 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 
 // Opens the WebSocket, authenticates and subscribes to state_changed, false after a logged handshake failure
 func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
+	wsURL := wsBaseURL(a.hassURL) + "/api/websocket"
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	conn, err := pyaiohttpws.Connect(connectCtx, wsBaseURL(a.hassURL)+"/api/websocket", pyaiohttpws.Options{
+	connectCtx, handshake := withTLSTrace(connectCtx)
+	conn, err := pyaiohttpws.Connect(connectCtx, wsURL, pyaiohttpws.Options{
 		Heartbeat: 30 * time.Second, CloseTimeout: 30 * time.Second, TrustEnv: gateway.GatewayTrustEnv(ctx),
 		MaxMsgSize: 4 * 1024 * 1024})
 	timedOut := errors.Is(connectCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
@@ -245,6 +247,9 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if err != nil {
 		if timedOut {
 			return false, &timeoutError{}
+		}
+		if tlsErr := handshake.get(); tlsErr != nil && ctx.Err() == nil {
+			return false, sslConnectError(wsURL, tlsErr)
 		}
 		return false, err
 	}

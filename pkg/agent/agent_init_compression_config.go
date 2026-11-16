@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -18,7 +18,7 @@ var (
 	compressionThresholdForModel           = provider.CompressionThresholdForModel
 	isCodexGPT54OrGPT55                    = provider.IsCodexGPT54OrGPT55
 	isCodexSpark                           = provider.IsCodexSpark
-	invalidConfigStderr          io.Writer = os.Stderr
+	invalidConfigStderr          io.Writer = pysys.Stderr
 )
 
 // Hermes is_truthy_value, nil the default, strings by the 1 true yes on set, the rest by Python truth

@@ -362,8 +362,12 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return hostedStrs(out), true, nil
 		}
 	case "api_mode_for_model":
-		p.APIModeForModelHook = func(model, apiKey string) APIMode {
-			return APIMode(hostedStr(hc.must(bg, attr, []any{model}, map[string]any{"api_key": hostedOptStr(apiKey)})))
+		p.APIModeForModelHook = func(model string, apiKey *string) APIMode {
+			var key any
+			if apiKey != nil {
+				key = *apiKey
+			}
+			return APIMode(hostedStr(hc.must(bg, attr, []any{model}, map[string]any{"api_key": key})))
 		}
 	case "client_headers":
 		p.ClientHeadersHook = func(baseURL, apiKey string, hasImages bool) map[string]string {
@@ -409,27 +413,27 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return hostedInt(hc.must(ctx, attr, []any{model}, map[string]any{"api_key": apiKey, "base_url": baseURL}))
 		}
 	case "normalize_model_id":
-		p.NormalizeModelIDHook = func(model, apiKey string) string {
+		p.NormalizeModelIDHook = func(_ context.Context, model, apiKey string) string {
 			return hostedStr(hc.must(bg, attr, []any{model}, map[string]any{"api_key": apiKey}))
 		}
 	case "resolve_api_key_secret":
-		p.ResolveAPIKeySecretHook = func() (string, string, bool) {
-			pair := hostedList(hc.must(bg, attr, nil, nil))
+		p.ResolveAPIKeySecretHook = func(ctx context.Context) (string, string, bool) {
+			pair := hostedList(hc.must(ctx, attr, nil, nil))
 			if len(pair) < 2 {
 				return "", "", false
 			}
 			return hostedStr(pair[0]), hostedStr(pair[1]), true
 		}
 	case "runtime_base_url":
-		p.RuntimeBaseURLHook = func(apiKey, defaultURL, envURL string) string {
-			return hostedStr(hc.must(bg, attr, nil, map[string]any{"api_key": apiKey, "default": defaultURL, "env_url": envURL}))
+		p.RuntimeBaseURLHook = func(ctx context.Context, apiKey, defaultURL, envURL string) string {
+			return hostedStr(hc.must(ctx, attr, nil, map[string]any{"api_key": apiKey, "default": defaultURL, "env_url": envURL}))
 		}
 	case "prepare_pool_entry":
-		p.PreparePoolEntryHook = func(entry *PooledCredential, apiKey string) string {
-			return hostedStr(hc.must(bg, attr, []any{entry, apiKey}, nil))
+		p.PreparePoolEntryHook = func(ctx context.Context, entry *PooledCredential, apiKey string) string {
+			return hostedStr(hc.must(ctx, attr, []any{entry, apiKey}, nil))
 		}
 	case "seed_pool_credentials":
-		p.SeedPoolCredentialsHook = func(suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any {
+		p.SeedPoolCredentialsHook = func(ctx context.Context, suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any {
 			sources := []string{}
 			for s, on := range suppressedSources {
 				if on {
@@ -437,7 +441,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 				}
 			}
 			sort.Strings(sources)
-			out := hc.must(bg, attr, nil, map[string]any{"suppressed_sources": sources, "explicitly_configured": explicitlyConfigured})
+			out := hc.must(ctx, attr, nil, map[string]any{"suppressed_sources": sources, "explicitly_configured": explicitlyConfigured})
 			if out == nil {
 				return nil
 			}
@@ -474,8 +478,8 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return hostedStrs(hc.must(bg, attr, nil, map[string]any{"status_code": hostedOptInt(statusCode), "base_url": baseURL}))
 		}
 	case "external_auth_evidence":
-		p.ExternalAuthEvidenceHook = func() (bool, string, bool) {
-			out := hc.must(bg, attr, nil, nil)
+		p.ExternalAuthEvidenceHook = func(ctx context.Context) (bool, string, bool) {
+			out := hc.must(ctx, attr, nil, nil)
 			pair := hostedList(out)
 			if out == nil || len(pair) < 2 {
 				return false, "", false

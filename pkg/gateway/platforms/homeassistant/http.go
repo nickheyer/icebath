@@ -3,23 +3,25 @@ package homeassistant
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"golang.org/x/text/encoding/ianaindex"
-
+	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -60,7 +62,7 @@ func (e *responseError) PyTypeName() string {
 }
 
 // Content types the aiohttp json reader accepts for a JSON body
-var jsonContentTypeRE = regexp.MustCompile(`^application/(?:[\w.+-]+?\+)?json`)
+var jsonContentTypeRE = pyre.MustCompile(`^application/(?:[\w.+-]+?\+)?json`)
 
 // One fully read HTTP response
 type httpResponse struct {
@@ -71,49 +73,44 @@ type httpResponse struct {
 	url    string
 }
 
-// Media type of the response without parameters, octet stream when the header is absent
-func (r *httpResponse) contentType() string {
-	raw := r.header.Get("Content-Type")
-	if raw == "" {
-		return "application/octet-stream"
-	}
-	if mt, _, err := mime.ParseMediaType(raw); err == nil {
-		return strings.ToLower(mt)
-	}
-	head, _, _ := strings.Cut(raw, ";")
-	return strings.ToLower(strings.TrimSpace(head))
-}
+// Lowercased raw Content-Type header, empty when absent, as aiohttp reads it for json and the encoding
+func (r *httpResponse) rawContentType() string { return pystr.Lower(r.header.Get("Content-Type")) }
 
-// Body text under the declared charset or a strict utf-8 decode, the decode error aiohttp text raises
-func (r *httpResponse) decode(body []byte) (string, error) {
-	charset := ""
-	if raw := r.header.Get("Content-Type"); raw != "" {
-		if _, params, err := mime.ParseMediaType(raw); err == nil {
-			charset = strings.ToLower(strings.Trim(params["charset"], `"' `))
+// Charset parameter parse_mimetype yields, the first one with spaces and double quotes stripped
+func mimetypeCharset(ctype string) string {
+	if ctype == "" {
+		return ""
+	}
+	parts := strings.Split(ctype, ";")
+	for _, item := range parts[1:] {
+		if item == "" {
+			continue
+		}
+		key, value, _ := strings.Cut(item, "=")
+		if pystr.Strip(pystr.Lower(key)) == "charset" {
+			return pystr.StripChars(value, ` "`)
 		}
 	}
-	switch charset {
-	case "", "utf-8", "utf8", "u8", "utf":
-		return pystr.DecodeUTF8(body)
-	}
-	enc, err := ianaindex.IANA.Encoding(charset)
-	if err != nil || enc == nil {
-		return pystr.DecodeUTF8(body)
-	}
-	out, err := enc.NewDecoder().Bytes(body)
-	if err != nil {
-		return "", &pyErr{"UnicodeDecodeError", err.Error()}
-	}
-	return string(out), nil
+	return ""
 }
 
-// aiohttp text of the body
-func (r *httpResponse) text() (string, error) { return r.decode(r.body) }
+// Codec name get_encoding picks, the CodecInfo name codecs.lookup gives the declared charset, else utf-8
+func (r *httpResponse) encoding() string {
+	if charset := mimetypeCharset(r.rawContentType()); charset != "" {
+		if name, ok := pycodecs.InfoName(charset); ok {
+			return name
+		}
+	}
+	return "utf-8"
+}
+
+// aiohttp text of the body, a strict decode with the get_encoding codec
+func (r *httpResponse) text() (string, error) { return pycodecs.Decode(r.body, r.encoding()) }
 
 // aiohttp json of the body, None for a blank body and the ContentTypeError of a non JSON content type
 func (r *httpResponse) json() (any, error) {
-	ctype := r.contentType()
-	if !jsonContentTypeRE.MatchString(ctype) {
+	ctype := r.rawContentType()
+	if ok, err := jsonContentTypeRE.MatchString(ctype); err != nil || !ok {
 		return nil, &responseError{status: r.status, message: "Attempt to decode JSON with unexpected mimetype: " + ctype, url: r.url,
 			contentType: true}
 	}
@@ -121,20 +118,61 @@ func (r *httpResponse) json() (any, error) {
 	if len(stripped) == 0 {
 		return nil, nil
 	}
-	text, err := r.decode(stripped)
+	text, err := pycodecs.Decode(stripped, r.encoding())
 	if err != nil {
 		return nil, err
 	}
 	return pyjson.Loads(text)
 }
 
-// Client like an aiohttp session, proxy and certificate env honoured only when trustEnv
+// HTTP/1.1 client like an aiohttp session with only its total timeout, proxy env honoured only when trustEnv
 func newSession(trustEnv bool) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = 0
+	transport.ForceAttemptHTTP2 = false
+	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
 	if !trustEnv {
 		transport.Proxy = nil
 	}
 	return &http.Client{Transport: transport}
+}
+
+// TLS handshake failure a traced connection attempt recorded
+type tlsFailure struct {
+	mu  sync.Mutex
+	err error
+}
+
+// Context whose connection attempts record a failed TLS handshake into the returned holder
+func withTLSTrace(ctx context.Context) (context.Context, *tlsFailure) {
+	failure := &tlsFailure{}
+	trace := &httptrace.ClientTrace{TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
+		if err != nil {
+			failure.mu.Lock()
+			failure.err = err
+			failure.mu.Unlock()
+		}
+	}}
+	return httptrace.WithClientTrace(ctx, trace), failure
+}
+
+// Recorded handshake failure, nil when every handshake succeeded
+func (f *tlsFailure) get() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err
+}
+
+// aiohttp connector error of a failed TLS handshake, the certificate form for a verify failure and the ssl form otherwise
+func sslConnectError(rawURL string, err error) error {
+	text := pyrequests.SSLErrorText(err)
+	host, port := hostPort(rawURL)
+	if strings.HasPrefix(text, "[SSL: CERTIFICATE_VERIFY_FAILED]") {
+		return &clientError{kind: "ClientConnectorCertificateError",
+			text: fmt.Sprintf("Cannot connect to host %s:%s ssl:True [SSLCertVerificationError: (1, %s)]", host, port, pyrepr.Repr(text)), err: err}
+	}
+	return &clientError{kind: "ClientConnectorSSLError", text: fmt.Sprintf("Cannot connect to host %s:%s ssl:default [%s]", host, port, text), err: err}
 }
 
 // Host and port of a URL with the scheme default port
@@ -183,6 +221,7 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 	total time.Duration) (*httpResponse, error) {
 	rctx, cancel := context.WithTimeout(ctx, total)
 	defer cancel()
+	rctx, handshake := withTLSTrace(rctx)
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -206,6 +245,9 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 		}
 		if rctx.Err() != nil {
 			return nil, &timeoutError{}
+		}
+		if tlsErr := handshake.get(); tlsErr != nil {
+			return nil, sslConnectError(rawURL, tlsErr)
 		}
 		return nil, transportError(rawURL, err)
 	}

@@ -142,13 +142,13 @@ func activeRouteURL(a *AIAgent, baseURL string) string {
 }
 
 // Normalizes a model for the provider, keeping the input when the normalizer panics
-func normalizeModelSafely(model, providerName string) (out string, ok bool) {
+func normalizeModelSafely(ctx context.Context, model, providerName string) (out string, ok bool) {
 	defer func() {
 		if recover() != nil {
 			out, ok = model, false
 		}
 	}()
-	return provider.NormalizeModelForProvider(model, providerName), true
+	return provider.NormalizeModelForProviderCtx(ctx, model, providerName), true
 }
 
 // The configured context length only when the startup runtime is the configured default model and route
@@ -161,9 +161,9 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, agentCf
 	configuredModel := strings.TrimSpace(cfgText(firstTruthy(def)))
 	configuredRuntimeModel, activeRuntimeModel := configuredModel, a.model
 	if configuredModel != "" {
-		if m, ok := normalizeModelSafely(configuredModel, a.provider); ok {
+		if m, ok := normalizeModelSafely(ctx, configuredModel, a.provider); ok {
 			configuredRuntimeModel = m
-			if act, ok := normalizeModelSafely(a.model, a.provider); ok {
+			if act, ok := normalizeModelSafely(ctx, a.model, a.provider); ok {
 				activeRuntimeModel = act
 			}
 		}

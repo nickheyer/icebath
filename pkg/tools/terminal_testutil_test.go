@@ -208,15 +208,14 @@ func resetTerminalState(t *testing.T) {
 	recordUnavailableReason("")
 	ResetTerminalScopeCache()
 	prevCfg, prevGuards, prevCleanup, prevPlan, prevAcquire := envConfigFn, checkAllGuardsFn, startCleanupThreadFn, planExecutionFn, acquireEnvFn
-	prevApproval, prevPre, prevFg, prevCreate, prevReg, prevLocks, prevHint := runApprovalGuardsFn, preExecBlockFn, runForegroundFn, createEnvironmentFn, terminalRegistry, SkillLocks, TerminalBackendInstallHint
+	prevApproval, prevPre, prevFg, prevCreate, prevReg, prevLocks := runApprovalGuardsFn, preExecBlockFn, runForegroundFn, createEnvironmentFn, terminalRegistry, SkillLocks
 	prevMin, prevHook, prevEvidence, prevArm := preExecGuardMinTimeout, TerminalOutputTransformHook, VerificationEvidenceRecorder, ArmProcessWatcher
 	startCleanupThreadFn = func(*Env) {}
 	SkillLocks = noSkillLocks{}
-	TerminalBackendInstallHint = func(context.Context, string) string { return "" }
 	t.Cleanup(func() {
 		StopCleanupThread()
 		envConfigFn, checkAllGuardsFn, startCleanupThreadFn, planExecutionFn, acquireEnvFn = prevCfg, prevGuards, prevCleanup, prevPlan, prevAcquire
-		runApprovalGuardsFn, preExecBlockFn, runForegroundFn, createEnvironmentFn, terminalRegistry, SkillLocks, TerminalBackendInstallHint = prevApproval, prevPre, prevFg, prevCreate, prevReg, prevLocks, prevHint
+		runApprovalGuardsFn, preExecBlockFn, runForegroundFn, createEnvironmentFn, terminalRegistry, SkillLocks = prevApproval, prevPre, prevFg, prevCreate, prevReg, prevLocks
 		preExecGuardMinTimeout, TerminalOutputTransformHook, VerificationEvidenceRecorder, ArmProcessWatcher = prevMin, prevHook, prevEvidence, prevArm
 		ResetTerminalScopeCache()
 	})

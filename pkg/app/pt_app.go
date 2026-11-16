@@ -99,6 +99,7 @@ type ptApplication struct {
 	done          atomic.Bool
 	hidden        bool
 	busy          atomic.Bool
+	released      atomic.Bool
 	loopGID       atomic.Uint64
 	queueMu       sync.Mutex
 	queue         []func()
@@ -398,6 +399,9 @@ func (a *ptApplication) PrintRaw(text string) {
 // Reports whether a function currently owns the terminal
 func (a *ptApplication) TerminalBusy() bool { return a.busy.Load() }
 
+// Reports whether the terminal is out of the program's hands while a function draws on it
+func (a *ptApplication) TerminalReleased() bool { return a.released.Load() }
+
 // Hides the chrome, hands the terminal to fn, then draws the chrome again below its output
 func (a *ptApplication) RunInTerminal(fn func()) {
 	if !a.running.Load() {
@@ -589,7 +593,11 @@ func (m *ptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.drainQueue()
 	case ptRunInTerminalMsg:
 		_ = a.program.ReleaseTerminal()
-		msg.fn()
+		a.released.Store(true)
+		func() {
+			defer a.released.Store(false)
+			msg.fn()
+		}()
 		_ = a.program.RestoreTerminal()
 		a.hidden = false
 		a.lastHeight = 0

@@ -693,7 +693,7 @@ func seedProfileSingleton(seed *seeder) {
 	if hooks == nil || hooks.SeedPoolCredentials == nil {
 		return
 	}
-	rows := hooks.SeedPoolCredentials(seed.env.Store.SuppressedCredentialSources(seed.provider), IsProviderExplicitlyConfigured(seed.env, seed.provider))
+	rows := hooks.SeedPoolCredentials(seed.env.hookContext(), seed.env.Store.SuppressedCredentialSources(seed.provider), IsProviderExplicitlyConfigured(seed.env, seed.provider))
 	pconfig, hasProfile := ProfileFor(seed.provider)
 	for _, row := range rows {
 		source := anyString(row["source"])

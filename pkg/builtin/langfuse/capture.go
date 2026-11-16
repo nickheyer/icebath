@@ -51,7 +51,7 @@ func envStr(name, def string) string {
 
 // Logs a plugin message at info when ICEBATH_LANGFUSE_DEBUG is on
 func debugLog(message string) {
-	switch strings.ToLower(envStr("ICEBATH_LANGFUSE_DEBUG", "")) {
+	switch pystr.Lower(envStr("ICEBATH_LANGFUSE_DEBUG", "")) {
 	case "1", "true", "yes", "on":
 		lfLog().Info("Langfuse tracing: " + message)
 	}
@@ -69,7 +69,7 @@ func failsafe(label string, fn func()) {
 
 // Active capture mode read per call, an invalid value warning once and meaning sanitized
 func captureMode() string {
-	value := strings.ToLower(envStr("ICEBATH_LANGFUSE_CAPTURE", ""))
+	value := pystr.Lower(envStr("ICEBATH_LANGFUSE_CAPTURE", ""))
 	if value == "" {
 		return defaultCapture
 	}
@@ -163,7 +163,7 @@ func captureContent(value any, parseJSON bool, result *toolResult) any {
 
 // String of value cut to maxChars code points after secret redaction, base64 data URIs replaced by a stub
 func truncateText(value string, maxChars int) any {
-	prefix := strings.ToLower(pystr.Slice(value, 0, 200))
+	prefix := pystr.Lower(pystr.Slice(value, 0, 200))
 	if strings.HasPrefix(prefix, "data:") && strings.Contains(prefix, ";base64,") {
 		header := "data:"
 		if strings.Contains(value, ",") {
@@ -590,6 +590,7 @@ func pyIter(v any) []any {
 
 // Export shape of an assistant message, reasoning from the first present reasoning field
 func serializeAssistantMessage(message any) *pyjson.Object {
+	content := captureContent(getattr(message, "content"), false, nil)
 	var reasoning any
 	for _, attr := range []string{"reasoning", "reasoning_content", "reasoning_details"} {
 		if v := getattr(message, attr); v != nil {
@@ -607,5 +608,5 @@ func serializeAssistantMessage(message any) *pyjson.Object {
 			calls = append(calls, serializeToolCall(tc))
 		}
 	}
-	return obj("content", captureContent(getattr(message, "content"), false, nil), "reasoning", capturedReasoning, "tool_calls", calls)
+	return obj("content", content, "reasoning", capturedReasoning, "tool_calls", calls)
 }

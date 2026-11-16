@@ -281,7 +281,7 @@ func failureHintFor(code *int64, apiDuration float64) string {
 }
 
 var (
-	recoveryPrint       = func(line string) { fmt.Println(line) }
+	recoveryPrint       = func(line string) { fmt.Fprintln(statusStdout, line) }
 	recoveryLocaleEnv   = os.Getenv
 	imagePatchLimitRe   = regexp.MustCompile(`exceeding the limit of\s*(\p{Nd}{2,7})`)
 	imageMaxAllowedRe   = regexp.MustCompile(`max allowed size(?:\s+for [^:]+)?:\s*(\p{Nd}{3,5})\s*pixels?`)

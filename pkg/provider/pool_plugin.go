@@ -12,7 +12,7 @@ type ProviderProfileHooks struct {
 	// Rotates a pooled OAuth row, returning the rotated fields or nothing when it could not
 	RefreshCredential func(entry PooledCredential) (map[string]any, error)
 	// Rows the profile seeds itself from ambient tokens it validates or exchanges
-	SeedPoolCredentials func(suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any
+	SeedPoolCredentials func(ctx context.Context, suppressedSources map[string]bool, explicitlyConfigured bool) []map[string]any
 	// Source variants and hints the profile claims for a removal, nil when it does not claim the source
 	RemoveCredentialSource func(source string) ([]string, []string, bool)
 	// Owns an icebath auth action, true when core prints nothing more

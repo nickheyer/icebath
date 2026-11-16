@@ -255,7 +255,7 @@ func (r *GatewayRunner) fallbackBaselineModel(ctx context.Context, sessionKey st
 	func() {
 		defer func() { _ = recover() }()
 		if providerName != "" && !provider.IsAggregatorModelProvider(providerName) {
-			model = provider.NormalizeModelForProvider(model, providerName)
+			model = provider.NormalizeModelForProviderCtx(ctx, model, providerName)
 		}
 	}()
 	func() {

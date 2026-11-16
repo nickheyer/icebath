@@ -42,7 +42,6 @@ type LeftCoreFeature struct {
 	EnableEnv          []string
 	ChannelEnvPrefixes []string
 	CLI                string
-	TerminalBackend    string
 	LeftAt             int
 	Providers          []string
 	ProfileEnv         []string
@@ -445,16 +444,6 @@ func leftCoreInstallSentence(ctx context.Context, f *LeftCoreFeature) string {
 func PlatformInstallHint(ctx context.Context, platform string) string {
 	for i := range leftCoreTable {
 		if f := &leftCoreTable[i]; f.Platform != "" && !f.BuiltIn && f.Platform == platform {
-			return ". " + leftCoreInstallSentence(ctx, f)
-		}
-	}
-	return ""
-}
-
-// TerminalBackendInstallHint names the install command for a terminal backend that left core, else empty
-func TerminalBackendInstallHint(ctx context.Context, backend string) string {
-	for i := range leftCoreTable {
-		if f := &leftCoreTable[i]; f.TerminalBackend != "" && f.TerminalBackend == backend {
 			return ". " + leftCoreInstallSentence(ctx, f)
 		}
 	}

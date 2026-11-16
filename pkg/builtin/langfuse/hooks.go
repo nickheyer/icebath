@@ -32,7 +32,7 @@ func kwOr(kw map[string]any, key string, def any) any {
 	return def
 }
 
-// Turn scoped pre_llm_call, keeping the opted in sender for the turn and opening a root only for a request shaped call
+// Turn scoped pre_llm_call keeping the opted in sender, opening a root only for a request shaped call
 func onPreLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 	taskID, sessionID, turnID, apiRequestID := kwStr(kw, "task_id"), kwStr(kw, "session_id"), kwStr(kw, "turn_id"), kwStr(kw, "api_request_id")
 	senderID := kw["sender_id"]

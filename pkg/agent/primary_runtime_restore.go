@@ -67,7 +67,7 @@ func (a *AIAgent) restorePrimaryRuntime(ctx context.Context) (bool, error) {
 		provider: pystr.Lower(pystr.Strip(pyrepr.Str(orEmpty(rt["provider"])))),
 		model:    pystr.Strip(pyrepr.Str(orEmpty(rt["model"]))),
 		baseURL:  pyrepr.Str(orEmpty(rt["base_url"]))}
-	if route.model != "" && (isEntitlementRejected(a, route.provider, route.model) || provider.IsKnownNonChatModel(route.model)) {
+	if route.model != "" && (isEntitlementRejected(ctx, a, route.provider, route.model) || provider.IsKnownNonChatModel(route.model)) {
 		return false, nil
 	}
 	if a.primaryQuotaReopenedEarly(ctx, route) {

@@ -33,7 +33,9 @@ type raised struct{ err error }
 func raise(err error) { panic(raised{err}) }
 
 // Raises a Python exception of the given type and message
-func raisef(typ, format string, args ...any) { raise(&PyError{Type: typ, Msg: fmt.Sprintf(format, args...)}) }
+func raisef(typ, format string, args ...any) {
+	raise(&PyError{Type: typ, Msg: fmt.Sprintf(format, args...)})
+}
 
 // Converts a raised exception into the returned error, leaving any other panic running
 func catch(errp *error) {

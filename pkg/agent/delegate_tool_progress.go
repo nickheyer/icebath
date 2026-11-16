@@ -336,7 +336,7 @@ func emitParentConsole(parent *AIAgent, line string) {
 			return
 		}
 	}
-	fmt.Println(line)
+	fmt.Fprintln(statusStdout, line)
 }
 
 // Above spinner line when a spinner exists, else the console line or the line indented two spaces

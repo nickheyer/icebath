@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/spf13/cobra"
@@ -66,7 +67,7 @@ func (c *CLI) handleCuratorCommand(cmd string) {
 	if !ran {
 		var ae *commands.ArgparseError
 		if errors.As(execErr, &ae) {
-			fmt.Fprintln(os.Stderr, ae.Stderr())
+			fmt.Fprintln(pysys.Stderr, ae.Stderr())
 		}
 		return
 	}
@@ -85,9 +86,22 @@ func (c *CLI) handleKanbanCommand(cmd string) {
 	if err != nil {
 		output = c.commandsT("kanban.failed", map[string]any{"error": pyrepr.ExceptionMessage(err)})
 	}
+	if output == kanban.SlashKanbanHelp {
+		output = terminalBold(output)
+	}
 	if output != "" {
 		printLines(output)
 	}
+}
+
+var markdownBoldRe = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
+
+// Markdown bold spans drawn bold on a console that shows styles, kept as written on one that does not
+func terminalBold(text string) string {
+	if !console().ShouldUseColor() {
+		return text
+	}
+	return markdownBoldRe.ReplaceAllString(text, boldANSI+"$1"+resetANSI)
 }
 
 // Prog argparse shows for a kanban parser, /kanban and its direct children renamed, deeper ones built under the wrapper

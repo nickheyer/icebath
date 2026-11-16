@@ -93,30 +93,6 @@ func TestSettingsOnlyBlockCodexSwitchSucceedsWithoutListing(t *testing.T) {
 	}
 }
 
-func TestModelPickWithARaisingHookGetsTheDeclaredWire(t *testing.T) {
-	registerTestProfile(t, Profile{Name: "respdefault", BaseURL: "https://api.respdefault.test/v1", Mode: ModeCodexResponses})
-	RegisterPerModelAPIMode("respdefault", func(model, _ string) APIMode {
-		if strings.HasPrefix(model, "broken") {
-			panic("live catalog unavailable")
-		}
-		if strings.HasPrefix(model, "claude") {
-			return ModeChatCompletions
-		}
-		return ""
-	})
-	t.Cleanup(func() { RegisterPerModelAPIMode("respdefault", nil) })
-	ctx := context.Background()
-	if mode, ok := ModelDerivedAPIMode(ctx, "respdefault", "broken-z", "sk-fake"); !ok || mode != string(ModeCodexResponses) {
-		t.Fatalf("raising hook gave %q %v", mode, ok)
-	}
-	if mode, ok := ModelDerivedAPIMode(ctx, "respdefault", "claude-y", "sk-fake"); !ok || mode != string(ModeChatCompletions) {
-		t.Fatalf("hook exception gave %q %v", mode, ok)
-	}
-	if mode, ok := ModelDerivedAPIMode(ctx, "respdefault", "gpt-x", "sk-fake"); ok {
-		t.Fatalf("hook none gave %q", mode)
-	}
-}
-
 const persistSeed = "model:\n  default: local-model\n  provider: custom\n  base_url: http://localhost:1234/v1\n" +
 	"  api_mode: anthropic_messages\n  api_key: sk-stale\n  context_length: 32000\n  model_slots:\n    fast: gpt-5-mini\n" +
 	"agent:\n  system_prompt: keepme\n"

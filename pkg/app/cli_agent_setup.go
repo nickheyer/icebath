@@ -458,10 +458,10 @@ func (c *CLI) normalizeModelForProvider(resolvedProvider string) bool {
 		}
 	}
 	if !containsString(provider.AggregatorProviders(), resolvedProvider) {
-		adopt(provider.NormalizeModelForProvider(currentModel, resolvedProvider), normalizedNotice)
+		adopt(provider.NormalizeModelForProviderCtx(c.ctx, currentModel, resolvedProvider), normalizedNotice)
 	}
 	if profile, ok := provider.GetProviderProfile(c.ctx, resolvedProvider); ok {
-		if nativeID := profile.NormalizeModelID(currentModel, c.apiKey); nativeID != "" {
+		if nativeID := profile.NormalizeModelID(c.ctx, currentModel, c.apiKey); nativeID != "" {
 			return adoptWithMode(func(string) string { return nativeID }, func(m string) string {
 				if mode, ok := provider.ModelDerivedAPIMode(c.ctx, resolvedProvider, m, c.apiKey); ok && mode != "" {
 					return mode

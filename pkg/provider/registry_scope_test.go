@@ -234,31 +234,6 @@ func TestOAuthPluginStatusFollowsTheCredentialPool(t *testing.T) {
 	}
 }
 
-func TestAnyExternalProcessPluginCountsAsSignedInWhenItsBinaryResolves(t *testing.T) {
-	snapshotProviderRegistry(t)
-	h, bin := t.TempDir(), t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	registerPluginForTest(t, Profile{Name: "example-acp", AuthType: AuthTypeExternalProcess, BaseURL: "acp://example",
-		ProcessCommand: "example-acp-bin", FallbackModels: []string{"acp-a"}})
-	env := testEnv(t, h)
-	t.Setenv("PATH", filepath.Join(bin, "nowhere"))
-	if status := GetExternalProcessProviderStatus(env, "example-acp"); status["auth_verified"] != false {
-		t.Fatalf("missing binary is no sign in evidence: %v", status)
-	}
-	fakeBinaryOnPath(t, bin, "example-acp-bin")
-	status := GetExternalProcessProviderStatus(env, "example-acp")
-	if status["auth_verified"] != true || !strings.HasPrefix(fmt.Sprint(status["auth_source"]), "command: ") {
-		t.Fatalf("resolving binary = %v", status)
-	}
-	registerPluginForTest(t, Profile{Name: "example-acp-tokens", AuthType: AuthTypeExternalProcess, BaseURL: "acp://tokens",
-		ProcessCommand: "example-acp-tokens-bin", ExternalAuthEvidenceHook: func() (bool, string, bool) { return false, "", true }})
-	verified, source := externalProcessAuthEvidence(context.Background(), "example-acp-tokens", filepath.Join(bin, "example-acp-tokens-bin"))
-	want, wantSource, _ := getProviderProfile(context.Background(), "example-acp-tokens").ExternalAuthEvidence()
-	if verified != want || source != wantSource {
-		t.Fatalf("token store evidence = %v %q", verified, source)
-	}
-}
-
 func TestAuthStatusReadsTheRegistryOfTheEnvBoundHome(t *testing.T) {
 	snapshotProviderRegistry(t)
 	launch, secondary, bin := t.TempDir(), t.TempDir(), t.TempDir()

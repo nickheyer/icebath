@@ -1009,17 +1009,17 @@ type ValidateModelOptions struct {
 }
 
 // Native id from the profile hook given the request key, empty when no hook exists or it declines
-func profileNormalizeModelIDWithKey(provider, model, apiKey string) string {
+func profileNormalizeModelIDWithKey(ctx context.Context, provider, model, apiKey string) string {
 	modelIDNormalizersMu.RLock()
 	fn := modelIDNormalizers[provider]
-	if p := getProviderProfile(context.Background(), provider); p != nil && p.NormalizeModelIDHook != nil {
+	if p := getProviderProfile(ctx, provider); p != nil && p.NormalizeModelIDHook != nil {
 		fn = p.NormalizeModelIDHook
 	}
 	modelIDNormalizersMu.RUnlock()
 	if fn == nil {
 		return ""
 	}
-	return fn(model, apiKey)
+	return fn(ctx, model, apiKey)
 }
 
 // ValidateRequestedModel validates a model value for the active provider without ever rewriting the requested id
@@ -1032,7 +1032,7 @@ func ValidateRequestedModel(ctx context.Context, modelName, provider string, opt
 	lookup := ""
 	if normalized != "" {
 		if profile, ok := modelsProfileForFn(normalized); ok {
-			lookup = profileNormalizeModelIDWithKey(profile.Name, requested, opts.APIKey)
+			lookup = profileNormalizeModelIDWithKey(ctx, profile.Name, requested, opts.APIKey)
 		}
 	}
 	if lookup == "" {

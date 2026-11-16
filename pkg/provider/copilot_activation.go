@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,14 +17,33 @@ var copilotProviderIDs = map[string]bool{"copilot": true, "github-copilot": true
 // Pool row sources a user created through an icebath Copilot sign in
 var copilotExplicitPoolSources = map[string]bool{"manual": true, "device_code": true}
 
-// Depth of Copilot flows the user started that are running in this process
-var copilotUserFlowDepth atomic.Int32
+// Context key marking a Copilot flow the user started
+type copilotUserFlowKey struct{}
 
-// Runs fn as a Copilot flow the user started, so GitHub calls inside it count as requested
-func withCopilotUserFlow(fn func() error) error {
-	copilotUserFlowDepth.Add(1)
-	defer copilotUserFlowDepth.Add(-1)
-	return fn()
+// Context of a Copilot flow the user started, so GitHub calls made under it count as requested
+func withCopilotUserFlow(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, copilotUserFlowKey{}, true)
+}
+
+// Reports a context inside a Copilot flow the user started
+func inCopilotUserFlow(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	marked, _ := ctx.Value(copilotUserFlowKey{}).(bool)
+	return marked
+}
+
+// Copy of a model flow run whose context and pool env carry the user started Copilot flow marker
+func copilotUserFlowRun(r *ModelFlowRun) *ModelFlowRun {
+	flowCtx := withCopilotUserFlow(r.ctx())
+	run := *r
+	run.Ctx = flowCtx
+	run.Env.Ctx = flowCtx
+	return &run
 }
 
 // Reports a config slot whose provider names the Copilot API profile
@@ -143,5 +161,5 @@ func copilotExplicitlyConfigured(ctx context.Context) bool {
 
 // Whether a token may go to the GitHub exchange or the Copilot catalog right now
 func githubCallsAllowed(ctx context.Context) bool {
-	return copilotUserFlowDepth.Load() > 0 || copilotExplicitlyConfigured(ctx)
+	return inCopilotUserFlow(ctx) || copilotExplicitlyConfigured(ctx)
 }

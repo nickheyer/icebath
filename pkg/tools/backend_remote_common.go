@@ -25,6 +25,12 @@ type CaptureResult struct {
 
 // Runs a CLI child with captured pipes and closed stdin, erroring on spawn failure, timeout, or check
 func runCapture(ctx context.Context, argv []string, timeout time.Duration, check bool, env map[string]string) (*CaptureResult, error) {
+	res, _, err := runCaptureState(ctx, argv, timeout, check, env)
+	return res, err
+}
+
+// Capture of runCapture with the finished process state, nil state when the child never finished
+func runCaptureState(ctx context.Context, argv []string, timeout time.Duration, check bool, env map[string]string) (*CaptureResult, *os.ProcessState, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -42,24 +48,24 @@ func runCapture(ctx context.Context, argv []string, timeout time.Duration, check
 	proc.Group(cmd)
 	cmd.Cancel = func() error { return proc.Kill(cmd) }
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	err := cmd.Wait()
 	if runCtx.Err() != nil {
-		return nil, ErrCaptureTimeout
+		return nil, nil, ErrCaptureTimeout
 	}
 	res := &CaptureResult{Stdout: strings.ToValidUTF8(stdout.String(), string(rune(0xFFFD))), Stderr: strings.ToValidUTF8(stderr.String(), string(rune(0xFFFD)))}
 	if err != nil {
 		var ee *exec.ExitError
 		if !errors.As(err, &ee) {
-			return nil, err
+			return nil, nil, err
 		}
 		res.Code = ee.ExitCode()
 	}
 	if check && res.Code != 0 {
-		return res, &CaptureExitError{Argv: argv, Code: res.Code, Stderr: res.Stderr}
+		return res, cmd.ProcessState, &CaptureExitError{Argv: argv, Code: res.Code, Stderr: res.Stderr}
 	}
-	return res, nil
+	return res, cmd.ProcessState, nil
 }
 
 // CaptureExitError is a checked capture that exited nonzero

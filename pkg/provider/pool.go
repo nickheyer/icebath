@@ -76,6 +76,19 @@ func (env PoolEnv) ctx() context.Context {
 	return context.Background()
 }
 
+// Call context profile hooks read through, the env's home and explicit secret scope bound onto it
+func (env PoolEnv) hookContext() context.Context {
+	h := ""
+	if env.Store != nil {
+		h = env.Store.Home()
+	}
+	ctx := ctxForHome(env.ctx(), h)
+	if env.Scope != nil && env.Scope.Mapping != nil && boundScope(ctx) == nil {
+		ctx = WithSecretScope(ctx, env.Scope.Mapping, env.Scope.ProfileHome)
+	}
+	return ctx
+}
+
 func (env PoolEnv) config() map[string]any {
 	if frozen := FrozenRuntimeConfig(env.ctx()); frozen != nil {
 		return frozen

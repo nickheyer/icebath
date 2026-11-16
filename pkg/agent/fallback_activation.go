@@ -235,14 +235,14 @@ func (a *AIAgent) candidatePoolExhausted(ctx context.Context, fbProvider, fbMode
 }
 
 // Provider and model pair rejected as unentitled for this account under its raw or normalized id
-func isEntitlementRejected(a *AIAgent, providerName, model string) bool {
+func isEntitlementRejected(ctx context.Context, a *AIAgent, providerName, model string) bool {
 	if len(a.entitlementRejectedModels) == 0 {
 		return false
 	}
 	if a.entitlementRejectedModels[[2]string{providerName, model}] {
 		return true
 	}
-	return a.entitlementRejectedModels[[2]string{providerName, provider.NormalizeModelForProvider(model, providerName)}]
+	return a.entitlementRejectedModels[[2]string{providerName, provider.NormalizeModelForProviderCtx(ctx, model, providerName)}]
 }
 
 // True for an unavailable, malformed, unentitled, exhausted or locally unusable entry or the backend that just failed
@@ -255,7 +255,7 @@ func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string
 	if fbProvider == "" || fbModel == "" {
 		return true
 	}
-	if isEntitlementRejected(a, fbProvider, fbModel) {
+	if isEntitlementRejected(ctx, a, fbProvider, fbModel) {
 		log.Info(fmt.Sprintf("Fallback skip: %s/%s was rejected as unentitled for this account", fbProvider, fbModel))
 		return true
 	}
@@ -418,7 +418,7 @@ func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, prov
 	if providerName == "moa" {
 		baseURL, apiMode = "moa://local", "chat_completions"
 	} else {
-		model = provider.NormalizeModelForProvider(model, providerName)
+		model = provider.NormalizeModelForProviderCtx(ctx, model, providerName)
 		baseURL = client.BaseURL()
 		if provider.IsActualRoute(providerName, baseURL) {
 			apiMode = "chat_completions"

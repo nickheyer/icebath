@@ -26,6 +26,9 @@ type utf8ReplaceWriter struct {
 	carry []byte
 }
 
+// Stream under the wrapper, where terminal probes find its descriptor
+func (u *utf8ReplaceWriter) Unwrap() io.Writer { return u.w }
+
 func (u *utf8ReplaceWriter) Write(p []byte) (int, error) {
 	buf := append(u.carry, p...)
 	u.carry = nil

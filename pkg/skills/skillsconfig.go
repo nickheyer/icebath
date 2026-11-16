@@ -300,7 +300,7 @@ func SkillsCommand(ctx context.Context, c *cliui.Console, h string) error {
 		labels := make([]string, len(skills))
 		pre := map[int]bool{}
 		for i, s := range skills {
-			labels[i] = fmt.Sprintf("%s  (%s)  —  %s", fmString(s["name"]), categoryOrUncategorized(s), runeHead(fmString(s["description"]), 55))
+			labels[i] = fmt.Sprintf("%s  (%s)  —  %s", fmString(s["name"]), categoryOrUncategorized(s), strings.Join(strings.Fields(fmString(s["description"])), " "))
 			if !disabled[fmString(s["name"])] {
 				pre[i] = true
 			}

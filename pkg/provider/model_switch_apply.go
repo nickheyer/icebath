@@ -34,7 +34,7 @@ var (
 // Normalizes and validates the model for the target, accepting config declared models the remote catalog lacks
 func validateSwitch(ctx context.Context, st *modelSwitch) *ModelSwitchResult {
 	st.NewModel = resolveNamedCustomModelID(st.NewModel, st.TargetProvider, st.CustomProviders)
-	st.NewModel = NormalizeModelForProvider(st.NewModel, st.TargetProvider)
+	st.NewModel = NormalizeModelForProviderCtx(ctx, st.NewModel, st.TargetProvider)
 	failOnModel := func(message string) *ModelSwitchResult {
 		res := st.failOnTarget(message)
 		res.NewModel = st.NewModel
@@ -121,7 +121,7 @@ func ModelDerivedAPIMode(ctx context.Context, provider, model, apiKey string) (s
 	if profile == nil {
 		return "", false
 	}
-	mode := modelAPIMode(ctx, profile, model, apiKey)
+	mode := modelAPIMode(ctx, profile, model, &apiKey)
 	return string(mode), mode != ""
 }
 

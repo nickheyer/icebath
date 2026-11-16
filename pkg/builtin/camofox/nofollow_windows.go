@@ -2,5 +2,5 @@
 
 package camofox
 
-// Windows has no O_NOFOLLOW, the open runs with no extra flag as getattr(os, "O_NOFOLLOW", 0) does
+// Windows has no O_NOFOLLOW so the open carries no extra flag
 const openNoFollow = 0

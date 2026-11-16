@@ -86,10 +86,13 @@ func raiseIfRemoved(ctx context.Context, candidates ...string) error {
 	return nil
 }
 
-// Live catalog entry of a bare name, or exit 1 pointing at search
+// Live catalog entry of a bare name, or exit 1 with the kill list reason or pointing at search
 func resolveCatalogName(ctx context.Context, identifier string, console *Console) (*PluginCatalogEntry, error) {
 	entry := GetLiveCatalogEntry(ctx, identifier)
 	if entry == nil {
+		if err := raiseIfRemoved(ctx, identifier); err != nil {
+			return nil, fail(console, "[red]Error:[/red] "+err.Error())
+		}
 		return nil, fail(console, fmt.Sprintf("[red]Error:[/red] '%s' is not in the Icebath plugin catalog and is not a Git URL or "+
 			"owner/repo shorthand. Browse entries with `icebath plugins search`.", identifier))
 	}
@@ -307,6 +310,14 @@ func catalogAnnotation(h, dir string) (string, error) {
 	return fmt.Sprintf("catalog:%s@%s", tier, sha[:min(8, len(sha))]), nil
 }
 
+// Kill list reason of a listed plugin, never one for a plugin compiled into the binary under the same name
+func installedRemovedAnnotation(h string, e discoveredPlugin, removedEntries []RemovedEntry) (string, bool, error) {
+	if e.Source == "bundled" {
+		return "", false, nil
+	}
+	return removedAnnotation(h, e.Name, e.Dir, removedEntries)
+}
+
 // Kill list reason of an installed plugin matched by name, catalog name or repo, empty when not removed
 func removedAnnotation(h, name, dir string, removedEntries []RemovedEntry) (string, bool, error) {
 	sidecar, err := catalogInstallRecord(h, dir)
@@ -360,8 +371,12 @@ func catalogIcebathError(entry *PluginCatalogEntry) string {
 	return fmt.Sprintf("%s needs Icebath %s; this is %s.", entry.Name, entry.RequiresIcebath, RunningVersion)
 }
 
-// Operation error when the catalog says the entry cannot run here by platform or version
+// Operation error when the entry is compiled in or the catalog says it cannot run here by platform or version
 func refuseIncompatibleCatalogEntry(ctx context.Context, entry *PluginCatalogEntry) error {
+	if _, builtIn := bundledPlugin(entry.Name); builtIn {
+		return &PluginOperationError{Msg: fmt.Sprintf("'%s' is built into icebath and needs no install: enable it with `icebath plugins enable %s`.",
+			entry.Name, entry.Name), FailureClass: "incompatible"}
+	}
 	if err := refuseUnsupportedCatalogPlatform(entry); err != nil {
 		return err
 	}

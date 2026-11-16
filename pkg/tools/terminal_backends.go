@@ -165,27 +165,17 @@ func stampSandboxHome(e Environment, provider BackendProvider, cwd string) {
 	}
 }
 
-// TerminalBackendInstallHint names the install command of a backend that left core for the home of ctx, set by the binary
-var TerminalBackendInstallHint func(ctx context.Context, backend string) string
-
-func terminalBackendInstallHint(ctx context.Context, backend string) string {
-	if TerminalBackendInstallHint == nil {
-		panic("tools: TerminalBackendInstallHint is nil, pkg/plugins must install the left core hint")
-	}
-	return TerminalBackendInstallHint(ctx, backend)
-}
-
 // Registered plugin backend names of the active scope, sorted
 func pluginBackendNames() []string { return PluginBackendNames(context.Background(), "") }
 
 // Unknown environment type error naming every usable backend
-func unknownBackendError(ctx context.Context, envType string) error {
+func unknownBackendError(envType string) error {
 	names := append(strings.Split(builtinBackendList, ", "), pluginBackendNames()...)
 	quoted := make([]string, 0, len(names))
 	for _, n := range names {
 		quoted = append(quoted, "'"+n+"'")
 	}
-	return fmt.Errorf("Unknown environment type: %s. Use %s%s", envType, strings.Join(quoted, ", "), terminalBackendInstallHint(ctx, envType))
+	return fmt.Errorf("Unknown environment type: %s. Use %s", envType, strings.Join(quoted, ", "))
 }
 
 // Builds the docker container config with the session scoped lifecycle applied
@@ -223,7 +213,7 @@ var createEnvironmentFn = createEnvironment
 func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string, timeout int, sshConfig, containerConfig, localConfig map[string]any, taskID, hostCwd string, probeOnly bool) (Environment, error) {
 	provider := GetTerminalBackend(envType)
 	if provider == nil {
-		return nil, unknownBackendError(ctx, envType)
+		return nil, unknownBackendError(envType)
 	}
 	if hosted, ok := provider.(HostedBackend); ok && hosted.RunsInPluginHost() {
 		return nil, HostedBackendRefusal(envType)
@@ -276,8 +266,8 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 	recordUnavailableReason("")
 	provider := GetTerminalBackend(envType)
 	if provider == nil {
-		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s'. Use one of: %s, or a plugin-registered backend%s",
-			envType, builtinBackendList, terminalBackendInstallHint(WithEnvHome(context.Background(), env), envType)))
+		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s'. Use one of: %s, or a plugin-registered backend",
+			envType, builtinBackendList))
 	}
 	if err := provider.CheckRequirements(env, cfg); err != nil {
 		if builtinBackends[envType] {

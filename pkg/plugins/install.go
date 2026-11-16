@@ -886,6 +886,9 @@ func resolveSource(ctx context.Context, identifier, catalogName string) (*Plugin
 	var entry *PluginCatalogEntry
 	if catalogName != "" {
 		if entry = GetLiveCatalogEntry(ctx, catalogName); entry == nil {
+			if err := raiseIfRemoved(ctx, catalogName); err != nil {
+				return nil, identifier, warnings, map[string]any{"ok": false, "error": err.Error()}
+			}
 			return nil, identifier, warnings, map[string]any{"ok": false, "error": fmt.Sprintf("'%s' is not in the Icebath plugin catalog.", catalogName)}
 		}
 		warnings = append(warnings, knownIssueWarnings(entry)...)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -81,4 +80,3 @@ func TestGateManifestLogsTheHermesMessages(t *testing.T) {
 		}
 	}
 }
-

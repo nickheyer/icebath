@@ -261,12 +261,14 @@ func mergedPluginsHub(ctx context.Context, forceRefresh bool) (*pyjson.Object, e
 			return nil, err
 		}
 		var removedReason any
-		reason, removed, err := plugins.RemovedAnnotation(ctx, e.Name, e.Dir, removedEntries)
-		if err != nil {
-			return nil, err
-		}
-		if removed {
-			removedReason = reason
+		if e.Source != "bundled" {
+			reason, removed, err := plugins.RemovedAnnotation(ctx, e.Name, e.Dir, removedEntries)
+			if err != nil {
+				return nil, err
+			}
+			if removed {
+				removedReason = reason
+			}
 		}
 		rows = append(rows, pyjson.ObjectOf(
 			"name", e.Name,

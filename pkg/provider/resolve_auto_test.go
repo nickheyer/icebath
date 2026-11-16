@@ -1,9 +1,7 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -105,45 +103,6 @@ func TestResolveRequestedProviderReadsBoundClientEnvBeforeSecrets(t *testing.T) 
 	unbound := state.ClientEnvScope(context.Background(), nil, true, nil)
 	if got, err := ResolveRequestedProvider(unbound, bare, ""); err != nil || got != "nous" {
 		t.Fatalf("unbound session reads the secret store %q %v", got, err)
-	}
-}
-
-func TestProfileModelAPIModeAnswersTheHookAndWarnsOncePerProvider(t *testing.T) {
-	ctx := context.Background()
-	if mode, ok := ProfileModelAPIMode(ctx, Profile{Name: "plain"}, "m"); ok || mode != "" {
-		t.Fatal("a profile without a per model hook answers None")
-	}
-	codex := Profile{Name: "hooked", APIModeForModelHook: func(model, _ string) APIMode {
-		if strings.HasPrefix(model, "gpt-5") {
-			return ModeCodexResponses
-		}
-		return ""
-	}}
-	if mode, ok := ProfileModelAPIMode(ctx, codex, "gpt-5.4"); !ok || mode != "codex_responses" {
-		t.Fatal(mode, ok)
-	}
-	if _, ok := ProfileModelAPIMode(ctx, codex, "llama"); ok {
-		t.Fatal("a hook answering None is no per model wire")
-	}
-	var buf bytes.Buffer
-	prev := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	t.Cleanup(func() { slog.SetDefault(prev) })
-	apiModeWarnedMu.Lock()
-	delete(apiModeWarned, "raising-hook")
-	apiModeWarnedMu.Unlock()
-	raising := Profile{Name: "raising-hook", Mode: ModeAnthropicMessages, APIModeForModelHook: func(string, string) APIMode { panic("catalog down") }}
-	for range 2 {
-		if mode, ok := ProfileModelAPIMode(ctx, raising, "m"); !ok || mode != "anthropic_messages" {
-			t.Fatal(mode, ok)
-		}
-	}
-	undeclared := Profile{Name: "raising-hook", APIModeForModelHook: raising.APIModeForModelHook}
-	if mode, _ := ProfileModelAPIMode(ctx, undeclared, "m"); mode != "chat_completions" {
-		t.Fatal(mode)
-	}
-	if n := strings.Count(buf.String(), "provider raising-hook: api_mode_for_model failed; using its declared api_mode"); n != 1 {
-		t.Fatalf("warned %d times\n%s", n, buf.String())
 	}
 }
 

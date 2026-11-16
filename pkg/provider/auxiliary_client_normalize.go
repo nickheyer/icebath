@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"reflect"
 	"strings"
 )
@@ -17,12 +18,12 @@ func auxNormalizeAPIKey(raw any) any {
 }
 
 // Resolved model rewritten into the form the receiving provider expects, unchanged when the rewrite fails
-func auxNormalizeResolvedModel(model, provider string) string {
+func auxNormalizeResolvedModel(ctx context.Context, model, provider string) string {
 	if model == "" {
 		return model
 	}
 	normalized := model
-	if err := auxRecoverRaise(func() { normalized = NormalizeModelForProvider(model, provider) }); err != nil {
+	if err := auxRecoverRaise(func() { normalized = NormalizeModelForProviderCtx(ctx, model, provider) }); err != nil {
 		return model
 	}
 	return normalized

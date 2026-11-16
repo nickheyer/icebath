@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,16 @@ func findSingularityExecutable() string {
 		}
 	}
 	return ""
+}
+
+// Python returncode of a finished capture, minus the signal number for a child a signal killed
+func singularityReturncode(res *CaptureResult, state *os.ProcessState) int {
+	if state != nil {
+		if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+			return -int(ws.Signal())
+		}
+	}
+	return res.Code
 }
 
 // Text of the Python TimeoutExpired raised when argv outlives its timeout
@@ -105,7 +116,7 @@ func ensureSingularityAvailable(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	res, err := runCapture(ctx, []string{exe, "version"}, 10*time.Second, false, nil)
+	res, state, err := runCaptureState(ctx, []string{exe, "version"}, 10*time.Second, false, nil)
 	switch {
 	case errors.Is(err, ErrCaptureTimeout):
 		return "", fmt.Errorf("'%s version' timed out.", exe)
@@ -114,8 +125,8 @@ func ensureSingularityAvailable(ctx context.Context) (string, error) {
 	case err != nil:
 		return "", err
 	}
-	if res.Code != 0 {
-		return "", fmt.Errorf("'%s version' failed (exit code %d): %s", exe, res.Code, runePrefix(pystr.Strip(res.Stderr), 200))
+	if code := singularityReturncode(res, state); code != 0 {
+		return "", fmt.Errorf("'%s version' failed (exit code %d): %s", exe, code, runePrefix(pystr.Strip(res.Stderr), 200))
 	}
 	return exe, nil
 }
@@ -561,7 +572,7 @@ func (singularityBackend) CheckRequirements(env *Env, cfg map[string]any) error 
 		return ErrBackendRequirementsNotMet
 	}
 	argv := []string{exe, "--version"}
-	res, err := runCapture(context.Background(), argv, 5*time.Second, false, nil)
+	res, state, err := runCaptureState(context.Background(), argv, 5*time.Second, false, nil)
 	if err != nil {
 		cause := err.Error()
 		if errors.Is(err, ErrCaptureTimeout) {
@@ -571,9 +582,9 @@ func (singularityBackend) CheckRequirements(env *Env, cfg map[string]any) error 
 			"so the install looks broken", exe, cause))
 		return ErrBackendRequirementsNotMet
 	}
-	if res.Code != 0 {
+	if code := singularityReturncode(res, state); code != 0 {
 		envLog(env).Error(fmt.Sprintf("Apptainer/Singularity is installed but `%s --version` exited with code %d, "+
-			"so the install looks broken", exe, res.Code))
+			"so the install looks broken", exe, code))
 		return ErrBackendRequirementsNotMet
 	}
 	return nil

@@ -120,7 +120,7 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 		}
 	}
 	if knownProviderNames()[canonical] && !strings.HasPrefix(canonical, "custom") {
-		if normalized := NormalizeModelForProvider(modelIn, canonical); normalized != "" {
+		if normalized := NormalizeModelForProviderCtx(ctx, modelIn, canonical); normalized != "" {
 			modelIn = normalized
 		}
 	}

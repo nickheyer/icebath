@@ -787,8 +787,12 @@ func registryFetch(ctx context.Context, conn *pyaiohttpws.Conn, mid int64, mtype
 
 // Authenticates and reads the area, device and entity registries, refused true when the token was rejected
 func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev keyedMap, refused bool, err error) {
-	conn, err := pyaiohttpws.Connect(ctx, wsURL, pyaiohttpws.Options{MaxMsgSize: registryMaxMsg})
+	traced, handshake := withTLSTrace(ctx)
+	conn, err := pyaiohttpws.Connect(traced, wsURL, pyaiohttpws.Options{MaxMsgSize: registryMaxMsg})
 	if err != nil {
+		if tlsErr := handshake.get(); tlsErr != nil && ctx.Err() == nil {
+			return nil, nil, false, sslConnectError(wsURL, tlsErr)
+		}
 		return nil, nil, false, err
 	}
 	defer func() {

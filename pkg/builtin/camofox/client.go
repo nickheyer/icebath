@@ -96,7 +96,9 @@ func (s *scope) authHeaders() http.Header {
 }
 
 // Raw config.yaml of the profile with no defaults merged
-func (s *scope) rawConfig() (map[string]any, error) { return config.ReadRawConfigReadonly(s.ctx, s.home) }
+func (s *scope) rawConfig() (map[string]any, error) {
+	return config.ReadRawConfigReadonly(s.ctx, s.home)
+}
 
 // Value at a nested key path of a config mapping, def on any miss and an explicit null kept
 func cfgGet(cfg map[string]any, def any, keys ...string) any {
@@ -151,7 +153,9 @@ func (s *scope) commandTimeout() int64 {
 }
 
 // browser.camofox.managed_persistence, a stable profile scoped userId instead of a random one
-func managedPersistenceEnabled(cfg map[string]any) bool { return pyrepr.Truthy(cfg["managed_persistence"]) }
+func managedPersistenceEnabled(cfg map[string]any) bool {
+	return pyrepr.Truthy(cfg["managed_persistence"])
+}
 
 // Env value first, then the browser.camofox key as stripped text, else empty
 func (s *scope) envOrCfg(envName string, cfg map[string]any, key string) string {
@@ -559,7 +563,9 @@ func (s *scope) slot(taskID string) sessionSlot {
 }
 
 // Path of a tab action under the session's tab
-func tabPath(ss *session, suffix string) string { return "/tabs/" + pyrepr.Str(ss.tab()) + "/" + suffix }
+func tabPath(ss *session, suffix string) string {
+	return "/tabs/" + pyrepr.Str(ss.tab()) + "/" + suffix
+}
 
 // userId query params of a session
 func userParams(ss *session) [][2]string { return [][2]string{{"userId", ss.userID}} }

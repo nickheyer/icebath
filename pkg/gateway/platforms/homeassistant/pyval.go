@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -110,6 +111,13 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
+	if rv := reflect.ValueOf(v); v != nil && (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) {
+		out := make([]any, rv.Len())
+		for i := range out {
+			out[i] = rv.Index(i).Interface()
+		}
+		return out, nil
+	}
 	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
 }
 
@@ -177,6 +185,9 @@ func hashKey(v any) (any, error) {
 			return n.Int64(), nil
 		}
 		return bigKey(n.String()), nil
+	}
+	if !reflect.TypeOf(v).Comparable() {
+		return nil, &pyErr{"TypeError", fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
 	}
 	return v, nil
 }

@@ -297,7 +297,7 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 			requested = pyrepr.Str(v)
 		}
 	}
-	finalModel := auxNormalizeResolvedModel(requested, "azure-foundry")
+	finalModel := auxNormalizeResolvedModel(ctx, requested, "azure-foundry")
 	if finalModel == "" {
 		slog.Debug(fmt.Sprintf("Auxiliary azure-foundry: no model resolved (model=%s, default=%s)",
 			pyrepr.Repr(auxNoneIfEmpty(model)), pyrepr.Repr(modelCfg["default"])))

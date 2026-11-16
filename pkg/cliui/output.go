@@ -147,8 +147,19 @@ func (c *Console) Prompt(question, def string, password bool) string {
 	return def
 }
 
-// PromptYesNo asks a localized yes or no question, accepting y or the localized affirmative initial
+// PromptYesNo asks a localized yes or no question, a Yes and No list inside a setup presentation
 func (c *Console) PromptYesNo(ctx context.Context, question string, def bool) bool {
+	if c.IsFlow() {
+		selected, cancel := 1, -1
+		if def {
+			selected = 0
+		}
+		idx, err := c.CursesRadiolist(ctx, question, []RadioItem{PlainItem("Yes"), PlainItem("No")}, selected, RadiolistOptions{CancelReturns: &cancel})
+		if err != nil || idx < 0 {
+			return def
+		}
+		return idx == 0
+	}
 	hint := i18n.T(ctx, "cli.shared.yes_no_default_no", "", nil)
 	if def {
 		hint = i18n.T(ctx, "cli.shared.yes_no_default_yes", "", nil)

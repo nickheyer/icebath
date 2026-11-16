@@ -96,7 +96,7 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 			source = e.Source
 		}
 		var removed any
-		reason, ok, err := removedAnnotation(h, e.Name, e.Dir, removedEntries)
+		reason, ok, err := installedRemovedAnnotation(h, e, removedEntries)
 		if err != nil {
 			return err
 		}

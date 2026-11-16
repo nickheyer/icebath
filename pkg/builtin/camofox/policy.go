@@ -340,7 +340,7 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 	return path
 }
 
-// Snapshot cut at a line boundary to maxChars, the note naming the stored full tree so refs past the cut survive
+// Snapshot cut at a line boundary to maxChars, the note naming the stored full tree for refs past the cut
 func (s *scope) truncateSnapshot(snapshotText string, maxChars int64) string {
 	if int64(pystr.Len(snapshotText)) <= maxChars {
 		return snapshotText

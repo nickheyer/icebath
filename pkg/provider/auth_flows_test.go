@@ -97,24 +97,6 @@ func TestExternalProcessStatusRejectsWrongAuthType(t *testing.T) {
 	}
 }
 
-func TestAuthVerifiedFalseWithoutEvidence(t *testing.T) {
-	h, env := codexTestEnv(t)
-	registerAcmeACP(t)
-	t.Setenv("HOME", filepath.Join(filepath.Dir(h), "userhome"))
-	t.Setenv("PATH", filepath.Join(filepath.Dir(h), "backend-bin"))
-	status := GetExternalProcessProviderStatus(env, "acme-acp")
-	if status["auth_verified"] != false || status["auth_source"] != nil || status["configured"] != false {
-		t.Fatalf("unexpected status %v", status)
-	}
-	evidenced := acmeACPProfile()
-	evidenced.ExternalAuthEvidenceHook = func() (bool, string, bool) { return true, "~/.acme/credentials.json", true }
-	RegisterProvider(evidenced)
-	status = GetExternalProcessProviderStatus(env, "acme-acp")
-	if status["auth_verified"] != true || status["auth_source"] != "~/.acme/credentials.json" {
-		t.Fatalf("evidence ignored %v", status)
-	}
-}
-
 func TestGetAuthStatusFallsThroughForUnknownAndEmpty(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})

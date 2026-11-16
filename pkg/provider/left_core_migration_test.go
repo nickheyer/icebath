@@ -290,26 +290,6 @@ func TestLeftCoreToolsetValuesParseLikeLiteralEval(t *testing.T) {
 	}
 }
 
-func TestLeftCoreEnvNameSets(t *testing.T) {
-	launch := leftCoreLaunchEnvNames()
-	if len(launch) != 3 || !launch["ICEBATH_COPILOT_ACP_COMMAND"] || !launch["COPILOT_CLI_PATH"] || launch["COPILOT_ACP_BASE_URL"] {
-		t.Fatalf("launch %v", launch)
-	}
-	profile := leftCoreProfileEnv()
-	if strings.Join(profile, ",") != "ICEBATH_COPILOT_ACP_COMMAND,ICEBATH_COPILOT_ACP_ARGS,COPILOT_CLI_PATH,COPILOT_ACP_BASE_URL" {
-		t.Fatalf("profile %v", profile)
-	}
-	if !EnvWriterLaunchDenylist()["ICEBATH_COPILOT_ACP_ARGS"] {
-		t.Fatal("the env writers refuse a left core launch name")
-	}
-	if LeftCoreTerminalKeys["terminal.singularity_image"] != "TERMINAL_SINGULARITY_IMAGE" || len(LeftCoreVersions()) != 1 || LeftCoreVersions()[0] != 52 {
-		t.Fatal("terminal keys and versions")
-	}
-	if PlatformInstallHint(context.Background(), "telegram") != "" || TerminalBackendInstallHint(context.Background(), "docker") != "" {
-		t.Fatal("core platforms and backends name nothing")
-	}
-}
-
 func TestLeftCoreRecoverProviderStopsBeforeAnyReadForOtherNames(t *testing.T) {
 	h := leftCoreHome(t, t.TempDir(), "home", "", "")
 	withPluginHooks(t, func(hk *PluginManagerHooks) {

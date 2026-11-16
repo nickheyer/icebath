@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math"
@@ -221,7 +222,7 @@ func (c *Cooldown) MarkEntitlementRejected(apiErr *APIError, provider, model str
 }
 
 // IsEntitlementRejected reports a provider and model pair rejected as unentitled under its raw or normalized id
-func (c *Cooldown) IsEntitlementRejected(provider, model string) bool {
+func (c *Cooldown) IsEntitlementRejected(ctx context.Context, provider, model string) bool {
 	c.mu.Lock()
 	if len(c.rejected) == 0 {
 		c.mu.Unlock()
@@ -232,7 +233,7 @@ func (c *Cooldown) IsEntitlementRejected(provider, model string) bool {
 		return true
 	}
 	c.mu.Unlock()
-	normalized := NormalizeModelForProvider(model, provider)
+	normalized := NormalizeModelForProviderCtx(ctx, model, provider)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.rejected[[2]string{provider, normalized}]
