@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // How long the input loop holds a local input behind this viewer's own queued admission at most
@@ -140,83 +139,6 @@ func queuedRows(c *CLI, store *gatewaycli.GatewaySessionStore) []queuedRow {
 	return out
 }
 
-// Texts the owner last published as queued plus this viewer's admissions submitted after that list
-func publishedQueue(c *CLI, store *gatewaycli.GatewaySessionStore) []string {
-	state := queueState(c, store)
-	state.Lock()
-	defer state.Unlock()
-	for admission := range state.QueuedAt {
-		if _, kept := state.QueuedInputs.Get(admission); !kept {
-			delete(state.QueuedAt, admission)
-		}
-	}
-	known := map[any]bool{}
-	var listed []string
-	for _, raw := range state.Pending {
-		row, isDict := raw.(map[string]any)
-		if !isDict {
-			continue
-		}
-		known[row["admission_id"]] = true
-		if row["status"] == "queued" {
-			listed = append(listed, strOrEmpty(row["text"]))
-		}
-	}
-	var fresh []string
-	for _, admission := range state.QueuedInputs.Keys {
-		text, _ := state.QueuedInputs.Get(admission)
-		at, has := state.QueuedAt[admission]
-		if !known[admission] && has && at >= state.PendingSeq {
-			fresh = append(fresh, pyrepr.Str(text))
-		}
-	}
-	return append(listed, fresh...)
-}
-
-// This viewer's queued admission at the head of the owner's queue not yet adopted, empty otherwise
-func ownQueueHead(state *gatewaycli.SessionState) string {
-	state.Lock()
-	defer state.Unlock()
-	var queued []map[string]any
-	listed := map[any]bool{}
-	for _, raw := range state.Pending {
-		row, isDict := raw.(map[string]any)
-		if !isDict {
-			continue
-		}
-		if row["status"] == "unknown" {
-			return ""
-		}
-		listed[row["admission_id"]] = true
-		if row["status"] == "queued" && pyrepr.Truthy(row["admission_id"]) {
-			queued = append(queued, row)
-		}
-	}
-	head := ""
-	if len(queued) > 0 {
-		sort.SliceStable(queued, func(i, j int) bool {
-			a, _ := pyIntValue(orZero(queued[i]["sequence"]))
-			b, _ := pyIntValue(orZero(queued[j]["sequence"]))
-			return a < b
-		})
-		head = pyrepr.Str(queued[0]["admission_id"])
-	} else {
-		for _, admission := range state.QueuedInputs.Keys {
-			if at, has := state.QueuedAt[admission]; !listed[admission] && has && at >= state.PendingSeq {
-				head = admission
-				break
-			}
-		}
-	}
-	if _, queuedHere := state.QueuedInputs.Get(head); !queuedHere {
-		return ""
-	}
-	if _, adopted := state.Adopted[head]; adopted {
-		return ""
-	}
-	return head
-}
-
 // Local input held while this viewer's own queued admission is the owner's next turn
 type ownQueueHold struct {
 	item             any
@@ -227,86 +149,6 @@ type ownQueueHold struct {
 	idleLists        int
 	deadline         time.Time
 	taken            bool
-}
-
-// Hold for an input taken while this viewer's own queued admission is next, nil when nothing holds it
-func beginOwnQueueHold(c *CLI, item any) *ownQueueHold {
-	switch item.(type) {
-	case *seededQueryMessage, tools.TimelineNotification:
-		return nil
-	}
-	c.uiMu.Lock()
-	running := c.agentRunning
-	c.uiMu.Unlock()
-	if running || c.sessionID == "" {
-		return nil
-	}
-	store := c.gatewayStore()
-	if store == nil {
-		return nil
-	}
-	state := queueState(c, store)
-	admission := ownQueueHead(state)
-	if admission == "" {
-		return nil
-	}
-	return newOwnQueueHold(item, state, admission)
-}
-
-// Hold of item on the queued admission, one settling idle list allowed while the owner runs a turn
-func newOwnQueueHold(item any, state *gatewaycli.SessionState, admission string) *ownQueueHold {
-	state.Lock()
-	defer state.Unlock()
-	h := &ownQueueHold{item: item, state: state, admission: admission, seq: state.PendingSeq,
-		deadline: time.Now().Add(time.Duration(ownQueueHoldSeconds * float64(time.Second)))}
-	if pyrepr.Truthy(state.Info["running"]) {
-		h.allowedIdleLists = 1
-	}
-	return h
-}
-
-// Pops a turn the owner runs now from the head of the pending input, typed items staying behind the hold
-func (h *ownQueueHold) takeGatewayTurn(pending *inputQueue) any {
-	pending.mu.Lock()
-	if len(pending.items) == 0 {
-		pending.mu.Unlock()
-		return nil
-	}
-	head := pending.items[0]
-	seeded, isSeeded := head.(*seededQueryMessage)
-	_, isNotification := head.(tools.TimelineNotification)
-	if !(isSeeded && seeded.AdmissionID != "") && !isNotification {
-		pending.mu.Unlock()
-		return nil
-	}
-	pending.items = pending.items[1:]
-	pending.mu.Unlock()
-	if isSeeded && seeded.AdmissionID == h.admission {
-		h.taken = true
-	}
-	return head
-}
-
-// Whether the hold is over, taken, timed out, no longer next or the owner idles without claiming it
-func (h *ownQueueHold) done() bool {
-	if h.taken || !time.Now().Before(h.deadline) {
-		return true
-	}
-	if ownQueueHead(h.state) != h.admission {
-		h.state.Lock()
-		_, adopted := h.state.Adopted[h.admission]
-		h.state.Unlock()
-		return !adopted
-	}
-	h.state.Lock()
-	defer h.state.Unlock()
-	if h.state.PendingSeq != h.seq {
-		h.seq = h.state.PendingSeq
-		if !pyrepr.Truthy(h.state.Info["running"]) {
-			h.idleLists++
-		}
-	}
-	return h.idleLists > h.allowedIdleLists
 }
 
 // Retires one queued admission, cancelled when it never ran, stopped when its run was interrupted, started otherwise

@@ -460,7 +460,6 @@ display.focus_saved_tool_progress
 display.focus_view
 display.friendly_tool_labels
 display.inline_diffs
-display.interface
 display.interim_assistant_messages
 display.language
 display.memory_notifications
@@ -1024,8 +1023,8 @@ func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
 			t.Errorf("container slot %s is missing", path)
 		}
 	}
-	if Defaults()["_config_version"] != 52 || Version != 52 {
-		t.Errorf("schema version %v, want 52", Defaults()["_config_version"])
+	if Defaults()["_config_version"] != 53 || Version != 53 {
+		t.Errorf("schema version %v, want 53", Defaults()["_config_version"])
 	}
 }
 

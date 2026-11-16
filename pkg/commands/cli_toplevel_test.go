@@ -97,7 +97,7 @@ func TestChatSubparserInheritedValueFlagsChatSubparserInheritedValueFlagsUseSupp
 }
 
 func TestCheckpointsParsesAtTheTopLevelAndSurvivesChat(t *testing.T) {
-	for _, argv := range [][]string{{"--tui", "--checkpoints"}, {"--checkpoints", "chat"}, {"chat", "--tui", "--checkpoints"}} {
+	for _, argv := range [][]string{{"--checkpoints"}, {"--checkpoints", "chat"}, {"chat", "--checkpoints"}} {
 		ns, err := chatNamespace(t, argv)
 		if err != nil {
 			t.Fatalf("%q: %v", argv, err)

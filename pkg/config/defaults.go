@@ -1,7 +1,7 @@
 package config
 
 // Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 52
+const Version = 53
 
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
@@ -477,7 +477,6 @@ func defaultsLiteral() Tree {
 			"busy_input_mode":                  "interrupt",
 			"busy_steer_ack_enabled":           true,
 			"cli_multiline_shortcuts":          true,
-			"interface":                        "cli",
 			"cli_layout":                       "modern",
 			"tui_native":                       false,
 			"tui_auto_resume_recent":           false,

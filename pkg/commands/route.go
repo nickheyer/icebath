@@ -420,7 +420,7 @@ func quickCommandEntry(cfg config.Tree, bare string) (any, bool, error) {
 	return nil, false, &RaisedError{"TypeError", fmt.Sprintf("argument of type '%s' is not a container or iterable", config.PyTypeName(raw))}
 }
 
-// Alias re-dispatch, type check and command check of one quick command entry as the classic CLI runs them
+// Alias re-dispatch, type check and command check of one quick command entry
 func (rt *Router) routeQuick(ctx context.Context, baseCmd, bare string, entry any, userArgs string, seenQuick map[string]bool) Route {
 	qcmd := config.AsMap(entry)
 	if qcmd == nil {

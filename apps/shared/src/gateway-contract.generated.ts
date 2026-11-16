@@ -2008,6 +2008,32 @@ export interface ModelSaveKeyParams {
 export interface ModelSaveKeyResult {
   provider: ModelOptionProvider
 }
+export interface ModelProbeParams {
+  base_url: string
+  api_key?: string
+}
+export interface ModelProbeResult {
+  base_url: string
+  found: boolean
+  models: string[]
+  probed_url: string
+  suggested_base_url: string
+}
+export interface ModelAssignParams {
+  provider: string
+  model: string
+  base_url?: string
+  api_key?: string
+  confirm_expensive_model?: boolean
+}
+/** ``confirm_required`` mirrors ``config.set``: a guarded model pick wrote nothing yet. */
+export interface ModelAssignResult {
+  provider: string
+  model: string
+  base_url: string
+  confirm_required: boolean
+  confirm_message: string
+}
 export interface ModelDisconnectParams {
   slug: string
   session_id?: string | null
@@ -4626,6 +4652,57 @@ export interface GroupsDiscardResult {
   discarded?: boolean
   task: RoomTaskReceipt
 }
+export interface SetupSectionLoadParams {
+  config_keys?: string[]
+  env_keys?: string[]
+  secret_config_keys?: string[]
+  secret_env_keys?: string[]
+  facts?: string[]
+}
+/** ``config`` and ``env`` hold each asked key that has a value, config keys with the defaults merged. ``secrets`` names the asked secret keys that hold a value and never carries one. ``facts`` answers each asked fact: ``env:KEY`` a non empty key, ``extra:NAME`` an engine this platform supports, ``module:NAME`` an installed engine, ``binary:NAME`` a program on the path, ``nous.managed_tools``, ``xai.oauth``. */
+export interface SetupSectionLoadResult {
+  config: Record<string, unknown>
+  env: Record<string, string>
+  secrets: string[]
+  facts: Record<string, boolean>
+}
+export interface SetupSectionSaveParams {
+  writes?: SetupSectionWrite[]
+  removals?: SetupSectionRemoval[]
+}
+/** One answer: a dotted ``config.yaml`` key or a ``.env`` key, with the type ``value`` is stored as. An ``env`` target takes ``text`` only. */
+export interface SetupSectionWrite {
+  target: 'config' | 'env'
+  key: string
+  kind: 'bool' | 'whole' | 'decimal' | 'text'
+  value: unknown
+}
+export interface SetupSectionRemoval {
+  target: 'config' | 'env'
+  key: string
+}
+/** ``config`` is what ``config.yaml`` holds for each written key after the save, ``env`` the ``.env`` keys saved, ``removed`` the keys of either file that existed and are gone. */
+export interface SetupSectionSaveResult {
+  config: Record<string, unknown>
+  env: string[]
+  removed: string[]
+}
+export interface SetupActionStartParams {
+  action: 'xai.oauth.login' | 'tts.install.neutts' | 'tts.install.kittentts'
+}
+export interface SetupActionStartResult {
+  job: string
+}
+export interface SetupActionPollParams {
+  job: string
+  after: number
+}
+/** ``lines`` is the output the job printed past the first ``after`` lines; ``ok`` is its outcome once ``done`` is true. */
+export interface SetupActionPollResult {
+  lines: string[]
+  done: boolean
+  ok: boolean
+}
 export interface CanonicalShellExecParams {
   session_id: string
   command: string
@@ -5365,7 +5442,7 @@ export interface ClarifyQuestion {
   choices?: string[] | null
   multi_select?: boolean
 }
-/** ``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response without ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as main's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline). */
+/** ``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response without ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended (``timed_out`` keeps the answers locked before its deadline). */
 export interface ClarifyResult {
   answers?: Record<string, string | null> | null
   outcome?: 'submitted' | 'timed_out' | 'cancelled' | null
@@ -5654,7 +5731,7 @@ export interface MessageStartPayload {
   text?: string | null
   turn_id?: string | null
 }
-/** ``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the reply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that closes the classic CLI's reply box. Every other viewer ignores an empty chunk. A prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code units of that segment already sent): a client drops a re-sent chunk it already applied. */
+/** ``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the reply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that ends the headless chat's reply segment. Every other viewer ignores an empty chunk. A prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code units of that segment already sent): a client drops a re-sent chunk it already applied. */
 export interface MessageDeltaPayload {
   text: string | null
   rendered?: string | null
@@ -5795,7 +5872,7 @@ export interface ReactionPayload {
 export interface ReviewSummaryPayload {
   text: string
 }
-/** A session-authority local-viewer turn: one line the agent printed through ``_print_fn`` (subagent completion, compaction, errors, budget notices), which main's classic CLI rendered through ``_agent_status_print``. */
+/** A session-authority local-viewer turn: one line the agent printed through ``_print_fn`` (subagent completion, compaction, errors, budget notices), which the headless chat prints as a status line. */
 export interface AgentPrintPayload {
   text: string
 }
@@ -6269,10 +6346,14 @@ export interface RpcMethods {
   'mcp.servers.test': { params: McpServerNameParams; result: McpServersTestResult }
   /** Set/clear one author's emoji reaction on a message; returns the row's full reaction list. */
   'message.react': { params: MessageReactParams; result: MessageReactResult }
+  /** Write the profile default model and provider, registering a new custom endpoint with its key. */
+  'model.assign': { params: ModelAssignParams; result: ModelAssignResult }
   /** Remove every credential (env keys and OAuth state) for a provider. */
   'model.disconnect': { params: ModelDisconnectParams; result: ModelDisconnectResult }
   /** Provider/model inventory for the picker, layered over the session's live provider when given. */
   'model.options': { params: ModelOptionsParams; result: ModelOptionsResult }
+  /** List the models an OpenAI compatible endpoint serves, with the base URL that answered. */
+  'model.probe': { params: ModelProbeParams; result: ModelProbeResult }
   /** Save an API key for a provider and return its refreshed inventory row. */
   'model.save_key': { params: ModelSaveKeyParams; result: ModelSaveKeyResult }
   /** Write onboarding.run in the root profile's config.yaml; answers the new state. */
@@ -6445,7 +6526,7 @@ export interface RpcMethods {
   'session.redirect': { params: SessionCorrectionParams; result: SessionCorrectionResult }
   /** Attach to a stored session: reuse it if live here, else lazy / deferred / cold / eager rebuild. */
   'session.resume': { params: SessionResumeParams; result: SessionResumeResult }
-  /** Export the transcript to ~/.icebath/sessions/saved (classic /save). */
+  /** Export the transcript to ~/.icebath/sessions/saved (/save). */
   'session.save': { params: SessionSaveParams; result: SessionSaveResult }
   /** Set/clear hidden (out of the default list, still resumable by its owner) on a session + lineage. */
   'session.set_hidden': { params: SessionSetHiddenParams; result: SessionSetHiddenResult }
@@ -6461,8 +6542,16 @@ export interface RpcMethods {
   'session.usage': { params: SessionUsageParams; result: SessionUsageResult }
   /** Re-home a stored session's workspace; git identity is replaced and a live agent follows. */
   'session.workspace.move': { params: SessionWorkspaceMoveParams; result: SessionWorkspaceMoveResult }
+  /** Wait up to two seconds for new output of a setup job and return it with the end state. */
+  'setup.action.poll': { params: SetupActionPollParams; result: SetupActionPollResult }
+  /** Start a side effect of a setup section, a login or an engine install, and return the job that follows it. */
+  'setup.action.start': { params: SetupActionStartParams; result: SetupActionStartResult }
   /** Strict provider check through the same runtime resolution the agent uses on session creation. */
   'setup.runtime_check': { params: SetupRuntimeCheckParams; result: SetupRuntimeCheckResult }
+  /** Read the values a setup section of the terminal UI starts from. */
+  'setup.section.load': { params: SetupSectionLoadParams; result: SetupSectionLoadResult }
+  /** Write the answers of one setup section to config.yaml and .env; the shared metrics consent keys go through the consent writer. */
+  'setup.section.save': { params: SetupSectionSaveParams; result: SetupSectionSaveResult }
   /** Loose provider check: is ANY provider auth state discoverable for the (launch or named) profile. */
   'setup.status': { params: ProfileParams; result: SetupStatusResult }
   /** Record one finished Desktop day (mode use + button presses); recorded=false keeps it for a retry. */
@@ -6679,8 +6768,10 @@ export const RPC_METHODS = [
   'mcp.servers.status',
   'mcp.servers.test',
   'message.react',
+  'model.assign',
   'model.disconnect',
   'model.options',
+  'model.probe',
   'model.save_key',
   'onboarding.set_run',
   'onboarding.skip',
@@ -6775,7 +6866,11 @@ export const RPC_METHODS = [
   'session.undo',
   'session.usage',
   'session.workspace.move',
+  'setup.action.poll',
+  'setup.action.start',
   'setup.runtime_check',
+  'setup.section.load',
+  'setup.section.save',
   'setup.status',
   'shared_metrics.desktop_daily',
   'shared_metrics.desktop_dislike',
@@ -6841,7 +6936,7 @@ export interface CanonicalRpcMethods {
   'clarify.lock': { params: ClarifyLockParams; result: ClarifyLockResult }
   /** Generation-fenced answer to a pending clarify prompt (empty answer = skipped). */
   'clarify.respond': { params: ClarifyRespondParams; result: PromptResponseResult }
-  /** Fire-only: a recognized command the classic CLI or the TUI runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired). */
+  /** Fire-only: a recognized command the terminal UI or the headless chat runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired). */
   'command.observe': { params: CommandObserveParams; result: CommandObserveResult }
   'config.get': { params: ConfigGetParams; result: CanonicalConfigGetResult }
   'config.set': { params: CanonicalConfigSetParams; result: ConfigSetResult }
@@ -6877,11 +6972,11 @@ export interface CanonicalRpcMethods {
   /** Hand a still-queued admission's text to the running turn's agent as a steer. The admission reads 'started' with that turn (pending snapshots mark it 'steering') and never runs on its own; it settles terminal 'steered' when the turn completes with its text, else 'interrupted' (its completion frame says 'cancelled', as an interrupted turn's does); a text the turn never consumed goes back to its queue place. Refusals: admission_started, session_idle, steer_unavailable (no agent to take it: the admission stays queued), unsupported_control, not_found. */
   'prompt.steer_queued': { params: CanonicalSteerQueuedParams; result: AdmissionStatus }
   'prompt.submit': { params: CanonicalSubmitParams; result: CanonicalSubmitResult }
-  /** The classic CLI's /diff session: everything changed since the session's earliest retained checkpoint, as data for its terminal renderer. */
+  /** /diff session: everything changed since the session's earliest retained checkpoint, as data for a terminal renderer. */
   'rollback.session_diff': { params: RollbackSessionDiffParams; result: RollbackSessionDiffResult }
   /** Owner identity and the canonical capabilities a client may rely on. */
   'runtime.describe': { params: RuntimeDescribeParams; result: RuntimeDescribeResult }
-  /** The classic CLI's /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row. */
+  /** The /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row. */
   'session.automation': { params: SessionAutomationParams; result: SessionAutomationResult }
   'session.create': { params: CanonicalCreateParams; result: CanonicalSnapshot }
   /** Drop this connection's subscription; a stale subscription id answers detached=false. end_reason (snake_case): the viewer is closing the conversation; the last viewer leaving an idle local session ends its row with that reason. */
@@ -6899,7 +6994,7 @@ export interface CanonicalRpcMethods {
   'session.prune': { params: SessionPruneParams; result: SessionPruneResult }
   'session.redirect': { params: CanonicalCorrectionParams; result: CanonicalCorrectionResult }
   'session.resume': { params: CanonicalResumeParams; result: CanonicalSnapshot }
-  /** The session.usage dict on demand: what main's classic CLI read off its agent. */
+  /** The session.usage dict on demand, read by the terminal UI and the headless chat. */
   'session.stats': { params: SessionStatsParams; result: SessionStats }
   'session.steer': { params: CanonicalCorrectionParams; result: CanonicalCorrectionResult }
   /** Ink ``!cmd`` / ``{!cmd}`` on the shared owner: one safe command for a local session, in its frozen launch cwd (``gateway/session_shell.py``). */

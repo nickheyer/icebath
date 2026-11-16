@@ -104,7 +104,11 @@ func EnsureRuntimeEnvironment(ctx context.Context, opts RuntimeEnvironmentOption
 	if !opts.Explicit && !LazyInstallsAllowedFor(ctx) {
 		return "", set.refuse(ctx)
 	}
-	env, err := ManagedEnvironment(ctx, venv, ManagedEnvironmentOptions{Explicit: opts.Explicit, Output: opts.Output})
+	toolchainCtx, cache, err := runtimeToolchainContext(ctx, venv)
+	if err != nil {
+		return "", err
+	}
+	env, err := ManagedEnvironment(toolchainCtx, venv, ManagedEnvironmentOptions{Explicit: opts.Explicit, Output: opts.Output, Cache: cache})
 	if err != nil {
 		return "", err
 	}
@@ -118,6 +122,24 @@ func EnsureRuntimeEnvironment(ctx context.Context, opts RuntimeEnvironmentOption
 		return "", err
 	}
 	return venv, env.installPinned(ctx, requirements)
+}
+
+// Store beside the environment with its own facts, holding the interpreter and uv the environment is built on
+func RuntimeSetStore(venv string) string {
+	return venv + "-runtime"
+}
+
+// Toolchain context and uv cache of a runtime set environment, the default store when it holds the toolchain
+func runtimeToolchainContext(ctx context.Context, venv string) (context.Context, string, error) {
+	_, _, found, err := uvToolchain(ctx, false, false)
+	if err != nil {
+		return nil, "", err
+	}
+	if found {
+		return ctx, "", nil
+	}
+	store := RuntimeSetStore(venv)
+	return WithRuntimeStore(ctx, store), filepath.Join(store, "uv-cache"), nil
 }
 
 // Installs a hash pinned requirement set exactly as locked, without resolving dependencies again

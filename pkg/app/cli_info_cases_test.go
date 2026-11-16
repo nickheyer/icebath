@@ -233,63 +233,6 @@ func waitCalls(t *testing.T, calls *atomic.Int32, want int32) {
 	}
 }
 
-func TestMCPConfigWatch(t *testing.T) {
-	github := map[string]any{"github": map[string]any{"url": "https://mcp.github.com"}}
-	t.Run("test_new_mcp_server_triggers_reload", func(t *testing.T) {
-		c, path, calls, _ := watchCLI(t, map[string]any{}, nil)
-		writeFile(t, path, "mcp_servers:\n  github:\n    url: https://mcp.github.com\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		waitCalls(t, calls, 1)
-	})
-	t.Run("test_removed_mcp_server_triggers_reload", func(t *testing.T) {
-		c, path, calls, _ := watchCLI(t, github, nil)
-		writeFile(t, path, "mcp_servers: {}\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		waitCalls(t, calls, 1)
-	})
-	t.Run("test_optout_disables_auto_reload", func(t *testing.T) {
-		c, path, calls, rec := watchCLI(t, map[string]any{}, nil)
-		writeFile(t, path, "mcp:\n  auto_reload_on_config_change: false\nmcp_servers:\n  github:\n    url: https://mcp.github.com\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		if calls.Load() != 0 || !strings.Contains(strings.Join(rec.plain(), "\n"), "/reload-mcp") {
-			t.Fatalf("calls %d out %q", calls.Load(), rec.plain())
-		}
-	})
-	t.Run("test_optout_updates_snapshot_so_reload_mcp_applies_cleanly", func(t *testing.T) {
-		c, path, calls, _ := watchCLI(t, map[string]any{}, nil)
-		writeFile(t, path, "mcp:\n  auto_reload_on_config_change: false\nmcp_servers:\n  github:\n    url: https://mcp.github.com\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		c.tui.lastConfigCheck = 0
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		if calls.Load() != 0 || !reflect.DeepEqual(c.tui.configMCPServers, github) {
-			t.Fatalf("calls %d snapshot %#v", calls.Load(), c.tui.configMCPServers)
-		}
-	})
-	t.Run("test_optout_path_is_top_level_mcp_not_auxiliary", func(t *testing.T) {
-		c, path, calls, _ := watchCLI(t, map[string]any{}, nil)
-		writeFile(t, path, "auxiliary:\n  mcp:\n    auto_reload_on_config_change: false\nmcp_servers:\n  github:\n    url: https://mcp.github.com\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		waitCalls(t, calls, 1)
-	})
-	t.Run("test_env_var_templates_do_not_false_positive_on_unrelated_saves", func(t *testing.T) {
-		t.Setenv("MCP_GH_API_KEY", "sekrit-token")
-		expanded := map[string]any{"github": map[string]any{"url": "https://mcp.github.com", "headers": map[string]any{"Authorization": "Bearer sekrit-token"}}}
-		c, path, calls, rec := watchCLI(t, expanded, nil)
-		writeFile(t, path, "agent:\n  reasoning_effort: high\nmcp_servers:\n  github:\n    headers:\n      Authorization: Bearer ${MCP_GH_API_KEY}\n    url: https://mcp.github.com\n")
-		c.tui.configSig = nil
-		c.checkConfigMCPChanges()
-		if calls.Load() != 0 || strings.Contains(strings.Join(rec.plain(), "\n"), "MCP server config changed") {
-			t.Fatalf("calls %d out %q", calls.Load(), rec.plain())
-		}
-	})
-}
-
 // Blocks until the filesystem timestamp clock of dir passes afterNs
 func waitForCtimeTick(t *testing.T, dir string, afterNs int64) {
 	t.Helper()
@@ -304,44 +247,6 @@ func waitForCtimeTick(t *testing.T, dir string, afterNs int64) {
 			t.Fatal("ctime clock never advanced")
 		}
 		time.Sleep(time.Millisecond)
-	}
-}
-
-func TestPinnedMtimeSameSizeReplacementTriggersReload(t *testing.T) {
-	c, path, calls, _ := watchCLI(t, map[string]any{"bb": map[string]any{"command": "b"}}, nil)
-	writeFile(t, path, "mcp_servers:\n  bb: {command: b}\n")
-	sig, err := config.ConfigVersionOrNone(c.ctx, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.tui.configSig = sig
-	waitForCtimeTick(t, filepath.Dir(path), statCtimeNs(t, path))
-	other := filepath.Join(filepath.Dir(path), "other.yaml")
-	writeFile(t, other, "mcp_servers:\n  aa: {command: a}\n")
-	data, _ := os.ReadFile(other)
-	writeFile(t, path, string(data))
-	mtime := time.Unix(0, sig[0].(int64))
-	if err := os.Chtimes(path, mtime, mtime); err != nil {
-		t.Fatal(err)
-	}
-	c.checkConfigMCPChanges()
-	waitCalls(t, calls, 1)
-	if !reflect.DeepEqual(c.tui.configMCPServers, map[string]any{"aa": map[string]any{"command": "a"}}) {
-		t.Fatalf("snapshot %#v", c.tui.configMCPServers)
-	}
-}
-
-func TestTuiInitRunStateSeedsConfigSigWhenConfigExists(t *testing.T) {
-	t.Setenv("ICEBATH_DEFER_AGENT_STARTUP", "1")
-	c, _ := infoCLI(t)
-	path := home.ConfigPath(home.Dir(c.ctx))
-	writeFile(t, path, "mcp_servers: {}\n")
-	c.config = map[string]any{"mcp_servers": map[string]any{}}
-	c.pendingInput, c.interruptQueue = &inputQueue{}, &inputQueue{}
-	c.tuiInitRunState()
-	want, err := config.ConfigVersionOrNone(c.ctx, path)
-	if err != nil || want == nil || !reflect.DeepEqual(c.tui.configSig, want) {
-		t.Fatalf("sig %v want %v err %v", c.tui.configSig, want, err)
 	}
 }
 
@@ -479,50 +384,6 @@ func openFDsUnder(t *testing.T, path string) []string {
 	return open
 }
 
-func TestBackgroundInlineDetector(t *testing.T) {
-	running := func(t *testing.T) *CLI {
-		c, _ := infoCLI(t)
-		c.agentRunning = true
-		return c
-	}
-	t.Run("test_detects_both_commands", func(t *testing.T) {
-		c := running(t)
-		if !c.shouldHandleBackgroundCommandInline("/bg do work", false) || !c.shouldHandleBackgroundCommandInline("/btw do work", false) {
-			t.Fatal("bg and btw dispatch inline")
-		}
-	})
-	t.Run("test_ignores_background_when_agent_idle", func(t *testing.T) {
-		c, _ := infoCLI(t)
-		if c.shouldHandleBackgroundCommandInline("/bg do work", false) {
-			t.Fatal("idle input dispatched inline")
-		}
-	})
-	t.Run("test_ignores_non_slash_input", func(t *testing.T) {
-		c := running(t)
-		if c.shouldHandleBackgroundCommandInline("bg without slash", false) || c.shouldHandleBackgroundCommandInline("", false) {
-			t.Fatal("non slash input dispatched inline")
-		}
-	})
-	t.Run("test_ignores_other_slash_commands", func(t *testing.T) {
-		c := running(t)
-		for _, text := range []string{"/steer hello", "/queue hello", "/stop"} {
-			if c.shouldHandleBackgroundCommandInline(text, false) {
-				t.Fatalf("%q dispatched as background", text)
-			}
-		}
-	})
-	t.Run("test_ignores_background_with_attached_images", func(t *testing.T) {
-		if running(t).shouldHandleBackgroundCommandInline("/bg look at this", true) {
-			t.Fatal("image payload dispatched inline")
-		}
-	})
-	t.Run("test_case_and_whitespace_tolerant", func(t *testing.T) {
-		if !running(t).shouldHandleBackgroundCommandInline("/BG do work", false) {
-			t.Fatal("upper case bg not detected")
-		}
-	})
-}
-
 func TestBackgroundBusyPolicyContract(t *testing.T) {
 	t.Run("test_bg_and_btw_declare_dispatch_while_busy", func(t *testing.T) {
 		for _, name := range []string{"bg", "btw"} {
@@ -576,78 +437,6 @@ func fakeGate(t *testing.T, verdict tools.GuardResult) *[]string {
 	return seen
 }
 
-func TestBangHandlerDispatch(t *testing.T) {
-	t.Run("test_non_bang_text_is_not_handled", func(t *testing.T) {
-		c, _ := bangCLI(t, nil)
-		if c.handleBangShell("please fix this bug!") || c.handleBangShell("/help") {
-			t.Fatal("non bang text handled")
-		}
-	})
-	t.Run("test_bare_bang_prints_usage_and_runs_nothing", func(t *testing.T) {
-		c, rec := bangCLI(t, nil)
-		calls := countRunner(t)
-		if !c.handleBangShell("!") || *calls != 0 || len(linesWith(rec.plain(), commands.BangUsageHint)) == 0 {
-			t.Fatalf("runner calls %d out %q", *calls, rec.plain())
-		}
-	})
-	t.Run("test_command_output_is_printed", func(t *testing.T) {
-		c, rec := bangCLI(t, nil)
-		if !c.handleBangShell("!echo hello-bang") || len(linesWith(rec.plain(), "hello-bang")) == 0 {
-			t.Fatalf("out %q", rec.plain())
-		}
-	})
-	t.Run("test_nonzero_exit_is_surfaced_to_the_user", func(t *testing.T) {
-		c, rec := bangCLI(t, nil)
-		if !c.handleBangShell("!exit 3") || len(linesWith(rec.plain(), "exited 3")) == 0 {
-			t.Fatalf("out %q", rec.plain())
-		}
-	})
-	t.Run("test_disabled_context_falls_through", func(t *testing.T) {
-		c, _ := bangCLI(t, nil)
-		t.Setenv("ICEBATH_GATEWAY_SESSION", "1")
-		calls := countRunner(t)
-		if c.handleBangShell("!echo nope") || *calls != 0 {
-			t.Fatal("gateway session ran a bang command")
-		}
-	})
-}
-
-func TestBangApprovalGate(t *testing.T) {
-	t.Run("test_approval_gate_is_invoked_for_a_dangerous_command", func(t *testing.T) {
-		c, _ := bangCLI(t, nil)
-		seen := fakeGate(t, tools.GuardResult{Approved: true})
-		countRunner(t)
-		c.handleBangShell("!rm -rf ./build")
-		if len(*seen) != 1 || (*seen)[0] != "rm -rf ./build" {
-			t.Fatalf("gate saw %q", *seen)
-		}
-	})
-	t.Run("test_gate_is_invoked_for_every_command_not_just_dangerous_ones", func(t *testing.T) {
-		c, _ := bangCLI(t, nil)
-		seen := fakeGate(t, tools.GuardResult{Approved: true})
-		countRunner(t)
-		c.handleBangShell("!ls")
-		if len(*seen) != 1 {
-			t.Fatalf("gate saw %q", *seen)
-		}
-	})
-	t.Run("test_denied_command_is_not_executed", func(t *testing.T) {
-		c, rec := bangCLI(t, nil)
-		fakeGate(t, tools.GuardResult{Approved: false, Message: "Command denied: recursive delete"})
-		calls := countRunner(t)
-		if !c.handleBangShell("!rm -rf /important") || *calls != 0 || len(linesWith(rec.plain(), "denied")) == 0 {
-			t.Fatalf("runner calls %d out %q", *calls, rec.plain())
-		}
-	})
-	t.Run("test_real_gate_blocks_a_hardline_command", func(t *testing.T) {
-		c, _ := bangCLI(t, nil)
-		calls := countRunner(t)
-		if !c.handleBangShell("!rm -rf /") || *calls != 0 {
-			t.Fatalf("hardline command ran, runner calls %d", *calls)
-		}
-	})
-}
-
 func seedHistory() []map[string]any {
 	return []map[string]any{
 		{"role": "system", "content": "You are Icebath."},
@@ -667,36 +456,6 @@ func historyJSON(t *testing.T, h []map[string]any) string {
 		t.Fatal(err)
 	}
 	return string(b)
-}
-
-func TestBangLeavesHistoryByteIdentical(t *testing.T) {
-	t.Run("test_history_is_byte_identical_before_and_after", func(t *testing.T) {
-		for _, submission := range []string{"!echo history-check", "!exit 7", "!", "!definitely-not-a-real-binary-xyz"} {
-			c, _ := bangCLI(t, seedHistory())
-			before := historyJSON(t, c.conversationHistory)
-			c.handleBangShell(submission)
-			if historyJSON(t, c.conversationHistory) != before || len(c.conversationHistory) != len(seedHistory()) {
-				t.Fatalf("bang command %q mutated conversation history", submission)
-			}
-		}
-	})
-	t.Run("test_history_unchanged_when_command_is_denied", func(t *testing.T) {
-		c, _ := bangCLI(t, seedHistory())
-		before := historyJSON(t, c.conversationHistory)
-		fakeGate(t, tools.GuardResult{Approved: false, Message: "nope"})
-		c.handleBangShell("!rm -rf /important")
-		if historyJSON(t, c.conversationHistory) != before {
-			t.Fatal("denied bang command mutated history")
-		}
-	})
-	t.Run("test_agent_is_never_invoked", func(t *testing.T) {
-		c, _ := bangCLI(t, seedHistory())
-		c.setAgent(&GatewayAgent{ctx: context.Background()})
-		c.handleBangShell("!echo no-model-turn")
-		if !reflect.DeepEqual(c.agentRef(), &GatewayAgent{ctx: context.Background()}) || historyJSON(t, c.conversationHistory) != historyJSON(t, seedHistory()) {
-			t.Fatal("bang command touched the agent or the history")
-		}
-	})
 }
 
 func TestCLIUsageNoAgentAccountLimits(t *testing.T) {

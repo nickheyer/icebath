@@ -212,155 +212,62 @@ func (c *CLI) printDiffText(text string) {
 	fmt.Fprintln(console().Out, text)
 }
 
-// Handles /snapshot with list, create, restore and prune subcommands
+// Handles /snapshot, quick state snapshots listed, created, restored and pruned
 func (c *CLI) handleSnapshotCommand(command string) {
 	parts := strings.Fields(command)
 	sub := "list"
 	if len(parts) > 1 {
 		sub = pystr.Lower(parts[1])
 	}
+	snap := c.snapshotCommand()
 	switch sub {
 	case "list", "ls":
-		c.snapshotList()
+		printSnapshotLines(snap.List())
 	case "create":
-		c.snapshotCreate(parts)
+		printSnapshotLines(snap.Create(parts))
 	case "restore", "rewind":
 		c.restoreSnapshotCommand(parts)
 	case "prune":
-		c.snapshotPrune(parts)
+		printSnapshotLines(snap.Prune(parts))
 	default:
-		printLines("  "+c.commandsT("snapshot.unknown_subcommand", map[string]any{"subcommand": sub}), "  "+c.commandsT("snapshot.usage", nil))
+		printSnapshotLines(snap.Unknown(sub), nil)
 	}
 }
 
-// Size of a snapshot as bytes, kilobytes or megabytes
-func snapshotSize(size int64) string {
-	switch {
-	case size < 1024:
-		return fmt.Sprintf("%d B", size)
-	case size < 1024*1024:
-		return pyFormat(float64(size)/1024, ".0f") + " KB"
-	}
-	return pyFormat(float64(size)/1024/1024, ".1f") + " MB"
+// Home and catalog of a /snapshot run in the classic CLI
+func (c *CLI) snapshotCommand() gatewaycli.SnapshotCommand {
+	return gatewaycli.SnapshotCommand{Home: home.Dir(c.ctx), T: c.commandsT}
 }
 
-// Python format spec applied to a float
-func pyFormat(f float64, spec string) string {
-	text, err := pyrepr.Format(f, spec)
+// Prints snapshot command lines under the two space indent, blank lines kept bare
+func printSnapshotLines(lines []string, err error) {
 	if err != nil {
 		panic(err)
 	}
-	return text
-}
-
-// Lists quick state snapshots in a table
-func (c *CLI) snapshotList() {
-	h := home.Dir(c.ctx)
-	snaps, err := backup.ListQuickSnapshots(20, h)
-	if err != nil {
-		panic(err)
-	}
-	if len(snaps) == 0 {
-		printLines("  "+c.commandsT("snapshot.none_yet", nil), "  "+c.commandsT("snapshot.create_hint", nil))
-		return
-	}
-	printLines("  " + c.commandsT("snapshot.list_header", map[string]any{"dir": home.Display(h)}) + "\n")
-	printLines(fmt.Sprintf("  %3s  %-35s %5s %10s %s", c.commandsT("snapshot.col_num", nil), c.commandsT("snapshot.col_id", nil),
-		c.commandsT("snapshot.col_files", nil), c.commandsT("snapshot.col_size", nil), c.commandsT("snapshot.col_label", nil)),
-		"  "+strings.Repeat("─", 3)+"  "+strings.Repeat("─", 35)+" "+strings.Repeat("─", 5)+" "+strings.Repeat("─", 10)+" "+strings.Repeat("─", 20))
-	for i, raw := range snaps {
-		s := plainMap(raw)
-		size := int64(0)
-		if n, ok := pyrepr.Int(mapValueOr(s, "total_size", 0)); ok && n != nil {
-			size = n.Int64()
+	for _, line := range lines {
+		if line == "" {
+			printLines("")
+			continue
 		}
-		label := cliStr(s["label"], "")
-		printLines(fmt.Sprintf("  %3d  %s %5s %10s %s", i+1, pystr.Ljust(pyrepr.Str(s["id"]), 35), pyrepr.Str(mapValueOr(s, "file_count", 0)), snapshotSize(size), label))
+		printLines("  " + line)
 	}
-}
-
-// Creates a quick snapshot with an optional label
-func (c *CLI) snapshotCreate(parts []string) {
-	var label *string
-	if len(parts) > 2 {
-		joined := strings.Join(parts[2:], " ")
-		label = &joined
-	}
-	id, err := backup.CreateQuickSnapshot(label, home.Dir(c.ctx), nil, nil)
-	if err != nil {
-		panic(err)
-	}
-	if id != "" {
-		printLines("  " + c.commandsT("snapshot.created", map[string]any{"snapshot_id": id}))
-		return
-	}
-	printLines("  " + c.commandsT("snapshot.nothing_to_snapshot", nil))
-}
-
-// Prunes quick snapshots down to the newest N, twenty by default
-func (c *CLI) snapshotPrune(parts []string) {
-	keep := 20
-	if len(parts) > 2 {
-		if !isDecimal(parts[2]) {
-			printLines("  " + c.commandsT("snapshot.usage_prune", nil))
-			return
-		}
-		keep, _ = parseQueueIndex(parts[2])
-	}
-	deleted, err := backup.PruneQuickSnapshots(keep, home.Dir(c.ctx))
-	if err != nil {
-		panic(err)
-	}
-	printLines("  " + c.commandsT("snapshot.pruned", map[string]any{"deleted": deleted, "keep": keep}))
-}
-
-// Reports a non empty string of decimal digits as str.isdecimal does
-func isDecimal(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if _, ok := decimalValue(r); !ok {
-			return false
-		}
-	}
-	return true
 }
 
 // Restores a quick snapshot by number or id, closing this process's store first
 func (c *CLI) restoreSnapshotCommand(parts []string) {
-	h := home.Dir(c.ctx)
-	if len(parts) < 3 {
-		printLines("  " + c.commandsT("snapshot.usage_restore", nil))
-		snaps, err := backup.ListQuickSnapshots(1, h)
-		if err != nil {
-			panic(err)
-		}
-		if len(snaps) > 0 {
-			printLines("  " + c.commandsT("snapshot.most_recent", map[string]any{"snapshot_id": plainMap(snaps[0])["id"]}))
-		}
+	snap := c.snapshotCommand()
+	snapID, lines, err := snap.RestoreTarget(parts)
+	if err != nil || lines != nil {
+		printSnapshotLines(lines, err)
 		return
-	}
-	snapID := parts[2]
-	if idx, ok := parsePyInt(snapID); ok {
-		snaps, err := backup.ListQuickSnapshots(20, h)
-		if err != nil {
-			panic(err)
-		}
-		if idx < 1 || idx > len(snaps) {
-			printLines("  " + c.commandsT("snapshot.invalid_number", map[string]any{"max": len(snaps)}))
-			return
-		}
-		snapID = pyrepr.Str(plainMap(snaps[idx-1])["id"])
 	}
 	store := c.gatewayStore()
 	chat := store != nil && c.gatewaySessionOpen
 	onGateway := chat && strings.TrimSpace(os.Getenv("ICEBATH_TUI_GATEWAY_URL")) == ""
 	var restored bool
-	var err error
 	gatewayTarget := false
 	if onGateway {
-		dir, derr := backup.QuickSnapshotDir(snapID, h)
+		dir, derr := backup.QuickSnapshotDir(snapID, snap.Home)
 		gatewayTarget, err = dir != "", derr
 	}
 	switch {
@@ -372,31 +279,12 @@ func (c *CLI) restoreSnapshotCommand(parts []string) {
 			c.sessionDB.Close()
 			c.sessionDB = nil
 		}
-		restored, err = backup.RestoreQuickSnapshot(c.ctx, snapID, h)
+		restored, err = backup.RestoreQuickSnapshot(c.ctx, snapID, snap.Home)
 	}
 	if err != nil {
 		cliLogger.Warn(fmt.Sprintf("Snapshot restore failed: %v", err))
-		printLines("  "+c.commandsT("snapshot.restore_incomplete", map[string]any{"snapshot_id": snapID}), "  "+err.Error())
-		return
 	}
-	if restored {
-		printLines("  " + c.commandsT("snapshot.restored", map[string]any{"snapshot_id": snapID}))
-		if !onGateway {
-			printLines("  " + c.commandsT("snapshot.restart_recommended", nil))
-		}
-		return
-	}
-	all, err := backup.ListQuickSnapshots(1000000, h)
-	if err != nil {
-		panic(err)
-	}
-	for _, s := range all {
-		if pyrepr.Str(plainMap(s)["id"]) == snapID {
-			printLines("  " + c.commandsT("snapshot.restore_incomplete", map[string]any{"snapshot_id": snapID}))
-			return
-		}
-	}
-	printLines("  " + c.commandsT("snapshot.not_found", map[string]any{"snapshot_id": snapID}))
+	printSnapshotLines(snap.RestoreReport(snapID, restored, err, onGateway))
 }
 
 // Plain map of a decoded JSON row

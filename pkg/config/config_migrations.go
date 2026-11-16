@@ -1297,6 +1297,10 @@ func migrationSteps() []migrationStep {
 				"gateway and tracked by receipt, so cron no longer runs (or times out) a Bot Chat turn of its own.",
 			extraGuard: func(raw map[string]any) bool { _, has := raw["bot_chat_delivery_timeout_seconds"]; return has }})},
 		{52, migrateTo52},
+		{53, rewriteKey(rewriteSpec{section: "display", key: "interface", remove: true, match: always,
+			added: "removed display.interface",
+			message: "  \u2713 Removed display.interface \u2014 the terminal has one interface and bare icebath opens it.",
+			extraGuard: func(raw map[string]any) bool { _, has := raw["interface"]; return has }})},
 	}
 }
 

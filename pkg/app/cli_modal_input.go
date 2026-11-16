@@ -11,24 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 )
 
-// Replaces collapsed paste references in the buffer with their real text, the text change that follows left uncollapsed
-func (c *CLI) inlinePastes(buffer *ptBuffer) {
-	existing := buffer.text()
-	expanded, err := c.expandPasteReferences(existing)
-	if err != nil {
-		cliLogger.Debug("Failed to inline paste placeholders", "error", err)
-		return
-	}
-	if expanded != existing {
-		c.tui.skipPasteCollapse = true
-		_ = buffer.setText(expanded)
-		buffer.setCursorPosition(len([]rune(expanded)))
-	}
-}
-
-// Clears an input buffer after a programmatic submit, its text kept in history
-func (c *CLI) resetInputBuffer(buffer *ptBuffer) { buffer.reset(true) }
-
 // Places text in the prompt buffer for editing
 func (c *CLI) prefillInputBuffer(text string) {
 	c.uiMu.Lock()
@@ -212,20 +194,6 @@ func (c *CLI) promptTextInputModal(title, detail string, choices []slashConfirmC
 	return result, result != ""
 }
 
-// Answers the open slash confirmation and closes it
-func (c *CLI) submitSlashConfirmResponse(value string) {
-	c.uiMu.Lock()
-	state := c.slashConfirmState
-	if state == nil {
-		c.uiMu.Unlock()
-		return
-	}
-	offer(state.response, value)
-	c.slashConfirmState, c.slashConfirmDeadline = nil, 0
-	c.uiMu.Unlock()
-	_ = c.invalidate()
-}
-
 // Canonical choice a typed answer names among the offered ones, empty when it names none
 func (c *CLI) normalizeSlashConfirmChoice(raw string, choices []slashConfirmChoice) string {
 	typed := strings.ToLower(strings.TrimSpace(raw))
@@ -282,95 +250,6 @@ func (c *CLI) openCommandPalette() {
 	c.commandPaletteState = &commandPaletteModalState{Entries: entries}
 	c.uiMu.Unlock()
 	_ = c.invalidateWithin(0)
-}
-
-// Closes the command palette and restores the draft
-func (c *CLI) closeCommandPalette() {
-	c.uiMu.Lock()
-	c.commandPaletteState = nil
-	c.uiMu.Unlock()
-	c.restoreModalInputSnapshot()
-	_ = c.invalidateWithin(0)
-}
-
-// Reports whether every character of needle appears in hay in order
-func isSubsequence(needle, hay string) bool {
-	rest := []rune(hay)
-	for _, ch := range needle {
-		i := 0
-		for i < len(rest) && rest[i] != ch {
-			i++
-		}
-		if i == len(rest) {
-			return false
-		}
-		rest = rest[i+1:]
-	}
-	return true
-}
-
-// Palette rows matching the filter, ranked exact name, name prefix, name substring, name subsequence, then description
-func (c *CLI) commandPaletteVisibleEntries() []commandPaletteEntry {
-	c.uiMu.Lock()
-	state := c.commandPaletteState
-	c.uiMu.Unlock()
-	if state == nil {
-		return nil
-	}
-	q := strings.ToLower(strings.TrimSpace(state.Filter))
-	if q == "" {
-		return append([]commandPaletteEntry{}, state.Entries...)
-	}
-	qn := strings.TrimLeft(q, "/")
-	buckets := make([][]commandPaletteEntry, 5)
-	for _, row := range state.Entries {
-		name := strings.TrimLeft(strings.ToLower(row.Command), "/")
-		rank := -1
-		switch {
-		case name == qn:
-			rank = 0
-		case strings.HasPrefix(name, qn):
-			rank = 1
-		case strings.Contains(name, qn):
-			rank = 2
-		case isSubsequence(qn, name):
-			rank = 3
-		case strings.Contains(strings.ToLower(row.Description), q):
-			rank = 4
-		}
-		if rank >= 0 {
-			buckets[rank] = append(buckets[rank], row)
-		}
-	}
-	var out []commandPaletteEntry
-	for _, bucket := range buckets {
-		out = append(out, bucket...)
-	}
-	return out
-}
-
-// Fills the selected command into the composer, never running it
-func (c *CLI) handleCommandPaletteSelection() {
-	c.uiMu.Lock()
-	state := c.commandPaletteState
-	c.uiMu.Unlock()
-	if state == nil {
-		return
-	}
-	rows := c.commandPaletteVisibleEntries()
-	if state.Selected < 0 || state.Selected >= len(rows) {
-		c.closeCommandPalette()
-		return
-	}
-	cmd := rows[state.Selected].Command
-	c.closeCommandPalette()
-	c.uiMu.Lock()
-	app := c.app
-	c.uiMu.Unlock()
-	if app != nil {
-		app.SetBuffer(cmd+" ", len([]rune(cmd))+1)
-		_ = c.invalidateWithin(0)
-	}
 }
 
 // Splits the skip tokens out of a destructive slash command, returning the remaining argument text and whether one was found

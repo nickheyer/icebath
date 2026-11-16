@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"runtime/pprof"
@@ -292,30 +291,13 @@ func (a *app) controlCommands() []slashCommand {
 				return a.resumeByID(child, nil)
 			})
 		}},
-		{name: "setup", help: "run the full setup wizard, the terminal handed to `icebath setup` until it exits", usage: "[section]", run: func(r *slashRun) tea.Cmd {
-			self, err := os.Executable()
-			if err != nil {
-				r.sys("error: " + err.Error())
-				return nil
+		{name: "setup", help: "configure a section, the provider and model, the agent or shared metrics", usage: "[section]", suggest: func(string) []string {
+			keys := []string{}
+			for _, s := range setupSections() {
+				keys = append(keys, s.key)
 			}
-			return tea.ExecProcess(exec.Command(self, append([]string{"setup"}, strings.Fields(r.arg)...)...), func(runErr error) tea.Msg {
-				return asyncDoneMsg{run: func() tea.Cmd {
-					var exit *exec.ExitError
-					switch {
-					case errors.As(runErr, &exit):
-						a.sys(tr("session.handoff.exitedWithCode", "setup", exit.ExitCode()))
-					case runErr != nil:
-						a.sys("error: " + runErr.Error())
-					default:
-						a.sys(tr("slashCmd.setup.setup.done"))
-					}
-					if a.store.ui.Sid == "" && runErr == nil {
-						return tea.Batch(tea.ClearScreen, a.newSession(nil))
-					}
-					return tea.ClearScreen
-				}}
-			})
-		}},
+			return keys
+		}, run: func(r *slashRun) tea.Cmd { return a.openSetup(trimJS(r.arg)) }},
 		{name: "wake", help: "toggle the wake word listener", usage: "[on|off|status]", suggest: func(string) []string { return []string{"on", "off", "status"} }, run: func(r *slashRun) tea.Cmd {
 			text := func(res map[string]any, key string) string {
 				s, _ := res[key].(string)

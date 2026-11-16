@@ -6,7 +6,6 @@ import (
 	"math"
 	"math/big"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -16,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
@@ -280,7 +280,7 @@ func checkpointUserHome() string {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		return filepath.Clean(h)
 	}
-	if u, err := user.Current(); err == nil {
+	if u, err := homeguard.Current(); err == nil {
 		return filepath.Clean(u.HomeDir)
 	}
 	return ""

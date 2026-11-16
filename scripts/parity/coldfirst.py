@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Measures the first --tui reply on a brand new home with a cold gateway for one side
+# Measures the first terminal UI reply on a brand new home with a cold gateway for one side
 import json, os, shutil, signal, subprocess, sys, time
 
 lane, side, tag = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -11,7 +11,7 @@ os.makedirs(home)
 shutil.copy(f"{lane}/{side}-home/config.yaml", f"{home}/config.yaml")
 var = "ICEBATH_HOME" if side == "ib" else "HERMES_HOME"
 spec = {
-    "argv": [f"{lane}/{side}", "--tui"],
+    "argv": [f"{lane}/{side}"] + (["--tui"] if side == "ref" else []),
     "env": {"HOME": f"{lane}/uh-{side}", var: home, "HERMES_TUI_DIR": f"{lane}/refsrc/ui-tui", "BROWSER": "/bin/true"},
     "rows": 40, "cols": 120, "cwd": f"{lane}/work",
     "steps": [["wait", "ready", 90, 0.3], ["snap", "01_start"], ["type", "hello there"], ["mark", "typed"], ["send", "\r"],

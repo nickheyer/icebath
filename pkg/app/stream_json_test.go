@@ -168,10 +168,6 @@ func TestStreamJSONRequestedForcesQuietAndRefusesInteractiveCombinations(t *test
 	if _, code := StreamJSONRequested(StreamJSONArgs{OutputFormat: "stream-json"}); code != 2 || !strings.Contains(errOut.String(), "requires -q/--query") {
 		t.Fatalf("missing query code=%d stderr=%q", code, errOut.String())
 	}
-	errOut.Reset()
-	if _, code := StreamJSONRequested(StreamJSONArgs{OutputFormat: "stream-json", Query: "hi", TUI: true}); code != 2 || !strings.Contains(errOut.String(), "cannot be used with --tui") {
-		t.Fatalf("tui code=%d stderr=%q", code, errOut.String())
-	}
 }
 
 func TestPrintNoninteractiveSetupGuidanceListsTheConfigCommands(t *testing.T) {

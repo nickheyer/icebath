@@ -50,7 +50,7 @@ func TestFiniteFollowerDoesNotWaitForeverAfterWorkerLoss(t *testing.T) {
 				emitter = NewStreamJSONEmitter("m", "s")
 			}
 			view := newGatewayChatView(peer, map[string]any{"stored_session_id": "s"}, true, emitter, "")
-			code, err := runViewWithin(t, view, "queued", true)
+			code, err := runViewWithin(t, view, "queued")
 			if err != nil || code != 3 {
 				t.Fatalf("before_ack=%v stream=%v: code %d err %v", beforeAck, streamJSON, code, err)
 			}
@@ -83,7 +83,7 @@ func TestSuccessorUnknownDoesNotReplaceCompletedPrompt(t *testing.T) {
 		return map[string]any{"admission_id": "ours"}, nil
 	})
 	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "s"}, true, nil, "")
-	if code, err := runViewWithin(t, view, "work", true); err != nil || code != 0 {
+	if code, err := runViewWithin(t, view, "work"); err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
 }
@@ -118,7 +118,7 @@ func TestOwnLostTurnExitsFromItsUnknownCompletionNotQueuedDetach(t *testing.T) {
 			return map[string]any{"admission_id": "ours"}, nil
 		})
 		view = newGatewayChatView(peer, map[string]any{"stored_session_id": "s"}, true, nil, "")
-		if code, err := runViewWithin(t, view, "work", true); err != nil || code != 1 {
+		if code, err := runViewWithin(t, view, "work"); err != nil || code != 1 {
 			t.Fatalf("yield=%v: code %d err %v", yieldBetween, code, err)
 		}
 		if strings.Contains(errOut.String(), "Your message is saved") {
@@ -331,7 +331,7 @@ func TestAdoptedApprovalEndsTheOneshotOnlyWhileTheSnapshotListsIt(t *testing.T) 
 			return map[string]any{"admission_id": "a", "status": "terminal", "outcome": "completed",
 				"result": map[string]any{"final_response": "DONE", "completed": true}}, nil
 		}
-		view, result, err := gappedView(t, answer, func(ctx context.Context, v *GatewayChatView) (any, error) { return v.Run(ctx, "q", true) })
+		view, result, err := gappedView(t, answer, func(ctx context.Context, v *GatewayChatView) (any, error) { return v.Run(ctx, "q") })
 		if err != nil || result != tc.code {
 			t.Fatalf("own %v: result %v err %v", tc.own, result, err)
 		}
@@ -442,52 +442,6 @@ func TestAckDuringTheReattachSettlesAgainstItsSnapshot(t *testing.T) {
 	}
 }
 
-func TestSendDirectivePrintsNoticeAndSubmitsThroughTheView(t *testing.T) {
-	out, _ := captureStreams(t)
-	reply := map[string]any{"type": "send", "message": "PLAN PROMPT BODY", "display": "/plan add a cache", "notice": "Planning: add a cache"}
-	peer := newFakeGatewayPeer(t, func(p *fakeGatewayPeer, method string, params map[string]any) (any, error) {
-		if method == "prompt.submit" {
-			return map[string]any{"admission_id": "adm"}, nil
-		}
-		return reply, nil
-	})
-	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "s"}, false, nil, "")
-	err := onViewLoop(view, func() error {
-		_, err := gatewayRunCommand(context.Background(), view, "/plan", "add a cache")
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := peer.recorded()
-	if len(calls) != 2 || calls[0].method != "slash.exec" || len(calls[0].params) != 2 || calls[0].params["session_id"] != "s" ||
-		calls[0].params["command"] != "plan add a cache" || calls[1].method != "prompt.submit" || calls[1].params["text"] != "PLAN PROMPT BODY" {
-		t.Fatalf("calls %v", calls)
-	}
-	printed := out.String()
-	if !strings.Contains(printed, "Planning: add a cache") || !strings.Contains(printed, "● /plan add a cache") || strings.Contains(printed, "PLAN PROMPT BODY") {
-		t.Fatalf("stdout %q", printed)
-	}
-}
-
-func TestExecOutputStillPrints(t *testing.T) {
-	out, _ := captureStreams(t)
-	peer := newFakeGatewayPeer(t, func(p *fakeGatewayPeer, method string, params map[string]any) (any, error) {
-		if method != "slash.exec" {
-			t.Fatalf("unexpected %s", method)
-		}
-		return map[string]any{"type": "exec", "output": "curator ok"}, nil
-	})
-	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "s"}, false, nil, "")
-	err := onViewLoop(view, func() error {
-		_, err := gatewayRunCommand(context.Background(), view, "/curator", "")
-		return err
-	})
-	if err != nil || !strings.Contains(out.String(), "curator ok") {
-		t.Fatalf("err %v stdout %q", err, out.String())
-	}
-}
-
 // A foreign admission's approval or clarify control event
 func controlEvent(kind string) map[string]any {
 	control := "clarify"
@@ -530,7 +484,7 @@ func TestOneshotTracksForeignBlockingControlAndDetaches(t *testing.T) {
 				return map[string]any{"admission_id": "mine"}, nil
 			})
 			view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, true, nil, "")
-			code, err := runViewWithin(t, view, "query", true)
+			code, err := runViewWithin(t, view, "query")
 			if err != nil || code != 3 {
 				t.Fatalf("%s/%s: code %d err %v", kind, timing, code, err)
 			}
@@ -565,7 +519,7 @@ func TestOneshotAppliesForeignControlSettlementBeforeReceipt(t *testing.T) {
 			return map[string]any{"admission_id": "mine"}, nil
 		})
 		view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored", "prompts": []any{pending}}, true, nil, "")
-		code, err := runViewWithin(t, view, "query", true)
+		code, err := runViewWithin(t, view, "query")
 		if err != nil || code != 0 {
 			t.Fatalf("%s: code %d err %v", kind, code, err)
 		}
@@ -738,7 +692,7 @@ func TestChatQSaysWhyATurnWasInterrupted(t *testing.T) {
 		}
 		return map[string]any{}, nil
 	})
-	code, err := runViewWithin(t, newGatewayChatView(peer, map[string]any{"stored_session_id": "sid-1"}, false, nil, ""), "hi", true)
+	code, err := runViewWithin(t, newGatewayChatView(peer, map[string]any{"stored_session_id": "sid-1"}, false, nil, ""), "hi")
 	if err != nil || code != 130 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -754,7 +708,7 @@ func TestNonWorkerOneShotPrintsItsExitSummary(t *testing.T) {
 			"payload": map[string]any{"text": "API call failed after 3 retries", "outcome": "failed"}})
 		return map[string]any{"admission_id": "mine"}, nil
 	})
-	code, err := runViewWithin(t, newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, true, nil, ""), "hello", true)
+	code, err := runViewWithin(t, newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, true, nil, ""), "hello")
 	if err != nil || code != 1 {
 		t.Fatalf("code %d err %v", code, err)
 	}

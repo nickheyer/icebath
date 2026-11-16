@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,9 +9,6 @@ import (
 	"sync"
 	"time"
 
-	xterm "github.com/charmbracelet/x/term"
-
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -556,49 +552,6 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 	return nil
 }
 
-// Next composer line, empty once the event stream failed first with the pending read cancelled
-func (v *GatewayChatView) readLine(ctx context.Context, prompt *ptPromptSession, symbol string) (string, error) {
-	def := v.prefill
-	v.prefill = ""
-	type line struct {
-		text string
-		err  error
-	}
-	reader := make(chan line, 1)
-	go func() {
-		text, err := prompt.prompt(symbol, def)
-		reader <- line{text, err}
-	}()
-	failed := v.failed.ch
-	var got line
-	done, cancelled := false, false
-	v.await(func() {
-		select {
-		case got = <-reader:
-			done = true
-			return
-		case <-failed:
-		case <-ctx.Done():
-			cancelled = true
-		}
-		select {
-		case got = <-reader:
-			done = true
-			return
-		default:
-		}
-		prompt.cancel()
-		<-reader
-	})
-	if done {
-		return got.text, got.err
-	}
-	if cancelled {
-		return "", ctx.Err()
-	}
-	return "", nil
-}
-
 // Routes one owner event to its handler
 func (v *GatewayChatView) dispatchEvent(ctx context.Context, kind string, admission any, payload map[string]any) {
 	switch kind {
@@ -809,134 +762,6 @@ func (v *GatewayChatView) submit(ctx context.Context, text string) (map[string]a
 	return receipt, nil
 }
 
-// Runs one slash command line, false when it detaches the view
-func (v *GatewayChatView) command(ctx context.Context, text string) (bool, error) {
-	command, rest, _ := strings.Cut(text, " ")
-	switch command {
-	case "/quit", "/exit", "/detach":
-		return false, nil
-	case "/stop":
-		_, err := v.rpc(ctx, "session.interrupt", map[string]any{"session_id": v.sessionID, "execution_generation": v.generation}, 0)
-		return true, err
-	case "/approve", "/answer":
-		promptID, answer, _ := strings.Cut(rest, " ")
-		prompt, ok := v.prompts.Get(promptID)
-		expected := "clarify"
-		if command == "/approve" {
-			expected = "approval"
-		}
-		if !ok || prompt == nil || !pyrepr.Equal(requireKey(prompt, "kind"), expected) {
-			return false, &gateway.GatewayClientError{Msg: "No matching pending control; resume to refresh"}
-		}
-		params := map[string]any{"session_id": v.sessionID, "execution_generation": requireKey(prompt, "execution_generation"), "prompt_id": promptID}
-		if expected == "approval" {
-			params["choice"] = answer
-		} else {
-			params["answer"] = answer
-		}
-		_, err := v.rpc(ctx, expected+".respond", params, 0)
-		return true, err
-	case "/discard":
-		snapshot, err := v.rpc(ctx, "session.resume", map[string]any{"session_id": v.sessionID}, 0)
-		if err != nil {
-			return false, err
-		}
-		lost, err := gatewayLostAdmission(snapshot, pystr.Strip(rest))
-		if err != nil {
-			return false, err
-		}
-		_, err = v.rpc(ctx, "prompt.resolve_unknown", map[string]any{"session_id": v.sessionID,
-			"admission_id": requireKey(lost, "admission_id"), "execution_generation": requireKey(lost, "execution_generation")}, 0)
-		return true, err
-	case "/branch", "/model", "/compress":
-		return v.mutationCommand(ctx, command, rest)
-	case "/yolo":
-		word := pystr.Lower(pystr.Strip(rest))
-		if word != "" && word != "on" && word != "off" {
-			return false, &gateway.GatewayClientError{Msg: "Usage: /yolo [on|off]"}
-		}
-		params := map[string]any{"session_id": v.sessionID, "key": "yolo"}
-		if word != "" {
-			params["value"] = "0"
-			if word == "on" {
-				params["value"] = "1"
-			}
-		}
-		result, err := v.rpc(ctx, "config.set", params, 0)
-		if err != nil {
-			return false, err
-		}
-		state := "off"
-		if pyrepr.Equal(result["value"], "1") {
-			state = "on"
-		}
-		v.println(v.out, fmt.Sprintf("YOLO %s for this session", state))
-		return true, nil
-	case "/help":
-		v.println(v.out, gatewayChatHelpText())
-		return true, nil
-	}
-	return gatewayRunCommand(ctx, v, command, rest)
-}
-
-// Applies a /branch, /model or /compress mutation and attaches to its result
-func (v *GatewayChatView) mutationCommand(ctx context.Context, command, rest string) (bool, error) {
-	operation, payload, err := slashMutation(command, pystr.Strip(rest))
-	if err != nil {
-		return false, err
-	}
-	original := v.sessionID
-	var confirm func(ctx context.Context, refusal map[string]any) (bool, error)
-	if operation == "model" && v.composer != nil {
-		confirm = v.confirmModelSwitch
-	}
-	result, err := v.mutations.Apply(ctx, v.rpc, original, operation, payload, confirm)
-	if err != nil {
-		return false, err
-	}
-	switch {
-	case pyrepr.Equal(result["status"], "cancelled"):
-		return true, nil
-	case pyrepr.Equal(result["status"], "preview"):
-		v.mutations.Acknowledge(original, operation, payload)
-		var lines []string
-		list, _ := requireKey(result, "lines").([]any)
-		for _, l := range list {
-			lines = append(lines, pyrepr.Str(l))
-		}
-		v.println(v.out, strings.Join(lines, "\n"))
-		return true, nil
-	case pyrepr.Equal(result["status"], "noop"):
-		v.mutations.Acknowledge(original, operation, payload)
-		summary, _ := result["summary"].(map[string]any)
-		if !pyrepr.Truthy(result["summary"]) {
-			summary = map[string]any{"note": result["note"]}
-		}
-		var lines []string
-		for _, key := range []string{"headline", "token_line", "note"} {
-			if pyrepr.Truthy(summary[key]) {
-				lines = append(lines, pyrepr.Str(summary[key]))
-			}
-		}
-		v.println(v.out, strings.Join(lines, "\n"))
-		return true, nil
-	}
-	target := pyrepr.Str(gatewayGetOr(result, "branched_session_id", original))
-	snapshot, err := v.rpc(ctx, "session.resume", map[string]any{"session_id": target}, 0)
-	if err != nil {
-		return false, err
-	}
-	if err := v.adopt(ctx, snapshot); err != nil {
-		return false, err
-	}
-	v.mutations.Acknowledge(original, operation, payload)
-	if operation == "model" && pyrepr.Truthy(result["model"]) {
-		v.model = gatewayModelName(result["model"], v.model)
-	}
-	v.println(v.out, fmt.Sprintf("%s: %s", operation, target))
-	return true, nil
-}
-
 // Attaches the view to another session snapshot, moving this terminal continue pointer when interactive
 func (v *GatewayChatView) adopt(ctx context.Context, snapshot map[string]any) error {
 	v.sessionID = pyrepr.Str(requireKey(snapshot, "stored_session_id"))
@@ -950,35 +775,6 @@ func (v *GatewayChatView) adopt(ctx context.Context, snapshot map[string]any) er
 		v.await(func() { WriteBreadcrumb(ctx, sid, "") })
 	}
 	return nil
-}
-
-// Asks on the composer whether to switch to a guarded model anyway, only an explicit yes applying
-func (v *GatewayChatView) confirmModelSwitch(ctx context.Context, refusal map[string]any) (bool, error) {
-	t := func(key string) string { return v.t(ctx, key) }
-	choices := [][3]string{{"once", t("cli.model.choice_switch_anyway"), t("cli.model.desc_switch_anyway")},
-		{"cancel", t("cli.model.choice_cancel"), t("cli.model.desc_keep_current_model")}}
-	v.println(v.out, fmt.Sprintf("\n!!! %s !!!\n%s\n", confirmationTitle(refusal), pyrepr.Str(requireKey(refusal, "confirm_message"))))
-	for i, choice := range choices {
-		v.println(v.out, fmt.Sprintf("  %d. %s — %s", i+1, choice[1], choice[2]))
-	}
-	raw, err := v.readLine(ctx, v.composer, t("cli.model.confirm_choice_prompt"))
-	if errors.Is(err, errKeyboardInterrupt) || errors.Is(err, io.EOF) {
-		raw, err = "", nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if v.failure == nil {
-		choice, err := confirmChoice(raw, choices)
-		if err != nil {
-			return false, err
-		}
-		if choice == "once" {
-			return true, nil
-		}
-	}
-	v.println(v.out, t("cli.model.switch_cancelled"))
-	return false, nil
 }
 
 // Says why a one shot cannot go on and exits 3, closing stream json with a failed result
@@ -1092,17 +888,17 @@ func (v *GatewayChatView) writeUsageFile(result *pyjson.Object, outcome any) {
 	oneshotWriteUsageFile(v.usageFile, report, failure)
 }
 
-// Shows pending state, submits the query and either waits for its settlement or runs the interactive composer
-func (v *GatewayChatView) Run(ctx context.Context, query string, oneshot bool) (int, error) {
+// Shows pending state, submits the query and waits for its settlement
+func (v *GatewayChatView) Run(ctx context.Context, query string) (int, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.quiet = v.quiet || oneshot
-	v.finite = oneshot
+	v.quiet = true
+	v.finite = true
 	v.showPending()
 	for _, prompt := range v.prompts.Values() {
 		v.showPrompt(prompt)
 	}
-	if oneshot && len(v.unknownAdmissions()) > 0 {
+	if len(v.unknownAdmissions()) > 0 {
 		return v.detach(fmt.Sprintf("Your message was not sent. To continue, run `icebath sessions discard "+
 			"%s --yes`, or resume this session in an interactive chat "+
 			"and /discard the paused turn there; then send it again.", v.sessionID)), nil
@@ -1124,10 +920,7 @@ func (v *GatewayChatView) Run(ctx context.Context, query string, oneshot bool) (
 			return 0, err
 		}
 	}
-	if oneshot {
-		return v.runFinite(ctx, receipt)
-	}
-	return v.runInteractive(ctx)
+	return v.runFinite(ctx, receipt)
 }
 
 // Waits for the one shot admission to settle and reports it under the in process exit contracts
@@ -1199,61 +992,6 @@ func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any)
 	v.reportNoReply(exitCode)
 	v.printExitIDs(ctx)
 	return exitCode, nil
-}
-
-// The interactive composer loop under a patched stdout until the user detaches or the stream fails
-func (v *GatewayChatView) runInteractive(ctx context.Context) (int, error) {
-	welcome := "Welcome to Icebath Agent! Type your message or /help for commands."
-	v.println(v.out, config.GetActiveSkin(ctx).GetBranding("welcome", welcome))
-	prompt := newPTPromptSession(tuiStdin(), tuiStdout(), func() string {
-		v.mu.Lock()
-		defer v.mu.Unlock()
-		return fmt.Sprintf(" ☤ %s │ %s ", v.model, v.sessionID)
-	})
-	symbol := config.GetActivePromptSymbol(ctx, "❯ ")
-	if xterm.IsTerminal(tuiStdin().Fd()) {
-		v.composer = prompt
-	} else {
-		v.composer = nil
-	}
-	proxy := prompt.patchStdout(v.out)
-	out, errOut := v.out, v.errOut
-	v.out, v.errOut = proxy, proxy
-	defer func() {
-		proxy.Flush()
-		v.out, v.errOut = out, errOut
-	}()
-	for v.failure == nil {
-		line, err := v.readLine(ctx, prompt, symbol)
-		if err == nil {
-			text := pystr.Strip(line)
-			if text == "" {
-				continue
-			}
-			if strings.HasPrefix(text, "/") {
-				var keep bool
-				if keep, err = v.command(ctx, text); err == nil && !keep {
-					return 0, nil
-				}
-			} else {
-				v.println(v.out, fmt.Sprintf("\n%s\n● %s", strings.Repeat("─", 40), text))
-				_, err = v.submit(ctx, text)
-			}
-		}
-		var refused *gateway.GatewayClientError
-		switch {
-		case err == nil:
-		case errors.Is(err, errKeyboardInterrupt):
-			v.println(v.out, "Use /stop to interrupt execution, /quit to detach.")
-		case errors.Is(err, io.EOF):
-			return 0, nil
-		case errors.As(err, &refused) && ctx.Err() == nil:
-			v.println(v.errOut, "Error: "+err.Error())
-		default:
-			return 0, err
-		}
-	}
-	return 0, v.failure
 }
 
 // The one shot admission id, nil when a bare stop phrase ended the voice chat and nothing was admitted

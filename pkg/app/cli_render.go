@@ -706,17 +706,6 @@ var (
 	suspectRows   int
 )
 
-// Installs the resize gate of the running application, nil clearing it
-func setPaintGate(app tuiApplication, gate func() bool) {
-	renderStateMu.Lock()
-	defer renderStateMu.Unlock()
-	if gate == nil {
-		paintGate = nil
-		return
-	}
-	paintGate = &paintGateEntry{app: app, gate: gate}
-}
-
 // Records the rows from the top of the prompt chrome to the bottom of the screen, nil when unknown
 func setChromeFloor(rows *int) {
 	renderStateMu.Lock()
@@ -1099,57 +1088,4 @@ func buildCompactBanner() string {
 		border + "║[/] [" + titleColor + "]" + line1 + "[/] " + border + "║[/]\n" +
 		border + "║[/] [dim " + dimColor + "]" + line2 + "[/] " + border + "║[/]\n" +
 		border + "╚" + bar + "╝[/]\n"
-}
-
-// Stable panel width wide enough for the title and content including borders
-func panelBoxWidth(title string, contentLines []string, minWidth, maxWidth int) int {
-	termCols, _ := pyshutil.GetTerminalSize(100, 20)
-	longest := max(pystr.Len(title), minWidth-4)
-	for _, line := range contentLines {
-		longest = max(longest, pystr.Len(line))
-	}
-	inner := min(max(longest+4, minWidth-2), maxWidth-2, max(24, termCols-6))
-	return inner + 2
-}
-
-// Wraps panel text, each source line on its own, keepWS preserving whitespace for command previews
-func wrapPanelText(text string, width int, subsequentIndent string, keepWS bool) []string {
-	parts := []string{text}
-	if keepWS {
-		parts = pystr.Splitlines(pystr.ExpandTabs(text, 4), false)
-	}
-	o := pystr.DefaultTextwrap(max(8, width))
-	o.SubsequentIndent = subsequentIndent
-	if keepWS {
-		o.ReplaceWhitespace, o.DropWhitespace = false, false
-	} else {
-		o.BreakLongWords, o.BreakOnHyphens = false, false
-	}
-	var wrapped []string
-	for _, part := range parts {
-		rows := pystr.TextwrapWrap(part, o)
-		if len(rows) == 0 {
-			rows = []string{""}
-		}
-		wrapped = append(wrapped, rows...)
-	}
-	if len(wrapped) == 0 {
-		return []string{""}
-	}
-	return wrapped
-}
-
-// Wraps panel text preserving whitespace
-func wrapPanelTextKeepWS(text string, width int, subsequentIndent string) []string {
-	return wrapPanelText(text, width, subsequentIndent, true)
-}
-
-// Appends one bordered content row to the panel fragments
-func appendPanelLine(lines *[]styledFragment, borderStyle, contentStyle, text string, boxWidth int) {
-	*lines = append(*lines, styledFragment{borderStyle, "│ "}, styledFragment{contentStyle, pystr.Ljust(text, max(0, boxWidth-2))}, styledFragment{borderStyle, " │\n"})
-}
-
-// Appends one blank bordered row to the panel fragments
-func appendBlankPanelLine(lines *[]styledFragment, borderStyle string, boxWidth int) {
-	*lines = append(*lines, styledFragment{borderStyle, "│" + strings.Repeat(" ", boxWidth) + "│\n"})
 }

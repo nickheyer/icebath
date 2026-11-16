@@ -150,6 +150,7 @@ type TerminalRenderer struct {
 	termW, termH     int          // the size [TerminalRenderer.Resize] was last told
 	termResized      bool         // whether the terminal changed size since the last render
 	damaged          []bool       // rows this render disturbed itself, see [TerminalRenderer.damage]
+	stale            []bool       // damaged rows whose model no longer matches the terminal, painted whole
 	logger           Logger       // The logger used for debugging.
 
 	// profile is the color profile to use when downsampling colors. This is
@@ -722,9 +723,7 @@ func (s *TerminalRenderer) emitRange(newbuf *RenderBuffer, line Line, n int) (eo
 	return false
 }
 
-// putRange puts a range of cells from the old line to the new line.
-// Returns whether the cursor is at the end of interval or somewhere in the
-// middle.
+// Writes the changed cells from start to end, jumping over unchanged runs longer than a cursor move
 func (s *TerminalRenderer) putRange(newbuf *RenderBuffer, oldLine, newLine Line, y, start, end int) (eoi bool) {
 	inline := min(len(ansi.CursorPosition(start+1, y+1)),
 		min(len(ansi.HorizontalPositionAbsolute(start+1)),
@@ -739,7 +738,7 @@ func (s *TerminalRenderer) putRange(newbuf *RenderBuffer, oldLine, newLine Line,
 			if cellEqual(oldCell, newCell) {
 				same++
 			} else {
-				if same > end-start {
+				if same > inline {
 					s.emitRange(newbuf, newLine[start:], j-same-start)
 					s.move(newbuf, j, y)
 					start = j
@@ -749,10 +748,6 @@ func (s *TerminalRenderer) putRange(newbuf *RenderBuffer, oldLine, newLine Line,
 		}
 
 		i := s.emitRange(newbuf, newLine[start:], j-same-start)
-
-		// Always return 1 for the next [tScreen.move] after a
-		// [tScreen.putRange] if we found identical characters at end of
-		// interval.
 		if same == 0 {
 			return i
 		}
@@ -861,72 +856,96 @@ func lineHasDrift(m ansi.Method, line Line) bool {
 	return false
 }
 
-// paintLine brings row y of the screen in line with newbuf. A drift-prone row,
-// or any row when force is set, is repainted; every other row is diffed.
+// Diffs a plain row, repaints a drift-prone or forced row from its first changed cell, skips an unchanged one
 func (s *TerminalRenderer) paintLine(newbuf *RenderBuffer, y int, force bool) {
-	drift := lineHasDrift(s.method, s.curbuf.Line(y)) || lineHasDrift(s.method, newbuf.Line(y))
+	oldLine, newLine := s.curbuf.Line(y), newbuf.Line(y)
+	drift := lineHasDrift(s.method, oldLine) || lineHasDrift(s.method, newLine)
 	s.markDrift(y, newbuf.Height(), drift)
-	switch {
-	case drift && !s.flags.Contains(tGraphemeWidth):
-		// Clip a cluster the terminal measures wider than the model instead of
-		// letting it spill onto the next row, then put the cursor back.
+	if !drift && !force {
+		s.transformLine(newbuf, y)
+		return
+	}
+	from := 0
+	if !force {
+		if from = s.repaintFrom(oldLine, newLine, newbuf.Width()); from < 0 {
+			return
+		}
+	}
+	if drift && !s.flags.Contains(tGraphemeWidth) {
 		s.noWrapLine = true
 		_, _ = s.buf.WriteString(ansi.ResetModeAutoWrap)
-		s.repaintLine(newbuf, y)
+		s.repaintLine(newbuf, y, from)
 		s.noWrapLine = false
 		_, _ = s.buf.WriteString(ansi.SetModeAutoWrap)
 		s.reanchorWideLine(newbuf)
-	case drift || force:
-		s.repaintLine(newbuf, y)
-	default:
-		s.transformLine(newbuf, y)
+		return
 	}
+	s.repaintLine(newbuf, y, from)
 }
 
-// repaintLine erases row y from column 0 and writes newbuf's cells, so the
-// result does not depend on what the model believes is on screen.
-func (s *TerminalRenderer) repaintLine(newbuf *RenderBuffer, y int) {
-	oldLine := s.curbuf.Line(y)
-	newLine := newbuf.Line(y)
-
-	s.move(newbuf, 0, y)
-	blank := s.clearBlank()
-	s.updatePen(blank)
-	_, _ = s.buf.WriteString(ansi.EraseLineRight)
-	s.cur.X = 0
-
-	// A cell whose width runs past the right margin cannot be shown, so stop
-	// there. The buffer can hold one after a resize narrowed the line around
-	// it, and painting it would put a clipped half-glyph on the screen.
-	width := newbuf.Width()
-	clipped := width
-	for x := 0; x < width; x++ {
-		if c := newLine.At(x); c != nil && !c.isWidePlaceholder() && x+c.Width > width {
-			clipped = x
+// Column to repaint a drift-prone row from, or -1 when the screen already shows it
+func (s *TerminalRenderer) repaintFrom(oldLine, newLine Line, width int) int {
+	clipped := clipColumn(newLine, width)
+	x := 0
+	for ; x < width; x++ {
+		want := newLine.At(x)
+		if x >= clipped {
+			want = &Cell{}
+		}
+		if !cellEqual(oldLine.At(x), want) {
 			break
 		}
 	}
+	if x == width {
+		return -1
+	}
+	for x > 0 && (oldLine.At(x).isWidePlaceholder() || newLine.At(x).isWidePlaceholder()) {
+		x--
+	}
+	if x == 0 || s.flags.Contains(tGraphemeWidth) {
+		return x
+	}
+	if lineHasDrift(s.method, oldLine[:min(x, len(oldLine))]) || lineHasDrift(s.method, newLine[:min(x, len(newLine))]) {
+		return 0
+	}
+	return x
+}
 
-	// Write the content cells. The line was just erased, so trailing blanks
-	// need no write, and writing them would risk wrapping past the right
-	// margin if the terminal painted a wide cell wider than the model
-	// measured.
+// First column whose cell runs past the right margin, or width when every cell fits
+func clipColumn(line Line, width int) int {
+	for x := 0; x < width; x++ {
+		if c := line.At(x); c != nil && !c.isWidePlaceholder() && x+c.Width > width {
+			return x
+		}
+	}
+	return width
+}
+
+// Erases row y from column from and writes the new cells up to the margin, recording the clipped tail as blank
+func (s *TerminalRenderer) repaintLine(newbuf *RenderBuffer, y, from int) {
+	oldLine := s.curbuf.Line(y)
+	newLine := newbuf.Line(y)
+
+	s.move(newbuf, from, y)
+	blank := s.clearBlank()
+	s.updatePen(blank)
+	_, _ = s.buf.WriteString(ansi.EraseLineRight)
+	s.cur.X = from
+
+	width := newbuf.Width()
+	clipped := clipColumn(newLine, width)
 	last := -1
-	for x := 0; x < clipped; x++ {
+	for x := from; x < clipped; x++ {
 		if c := newLine.At(x); c != nil && !c.isWidePlaceholder() && !cellEqual(c, blank) {
 			last = x
 		}
 	}
-	for x := 0; x <= last; x++ {
+	for x := from; x <= last; x++ {
 		s.putCell(newbuf, newLine.At(x))
 	}
 
-	// Adopt the new line as the model of what is on screen. The clipped tail
-	// was never painted, so the model records it as blank: claiming otherwise
-	// would let a later frame skip the cell, and a resize that widens the line
-	// would leave the half-glyph on screen forever.
 	if len(oldLine) == len(newLine) {
-		copy(oldLine, newLine)
+		copy(oldLine[from:], newLine[from:])
 		for x := clipped; x < width && x < len(oldLine); x++ {
 			oldLine[x] = Cell{}
 		}
@@ -1383,6 +1402,9 @@ func (s *TerminalRenderer) reconcileSize(newbuf *RenderBuffer) sizeChange {
 		for y, drifts := range s.driftRows {
 			if drifts {
 				s.damage(y, 1)
+				if y < len(s.stale) {
+					s.stale[y] = true
+				}
 			}
 		}
 	}
@@ -1410,9 +1432,11 @@ func (s *TerminalRenderer) damage(y, n int) {
 func (s *TerminalRenderer) beginDamage(height int) {
 	if len(s.damaged) != height {
 		s.damaged = make([]bool, height)
+		s.stale = make([]bool, height)
 		return
 	}
 	clear(s.damaged)
+	clear(s.stale)
 }
 
 // Redraw forces a full redraw of the screen. It's equivalent to calling
@@ -1515,7 +1539,7 @@ func (s *TerminalRenderer) Render(newbuf *RenderBuffer) {
 			// A repaintAll row has to be put back whatever the model says.
 			if size.repaintAll || s.damaged[i] || (newbuf.Touched[i] != nil &&
 				(newbuf.Touched[i].FirstCell != -1 || newbuf.Touched[i].LastCell != -1)) {
-				s.paintLine(newbuf, i, size.repaintAll)
+				s.paintLine(newbuf, i, size.repaintAll || s.stale[i])
 				changedLines++
 			}
 		}

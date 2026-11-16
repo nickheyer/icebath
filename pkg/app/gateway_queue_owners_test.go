@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -318,83 +317,10 @@ func TestQueueRmAndClearRetireTheGatewayAdmissions(t *testing.T) {
 	}
 }
 
-// Enter typed while the turn runs in the given busy mode, the busy input hint already seen
-func busyEnter(t *testing.T, c *CLI, mode, text string, images ...string) {
-	t.Helper()
-	SetCLIConfig(map[string]any{"onboarding": map[string]any{"seen": map[string]any{"busy_input_prompt": true}}})
-	t.Cleanup(func() { SetCLIConfig(nil) })
-	c.busyInputMode = mode
-	var payload any = text
-	if len(images) > 0 {
-		payload = submittedInput{Text: text, Images: append([]string{}, images...)}
-	}
-	c.tuiEnterWhileBusy(text, append([]string{}, images...), payload, "")
-}
-
-func TestProbeQueueModeEnterThenQueueKeepEntryOrder(t *testing.T) {
-	rec := recordPrints(t)
-	o := startQueueOwners(t)
-	c, _ := attachedQueueCLI(t, o)
-	busyEnter(t, c, "queue", "typed first")
-	queueCommand(t, c, rec, "/queue "+fifoText)
-	if _, held := c.pendingInput.GetNoWait(); held {
-		t.Fatal("an input was held client side")
-	}
-	listed := queueCommand(t, c, rec, "/queue list")
-	first, second := strings.Index(listed, "typed first"), strings.Index(listed, fifoText)
-	if first < 0 || second < 0 || first >= second {
-		t.Fatalf("entry order lost: %s", listed)
-	}
-}
-
 // One input the replaced dispatch step received with the time it arrived
 type processedInput struct {
 	at   time.Time
 	item any
-}
-
-// Runs the input loop with a recording dispatch until the given count and returns the records and a stop
-func runInputLoop(c *CLI, until int) (func() []processedInput, func(timeout time.Duration)) {
-	var mu sync.Mutex
-	var processed []processedInput
-	one := func(item any) {
-		mu.Lock()
-		processed = append(processed, processedInput{time.Now(), item})
-		reached := len(processed) >= until
-		mu.Unlock()
-		if reached {
-			c.uiMu.Lock()
-			c.shouldExit = true
-			c.uiMu.Unlock()
-		}
-	}
-	c.uiMu.Lock()
-	c.shouldExit = false
-	c.uiMu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		c.tuiProcessLoopWith(one, func() { c.drainProcessNotifications("cli-idle") })
-	}()
-	records := func() []processedInput {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]processedInput{}, processed...)
-	}
-	stop := func(timeout time.Duration) {
-		select {
-		case <-done:
-		case <-time.After(timeout):
-		}
-		c.uiMu.Lock()
-		c.shouldExit = true
-		c.uiMu.Unlock()
-		select {
-		case <-done:
-		case <-time.After(2 * time.Second):
-		}
-	}
-	return records, stop
 }
 
 // Text an input renders as, the str of the Python item
@@ -408,117 +334,7 @@ func inputText(item any) string {
 	return ""
 }
 
-func TestProbeSlashCommandTypedAfterQueueRunsAfterIt(t *testing.T) {
-	c, client, conn, _ := idleNotifyCLI(t)
-	state := rememberQueued(conn, "adm-q", fifoText)
-	state.ApplyEvent(context.Background(), "session.info", map[string]any{"running": true, "pending": []any{
-		map[string]any{"admission_id": "adm-1", "status": "started", "sequence": 1, "text": "turn"},
-		map[string]any{"admission_id": "adm-q", "status": "queued", "sequence": 2, "text": fifoText}}})
-	c.pendingInput.Put("/new")
-	processed, stop := runInputLoop(c, 2)
-	waitUntil(t, func() bool { return c.pendingInput.Empty() })
-	for _, frame := range []map[string]any{
-		scriptFrame("session.info", map[string]any{"running": false, "pending": []any{
-			map[string]any{"admission_id": "adm-q", "status": "queued", "sequence": 2, "text": fifoText}}}, ""),
-		scriptFrame("message.start", map[string]any{}, "adm-q"),
-	} {
-		client.events.PutNowait(wireValue(t, frame))
-	}
-	stop(5 * time.Second)
-	records := processed()
-	var order []string
-	for _, record := range records {
-		order = append(order, inputText(record.item))
-	}
-	if len(order) != 2 || order[0] != fifoText || order[1] != "/new" {
-		t.Fatalf("input loop runs %q before the /queue prompt", order)
-	}
-	if seeded, ok := records[0].item.(*seededQueryMessage); !ok || seeded.AdmissionID != "adm-q" {
-		t.Fatalf("first input %#v", records[0].item)
-	}
-}
-
-func TestTypingStaysResponsiveWhenTheOwnerQueueIsPaused(t *testing.T) {
-	if ownQueueHoldSeconds < 2.0 {
-		t.Fatalf("hold %v", ownQueueHoldSeconds)
-	}
-	queued := map[string]any{"admission_id": "adm-q", "status": "queued", "sequence": 2, "text": fifoText}
-	cases := []struct {
-		name    string
-		pending []any
-		running bool
-	}{
-		{"unknown_head_idle", []any{map[string]any{"admission_id": "adm-0", "status": "unknown", "sequence": 1, "text": "lost"}, queued}, false},
-		{"own_head_idle", []any{queued}, false},
-		{"own_head_running", []any{queued}, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c, _, conn, _ := idleNotifyCLI(t)
-			state := rememberQueued(conn, "adm-q", fifoText)
-			state.ApplyEvent(context.Background(), "session.info", map[string]any{"running": tc.running, "pending": tc.pending})
-			started := time.Now()
-			c.pendingInput.Put("/help")
-			processed, stop := runInputLoop(c, 1)
-			stop(time.Duration((ownQueueHoldSeconds + 2) * float64(time.Second)))
-			records := processed()
-			if len(records) != 1 || inputText(records[0].item) != "/help" {
-				t.Fatalf("processed %v", records)
-			}
-			limit := ownQueueHoldSeconds + 1.0
-			if status, _ := tc.pending[0].(map[string]any)["status"].(string); status == "unknown" {
-				limit = 0.5
-			}
-			if waited := records[0].at.Sub(started).Seconds(); waited >= limit {
-				t.Fatalf("waited %v", waited)
-			}
-			state.Lock()
-			keys := state.QueuedInputs.Keys
-			value, _ := state.QueuedInputs.Get("adm-q")
-			state.Unlock()
-			if len(keys) != 1 || value != fifoText {
-				t.Fatalf("queued inputs %v", keys)
-			}
-		})
-	}
-}
-
 // Gateway agent whose running turn refuses every steer
 type steerRefusingAgent struct{ *GatewayAgent }
 
 func (steerRefusingAgent) Steer(string) any { return false }
-
-func TestASteerThatFallsBackToQueueIsAGatewayAdmissionAndImagesStayLocal(t *testing.T) {
-	c, client, conn, _ := idleNotifyCLI(t)
-	c.agentRunning = true
-	c.setAgent(steerRefusingAgent{&GatewayAgent{ctx: context.Background()}})
-	busyEnter(t, c, "steer", "steer me")
-	state := conn.State(scriptSID)
-	state.Lock()
-	var queued []any
-	for _, key := range state.QueuedInputs.Keys {
-		value, _ := state.QueuedInputs.Get(key)
-		queued = append(queued, value)
-	}
-	state.Unlock()
-	if !c.pendingInput.Empty() || len(queued) != 1 || queued[0] != "steer me" {
-		t.Fatalf("pending empty %v queued %v", c.pendingInput.Empty(), queued)
-	}
-	busyEnter(t, c, "queue", "look", "/img.png")
-	item, _ := c.pendingInput.GetNoWait()
-	if want := (submittedInput{Text: "look", Images: []string{"/img.png"}}); !reflect.DeepEqual(item, want) {
-		t.Fatalf("held %#v", item)
-	}
-	if submits := len(client.callsOf("prompt.submit")); submits != 1 {
-		t.Fatalf("submits %d", submits)
-	}
-	conn.Close(context.Background())
-	local := bareCLI()
-	local.sessionID = scriptSID
-	local.pendingInput, local.interruptQueue = &inputQueue{}, &inputQueue{}
-	local.agentRunning = true
-	busyEnter(t, local, "queue", "plain")
-	if item, _ := local.pendingInput.GetNoWait(); item != "plain" {
-		t.Fatalf("held %#v", item)
-	}
-}

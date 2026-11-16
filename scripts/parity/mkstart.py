@@ -1,5 +1,5 @@
 import json, sys
-# usage: mkstart.py <ib|ref> <home-suffix> <name> [args...]  builds a classic CLI startup spec with the homes/<suffix>-<side> home
+# usage: mkstart.py <ib|ref> <home-suffix> <name> [args...]  builds a terminal startup spec with the homes/<suffix>-<side> home
 which, suf, name = sys.argv[1], sys.argv[2], sys.argv[3]
 extra = sys.argv[4:]
 L = "@ROOT@"

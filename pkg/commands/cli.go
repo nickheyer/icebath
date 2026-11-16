@@ -118,13 +118,11 @@ func cfgPathForHelp() string {
 const rootEpilog = `Examples:
     icebath                        Start interactive chat
     icebath chat -q "Hello"        Single query mode
-    icebath --tui                  Launch the modern TUI (or set display.interface: tui)
-    icebath --cli                  Force the classic REPL (overrides display.interface: tui)
     icebath -c                     Resume the most recent session
     icebath -c "my project"        Resume a session by name (latest in lineage)
     icebath --resume <session_id>  Resume a specific session by ID
     icebath --resume latest        Resume the most recent session (same as -c)
-    icebath --tui --resume latest --in ./dir   Resume ./dir's latest session in the TUI
+    icebath --resume latest --in ./dir   Resume ./dir's latest session
     icebath setup                  Run setup wizard
     icebath logout                 Clear stored authentication
     icebath auth add <provider>    Add a pooled credential
@@ -220,13 +218,13 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	f.BoolP("version", "V", false, "Show version and exit")
 	f.StringP("oneshot", "z", "", "One-shot mode: send a single prompt and print ONLY the final response text to stdout. No banner, no spinner, no tool previews, no session_id line. Tools, memory, rules, and AGENTS.md in the CWD are loaded as normal; approvals are auto-bypassed. Intended for scripts / pipes.")
 	f.String("usage-file", "", "One-shot mode only: after the run, write a JSON usage report (estimated cost, token counts, model, api_calls) to PATH. The report is written even when the run fails, so pipelines can always account for spend. No effect outside -z/--oneshot.")
-	f.StringP("model", "m", "", "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). Applies to -z/--oneshot and --tui. Also settable via ICEBATH_INFERENCE_MODEL env var.")
+	f.StringP("model", "m", "", "Model override for this invocation (e.g. anthropic/claude-sonnet-4.6). Applies to -z/--oneshot and the TUI. Also settable via ICEBATH_INFERENCE_MODEL env var.")
 	c.inherited(root, "model")
-	f.String("provider", "", "Provider override for this invocation (e.g. openrouter, anthropic). Applies to -z/--oneshot and --tui. The persistent provider lives in config.yaml under model.provider — use `icebath setup` or edit the file to change it.")
+	f.String("provider", "", "Provider override for this invocation (e.g. openrouter, anthropic). Applies to -z/--oneshot and the TUI. The persistent provider lives in config.yaml under model.provider — use `icebath setup` or edit the file to change it.")
 	c.inherited(root, "provider")
 	f.String("reasoning", "", "Reasoning effort for this invocation: none, minimal, low, medium, high, xhigh, max, or ultra. Overrides agent.reasoning_effort in config.yaml for this run only; the persistent level lives there (or per-model under agent.reasoning_overrides).")
 	c.inherited(root, "reasoning")
-	f.StringP("toolsets", "t", "", "Comma-separated toolsets to enable for this invocation. Applies to -z/--oneshot and --tui.")
+	f.StringP("toolsets", "t", "", "Comma-separated toolsets to enable for this invocation. Applies to -z/--oneshot and the TUI.")
 	f.StringP("resume", "r", "", "Resume a previous session by ID or title, or pass 'latest' for the most recent session (workspace-scoped, like -c with no name)")
 	f.Bool("no-restore-cwd", false, "Don't cd into a resumed session's recorded working directory.")
 	f.String("in", "", "Change into DIR before starting or resuming. Combined with '--resume latest' or -c, the most recent session for DIR's workspace is picked, and the session stays in DIR (skips the recorded-cwd restore).")
@@ -249,13 +247,8 @@ func (c *CLI) addRootFlags(root *cobra.Command) {
 	c.inherited(root, "ignore-rules")
 	f.Bool("safe-mode", false, "Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules)")
 	c.inherited(root, "safe-mode")
-	f.Bool("tui", false, "Launch the modern TUI instead of the classic REPL")
-	c.inherited(root, "tui")
-	f.Bool("native", false, "With --tui: use native terminal scrollback and disable mouse tracking")
+	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking in the TUI")
 	c.inherited(root, "native")
-	c.aliasFlag(root, "tui-native", "native")
-	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
-	c.inherited(root, "cli")
 	pf := root.PersistentFlags()
 	pf.StringP("profile", "p", "", "Run against a named profile's home (consumed before parsing, also carried over on relaunch)")
 	root.RegisterFlagCompletionFunc("profile", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -295,7 +288,7 @@ func (c *CLI) addChat(root *cobra.Command) {
 	f.String("api-key", "", "API key for this launch only; not persisted.")
 	f.BoolP("verbose", "v", false, "Verbose output")
 	f.BoolP("quiet", "Q", false, "Quiet mode for programmatic use: suppress banner, spinner, and tool previews. Only output the final response and session info.")
-	f.String("format", "text", "Output format for single-query mode (-q). 'text' prints the final response as plain text (default). 'stream-json' emits newline-delimited JSON events (JSONL), implies --quiet, and cannot be combined with --tui.")
+	f.String("format", "text", "Output format for single-query mode (-q). 'text' prints the final response as plain text (default). 'stream-json' emits newline-delimited JSON events (JSONL), and implies --quiet.")
 	c.choice(chat, "format", "text", "stream-json")
 	f.StringP("resume", "r", "", "Resume a previous session by ID (shown on exit), or 'latest' for the most recent session")
 	f.Bool("no-restore-cwd", false, "Don't cd into a resumed session's recorded working directory.")
@@ -321,13 +314,8 @@ func (c *CLI) addChat(root *cobra.Command) {
 	f.Bool("safe-mode", false, "Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules). Use to isolate whether a problem comes from your setup or from Icebath itself.")
 	c.inherited(chat, "safe-mode")
 	f.String("source", "", "Session source tag for filtering (default: cli). Use 'tool' for third-party integrations that should not appear in user session lists.")
-	f.Bool("tui", false, "Launch the modern TUI instead of the classic REPL")
-	c.inherited(chat, "tui")
-	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking")
+	f.Bool("native", false, "Use native terminal scrollback and disable mouse tracking in the TUI")
 	c.inherited(chat, "native")
-	c.aliasFlag(chat, "tui-native", "native")
-	f.Bool("cli", false, "Force the classic prompt_toolkit REPL (overrides display.interface=tui)")
-	c.inherited(chat, "cli")
 	c.chatArgparseShape(chat)
 }
 

@@ -53,14 +53,14 @@ func TestResolveHermesBinFallsBackToPathWhich(t *testing.T) {
 	}
 }
 
-func TestExtractInheritedFlagsExtractsTuiAndDev(t *testing.T) {
-	if got := extractInheritedFlags([]string{"--tui", "chat"}); !slices.Equal(got, []string{"--tui"}) {
+func TestExtractInheritedFlagsExtractsYolo(t *testing.T) {
+	if got := extractInheritedFlags([]string{"--yolo", "chat"}); !slices.Equal(got, []string{"--yolo"}) {
 		t.Fatalf("flags %v", got)
 	}
 }
 
 func TestExtractInheritedFlagsPreservesMultipleSkills(t *testing.T) {
-	argv := []string{"-s", "foo", "-s", "bar", "--tui"}
+	argv := []string{"-s", "foo", "-s", "bar", "--yolo"}
 	if got := extractInheritedFlags(argv); !slices.Equal(got, argv) {
 		t.Fatalf("flags %v", got)
 	}
@@ -76,7 +76,7 @@ func TestInheritedFlagTableExcludedFlagsAreNotInherited(t *testing.T) {
 			t.Fatalf("%s should not be inherited", flag)
 		}
 	}
-	for _, flag := range []string{"--tui", "--profile", "-p", "-s"} {
+	for _, flag := range []string{"--yolo", "--profile", "-p", "-s"} {
 		if !table[flag] {
 			t.Fatalf("%s is missing from the table %v", flag, table)
 		}
@@ -85,12 +85,12 @@ func TestInheritedFlagTableExcludedFlagsAreNotInherited(t *testing.T) {
 
 func TestBuildRelaunchArgvPreservesInheritedFlags(t *testing.T) {
 	bin := resolvedRelaunchBin(t)
-	original := []string{"--tui", "--profile", "work", "sessions", "browse"}
+	original := []string{"--yolo", "--profile", "work", "sessions", "browse"}
 	argv, err := buildRelaunchArgv([]string{"--resume", "abc"}, true, original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"--tui", "--profile", "work", "--resume", "abc"} {
+	for _, want := range []string{"--yolo", "--profile", "work", "--resume", "abc"} {
 		if !slices.Contains(argv, want) {
 			t.Fatalf("argv %v lacks %s", argv, want)
 		}
@@ -102,7 +102,7 @@ func TestBuildRelaunchArgvPreservesInheritedFlags(t *testing.T) {
 
 func TestBuildRelaunchArgvCanDisablePreserve(t *testing.T) {
 	bin := resolvedRelaunchBin(t)
-	argv, err := buildRelaunchArgv([]string{"--resume", "abc"}, false, []string{"--tui", "chat"})
+	argv, err := buildRelaunchArgv([]string{"--resume", "abc"}, false, []string{"--yolo", "chat"})
 	if err != nil || !slices.Equal(argv, []string{bin, "--resume", "abc"}) {
 		t.Fatalf("argv %v %v", argv, err)
 	}

@@ -301,26 +301,6 @@ func gatewayPluginToolsets(c *CLI) ([]tools.ConfigurableToolset, map[string]bool
 	return rows, portable, true
 }
 
-// Plugin command names and descriptions for completion, false off the gateway, a failed read listing none
-func gatewayPluginNames(c *CLI) (map[string]string, bool) {
-	connection := gatewayConnectionFor(c)
-	if connection == nil {
-		return nil, false
-	}
-	found := cachedGatewayCommands(c, connection)
-	if found == nil {
-		read, err := readGatewayCatalog(c, connection)
-		if err != nil {
-			if !isGatewayClientError(err) {
-				panic(err)
-			}
-			return map[string]string{}, true
-		}
-		found = read
-	}
-	return found, true
-}
-
 // Whether name is one of the gateway's plugin commands, rereading once on a miss, nil off the gateway
 func gatewayPluginLookup(c *CLI, name string) (*bool, error) {
 	connection := gatewayConnectionFor(c)

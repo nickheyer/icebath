@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -30,28 +29,6 @@ type closePersister interface {
 }
 
 var _ closePersister = (*agent.AIAgent)(nil)
-
-// Flushes the agent's in memory turn before the session row ends, adopting the agent's session id afterwards
-func (c *CLI) persistActiveSessionBeforeClose() {
-	persister, ok := c.agentRef().(closePersister)
-	if !ok {
-		return
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			cliLogger.Debug(fmt.Sprintf("Could not persist active CLI session before close: %v", r))
-		}
-	}()
-	if !persister.PersistActiveSessionBeforeClose(c.ctx, func() []map[string]any { return c.conversationHistory }) {
-		return
-	}
-	if sid := c.agentRef().SessionID(); sid != "" {
-		c.uiMu.Lock()
-		c.sessionID = sid
-		c.uiMu.Unlock()
-		c.writeTerminalBreadcrumb()
-	}
-}
 
 // Records this terminal's live session so a later bare -c in this terminal resumes it
 func (c *CLI) writeTerminalBreadcrumb() {
@@ -260,25 +237,4 @@ func (c *CLI) discardSessionIfEmpty(sessionID string) bool {
 		return false
 	}
 	return removed
-}
-
-// Resolves a bare number typed right after a bare resume prompt, true when the input was consumed
-func (c *CLI) consumePendingResumeSelection(text string) bool {
-	pending := c.pendingResumeSessions
-	if len(pending) == 0 {
-		return false
-	}
-	c.pendingResumeSessions = nil
-	stripped := pystr.Strip(text)
-	if !pystr.StrIsDigit(stripped) {
-		return false
-	}
-	index, ok := pyint.Parse(stripped)
-	if !ok || !index.IsInt64() || index.Int64() < 1 || index.Int64() > int64(len(pending)) {
-		cprint("  " + c.t("cli.session.resume_index_out_of_range", map[string]any{"index": index.String()}))
-		cprint("  " + c.t("cli.session.resume_no_args_hint", nil))
-		return true
-	}
-	c.handleResumeCommand(fmt.Sprintf("/resume %d", index.Int64()))
-	return true
 }

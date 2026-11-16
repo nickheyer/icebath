@@ -18,7 +18,7 @@ import (
 
 const slashCompletionLimit = 30
 
-// One completion of the classic prompt slash completer, display and meta already plain text
+// One completion of the prompt slash completer, display and meta already plain text
 type SlashCompletion struct {
 	Text, Display, Meta string
 }

@@ -1,14 +1,10 @@
 package app
 
 import (
-	"context"
-	"sort"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -93,81 +89,10 @@ type clarifyAnswerMeta struct {
 	OtherText string
 }
 
-// Localized label of an approval choice id, an unknown id shown as it is
-func approvalChoiceLabel(ctx context.Context, choice string) string {
-	if key, ok := approvalChoiceKeys[choice]; ok {
-		return i18n.T(ctx, key, "", nil)
-	}
-	return choice
-}
-
-// Agent name of the active skin
-func agentName(ctx context.Context) string {
-	return config.GetActiveSkin(ctx).GetBranding("agent_name", "Icebath")
-}
-
-// Plural aware catalog lookup, the one form for exactly one and the other form otherwise
-func tn(ctx context.Context, key string, count int, kwargs map[string]any) string {
-	args := map[string]any{"count": count}
-	for k, v := range kwargs {
-		args[k] = v
-	}
-	if count == 1 {
-		return i18n.T(ctx, key+"_one", "", args)
-	}
-	return i18n.T(ctx, key+"_other", "", args)
-}
-
-// Quick select key label, 1 to 9 then 0 for the tenth and blank beyond
-func numPrefix(i int) string {
-	switch {
-	case i < 9:
-		return string(rune('1' + i))
-	case i == 9:
-		return "0"
-	}
-	return " "
-}
-
-// Terminal rows, 24 when the size is unknown
-func termRows() int {
-	_, rows := pyshutil.GetTerminalSize(100, 24)
-	return rows
-}
-
 // wrappedRow is one wrapped line tagged with the index of the item it came from
 type wrappedRow struct {
 	Index int
 	Text  string
-}
-
-// Wraps each item, every row keeping its item index so selection styling follows it
-func wrapRows(wrap func(text string, width int, subsequentIndent string) []string, items []string, width int, indent string) []wrappedRow {
-	var out []wrappedRow
-	for i, label := range items {
-		for _, w := range wrap(label, width, indent) {
-			out = append(out, wrappedRow{i, w})
-		}
-	}
-	return out
-}
-
-// Wraps a label, then leads the first row with firstPrefix and the rest with indent
-func prefixWrappedRows(wrap func(text string, width int, subsequentIndent string) []string, label string, width int, firstPrefix, indent string) []string {
-	rows := wrap(label, width, "")
-	for i, row := range rows {
-		if i == 0 {
-			rows[i] = firstPrefix + row
-		} else {
-			rows[i] = indent + row
-		}
-	}
-	return rows
-}
-
-// Panel wrap that trims whitespace
-func wrapPanelTextTrim(text string, width int, subsequentIndent string) []string {
-	return wrapPanelText(text, width, subsequentIndent, false)
 }
 
 // Entries of the clarify callback payload as questions
@@ -243,39 +168,6 @@ func (c *CLI) clarifyBatchSetActive(state *clarifyModalState, index int) {
 	}
 }
 
-// Locks an answer for the active question and moves to the next unanswered, resolving the panel when none is left
-func (c *CLI) clarifyBatchLock(state *clarifyModalState, answer *string, meta *clarifyAnswerMeta) {
-	entry := state.Questions[state.Active]
-	if state.Answers == nil {
-		state.Answers = map[string]*string{}
-	}
-	if state.AnswerMeta == nil {
-		state.AnswerMeta = map[string]clarifyAnswerMeta{}
-	}
-	state.Answers[entry.QID] = answer
-	if meta == nil {
-		meta = &clarifyAnswerMeta{Kind: "choice"}
-	}
-	state.AnswerMeta[entry.QID] = *meta
-	outcome := ""
-	if answer != nil {
-		outcome = *answer
-	}
-	c.persistPromptSummary("?", i18n.T(c.ctx, "cli.clarify.label", "", nil), entry.Question, outcome)
-	total := len(state.Questions)
-	for offset := 1; offset <= total; offset++ {
-		candidate := (state.Active + offset) % total
-		if _, answered := state.Answers[state.Questions[candidate].QID]; !answered {
-			c.clarifyBatchSetActive(state, candidate)
-			return
-		}
-	}
-	offer(state.response, state.answersMap())
-	c.uiMu.Lock()
-	c.clarifyState, c.clarifyFreetext, c.clarifyMultiBase = nil, false, nil
-	c.uiMu.Unlock()
-}
-
 // Locked answers keyed by question id, a skipped question mapping to nil
 func (s *clarifyModalState) answersMap() map[string]any {
 	out := make(map[string]any, len(s.Answers))
@@ -287,67 +179,6 @@ func (s *clarifyModalState) answersMap() map[string]any {
 		}
 	}
 	return out
-}
-
-// JSON array text of a list of labels, non ASCII kept as typed
-func jsonLabels(labels []string) string {
-	items := make([]any, len(labels))
-	for i, l := range labels {
-		items[i] = l
-	}
-	text, err := pyjson.Dumps(items, pyjson.EnsureASCII(false))
-	if err != nil {
-		return "[]"
-	}
-	return text
-}
-
-// Enter on the clarify panel in choice mode, locking the selection or switching to typed input for Other
-func (c *CLI) clarifyBatchEnter(state *clarifyModalState) {
-	choices := state.Choices
-	entry := state.Questions[state.Active]
-	meta := state.AnswerMeta[entry.QID]
-	if state.MultiSelect {
-		var indices []int
-		for i := range state.SelectedIndices {
-			if state.SelectedIndices[i] {
-				indices = append(indices, i)
-			}
-		}
-		sort.Ints(indices)
-		selected := []string{}
-		other := false
-		for _, i := range indices {
-			if i < len(choices) {
-				selected = append(selected, choices[i])
-			} else if i == len(choices) {
-				other = true
-			}
-		}
-		if other {
-			c.uiMu.Lock()
-			c.clarifyMultiBase = &selected
-			c.clarifyFreetext = true
-			c.clarifyPrefill = meta.OtherText
-			c.uiMu.Unlock()
-			return
-		}
-		answer := jsonLabels(selected)
-		c.clarifyBatchLock(state, &answer, &clarifyAnswerMeta{Kind: "multi", Choices: selected})
-		return
-	}
-	if state.Selected < len(choices) {
-		answer := choices[state.Selected]
-		c.clarifyBatchLock(state, &answer, &clarifyAnswerMeta{Kind: "choice"})
-		return
-	}
-	c.uiMu.Lock()
-	c.clarifyFreetext = true
-	c.clarifyPrefill = ""
-	if meta.Kind == "other" {
-		c.clarifyPrefill = meta.OtherText
-	}
-	c.uiMu.Unlock()
 }
 
 // Clarify deadline, absent while the wait is unlimited

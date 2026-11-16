@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -109,53 +108,4 @@ func subagentGatewayFixture(t *testing.T) (*GatewayAgent, *subagentGatewayClient
 		bindGatewayView(nil, nil)
 	})
 	return a, client
-}
-
-func TestDetailViewPaintsTheCachedTailAndOnlyTheTickAsksTheGateway(t *testing.T) {
-	a, client := subagentGatewayFixture(t)
-	c := dockCLI(t, a, "")
-	c.agentRunning = true
-	monitor := newSubagentMonitor(c)
-	monitor.refresh()
-	tails := func() int { return client.count("subagent.tail") }
-	h := newMonitorHarness(t, monitor, 80, 14)
-	monitor.app = h.app
-	h.start("Audit the parser")
-	h.typeBytes("\r")
-	unavailable := c.t("cli.subagents.transcript_unavailable", nil)
-	h.waitShows(unavailable)
-	for i := 0; i < 3; i++ {
-		h.app.invalidate()
-	}
-	h.waitShows(unavailable)
-	if tails() != 0 || h.shows("step 1") {
-		t.Fatalf("a repaint asked the gateway, %d tail calls, screen:\n%s", tails(), strings.Join(h.screen(), "\n"))
-	}
-	monitor.tick()
-	h.waitShows("step 2")
-	if tails() != 1 || !h.shows("step 1") {
-		t.Fatalf("%d tail calls, screen:\n%s", tails(), strings.Join(h.screen(), "\n"))
-	}
-	h.typeBytes("\x1b")
-	h.waitShows("Enter tail")
-	h.typeBytes("q")
-	if !h.exited(3 * time.Second) {
-		t.Fatalf("monitor still open, screen:\n%s", strings.Join(h.screen(), "\n"))
-	}
-	view := gatewayProcessView()
-	client.mu.Lock()
-	client.tailError = &gateway.GatewayRPCError{Msg: "unavailable"}
-	client.mu.Unlock()
-	view.mu.Lock()
-	view.tail = nil
-	view.mu.Unlock()
-	if view.subagentTail("sa-0-1", true) != nil {
-		t.Fatal("a failing tail is not None")
-	}
-	if view.subagentTail("sa-0-1", true) != nil {
-		t.Fatal("the cached failure is not None")
-	}
-	if tails() != 2 {
-		t.Fatalf("%d tail calls, the failure is not cached for the poll interval", tails())
-	}
 }

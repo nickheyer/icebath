@@ -12,7 +12,7 @@ func TestResolveChatCwdFailsClosedAndReachesTheTuiEnv(t *testing.T) {
 	tmp := t.TempDir()
 	prev := TUIArgv
 	t.Cleanup(func() { TUIArgv = prev })
-	TUIArgv = func() ([]string, error) { return []string{"icebath", "--tui"}, nil }
+	TUIArgv = func() ([]string, error) { return []string{"icebath"}, nil }
 
 	empty := ""
 	if got, err := resolveChatCwd(&empty); got != nil || err != nil {

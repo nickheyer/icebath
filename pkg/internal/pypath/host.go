@@ -4,11 +4,12 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 var windows = runtime.GOOS == "windows"
@@ -94,13 +95,13 @@ func PosixExpanduser(p string) string {
 	if i == 1 {
 		if h, ok := os.LookupEnv("HOME"); ok {
 			home = h
-		} else if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
+		} else if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
 			home = u.HomeDir
 		} else {
 			return p
 		}
 	} else {
-		u, err := user.Lookup(p[1:i])
+		u, err := homeguard.Lookup(p[1:i])
 		if err != nil {
 			return p
 		}

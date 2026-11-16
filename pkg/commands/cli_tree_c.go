@@ -205,8 +205,6 @@ func (c *CLI) addTreeC(root *cobra.Command) {
 	dashboard := c.newCmd(root, "dashboard", "Start the web UI dashboard", "Launch the Icebath Agent web dashboard for managing config, API keys, and sessions")
 	serverRuntime(dashboard)
 	bf(dashboard, "no-open", "", "Don't open browser automatically")
-	bf(dashboard, "tui", "", "")
-	hide(dashboard, "tui")
 	register := c.newCmd(dashboard, "register", "Register a self-hosted dashboard with Nous Portal (writes the OAuth client ID to .env)",
 		"Register this install as a self-hosted dashboard with your Nous Portal account. Creates an OAuth client, writes ICEBATH_DASHBOARD_OAUTH_CLIENT_ID into ~/.icebath/.env, and prints how to engage the login gate. Requires being logged in (icebath setup).")
 	sf(register, "name", "", "", "Human-readable label for the dashboard (default: an auto-generated name)")

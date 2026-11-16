@@ -465,6 +465,10 @@ func keylessVariantSchema(display, keyEnv, keyURL, freeTag, paidTag string) map[
 	return setupSchema(display+" · Free (keyless)", "free · no key", freeTag, "", "", "", map[string]any{"web_tier": "free", "variants": []any{paid}})
 }
 
-func init() {
-	RegisterWebProvider(&firecrawlProvider{baseWebProvider{name: "firecrawl", display: "Firecrawl", keyEnv: "FIRECRAWL_API_KEY", extract: true, keyless: true}})
+// Firecrawl search and extract provider the web/firecrawl plugin registers
+func NewFirecrawlWebProvider() WebProvider {
+	return &firecrawlProvider{baseWebProvider{name: "firecrawl", display: "Firecrawl", keyEnv: "FIRECRAWL_API_KEY", extract: true, keyless: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*firecrawlProvider) PyTypeName() string { return "FirecrawlWebSearchProvider" }

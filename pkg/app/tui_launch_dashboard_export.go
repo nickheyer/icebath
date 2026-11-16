@@ -8,5 +8,5 @@ func TUIArgv() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []string{self, "--tui"}, nil
+	return []string{self}, nil
 }

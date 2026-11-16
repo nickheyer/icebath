@@ -156,6 +156,10 @@ func (p *keenableProvider) SetupSchema() map[string]any {
 		"Independent web index for AI apps. Keyed access with higher limits and guaranteed service.")
 }
 
-func init() {
-	RegisterWebProvider(&keenableProvider{baseWebProvider{name: "keenable", display: "Keenable", keyEnv: "KEENABLE_API_KEY", extract: true, keyless: true}})
+// Keenable search and fetch provider the web/keenable plugin registers
+func NewKeenableWebProvider() WebProvider {
+	return &keenableProvider{baseWebProvider{name: "keenable", display: "Keenable", keyEnv: "KEENABLE_API_KEY", extract: true, keyless: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*keenableProvider) PyTypeName() string { return "KeenableWebSearchProvider" }

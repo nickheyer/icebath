@@ -19,7 +19,7 @@ var tuiBootstrapScrubbedEnv = []string{"ICEBATH_MODEL", "ICEBATH_INFERENCE_MODEL
 	"ICEBATH_INFERENCE_PROVIDER", "ICEBATH_TUI_TOOLSETS", "ICEBATH_TUI_SKILLS",
 	"ICEBATH_CWD", "TERMINAL_CWD", "ICEBATH_YOLO", "ICEBATH_ACCEPT_HOOKS",
 	"ICEBATH_TUI_CHECKPOINTS", "ICEBATH_TUI_PASS_SESSION_ID", "ICEBATH_KANBAN_BOARD",
-	"ICEBATH_TUI_CLIENT_ENV"}
+	"ICEBATH_TUI_CLIENT_ENV", "ICEBATH_TUI_BASE_URL", "ICEBATH_TUI_API_KEY", "ICEBATH_TUI_REASONING"}
 
 // Verdict line the TUI shows when no owner can be attached, each detail line kept a verdict
 func tuiBootstrapFailureMessage(receipt gateway.ObservedEndpoint) string {

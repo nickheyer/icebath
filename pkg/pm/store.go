@@ -3,6 +3,7 @@ package pm
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -1085,12 +1086,22 @@ func treeDigest(root string, skipMetadata bool) (string, error) {
 
 // Store is one directory of immutable published entries plus a scratch area
 type Store struct {
-	Root string
+	Root        string
+	PartialsDir string
 }
 
 // Store rooted at root, spelled long on Windows
 func NewStore(root string) *Store {
 	return &Store{Root: LongRoot(root)}
+}
+
+// Store rooted at root whose downloads keep their partials inside the runtime store the context selects
+func storeFor(ctx context.Context, root string) *Store {
+	s := NewStore(root)
+	if override := runtimeStoreOverride(ctx); override != "" {
+		s.PartialsDir = filepath.Join(resolvePath(override), ".partials")
+	}
+	return s
 }
 
 // Path of a named entry
@@ -1169,7 +1180,7 @@ func (s *Store) FetchMany(artifacts []Artifact, scratch string, progress Progres
 		}
 		return progress(done, total, mapped)
 	}
-	_, runErr := NewDownload(sources, DownloadOptions{Pause: pause}).Run(tick)
+	_, runErr := NewDownload(sources, DownloadOptions{Pause: pause, PartialsDir: s.PartialsDir}).Run(tick)
 	for _, source := range sources {
 		if isRelativeTo(source.Dest, scratch) && isRegularFile(source.Dest) {
 			if _, err := s.Publish(filepath.Dir(source.Dest), "fetch-"+source.SHA256); err != nil {

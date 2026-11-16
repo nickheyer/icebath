@@ -3,12 +3,12 @@ package home
 import (
 	"context"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
@@ -57,7 +57,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 	t.Setenv("ICEBATH_REAL_HOME", fallback)
 	account := fallback
 	if runtime.GOOS != "windows" {
-		if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
+		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
 			account = pypath.PathStr(u.HomeDir)
 		}
 	}

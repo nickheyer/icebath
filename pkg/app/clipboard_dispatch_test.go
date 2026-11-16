@@ -100,11 +100,3 @@ func TestTryAttachClipboardImageImagePathFollowsNamingConvention(t *testing.T) {
 		t.Fatalf("path %s", path)
 	}
 }
-
-func TestAutoAttachClipboardImageOnPasteAutoAttachDecision(t *testing.T) {
-	for pasted, want := range map[string]bool{"  hello world  ": false, "   \n\t  ": true} {
-		if got := shouldAutoAttachClipboardImageOnPaste(pasted); got != want {
-			t.Fatalf("%q: %v", pasted, got)
-		}
-	}
-}

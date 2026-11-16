@@ -70,6 +70,10 @@ func (p *searxngProvider) SetupSchema() map[string]any {
 		"SEARXNG_URL", "SearXNG instance URL (e.g. http://localhost:8080)", "https://searx.space/", nil)
 }
 
-func init() {
-	RegisterWebProvider(&searxngProvider{baseWebProvider{name: "searxng", display: "SearXNG", keyEnv: "SEARXNG_URL"}})
+// SearXNG search provider the web/searxng plugin registers
+func NewSearXNGWebProvider() WebProvider {
+	return &searxngProvider{baseWebProvider{name: "searxng", display: "SearXNG", keyEnv: "SEARXNG_URL"}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*searxngProvider) PyTypeName() string { return "SearXNGWebSearchProvider" }

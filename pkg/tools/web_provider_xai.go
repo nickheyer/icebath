@@ -395,6 +395,10 @@ func (p *xaiWebProvider) SetupSchema() map[string]any {
 		map[string]any{"post_setup": "xai_grok"})
 }
 
-func init() {
-	RegisterWebProvider(&xaiWebProvider{baseWebProvider{name: "xai", display: "xAI Web Search (Grok)"}})
+// xAI Grok web search provider the web/xai plugin registers
+func NewXAIWebProvider() WebProvider {
+	return &xaiWebProvider{baseWebProvider{name: "xai", display: "xAI Web Search (Grok)"}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*xaiWebProvider) PyTypeName() string { return "XAIWebSearchProvider" }

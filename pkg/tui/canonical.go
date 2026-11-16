@@ -267,7 +267,8 @@ func canonicalEvent(ev gatewayEventMsg) gatewayEventMsg {
 // Session creation options of the launch environment, flags only when truthy
 func localCreationOptions(env func(string) string) map[string]any {
 	options := map[string]any{}
-	for _, f := range [][2]string{{"model", "ICEBATH_MODEL"}, {"provider", "ICEBATH_TUI_PROVIDER"}, {"cwd", "ICEBATH_CWD"}} {
+	for _, f := range [][2]string{{"model", "ICEBATH_MODEL"}, {"provider", "ICEBATH_TUI_PROVIDER"}, {"cwd", "ICEBATH_CWD"},
+		{"base_url", "ICEBATH_TUI_BASE_URL"}, {"api_key", "ICEBATH_TUI_API_KEY"}, {"reasoning", "ICEBATH_TUI_REASONING"}} {
 		if v := env(f[1]); v != "" {
 			options[f[0]] = v
 		}

@@ -55,6 +55,12 @@ def plan(body):
         return {"tool": ("terminal", {"command": "rm -rf @ROOT@/work/victim"})}
     if "usefile" in user and "write_file" in names:
         return {"tool": ("write_file", {"path": "@ROOT@/work/note.txt", "content": "line one\nline two\nline three\n"})}
+    if "usewebsearch" in user and "web_search" in names:
+        return {"tool": ("web_search", {"query": "parity probe", "limit": 3})}
+    if "usewebextract" in user and "web_extract" in names:
+        return {"tool": ("web_extract", {"urls": ["https://example.com/"]})}
+    if "usehaarea" in user and "tool_call" in names:
+        return {"tool": ("tool_call", {"calls": [{"name": "ha_list_entities", "arguments": {"area": "Kitchen"}}]})}
     if "usehacallobj" in user and "tool_call" in names:
         return {"tool": ("tool_call", {"calls": [{"name": "ha_call_service", "arguments": {"domain": "light", "service": "turn_on", "entity_id": "light.kitchen", "data": {"brightness": 120}}}]})}
     if "usehacall" in user and "tool_call" in names:

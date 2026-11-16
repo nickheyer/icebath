@@ -28,49 +28,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// --safe-mode or --ignore-user-config chat runs out of process under the gateway owner unless --tui forwards the flags
+// Headless --safe-mode or --ignore-user-config chat runs out of process under the gateway owner
 func bypassChatLaunch(a *chatArgs) bool {
-	return (a.SafeMode || a.IgnoreUserConfig) && !a.TUI
-}
-
-// --cli wins, then --tui, then the TTY gate, then ICEBATH_TUI, then display.interface
-func resolveUseTUI(a *chatArgs) bool {
-	if a.CLI {
-		return false
-	}
-	if a.TUI || a.TUINative {
-		return true
-	}
-	if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stdout.Fd()) {
-		return false
-	}
-	if os.Getenv("ICEBATH_TUI") == "1" {
-		return true
-	}
-	ctx := context.Background()
-	cfg, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		return false
-	}
-	return strings.ToLower(strings.TrimSpace(cfg.String("display.interface", "cli"))) == "tui"
-}
-
-// Flags the TUI session cannot forward refuse the launch before any session starts
-func refuseUnforwardedTUIFlags(a *chatArgs) {
-	var flags []string
-	for _, pair := range [][2]string{{a.APIKey, "--api-key"}, {a.BaseURL, "--base-url"}, {a.Reasoning, "--reasoning"}} {
-		if pair[0] != "" {
-			flags = append(flags, pair[1])
-		}
-	}
-	if len(flags) == 0 {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "Error: Unsupported --tui options: %s. No session was started.\n"+
-		"  Use classic chat for this launch: icebath chat --cli %s ...\n"+
-		"  Or set model.base_url / agent.reasoning_effort in config.yaml (/reasoning in the TUI).\n",
-		strings.Join(flags, ", "), strings.Join(flags, " "))
-	exit(2)
+	return (a.SafeMode || a.IgnoreUserConfig) && !isTUIChatLaunch(a)
 }
 
 // Pins the active kanban board into the env so in process tools and shelled out calls agree
@@ -616,56 +576,21 @@ func readLine() string {
 	return strings.TrimRight(line, "\r\n")
 }
 
-// One line of stdin like input, false at EOF before any text or on a read error
-func readLineBeforeEOF() (string, bool) {
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && (err != io.EOF || line == "") {
-		return "", false
-	}
-	return strings.TrimRight(line, "\r\n"), true
+// Headless chat with no provider configured, one stderr line naming the terminal interface and exit 1
+func refuseUnconfiguredHeadlessChat() int {
+	fmt.Fprintln(os.Stderr, "Error: no model provider is configured, run `icebath` in a terminal to configure one")
+	return 1
 }
 
-// No provider configured, offers icebath setup on a TTY or exits 1 with guidance
-func firstRunSetupGuard(a *chatArgs) {
-	code, _ := firstRunSetupGuardCode(a)
-	exit(code)
-}
-
-// The first run guard, its exit code and whether it raised SystemExit, a completed setup returning normally
-func firstRunSetupGuardCode(a *chatArgs) (int, bool) {
-	if app.InteractiveTerminal() {
-		if code := cmdSetup(a); code != 0 {
-			return code, true
-		}
-		if hasAnyProviderConfigured(context.Background(), false) {
-			return 0, false
-		}
-		fmt.Println()
-		fmt.Println("You can run 'icebath setup' at any time to configure.")
-		return 1, true
+// Stdin text becomes the query of a chat launch that names none and opens no TUI, code 2 when blank without an image
+func adoptStdinQuery(a *chatArgs) int {
+	if (a.Command != "" && a.Command != "chat") || a.Query != "" || a.QueryFile != "" || a.Oneshot != "" || isTUIChatLaunch(a) {
+		return 0
 	}
-	fmt.Println()
-	fmt.Println("It looks like Icebath isn't configured yet -- no API keys or providers found.")
-	fmt.Println()
-	fmt.Println("  Run:  icebath setup")
-	fmt.Println()
-	if !app.IsInteractiveStdin() {
-		app.PrintNoninteractiveSetupGuidance("No interactive TTY detected for the first-run setup prompt.")
-		return 1, true
+	if a.Image != "" && isatty.IsTerminal(os.Stdin.Fd()) {
+		return 0
 	}
-	fmt.Print("Run setup now? [Y/n] ")
-	reply, ok := readLineBeforeEOF()
-	if !ok {
-		reply = "n"
-	}
-	reply = strings.ToLower(strings.TrimSpace(reply))
-	if reply == "" || reply == "y" || reply == "yes" {
-		code := cmdSetup(a)
-		return code, code != 0
-	}
-	fmt.Println()
-	fmt.Println("You can run 'icebath setup' at any time to configure.")
-	return 1, true
+	return app.QueryFromStdin(&a.Query, a.Image)
 }
 
 // Termux bundled skills sync fingerprint, the checkout revision or the skills tree stat
@@ -759,28 +684,27 @@ func startChatBackgroundPrefetch() {
 	go sync()
 }
 
-// Runs the interactive chat CLI or the TUI, hermes_cli/main.py cmd_chat
+// Opens the TUI for a terminal chat with no query and runs every other chat launch headless
 func cmdChat(a *chatArgs) int {
-	streamJSON, code := app.StreamJSONRequested(app.StreamJSONArgs{OutputFormat: a.OutputFormat, Query: a.Query, QueryFile: a.QueryFile, TUI: a.TUI, Quiet: &a.Quiet})
+	if code := adoptStdinQuery(a); code != 0 {
+		return code
+	}
+	streamJSON, code := app.StreamJSONRequested(app.StreamJSONArgs{OutputFormat: a.OutputFormat, Query: a.Query, QueryFile: a.QueryFile, Quiet: &a.Quiet})
 	if code != 0 {
 		return code
 	}
+	useTUI := isTUIChatLaunch(a)
 	if streamJSON || bypassChatLaunch(a) {
 		return launchGatewayChat(a)
 	}
 	applySafeMode(a)
 	applyUserConfigBypass(a)
 	guardNoninteractiveUserConfig(a)
-	useTUI := resolveUseTUI(a)
-	if useTUI {
-		refuseUnforwardedTUIFlags(a)
-	}
 	resolveChatSessionArgs(a, useTUI)
 	warnRetiredXAIModels()
 	providerConfigured := hasAnyProviderConfigured(context.Background(), false)
 	if !useTUI && !providerConfigured {
-		firstRunSetupGuard(a)
-		return 0
+		return refuseUnconfiguredHeadlessChat()
 	}
 	startChatBackgroundPrefetch()
 	if a.Yolo {
@@ -802,14 +726,15 @@ func cmdChat(a *chatArgs) int {
 	confirmStartupExpensiveModelOverride(a)
 	if useTUI {
 		return app.LaunchTUI(ctx, app.TUILaunch{Resume: a.Resume, Native: a.TUINative, Model: a.Model, AcceptHooks: a.AcceptHooks,
-			Provider: a.Provider, Toolsets: a.Toolsets, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Query: a.Query, Image: a.Image,
-			Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID, MaxTurns: a.MaxTurns})
+			Provider: a.Provider, BaseURL: a.BaseURL, APIKey: a.APIKey, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Skills: a.Skills,
+			Verbose: a.Verbose, Quiet: a.Quiet, Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID,
+			MaxTurns: a.MaxTurns})
 	}
 	readQueryFile(a)
 	observability.BeginProcess(ctx, "cli")
 	return app.ChatMain(ctx, app.MainOptions{Model: a.Model, Reasoning: a.Reasoning, Toolsets: a.Toolsets, Query: a.Query, Oneshot: a.OneshotExit,
 		RunBudget: a.RunBudget, OutputFormat: a.OutputFormat, IgnoreRules: a.IgnoreRules || a.SafeMode, IgnoreUserConfig: a.IgnoreUserConfig || a.SafeMode,
-		Compact: a.Compact, Provider: a.Provider, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Image: a.Image, Resume: a.Resume,
+		Provider: a.Provider, Skills: a.Skills, Verbose: a.Verbose, Quiet: a.Quiet, Image: a.Image, Resume: a.Resume,
 		Worktree: a.Worktree, Checkpoints: a.Checkpoints, PassSessionID: a.PassSessionID, MaxTurns: a.MaxTurns, APIKey: a.APIKey, BaseURL: a.BaseURL})
 }
 
@@ -841,7 +766,7 @@ func readQueryFile(a *chatArgs) {
 	}
 }
 
-// Frontend startup check shared by classic chat and top level one shot, false when setup was offered, hermes_cli/gateway_chat_startup.py ensure_launch_provider
+// Provider check of a gateway run chat, exit 1 after the stderr line when none is configured
 func ensureLaunchProvider(a *chatArgs) (bool, error) {
 	if app.BypassLaunch(gatewayChatNamespace(a)) {
 		return true, nil
@@ -853,10 +778,7 @@ func ensureLaunchProvider(a *chatArgs) (bool, error) {
 	if hasAnyProviderConfigured(context.Background(), false) {
 		return true, nil
 	}
-	if code, exited := firstRunSetupGuardCode(a); exited {
-		return false, &pm.SystemExit{Code: code}
-	}
-	return false, nil
+	return false, &pm.SystemExit{Code: refuseUnconfiguredHeadlessChat()}
 }
 
 // The chat flags as the argparse namespace the gateway chat launch reads
@@ -918,8 +840,6 @@ func gatewayChatNamespace(a *chatArgs) map[string]any {
 	flag("pass_session_id", a.PassSessionID)
 	flag("worktree", a.Worktree)
 	flag("no_restore_cwd", a.NoRestoreCWD)
-	flag("compact", a.Compact)
-	flag("tui", a.TUI)
 	return ns
 }
 

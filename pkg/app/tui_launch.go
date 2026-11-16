@@ -223,9 +223,9 @@ func printTUIExitSummary(ctx context.Context, w io.Writer, sessionID, activeSess
 	if active := profiles.GetActiveProfileName(ctx); active != "default" && active != "custom" {
 		profileFlag = " -p " + active
 	}
-	fmt.Fprintf(w, "\n%s\n  icebath --tui --resume %s%s\n", i18n.T(ctx, "cli.session.exit_resume_hint", "", nil), resumeID, profileFlag)
+	fmt.Fprintf(w, "\n%s\n  icebath --resume %s%s\n", i18n.T(ctx, "cli.session.exit_resume_hint", "", nil), resumeID, profileFlag)
 	if title != "" {
-		fmt.Fprintf(w, "  icebath --tui -c \"%s\"%s\n", title, profileFlag)
+		fmt.Fprintf(w, "  icebath -c \"%s\"%s\n", title, profileFlag)
 	}
 	fmt.Fprintf(w, "\nSession:        %s\n", resumeID)
 	if title != "" {
@@ -305,7 +305,7 @@ func setupTUIWorktree(ctx context.Context, stderr io.Writer) (map[string]any, er
 	return out, nil
 }
 
-// Worktree info with its string values, the shape the classic cleanup reads
+// Worktree info with its string values, the shape the worktree cleanup reads
 func worktreeInfoStrings(info map[string]any) map[string]string {
 	out := make(map[string]string, len(info))
 	for k, v := range info {
@@ -351,7 +351,7 @@ func requireBypassModel(env map[string]string, model, resumeSessionID string, st
 	if bypass && resumeSessionID == "" && model == "" && pystr.Strip(env["ICEBATH_MODEL"]) == "" {
 		fmt.Fprintln(stderr, "Error: --safe-mode / --ignore-user-config (or ICEBATH_IGNORE_USER_CONFIG=1) read no profile "+
 			"default model: pass --model explicitly.\n"+
-			"  Example: icebath --tui --safe-mode --provider openrouter --model anthropic/claude-sonnet-4")
+			"  Example: icebath --safe-mode --provider openrouter --model anthropic/claude-sonnet-4")
 		return &tuiExitError{1}
 	}
 	return nil
@@ -471,7 +471,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		{"ICEBATH_TUI_PROVIDER", l.Provider}, {"ICEBATH_INFERENCE_PROVIDER", l.Provider},
 		{"ICEBATH_TUI_TOOLSETS", strings.Join(normalizeTUIToolsets(l.Toolsets), ",")},
 		{"ICEBATH_TUI_SKILLS", skillsValue},
-		{"ICEBATH_TUI_QUERY", l.Query}, {"ICEBATH_TUI_IMAGE", l.Image},
+		{"ICEBATH_TUI_BASE_URL", l.BaseURL}, {"ICEBATH_TUI_API_KEY", l.APIKey}, {"ICEBATH_TUI_REASONING", l.Reasoning},
 		{"ICEBATH_TUI_CHECKPOINTS", flag(l.Checkpoints)},
 		{"ICEBATH_TUI_PASS_SESSION_ID", flag(l.PassSessionID)},
 		{"ICEBATH_TUI_MAX_TURNS", maxTurns},

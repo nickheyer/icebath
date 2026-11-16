@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -349,12 +349,12 @@ func expandUser(path string) string {
 	if i == 1 {
 		if v, ok := os.LookupEnv("HOME"); ok {
 			home = v
-		} else if u, err := user.Current(); err == nil {
+		} else if u, err := homeguard.Current(); err == nil {
 			home = u.HomeDir
 		} else {
 			return path
 		}
-	} else if u, err := user.Lookup(path[1:i]); err == nil {
+	} else if u, err := homeguard.Lookup(path[1:i]); err == nil {
 		home = u.HomeDir
 	} else {
 		return path

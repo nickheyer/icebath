@@ -213,6 +213,10 @@ func (p *tavilyProvider) SetupSchema() map[string]any {
 		"TAVILY_API_KEY", "Tavily API key (optional — keyless works when Tavily is selected)", "https://app.tavily.com/home", nil)
 }
 
-func init() {
-	RegisterWebProvider(&tavilyProvider{baseWebProvider{name: "tavily", display: "Tavily", keyEnv: "TAVILY_API_KEY", extract: true, keyless: true}})
+// Tavily search and extract provider the web/tavily plugin registers
+func NewTavilyWebProvider() WebProvider {
+	return &tavilyProvider{baseWebProvider{name: "tavily", display: "Tavily", keyEnv: "TAVILY_API_KEY", extract: true, keyless: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*tavilyProvider) PyTypeName() string { return "TavilyWebSearchProvider" }

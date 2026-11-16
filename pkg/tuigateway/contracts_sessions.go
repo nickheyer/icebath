@@ -331,7 +331,7 @@ var SessionSaveResult = pydantic.NewModel("SessionSaveResult", OpenConfig,
 	pydantic.Def("file", pydantic.Nullable(pydantic.Str), nil),
 ).Described("Under turn isolation the compute host's result passes through verbatim.")
 
-var _ = Method("session.save", SessionSaveParams, SessionSaveResult, "Export the transcript to ~/.icebath/sessions/saved (classic /save).")
+var _ = Method("session.save", SessionSaveParams, SessionSaveResult, "Export the transcript to ~/.icebath/sessions/saved (/save).")
 
 var SessionStatusParams = pydantic.Extend(SessionParams, "SessionStatusParams", ParamsConfig)
 

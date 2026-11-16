@@ -545,6 +545,14 @@ func (v *transcriptView) stickyPrompt(top int) string {
 	return text
 }
 
+// Width the transcript wraps to, one column short of the pane so the scrollbar never covers text
+func scrollbarRoom(width int) int {
+	if width > 4 {
+		return width - 1
+	}
+	return width
+}
+
 // Window of rows at the scroll position with a scrollbar column when the transcript overflows
 func (v *transcriptView) view(lines []string, width, height int, c renderCtx) string {
 	v.total, v.height = len(lines), height

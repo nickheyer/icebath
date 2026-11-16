@@ -207,7 +207,7 @@ func TestCLIExecQuickCommandTimeoutLeavesTheGrandchild(t *testing.T) {
 	}
 	time.Sleep(300 * time.Millisecond)
 	if !quickAlive(child) {
-		t.Fatal("the classic CLI killed the grandchild, subprocess.run kills only the shell")
+		t.Fatal("the local quick command killed the grandchild, subprocess.run kills only the shell")
 	}
 }
 

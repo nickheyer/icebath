@@ -516,9 +516,6 @@ func (l *sessionLifecycle) startNewSession(message, title string, keepCurrent bo
 		}
 		return l.closeSession(previousSid, true, create)
 	}
-	if l.gw.canonical() {
-		return resolved(func() tea.Cmd { return afterSetup(nil) })
-	}
 	return l.rpc("setup.status", map[string]any{}, afterSetup)
 }
 
@@ -735,9 +732,6 @@ func (l *sessionLifecycle) resumeByID(id string, then func(err error) tea.Cmd) t
 			}
 			return finish(append(cmds, l.adoptAttachment(r, previousSid, previousSubscription, true))...)
 		})
-	}
-	if l.gw.canonical() {
-		return resolved(func() tea.Cmd { return afterSetup(nil) })
 	}
 	return l.rpc("setup.status", map[string]any{}, afterSetup)
 }

@@ -20,7 +20,7 @@ func TuiResumeArgs(sessionID, profile string) []string {
 	if pinned := connections.BackendProfileArg(profile); pinned != nil {
 		head = []string{"--profile", *pinned}
 	}
-	return append(head, "--tui", "--resume", sessionID)
+	return append(head, "--resume", sessionID)
 }
 
 // Single quoted value for the POSIX launcher script

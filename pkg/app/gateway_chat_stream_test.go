@@ -102,8 +102,6 @@ func TestChatStreamJSONRejectsInteractiveCombinations(t *testing.T) {
 		message string
 	}{
 		{StreamJSONArgs{OutputFormat: "stream-json"}, "requires -q/--query"},
-		{StreamJSONArgs{OutputFormat: "stream-json", Query: "hi", TUI: true}, "cannot be used with --tui"},
-		{StreamJSONArgs{OutputFormat: "stream-json", Query: "hi", TUI: true}, "cannot be used with --tui"},
 	}
 	for _, tc := range cases {
 		_, errOut := captureStreams(t)

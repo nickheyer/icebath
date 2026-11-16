@@ -6,11 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
@@ -240,27 +238,6 @@ func (c *CLI) restoreModelRuntimeSnapshot(snapshot map[string]any) {
 	}
 }
 
-// Value and label rows of the picker effort step, the canonical ladder then off then keep current
-func pickerReasoningRows() [][2]string {
-	ctx := context.Background()
-	rows := make([][2]string, 0, len(config.ValidReasoningEfforts)+2)
-	for _, level := range config.ValidReasoningEfforts {
-		rows = append(rows, [2]string{level, level})
-	}
-	rows = append(rows, [2]string{"none", i18n.T(ctx, "cli.model.effort_none", "", nil)}, [2]string{"", i18n.T(ctx, "cli.model.effort_keep_current", "", nil)})
-	return rows
-}
-
-// Reports a picked model the inventory does not mark as lacking a reasoning control
-func pickerOffersReasoning(providerData map[string]any, model string) bool {
-	caps, ok := providerData["capabilities"].(map[string]any)
-	if !ok {
-		return true
-	}
-	entry, ok := caps[model].(map[string]any)
-	return !(ok && entry["reasoning"] == false)
-}
-
 // Opens the prompt native model picker on its provider stage
 func (c *CLI) openModelPicker(providers []map[string]any, currentModel, currentProvider string, userProvs map[string]any, customProvs []any) {
 	c.captureModalInputSnapshot()
@@ -279,47 +256,10 @@ func (c *CLI) openModelPicker(providers []map[string]any, currentModel, currentP
 	_ = c.invalidateWithin(0)
 }
 
-// Closes the model picker and restores the draft it hid
-func (c *CLI) closeModelPicker() {
-	c.uiMu.Lock()
-	c.modelPickerState = nil
-	c.uiMu.Unlock()
-	c.restoreModalInputSnapshot()
-	_ = c.invalidateWithin(0)
-}
-
-// Original index and label pairs of entries matching a case insensitive subsequence query, all of them for an empty query
-func (c *CLI) filterModelPickerEntries(modelList []string, query string) []pickerEntry {
-	pairs := make([]pickerEntry, 0, len(modelList))
-	q := pystr.Lower(pystr.Strip(query))
-	for i, entry := range modelList {
-		if q == "" || isSubsequence(q, pystr.Lower(entry)) {
-			pairs = append(pairs, pickerEntry{Index: i, Model: entry})
-		}
-	}
-	return pairs
-}
-
 // pickerEntry is a model picker row with the index it has in the unfiltered list
 type pickerEntry struct {
 	Index int
 	Model string
-}
-
-// Scroll offset and visible row count of the picker that keep the selection on screen
-func computeModelPickerViewport(selected, scrollOffset, nItems, termRows, panelChrome int) (int, int) {
-	const reservedBelow, minVisible = 6, 3
-	maxVisible := max(minVisible, termRows-reservedBelow-panelChrome)
-	if nItems <= maxVisible {
-		return 0, nItems
-	}
-	visible := maxVisible
-	if selected < scrollOffset {
-		scrollOffset = selected
-	} else if selected >= scrollOffset+visible {
-		scrollOffset = selected - visible + 1
-	}
-	return max(0, min(scrollOffset, nItems-visible)), visible
 }
 
 // Switch result of a raw model pick resolved against this CLI's live route
@@ -694,167 +634,6 @@ func (c *CLI) commitModelSwitch(result *provider.ModelSwitchResult, persistGloba
 		c.persistModelSwitchToSession(result)
 	}
 	return nil
-}
-
-// Picker path commit of a switch result
-func (c *CLI) applyModelSwitchResult(result *provider.ModelSwitchResult, persistGlobal bool, customProviders []any, reasoningEffort string) error {
-	if !result.Success {
-		cprint("  ✗ " + result.ErrorMessage)
-		return nil
-	}
-	c.mergePreflightWarning(result, customProviders)
-	return c.commitModelSwitch(result, persistGlobal, false, true, reasoningEffort)
-}
-
-// Confirms a costly picked switch and applies it, printing any failure
-func (c *CLI) confirmAndApplyModelSwitchResult(result *provider.ModelSwitchResult, persistGlobal bool, customProviders []any, reasoningEffort string) {
-	err := func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("%v", r)
-			}
-		}()
-		if result.Success && !c.confirmExpensiveModelSwitch(result) {
-			cprint("  " + c.t("cli.model.switch_cancelled", nil))
-			return nil
-		}
-		return c.applyModelSwitchResult(result, persistGlobal, customProviders, reasoningEffort)
-	}()
-	if err != nil {
-		cprint("  " + c.t("cli.model.selection_failed", map[string]any{"error": err}))
-	}
-}
-
-// Closes the picker and runs the confirm and apply sequence of a picked result
-func (c *CLI) commitPickerResult(result *provider.ModelSwitchResult, persistGlobal bool, reasoningEffort string) {
-	state := c.modelPicker()
-	customProvs, _ := state["custom_provs"].([]any)
-	c.closeModelPicker()
-	c.runConfirmAndApply(func() { c.confirmAndApplyModelSwitchResult(result, persistGlobal, customProvs, reasoningEffort) })
-}
-
-// Model ids a picked provider row offers, the cached catalog when its curated list is empty
-func (c *CLI) pickerModelList(providerData map[string]any) []string {
-	var raw []any
-	switch models := providerData["models"].(type) {
-	case []any:
-		raw = models
-	case []string:
-		for _, m := range models {
-			raw = append(raw, m)
-		}
-	}
-	if len(raw) == 0 {
-		func() {
-			defer func() { _ = recover() }()
-			slug, _ := providerData["slug"].(string)
-			for _, id := range provider.CachedProviderModelIDs(c.ctx, slug, provider.CachedModelsOptions{}) {
-				raw = append(raw, id)
-			}
-		}()
-	}
-	slug, _ := providerData["slug"].(string)
-	apiURL, _ := providerData["api_url"].(string)
-	var out []string
-	for _, id := range provider.OfferedModelIDs(raw, slug, apiURL) {
-		out = append(out, fmt.Sprint(id))
-	}
-	return out
-}
-
-// Advances the picker on Enter through its provider, model and effort stages
-func (c *CLI) handleModelPickerSelection(persistGlobal bool) error {
-	state := c.modelPicker()
-	if state == nil {
-		return nil
-	}
-	selected := stateInt(state, "selected", 0)
-	stage := cliStr(state["stage"], "")
-	switch stage {
-	case "provider":
-		providers, _ := state["providers"].([]map[string]any)
-		if selected >= len(providers) {
-			c.closeModelPicker()
-			return nil
-		}
-		providerData := providers[selected]
-		modelList := c.pickerModelList(providerData)
-		c.uiMu.Lock()
-		state["stage"], state["provider_data"], state["model_list"] = "model", providerData, modelList
-		state["selected"], state["filter"], state["_filtered_pairs"] = 0, "", nil
-		c.uiMu.Unlock()
-		_ = c.invalidateWithin(0)
-		return nil
-	case "model":
-		providerData, _ := state["provider_data"].(map[string]any)
-		modelList, _ := state["model_list"].([]string)
-		pairs, ok := state["_filtered_pairs"].([]pickerEntry)
-		if !ok {
-			pairs = c.filterModelPickerEntries(modelList, "")
-		}
-		backIdx := len(pairs)
-		if selected == backIdx {
-			providers, _ := state["providers"].([]map[string]any)
-			back := 0
-			for i, p := range providers {
-				if p["slug"] == providerData["slug"] {
-					back = i
-					break
-				}
-			}
-			c.uiMu.Lock()
-			state["stage"], state["filter"], state["_filtered_pairs"], state["selected"] = "provider", "", nil, back
-			c.uiMu.Unlock()
-			_ = c.invalidateWithin(0)
-			return nil
-		}
-		if selected > backIdx || selected < 0 {
-			c.closeModelPicker()
-			return nil
-		}
-		userProvs, _ := state["user_provs"].(map[string]any)
-		customProvs, _ := state["custom_provs"].([]any)
-		slug, _ := providerData["slug"].(string)
-		result, err := c.switchModelFrom(pairs[selected].Model, persistGlobal, slug, userProvs, customProvs)
-		if err != nil {
-			return err
-		}
-		if result.Success && pickerOffersReasoning(providerData, result.NewModel) {
-			c.uiMu.Lock()
-			state["stage"], state["switch_result"], state["selected"], state["_scroll_offset"] = "reasoning", result, 0, 0
-			c.uiMu.Unlock()
-			_ = c.invalidateWithin(0)
-			return nil
-		}
-		c.commitPickerResult(result, persistGlobal, "")
-		return nil
-	case "reasoning":
-		rows := pickerReasoningRows()
-		result, _ := state["switch_result"].(*provider.ModelSwitchResult)
-		if selected == len(rows) {
-			c.uiMu.Lock()
-			state["stage"], state["selected"], state["_scroll_offset"], state["switch_result"] = "model", 0, 0, nil
-			c.uiMu.Unlock()
-			_ = c.invalidateWithin(0)
-			return nil
-		}
-		if selected > len(rows) || result == nil {
-			c.closeModelPicker()
-			return nil
-		}
-		c.commitPickerResult(result, persistGlobal, rows[selected][0])
-	}
-	return nil
-}
-
-// Reports a model command typed without images, which runs at once on the UI thread
-func (c *CLI) shouldHandleModelCommandInline(text string, hasImages bool) bool {
-	if text == "" || hasImages || !looksLikeSlashCommand(text) {
-		return false
-	}
-	words := pystr.SplitWhitespace(text, 1)
-	cmd := commands.Resolve(strings.TrimLeft(pystr.Lower(words[0]), "/"))
-	return cmd != nil && cmd.Name == "model"
 }
 
 // Usage rows of the model command, the invocation form and its catalog description key

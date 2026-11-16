@@ -109,7 +109,7 @@ func stopCLIGateway(t *testing.T, bin, h string, env []string) {
 
 var printedSessionLine = regexp.MustCompile(`(?m)^Session:\s+(\S+)\s*$`)
 
-func TestClassicChatQueryRunsInTheGatewayItLaunches(t *testing.T) {
+func TestChatQueryRunsInTheGatewayItLaunches(t *testing.T) {
 	peer := newModelPeer(t)
 	h, env := cliGatewayHomes(t, peer)
 	bin := cliProgramBinary(t)

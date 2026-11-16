@@ -4,6 +4,6 @@ package contractgen
 
 // SHA-256 of each committed generated file, compared with a fresh render by the staleness tests
 var Committed = map[string]string{
-	"apps/shared/src/gateway-contract.generated.ts": "700e2b279a9acf0cbbac79da8d96649dd63ec1476262c3e2475c39ba1ffabc23",
-	"apps/shared/src/gateway-contract.openrpc.json": "3ebd73f4e445c742be8077c533e42a35ab9fa19e154640d3d22f91abbfa11ec1",
+	"apps/shared/src/gateway-contract.generated.ts": "86a69c95b96975aba4411bd58aeb88ee9e5bb54d6b81abc0f1cc4b567a293a4f",
+	"apps/shared/src/gateway-contract.openrpc.json": "4f4e1e50cdf73c50821c322e16a7338453db5822744157b5644d71f586466a7a",
 }

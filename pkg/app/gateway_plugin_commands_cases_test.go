@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"reflect"
 	"slices"
@@ -217,16 +216,6 @@ func collidingSkillAndBundle(t *testing.T, name string) *[]string {
 
 func printedText(rec *printRecorder) string { return strings.Join(rec.plain(), "\n") }
 
-// Names of the gateway's plugin commands as completion reads them
-func pluginNames(t *testing.T, c *CLI) map[string]string {
-	t.Helper()
-	names, onGateway := gatewayPluginNames(c)
-	if !onGateway {
-		t.Fatal("the CLI is not on a gateway session")
-	}
-	return names
-}
-
 func nameSet(names map[string]string) []string {
 	out := make([]string, 0, len(names))
 	for name := range names {
@@ -324,33 +313,6 @@ func TestAnUnknownCommandRefreshesTheCatalogOnceThenFallsThrough(t *testing.T) {
 	}
 }
 
-func TestASessionBoundaryRereadsTheCatalog(t *testing.T) {
-	for _, boundary := range []string{"new_session", "reconnect"} {
-		t.Run(boundary, func(t *testing.T) {
-			c, gw, _ := pluginCLI(t, map[string]string{"old-plugin": "Before"}, nil)
-			if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"old-plugin"}) {
-				t.Fatalf("names %v", got)
-			}
-			gw.set(func() { gw.plugins = map[string]string{"new-plugin": "After a gateway restart"} })
-			if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"old-plugin"}) {
-				t.Fatalf("completion left the session's read: %v", got)
-			}
-			if boundary == "new_session" {
-				c.sessionID = "local-s2"
-			} else {
-				gw.redial()
-			}
-			if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"new-plugin"}) {
-				t.Fatalf("names after the boundary %v", got)
-			}
-			c.processUnregisteredSlash("/new-plugin", "/new-plugin")
-			if !reflect.DeepEqual(gw.execs(), []string{"new-plugin"}) {
-				t.Fatalf("execs %v", gw.execs())
-			}
-		})
-	}
-}
-
 func TestAFailedCatalogReadRunsNothingElse(t *testing.T) {
 	reads := localPluginReads(t)
 	c, gw, rec := pluginCLI(t, map[string]string{}, nil)
@@ -367,38 +329,6 @@ func TestAFailedCatalogReadRunsNothingElse(t *testing.T) {
 	}
 }
 
-func TestACatalogWhosePluginDiscoveryFailedRunsNothingElse(t *testing.T) {
-	reads := localPluginReads(t)
-	c, gw, rec := pluginCLI(t, map[string]string{}, nil)
-	gw.set(func() {
-		gw.extra = map[string]any{"plugin_discovery_error": "boom in register()", "warning": "plugin command discovery unavailable: boom in register()"}
-	})
-	ran := collidingSkillAndBundle(t, "mcp-status")
-	if !c.processUnregisteredSlash("/mcp-status", "/mcp-status") {
-		t.Fatal("dispatch answered false")
-	}
-	if !strings.Contains(printedText(rec), "boom in register()") {
-		t.Fatalf("output %q", printedText(rec))
-	}
-	if len(*ran) != 0 || len(gw.execs()) != 0 || len(reads.seen()) != 0 {
-		t.Fatalf("ran %v execs %v reads %v", *ran, gw.execs(), reads.seen())
-	}
-	printed := len(rec.plain())
-	if got := pluginNames(t, c); len(got) != 0 {
-		t.Fatalf("names %v", got)
-	}
-	if len(rec.plain()) != printed {
-		t.Fatalf("completion printed %q", rec.plain()[printed:])
-	}
-	gw.set(func() { gw.extra, gw.plugins = nil, map[string]string{"mcp-status": "Ask the MCP server"} })
-	if !c.processUnregisteredSlash("/mcp-status", "/mcp-status") {
-		t.Fatal("dispatch answered false")
-	}
-	if !reflect.DeepEqual(gw.execs(), []string{"mcp-status"}) || len(*ran) != 0 {
-		t.Fatalf("execs %v ran %v", gw.execs(), *ran)
-	}
-}
-
 func TestAnOlderGatewayWithoutTheDiscoveryFieldKeepsTodaysBehaviour(t *testing.T) {
 	c, gw, _ := pluginCLI(t, map[string]string{}, nil)
 	gw.set(func() { gw.extra = map[string]any{"warning": "skill discovery unavailable: x"} })
@@ -408,22 +338,6 @@ func TestAnOlderGatewayWithoutTheDiscoveryFieldKeepsTodaysBehaviour(t *testing.T
 	}
 	if !reflect.DeepEqual(*ran, []string{"_run_skill_bundle_command"}) {
 		t.Fatalf("ran %v", *ran)
-	}
-}
-
-func TestAPluginCommandADisplayEntryHidesStillDispatches(t *testing.T) {
-	reads := localPluginReads(t)
-	c, gw, _ := pluginCLI(t, map[string]string{}, nil)
-	gw.set(func() { gw.extra = map[string]any{"plugin_commands": map[string]any{"logs": "Plugin logs"}} })
-	ran := collidingSkillAndBundle(t, "logs")
-	if !c.processUnregisteredSlash("/logs", "/logs") {
-		t.Fatal("dispatch answered false")
-	}
-	if !reflect.DeepEqual(gw.execs(), []string{"logs"}) || len(*ran) != 0 || len(reads.seen()) != 0 {
-		t.Fatalf("execs %v ran %v reads %v", gw.execs(), *ran, reads.seen())
-	}
-	if got := pluginNames(t, c); !reflect.DeepEqual(got, map[string]string{"logs": "Plugin logs"}) {
-		t.Fatalf("names %v", got)
 	}
 }
 
@@ -503,84 +417,6 @@ func TestAReplyThatIsNoPluginRunIsReported(t *testing.T) {
 	}
 }
 
-func TestACatalogServedBeforeARedialIsNotCachedAsTheNewLifes(t *testing.T) {
-	c, gw, _ := pluginCLI(t, map[string]string{"old-plugin": "Served by the old gateway life"}, nil)
-	gw.set(func() {
-		gw.afterCatalog = func() {
-			gw.redial()
-			gw.set(func() { gw.plugins = map[string]string{"new-plugin": "Served by the new gateway life"} })
-		}
-	})
-	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"old-plugin"}) {
-		t.Fatalf("names %v", got)
-	}
-	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"new-plugin"}) {
-		t.Fatalf("names of the new life %v", got)
-	}
-	if gw.catalogReads() != 2 {
-		t.Fatalf("catalog reads %d", gw.catalogReads())
-	}
-	c.processUnregisteredSlash("/new-plugin", "/new-plugin")
-	if !reflect.DeepEqual(gw.execs(), []string{"new-plugin"}) || gw.catalogReads() != 2 {
-		t.Fatalf("execs %v catalog reads %d", gw.execs(), gw.catalogReads())
-	}
-}
-
-func TestACatalogReadAcrossASessionChangeIsNotCachedForTheNewSession(t *testing.T) {
-	c, gw, _ := pluginCLI(t, map[string]string{"old-plugin": "Before"}, nil)
-	gw.set(func() {
-		gw.afterCatalog = func() {
-			c.sessionID = "local-s2"
-			gw.set(func() { gw.plugins = map[string]string{"new-plugin": "After"} })
-		}
-	})
-	pluginNames(t, c)
-	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"new-plugin"}) {
-		t.Fatalf("names %v", got)
-	}
-	if gw.catalogReads() != 2 {
-		t.Fatalf("catalog reads %d", gw.catalogReads())
-	}
-}
-
-func TestSlashNewRereadsTheCatalog(t *testing.T) {
-	recordPrints(t)
-	gw := &pluginGateway{t: t, client: &scriptedClient{}, plugins: map[string]string{"old-plugin": "Before"}, reply: map[string]any{}}
-	created := 0
-	gw.client.override = func(method string, params map[string]any) (any, bool, error) {
-		switch method {
-		case "session.create":
-			gw.client.record(method, params)
-			created++
-			return storeSnapshot(fmt.Sprintf("local-new-%d", created)), true, nil
-		case "session.resume":
-			gw.client.record(method, params)
-			return storeSnapshot(params["session_id"].(string)), true, nil
-		}
-		return gw.handle(method, params)
-	}
-	gw.conn = scriptedConnection(t, gw.client)
-	c := configuredCLI(t, map[string]any{}, CLIOptions{})
-	c.sessionDB, c.gatewaySessionOpen, c.sessionID = gatewaycli.NewGatewaySessionStore(gw.conn), true, "local-s"
-	t.Cleanup(func() { _ = c.sessionDB.CloseReader() })
-	c.setAgent(nil)
-	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"old-plugin"}) {
-		t.Fatalf("names %v", got)
-	}
-	gw.set(func() { gw.plugins = map[string]string{"new-plugin": "After"} })
-	before := c.sessionID
-	c.newSession(true, "")
-	if c.sessionID == before {
-		t.Fatalf("session id stayed %q", before)
-	}
-	if got := nameSet(pluginNames(t, c)); !reflect.DeepEqual(got, []string{"new-plugin"}) {
-		t.Fatalf("names after /new %v", got)
-	}
-	if gw.catalogReads() != 2 {
-		t.Fatalf("catalog reads %d", gw.catalogReads())
-	}
-}
-
 func TestAFailedRefreshOnAMissRunsNothingElse(t *testing.T) {
 	c, gw, rec := pluginCLI(t, map[string]string{"mcp-status": "Ask the MCP server"}, nil)
 	c.processUnregisteredSlash("/mcp-status", "/mcp-status")
@@ -591,17 +427,6 @@ func TestAFailedRefreshOnAMissRunsNothingElse(t *testing.T) {
 	}
 	if !strings.Contains(printedText(rec), "gateway restarting") || len(*ran) != 0 {
 		t.Fatalf("output %q ran %v", printedText(rec), *ran)
-	}
-}
-
-func TestCompletionDegradesQuietlyWhenTheCatalogFails(t *testing.T) {
-	c, gw, rec := pluginCLI(t, map[string]string{}, nil)
-	gw.set(func() { gw.catalogError = &gateway.GatewayClientError{Msg: "gateway restarting"} })
-	if got := pluginNames(t, c); len(got) != 0 {
-		t.Fatalf("names %v", got)
-	}
-	if out := printedText(rec); out != "" {
-		t.Fatalf("output %q", out)
 	}
 }
 

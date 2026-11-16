@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	xterm "github.com/charmbracelet/x/term"
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -33,12 +32,12 @@ var gatewayChatUnsupported = []string{"image", "worktree", "w", "no_restore_cwd"
 
 // Where each refused option lives now
 var gatewayChatRelocated = map[string]string{
-	"image":                               "`icebath --tui` or the Desktop app to attach the image",
-	"worktree":                            "`icebath --tui -w`",
-	"w":                                   "`icebath --tui -w`",
+	"image":                               "`icebath` or the Desktop app to attach the image",
+	"worktree":                            "`icebath -w`",
+	"w":                                   "`icebath -w`",
 	"no_restore_cwd":                      "`--in <dir>` (the gateway keeps the session's frozen cwd)",
 	"run_budget":                          "`agent.run_budget_seconds` in config.yaml",
-	"verbose":                             "`icebath logs --follow`, or `icebath chat --tui -v`",
+	"verbose":                             "`icebath logs --follow`, or `icebath chat -v`",
 	"compact":                             "`display.compact: true` in config.yaml",
 	"create-if-missing without -c <name>": "`-c <name> --create-if-missing`",
 }
@@ -237,7 +236,7 @@ func gatewayResumeNamed(ctx context.Context, client gatewayChatPeer, args map[st
 
 // Creates a session under the launch policy the owner create contract advertises
 func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[string]any, description map[string]any,
-	oneshot bool, createIfMissing bool, title string, oneshotPrompt bool) (map[string]any, error) {
+	createIfMissing bool, title string, oneshotPrompt bool) (map[string]any, error) {
 	contract, _ := gatewayGetOr(description, "session_create", map[string]any{}).(map[string]any)
 	sources, _ := gatewayGetOr(contract, "sources", []any{}).([]any)
 	has := func(list []any, name string) bool {
@@ -251,7 +250,7 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	requested := "cli"
 	if pyrepr.Truthy(args["source"]) {
 		requested = pyrepr.Str(args["source"])
-	} else if oneshot && has(sources, "oneshot") {
+	} else if has(sources, "oneshot") {
 		requested = "oneshot"
 	}
 	source := agent.CreateSurface(requested)
@@ -316,11 +315,6 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	return snapshot, nil
 }
 
-// Whether standard input and output are both terminals
-func gatewayStdioTTY() bool {
-	return xterm.IsTerminal(os.Stdin.Fd()) && xterm.IsTerminal(os.Stdout.Fd())
-}
-
 // Attaches to the owner, resumes or creates the session and runs the chat view on it
 func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSONEmitter,
 	connect func(ctx context.Context) (gatewayChatConn, error)) (int, error) {
@@ -335,7 +329,6 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 		query = oneshotText
 	}
 	quiet := pyrepr.Truthy(args["quiet"]) || oneshotText != "" || emitter != nil
-	oneshot := oneshotText != "" || pyrepr.Truthy(args["oneshot_exit"]) || quiet || (query != "" && !gatewayStdioTTY())
 	client, err := connect(ctx)
 	if err != nil {
 		return 0, err
@@ -367,7 +360,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 			err = gatewaycli.CheckResumePolicy(ctx, args, snapshot)
 		}
 	default:
-		snapshot, err = gatewayCreateSession(ctx, client, args, description, oneshot, createIfMissing, title, oneshotPrompt)
+		snapshot, err = gatewayCreateSession(ctx, client, args, description, createIfMissing, title, oneshotPrompt)
 	}
 	if err != nil {
 		return 0, err
@@ -375,9 +368,6 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 	sessionID := pyrepr.Str(requireKey(snapshot, "stored_session_id"))
 	if !oneshotPrompt {
 		fmt.Fprintln(stderrWriter(), "Session: "+sessionID)
-	}
-	if !oneshot {
-		WriteBreadcrumb(ctx, sessionID, "")
 	}
 	if emitter != nil {
 		emitter.BindSession(sessionID)
@@ -391,7 +381,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 		view.launchAPIKey = pyrepr.Str(args["api_key"])
 	}
 	view.unattended = oneshotPrompt
-	view.resumeFooter = oneshot && !quiet
+	view.resumeFooter = !quiet
 	if (pyrepr.Truthy(args["resume"]) || (titled && title != "") || latest) && !quiet {
 		messages, _ := gatewayGetOr(snapshot, "messages", []any{}).([]any)
 		for _, raw := range messages {
@@ -402,7 +392,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 			}
 		}
 	}
-	return view.Run(ctx, query, oneshot)
+	return view.Run(ctx, query)
 }
 
 // Prints a refused resume as the usage error every classic path exits 2 with, nil for any other failure
@@ -575,8 +565,15 @@ func launchFromArgs(ctx context.Context, args map[string]any, ensure func() (boo
 				return failed(fmt.Sprintf("--query-file %s is empty", path), 2), nil
 			}
 		}
-		if !pyrepr.Truthy(args["query"]) && !pyrepr.Truthy(args["q"]) && !pyrepr.Truthy(args["oneshot"]) && !xterm.IsTerminal(os.Stdin.Fd()) {
-			return 0, &gateway.GatewayClientError{Msg: "Noninteractive chat requires --query or --oneshot"}
+		if !pyrepr.Truthy(args["query"]) && !pyrepr.Truthy(args["q"]) && !pyrepr.Truthy(args["oneshot"]) {
+			text, err := StdinQuery()
+			if err != nil {
+				return failed(stdinQueryError(err), 2), nil
+			}
+			if pystr.Strip(text) == "" {
+				return failed(QuerylessChatUsage, 2), nil
+			}
+			args["query"] = text
 		}
 		return runGatewayChat(runCtx, args, emitter, connect)
 	}()

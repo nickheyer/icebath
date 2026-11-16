@@ -2,7 +2,10 @@ package app
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,21 +19,48 @@ const streamJSONToolOutputCap = 5000
 // StreamJSONArgs is the chat argument namespace stream_json_requested inspects and forces quiet on
 type StreamJSONArgs struct {
 	OutputFormat, Query, QueryFile string
-	TUI                            bool
 	Quiet                          *bool
 }
 
-// Reports --format stream-json, exit code 2 without a query or with --tui, and forces quiet mode on
+// Usage error text of a chat launch that carries no query, printed with exit 2
+const QuerylessChatUsage = "no query given, pass one with icebath chat -q/--query or pipe it on stdin"
+
+// Text on stdin with its trailing newlines trimmed, read to EOF once per process
+var StdinQuery = sync.OnceValues(func() (string, error) {
+	raw, err := io.ReadAll(os.Stdin)
+	return strings.TrimRight(string(raw), "\r\n"), err
+})
+
+// Error text of a stdin query read that failed
+func stdinQueryError(err error) string {
+	return fmt.Sprintf("cannot read the query from stdin (%v), pass one with icebath chat -q/--query", err)
+}
+
+// Sets an empty query to the stdin text, exit 2 with the usage error when stdin is blank and no image rides along
+func QueryFromStdin(query *string, image string) int {
+	text, err := StdinQuery()
+	if err != nil {
+		fmt.Fprintln(stderrWriter(), "Error: "+stdinQueryError(err))
+		return 2
+	}
+	if strings.TrimSpace(text) != "" {
+		*query = text
+		return 0
+	}
+	if image != "" {
+		return 0
+	}
+	fmt.Fprintln(stderrWriter(), "Error: "+QuerylessChatUsage)
+	return 2
+}
+
+// Reports --format stream-json, exit code 2 without a query, and forces quiet mode on
 func StreamJSONRequested(a StreamJSONArgs) (bool, int) {
 	if a.OutputFormat != "stream-json" {
 		return false, 0
 	}
 	if a.Query == "" && a.QueryFile == "" {
 		fmt.Fprintln(stderrWriter(), "Error: --format stream-json requires -q/--query.")
-		return false, 2
-	}
-	if a.TUI {
-		fmt.Fprintln(stderrWriter(), "Error: --format stream-json cannot be used with --tui.")
 		return false, 2
 	}
 	if a.Quiet != nil {

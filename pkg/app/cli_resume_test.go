@@ -352,16 +352,3 @@ func TestSessionsCommandRestoresRecordedCwd(t *testing.T) {
 		t.Fatalf("TERMINAL_CWD %q", os.Getenv("TERMINAL_CWD"))
 	}
 }
-
-func TestPendingNumberResumesSelectedSession(t *testing.T) {
-	twoSessionDB(t, "")
-	recordPrints(t)
-	c := resumeCLI(t)
-	c.pendingResumeSessions = c.listRecentSessions(10)
-	if !c.consumePendingResumeSelection("2") {
-		t.Fatal("selection not consumed")
-	}
-	if c.sessionID != "sess_001" || c.pendingResumeSessions != nil {
-		t.Fatalf("session %q pending %v", c.sessionID, c.pendingResumeSessions)
-	}
-}

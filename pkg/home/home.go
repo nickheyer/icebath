@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -15,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -173,7 +173,7 @@ func Dir(ctx context.Context) string {
 // OS account home from the password database, the real home resolver where it cannot answer
 func accountHome(ctx context.Context) string {
 	if runtime.GOOS != "windows" {
-		if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
+		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
 			return pypath.PathStr(u.HomeDir)
 		}
 	}

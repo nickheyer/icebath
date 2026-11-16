@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -31,9 +32,8 @@ type chatArgs struct {
 	Quiet, Worktree, Checkpoints        bool
 	PassSessionID, IgnoreUserConfig     bool
 	IgnoreRules, SafeMode, Yolo         bool
-	AcceptHooks, TUI, TUINative         bool
-	CLI, NoRestoreCWD, CreateIfMissing  bool
-	Compact                             bool
+	AcceptHooks, TUINative              bool
+	NoRestoreCWD, CreateIfMissing       bool
 	noninteractiveConfigValidated       bool
 }
 
@@ -111,9 +111,7 @@ func parsedArgs(cli *commands.CLI, cmd *cobra.Command, args []string) *chatArgs 
 		boolean("safe-mode", &a.SafeMode)
 		boolean("yolo", &a.Yolo)
 		boolean("accept-hooks", &a.AcceptHooks)
-		boolean("tui", &a.TUI)
 		boolean("native", &a.TUINative)
-		boolean("cli", &a.CLI)
 		boolean("no-restore-cwd", &a.NoRestoreCWD)
 		boolean("create-if-missing", &a.CreateIfMissing)
 	}
@@ -173,18 +171,20 @@ func agentSubcommandSelected(a *chatArgs) bool {
 	return ok && subs[a.SubCommand]
 }
 
-// Only chat commands launch the TUI, decided the way cmd_chat decides
+// Query, query file, one shot or image, the inputs that make a chat launch headless
+func chatCarriesQuery(a *chatArgs) bool {
+	return a.Query != "" || a.QueryFile != "" || a.Oneshot != "" || a.Image != ""
+}
+
+// Chat on a terminal at both ends with no query, image or stream format opens the TUI
 func isTUIChatLaunch(a *chatArgs) bool {
-	if bypassChatLaunch(a) {
-		return false
-	}
-	if a.TUI || os.Getenv("ICEBATH_TUI") == "1" {
-		return true
-	}
 	if a.Command != "" && a.Command != "chat" {
 		return false
 	}
-	return resolveUseTUI(a)
+	if chatCarriesQuery(a) || a.OutputFormat == "stream-json" {
+		return false
+	}
+	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
 }
 
 func shouldBackgroundMCPStartup(a *chatArgs) bool {
@@ -312,7 +312,7 @@ func lightChatArgs(argv []string) (*chatArgs, bool) {
 		return nil, false
 	}
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
-	if err := cmd.ParseFlags(rest); err != nil {
+	if err := cmd.ParseFlags(rest); err != nil || len(cli.UnknownOptions(argv, cmd)) > 0 {
 		return nil, false
 	}
 	if cmd == cli.Root {
@@ -374,6 +374,9 @@ func tryFastChatLaunch(argv []string) (bool, int) {
 	if a.Yolo {
 		os.Setenv("ICEBATH_YOLO_MODE", "1")
 	}
+	if code := adoptStdinQuery(a); code != 0 {
+		return true, code
+	}
 	prepareAgentStartup(a)
 	if a.Oneshot != "" {
 		return true, runOneshotFromArgs(a)
@@ -412,20 +415,16 @@ func tryTermuxFastCLILaunch(argv []string) (bool, int) {
 		printVersionInfo(true)
 		return true, 0
 	}
+	if code := adoptStdinQuery(a); code != 0 {
+		return true, code
+	}
 	if a.Oneshot != "" {
 		prepareAgentStartup(a)
 		return true, runOneshotFromArgs(a)
 	}
 	promoteTopLevelResume(a)
 	if a.Command == "" || a.Command == "chat" {
-		if a.Query == "" && a.Image == "" {
-			a.Compact = true
-			os.Setenv("ICEBATH_DEFER_AGENT_STARTUP", "1")
-			os.Setenv("ICEBATH_FAST_STARTUP_BANNER", "1")
-			if a.AcceptHooks {
-				os.Setenv("ICEBATH_ACCEPT_HOOKS", "1")
-			}
-		} else {
+		if chatCarriesQuery(a) {
 			prepareAgentStartup(a)
 		}
 		return true, cmdChat(a)
@@ -433,22 +432,13 @@ func tryTermuxFastCLILaunch(argv []string) (bool, int) {
 	return false, 0
 }
 
-// Obvious Termux TUI invocations launched before building every subparser
+// Termux TUI launch on the light parser before the subcommand tree is built
 func tryTermuxFastTUILaunch(argv []string) (bool, int) {
-	if !isTermuxStartupEnvironment() || containsArg(argv, "-h") || containsArg(argv, "--help") {
+	if !isTermuxStartupEnvironment() {
 		return false, 0
 	}
-	if !wantsTUIEarly(argv) {
-		return false, 0
-	}
-	if first, ok := firstPositional(argv); ok && first != "chat" {
-		return false, 0
-	}
-	a, ok := lightChatArgs(argv)
-	if !ok || a.Version || a.Oneshot != "" || (a.Command != "" && a.Command != "chat") {
-		return false, 0
-	}
-	if !resolveUseTUI(a) {
+	a, ok := earlyTUIArgs(argv)
+	if !ok {
 		return false, 0
 	}
 	return true, cmdChat(a)

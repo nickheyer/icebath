@@ -274,6 +274,10 @@ func (p *perplexityProvider) SetupSchema() map[string]any {
 		"PERPLEXITY_API_KEY", "Perplexity API key", perplexityKeyURL, map[string]any{"web_tier": "paid"})
 }
 
-func init() {
-	RegisterWebProvider(&perplexityProvider{baseWebProvider{name: "perplexity", display: "Perplexity", keyEnv: "PERPLEXITY_API_KEY", extract: true}})
+// Perplexity search and snippet provider the web/perplexity plugin registers
+func NewPerplexityWebProvider() WebProvider {
+	return &perplexityProvider{baseWebProvider{name: "perplexity", display: "Perplexity", keyEnv: "PERPLEXITY_API_KEY", extract: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*perplexityProvider) PyTypeName() string { return "PerplexityWebSearchProvider" }

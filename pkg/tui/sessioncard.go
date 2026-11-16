@@ -288,7 +288,9 @@ func (c *sessionCard) View(w, h int) string {
 	top := c.app.widgets.dock("dock-top", w)
 	bottom := c.app.widgets.dock("dock-bottom", w)
 	bodyRows = max(bodyRows-len(top)-len(bottom), 1)
-	c.lines = c.view.rows(c.app.history, c.app.store, c.app.turn.visibleStream(), rc, c.tick)
+	wrap := rc
+	wrap.width = scrollbarRoom(w)
+	c.lines = c.view.rows(c.app.history, c.app.store, c.app.turn.visibleStream(), wrap, c.tick)
 	body := strings.Join(c.app.widgets.overlayCorners(strings.Split(c.view.view(c.lines, w, bodyRows, rc), "\n"), w), "\n")
 	if len(top) > 0 {
 		body = strings.Join(top, "\n") + "\n" + body

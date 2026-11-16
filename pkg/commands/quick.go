@@ -20,7 +20,7 @@ import (
 // Time a gateway exec quick command may run before its whole process tree is stopped
 var execQuickCommandTimeout = 30 * time.Second
 
-// Time subprocess.run gives a classic CLI exec quick command before its shell is killed
+// Time subprocess.run gives a local exec quick command before its shell is killed
 var cliQuickCommandTimeout = 30 * time.Second
 
 const (
@@ -29,7 +29,7 @@ const (
 	streamPauseBytes = 2 * 65536
 )
 
-// CLIQuickStyle is how the classic CLI prints one quick command reply
+// Print style of one local quick command reply
 type CLIQuickStyle int
 
 const (
@@ -41,7 +41,7 @@ const (
 	CLIQuickFailure
 )
 
-// CLIQuickReply is the text one classic CLI exec quick command prints and its style
+// Text one local exec quick command prints and its style
 type CLIQuickReply struct {
 	Text  string
 	Style CLIQuickStyle
@@ -112,7 +112,7 @@ func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any
 	return output, nil
 }
 
-// Runs a classic CLI exec quick command like subprocess.run with shell, capture, utf-8 replace text and a 30 second timeout
+// Runs a local exec quick command like subprocess.run with shell, capture, utf-8 replace text and a 30 second timeout
 func RunCLIExecQuickCommand(ctx context.Context, env *tools.Env, command any) (CLIQuickReply, error) {
 	if err := ctx.Err(); err != nil {
 		return CLIQuickReply{}, err

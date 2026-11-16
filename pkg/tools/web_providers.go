@@ -839,41 +839,20 @@ func normPluginName(s string) string {
 	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "-", "_")
 }
 
-// Reports whether plugins.disabled lists the bundled web plugin of a provider
-func webPluginDisabled(env *Env, name string) bool {
-	if env == nil || env.Config == nil {
-		return false
-	}
-	want := normPluginName(name)
-	for _, key := range env.Config.Strings("plugins.disabled") {
-		k := strings.ToLower(strings.TrimSpace(key))
-		if strings.HasPrefix(k, "web/") && normPluginName(k[len("web/"):]) == want {
-			return true
-		}
-	}
-	return false
-}
-
-// Registered provider by name in the env scope then globally, nil when unknown or disabled in config
+// Registered provider by name in the env scope then globally, nil when no loaded plugin registered it
 func webProvider(env *Env, name string) WebProvider {
-	if name == "" || webPluginDisabled(env, name) {
+	if name == "" {
 		return nil
 	}
 	return webRegistry.GetProvider(context.Background(), name, webScope(env))
 }
 
-// GetWebProvider is the registry get_provider read of the env scope, nil when unknown or disabled in config
+// GetWebProvider is the registry get_provider read of the env scope, nil when no loaded plugin registered it
 func GetWebProvider(env *Env, name string) WebProvider { return webProvider(env, name) }
 
-// Every enabled provider visible in the env scope sorted by name
+// Every registered provider visible in the env scope sorted by name
 func listWebProviders(env *Env) []WebProvider {
-	out := []WebProvider{}
-	for _, p := range webRegistry.ListProviders(context.Background(), webScope(env)) {
-		if !webPluginDisabled(env, p.Name()) {
-			out = append(out, p)
-		}
-	}
-	return out
+	return append([]WebProvider{}, webRegistry.ListProviders(context.Background(), webScope(env))...)
 }
 
 // ListWebProviders is the registry list_providers read of the env scope

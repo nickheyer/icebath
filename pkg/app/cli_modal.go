@@ -128,27 +128,6 @@ func pollModalQueue[T any](c *CLI, ctx context.Context, response <-chan T, deadl
 	}
 }
 
-// Current sudo panel state
-func (c *CLI) sudoModal() *sudoModalState {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	return c.sudoState
-}
-
-// Current approval panel state
-func (c *CLI) approvalModal() *approvalModalState {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	return c.approvalState
-}
-
-// Current secret panel state
-func (c *CLI) secretModal() *secretModalState {
-	c.uiMu.Lock()
-	defer c.uiMu.Unlock()
-	return c.secretState
-}
-
 // Installs or clears the sudo panel with its deadline
 func (c *CLI) setSudoModal(state *sudoModalState, deadline float64) {
 	c.uiMu.Lock()
@@ -247,37 +226,6 @@ func (c *CLI) approvalChoices(command string, allowPermanent, allowSession, smar
 		choices = append(choices, "view")
 	}
 	return choices
-}
-
-// Processes the selected approval choice, view expanding the command in place
-func (c *CLI) handleApprovalSelection() {
-	c.uiMu.Lock()
-	state := c.approvalState
-	if state == nil || state.Selected < 0 || state.Selected >= len(state.Choices) {
-		c.uiMu.Unlock()
-		return
-	}
-	chosen := state.Choices[state.Selected]
-	if chosen == "view" {
-		state.ShowFull = true
-		kept := make([]string, 0, len(state.Choices))
-		for _, choice := range state.Choices {
-			if choice != "view" {
-				kept = append(kept, choice)
-			}
-		}
-		state.Choices = kept
-		if state.Selected >= len(kept) {
-			state.Selected = max(0, len(kept)-1)
-		}
-		c.uiMu.Unlock()
-		_ = c.invalidate()
-		return
-	}
-	offer(state.response, chosen)
-	c.approvalState = nil
-	c.uiMu.Unlock()
-	_ = c.invalidate()
 }
 
 // Masked master password prompt for an external password manager on the sudo panel, empty when it stays locked

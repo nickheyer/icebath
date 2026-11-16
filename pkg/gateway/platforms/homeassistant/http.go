@@ -21,6 +21,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -221,9 +222,6 @@ func transportError(rawURL string, err error) error {
 	return &clientError{kind: "ClientOSError", text: pyhttpx.OSErrorText(err), err: err}
 }
 
-// Accept-Encoding an aiohttp session sends when zstd is importable and Brotli is not installed
-const defaultAcceptEncoding = "gzip, deflate, zstd"
-
 // Body decoded as the aiohttp payload parser decodes gzip, deflate and zstd, with its errors for br and corrupt data
 func decodeContent(encoding string, raw []byte, rawURL string) ([]byte, error) {
 	enc := strings.ToLower(encoding)
@@ -370,8 +368,9 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 	if err != nil {
 		return nil, &clientError{kind: "InvalidUrlClientError", text: rawURL, err: err}
 	}
-	req.Header.Set("Accept", "*/*")
-	req.Header.Set("Accept-Encoding", defaultAcceptEncoding)
+	req.Header.Set("Accept", pyaiohttpws.Accept)
+	req.Header.Set("Accept-Encoding", pyaiohttpws.AcceptEncoding)
+	req.Header.Set("User-Agent", pyaiohttpws.UserAgent)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}

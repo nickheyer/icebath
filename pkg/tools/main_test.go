@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 	installGitlockDoubles()
 	installWorktreeDoubles()
 	installProfileStoreDoubles()
+	installBundledWebProviders()
 	hermetic.AroundEachTest(m, mainContextState, isolatedPlatformDefault)
 	os.Exit(runUnderPrivateHome(m))
 }

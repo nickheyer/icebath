@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 
@@ -45,45 +44,6 @@ func TestTwoIndependentSessionsAreIsolated(t *testing.T) {
 	a.toggleYolo()
 	if !tools.IsSessionYoloEnabled("session-yolo-a") || tools.IsSessionYoloEnabled("session-yolo-b") {
 		t.Fatal("sessions not isolated")
-	}
-}
-
-func TestHelperReflectsToggle(t *testing.T) {
-	c := yoloStandIn(t, yoloSessionKey)
-	withConsoleInput(t, "")
-	if c.isSessionYoloActive() {
-		t.Fatal("active before toggle")
-	}
-	c.toggleYolo()
-	if !c.isSessionYoloActive() {
-		t.Fatal("inactive after on")
-	}
-	c.toggleYolo()
-	if c.isSessionYoloActive() {
-		t.Fatal("active after off")
-	}
-}
-
-func TestHelperHonorsFrozenYoloMode(t *testing.T) {
-	c := yoloStandIn(t, yoloSessionKey)
-	t.Cleanup(tools.SwapYoloModeFrozen(true))
-	if !c.isSessionYoloActive() {
-		t.Fatal("frozen yolo not reflected")
-	}
-}
-
-func TestToggleUnderFrozenYoloReportsLockedAndStaysOn(t *testing.T) {
-	c := yoloStandIn(t, yoloSessionKey)
-	out := withConsoleInput(t, "")
-	t.Cleanup(tools.SwapYoloModeFrozen(true))
-	c.toggleYolo()
-	c.toggleYolo()
-	if !c.isSessionYoloActive() || tools.IsSessionYoloEnabled(yoloSessionKey) {
-		t.Fatal("frozen toggle changed the session flag")
-	}
-	printed := out.String()
-	if !strings.Contains(printed, "locked ON") || strings.Contains(printed, "will require approval") {
-		t.Fatalf("printed %q", printed)
 	}
 }
 

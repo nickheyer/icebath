@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
@@ -16,8 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/kanban"
-	"github.com/nickheyer/icebath/pkg/observability"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -49,18 +47,6 @@ func routeSignature(model string, rt *cliRuntime) string {
 	return fmt.Sprintf("%q|%q|%q|%q|%q|%q|%q", model, rt.Provider, rt.RequestedProvider, rt.BaseURL, rt.APIMode, rt.Command, strings.Join(rt.Args, "\x00"))
 }
 
-// Names why a benched credential is cooling down from what the pool recorded
-func cooldownCause(c *CLI, entry provider.PooledCredential) string {
-	reason := strings.ToLower(entry.LastErrorReason)
-	if entry.LastErrorCode == 402 || entry.LastErrorCode == 429 || strings.Contains(reason, "rate") || strings.Contains(reason, "quota") || strings.Contains(reason, "insufficient") {
-		return i18n.T(c.ctx, "cli.startup.cooldown_cause_rate_limit", "", nil)
-	}
-	if entry.LastErrorCode == 0 || strings.Contains(reason, "refresh") {
-		return i18n.T(c.ctx, "cli.startup.cooldown_cause_token_refresh", "", nil)
-	}
-	return i18n.T(c.ctx, "cli.startup.cooldown_cause_http", "", map[string]any{"code": entry.LastErrorCode})
-}
-
 // Credential pool surface the startup gate reads, the agent.credential_pool.CredentialPool methods it calls
 type startupCredentialPool interface {
 	HasCredentials() bool
@@ -82,36 +68,6 @@ var (
 	}
 	resolveRuntimeProviderFn = provider.ResolveRuntimeProvider
 )
-
-// Explains why a provider's credential pool has nothing selectable, cooling first when a cooldown is live
-func credentialPoolNotice(c *CLI, providerName string) (bool, []string) {
-	pool := startupLoadPool(c, providerName)
-	if pool == nil || !pool.HasCredentials() || pool.HasAvailable("") {
-		return false, nil
-	}
-	nextAt, hasNext := pool.NextAvailableAt("")
-	entries := pool.Entries()
-	var lines []string
-	if hasNext {
-		minutes := max(1, int((time.Until(nextAt).Seconds()+59)/60))
-		cause := i18n.T(c.ctx, "cli.startup.cooldown_cause_failed_request", "", nil)
-		for _, e := range entries {
-			if e.LastStatus == provider.StatusExhausted {
-				cause = cooldownCause(c, e)
-				break
-			}
-		}
-		lines = append(lines, i18n.T(c.ctx, "cli.startup.credential_cooling_down", "", map[string]any{"provider": providerName, "cause": cause, "minutes": minutes}))
-	}
-	for _, e := range entries {
-		if e.LastStatus == provider.StatusDead {
-			reason := firstNonEmpty(e.LastErrorMessage, e.LastErrorReason, i18n.T(c.ctx, "cli.startup.sign_in_lost", "", nil))
-			lines = append(lines, i18n.T(c.ctx, "cli.startup.sign_in_was_lost", "", map[string]any{"provider": providerName, "reason": reason}))
-			break
-		}
-	}
-	return hasNext, lines
-}
 
 // Returns the user and total message count suffix of the resumed session line
 func resumeCounts(c *CLI, userCount, total int) string {
@@ -528,131 +484,6 @@ func (c *CLI) resolveFallbackRuntime(primaryErr error) *provider.Runtime {
 	return nil
 }
 
-// Silently probes whether any inference provider can be resolved
-func (c *CLI) runtimeCredentialsReady() bool {
-	ready, _ := c.probeRuntimeCredentials()
-	return ready
-}
-
-// Reports readiness and the error that stopped resolution, never printing or mutating CLI state
-func (c *CLI) probeRuntimeCredentials() (bool, error) {
-	runtime, err := resolveRuntimeProviderFn(c.ctx, home.Dir(c.ctx), c.requestedProvider, "", c.explicitBaseURL, c.explicitAPIKey)
-	if err != nil {
-		return false, err
-	}
-	if runtime == nil {
-		return false, nil
-	}
-	if runtime.TokenSource != nil || runtime.APIKey != "" {
-		return runtime.BaseURL != "", nil
-	}
-	var authErr error
-	if runtime.AuthError != nil {
-		authErr = runtime.AuthError
-	}
-	return keylessCustomBase(runtime.BaseURL), authErr
-}
-
-// Routes a blank install to the provider wizard, a benched or signed out profile to its reason
-func (c *CLI) maybeOfferFirstRunSetup() {
-	if !c.console.StdinIsTTY() {
-		return
-	}
-	ready, err := c.probeRuntimeCredentials()
-	if !ready && !c.explainUnusableCredentials(err) {
-		c.offerFirstRunSetup()
-	}
-}
-
-// Prints why a configured credential is unusable, false when nothing is configured at all
-func (c *CLI) explainUnusableCredentials(err error) bool {
-	if err == nil {
-		return false
-	}
-	var authErr *provider.AuthError
-	isAuth := errors.As(err, &authErr)
-	if isAuth && authErr.Code == "no_provider_configured" {
-		return false
-	}
-	providerName := c.requestedProvider
-	if isAuth && authErr.Provider != "" {
-		providerName = authErr.Provider
-	}
-	cooling, lines := false, []string{}
-	if providerName != "" && providerName != "auto" {
-		cooling, lines = credentialPoolNotice(c, providerName)
-	}
-	cprint("")
-	if cooling {
-		cprint("⚠️  " + pyrich.Escape(lines[0]))
-		lines = lines[1:]
-		cprint("  " + pyrich.Escape(err.Error()))
-	} else if isAuth {
-		cprint("⚠️  " + pyrich.Escape(provider.FormatAuthError(authErr)))
-	} else {
-		cprint("⚠️  " + pyrich.Escape(err.Error()))
-	}
-	for _, line := range lines {
-		cprint("  " + pyrich.Escape(line))
-	}
-	return true
-}
-
-// Offers the provider picker when no provider is configured, true when one was configured
-func (c *CLI) offerFirstRunSetup() bool {
-	cprint("")
-	cprint(i18n.T(c.ctx, "cli.startup.first_run_no_provider", "", nil))
-	cprint("  " + i18n.T(c.ctx, "cli.startup.first_run_pick_provider", "", nil))
-	answer, err := c.console.Input("  " + i18n.T(c.ctx, "cli.startup.first_run_prompt", "", nil) + " ")
-	if err != nil {
-		fmt.Fprintln(c.console.Out)
-		answer = "n"
-	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	if answer == "n" || answer == "no" {
-		cprint("  " + i18n.T(c.ctx, "cli.startup.first_run_skipped", "", nil))
-		return false
-	}
-	setupErr := observability.ProviderSetupSurface(c.ctx, "cli_setup", func(ctx context.Context) error {
-		return selectProviderAndModel(ctx)
-	})
-	if setupErr != nil {
-		if errors.Is(setupErr, ErrSetupCancelled) {
-			fmt.Fprintln(c.console.Out)
-			cprint("  " + i18n.T(c.ctx, "cli.startup.first_run_cancelled", "", nil))
-			return false
-		}
-		cliLogger.Debug(fmt.Sprintf("first-run provider setup failed: %v", setupErr))
-		cprint("  " + i18n.T(c.ctx, "cli.startup.provider_setup_failed", "", map[string]any{"error": setupErr}))
-		cprint("  " + i18n.T(c.ctx, "cli.startup.run_model_to_retry", "", nil))
-		return false
-	}
-	if cfg, lerr := config.Load(home.Dir(c.ctx), nil); lerr == nil {
-		if modelCfg, ok := cfg["model"].(map[string]any); ok {
-			if p := strings.TrimSpace(cliStr(modelCfg["provider"], "")); p != "" {
-				c.requestedProvider = p
-			}
-			newModel := strings.TrimSpace(cliStr(modelCfg["default"], cliStr(modelCfg["model"], "")))
-			if newModel != "" {
-				c.model = newModel
-				if c.explicitReasoningConfig == nil {
-					c.resolveCLIReasoning()
-				}
-			}
-		}
-	} else {
-		cliLogger.Debug(fmt.Sprintf("first-run config re-sync failed: %v", lerr))
-	}
-	retireAgent(c)
-	c.activeAgentRouteSignature = ""
-	if c.runtimeCredentialsReady() {
-		cprint("  " + i18n.T(c.ctx, "cli.startup.provider_configured", "", nil))
-		return true
-	}
-	cprint("  " + i18n.T(c.ctx, "cli.startup.provider_setup_incomplete", "", nil))
-	return false
-}
-
 // Returns the effective model and runtime for one turn, attaching static fast tier request overrides
 func (c *CLI) resolveTurnAgentConfig(userMessage any) turnRoute {
 	rt := currentRuntime(c)
@@ -879,56 +710,6 @@ func (c *CLI) resumeHistoryLimitError(tipOnly bool) string {
 		cliLogger.Warn(fmt.Sprintf("Resume safety check failed for %s (proceeding without guard): %v", c.sessionID, err))
 	}
 	return ""
-}
-
-// Loads a resumed session's history early so run can display it, true when history loaded
-func (c *CLI) preloadResumedSession() bool {
-	if !c.resumed || c.sessionDB == nil {
-		return false
-	}
-	sessionMeta := c.sessionMeta(c.sessionID)
-	if sessionMeta == nil {
-		c.consolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(i18n.T(c.ctx, "cli.resume.session_not_found", "", map[string]any{"session_id": c.sessionID}))))
-		c.consolePrint(fmt.Sprintf("[dim]%s[/]", pyrich.Escape(i18n.T(c.ctx, "cli.resume.session_id_hint", "", nil))))
-		return false
-	}
-	sessionMeta = c.followCompressionChain(sessionMeta, func(rid string) {
-		c.consolePrint(fmt.Sprintf("[dim]%s[/]", pyrich.Escape(i18n.T(c.ctx, "cli.resume.compressed_into", "", map[string]any{"session_id": c.sessionID, "descendant": rid}))))
-	})
-	if refusal := kanban.KanbanResumeRefusal(c.ctx, c.sessionDB, c.resumeReadID); refusal != "" {
-		c.consolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(refusal)))
-		c.resumed = false
-		c.sessionID = newSessionID(c.sessionStart)
-		return false
-	}
-	if limitErr := c.resumeHistoryLimitError(false); limitErr != "" {
-		c.resumeHistoryError = limitErr
-		c.consolePrint(fmt.Sprintf("[bold red]%s[/] %s", pyrich.Escape(i18n.T(c.ctx, "cli.resume.cannot_resume_prefix", "", nil)), limitErr))
-		return false
-	}
-	restored, displayHistory, err := c.sessionDB.GetResumeConversations(c.ctx, c.resumeReadID)
-	accent := accentHex()
-	if err != nil || len(restored) == 0 {
-		c.consolePrint(fmt.Sprintf("[%s]%s[/]", accent, pyrich.Escape(i18n.T(c.ctx, "cli.resume.session_no_messages", "", map[string]any{"session_id": c.sessionID}))))
-		return false
-	}
-	c.conversationHistory = withoutSessionMeta(restored)
-	c.resumeDisplayHistory = withoutSessionMeta(displayHistory)
-	msgCount := 0
-	for _, m := range c.resumeDisplayHistory {
-		if agent.IsUserOriginatedTurn(m) {
-			msgCount++
-		}
-	}
-	titlePart := ""
-	if title := cliStr(sessionMeta["title"], ""); title != "" {
-		titlePart = fmt.Sprintf(" %q", title)
-	}
-	c.consolePrint(fmt.Sprintf("[%s]%s [bold]%s[/bold]%s %s[/]", accent, pyrich.Escape(i18n.T(c.ctx, "cli.resume.resumed_session", "", nil)),
-		c.sessionID, titlePart, resumeCounts(c, msgCount, len(c.conversationHistory))))
-	c.restoreSessionState(sessionMeta, false)
-	c.reopenSession()
-	return true
 }
 
 // Drops session_meta rows from a stored conversation

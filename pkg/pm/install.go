@@ -89,7 +89,7 @@ func defaultStore(ctx context.Context) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewStore(root), nil
+	return storeFor(ctx, root), nil
 }
 
 // Reports a path that exists without following a final symlink
@@ -1122,7 +1122,7 @@ func ensure(ctx context.Context, name string, opts EnsureOptions) (*Runner, erro
 			if err != nil {
 				return nil, err
 			}
-			store = NewStore(root)
+			store = storeFor(ctx, root)
 		}
 		own, err := defaultStore(ctx)
 		if err != nil {

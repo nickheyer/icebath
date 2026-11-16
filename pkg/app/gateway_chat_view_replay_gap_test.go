@@ -31,7 +31,7 @@ func replayGapOneshot(t *testing.T, mode string, quiet bool, emitter *StreamJSON
 		}
 		done := make(chan outcome, 1)
 		go func() {
-			code, err := view.Run(ctx, "write a long answer", true)
+			code, err := view.Run(ctx, "write a long answer")
 			done <- outcome{code, err}
 		}()
 		select {

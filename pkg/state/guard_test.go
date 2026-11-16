@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 const guardHelperEnv = "ICEBATH_GUARD_ANCESTRY_HELPER"
@@ -183,6 +186,34 @@ func TestRealPlatformStateRootFollowsTheAccountHome(t *testing.T) {
 	want := filepath.Join(realpathLax(dir), ".icebath")
 	if !ok || root != want {
 		t.Fatalf("root = %q, %v, want %q", root, ok, want)
+	}
+}
+
+// Environment flag of the child that checks the guard from inside a binary launched with a developer home
+const developerHomeChildEnv = "ICEBATH_STATE_GUARD_DEVELOPER_HOME_CHILD"
+
+func TestGuardRefusesTheStateDBOfTheHomeTheDeveloperLaunchedWith(t *testing.T) {
+	if os.Getenv(developerHomeChildEnv) == "1" {
+		root := filepath.Join(homeguard.Original(), ".icebath")
+		if runtime.GOOS == "windows" {
+			root = filepath.Join(homeguard.Original(), "AppData", "Local", "icebath")
+		}
+		for _, path := range []string{filepath.Join(root, "state.db"), filepath.Join(root, "profiles", "work", "state.db")} {
+			if err := ensureTestIsolation(path); err == nil || !strings.Contains(err.Error(), "live-system guard") {
+				t.Errorf("open of %s was not refused: %v", path, err)
+			}
+		}
+		if err := ensureTestIsolation(filepath.Join(t.TempDir(), "state.db")); err != nil {
+			t.Errorf("a temp state.db was refused: %v", err)
+		}
+		return
+	}
+	developer := filepath.Join(string(filepath.Separator), "state-guard-developer-home")
+	cmd := exec.Command(os.Args[0], "-test.run=^TestGuardRefusesTheStateDBOfTheHomeTheDeveloperLaunchedWith$", "-test.v")
+	cmd.Env = append(os.Environ(), developerHomeChildEnv+"=1", "HOME="+developer, "USERPROFILE="+developer)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "--- PASS: TestGuardRefusesTheStateDBOfTheHomeTheDeveloperLaunchedWith") {
+		t.Fatalf("child launched with %s: %v\n%s", developer, err, out)
 	}
 }
 

@@ -110,7 +110,7 @@ func (p *fakeGatewayPeer) connector() func(ctx context.Context) (gatewayChatConn
 }
 
 // Runs the view to completion within the deadline the Python cases give asyncio.wait_for
-func runViewWithin(t *testing.T, v *GatewayChatView, query string, oneshot bool) (int, error) {
+func runViewWithin(t *testing.T, v *GatewayChatView, query string) (int, error) {
 	t.Helper()
 	type outcome struct {
 		code int
@@ -120,7 +120,7 @@ func runViewWithin(t *testing.T, v *GatewayChatView, query string, oneshot bool)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		code, err := v.Run(ctx, query, oneshot)
+		code, err := v.Run(ctx, query)
 		done <- outcome{code, err}
 	}()
 	select {
@@ -138,11 +138,4 @@ func onViewLoop[T any](v *GatewayChatView, fn func() T) T {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return fn()
-}
-
-// Runs one slash command line on the view loop
-func viewCommand(v *GatewayChatView, line string) (bool, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return v.command(context.Background(), line)
 }

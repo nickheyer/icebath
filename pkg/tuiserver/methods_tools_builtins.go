@@ -416,13 +416,14 @@ func isSnapshotRestore(arg string) bool {
 	return len(words) > 0 && (pystr.Lower(words[0]) == "restore" || pystr.Lower(words[0]) == "rewind")
 }
 
-// Blocks snapshot restore in the TUI, every other snapshot form falling through to the refusal
+// Blocks snapshot restore for attached clients, every other snapshot form falling through to the refusal
 func cmdSnapshot(ctx context.Context, rid any, params map[string]any, session *tuigateway.Session, name, arg string) map[string]any {
 	if !isSnapshotRestore(arg) {
 		return nil
 	}
-	return execOut(rid, "/snapshot restore is blocked in the TUI because it changes config/state on disk "+
-		"while the live agent has cached settings. Run it in the classic CLI, then restart the TUI.")
+	return execOut(rid, "/snapshot restore is blocked over this connection because it changes config/state on disk "+
+		"while the live agent has cached settings. Type /snapshot restore in the terminal UI (bare `icebath`), "+
+		"which hands the profile off the gateway for the restore.")
 }
 
 // Compresses the live session, relayed to the compute host when it owns the session

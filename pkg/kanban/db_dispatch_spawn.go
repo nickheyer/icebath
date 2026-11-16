@@ -357,7 +357,6 @@ func defaultSpawn(ctx context.Context, task *Task, workspace string, board *stri
 	env["ICEBATH_KANBAN_BOARD"] = slug
 	env["ICEBATH_PROFILE"] = profileArg
 	delete(env, tools.DelegatedChildEnvMarker)
-	delete(env, "ICEBATH_TUI")
 	cmd, err := workerArgv()
 	if err != nil {
 		return nil, err

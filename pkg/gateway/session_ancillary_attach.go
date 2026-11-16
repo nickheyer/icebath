@@ -42,6 +42,7 @@ func ancillaryHandlers(c *AuthorityConnection) map[string]controlHandler {
 	out["reload.mcp"] = bind(reloadMCP)
 	out["file.attach"] = bind(attachFile)
 	out["tools.show"] = bind(showTools)
+	out["tools.configure"] = bind(configureTools)
 	out["skills.reload"] = bind(reloadSkills)
 	for _, name := range []string{"subagent.steer", "subagent.interrupt"} {
 		steer := name == "subagent.steer"

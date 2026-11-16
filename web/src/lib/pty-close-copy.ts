@@ -53,7 +53,7 @@ export const PTY_GAVE_UP_BANNER: PtyBanner = {
   action: 'check-server'
 }
 
-/** Overlay copy: the icebath --tui child exited; a crash looks identical to `/exit`. */
+/** Overlay copy: the icebath child exited; a crash looks identical to `/exit`. */
 export const PTY_SESSION_ENDED_MESSAGE =
   'Chat session ended. If you did not end it yourself, the agent may have crashed — open Logs to see why, or start a new session.'
 

@@ -13,7 +13,7 @@ import (
 
 const historyMax = 1000
 
-// Prompt history shared with the classic CLI file, loaded once and appended per submit
+// Prompt history of the active home, loaded once and appended per submit
 type inputHistory struct {
 	mu    sync.Mutex
 	file  string
@@ -21,7 +21,7 @@ type inputHistory struct {
 	now   func() time.Time
 }
 
-// History of the active home, the .icebath_history file the classic CLI also keeps
+// History of the active home, kept in its .icebath_history file
 func newInputHistory(ctx context.Context) *inputHistory {
 	return &inputHistory{file: filepath.Join(home.Dir(ctx), ".icebath_history"), now: time.Now}
 }

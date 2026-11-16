@@ -40,6 +40,13 @@ const (
 	closeMessageTooBig = 1009
 )
 
+// Session default headers of the pinned aiohttp 3.14.5 on Python 3.14 with zstd importable and Brotli absent
+const (
+	UserAgent      = "Python/3.14 aiohttp/3.14.5"
+	Accept         = "*/*"
+	AcceptEncoding = "gzip, deflate, zstd"
+)
+
 // One received message, Data a string for text, bytes for binary, the close code for close and the error for error
 type Message struct {
 	Type  MsgType
@@ -194,11 +201,10 @@ func Connect(ctx context.Context, rawURL string, opts Options) (*Conn, error) {
 	if header == nil {
 		header = http.Header{}
 	}
-	if header.Get("Accept") == "" {
-		header.Set("Accept", "*/*")
-	}
-	if header.Get("Accept-Encoding") == "" {
-		header.Set("Accept-Encoding", "gzip, deflate, zstd")
+	for key, value := range map[string]string{"Accept": Accept, "Accept-Encoding": AcceptEncoding, "User-Agent": UserAgent} {
+		if header.Get(key) == "" {
+			header.Set(key, value)
+		}
 	}
 	ws, resp, err := dialer.DialContext(ctx, rawURL, header)
 	if err != nil {

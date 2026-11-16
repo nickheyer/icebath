@@ -60,6 +60,10 @@ func (p *braveFreeProvider) SetupSchema() map[string]any {
 		"BRAVE_SEARCH_API_KEY", "Brave Search API key (free tier)", "https://brave.com/search/api/", nil)
 }
 
-func init() {
-	RegisterWebProvider(&braveFreeProvider{baseWebProvider{name: "brave-free", display: "Brave Search (Free)", keyEnv: "BRAVE_SEARCH_API_KEY"}})
+// Brave free tier search provider the web/brave_free plugin registers
+func NewBraveFreeWebProvider() WebProvider {
+	return &braveFreeProvider{baseWebProvider{name: "brave-free", display: "Brave Search (Free)", keyEnv: "BRAVE_SEARCH_API_KEY"}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*braveFreeProvider) PyTypeName() string { return "BraveFreeWebSearchProvider" }

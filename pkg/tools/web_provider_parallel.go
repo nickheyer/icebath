@@ -457,6 +457,10 @@ func (p *parallelProvider) SetupSchema() map[string]any {
 		"Objective-tuned search + parallel page extraction via the Parallel SDK. Unthrottled, guaranteed service.")
 }
 
-func init() {
-	RegisterWebProvider(&parallelProvider{baseWebProvider{name: "parallel", display: "Parallel", keyEnv: "PARALLEL_API_KEY", extract: true, keyless: true}})
+// Parallel search and extract provider the web/parallel plugin registers
+func NewParallelWebProvider() WebProvider {
+	return &parallelProvider{baseWebProvider{name: "parallel", display: "Parallel", keyEnv: "PARALLEL_API_KEY", extract: true, keyless: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*parallelProvider) PyTypeName() string { return "ParallelWebSearchProvider" }

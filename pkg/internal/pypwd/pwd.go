@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Passwd is one account record like pwd.struct_passwd
@@ -28,8 +30,11 @@ type KeyError struct{ Msg string }
 
 func (e *KeyError) Error() string { return e.Msg }
 
+// Account database of the host, the one whose entry for this process a test binary sees with its private home
+const systemPasswdPath = "/etc/passwd"
+
 var (
-	passwdPath = "/etc/passwd"
+	passwdPath = systemPasswdPath
 	groupPath  = "/etc/group"
 )
 
@@ -70,7 +75,11 @@ func Getpwall() ([]Passwd, error) {
 		if err1 != nil || err2 != nil {
 			continue
 		}
-		out = append(out, Passwd{Name: r[0], Passwd: r[1], UID: uid, GID: gid, Gecos: r[4], Dir: r[5], Shell: r[6]})
+		dir := r[5]
+		if passwdPath == systemPasswdPath {
+			dir = homeguard.AccountDir(uid, dir)
+		}
+		out = append(out, Passwd{Name: r[0], Passwd: r[1], UID: uid, GID: gid, Gecos: r[4], Dir: dir, Shell: r[6]})
 	}
 	return out, nil
 }

@@ -88,7 +88,7 @@ var CommandObserveResult = pydantic.NewModel("CommandObserveResult", ClosedConfi
 	pydantic.Req("queued", pydantic.Bool),
 )
 
-var _ = CanonicalMethod("command.observe", CommandObserveParams, CommandObserveResult, "Fire-only: a recognized command the classic CLI or the TUI runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired).")
+var _ = CanonicalMethod("command.observe", CommandObserveParams, CommandObserveResult, "Fire-only: a recognized command the terminal UI or the headless chat runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired).")
 
 var CanonicalSessionInfoParams = pydantic.NewModel("CanonicalSessionInfoParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -188,7 +188,7 @@ var SessionStats = pydantic.NewModel("SessionStats", ClosedConfig,
 	pydantic.Def("plan_gauge", pydantic.Nullable(PlanGauge), nil),
 ).Described("``gateway/session_usage.py::usage_stats``: session-cumulative counters (the agent's ``session_*``),\ncontext / compressor figures, rolling latency and throughput, rate-limit state, live subagents.")
 
-var _ = CanonicalMethod("session.stats", SessionStatsParams, SessionStats, "The session.usage dict on demand: what main's classic CLI read off its agent.")
+var _ = CanonicalMethod("session.stats", SessionStatsParams, SessionStats, "The session.usage dict on demand, read by the terminal UI and the headless chat.")
 
 var RollbackSessionDiffParams = pydantic.NewModel("RollbackSessionDiffParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -205,7 +205,7 @@ var RollbackSessionDiffResult = pydantic.NewModel("RollbackSessionDiffResult", C
 	pydantic.Def("error", pydantic.Nullable(pydantic.Str), nil),
 ).Described("``gateway/session_tui_ops.py::_session_diff``: ``CheckpointManager.session_diff`` under the\nsession's frozen checkpoint policy (``enabled: false`` when that policy does not checkpoint).\n``diff`` is bounded to fit one frame; ``diff_lines`` counts the whole body.")
 
-var _ = CanonicalMethod("rollback.session_diff", RollbackSessionDiffParams, RollbackSessionDiffResult, "The classic CLI's /diff session: everything changed since the session's earliest retained checkpoint, as data for its terminal renderer.")
+var _ = CanonicalMethod("rollback.session_diff", RollbackSessionDiffParams, RollbackSessionDiffResult, "/diff session: everything changed since the session's earliest retained checkpoint, as data for a terminal renderer.")
 
 var SessionExportParams = pydantic.NewModel("SessionExportParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),
@@ -236,7 +236,7 @@ var SessionAutomationResult = pydantic.NewModel("SessionAutomationResult", Close
 	pydantic.Def("error", pydantic.Nullable(pydantic.Dict(pydantic.Str)), nil),
 ).Described("``gateway/session_viewer_automation.py``: the manager's persisted state after the call (its own\nJSON, ``null`` when none) and the call's value, or the refusal main's manager raised.")
 
-var _ = CanonicalMethod("session.automation", SessionAutomationParams, SessionAutomationResult, "The classic CLI's /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row.")
+var _ = CanonicalMethod("session.automation", SessionAutomationParams, SessionAutomationResult, "The /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row.")
 
 var SessionDetachParams = pydantic.NewModel("SessionDetachParams", ParamsConfig,
 	pydantic.Req("session_id", pydantic.Str),

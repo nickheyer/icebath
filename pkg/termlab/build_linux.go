@@ -129,12 +129,12 @@ func RemoveBuild() error {
 	return os.RemoveAll(built.dir)
 }
 
-// Writes an icebath home with a loopback provider, metrics declined, the terminal UI and the settings given
+// Writes an icebath home with a loopback provider, metrics declined and the settings given
 func WriteConfig(dir string, settings map[string]string) error {
 	arena := map[string]any{}
 	cfg := map[string]any{
 		"model":     map[string]any{"provider": "custom", "default": "termlab-model", "base_url": "http://127.0.0.1:9/v1", "api_key": "termlab-loopback"},
-		"display":   map[string]any{"interface": "tui", "arena": arena},
+		"display":   map[string]any{"arena": arena},
 		"auxiliary": map[string]any{"title_generation": map[string]any{"enabled": false}},
 		"updates":   map[string]any{"check": false},
 	}

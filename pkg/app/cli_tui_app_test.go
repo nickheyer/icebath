@@ -213,10 +213,3 @@ func fakeMonotonic(t *testing.T, readings ...float64) {
 	modalPollInterval = time.Millisecond
 	t.Cleanup(func() { monotonic, modalPollInterval = prevClock, prevInterval })
 }
-
-// Registers the fake as the process wide application for the test
-func installTUIApp(t *testing.T, app *fakeTUIApp) {
-	t.Helper()
-	setTUIApp(app)
-	t.Cleanup(func() { setTUIApp(nil) })
-}

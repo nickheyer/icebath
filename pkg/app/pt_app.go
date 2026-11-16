@@ -11,15 +11,12 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
-	"github.com/nickheyer/icebath/pkg/ui/theme"
 )
 
 // ptWindowKind tells what a layout row group draws
@@ -156,50 +153,6 @@ type ptApplication struct {
 	onResize          []func(cols, rows int)
 }
 
-// Builds an application reading keys from in and drawing to out
-func newPTApplication(in io.Reader, out io.Writer) *ptApplication {
-	installPromptKeyAliases()
-	a := &ptApplication{in: in, out: out, clipboard: &ptClipboard{}, keyBindings: &ptKeyBindings{}, timeoutLen: time.Second,
-		outboxSignal: make(chan struct{}, 1), editingMode: ptEditingEmacs, viState: newPTViState()}
-	a.cprNotSupportedCallback = func() {
-		a.RunInTerminal(func() {
-			_, _ = io.WriteString(a.out, "WARNING: your terminal doesn't support cursor position requests (CPR).\r\n")
-		})
-	}
-	a.setBuffer(newPTBuffer(nil))
-	a.processor = &ptKeyProcessor{app: a}
-	a.defaultBindings = ptLoadDefaultBindings(a)
-	user, _ := newPTStyle(nil)
-	a.style = newPTMergedStyle(user)
-	return a
-}
-
-// Installs the input buffer, wiring its repaint and background work to the loop
-func (a *ptApplication) setBuffer(b *ptBuffer) {
-	a.buffer = b
-	b.onChange = a.publishSnapshot
-	b.editingVi = func() bool { return a.editingMode == ptEditingVi }
-	b.spawn = func(work func() func()) {
-		if !a.running.Load() {
-			if apply := work(); apply != nil {
-				apply()
-			}
-			return
-		}
-		go func() {
-			if apply := work(); apply != nil {
-				a.CallSoonThreadsafe(apply)
-			}
-		}()
-	}
-	a.publishSnapshot()
-}
-
-// Publishes the buffer text and cursor for readers off the loop
-func (a *ptApplication) publishSnapshot() {
-	a.snapshot.Store(&modalInputSnapshot{Text: a.buffer.text(), Cursor: a.buffer.cursor})
-}
-
 // Replaces the user style rules
 func (a *ptApplication) setStyle(d *styleDict) error {
 	user, err := ptStyleFromDict(d)
@@ -209,9 +162,6 @@ func (a *ptApplication) setStyle(d *styleDict) error {
 	a.style = newPTMergedStyle(user)
 	return nil
 }
-
-// Reports whether the application finished or was asked to exit
-func (a *ptApplication) isDone() bool { return a.done.Load() }
 
 // Starts recording an emacs keyboard macro
 func (a *ptApplication) startMacro() { a.emacsMacroRecording = &[]ptKeyPress{} }
@@ -251,28 +201,6 @@ func (a *ptApplication) send(msg tea.Msg) {
 	}
 }
 
-// Delivers queued messages to the program one at a time until it stops
-func (a *ptApplication) pump(p *tea.Program, stop <-chan struct{}) {
-	for {
-		select {
-		case <-stop:
-			return
-		case <-a.outboxSignal:
-		}
-		for {
-			a.queueMu.Lock()
-			if len(a.outbox) == 0 {
-				a.queueMu.Unlock()
-				break
-			}
-			msg := a.outbox[0]
-			a.outbox = a.outbox[1:]
-			a.queueMu.Unlock()
-			p.Send(msg)
-		}
-	}
-}
-
 // Asks the loop to run queued callbacks and repaint, coalescing repeated requests
 func (a *ptApplication) wake() {
 	if a.wakePending.CompareAndSwap(false, true) {
@@ -295,17 +223,6 @@ func (a *ptApplication) Invalidate() error {
 // Reports whether the program is running
 func (a *ptApplication) IsRunning() bool { return a.running.Load() }
 
-// Reports whether typed bytes wait unread on the input
-func (a *ptApplication) inputWaiting() bool {
-	if a.inputWaitingFn != nil {
-		return a.inputWaitingFn()
-	}
-	if f, ok := a.in.(*os.File); ok {
-		return fileReadable(f)
-	}
-	return false
-}
-
 // Reports whether the caller is the goroutine running the program loop
 func (a *ptApplication) OnLoop() bool {
 	return a.running.Load() && a.loopGID.Load() == pythread.GoroutineID()
@@ -325,18 +242,6 @@ func (a *ptApplication) CallSoonThreadsafe(fn func()) bool {
 	a.queueMu.Unlock()
 	a.wake()
 	return true
-}
-
-// Runs fn on the loop after a delay, nil when no loop is running
-func (a *ptApplication) callLater(d time.Duration, fn func()) *time.Timer {
-	if a.callLaterHook != nil {
-		a.callLaterHook(d, fn)
-		return nil
-	}
-	if !a.running.Load() {
-		return nil
-	}
-	return time.AfterFunc(d, func() { a.CallSoonThreadsafe(fn) })
 }
 
 // Writes an escape sequence through the program output, straight to the output when idle
@@ -476,66 +381,6 @@ func (a *ptApplication) Exit() {
 	}
 }
 
-// Feeds key presses through the bindings as if typed
-func (a *ptApplication) feedKeys(presses ...ptKeyPress) {
-	a.processor.feedMultiple(presses, false)
-	a.processor.processKeys()
-}
-
-// Runs the program until it exits, the terminal restored on return
-func (a *ptApplication) run() error {
-	a.loopGID.Store(pythread.GoroutineID())
-	opts := []tea.ProgramOption{tea.WithInput(guardedInput(a.in)), tea.WithOutput(a.out), tea.WithoutSignalHandler()}
-	if a.initialCols > 0 && a.initialRows > 0 {
-		opts = append(opts, tea.WithWindowSize(a.initialCols, a.initialRows))
-		a.width.Store(int32(a.initialCols))
-		a.rows.Store(int32(a.initialRows))
-	}
-	opts = append(opts, tea.WithFilter(a.filterMessage))
-	p := tea.NewProgram(&ptModel{app: a}, opts...)
-	a.program = p
-	a.viState.reset()
-	stop := make(chan struct{})
-	pumped := make(chan struct{})
-	a.done.Store(false)
-	a.running.Store(true)
-	releasePromptApp := tools.EnterPromptApp()
-	defer releasePromptApp()
-	go func() {
-		a.pump(p, stop)
-		close(pumped)
-	}()
-	if a.refreshInterval > 0 {
-		go func() {
-			ticker := time.NewTicker(time.Duration(a.refreshInterval * float64(time.Second)))
-			defer ticker.Stop()
-			for {
-				select {
-				case <-stop:
-					return
-				case <-ticker.C:
-					_ = a.Invalidate()
-				}
-			}
-		}()
-	}
-	_, err := p.Run()
-	a.running.Store(false)
-	releasePromptApp()
-	close(stop)
-	<-pumped
-	a.queueMu.Lock()
-	a.queue, a.outbox = nil, nil
-	a.queueMu.Unlock()
-	a.busy.Store(false)
-	a.wakePending.Store(false)
-	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
-		a.runErr.Store(&err)
-		return err
-	}
-	return nil
-}
-
 // ptModel adapts the application to the bubbletea model contract
 type ptModel struct{ app *ptApplication }
 
@@ -545,179 +390,8 @@ type ptCPRTimeoutMsg struct{}
 // Seconds a cursor position query may stay unanswered
 const ptCPRTimeout = 2 * time.Second
 
-// Drops kitty key reporting where the terminal mishandles it and asks for the cursor row when queries are enabled
-func (m *ptModel) Init() tea.Cmd {
-	var cmds []tea.Cmd
-	for _, fn := range m.app.onStart {
-		fn()
-	}
-	if m.app.disableKitty {
-		cmds = append(cmds, tea.Raw(ansi.PopKittyKeyboard(1)))
-	}
-	if m.app.enableCPR {
-		cmds = append(cmds, tea.RequestCursorPosition, tea.Tick(ptCPRTimeout, func(time.Time) tea.Msg { return ptCPRTimeoutMsg{} }))
-	}
-	return tea.Batch(cmds...)
-}
-
-// Routes one program message into the key processor, the callback queue or the resize hooks
-func (m *ptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	a := m.app
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		a.width.Store(int32(msg.Width))
-		a.rows.Store(int32(msg.Height))
-		a.appliedCols, a.appliedRows = msg.Width, msg.Height
-		a.lastHeight = 0
-		a.screenValid = false
-		for _, fn := range a.onResize {
-			fn(msg.Width, msg.Height)
-		}
-	case tea.KeyPressMsg:
-		a.feedKeys(ptKeyPressesForEvent(msg.Key())...)
-	case tea.PasteMsg:
-		a.feedKeys(ptKeyPress{Key: ptKeyBracketedPaste, Data: msg.Content})
-	case tea.FocusMsg:
-		a.feedKeys(ptKeyPress{Key: ptKeyIgnore, Data: "\x1b[I"})
-	case tea.BlurMsg:
-		a.feedKeys(ptKeyPress{Key: ptKeyIgnore, Data: "\x1b[O"})
-	case tea.CursorPositionMsg:
-		a.cprAnswered = true
-		a.minAvailableHeight = max(0, int(a.rows.Load())-msg.Y)
-	case ptCPRTimeoutMsg:
-		if !a.cprAnswered && a.cprNotSupportedCallback != nil {
-			a.cprNotSupportedCallback()
-		}
-	case ptWakeMsg:
-		a.wakePending.Store(false)
-		a.drainQueue()
-	case ptRunInTerminalMsg:
-		_ = a.program.ReleaseTerminal()
-		a.released.Store(true)
-		func() {
-			defer a.released.Store(false)
-			msg.fn()
-		}()
-		_ = a.program.RestoreTerminal()
-		a.hidden = false
-		a.lastHeight = 0
-		a.busy.Store(false)
-		if a.disableKitty {
-			a.send(tea.RawMsg{Msg: ansi.PopKittyKeyboard(1)})
-		}
-	case ptAfterRenderMsg:
-		a.afterRenderQueued = false
-		for _, fn := range a.afterRender {
-			fn()
-		}
-		return m, nil
-	}
-	a.publishSnapshot()
-	if len(a.afterRender) > 0 && !a.afterRenderQueued {
-		a.afterRenderQueued = true
-		return m, tea.Tick(time.Second/60, func(time.Time) tea.Msg { return ptAfterRenderMsg{} })
-	}
-	return m, nil
-}
-
-// Runs every callback queued for the loop
-func (a *ptApplication) drainQueue() {
-	for {
-		a.queueMu.Lock()
-		queue := a.queue
-		a.queue = nil
-		a.queueMu.Unlock()
-		if len(queue) == 0 {
-			return
-		}
-		for _, fn := range queue {
-			fn()
-		}
-	}
-}
-
 // Message applying a terminal size the resize recovery held back
 type ptApplyResizeMsg struct{ cols, rows int }
-
-// Records each terminal size signal, the resize recovery deciding when the renderer learns of it
-func (a *ptApplication) filterMessage(_ tea.Model, msg tea.Msg) tea.Msg {
-	switch m := msg.(type) {
-	case tea.WindowSizeMsg:
-		a.width.Store(int32(m.Width))
-		a.rows.Store(int32(m.Height))
-		if !a.sizeSeen || a.onResizeSignal == nil {
-			a.sizeSeen = true
-			return msg
-		}
-		a.onResizeSignal()
-		return nil
-	case ptApplyResizeMsg:
-		return tea.WindowSizeMsg{Width: m.cols, Height: m.rows}
-	}
-	return msg
-}
-
-// Erases the chrome from the renderer's cursor and repaints it at the signalled terminal size
-func (a *ptApplication) applyResize() {
-	a.rawMu.Lock()
-	aim := a.aimRows
-	a.aimRows = 0
-	a.rawMu.Unlock()
-	if aim > 0 {
-		a.send(tea.RawMsg{Msg: ansi.CursorUp(aim)})
-	}
-	a.send(ptApplyResizeMsg{int(a.width.Load()), int(a.rows.Load())})
-}
-
-// Draws the chrome, nothing once the application is done or a function owns the terminal
-func (m *ptModel) View() tea.View {
-	a := m.app
-	var v tea.View
-	v.ReportFocus = true
-	done := a.done.Load()
-	if done || a.hidden {
-		a.chromeRows.Store(0)
-		a.cursorX, a.cursorY = 0, 0
-		a.lastView = v
-		return v
-	}
-	if a.redrawGate != nil && !a.redrawGate(false) {
-		return a.lastView
-	}
-	width, rows := a.appliedCols, a.appliedRows
-	if width <= 0 {
-		width = int(a.width.Load())
-	}
-	if rows <= 0 {
-		rows = int(a.rows.Load())
-	}
-	if width <= 0 {
-		width = 80
-	}
-	if rows <= 0 {
-		rows = 24
-	}
-	full := !a.screenValid || a.lastPaintCols != width || a.lastPaintRows != rows
-	lines, cx, cy := a.paintChrome(width, rows)
-	a.chromeRows.Store(int32(len(lines)))
-	v.SetContent(strings.Join(lines, "\n"))
-	a.cursorX, a.cursorY = 0, 0
-	if cy >= 0 && cy < len(lines) {
-		cur := tea.NewCursor(cx, cy)
-		cur.Shape = tea.CursorBlock
-		cur.Blink = false
-		v.Cursor = cur
-		a.cursorX, a.cursorY = cx, cy
-	}
-	a.frameID++
-	a.screenValid = true
-	a.lastPaintCols, a.lastPaintRows = width, rows
-	a.lastView = v
-	if a.afterRedraw != nil {
-		a.afterRedraw(full)
-	}
-	return v
-}
 
 // The renderer of this application
 func (a *ptApplication) Renderer() tuiRenderer { return a }
@@ -844,31 +518,6 @@ type ptFrame struct {
 	cx, cy int
 }
 
-// Renders the chrome, a guarded paint retrying a failed render once from a clean previous frame
-func (a *ptApplication) paintChrome(width, rows int) ([]string, int, int) {
-	if !a.guardedPaint {
-		return a.renderChrome(width, rows)
-	}
-	previous := &ptScreen{height: a.lastHeight}
-	result, err := hermesCallOutputScreenDiff(func(prev *ptScreen, _ string, _ int) (frame any, err error) {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("chrome render failed: %v", r)
-			}
-		}()
-		if prev == nil {
-			a.lastHeight, a.inputScroll, a.inputScroll2, a.menuScroll = 0, 0, 0, 0
-		}
-		lines, cx, cy := a.renderChrome(width, rows)
-		return ptFrame{lines, cx, cy}, nil
-	}, &ptScreen{height: a.lastHeight}, previous, "", width)
-	if err != nil {
-		panic(err)
-	}
-	frame := result.(ptFrame)
-	return frame.lines, frame.cx, frame.cy
-}
-
 // Characters of text as cells, control characters drawn the way prompt_toolkit shows them
 func ptCells(style, text string) []ptSeg {
 	out := make([]ptSeg, 0, len(text))
@@ -928,23 +577,6 @@ func ptWrapCells(line []ptSeg, width int) [][]ptSeg {
 	return rows
 }
 
-// Rows a line of the given display width takes when wrapped, at least one
-func ptLineHeight(textWidth, width int) int {
-	if width <= 0 {
-		return 100000000
-	}
-	return max(1, (textWidth+width-1)/width)
-}
-
-// Display width of a row of cells
-func ptRowWidth(row []ptSeg) int {
-	w := 0
-	for _, c := range row {
-		w += ptCellWidth(c)
-	}
-	return w
-}
-
 // Visual rows of a text window at the given width
 func (w *ptWindow) textRows(width int) [][]ptSeg {
 	if w.fragments == nil {
@@ -966,273 +598,6 @@ type ptInputContent struct {
 	lines     [][]ptSeg
 	cursorRow int
 	cursorCol int
-}
-
-// Builds the input lines with prompt, masking, empty input hint, ghost suggestion and selection applied
-func (a *ptApplication) inputContent() ptInputContent {
-	b := a.buffer
-	doc := b.document()
-	base := "class:text-area " + a.inputStyle
-	masked := a.password != nil && a.password()
-	content := ptInputContent{cursorRow: doc.cursorRow()}
-	index := 0
-	docLines := doc.lines()
-	multiple := a.viInsertMultipleMode()
-	for i, line := range docLines {
-		lineRunes := []rune(line)
-		styles := make([]string, len(lineRunes))
-		texts := make([]string, len(lineRunes))
-		for j, r := range lineRunes {
-			styles[j], texts[j] = base, string(r)
-		}
-		if from, to, ok := doc.selectionRangeAtLine(i); ok {
-			if from == 0 && to == 0 && len(lineRunes) == 0 {
-				styles, texts = []string{base + " class:selected "}, []string{" "}
-			} else {
-				for k := from; k < to; k++ {
-					if k < len(styles) {
-						styles[k] += " class:selected "
-					} else if k == len(styles) {
-						styles, texts = append(styles, base+" class:selected "), append(texts, " ")
-					}
-				}
-			}
-		}
-		if multiple {
-			start := doc.translateRowColToIndex(i, 0)
-			for _, p := range b.multipleCursors {
-				if start <= p && p <= start+len(lineRunes) {
-					if column := p - start; column < len(styles) {
-						styles[column] += " class:multiple-cursors"
-					} else {
-						styles, texts = append(styles, base+" class:multiple-cursors"), append(texts, " ")
-					}
-				}
-			}
-		}
-		var cells []ptSeg
-		if i == 0 && a.prompt != nil {
-			for _, f := range a.prompt() {
-				cells = append(cells, ptCells(base+" class:text-area.prompt "+f.Style, f.Text)...)
-			}
-		}
-		extra := len(styles) - len(lineRunes)
-		for j := range lineRunes {
-			if index == doc.cursor {
-				content.cursorCol = len(cells)
-			}
-			text := texts[j]
-			if masked {
-				text = "*"
-			}
-			cells = append(cells, ptCells(styles[j], text)...)
-			index++
-		}
-		if index == doc.cursor {
-			content.cursorCol = len(cells)
-		}
-		for j := len(lineRunes); j < len(lineRunes)+extra; j++ {
-			cells = append(cells, ptCells(styles[j], texts[j])...)
-		}
-		index++
-		if i == 0 && len(doc.runes) == 0 && a.emptyHint != nil {
-			if text := a.emptyHint(); text != "" {
-				cells = append(cells, ptCells(base+" class:placeholder", text)...)
-			}
-		}
-		if i == len(docLines)-1 && b.suggestion != nil && doc.atEnd() {
-			cells = append(cells, ptCells(base+" class:auto-suggestion", *b.suggestion)...)
-		}
-		if extra > 0 {
-			content.lines = append(content.lines, cells)
-			continue
-		}
-		content.lines = append(content.lines, append(cells, ptSeg{base, " "}))
-	}
-	return content
-}
-
-// Scrolls the wrapped input so the cursor line stays visible, the prompt_toolkit window algorithm
-func (a *ptApplication) scrollInput(content ptInputContent, width, height int) {
-	lineHeight := func(i int) int { return ptLineHeight(ptRowWidth(content.lines[i]), width) }
-	cy := content.cursorRow
-	if lh := lineHeight(cy); lh > height {
-		before := ptLineHeight(ptRowWidth(content.lines[cy][:min(content.cursorCol, len(content.lines[cy]))]), width)
-		a.inputScroll = cy
-		a.inputScroll2 = min(before-1, lh-height, a.inputScroll2)
-		a.inputScroll2 = max(0, before-height, a.inputScroll2)
-		return
-	}
-	a.inputScroll2 = 0
-	minScroll := func() int {
-		used, prev := 0, cy
-		for i := cy; i >= 0; i-- {
-			used += lineHeight(i)
-			if used > height {
-				return prev
-			}
-			prev = i
-		}
-		return 0
-	}
-	maxScroll := func() int {
-		used, prev := 0, cy
-		for i := cy - 1; i >= 0; i-- {
-			used += lineHeight(i)
-			if used > 0 {
-				return prev
-			}
-			prev = i
-		}
-		return prev
-	}
-	topmost := func() int {
-		used, prev := 0, len(content.lines)-1
-		for i := len(content.lines) - 1; i >= 0; i-- {
-			used += lineHeight(i)
-			if used > height {
-				return prev
-			}
-			prev = i
-		}
-		return prev
-	}
-	top := topmost()
-	a.inputScroll = max(a.inputScroll, min(top, minScroll()))
-	a.inputScroll = min(a.inputScroll, maxScroll())
-	a.inputScroll = min(a.inputScroll, top)
-}
-
-// Visible input rows and the cursor position among them
-func (a *ptApplication) inputRows(width, height int) (rows [][]ptSeg, cx, cy int) {
-	content := a.inputContent()
-	a.scrollInput(content, width, height)
-	cx, cy = -1, -1
-	y := -a.inputScroll2
-	info := &ptRenderInfo{windowHeight: height, windowWidth: width}
-	for i := range content.lines {
-		info.lineHeights = append(info.lineHeights, len(ptWrapCells(content.lines[i], width)))
-	}
-	defer func() {
-		if len(info.displayedLines) > 0 {
-			a.inputRenderInfo = info
-		}
-	}()
-	for i := a.inputScroll; i < len(content.lines); i++ {
-		wrapped := ptWrapCells(content.lines[i], width)
-		if i == content.cursorRow {
-			col, seen := content.cursorCol, 0
-			for r, row := range wrapped {
-				if col < seen+len(row) {
-					cy, cx = y+r, ptRowWidth(row[:col-seen])
-					break
-				}
-				seen += len(row)
-			}
-		}
-		for _, row := range wrapped {
-			if y >= 0 && y < height {
-				rows = append(rows, row)
-				info.displayedLines = append(info.displayedLines, i)
-			}
-			y++
-		}
-		if y >= height {
-			break
-		}
-	}
-	if cy < 0 || cy >= height {
-		cx, cy = -1, -1
-	}
-	return rows, cx, cy
-}
-
-// Completion menu rows with the selected entry scrolled into view
-func (a *ptApplication) menuRows(width, height int) [][]ptSeg {
-	state := a.buffer.completeState
-	if state == nil || len(state.completions) == 0 || height <= 0 {
-		return nil
-	}
-	display := func(c ptCompletion) string {
-		if c.Display != "" {
-			return c.Display
-		}
-		return c.Text
-	}
-	menuWidth, metaWidth := 7, 0
-	for _, c := range state.completions {
-		menuWidth = max(menuWidth, pyunicode.WcsWidth(display(c))+2)
-	}
-	menuWidth = min(width-1, menuWidth)
-	showMeta := false
-	for i, c := range state.completions {
-		if c.Meta != "" {
-			showMeta = true
-			if i < 200 {
-				metaWidth = max(metaWidth, pyunicode.WcsWidth(c.Meta)+2)
-			}
-		}
-	}
-	if showMeta {
-		metaWidth = min(max(0, width-1-menuWidth), metaWidth)
-	}
-	count := len(state.completions)
-	cursor := 0
-	if state.index != nil {
-		cursor = *state.index
-	}
-	start := min(1, height/2, cursor)
-	end := min(1, height/2, count-1-cursor)
-	scroll := max(0, a.menuScroll)
-	if scroll > count-height {
-		scroll = max(0, count-height)
-	}
-	if scroll > cursor-start {
-		scroll = max(0, cursor-start)
-	}
-	if scroll < cursor+1-height+end {
-		scroll = cursor + 1 - height + end
-	}
-	a.menuScroll = scroll
-	cell := func(style, text string, w int) []ptSeg {
-		if w <= 0 {
-			return nil
-		}
-		tw := pyunicode.WcsWidth(text)
-		if tw > w-2 {
-			r := []rune(text)
-			for len(r) > 0 && pyunicode.WcsWidth(string(r))+3 > w-2 {
-				r = r[:len(r)-1]
-			}
-			text = string(r) + "..."
-			tw = pyunicode.WcsWidth(text)
-		}
-		return ptCells(style, " "+text+strings.Repeat(" ", max(0, w-1-tw)))
-	}
-	thumbStart, thumbEnd := 0, height
-	if count > height {
-		thumb := max(1, height*height/count)
-		thumbStart = scroll * height / count
-		thumbEnd = thumbStart + thumb
-	}
-	var rows [][]ptSeg
-	for i := scroll; i < min(count, scroll+height); i++ {
-		c := state.completions[i]
-		suffix := ""
-		if state.index != nil && *state.index == i {
-			suffix = ".current"
-		}
-		row := cell("class:completion-menu class:completion-menu.completion"+suffix, display(c), menuWidth)
-		if showMeta {
-			row = append(row, cell("class:completion-menu class:completion-menu.meta.completion"+suffix, c.Meta, metaWidth)...)
-		}
-		bar := "class:completion-menu class:scrollbar.background"
-		if y := i - scroll; count > height && y >= thumbStart && y < thumbEnd {
-			bar = "class:completion-menu class:scrollbar.button"
-		}
-		rows = append(rows, append(row, ptSeg{bar, " "}))
-	}
-	return rows
 }
 
 // Row counts the window wants at the given width
@@ -1259,167 +624,4 @@ func (a *ptApplication) windowDim(w *ptWindow, width, available int) ptDim {
 		return ptDim{h, h, h}
 	}
 	return ptDim{0, ptUnbounded, len(w.textRows(width))}
-}
-
-// Splits the available rows among the windows by minimum, preferred then maximum size, false when the minimums overflow
-func ptDivideHeights(dims []ptDim, height int, done bool) ([]int, bool) {
-	sizes := make([]int, len(dims))
-	sumMin, sumPref, sumMax := 0, 0, 0
-	for i, d := range dims {
-		sizes[i] = d.min
-		sumMin += d.min
-		sumPref += d.pref
-		sumMax = min(ptUnbounded, sumMax+d.max)
-	}
-	if sumMin > height {
-		return nil, false
-	}
-	if len(dims) == 0 {
-		return sizes, true
-	}
-	total := sumMin
-	i := 0
-	for stop := min(height, sumPref); total < stop; i = (i + 1) % len(dims) {
-		if sizes[i] < dims[i].pref {
-			sizes[i]++
-			total++
-		}
-	}
-	if !done {
-		for stop := min(height, sumMax); total < stop; i = (i + 1) % len(dims) {
-			if sizes[i] < dims[i].max {
-				sizes[i]++
-				total++
-			}
-		}
-	}
-	return sizes, true
-}
-
-// Splits rows like the stock container, an overflow keeping bottom rows, clipping late top rows and queuing a repaint
-func footerSplitDivideHeights(a *ptApplication, dims []ptDim, height int) []int {
-	if sizes, ok := ptDivideHeights(dims, height, a.isDone()); ok {
-		return sizes
-	}
-	budget := height
-	clipped := make([]int, len(dims))
-	for i := len(dims) - 1; i >= 0; i-- {
-		clipped[i] = min(dims[i].min, budget)
-		budget -= clipped[i]
-	}
-	_ = a.Invalidate()
-	if a.running.Load() {
-		a.wake()
-	}
-	return clipped
-}
-
-// Renders the chrome rows as styled lines with the cursor position, minus one when hidden
-func (a *ptApplication) renderChrome(width, termRows int) (lines []string, cx, cy int) {
-	dims := make([]ptDim, len(a.layout))
-	pref := 0
-	for i, w := range a.layout {
-		dims[i] = a.windowDim(w, width, termRows)
-		pref += dims[i].pref
-	}
-	height := min(termRows, max(a.minAvailableHeight, a.lastHeight, pref))
-	sizes := footerSplitDivideHeights(a, dims, height)
-	cx, cy = -1, -1
-	type placed struct {
-		rows  [][]ptSeg
-		style string
-		right bool
-	}
-	var out []placed
-	for i, w := range a.layout {
-		h := sizes[i]
-		if h <= 0 {
-			continue
-		}
-		var rows [][]ptSeg
-		style := w.style
-		switch w.kind {
-		case ptWindowBuffer:
-			style = "class:text-area " + a.inputStyle
-			var x, y int
-			rows, x, y = a.inputRows(width, h)
-			if y >= 0 {
-				cx, cy = x, len(out)+y
-			}
-		case ptWindowMenu:
-			rows = a.menuRows(width, h)
-		default:
-			if w.char != "" {
-				row := ptCells("", strings.Repeat(w.char, width))
-				for len(rows) < h {
-					rows = append(rows, row)
-				}
-			} else {
-				rows = w.textRows(width)
-			}
-		}
-		for r := 0; r < h; r++ {
-			var row []ptSeg
-			if r < len(rows) {
-				row = rows[r]
-			}
-			out = append(out, placed{[][]ptSeg{row}, style, w.alignRight})
-		}
-	}
-	for len(out) > 0 && len(out[len(out)-1].rows[0]) == 0 && cy < len(out)-1 {
-		out = out[:len(out)-1]
-	}
-	a.lastHeight = height
-	if len(out) == 0 {
-		a.lastRowWidths = a.lastRowWidths[:0]
-		return nil, -1, -1
-	}
-	buf := uv.NewScreenBuffer(width, len(out))
-	painter := cards.NewPainter(buf.Buffer, theme.Plain())
-	a.lastRowWidths = a.lastRowWidths[:0]
-	for y, p := range out {
-		painter.Styled(0, y, width, 1, a.renderRow(p.rows[0], p.style, p.right, width))
-		a.lastRowWidths = append(a.lastRowWidths, a.rowReach(p.rows[0], p.style, p.right, width))
-	}
-	return strings.Split(buf.Render(), "\n"), cx, cy
-}
-
-// Cells a painted row reaches, one past the last cell that shows text or a style
-func (a *ptApplication) rowReach(row []ptSeg, windowStyle string, right bool, width int) int {
-	if (right || a.style.hasStyle(windowStyle)) && len(row) > 0 {
-		return max(1, width)
-	}
-	x, reach := 0, 0
-	for _, c := range row {
-		w := ptCellWidth(c)
-		if c.text != " " || a.style.hasStyle(windowStyle+" "+c.style) {
-			reach = x + w - 1
-		}
-		x += w
-	}
-	return 1 + min(reach, max(0, width-1))
-}
-
-// Styles one row of cells, right aligned rows padded on the left and styled windows filled to the edge
-func (a *ptApplication) renderRow(row []ptSeg, windowStyle string, right bool, width int) string {
-	var b strings.Builder
-	used := ptRowWidth(row)
-	if right && used < width {
-		b.WriteString(a.style.render(windowStyle).Render(strings.Repeat(" ", width-used)))
-		used = width
-	}
-	for i := 0; i < len(row); {
-		j := i
-		var text strings.Builder
-		for j < len(row) && row[j].style == row[i].style {
-			text.WriteString(row[j].text)
-			j++
-		}
-		b.WriteString(a.style.render(windowStyle + " " + row[i].style).Render(text.String()))
-		i = j
-	}
-	if windowStyle != "" && used < width {
-		b.WriteString(a.style.render(windowStyle).Render(strings.Repeat(" ", width-used)))
-	}
-	return b.String()
 }

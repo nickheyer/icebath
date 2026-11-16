@@ -430,9 +430,28 @@ func payloadPath(payloadRoot, relative, what string) (string, error) {
 	return path, nil
 }
 
-// Store of a tree from the runtime override, a payload manifest, an install stamp, or the default root
+type runtimeStoreKey struct{}
+
+// Context whose runtime store is dir, the way ICEBATH_RUNTIME_DIR points a whole process at one
+func WithRuntimeStore(ctx context.Context, dir string) context.Context {
+	return context.WithValue(ctx, runtimeStoreKey{}, dir)
+}
+
+// Runtime store a context carries, empty when it carries none
+func runtimeStoreOverride(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	dir, _ := ctx.Value(runtimeStoreKey{}).(string)
+	return dir
+}
+
+// Store of a tree from the context or process runtime override, a payload manifest, an install stamp, or the default root
 func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeOverride bool) (string, error) {
 	if honorRuntimeOverride {
+		if override := runtimeStoreOverride(ctx); override != "" {
+			return resolvePath(override), nil
+		}
 		if override := os.Getenv(EnvRuntimeDir); override != "" {
 			return resolvePath(override), nil
 		}

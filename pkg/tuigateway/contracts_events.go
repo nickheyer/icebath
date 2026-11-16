@@ -92,7 +92,7 @@ var MessageDeltaPayload = pydantic.Extend(StreamDeltaPayload, "MessageDeltaPaylo
 	pydantic.Def("turn_id", pydantic.Nullable(pydantic.Str), nil),
 	pydantic.Def("segment", pydantic.Nullable(pydantic.Int), nil),
 	pydantic.Def("offset", pydantic.Nullable(pydantic.Int), nil),
-).Described("``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the\nreply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that\ncloses the classic CLI's reply box. Every other viewer ignores an empty chunk.\n\nA prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code\nunits of that segment already sent): a client drops a re-sent chunk it already applied.")
+).Described("``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the\nreply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that\nends the headless chat's reply segment. Every other viewer ignores an empty chunk.\n\nA prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code\nunits of that segment already sent): a client drops a re-sent chunk it already applied.")
 
 var _ = Event("message.delta", MessageDeltaPayload, "One streamed chunk of the assistant reply (null text: segment boundary).")
 
@@ -243,7 +243,7 @@ var _ = Event("review.summary", ReviewSummaryPayload, "Background review of the 
 
 var AgentPrintPayload = pydantic.NewModel("AgentPrintPayload", ClosedConfig,
 	pydantic.Req("text", pydantic.Str),
-).Described("A session-authority local-viewer turn: one line the agent printed through ``_print_fn``\n(subagent completion, compaction, errors, budget notices), which main's classic CLI rendered\nthrough ``_agent_status_print``.")
+).Described("A session-authority local-viewer turn: one line the agent printed through ``_print_fn``\n(subagent completion, compaction, errors, budget notices), which the headless chat prints\nas a status line.")
 
 var _ = Event("agent.print", AgentPrintPayload, "A status line the agent printed during a local viewer's turn.")
 

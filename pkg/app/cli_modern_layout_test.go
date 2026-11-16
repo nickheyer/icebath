@@ -120,33 +120,6 @@ func TestLayoutAndBusyDefaultThroughTheConfigLoader(t *testing.T) {
 	}
 }
 
-func TestLongUserMessageSoftWrapsSoAResizeReflowsIt(t *testing.T) {
-	longLine := strings.TrimSpace(strings.Repeat("word ", 60))
-	for _, text := range []string{longLine, longLine + "\nsecond line"} {
-		out := map[string][]string{}
-		for _, width := range []string{"60", "140"} {
-			rec := recordPrints(t)
-			t.Setenv("COLUMNS", width)
-			c := bareCLI()
-			c.modernLayout = true
-			c.printUserMessagePreview(text)
-			for _, line := range strings.Split(strings.Join(rec.plain(), "\n"), "\n") {
-				if strings.TrimSpace(line) != "" {
-					out[width] = append(out[width], line)
-				}
-			}
-		}
-		if !slices.Equal(out["60"], out["140"]) {
-			t.Fatalf("echo depends on the width: %q vs %q", out["60"], out["140"])
-		}
-		if !slices.ContainsFunc(out["60"], func(line string) bool {
-			return strings.HasSuffix(strings.TrimRight(line, " "), "word") && strings.Count(line, "word") == 60
-		}) {
-			t.Fatalf("long line was broken: %q", out["60"])
-		}
-	}
-}
-
 func TestToolRowsKeepTheClassicToolEmoji(t *testing.T) {
 	recordPrints(t)
 	ctx := context.Background()
@@ -184,55 +157,5 @@ func TestRefusedSkillWriteReadsNeutralNotFailed(t *testing.T) {
 	broken := strings.Replace(refused, `(limit: 100,000)."`, `(limit: 100,000). — batch aborted, ROLLBACK FAILED for demo."`, 1)
 	if got := plainSGR(toolRow(ctx, nil, "skill_manage", map[string]any{"operations": []any{}}, 1.1, broken, false)); !strings.HasPrefix(got, "✗ ") {
 		t.Fatalf("a failed rollback must stay a failure: %q", got)
-	}
-}
-
-func TestEveryBlockIsFramedByBarsAndBlankLines(t *testing.T) {
-	rec := recordPrints(t)
-	c := bareCLI()
-	c.modernLayout = true
-	bar := strings.Repeat("─", 40)
-	two := 2.0
-	c.printUserMessagePreview("read the hostname")
-	for _, row := range thoughtRows(&two, "Plan the read.", true) {
-		cprint(row)
-	}
-	cprint(completedToolLine(c, "read_file", map[string]any{"path": "/etc/hostname"}, 0.2, nil, false))
-	cprint(completedToolLine(c, "terminal", map[string]any{"command": "echo hi"}, 0.1, nil, false))
-	cprint(answerLabel(""))
-	cprint("It is LINUX.")
-	cprint(closingSeparator(true))
-	cprint(turnFooter("1.0s"))
-	var rows []string
-	for _, entry := range rec.plain() {
-		for _, r := range strings.Split(entry, "\n") {
-			rows = append(rows, strings.TrimRight(r, " \t"))
-		}
-	}
-	start := slices.Index(rows, "❯ read the hostname") - 1
-	if start < 1 {
-		t.Fatalf("user row missing in %q", rows)
-	}
-	var got []string
-	for _, r := range rows[start-1:] {
-		switch {
-		case r == bar:
-			got = append(got, "BAR")
-		case r == "":
-			got = append(got, "")
-		default:
-			got = append(got, strings.Fields(r)[0])
-		}
-	}
-	want := []string{"", "BAR", "❯", "BAR", "", "BAR", "Plan", "∴", "BAR", "", "📖", "💻", "", "BAR", "☤", "It", "BAR", "", "─"}
-	if !slices.Equal(got, want) {
-		t.Fatalf("got %q want %q", got, want)
-	}
-}
-
-func TestPanelRowsNeverCarryANewline(t *testing.T) {
-	rows := wrapPanelTextKeepWS("python3 - <<'PY'\nprint(sum(range(10)))\nPY", 30, "")
-	if !slices.Equal(rows, []string{"python3 - <<'PY'", "print(sum(range(10)))", "PY"}) {
-		t.Fatalf("rows %q", rows)
 	}
 }

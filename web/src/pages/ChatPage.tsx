@@ -1,5 +1,5 @@
 /**
- * ChatPage — embeds `icebath --tui` inside the dashboard.
+ * ChatPage — embeds the `icebath` terminal UI inside the dashboard.
  *
  *   <div host> (dashboard chrome)                                         .
  *     └─ <div wrapper> (rounded, dark bg, padded — the "terminal window"  .
@@ -13,7 +13,7 @@
  *          ▼                                                              .
  *     FastAPI pty_ws  (hermes_cli/web_server.py)                          .
  *          ▼                                                              .
- *     POSIX PTY → `icebath --tui` (pkg/tui) → gateway + agent             .
+ *     POSIX PTY → `icebath` (pkg/tui) → gateway + agent                   .
  */
 
 import { FitAddon } from "@xterm/addon-fit";
@@ -553,7 +553,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     //      terminal has a selection, then emits an OSC 52 escape.  Our
     //      OSC 52 handler below decodes that escape and writes to the
     //      browser clipboard — so the flow works just like it does in
-    //      `icebath --tui`.
+    //      `icebath` on a terminal.
     //
     //   2. **Ctrl/Cmd+Shift+C.**  Belt-and-suspenders shortcut that
     //      operates directly on xterm's selection, useful if the TUI
@@ -700,7 +700,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
       // Ctrl+Backspace → delete previous word. xterm.js sends bare DEL
       // regardless of modifier, so word-delete never reaches the TUI on its
-      // own. Send ^W (0x17), which readline / prompt_toolkit treat as
+      // own. Send ^W (0x17), the readline binding for
       // delete-word-backward. (Ctrl+W can't be used in a browser tab — it's a
       // reserved shortcut that closes the tab and preventDefault has no effect;
       // for Ctrl+W muscle memory use the Electron desktop app.)
@@ -711,7 +711,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }
 
       // Ctrl+Delete → delete next word. Mirror of Ctrl+Backspace; sends Alt+d
-      // (ESC d), the readline / prompt_toolkit kill-word-forward binding.
+      // (ESC d), the readline kill-word-forward binding.
       if (shortcut === "delete-word-forward") {
         ev.preventDefault();
         sendPtyShortcutSequence(wsRef.current, ptyStateRef.current, "\x1bd");

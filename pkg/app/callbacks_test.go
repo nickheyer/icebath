@@ -16,38 +16,6 @@ func secretResultOf(t *testing.T, result map[string]any, err error) map[string]a
 	return result
 }
 
-func TestSecretCaptureCallbackCanBeCompletedFromCliStateMachine(t *testing.T) {
-	c, _ := newModalTestCLI(t, nil)
-	captureStreams(t)
-	type outcome struct {
-		result map[string]any
-		err    error
-	}
-	results := make(chan outcome, 1)
-	go func() {
-		r, err := c.secretCaptureCallback("TENOR_API_KEY", "Tenor API key", nil)
-		results <- outcome{r, err}
-	}()
-	waitFor(t, "secret panel", func() bool { return c.secretModal() != nil })
-	c.submitSecretResponse("super-secret-value")
-	got := <-results
-	result := secretResultOf(t, got.result, got.err)
-	if result["success"] != true || result["stored_as"] != "TENOR_API_KEY" || result["skipped"] != false {
-		t.Fatalf("result %v", result)
-	}
-}
-
-func TestCancelSecretCaptureMarksSetupSkipped(t *testing.T) {
-	c, _ := newModalTestCLI(t, nil)
-	c.app = nil
-	c.secretState = &secretModalState{VarName: "TENOR_API_KEY", Prompt: "Tenor API key", Metadata: map[string]any{}, response: make(chan string, 1)}
-	c.secretDeadline = 123
-	c.cancelSecretCapture()
-	if c.secretModal() != nil || c.secretDeadline != 0 {
-		t.Fatalf("state %v deadline %v", c.secretModal(), c.secretDeadline)
-	}
-}
-
 func TestSecretCaptureUsesMaskedPromptWithoutTui(t *testing.T) {
 	c, _ := newModalTestCLI(t, nil)
 	c.app = nil

@@ -1,14 +1,10 @@
 package app
 
 import (
-	"bufio"
 	"errors"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
-	"unicode"
 )
 
 // Characters Python str.isspace and the re module whitespace class accept
@@ -69,8 +65,6 @@ func (d ptDocument) lineStart(index int) (row, start int) {
 
 func (d ptDocument) cursorRow() int { row, _ := d.lineStart(d.cursor); return row }
 func (d ptDocument) cursorCol() int { _, start := d.lineStart(d.cursor); return d.cursor - start }
-func (d ptDocument) lineCount() int { return strings.Count(string(d.runes), "\n") + 1 }
-func (d ptDocument) atEnd() bool    { return d.cursor == len(d.runes) }
 
 // Character under the cursor, zero at the end of the text
 func (d ptDocument) currentChar() rune {
@@ -95,42 +89,8 @@ func (d ptDocument) currentLineAfterCursor() []rune {
 	return d.runes[d.cursor:end]
 }
 
-// Whole line the cursor is on
-func (d ptDocument) currentLine() string {
-	return string(d.currentLineBeforeCursor()) + string(d.currentLineAfterCursor())
-}
-
-// Leading blanks of the cursor line
-func (d ptDocument) leadingWhitespaceInCurrentLine() string {
-	line := d.currentLine()
-	return line[:len(line)-len(strings.TrimLeftFunc(line, unicode.IsSpace))]
-}
-
-// Index of a row and column, both clamped into the text
-func (d ptDocument) rowColToIndex(row, col int) int {
-	lines := d.lines()
-	if row < 0 {
-		row = 0
-	}
-	if row >= len(lines) {
-		row = len(lines) - 1
-	}
-	result := 0
-	for i := 0; i < row; i++ {
-		result += len([]rune(lines[i])) + 1
-	}
-	result += max(0, min(col, len([]rune(lines[row]))))
-	return max(0, min(result, len(d.runes)))
-}
-
 func (d ptDocument) startOfLinePosition() int { return -len(d.currentLineBeforeCursor()) }
 func (d ptDocument) endOfLinePosition() int   { return len(d.currentLineAfterCursor()) }
-
-// Offset to the first non blank of the cursor line
-func (d ptDocument) startOfLineAfterWhitespace() int {
-	line := d.currentLine()
-	return len([]rune(line)) - len([]rune(strings.TrimLeftFunc(line, unicode.IsSpace))) - d.cursorCol()
-}
 
 // Offset moving count characters left within the line
 func (d ptDocument) cursorLeftPosition(count int) int {
@@ -146,24 +106,6 @@ func (d ptDocument) cursorRightPosition(count int) int {
 		return d.cursorLeftPosition(-count)
 	}
 	return min(count, len(d.currentLineAfterCursor()))
-}
-
-// Offset moving count rows up keeping the preferred column
-func (d ptDocument) cursorUpPosition(count int, preferred *int) int {
-	col := d.cursorCol()
-	if preferred != nil {
-		col = *preferred
-	}
-	return d.rowColToIndex(max(0, d.cursorRow()-count), col) - d.cursor
-}
-
-// Offset moving count rows down keeping the preferred column
-func (d ptDocument) cursorDownPosition(count int, preferred *int) int {
-	col := d.cursorCol()
-	if preferred != nil {
-		col = *preferred
-	}
-	return d.rowColToIndex(d.cursorRow()+count, col) - d.cursor
 }
 
 // Reversed copy of the runes
@@ -266,49 +208,6 @@ func (d ptDocument) findPreviousWordEnding(count int) (int, bool) {
 	return 0, false
 }
 
-// Offset of the count-th occurrence of char on the cursor line, forward or backward
-func (d ptDocument) findChar(char string, count int, backwards bool) (int, bool) {
-	needle := []rune(char)
-	if len(needle) != 1 || count < 1 {
-		return 0, false
-	}
-	seen := 0
-	if backwards {
-		before := d.currentLineBeforeCursor()
-		for i := len(before) - 1; i >= 0; i-- {
-			if before[i] == needle[0] {
-				seen++
-				if seen == count {
-					return i - len(before), true
-				}
-			}
-		}
-		return 0, false
-	}
-	after := d.currentLineAfterCursor()
-	for i := 1; i < len(after); i++ {
-		if after[i] == needle[0] {
-			seen++
-			if seen == count {
-				return i, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// Start and end of the selection, the cursor twice when nothing is selected
-func (d ptDocument) selectionRange() (int, int) {
-	if d.selection == nil {
-		return d.cursor, d.cursor
-	}
-	a, b := d.cursor, d.selection.original
-	if a > b {
-		a, b = b, a
-	}
-	return a, b
-}
-
 // ptCompletion is one completion replacing start characters before the cursor
 type ptCompletion struct {
 	Text    string
@@ -322,14 +221,6 @@ type ptCompletionState struct {
 	original    ptDocument
 	completions []ptCompletion
 	index       *int
-}
-
-// Selected completion, nil when none is selected
-func (s *ptCompletionState) current() *ptCompletion {
-	if s.index == nil {
-		return nil
-	}
-	return &s.completions[*s.index]
 }
 
 // Text and cursor the buffer shows for the selected completion
@@ -358,87 +249,11 @@ type ptInMemoryHistory struct {
 	entries []string
 }
 
-func (h *ptInMemoryHistory) strings() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return append([]string{}, h.entries...)
-}
-
-func (h *ptInMemoryHistory) appendString(s string) {
-	h.mu.Lock()
-	h.entries = append(h.entries, s)
-	h.mu.Unlock()
-}
-
 // ptFileHistory stores history in the prompt_toolkit file format
 type ptFileHistory struct {
 	ptInMemoryHistory
 	filename string
 	loaded   bool
-}
-
-// Opens a history file, entries read on first use
-func newPTFileHistory(filename string) *ptFileHistory { return &ptFileHistory{filename: filename} }
-
-// Reads the entries of the history file, oldest first
-func (h *ptFileHistory) load() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.loaded {
-		return
-	}
-	h.loaded = true
-	f, err := os.Open(h.filename)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	var lines []string
-	add := func() {
-		if len(lines) > 0 {
-			joined := strings.Join(lines, "")
-			h.entries = append(h.entries, strings.TrimSuffix(joined, "\n"))
-		}
-	}
-	reader := bufio.NewReader(f)
-	for {
-		line, err := reader.ReadString('\n')
-		if line != "" {
-			line = strings.ToValidUTF8(line, "�")
-			if strings.HasPrefix(line, "+") {
-				lines = append(lines, line[1:])
-			} else {
-				add()
-				lines = nil
-			}
-		}
-		if err != nil {
-			break
-		}
-	}
-	add()
-}
-
-func (h *ptFileHistory) strings() []string {
-	h.load()
-	return h.ptInMemoryHistory.strings()
-}
-
-// Appends an entry in memory and to the history file
-func (h *ptFileHistory) appendString(s string) {
-	h.load()
-	h.ptInMemoryHistory.appendString(s)
-	f, err := os.OpenFile(h.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	var b strings.Builder
-	b.WriteString("\n# " + time.Now().Format("2006-01-02 15:04:05.000000") + "\n")
-	for _, line := range strings.Split(s, "\n") {
-		b.WriteString("+" + line + "\n")
-	}
-	_, _ = f.WriteString(b.String())
 }
 
 // ptClipboard is the kill ring shared by the editing commands
@@ -516,16 +331,6 @@ type ptBuffer struct {
 	multiline           bool
 	completeGen         int
 	suggestGen          int
-}
-
-// Builds a buffer over a history, in memory history when nil
-func newPTBuffer(history ptHistory) *ptBuffer {
-	if history == nil {
-		history = &ptInMemoryHistory{}
-	}
-	b := &ptBuffer{history: history, multiline: true}
-	b.reset(false)
-	return b
 }
 
 // Current text
@@ -696,53 +501,6 @@ func (b *ptBuffer) cursorRight(count int) {
 	b.setCursorPosition(b.cursor + b.document().cursorRightPosition(count))
 }
 
-// Moves the cursor up keeping its preferred column
-func (b *ptBuffer) cursorUp(count int) {
-	doc := b.document()
-	col := doc.cursorCol()
-	if b.preferredColumn != nil && *b.preferredColumn != 0 {
-		col = *b.preferredColumn
-	}
-	b.setCursorPosition(b.cursor + doc.cursorUpPosition(count, &col))
-	b.preferredColumn = &col
-}
-
-// Moves the cursor down keeping its preferred column
-func (b *ptBuffer) cursorDown(count int) {
-	doc := b.document()
-	col := doc.cursorCol()
-	if b.preferredColumn != nil && *b.preferredColumn != 0 {
-		col = *b.preferredColumn
-	}
-	b.setCursorPosition(b.cursor + doc.cursorDownPosition(count, &col))
-	b.preferredColumn = &col
-}
-
-// Up through completions, then lines, then history
-func (b *ptBuffer) autoMoveUp(count int) {
-	switch {
-	case b.completeState != nil:
-		b.completePrevious(count)
-	case b.document().cursorRow() > 0:
-		b.cursorUp(count)
-	case b.selection == nil:
-		b.historyBackward(count)
-	}
-}
-
-// Down through completions, then lines, then history
-func (b *ptBuffer) autoMoveDown(count int) {
-	doc := b.document()
-	switch {
-	case b.completeState != nil:
-		b.completeNext(count)
-	case doc.cursorRow() < doc.lineCount()-1:
-		b.cursorDown(count)
-	case b.selection == nil:
-		b.historyForward(count)
-	}
-}
-
 // Deletes count characters before the cursor and returns them
 func (b *ptBuffer) deleteBeforeCursor(count int) string {
 	if b.cursor <= 0 || count <= 0 {
@@ -862,15 +620,6 @@ func (b *ptBuffer) completePrevious(count int) {
 	b.goToCompletion(index)
 }
 
-// Closes the completion menu restoring the text typed before it
-func (b *ptBuffer) cancelCompletion() {
-	if b.completeState != nil {
-		b.goToCompletion(nil)
-		b.completeState = nil
-		b.changed()
-	}
-}
-
 // Shows the text of the completion at index, nil showing what was typed
 func (b *ptBuffer) goToCompletion(index *int) {
 	state := b.completeState
@@ -885,16 +634,6 @@ func (b *ptBuffer) goToCompletion(index *int) {
 	_ = b.setDocument(text, cursor, false)
 	b.completeState = state
 	b.changed()
-}
-
-// Inserts a completion and closes the menu
-func (b *ptBuffer) applyCompletion(c ptCompletion) {
-	if b.completeState != nil {
-		b.goToCompletion(nil)
-	}
-	b.completeState = nil
-	b.deleteBeforeCursor(-c.Start)
-	b.insertText(c.Text, false, true, true)
 }
 
 // Reports whether applying the completion would leave the text unchanged
@@ -1080,40 +819,6 @@ func (b *ptBuffer) startSuggestion() {
 		}
 	})
 }
-
-// Inserts a newline, copying the indentation of the current line when asked
-func (b *ptBuffer) newline(copyMargin bool) {
-	if copyMargin {
-		b.insertText("\n"+b.document().leadingWhitespaceInCurrentLine(), false, true, true)
-		return
-	}
-	b.insertText("\n", false, true, true)
-}
-
-// Starts a selection of the given kind at the cursor
-func (b *ptBuffer) startSelection(typ ptSelectionType) {
-	b.selection = &ptSelection{original: b.cursor, typ: typ}
-	b.changed()
-}
-
-// Ends the selection keeping the text
-func (b *ptBuffer) exitSelection() { b.selection = nil; b.changed() }
-
-// Clipboard entry of the selection, the selection removed from the text when cut is set
-func (b *ptBuffer) copySelection(cut bool) ptClipboardData {
-	newDocument, data := b.document().cutSelection()
-	if cut {
-		if err := b.setDocument(newDocument.text(), newDocument.cursor, false); err != nil {
-			panic(ptEditReadOnly{})
-		}
-	}
-	b.selection = nil
-	b.changed()
-	return data
-}
-
-// Removes the selection and returns it as a clipboard entry
-func (b *ptBuffer) cutSelection() ptClipboardData { return b.copySelection(true) }
 
 // Pastes a clipboard entry count times in the given mode, remembering the document for a yank pop
 func (b *ptBuffer) pasteClipboardData(data ptClipboardData, mode ptPasteMode, count int) {

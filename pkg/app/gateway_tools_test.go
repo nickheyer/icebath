@@ -106,28 +106,6 @@ func gatewayToolsFixture(t *testing.T) (*GatewayAgent, *gatewayToolsGateway) {
 	return a, gw
 }
 
-func TestDockRowsComeFromTheGatewaySession(t *testing.T) {
-	recordPrints(t)
-	_, gw := gatewayToolsFixture(t)
-	c := bareCLI()
-	rows := processRows(c.ctx, c.processRegistry(), nowSeconds())
-	if len(rows) != 2 || rows[0]["id"] != "proc_1" || rows[0]["status"] != "running" || rows[1]["id"] != "proc_2" || rows[1]["status"] != "done" {
-		t.Fatalf("rows %v", rows)
-	}
-	if rows[0]["command"] != "sleep 300" || rows[0]["detail"] != "tick 2" || rows[0]["elapsed"].(int) < 4 {
-		t.Fatalf("first row %v", rows[0])
-	}
-	if rows[1]["exit_code"] != 0 || rows[1]["since_exit"].(int) < 2 {
-		t.Fatalf("second row %v", rows[1])
-	}
-	if !gw.askedForSession("process.list") {
-		t.Fatalf("calls %v", gw.calls)
-	}
-	if tail := processTail(c.ctx, c.processRegistry(), "proc_1"); tail != "tick 1\ntick 2\n" {
-		t.Fatalf("tail %q", tail)
-	}
-}
-
 func TestStatusBarCountReadsTheCachedGatewayCount(t *testing.T) {
 	_, gw := gatewayToolsFixture(t)
 	c := bareCLI()
@@ -194,62 +172,6 @@ func TestAgentsBeforeTheFirstTurnReadsTheOpenedSessionsProcesses(t *testing.T) {
 		t.Fatalf("output %q", out)
 	}
 	if !gw.askedForSession("process.list") {
-		t.Fatalf("calls %v", gw.calls)
-	}
-}
-
-func TestStopTypedMidTurnInterruptsTheTurnThenStopsProcesses(t *testing.T) {
-	rec := recordPrints(t)
-	a, gw := gatewayToolsFixture(t)
-	if gatewayProcessView() == nil {
-		t.Fatal("no process view bound")
-	}
-	release := make(chan struct{})
-	gw.mu.Lock()
-	gw.stopGate = release
-	gw.mu.Unlock()
-	var stops []cliAgent
-	prev := requestHardInterrupt
-	requestHardInterrupt = func(a cliAgent) { stops = append(stops, a) }
-	t.Cleanup(func() { requestHardInterrupt = prev })
-	c := bareCLI()
-	c.agentRunning = true
-	c.setAgent(a)
-	_, event := handlerRig()
-	if !c.tuiEnterInlineCommand(event, "/stop", false) {
-		t.Fatal("/stop was not dispatched inline")
-	}
-	stopped := func() bool {
-		gw.mu.Lock()
-		defer gw.mu.Unlock()
-		return slices.ContainsFunc(gw.calls, func(call [2]any) bool { return call[0] == "process.stop" })
-	}
-	if len(stops) != 1 || stops[0] != a || stopped() {
-		t.Fatalf("stops %v stopped %v", stops, stopped())
-	}
-	close(release)
-	waitUntil(t, func() bool {
-		return stopped() && strings.Contains(strings.Join(rec.plain(), "\n"), "Stopped 1 process(es).")
-	})
-	if out := strings.Join(rec.plain(), "\n"); !strings.Contains(out, "Interrupting agent") {
-		t.Fatalf("output %q", out)
-	}
-}
-
-func TestDockStopKillsOneProcessThroughTheGateway(t *testing.T) {
-	recordPrints(t)
-	_, gw := gatewayToolsFixture(t)
-	c := bareCLI()
-	processRows(c.ctx, c.processRegistry(), nowSeconds())
-	if got := killDockProcess(c.ctx, c.processRegistry(), "proc_1"); got["status"] != "killed" {
-		t.Fatalf("kill answered %v", got)
-	}
-	gw.mu.Lock()
-	defer gw.mu.Unlock()
-	if !slices.ContainsFunc(gw.calls, func(call [2]any) bool {
-		params, _ := call[1].(map[string]any)
-		return call[0] == "process.kill" && len(params) == 2 && params["session_id"] == gatewayToolsSID && params["process_id"] == "proc_1"
-	}) {
 		t.Fatalf("calls %v", gw.calls)
 	}
 }

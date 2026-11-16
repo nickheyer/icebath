@@ -1,6 +1,7 @@
 package tuigateway
 
 import (
+	"fmt"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -202,7 +203,7 @@ type toolCallArgs struct {
 func dictGet(v any, key string, def any) any {
 	d, isDict := v.(map[string]any)
 	if !isDict {
-		panic("AttributeError: '" + pyrepr.TypeName(v) + "' object has no attribute 'get'")
+		panic("AttributeError: '" + pyrepr.TypeName(v) + "' object has no attribute 'get'" + fmt.Sprintf(" DEBUGTYPE %T key %s", v, key))
 	}
 	if value, present := d[key]; present {
 		return value

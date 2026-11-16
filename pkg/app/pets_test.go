@@ -5,7 +5,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/pet"
@@ -17,18 +16,6 @@ func petsTestRun(t *testing.T) *petsRun {
 	os.Mkdir(h, 0o755)
 	t.Setenv("ICEBATH_HOME", h)
 	return &petsRun{ctx: context.Background(), h: h, ns: map[string]any{}, w: &bytes.Buffer{}}
-}
-
-func TestPetsCliQuotedFalseDisablesAndToggleEnables(t *testing.T) {
-	r := petsTestRun(t)
-	os.WriteFile(filepath.Join(r.h, "config.yaml"), []byte("display:\n  pet:\n    enabled: 'false'\n    slug: ''\n    scale: 0.33\n"), 0o644)
-	if active, err := r.hasActivePet(); err != nil || active {
-		t.Fatalf("active %v %v", active, err)
-	}
-	enabled, name, msg, err := r.togglePetDisplay()
-	if err != nil || msg == nil || !strings.Contains(*msg, "no pets installed") || enabled || name != nil {
-		t.Fatalf("toggle %v %v %v %v", enabled, name, msg, err)
-	}
 }
 
 func TestSetPetScaleWritesClampedValue(t *testing.T) {

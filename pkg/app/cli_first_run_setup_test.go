@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -67,64 +66,6 @@ func swapFirstRunPicker(t *testing.T, fn func(ctx context.Context) error) *int {
 
 var noProviderConfigured = &provider.AuthError{Message: "No inference provider configured.", Code: "no_provider_configured"}
 
-func TestCredentialsReadyFalseWhenNoProvider(t *testing.T) {
-	c, _ := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) { return nil, noProviderConfigured })
-	if c.runtimeCredentialsReady() {
-		t.Fatal("ready without a provider")
-	}
-}
-
-func TestCredentialsReadyFalseOnEmptyOpenrouterKey(t *testing.T) {
-	c, _ := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "openrouter", APIKey: "", BaseURL: "https://openrouter.ai/api/v1", Source: "env/config"}, nil
-	})
-	if c.runtimeCredentialsReady() {
-		t.Fatal("ready with an empty OpenRouter key")
-	}
-}
-
-func TestCredentialsReadyTrueWithKey(t *testing.T) {
-	c, _ := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "openrouter", APIKey: "sk-test", BaseURL: "https://openrouter.ai/api/v1", Source: "env/config"}, nil
-	})
-	if !c.runtimeCredentialsReady() {
-		t.Fatal("not ready with a key")
-	}
-}
-
-func TestCredentialsReadyTrueForKeylessLocalEndpoint(t *testing.T) {
-	c, _ := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "custom", APIKey: "", BaseURL: "http://localhost:11434/v1", Source: "custom_provider"}, nil
-	})
-	if !c.runtimeCredentialsReady() {
-		t.Fatal("keyless local endpoint not ready")
-	}
-}
-
-func TestCredentialsReadyTrueForCallableBearerProvider(t *testing.T) {
-	c, _ := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "azure-foundry", TokenSource: func(context.Context) (string, error) { return "tok", nil },
-			BaseURL: "https://foundry.example/v1", Source: "entra"}, nil
-	})
-	if !c.runtimeCredentialsReady() {
-		t.Fatal("callable bearer not ready")
-	}
-}
-
-func TestCredentialsReadyNeverPrints(t *testing.T) {
-	c, out := firstRunShell(t, "", false, nil)
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) { return nil, noProviderConfigured })
-	c.runtimeCredentialsReady()
-	if out.Len() != 0 {
-		t.Fatalf("probe printed %q", out.String())
-	}
-}
-
 // Writes the model section the picker saves
 func writePickedModel(t *testing.T, c *CLI, providerName, model string) {
 	t.Helper()
@@ -136,57 +77,6 @@ func writePickedModel(t *testing.T, c *CLI, providerName, model string) {
 	cfg["model"] = map[string]any{"provider": providerName, "default": model}
 	if err := config.SaveConfig(c.ctx, h, cfg, config.SaveOptions{}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestOfferFirstRunSetupRoutesIntoSharedPicker(t *testing.T) {
-	c, _ := firstRunShell(t, "y\n", true, nil)
-	calls := swapFirstRunPicker(t, func(context.Context) error {
-		writePickedModel(t, c, "nous", "hermes-4-405b")
-		return nil
-	})
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "nous", APIKey: "portal-token", BaseURL: "https://inference-api.nousresearch.com/v1", Source: "oauth"}, nil
-	})
-	if !c.offerFirstRunSetup() || *calls != 1 || c.requestedProvider != "nous" || c.model != "hermes-4-405b" || c.agentRef() != nil {
-		t.Fatalf("calls %d provider %q model %q agent %v", *calls, c.requestedProvider, c.model, c.agentRef())
-	}
-}
-
-func TestOfferFirstRunSetupReResolvesReasoningForPickedModel(t *testing.T) {
-	c, _ := firstRunShell(t, "y\n", true, map[string]any{"agent": map[string]any{"reasoning_effort": "medium",
-		"reasoning_overrides": map[string]any{"hermes-4-405b": "high"}}})
-	if c.reasoningConfig["effort"] != "medium" {
-		t.Fatalf("launch reasoning %v", c.reasoningConfig)
-	}
-	swapFirstRunPicker(t, func(context.Context) error {
-		writePickedModel(t, c, "nous", "hermes-4-405b")
-		return nil
-	})
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "nous", APIKey: "portal-token", BaseURL: "https://inference-api.nousresearch.com/v1"}, nil
-	})
-	if !c.offerFirstRunSetup() || c.model != "hermes-4-405b" || c.reasoningConfig["effort"] != "high" {
-		t.Fatalf("model %q reasoning %v", c.model, c.reasoningConfig)
-	}
-}
-
-func TestOfferFirstRunSetupDeclined(t *testing.T) {
-	c, _ := firstRunShell(t, "n\n", true, nil)
-	calls := swapFirstRunPicker(t, func(context.Context) error {
-		t.Error("picker must not run when declined")
-		return nil
-	})
-	if c.offerFirstRunSetup() || *calls != 0 {
-		t.Fatalf("declined offer configured, picker ran %d times", *calls)
-	}
-}
-
-func TestOfferFirstRunSetupPickerCancelIsGraceful(t *testing.T) {
-	c, _ := firstRunShell(t, "\n", true, nil)
-	calls := swapFirstRunPicker(t, func(context.Context) error { return cliui.ErrInterrupt })
-	if c.offerFirstRunSetup() || *calls != 1 {
-		t.Fatalf("cancelled picker reported configured, ran %d times", *calls)
 	}
 }
 
@@ -230,63 +120,4 @@ func benchNousPool(t *testing.T, code int, reason string) {
 func forbidWizard(t *testing.T) {
 	t.Helper()
 	swapFirstRunPicker(t, func(context.Context) error { t.Error("wizard must not run"); return nil })
-}
-
-func TestBenchedCredentialPrintsCooldownInsteadOfWizard(t *testing.T) {
-	c, out := firstRunShell(t, "", true, nil)
-	c.requestedProvider = "nous"
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return nil, &provider.AuthError{Message: "Icebath is not logged into Nous Portal.", Provider: "nous", Code: "nous_auth_missing", ReloginRequired: true}
-	})
-	benchNousPool(t, 429, "rate_limited")
-	forbidWizard(t)
-	c.maybeOfferFirstRunSetup()
-	text := out.String()
-	ctx := c.ctx
-	if strings.Contains(text, i18n.T(ctx, "cli.startup.first_run_no_provider", "", nil)) {
-		t.Fatalf("wizard offered %q", text)
-	}
-	headline := ""
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) != "" {
-			headline = line
-			break
-		}
-	}
-	want := i18n.T(ctx, "cli.startup.credential_cooling_down", "", map[string]any{"provider": "nous",
-		"cause": i18n.T(ctx, "cli.startup.cooldown_cause_rate_limit", "", nil), "minutes": 1})
-	if !strings.HasSuffix(headline, want) || strings.Contains(text, i18n.T(ctx, "cli.startup.cooldown_cause_token_refresh", "", nil)) ||
-		!strings.Contains(text, "not logged into Nous Portal") || strings.Contains(text, "re-authenticate") || strings.Contains(text, "icebath model") {
-		t.Fatalf("headline %q want suffix %q screen %q", headline, want, text)
-	}
-}
-
-func TestAuthJSONOnlyLoginExplainsInsteadOfWizard(t *testing.T) {
-	c, out := firstRunShell(t, "", true, map[string]any{"model": map[string]any{"default": "some-model"}})
-	for _, kv := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
-		t.Setenv(kv, "")
-	}
-	c.requestedProvider = "auto"
-	c.explicitAPIKey = ""
-	c.explicitBaseURL = ""
-	nousFailure := &provider.AuthError{Message: "Icebath is not logged into Nous Portal.", Provider: "nous", Code: "nous_auth_missing", ReloginRequired: true}
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return &provider.Runtime{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Source: "default", AuthError: nousFailure}, nil
-	})
-	forbidWizard(t)
-	c.maybeOfferFirstRunSetup()
-	text := out.String()
-	if !strings.Contains(text, "not logged into Nous Portal") || strings.Contains(text, i18n.T(c.ctx, "cli.startup.first_run_no_provider", "", nil)) {
-		t.Fatalf("screen %q", text)
-	}
-	out.Reset()
-	swapRuntimeResolver(t, func() (*provider.Runtime, error) {
-		return nil, &provider.AuthError{Message: "Icebath is not connected to any AI provider yet.", Code: "no_provider_configured"}
-	})
-	offered := swapFirstRunPicker(t, func(context.Context) error { return nil })
-	c.console.In = strings.NewReader("y\n")
-	c.maybeOfferFirstRunSetup()
-	if *offered != 1 || !strings.Contains(out.String(), i18n.T(c.ctx, "cli.startup.first_run_no_provider", "", nil)) || strings.Contains(out.String(), "not logged into") {
-		t.Fatalf("control offered %d screen %q", *offered, out.String())
-	}
 }

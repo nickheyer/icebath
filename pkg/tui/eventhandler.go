@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	startupPollInterval  = 100 * time.Millisecond
-	startupPollLimit     = 40
 	delegationFetchEvery = 5000
 )
 
@@ -23,7 +21,6 @@ type eventApp interface {
 	setInput(update func(string) string)
 	enqueue(text, display string, destination submissionDestination)
 	submit(text string) tea.Cmd
-	submitLiteral(text string, attachments []imageAttachment) tea.Cmd
 	newSession(then func() tea.Cmd) tea.Cmd
 	resumeByID(id string, then func(err error) tea.Cmd) tea.Cmd
 	setCatalog(c *slashCatalog)
@@ -62,9 +59,6 @@ type fullConfigFlight struct {
 // Batched status of the thinking stream firing
 type thinkingStatusMsg struct{ gen int }
 
-// Startup query check of the session, waited the number of polls so far
-type startupPromptMsg struct{ waited int }
-
 // Gateway event dispatch over the shared store, the turn controller and the app
 type eventHandler struct {
 	store *tuiStore
@@ -73,13 +67,10 @@ type eventHandler struct {
 	app   eventApp
 
 	startupResumeID string
-	startupQuery    string
-	startupImage    string
 
 	pendingThinkingStatus     string
 	thinkingGen               int
 	thinkingArmed             bool
-	startupPromptSubmitted    bool
 	persistedAbandonedClarify map[string]bool
 	openedChallenges          map[string]bool
 	lastDelegationFetchAt     float64
@@ -97,7 +88,7 @@ func newEventHandler(store *tuiStore, turn *turnController, gw turnGateway, app 
 	env := func(name string) string { return strings.TrimFunc(os.Getenv(name), isJSSpace) }
 	h := &eventHandler{
 		store: store, turn: turn, gw: gw, app: app,
-		startupResumeID: env("ICEBATH_TUI_RESUME"), startupQuery: env("ICEBATH_TUI_QUERY"), startupImage: env("ICEBATH_TUI_IMAGE"),
+		startupResumeID:           env("ICEBATH_TUI_RESUME"),
 		persistedAbandonedClarify: map[string]bool{}, openedChallenges: map[string]bool{}, agentsNudgeEnabled: true,
 	}
 	return h, store.syncThemeToTerminalBackground()
@@ -130,8 +121,6 @@ func (h *eventHandler) update(m tea.Msg) (bool, tea.Cmd) {
 			}
 			h.store.ui.Status = status
 		}
-	case startupPromptMsg:
-		h.queue(h.runStartupPrompt(m.waited))
 	case tea.BackgroundColorMsg:
 		h.queue(h.store.onTerminalBackground(m.String()))
 	case tea.ForegroundColorMsg:
@@ -422,64 +411,10 @@ func (h *eventHandler) refreshSlashCatalogOnSkillsChange(ev gatewayEventMsg) boo
 	return true
 }
 
-// Submits the launch query and image once the first session exists
-func (h *eventHandler) scheduleStartupPrompt() {
-	if h.startupPromptSubmitted || (h.startupQuery == "" && h.startupImage == "") {
-		return
-	}
-	h.startupPromptSubmitted = true
-	h.queue(func() tea.Msg { return startupPromptMsg{} })
-}
-
-// Polls for the session, then attaches the startup image and submits the startup query literally
-func (h *eventHandler) runStartupPrompt(waited int) tea.Cmd {
-	sid := h.store.ui.Sid
-	if sid == "" && waited < startupPollLimit {
-		return tea.Tick(startupPollInterval, func(time.Time) tea.Msg { return startupPromptMsg{waited: waited + 1} })
-	}
-	if sid == "" {
-		h.app.sys(tr("gatewayMsg.startup.querySkipped"))
-		return nil
-	}
-	destination, err := h.store.captureDestination()
-	if err != nil {
-		h.app.uncaught(err)
-		return nil
-	}
-	submit := func(attachments []imageAttachment) tea.Cmd {
-		if !h.store.isCurrentDestination(destination) {
-			h.app.sys(tr("canonical.submit.startupQuerySwitched"))
-			return nil
-		}
-		query := h.startupQuery
-		if query == "" {
-			query = "What do you see in this image?"
-		}
-		return h.app.submitLiteral(query, attachments)
-	}
-	if h.startupImage == "" {
-		return submit([]imageAttachment{})
-	}
-	if h.gw.canonical() {
-		return h.store.stageImagePath(h.startupImage, h.gw, destination, func(image *stagedImage, err error) tea.Cmd {
-			if err != nil {
-				h.app.sys(tr("gatewayMsg.startup.imageAttachFailed", rpcErrorMessage(err)))
-				return nil
-			}
-			return submit([]imageAttachment{image.imageAttachment})
-		})
-	}
-	return h.rpc("image.attach", map[string]any{"path": h.startupImage, "session_id": sid}, func(map[string]any) tea.Cmd {
-		return submit([]imageAttachment{})
-	})
-}
-
-// Starts a fresh session and the startup prompt with the forging status
+// Starts a fresh session with the forging status
 func (h *eventHandler) forgeSession() tea.Cmd {
 	h.store.ui.Status = tr("gatewayMsg.status.forgingSession")
-	cmd := h.app.newSession(nil)
-	h.scheduleStartupPrompt()
-	return cmd
+	return h.app.newSession(nil)
 }
 
 // First gateway.ready of a connection, skin, wake listener, catalog and the session to open
@@ -515,7 +450,6 @@ func (h *eventHandler) handleReady(skin *gatewaySkin) {
 	if h.startupResumeID != "" {
 		h.store.ui.Status = tr("session.status.resuming")
 		h.queue(h.app.resumeByID(h.startupResumeID, nil))
-		h.scheduleStartupPrompt()
 		return
 	}
 	h.withFullConfig(func(cfg map[string]any) tea.Cmd {
@@ -525,9 +459,7 @@ func (h *eventHandler) handleReady(skin *gatewaySkin) {
 		return h.rpc("session.most_recent", map[string]any{}, func(r map[string]any) tea.Cmd {
 			if target := r["session_id"]; truthyJS(target) {
 				h.store.ui.Status = tr("gatewayMsg.status.resumingMostRecent")
-				cmd := h.app.resumeByID(jsValueString(target), nil)
-				h.scheduleStartupPrompt()
-				return cmd
+				return h.app.resumeByID(jsValueString(target), nil)
 			}
 			return h.forgeSession()
 		})

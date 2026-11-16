@@ -237,6 +237,12 @@ func (c *CLI) droppedOptions(cmd *cobra.Command) []string {
 	return extras
 }
 
+// Option tokens of a parse ready argv that no parser level on the way to cmd declares
+func (c *CLI) UnknownOptions(argv []string, cmd *cobra.Command) []string {
+	c.argv = argv
+	return c.droppedOptions(cmd)
+}
+
 // Child of a command named or aliased by token, nil when the command has none
 func findSubcommand(cmd *cobra.Command, token string) *cobra.Command {
 	for _, sub := range cmd.Commands() {

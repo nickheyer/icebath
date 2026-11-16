@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -44,51 +43,4 @@ func notificationCLI(t *testing.T, mode string, events ...map[string]any) (*CLI,
 		SetCLIConfig(nil)
 	})
 	return &CLI{ctx: context.Background(), sessionID: "display-session", pendingInput: &inputQueue{}}, &acked
-}
-
-func TestDrainHonorsBackgroundProcessNotificationsOff(t *testing.T) {
-	for mode, injected := range map[string]bool{"off": false, "concise": true, "all": true} {
-		c, acked := notificationCLI(t, mode, processEvent("proc_off", 0))
-		c.drainProcessNotifications("cli-post-turn")
-		if *acked == 0 {
-			t.Fatalf("mode %s: events were not claimed and acknowledged", mode)
-		}
-		if got := c.pendingInput.Len() > 0; got != injected {
-			t.Fatalf("mode %s: injected %v", mode, got)
-		}
-	}
-}
-
-func TestOffMutesProcessWakesButSubagentResultsStillLand(t *testing.T) {
-	delegation := map[string]any{"type": "async_delegation", "delegation_id": "d1", "session_key": "display-session",
-		"results": []any{map[string]any{"status": "completed", "summary": "done", "goal": "audit"}}}
-	heartbeat := processEvent("proc_b", 0)
-	heartbeat["type"], heartbeat["seq"], heartbeat["output"] = "heartbeat", 1, "line"
-	c, _ := notificationCLI(t, "off", processEvent("proc_a", 0), heartbeat, delegation)
-	c.drainProcessNotifications("cli-post-turn")
-	queued, ok := c.pendingInput.GetNoWait()
-	if !ok || c.pendingInput.Len() != 0 {
-		t.Fatalf("queued %v ok %v, %d left", queued, ok, c.pendingInput.Len())
-	}
-	if n, isNotification := queued.(tools.TimelineNotification); !isNotification || n.DisplayKind != "async_delegation_complete" {
-		t.Fatalf("queued %#v", queued)
-	}
-}
-
-func TestHeartbeatWakePaintsOneLineAndPersistsHidden(t *testing.T) {
-	beat := processEvent("proc_hb", nil)
-	beat["type"], beat["seq"], beat["elapsed"], beat["interval"] = "heartbeat", 3, 422, 60
-	c, _ := notificationCLI(t, "", beat)
-	c.drainProcessNotifications("cli-idle")
-	queued, _ := c.pendingInput.GetNoWait()
-	n, ok := queued.(tools.TimelineNotification)
-	if !ok || n.Text != tools.FormatProcessNotification(beat) {
-		t.Fatalf("queued %#v", queued)
-	}
-	if n.DisplayKind != tools.HeartbeatDisplayKind || tools.HeartbeatDisplayKind != "hidden" || n.DisplayText != tools.HeartbeatDisplayText(beat) {
-		t.Fatalf("display kind %q text %q", n.DisplayKind, n.DisplayText)
-	}
-	if strings.Contains(n.DisplayText, "SECRET_OUTPUT_LINE") || !strings.Contains(n.DisplayText, "long-build.sh") {
-		t.Fatalf("display text %q", n.DisplayText)
-	}
 }

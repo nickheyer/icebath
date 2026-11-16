@@ -36,7 +36,7 @@ func (c *CLI) chatArgparseShape(chat *cobra.Command) {
 	noneDefault(chat, "max-turns", "run-budget")
 	suppress(chat, "model", "toolsets", "reasoning", "skills", "provider", "base-url", "api-key", "verbose", "resume",
 		"no-restore-cwd", "in", "continue", "create-if-missing", "worktree", "accept-hooks", "checkpoints", "yolo",
-		"pass-session-id", "ignore-user-config", "ignore-rules", "safe-mode", "tui", "native", "cli")
+		"pass-session-id", "ignore-user-config", "ignore-rules", "safe-mode", "native")
 }
 
 // Install command when a top level word names a catalog memory plugin that resolves nowhere, else empty

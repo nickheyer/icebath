@@ -157,7 +157,9 @@ func newApp(ctx context.Context) *app {
 	a.arena = newArenaFeed(a)
 	a.syncTheme()
 	a.widgets = newWidgetHost(a)
-	a.localCommands = append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...)
+	a.localCommands = append(append(append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...), a.wmCommands()...), a.recoveryCommands()...)
+	a.localCommands = append(a.localCommands, a.toolsCommands()...)
+	a.localCommands = append(a.localCommands, a.snapshotCommands()...)
 	a.card = newSessionCard(a)
 	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(bootMotion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
@@ -281,6 +283,8 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.dispatchSubmission(m.Text)
 	case editorDoneMsg:
 		cmd = a.onEditorDone(m)
+	case sectionCommandMsg:
+		cmd = a.onSectionCommand(m)
 	case exitMsg:
 		a.exitCode = m.code
 		return a, tea.Quit
@@ -490,10 +494,6 @@ func (a *app) enqueue(text, display string, destination submissionDestination) {
 }
 
 func (a *app) submit(text string) tea.Cmd { return a.dispatchSubmission(text) }
-
-func (a *app) submitLiteral(text string, attachments []imageAttachment) tea.Cmd {
-	return a.send(text, true, "", submitOpts{Attachments: attachments})
-}
 
 func (a *app) newSession(then func() tea.Cmd) tea.Cmd {
 	return a.life.newSession("", "", func(string) tea.Cmd {

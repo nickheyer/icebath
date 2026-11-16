@@ -2,10 +2,11 @@ package state
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Resolves symlinks component by component like Python's non strict Path.resolve, keeping missing tails literal
@@ -90,7 +91,7 @@ func pyUserHome() (string, bool) {
 	if home, ok := os.LookupEnv("HOME"); ok {
 		return home, true
 	}
-	u, err := user.Current()
+	u, err := homeguard.Current()
 	if err != nil {
 		return "", false
 	}

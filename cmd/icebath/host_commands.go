@@ -456,16 +456,6 @@ func cmdSetupNamespace(ctx context.Context, ns map[string]any) (int, error) {
 	return runSetupWizard(ctx, ns)
 }
 
-// Setup entered from the chat first run guard, whose namespace carries none of the setup flags
-func cmdSetup(a *chatArgs) int {
-	code, err := cmdSetupNamespace(context.Background(), map[string]any{})
-	if err != nil {
-		printErr(err.Error())
-		return 1
-	}
-	return code
-}
-
 // Lifts the emergency stop, hermes_cli/subcommands/pause.py cmd_resume
 func cmdResume(ctx context.Context, cmd *cobra.Command, args []string) (int, error) {
 	return tools.ResumeCommand(ctx, home.Dir(ctx), args, cmd.OutOrStdout())

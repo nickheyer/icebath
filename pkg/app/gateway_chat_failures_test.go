@@ -86,7 +86,7 @@ func TestOneshotMatchesOwnTerminalReceiptNotNeighbor(t *testing.T) {
 		return map[string]any{"admission_id": "mine"}, nil
 	})
 	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, true, nil, "")
-	code, err := runViewWithin(t, view, "query", true)
+	code, err := runViewWithin(t, view, "query")
 	if err != nil || code != 1 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -133,7 +133,7 @@ func TestStreamJSONOneshotFiltersNeighborEventsThatArriveBeforeSubmitReceipt(t *
 	})
 	emitter := NewStreamJSONEmitter("m", "stored")
 	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, false, emitter, "")
-	code, err := runViewWithin(t, view, "query", true)
+	code, err := runViewWithin(t, view, "query")
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -201,7 +201,7 @@ func TestFiniteExitCodeFollowsTheCommittedResultNotTheOutcome(t *testing.T) {
 		}{{false, tc.chatCode}, {true, tc.zCode}} {
 			view := newGatewayChatView(settledPeer(t, tc.outcome, tc.result), map[string]any{"stored_session_id": "stored"}, true, nil, "")
 			view.unattended = run.unattended
-			code, err := runViewWithin(t, view, "query", true)
+			code, err := runViewWithin(t, view, "query")
 			if err != nil || code != run.expected {
 				t.Fatalf("%s unattended=%v code %d err %v", tc.outcome, run.unattended, code, err)
 			}
@@ -218,7 +218,7 @@ func TestTextlessOneshotNamesTheFailureOnStderr(t *testing.T) {
 	view := newGatewayChatView(settledPeer(t, "completed", map[string]any{"completed": true, "final_response": ""}),
 		map[string]any{"stored_session_id": "stored"}, true, nil, "")
 	view.unattended = true
-	code, err := runViewWithin(t, view, "query", true)
+	code, err := runViewWithin(t, view, "query")
 	if err != nil || code != 1 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -233,7 +233,7 @@ func TestStreamJSONResultRecordReportsAnUnfinishedTurn(t *testing.T) {
 	result["input_tokens"], result["output_tokens"], result["total_tokens"] = 10, 5, 15
 	view := newGatewayChatView(settledPeer(t, "completed", result), map[string]any{"stored_session_id": "stored"}, false,
 		NewStreamJSONEmitter("m", "stored"), "")
-	code, err := runViewWithin(t, view, "query", true)
+	code, err := runViewWithin(t, view, "query")
 	if err != nil || code != 1 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -258,7 +258,7 @@ func TestOneshotReplayGapFailsInsteadOfWaitingForever(t *testing.T) {
 		return map[string]any{"admission_id": "mine"}, nil
 	})
 	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored"}, true, nil, "")
-	_, err := runViewWithin(t, view, "query", true)
+	_, err := runViewWithin(t, view, "query")
 	var refused *gateway.GatewayClientError
 	if !errors.As(err, &refused) || !strings.Contains(refused.Msg, "session_replay_gap") {
 		t.Fatalf("err %v", err)
@@ -273,7 +273,7 @@ func TestOneshotRefusesUnknownBlockedSessionBeforeSubmitting(t *testing.T) {
 	})
 	lost := "admission-unknown-0123456789abcdef"
 	snapshot := map[string]any{"stored_session_id": "stored", "pending": []any{map[string]any{"admission_id": lost, "status": "unknown", "execution_generation": int64(4)}}}
-	code, err := runViewWithin(t, newGatewayChatView(peer, snapshot, true, nil, ""), "pong", true)
+	code, err := runViewWithin(t, newGatewayChatView(peer, snapshot, true, nil, ""), "pong")
 	if err != nil || code != 3 {
 		t.Fatalf("code %d err %v", code, err)
 	}
@@ -306,7 +306,7 @@ func TestStreamJSONOneshotAlwaysClosesWithAResultRecord(t *testing.T) {
 		}
 		emitter := NewStreamJSONEmitter("m", "stored")
 		view := newGatewayChatView(peer, map[string]any{"stored_session_id": "stored", "pending": pending}, false, emitter, "")
-		code, err := runViewWithin(t, view, "pong", true)
+		code, err := runViewWithin(t, view, "pong")
 		if err != nil || code != 3 {
 			t.Fatalf("%s: code %d err %v", blocker, code, err)
 		}

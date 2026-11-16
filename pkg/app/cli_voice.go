@@ -651,28 +651,6 @@ func (c *CLI) enableVoiceMode() {
 	cprint("  " + voiceDim(c.t("cli.voice.disable_hint", nil)))
 }
 
-// Ends an active voice chat on a typed bare stop phrase, true when it did
-func (c *CLI) typedVoiceStop(userInput any) bool {
-	text, ok := userInput.(string)
-	if !ok {
-		return false
-	}
-	c.voiceLock.Lock()
-	voiceOn := c.voiceMode || c.voiceContinuous
-	c.voiceLock.Unlock()
-	if !voiceOn {
-		return false
-	}
-	isStop := false
-	probeCall(func() { isStop = media.IsVoiceStopPhrase(text) })
-	if !isStop {
-		return false
-	}
-	cprint("\n" + voiceDim(c.t("cli.voice.stop_phrase_typed", nil)))
-	c.disableVoiceMode()
-	return true
-}
-
 // Disables voice mode, cancelling any recording and stopping TTS
 func (c *CLI) disableVoiceMode() {
 	c.voiceLock.Lock()
@@ -697,17 +675,6 @@ func (c *CLI) disableVoiceMode() {
 	})
 	c.voiceTTSDone.Set()
 	cprint("\n" + voiceDim(c.t("cli.voice.disabled", nil)))
-}
-
-// Starts the wake word listener at startup when this surface is eligible
-func (c *CLI) maybeStartWakeWord() error {
-	enabled := false
-	probeCall(func() { enabled = media.WakeSurfaceEnabled(c.ctx, "cli", nil) })
-	if !enabled {
-		return nil
-	}
-	c.startWakeWordListener(true)
-	return nil
 }
 
 // Builds and starts the hotword detector, true on success

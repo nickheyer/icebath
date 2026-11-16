@@ -96,7 +96,7 @@ declare global {
         sessionId: string,
         opts?: { connectionId?: null | string; profile?: null | string; watch?: boolean }
       ) => Promise<{ ok: boolean; error?: string }>
-      // Resume this session in the user's own terminal emulator (`icebath --tui
+      // Resume this session in the user's own terminal emulator (`icebath
       // --resume <id>`) — the external terminal, not the in-app pane.
       openSessionInTerminal?: (
         sessionId: string,

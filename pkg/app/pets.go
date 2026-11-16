@@ -33,108 +33,16 @@ type petsRun struct {
 func (r *petsRun) printf(format string, a ...any) { fmt.Fprintf(r.w, format+"\n", a...) }
 func (r *petsRun) errf(format string, a ...any)   { fmt.Fprintf(stderrWriter(), format+"\n", a...) }
 
-// display.pet config dict, empty when absent or not a dict
-func (r *petsRun) petConfig() (map[string]any, error) {
-	cfg, err := config.LoadContext(r.ctx, r.h, nil)
-	if err != nil {
-		return nil, err
-	}
-	display, _ := cfg["display"].(map[string]any)
-	petCfg, _ := display["pet"].(map[string]any)
-	if petCfg == nil {
-		petCfg = map[string]any{}
-	}
-	return petCfg, nil
-}
+// Shared pet operations bound to this invocation
+func (r *petsRun) core() *pet.Run { return &pet.Run{Ctx: r.ctx, Home: r.h, W: r.w, Env: r.env} }
 
-// Bool coercion over the shared truthy strings, the default for None
-func petTruthy(v any, def bool) bool {
-	switch x := v.(type) {
-	case nil:
-		return def
-	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyrepr.Truthy(v)
-}
-
-// Whether display.pet.enabled is truthy
-func petEnabled(cfg map[string]any) bool { return petTruthy(cfg["enabled"], false) }
-
-// str of a config value or empty when falsy
-func petCfgText(cfg map[string]any, key string) string {
-	if v := cfg[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
-	}
-	return ""
-}
-
-// Writes display.pet keys and saves config, only when the configured slug matches whenSlug if given
+func (r *petsRun) petConfig() (map[string]any, error) { return r.core().PetConfig() }
+func (r *petsRun) setActive(slug string) error        { return r.core().SetActive(slug) }
+func (r *petsRun) hasActivePet() (bool, error)        { return r.core().HasActivePet() }
 func (r *petsRun) updatePetConfig(whenSlug *string, values ...any) (bool, error) {
-	cfg, err := config.LoadContext(r.ctx, r.h, nil)
-	if err != nil {
-		return false, err
-	}
-	display, ok := cfg["display"].(map[string]any)
-	if _, present := cfg["display"]; !present {
-		display, ok = map[string]any{}, true
-		cfg["display"] = display
-	}
-	if !ok {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(cfg["display"]) + "' object has no attribute 'setdefault'"}
-	}
-	petVal, present := display["pet"]
-	if !present {
-		petVal = map[string]any{}
-		display["pet"] = petVal
-	}
-	petCfg, isDict := petVal.(map[string]any)
-	if whenSlug != nil && (!isDict || petCfgText(petCfg, "slug") != *whenSlug) {
-		return false, nil
-	}
-	if !isDict {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(petVal) + "' object has no attribute 'update'"}
-	}
-	for i := 0; i+1 < len(values); i += 2 {
-		petCfg[values[i].(string)] = values[i+1]
-	}
-	if err := config.SaveConfig(r.ctx, r.h, cfg, config.SaveOptions{}); err != nil {
-		return false, err
-	}
-	return true, nil
+	return r.core().UpdatePetConfig(whenSlug, values...)
 }
-
-func (r *petsRun) setActive(slug string) error {
-	_, err := r.updatePetConfig(nil, "slug", slug, "enabled", true)
-	return err
-}
-
-// Whether a pet is enabled and a slug is configured
-func (r *petsRun) hasActivePet() (bool, error) {
-	cfg, err := r.petConfig()
-	if err != nil {
-		return false, err
-	}
-	return petEnabled(cfg) && pyrepr.Truthy(cfg["slug"]), nil
-}
-
-// Persists the clamped display.pet.scale, a message and nothing written when the value is not a number
-func (r *petsRun) setPetScale(value any) (float64, string, error) {
-	f, err := pyint.Float(value)
-	if err != nil {
-		return 0, "not a number: " + pyrepr.Repr(value) + " — try a value like 0.5", nil
-	}
-	scale := pet.ClampScale(f)
-	if _, err := r.updatePetConfig(nil, "scale", scale); err != nil {
-		return 0, "", err
-	}
-	return scale, "", nil
-}
-
+func (r *petsRun) setPetScale(value any) (float64, string, error) { return r.core().SetPetScale(value) }
 func (r *petsRun) cmdList() (int, error) {
 	if nsTruthy(r.ns, "installed") {
 		pets, err := pet.InstalledPets(r.h)
@@ -332,7 +240,7 @@ func (r *petsRun) cmdShow() (int, error) {
 	}
 	slug := pystr.Strip(nsText(r.ns, "slug"))
 	if slug == "" {
-		slug = petCfgText(cfg, "slug")
+		slug = pet.CfgText(cfg, "slug")
 	}
 	p, err := pet.ResolveActivePet(r.h, slug)
 	if err != nil {
@@ -344,7 +252,7 @@ func (r *petsRun) cmdShow() (int, error) {
 	}
 	modeCfg := nsText(r.ns, "mode")
 	if modeCfg == "" {
-		modeCfg = petCfgText(cfg, "render_mode")
+		modeCfg = pet.CfgText(cfg, "render_mode")
 		if modeCfg == "" {
 			modeCfg = "auto"
 		}
@@ -457,9 +365,9 @@ func (r *petsRun) cmdDoctor() (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	enabled := petEnabled(cfg)
-	configuredSlug := petCfgText(cfg, "slug")
-	modeCfg := petCfgText(cfg, "render_mode")
+	enabled := pet.Enabled(cfg)
+	configuredSlug := pet.CfgText(cfg, "slug")
+	modeCfg := pet.CfgText(cfg, "render_mode")
 	if modeCfg == "" {
 		modeCfg = "auto"
 	}
@@ -543,90 +451,4 @@ func PetsCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) 
 		return r.cmdDoctor()
 	}
 	return 1, fmt.Errorf("unknown pets command %s", pyrepr.Repr(ns["pets_command"]))
-}
-
-// Flips display.pet.enabled, adopting the first installed pet when none resolves
-func (r *petsRun) togglePetDisplay() (bool, *string, *string, error) {
-	cfg, err := r.petConfig()
-	if err != nil {
-		return false, nil, nil, err
-	}
-	p, err := pet.ResolveActivePet(r.h, petCfgText(cfg, "slug"))
-	if err != nil {
-		return false, nil, nil, err
-	}
-	if petEnabled(cfg) {
-		if _, err := r.updatePetConfig(nil, "enabled", false); err != nil {
-			return false, nil, nil, err
-		}
-		if p != nil {
-			return false, &p.DisplayName, nil, nil
-		}
-		return false, nil, nil, nil
-	}
-	if p == nil {
-		installed, err := pet.InstalledPets(r.h)
-		if err != nil {
-			return false, nil, nil, err
-		}
-		if len(installed) == 0 {
-			msg := "no pets installed — /pet list to browse, or /pet <slug> to adopt"
-			return false, nil, &msg, nil
-		}
-		p = installed[0]
-		if err := r.setActive(p.Slug); err != nil {
-			return false, nil, nil, err
-		}
-	} else if _, err := r.updatePetConfig(nil, "enabled", true); err != nil {
-		return false, nil, nil, err
-	}
-	return true, &p.DisplayName, nil, nil
-}
-
-// Prints a slice of the public petdex gallery as the CLI and TUI text fallback
-func (r *petsRun) printPetGallery(limit int) error {
-	entries, err := pet.FetchManifest(r.ctx, r.env, false)
-	if err != nil {
-		var me *pet.ManifestError
-		if errors.As(err, &me) {
-			r.printf("(._.) Couldn't reach the petdex gallery: %s", me.Msg)
-			return nil
-		}
-		return err
-	}
-	installedPets, err := pet.InstalledPets(r.h)
-	if err != nil {
-		return err
-	}
-	installed := map[string]bool{}
-	for _, p := range installedPets {
-		installed[p.Slug] = true
-	}
-	shown := entries
-	if limit > 0 && len(entries) > limit {
-		shown = entries[:limit]
-	}
-	r.printf("(^o^)/ petdex gallery — first %d of %d:", len(shown), len(entries))
-	for _, e := range shown {
-		mark := "○"
-		if installed[e.Slug] {
-			mark = "●"
-		}
-		r.printf("  %s %s %s", mark, padRight(e.Slug, 24), e.DisplayName)
-	}
-	r.printf("  /pet <slug> to adopt · /pet to toggle")
-	return nil
-}
-
-// Disables and unsets the active pet only when it is the given slug
-func (r *petsRun) clearActiveIf(slug string) (bool, error) {
-	return r.updatePetConfig(&slug, "slug", "", "enabled", false)
-}
-
-// Repoints the active pet to a renamed slug only when the old slug is active, keeping enabled
-func (r *petsRun) renameActiveIf(oldSlug, newSlug string) (bool, error) {
-	if newSlug == "" || oldSlug == newSlug {
-		return false, nil
-	}
-	return r.updatePetConfig(&oldSlug, "slug", newSlug)
 }

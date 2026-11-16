@@ -7,7 +7,7 @@
 # Schema version of this file. The installers copy it to seed config.yaml, and
 # `icebath update` uses it to know which one-time migrations the file already
 # has. icebath manages it: do not copy it into another config.
-_config_version: 52
+_config_version: 53
 
 # =============================================================================
 # Database Configuration
@@ -450,11 +450,11 @@ terminal:
   # Two process_manage wait/poll calls in a row with no new output on a running background process
   # turn on notify_on_complete for it and tell the agent to stop checking; false = poll as before.
   process_wait_auto_notify: true
-  # A `icebath` / `icebath --tui` session's local tools (terminal, background processes, execute_code)
+  # An `icebath` session's local tools (terminal, background processes, execute_code)
   # start with the launching shell's toolchain: PATH, an activated venv and CONDA_* / NODE_* / NVM_* /
   # PYENV_* (plus GOPATH, GOROOT, CARGO_HOME, RUSTUP_HOME, JAVA_HOME), for that session only, when
   # the client runs on the gateway's host (a remote client's session keeps the gateway's toolchain).
-  # As in the classic CLI, the venv reaches `terminal` through PATH (`which python`): VIRTUAL_ENV and
+  # The venv reaches `terminal` through PATH (`which python`): VIRTUAL_ENV and
   # CONDA_PREFIX themselves are unset there; execute_code sees them.
   # A toolchain name the client did not export is unset for its session's tools (PATH excepted).
   # List more non-secret names here (default: none); names execute_code treats as credentials (…TOKEN,
@@ -646,7 +646,7 @@ browser:
 # =============================================================================
 # Soft warnings are enabled by default. They append guidance to repeated failed
 # or non-progressing tool results but still let the tool execute. Hard stops stay
-# opt-in for interactive CLI/TUI/Desktop/ACP sessions, but default on for unattended
+# opt-in for CLI/TUI/Desktop/ACP sessions, but default on for unattended
 # gateway/cron sessions where nobody is present to interrupt a model that
 # ignores loop warnings.
 tool_loop_guardrails:

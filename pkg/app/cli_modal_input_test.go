@@ -2,8 +2,6 @@ package app
 
 import (
 	"bytes"
-	"context"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -16,68 +14,6 @@ var paletteEntries = []commandPaletteEntry{
 	{"/compress", "Context", "Compress the conversation"},
 	{"/goal", "Background", "Set an autonomous goal"},
 	{"/status", "Context", "Show session status"},
-}
-
-// Commands of the palette rows visible for a query over the entries
-func paletteCommands(entries []commandPaletteEntry, query string) []string {
-	c := &CLI{ctx: context.Background(), commandPaletteState: &commandPaletteModalState{Entries: entries, Filter: query}}
-	var out []string
-	for _, row := range c.commandPaletteVisibleEntries() {
-		out = append(out, row.Command)
-	}
-	return out
-}
-
-func TestCommandPaletteFilter(t *testing.T) {
-	t.Run("test_empty_query_returns_all", func(t *testing.T) {
-		c := &CLI{ctx: context.Background(), commandPaletteState: &commandPaletteModalState{Entries: paletteEntries}}
-		if got := c.commandPaletteVisibleEntries(); !reflect.DeepEqual(got, paletteEntries) {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_filter_by_command_name", func(t *testing.T) {
-		if got := paletteCommands(paletteEntries, "model"); !reflect.DeepEqual(got, []string{"/model"}) {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_filter_by_description", func(t *testing.T) {
-		if got := paletteCommands(paletteEntries, "autonomous"); !reflect.DeepEqual(got, []string{"/goal"}) {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_subsequence_match", func(t *testing.T) {
-		if got := paletteCommands(paletteEntries, "cmprs"); indexOf(got, "/compress") < 0 {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_no_match", func(t *testing.T) {
-		if got := paletteCommands(paletteEntries, "zzznope"); len(got) != 0 {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_command_name_matches_rank_above_description", func(t *testing.T) {
-		entries := []commandPaletteEntry{{"/goal", "Background", "check the status of things"}, {"/status", "Context", "Show session status"}}
-		if got := paletteCommands(entries, "status"); len(got) == 0 || got[0] != "/status" {
-			t.Fatalf("rows %v", got)
-		}
-	})
-	t.Run("test_query_does_not_overmatch_via_description", func(t *testing.T) {
-		entries := []commandPaletteEntry{{"/new", "Session", "Start a totally separate resettable session"}}
-		if got := paletteCommands(entries, "steer"); len(got) != 0 {
-			t.Fatalf("rows %v", got)
-		}
-	})
-}
-
-func TestCommandPaletteSelectionInserts(t *testing.T) {
-	t.Run("test_selection_prefills_exact_command", func(t *testing.T) {
-		c, app := newModalTestCLI(t, nil)
-		c.commandPaletteState = &commandPaletteModalState{Entries: []commandPaletteEntry{{"/model", "Model", "Switch model"}}}
-		c.handleCommandPaletteSelection()
-		if app.BufferText() != "/model " || c.commandPaletteState != nil {
-			t.Fatalf("buffer %q palette %v", app.BufferText(), c.commandPaletteState)
-		}
-	})
 }
 
 // Routes console input reads to the given text for the test

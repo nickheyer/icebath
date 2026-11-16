@@ -5,7 +5,6 @@ import (
 	"math"
 	"math/big"
 	"os"
-	"os/user"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -13,6 +12,8 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Directory names of dependency, build, cache, VCS and backup trees that broad recursive scans skip
@@ -40,7 +41,7 @@ func searchDefaultHome() string {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		return h
 	}
-	if u, err := user.Current(); err == nil {
+	if u, err := homeguard.Current(); err == nil {
 		return u.HomeDir
 	}
 	return ""

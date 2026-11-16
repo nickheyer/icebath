@@ -255,37 +255,6 @@ func TestABackgroundReviewSummaryDuringATurnIsPrintedLikeMains(t *testing.T) {
 	}
 }
 
-func TestAnotherViewerCompletingTheClarifyBatchReleasesMainsPanel(t *testing.T) {
-	panel, _ := clarifyBatchCLI(t, 60)
-	request := serverRequest("srq-clr", "clarify", map[string]any{"questions": []any{
-		map[string]any{"qid": "q0", "question": "colour?", "choices": []any{"red", "blue"}},
-		map[string]any{"qid": "q1", "question": "size?", "choices": []any{"s", "l"}}}})
-	withdrawn := scriptFrame("request.cancel", map[string]any{"id": "srq-clr", "method": "clarify", "reason": "resolved"}, "")
-	client := &scriptedClient{script: []any{request, "wait", withdrawn, completeFrame("ok")}}
-	a := scriptedAgentOn(t, scriptedConnection(t, client), gatewayAgentOptions{ClarifyCallback: panel.clarifyCallback, ModalWithdrawCallback: panel.withdrawGatewayModal})
-	var out map[string]any
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		out, _ = a.RunConversation(context.Background(), "ask", agent.RunConversationOptions{})
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the CLI stayed blocked in its clarify panel")
-	}
-	if panel.clarifyModal() != nil {
-		t.Fatal("the clarify panel stayed open")
-	}
-	if out["completed"] != true && out["final_response"] == nil {
-		t.Fatalf("out %v", out)
-	}
-	want := []any{[]any{"srq-clr", map[string]any{"answers": map[string]any{}, "outcome": "cancelled"}}}
-	if got := client.replies(); !sameJSON(got, want) {
-		t.Fatalf("replies %v", got)
-	}
-}
-
 func TestAnotherViewerAnsweringAVaultPromptReleasesMainsPanel(t *testing.T) {
 	for method, params := range map[string]map[string]any{
 		"vault.code":          {"site": "example.com", "hint": ""},
@@ -395,54 +364,6 @@ func TestAVoiceStoppedReplyReturnsWithoutWaitingForATurn(t *testing.T) {
 	notice := i18n.T(context.Background(), "cli.voice.stop_phrase_typed", "", nil)
 	if !slices.ContainsFunc(printed, func(line string) bool { return strings.Contains(line, notice) }) {
 		t.Fatalf("printed %q", printed)
-	}
-}
-
-func TestAVoiceStoppedCorrectionIsConsumedNotRequeued(t *testing.T) {
-	for mode, verb := range map[string]string{"steer": "session.steer", "interrupt": "session.redirect"} {
-		t.Run(mode, func(t *testing.T) {
-			recordPrints(t)
-			a, client := makeScriptedAgent(t, &scriptedClient{}, gatewayAgentOptions{})
-			client.mu.Lock()
-			client.override = func(method string, params map[string]any) (any, bool, error) {
-				if method != "session.steer" && method != "session.redirect" {
-					return nil, false, nil
-				}
-				client.record(method, params)
-				return map[string]any{"voice_stopped": true}, true, nil
-			}
-			client.mu.Unlock()
-			var printed []string
-			a.SetPrintFn(func(text string) { printed = append(printed, text) })
-			ask := 3
-			a.mu.Lock()
-			a.generation, a.turnAskIndex = 7, &ask
-			a.mu.Unlock()
-			shell := bareCLI()
-			shell.busyInputMode = mode
-			shell.setAgent(a)
-			shell.pendingInput, shell.interruptQueue = &inputQueue{}, &inputQueue{}
-			shell.tuiEnterWhileBusy("stop", nil, "stop", "")
-			if !shell.pendingInput.Empty() || !shell.interruptQueue.Empty() {
-				t.Fatal("consumed stop was re-queued")
-			}
-			var sent []string
-			client.mu.Lock()
-			for _, call := range client.calls {
-				if strings.HasPrefix(call.method, "session.") {
-					sent = append(sent, call.method)
-				}
-			}
-			client.mu.Unlock()
-			if !reflect.DeepEqual(sent, []string{verb}) {
-				t.Fatalf("sent %v", sent)
-			}
-			a.mu.Lock()
-			defer a.mu.Unlock()
-			if a.turnAskIndex == nil || *a.turnAskIndex != 3 {
-				t.Fatalf("turn ask index %v", a.turnAskIndex)
-			}
-		})
 	}
 }
 

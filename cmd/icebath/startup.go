@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/acp"
 	"github.com/nickheyer/icebath/pkg/app"
@@ -116,71 +115,27 @@ func installTruststore() {
 	provider.InstallTrustStore()
 }
 
-// Cheap display.interface read for the earliest hot path decisions, cached per config path
-var earlyInterfaceCache struct {
-	sync.Mutex
-	path, value string
-}
-
-func earlyInterfaceConfigPath() string {
-	if h := os.Getenv(home.EnvHome); h != "" {
-		return filepath.Join(h, "config.yaml")
-	}
-	return filepath.Join(home.PlatformDefault(), "config.yaml")
-}
-
-// Configured default interface, cli or tui, any error reading as cli
-func configDefaultInterfaceEarly() string {
-	cfgPath := earlyInterfaceConfigPath()
-	earlyInterfaceCache.Lock()
-	defer earlyInterfaceCache.Unlock()
-	if earlyInterfaceCache.path == cfgPath && earlyInterfaceCache.value != "" {
-		return earlyInterfaceCache.value
-	}
-	value := "cli"
-	ctx := context.Background()
-	if exists, err := config.ConfigExists(ctx, cfgPath); err == nil && exists {
-		if raw, err := config.ReadConfigDocReadonly(ctx, cfgPath); err == nil {
-			if doc, ok := raw.(map[string]any); ok {
-				if disp, ok := doc["display"].(map[string]any); ok {
-					if iface, ok := disp["interface"].(string); ok && strings.ToLower(strings.TrimSpace(iface)) == "tui" {
-						value = "tui"
-					}
-				}
-			}
-		}
-	}
-	earlyInterfaceCache.path, earlyInterfaceCache.value = cfgPath, value
-	return value
-}
-
-// Earliest TUI decision, --cli wins, then --tui or ICEBATH_TUI, then a real TTY gate, then display.interface
-func wantsTUIEarly(argv []string) bool {
-	for _, a := range argv {
-		if a == "--cli" {
-			return false
-		}
-	}
-	if os.Getenv("ICEBATH_TUI") == "1" {
-		return true
-	}
-	for _, a := range argv {
-		if a == "--tui" || a == "--native" || a == "--tui-native" {
-			return true
-		}
-	}
+// Light parse of a chat argv that opens the TUI, false for every headless or non chat launch
+func earlyTUIArgs(argv []string) (*chatArgs, bool) {
 	if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stdout.Fd()) {
-		return false
+		return nil, false
 	}
-	return configDefaultInterfaceEarly() == "tui"
+	a, ok := lightChatArgs(argv)
+	if !ok || a.Version || !isTUIChatLaunch(a) {
+		return nil, false
+	}
+	return a, true
+}
+
+// Earliest TUI decision, the same rule the chat command applies after the full parse
+func wantsTUIEarly(argv []string) bool {
+	_, ok := earlyTUIArgs(argv)
+	return ok
 }
 
 // Turns every known mouse tracking mode off before the TUI takes stdin raw
 func suppressMouseResidueEarly(argv []string) {
 	if os.Getenv("ICEBATH_TUI_NO_EARLY_DISABLE") == "1" || !wantsTUIEarly(argv) {
-		return
-	}
-	if !isatty.IsTerminal(os.Stdout.Fd()) {
 		return
 	}
 	os.Stdout.WriteString("\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l")

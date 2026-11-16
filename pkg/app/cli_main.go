@@ -35,24 +35,7 @@ var ErrSetupCancelled = errors.New("provider setup cancelled")
 // Seam over the shared provider picker, the hermes_cli.main.select_provider_and_model the first run tests patch
 var firstRunProviderPicker = provider.SelectProviderAndModel
 
-// Runs the provider picker with no namespace, a Ctrl-C, EOF or setup exit reported as ErrSetupCancelled
-func selectProviderAndModel(ctx context.Context) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			if _, ok := r.(provider.SetupExit); !ok {
-				panic(r)
-			}
-			err = ErrSetupCancelled
-		}
-	}()
-	err = firstRunProviderPicker(ctx, nil)
-	if provider.IsPromptInterrupt(err) {
-		return ErrSetupCancelled
-	}
-	return err
-}
-
-// Interactive chat entry, a single query when one is given, returning the exit code and the error it raises
+// Runs one query or image turn in process and returns the exit code with the error it raises
 func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	defer runAtExit()
 	ConfigureWindowsStdio()
@@ -87,7 +70,6 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	if c := console(); c.StdinIsTTY() && c.StdoutIsTTY() {
 		detectLightMode()
 	}
-	joinWorktree := startWorktreeSetup(ctx, o.ListTools, o.ListToolsets, o.Worktree, o.W)
 	query := o.Query
 	if query == "" {
 		query = o.Q
@@ -99,6 +81,12 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 		}
 		quiet = true
 	}
+	if query == "" && o.Image == "" && !(o.ListTools || o.ListToolsets) {
+		if code := QueryFromStdin(&query, ""); code != 0 {
+			return code, nil
+		}
+	}
+	joinWorktree := startWorktreeSetup(ctx, o.ListTools, o.ListToolsets, o.Worktree, o.W)
 	maxTurns := o.MaxTurns
 	var runBudget *float64
 	if o.RunBudget > 0 {
@@ -132,11 +120,7 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	defer runCleanup(ctx, c.env, true)
 	installSingleQuerySignalHandlers(c)
 	defer c.signalStop()
-	if query != "" || o.Image != "" {
-		runSingleQueryMode(c, query, o.Image, quiet, o.Oneshot, o.OutputFormat == "stream-json")
-		return 0, nil
-	}
-	c.run()
+	runSingleQueryMode(c, query, o.Image, quiet, o.Oneshot, o.OutputFormat == "stream-json")
 	return 0, nil
 }
 

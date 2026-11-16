@@ -174,7 +174,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		describe(t, last, `{"session_create":{"sources":["tui"],"parameters":[]}}`)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 	})
-	t.Run("pins the launcher tool-progress mode (icebath --tui -v) on the created session before returning it", func(t *testing.T) {
+	t.Run("pins the launcher tool-progress mode (icebath -v) on the created session before returning it", func(t *testing.T) {
 		t.Setenv("ICEBATH_TUI_TOOL_PROGRESS", "verbose")
 		c, _, _, _, s := startLocal(t, nil)
 		describe(t, s, describeResult)

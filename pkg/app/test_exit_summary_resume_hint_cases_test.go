@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -23,8 +22,6 @@ var interactiveExits = []struct {
 	exit func(t *testing.T, c *CLI)
 }{
 	{"print_exit_summary", func(_ *testing.T, c *CLI) { c.printExitSummary(true) }},
-	{"run_stdin_unusable", exitThroughUnusableStdin},
-	{"tui_shutdown", exitThroughShutdown},
 }
 
 // Marks the once per process cleanup done so the exit path skips it the way the cases patch it out
@@ -39,35 +36,6 @@ func skipExitCleanup(t *testing.T) {
 		cleanupDone = prev
 		cleanupMu.Unlock()
 	})
-}
-
-// Runs the interactive loop over a closed standard input so it exits before the prompt starts
-func exitThroughUnusableStdin(t *testing.T, c *CLI) {
-	t.Helper()
-	skipExitCleanup(t)
-	stdin, err := os.Open(os.DevNull)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdin.Close()
-	stdout, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prevIn, prevOut := tuiStdin, tuiStdout
-	tuiStdin, tuiStdout = func() *os.File { return stdin }, func() *os.File { return stdout }
-	t.Cleanup(func() {
-		c.releaseActiveSession()
-		tuiStdin, tuiStdout = prevIn, prevOut
-		stdout.Close()
-	})
-	c.run()
-	c.setShouldExit(false)
-	joinCLIWorkers(t, c)
-	rec, ok := console().Out.(*printRecorder)
-	if !ok || !strings.Contains(strings.Join(rec.plain(), "\n"), c.t("cli.tui.stdin_unavailable", nil)) {
-		t.Fatal("the loop did not exit through the unusable stdin check")
-	}
 }
 
 // Waits until no other goroutine still runs a method of the CLI, the workers the loop started before its exit
@@ -93,13 +61,6 @@ func joinCLIWorkers(t *testing.T, c *CLI) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-}
-
-// Tears the prompt down the way the loop does once it returns
-func exitThroughShutdown(t *testing.T, c *CLI) {
-	t.Helper()
-	skipExitCleanup(t)
-	c.tuiShutdown()
 }
 
 // Replaces the active profile lookup of the resume hint

@@ -27,7 +27,7 @@ var ClarifyRequestParams = pydantic.Extend(ServerRequestParams, "ClarifyRequestP
 var ClarifyResult = pydantic.NewModel("ClarifyResult", ClosedConfig,
 	pydantic.Def("answers", pydantic.Nullable(pydantic.Dict(pydantic.Nullable(pydantic.Str))), nil),
 	pydantic.Def("outcome", pydantic.Nullable(pydantic.Literal("submitted", "timed_out", "cancelled")), nil),
-).Described("``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response\nwithout ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as\nmain's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline).")
+).Described("``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response\nwithout ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended\n(``timed_out`` keeps the answers locked before its deadline).")
 
 var _ = ServerRequestOf("clarify", ClarifyRequestParams, ClarifyResult, "The clarify tool: ask the user 1-5 questions.")
 

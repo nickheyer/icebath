@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/term"
 )
 
@@ -34,34 +33,6 @@ func (w monitorEmulatorWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
-}
-
-// Builds the monitor application on a cols by rows emulator without starting it
-func newMonitorHarness(t *testing.T, m *subagentMonitor, cols, rows int) *monitorHarness {
-	t.Helper()
-	pr, pw := io.Pipe()
-	h := &monitorHarness{t: t, emu: term.New(cols, rows, term.Options{}), keys: pw, done: make(chan struct{})}
-	h.app = buildMonitorApplication(m, pr, monitorEmulatorWriter{h})
-	h.app.cols, h.app.rows = cols, rows
-	t.Cleanup(func() {
-		h.app.exit()
-		select {
-		case <-h.done:
-		case <-time.After(5 * time.Second):
-		}
-		_ = pw.Close()
-	})
-	return h
-}
-
-// Runs the monitor on its own goroutine and waits for its first frame
-func (h *monitorHarness) start(firstFrame string) {
-	h.t.Helper()
-	go func() {
-		defer close(h.done)
-		h.app.run()
-	}()
-	h.waitShows(firstFrame)
 }
 
 // Types raw terminal bytes
@@ -153,47 +124,6 @@ func (c *pinnedChild) got() []string {
 	return append([]string(nil), c.received...)
 }
 
-func TestMonitorKeysPinControlsAcrossRosterChanges(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	cleanSubagentRegistry(t)
-	child := &pinnedChild{}
-	for _, sid := range []string{"first", "second"} {
-		agent.RegisterSubagent(map[string]any{"subagent_id": sid, "goal": sid, "owner_agent_session_id": "owner",
-			"started_at": 1.0, "status": "running", "agent": child})
-	}
-	dock := newSubagentMonitor(dockCLI(t, ownerAgent(t, "owner"), ""))
-	dock.refresh()
-	h := newMonitorHarness(t, dock, 32, 14)
-	footer := h.app.footer(h.app.cols, h.app.confirm, h.app.steering, dock.detail, false)
-	if !strings.Contains(footer, "Ctrl+T") || utf8.RuneCountInString(footer) > 32 {
-		t.Fatalf("footer %q", footer)
-	}
-	pending := dock.cli.t("cli.subagents.control_pending", nil)
-	h.start("first")
-	h.typeBytes("\x1b[B\rsFocus on tests\r")
-	waitFor(t, "steer delivered", func() bool { return len(child.got()) == 1 && h.notice() != pending })
-	steered := h.notice()
-	h.waitShows("x stop")
-	h.typeBytes("x")
-	h.waitShows("Stop?")
-	agent.UnregisterSubagent("second", nil)
-	dock.refresh()
-	h.typeBytes("y")
-	waitFor(t, "stop answered", func() bool { n := h.notice(); return n != pending && n != steered })
-	h.typeBytes("\x1b")
-	h.waitShows("Enter tail")
-	h.typeBytes("\x14")
-	if !h.exited(3 * time.Second) {
-		t.Fatalf("monitor still open, screen:\n%s", strings.Join(h.screen(), "\n"))
-	}
-	if dock.selectedID != "first" {
-		t.Fatalf("selected %v", dock.selectedID)
-	}
-	if got := child.got(); len(got) != 1 || got[0] != "Focus on tests" {
-		t.Fatalf("received %q", got)
-	}
-}
-
 func TestExtendedTailIsBoundedAndLiteral(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	c := bareCLI()
@@ -212,44 +142,4 @@ func TestExtendedTailIsBoundedAndLiteral(t *testing.T) {
 	if !strings.Contains(readTail(c, filepath.Join(dir, "missing.log")), "not available") {
 		t.Fatal("missing transcript is not reported unavailable")
 	}
-}
-
-func TestAStalledSteerNeverFreezesTheMonitor(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	cleanSubagentRegistry(t)
-	agent.RegisterSubagent(map[string]any{"subagent_id": "only", "goal": "only", "owner_agent_session_id": "owner",
-		"started_at": 1.0, "status": "running", "agent": &pinnedChild{}})
-	dock := newSubagentMonitor(dockCLI(t, ownerAgent(t, "owner"), ""))
-	dock.refresh()
-	release, entered := make(chan struct{}), make(chan struct{})
-	var enterOnce sync.Once
-	previous := monitorControl
-	monitorControl = func(_ *subagentMonitor, action string, message any, target any) (map[string]any, error) {
-		enterOnce.Do(func() { close(entered) })
-		select {
-		case <-release:
-		case <-time.After(5 * time.Second):
-		}
-		return map[string]any{"note": "steered late"}, nil
-	}
-	t.Cleanup(func() { monitorControl = previous })
-	h := newMonitorHarness(t, dock, 80, 40)
-	h.start("only")
-	h.typeBytes("sFocus\r")
-	h.waitShows(dock.cli.t("cli.subagents.control_pending", nil))
-	select {
-	case <-entered:
-	case <-time.After(3 * time.Second):
-		t.Fatal("the steer never reached the backend")
-	}
-	select {
-	case <-release:
-		t.Fatal("released before the monitor closed")
-	default:
-	}
-	h.typeBytes("\x1b")
-	if !h.exited(3 * time.Second) {
-		t.Fatalf("Esc did not close the monitor mid call, screen:\n%s", strings.Join(h.screen(), "\n"))
-	}
-	close(release)
 }

@@ -208,9 +208,9 @@ export function handleStatusEvent(ctx: GatewayEventContext): boolean {
   if (event.type === 'review.summary') {
     // Self-improvement background review saved something to memory/skills
     // and emitted a persistent summary (Python formats it as
-    // "💾 Self-improvement review: …"). The CLI prints this via
-    // prompt_toolkit and the terminal UI renders it as a system line; the
-    // desktop has neither, so without this handler the skill/memory
+    // "💾 Self-improvement review: …"). The terminal UI renders it as a
+    // system line; the desktop has no such line, so without this handler
+    // the skill/memory
     // change happens silently. Surface it as a persistent system message
     // in the transcript so the user is always informed — it must not be a
     // transient toast that can be missed.

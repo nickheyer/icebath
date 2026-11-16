@@ -173,9 +173,9 @@ func readActiveWork(ctx context.Context, h string) []any {
 // TUI command opening the profile of h, the bare command for the default profile or no profile
 func drainTUICommand(h string) string {
 	if name := home.ProfileNameFor(h); name != "" && name != "default" {
-		return "icebath -p " + name + " --tui"
+		return "icebath -p " + name
 	}
-	return "icebath --tui"
+	return "icebath"
 }
 
 // Progress block naming what the gateway waits on and how to release the wait

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -23,14 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Stop advice per supervisor that would relaunch a gateway right after a drain
-var ownerStopHints = map[string]string{
-	"systemd":  "stop its systemd unit with systemctl before retrying",
-	"launchd":  "stop its LaunchAgent with launchctl before retrying",
-	"desktop":  "quit the owning desktop app before retrying",
-	"external": "stop the gateway through its external supervisor before retrying",
-}
 
 // Control socket probes the holder checks reach, swapped by the cases that answer for a gateway
 var (
@@ -66,56 +59,7 @@ func jsonPyInt(v any) (int, bool) {
 
 // Identify answer of the manually launched gateway owning the home, nil when none runs, an error for a supervised one
 func manualGatewayIdentity(h string) (*pyjson.Object, error) {
-	identity := holdersIdentifyGateway(h)
-	if identity == nil {
-		running, err := strictGatewayRunning(filepath.Join(h, "gateway.pid"))
-		if err != nil {
-			return nil, err
-		}
-		if running {
-			return nil, holderErrorf("gateway has no usable control socket for %s; stop it through its owner and retry", h)
-		}
-		return nil, nil
-	}
-	claimed, _ := identity.Get("hermes_home")
-	if !pyrepr.Truthy(claimed) {
-		return nil, holderErrorf("gateway control identity does not match %s", h)
-	}
-	resolved, err := pypath.Resolve(pyrepr.Str(claimed))
-	if err != nil {
-		return nil, err
-	}
-	if !pathEq(resolved, h) {
-		return nil, holderErrorf("gateway control identity does not match %s", h)
-	}
-	owner := gateway.LaunchSupervisor(identity)
-	if owner != "manual" {
-		hint, known := ownerStopHints[owner]
-		if !known {
-			hint = "stop it through its supervisor before retrying"
-		}
-		named := owner
-		if named == "" {
-			named = "unknown"
-		}
-		return nil, holderErrorf("%s gateway still owns %s; %s", named, h, hint)
-	}
-	return identity, nil
-}
-
-// Whether the identified gateway itself accepted the drain or is already stopping
-func pauseAcked(response, identity *pyjson.Object) bool {
-	if response == nil || response.Len() == 0 || identity == nil {
-		return false
-	}
-	respPid, _ := response.Get("pid")
-	idPid, _ := identity.Get("pid")
-	if !pyrepr.Equal(respPid, idPid) {
-		return false
-	}
-	pausing, _ := response.Get("pausing")
-	stopping, _ := response.Get("already_stopping")
-	return pyrepr.Truthy(pausing) || pyrepr.Truthy(stopping)
+	return gatewaycli.ManualGatewayIdentity(h, holdersIdentifyGateway, holderErrorf)
 }
 
 // Python float of a drain timeout field, the TypeError or ValueError text for anything else
@@ -156,7 +100,7 @@ func drainManualGateway(h string) error {
 		return holderErrorf("gateway process identity is unverified for %s", h)
 	}
 	response := holdersPauseGateway(h)
-	if !pauseAcked(response, identity) {
+	if !gatewaycli.PauseAcked(response, identity) {
 		return holderErrorf("gateway refused to drain for %s", h)
 	}
 	var probeErr error

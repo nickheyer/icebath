@@ -68,7 +68,7 @@ func TestEpiloguePrintsShortResumeIDForCanonicalSession(t *testing.T) {
 	sid := "local-" + "ab12cd34ef56a7b8" + strings.Repeat("0", 48)
 	tuiSeed(t, h, sid, 300, 60)
 	out := tuiSummary(sid)
-	if !strings.Contains(out, "icebath --tui --resume "+sid[:22]+"\n") {
+	if !strings.Contains(out, "icebath --resume "+sid[:22]+"\n") {
 		t.Fatalf("short id missing: %q", out)
 	}
 	if strings.Contains(out, sid) {
@@ -85,7 +85,7 @@ func TestAmbiguousPrefixFallsBackToFullID(t *testing.T) {
 	b := "local-" + "ab12cd34ef56a7b8" + strings.Repeat("1", 48)
 	tuiSeed(t, h, a, 300, 60)
 	tuiSeed(t, h, b, 300, 60)
-	if out := tuiSummary(a); !strings.Contains(out, "icebath --tui --resume "+a+"\n") {
+	if out := tuiSummary(a); !strings.Contains(out, "icebath --resume "+a+"\n") {
 		t.Fatalf("ambiguous prefix shortened: %q", out)
 	}
 }
@@ -93,7 +93,7 @@ func TestAmbiguousPrefixFallsBackToFullID(t *testing.T) {
 func TestStoredIDsPrintUnchanged(t *testing.T) {
 	h := tuiTestHome(t)
 	tuiSeed(t, h, "20261012_185208_a67483", 300, 60)
-	if out := tuiSummary("20261012_185208_a67483"); !strings.Contains(out, "icebath --tui --resume 20261012_185208_a67483\n") {
+	if out := tuiSummary("20261012_185208_a67483"); !strings.Contains(out, "icebath --resume 20261012_185208_a67483\n") {
 		t.Fatalf("stored id: %q", out)
 	}
 }
@@ -150,7 +150,7 @@ func TestTuiExitSummaryResumeHintTuiHintsIncludeProfileFlagForNamedProfile(t *te
 	t.Setenv("ICEBATH_HOME", h)
 	tuiTitledSession(t, h, "20260524_000001_abc123")
 	out := tuiSummary("20260524_000001_abc123")
-	if !strings.Contains(out, "icebath --tui --resume 20260524_000001_abc123 -p dev") || !strings.Contains(out, `icebath --tui -c "My TUI Session" -p dev`) {
+	if !strings.Contains(out, "icebath --resume 20260524_000001_abc123 -p dev") || !strings.Contains(out, `icebath -c "My TUI Session" -p dev`) {
 		t.Fatalf("profile hints: %q", out)
 	}
 }
@@ -159,7 +159,7 @@ func TestTuiExitSummaryResumeHintTuiHintsNoProfileFlagOnDefault(t *testing.T) {
 	h := tuiTestHome(t)
 	tuiTitledSession(t, h, "20260524_000001_abc123")
 	out := tuiSummary("20260524_000001_abc123")
-	if !strings.Contains(out, "icebath --tui --resume 20260524_000001_abc123") || strings.Contains(out, " -p ") {
+	if !strings.Contains(out, "icebath --resume 20260524_000001_abc123") || strings.Contains(out, " -p ") {
 		t.Fatalf("default hints: %q", out)
 	}
 }

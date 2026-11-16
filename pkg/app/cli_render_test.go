@@ -370,87 +370,6 @@ func historyTexts() []string {
 	return out
 }
 
-func TestCprintNoAppDirectPrint(t *testing.T) {
-	configureHistoryForTest(t, false, 200)
-	out, _ := captureStreams(t)
-	setTUIApp(nil)
-	cprint("hello")
-	if out.String() != "hello\n" {
-		t.Fatalf("got %q", out.String())
-	}
-}
-
-func TestCprintAppNotRunningDirectPrint(t *testing.T) {
-	configureHistoryForTest(t, false, 200)
-	out, _ := captureStreams(t)
-	app := &fakeTUIApp{running: false}
-	installTUIApp(t, app)
-	cprint("x")
-	if out.String() != "x\n" || len(app.printedAbove()) != 0 {
-		t.Fatalf("got %q above %v", out.String(), app.printedAbove())
-	}
-}
-
-func TestCprintSameThreadAsAppLoopDirectPrint(t *testing.T) {
-	configureHistoryForTest(t, false, 200)
-	out, _ := captureStreams(t)
-	app := &fakeTUIApp{running: true, loop: true, onLoop: true}
-	installTUIApp(t, app)
-	cprint("x")
-	if got := app.printedAbove(); len(got) != 1 || got[0] != "x" {
-		t.Fatalf("printed above %v", got)
-	}
-	if len(app.loopQueue()) != 0 || out.Len() != 0 {
-		t.Fatal("the app's own thread must paint directly, never through the loop queue")
-	}
-}
-
-func TestCprintSwallowsPromptToolkitImportError(t *testing.T) {
-	configureHistoryForTest(t, false, 200)
-	out, _ := captureStreams(t)
-	setTUIApp(nil)
-	cprint("fallback2")
-	if out.String() != "fallback2\n" {
-		t.Fatalf("got %q", out.String())
-	}
-}
-
-func TestReplayOutputHistoryRerendersCallableEntries(t *testing.T) {
-	configureHistoryForTest(t, true, 10)
-	out, _ := captureStreams(t)
-	setTUIApp(nil)
-	calls := 0
-	render := func() []string {
-		calls++
-		return []string{"top border", "body"}
-	}
-	recordOutputHistoryEntry(render)
-	replayOutputHistory(nil, nil)
-	if calls != 1 || out.String() != "top border\nbody\n" {
-		t.Fatalf("calls %d out %q", calls, out.String())
-	}
-	if got := historyTexts(); len(got) != 1 || got[0] != "<callable>" {
-		t.Fatalf("history %v", got)
-	}
-}
-
-func TestChatConsoleRecordsRichAnsiForResizeReplay(t *testing.T) {
-	configureHistoryForTest(t, true, 10)
-	captureStreams(t)
-	setTUIApp(nil)
-	newChatConsole().Print("[bold red]Hello[/]")
-	texts := historyTexts()
-	if len(texts) == 0 {
-		t.Fatal("nothing recorded")
-	}
-	for _, line := range texts {
-		if strings.Contains(line, "\x1b[") {
-			return
-		}
-	}
-	t.Fatalf("no ANSI in %q", texts)
-}
-
 func TestSuspendOutputHistoryBlocksRecording(t *testing.T) {
 	configureHistoryForTest(t, true, 10)
 	restore := suspendOutputHistory()
@@ -516,29 +435,6 @@ func TestUnknownShapeReturnedUnchanged(t *testing.T) {
 	}
 }
 
-func TestInterruptMarkerNotRecordedSuspendBlocksRecordingDuringCprint(t *testing.T) {
-	configureHistoryForTest(t, true, 10)
-	captureStreams(t)
-	setTUIApp(nil)
-	recordOutputHistory("before marker", false)
-	restore := suspendOutputHistory()
-	cprint("── [Interrupted — processing new message] ──")
-	restore()
-	if got := historyTexts(); len(got) != 1 || got[0] != "before marker" {
-		t.Fatalf("history %v", got)
-	}
-}
-
-func TestInterruptMarkerNotRecordedNormalCprintStillRecords(t *testing.T) {
-	configureHistoryForTest(t, true, 10)
-	out, _ := captureStreams(t)
-	setTUIApp(nil)
-	cprint("normal response text")
-	if got := historyTexts(); len(got) != 1 || got[0] != "normal response text" || out.String() != "normal response text\n" {
-		t.Fatalf("history %v out %q", got, out.String())
-	}
-}
-
 func TestInterruptMarkerNotRecordedSuspendIsIdempotentNested(t *testing.T) {
 	configureHistoryForTest(t, true, 10)
 	recordOutputHistory("before", false)
@@ -551,26 +447,6 @@ func TestInterruptMarkerNotRecordedSuspendIsIdempotentNested(t *testing.T) {
 	recordOutputHistory("after", false)
 	if got := historyTexts(); strings.Join(got, "|") != "before|after" {
 		t.Fatalf("history %v", got)
-	}
-}
-
-func TestReplayDoesNotDuplicateMarkerReplayCleanAfterInterruptedTurn(t *testing.T) {
-	configureHistoryForTest(t, true, 10)
-	out, _ := captureStreams(t)
-	setTUIApp(nil)
-	recordOutputHistory("Assistant response text", false)
-	restore := suspendOutputHistory()
-	cprint("── [Interrupted — processing new message] ──")
-	restore()
-	if got := historyTexts(); len(got) != 1 || got[0] != "Assistant response text" {
-		t.Fatalf("history %v", got)
-	}
-	replayOutputHistory(nil, nil)
-	if n := strings.Count(out.String(), "Interrupted"); n != 1 {
-		t.Fatalf("marker printed %d times: %q", n, out.String())
-	}
-	if !strings.Contains(out.String(), "Assistant response text") {
-		t.Fatalf("replay missing the response: %q", out.String())
 	}
 }
 

@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -187,30 +186,6 @@ func confirmationTitle(refusal map[string]any) string {
 		return pyrepr.Str(requireKey(first, "title"))
 	}
 	return "Model Selection Warning"
-}
-
-// Choice value of a typed answer by its number or the classic confirm aliases, empty when none matches
-func confirmChoice(raw string, choices [][3]string) (string, error) {
-	answer := pystr.Lower(pystr.Strip(raw))
-	if answer != "" && pystr.StrIsDigit(answer) {
-		n, ok := pystr.IntText(answer)
-		if !ok {
-			return "", fmt.Errorf("ValueError: invalid literal for int() with base 10: %s", pyrepr.Repr(answer))
-		}
-		if n.Sign() > 0 && n.IsInt64() && n.Int64() <= int64(len(choices)) {
-			return choices[n.Int64()-1][0], nil
-		}
-	}
-	normalized := answer
-	if alias, ok := confirmAliases[answer]; ok {
-		normalized = alias
-	}
-	for _, choice := range choices {
-		if choice[0] == normalized {
-			return normalized, nil
-		}
-	}
-	return "", nil
 }
 
 // Structured compress payload from the raw /compress arguments, aggressive refused before the owner sees it

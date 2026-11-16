@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Raw bytes ingest budget, the 50MB download cap rather than the 20MB provider payload cap
@@ -172,11 +173,11 @@ func pyExpandUser(p string) string {
 	if name == "" {
 		h = os.Getenv("HOME")
 		if h == "" {
-			if u, err := user.Current(); err == nil {
+			if u, err := homeguard.Current(); err == nil {
 				h = u.HomeDir
 			}
 		}
-	} else if u, err := user.Lookup(name); err == nil {
+	} else if u, err := homeguard.Lookup(name); err == nil {
 		h = u.HomeDir
 	}
 	if h == "" {

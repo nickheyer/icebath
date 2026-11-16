@@ -1969,6 +1969,24 @@
       }
     },
     {
+      "name": "model.assign",
+      "summary": "Write the profile default model and provider, registering a new custom endpoint with its key.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ModelAssignParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ModelAssignResult"
+        }
+      }
+    },
+    {
       "name": "model.disconnect",
       "summary": "Remove every credential (env keys and OAuth state) for a provider.",
       "params": [
@@ -2001,6 +2019,24 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ModelOptionsResult"
+        }
+      }
+    },
+    {
+      "name": "model.probe",
+      "summary": "List the models an OpenAI compatible endpoint serves, with the base URL that answered.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ModelProbeParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ModelProbeResult"
         }
       }
     },
@@ -3554,7 +3590,7 @@
     },
     {
       "name": "session.save",
-      "summary": "Export the transcript to ~/.icebath/sessions/saved (classic /save).",
+      "summary": "Export the transcript to ~/.icebath/sessions/saved (/save).",
       "params": [
         {
           "name": "params",
@@ -3697,6 +3733,42 @@
       }
     },
     {
+      "name": "setup.action.poll",
+      "summary": "Wait up to two seconds for new output of a setup job and return it with the end state.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SetupActionPollParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SetupActionPollResult"
+        }
+      }
+    },
+    {
+      "name": "setup.action.start",
+      "summary": "Start a side effect of a setup section, a login or an engine install, and return the job that follows it.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SetupActionStartParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SetupActionStartResult"
+        }
+      }
+    },
+    {
       "name": "setup.runtime_check",
       "summary": "Strict provider check through the same runtime resolution the agent uses on session creation.",
       "params": [
@@ -3711,6 +3783,42 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/SetupRuntimeCheckResult"
+        }
+      }
+    },
+    {
+      "name": "setup.section.load",
+      "summary": "Read the values a setup section of the terminal UI starts from.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SetupSectionLoadParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SetupSectionLoadResult"
+        }
+      }
+    },
+    {
+      "name": "setup.section.save",
+      "summary": "Write the answers of one setup section to config.yaml and .env; the shared metrics consent keys go through the consent writer.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SetupSectionSaveParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SetupSectionSaveResult"
         }
       }
     },
@@ -5174,7 +5282,7 @@
       },
       "AgentPrintPayload": {
         "additionalProperties": false,
-        "description": "A session-authority local-viewer turn: one line the agent printed through ``_print_fn``\n(subagent completion, compaction, errors, budget notices), which main's classic CLI rendered\nthrough ``_agent_status_print``.",
+        "description": "A session-authority local-viewer turn: one line the agent printed through ``_print_fn``\n(subagent completion, compaction, errors, budget notices), which the headless chat prints\nas a status line.",
         "properties": {
           "text": {
             "title": "Text",
@@ -11662,7 +11770,7 @@
       },
       "ClarifyResult": {
         "additionalProperties": false,
-        "description": "``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response\nwithout ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as\nmain's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline).",
+        "description": "``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response\nwithout ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended\n(``timed_out`` keeps the answers locked before its deadline).",
         "properties": {
           "answers": {
             "anyOf": [
@@ -23564,7 +23672,7 @@
       },
       "MessageDeltaPayload": {
         "additionalProperties": false,
-        "description": "``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the\nreply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that\ncloses the classic CLI's reply box. Every other viewer ignores an empty chunk.\n\nA prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code\nunits of that segment already sent): a client drops a re-sent chunk it already applied.",
+        "description": "``message.delta``. A session-authority local-viewer turn also publishes ``text: null``: the\nreply segment boundary (the agent's ``stream_delta_callback(None)``, before tool lines) that\nends the headless chat's reply segment. Every other viewer ignores an empty chunk.\n\nA prompt turn stamps ``turn_id`` + ``segment`` (interim seals before it) + ``offset`` (UTF-16 code\nunits of that segment already sent): a client drops a re-sent chunk it already applied.",
         "properties": {
           "text": {
             "anyOf": [
@@ -24054,6 +24162,75 @@
           "text"
         ],
         "title": "MoaReferencePayload",
+        "type": "object"
+      },
+      "ModelAssignParams": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "api_key": {
+            "default": "",
+            "title": "Api Key",
+            "type": "string"
+          },
+          "confirm_expensive_model": {
+            "default": false,
+            "title": "Confirm Expensive Model",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "ModelAssignParams",
+        "type": "object"
+      },
+      "ModelAssignResult": {
+        "additionalProperties": false,
+        "description": "``confirm_required`` mirrors ``config.set``: a guarded model pick wrote nothing yet.",
+        "properties": {
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "confirm_required": {
+            "title": "Confirm Required",
+            "type": "boolean"
+          },
+          "confirm_message": {
+            "title": "Confirm Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "base_url",
+          "confirm_required",
+          "confirm_message"
+        ],
+        "title": "ModelAssignResult",
         "type": "object"
       },
       "ModelCapabilities": {
@@ -24598,6 +24775,62 @@
           "free"
         ],
         "title": "ModelPricing",
+        "type": "object"
+      },
+      "ModelProbeParams": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "api_key": {
+            "default": "",
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url"
+        ],
+        "title": "ModelProbeParams",
+        "type": "object"
+      },
+      "ModelProbeResult": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "found": {
+            "title": "Found",
+            "type": "boolean"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "probed_url": {
+            "title": "Probed Url",
+            "type": "string"
+          },
+          "suggested_base_url": {
+            "title": "Suggested Base Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "found",
+          "models",
+          "probed_url",
+          "suggested_base_url"
+        ],
+        "title": "ModelProbeResult",
         "type": "object"
       },
       "ModelSaveKeyParams": {
@@ -39751,6 +39984,86 @@
         "title": "SessionWorkspaceMoveResult",
         "type": "object"
       },
+      "SetupActionPollParams": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "title": "Job",
+            "type": "string"
+          },
+          "after": {
+            "title": "After",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job",
+          "after"
+        ],
+        "title": "SetupActionPollParams",
+        "type": "object"
+      },
+      "SetupActionPollResult": {
+        "additionalProperties": false,
+        "description": "``lines`` is the output the job printed past the first ``after`` lines; ``ok`` is its outcome once ``done`` is true.",
+        "properties": {
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "lines",
+          "done",
+          "ok"
+        ],
+        "title": "SetupActionPollResult",
+        "type": "object"
+      },
+      "SetupActionStartParams": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "xai.oauth.login",
+              "tts.install.neutts",
+              "tts.install.kittentts"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "SetupActionStartParams",
+        "type": "object"
+      },
+      "SetupActionStartResult": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "title": "Job",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "SetupActionStartResult",
+        "type": "object"
+      },
       "SetupBeat": {
         "enum": [
           "name",
@@ -40293,6 +40606,203 @@
           "ok"
         ],
         "title": "SetupRuntimeCheckResult",
+        "type": "object"
+      },
+      "SetupSectionLoadParams": {
+        "additionalProperties": false,
+        "properties": {
+          "config_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Config Keys",
+            "type": "array"
+          },
+          "env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Keys",
+            "type": "array"
+          },
+          "secret_config_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Config Keys",
+            "type": "array"
+          },
+          "secret_env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secret Env Keys",
+            "type": "array"
+          },
+          "facts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Facts",
+            "type": "array"
+          }
+        },
+        "title": "SetupSectionLoadParams",
+        "type": "object"
+      },
+      "SetupSectionLoadResult": {
+        "additionalProperties": false,
+        "description": "``config`` and ``env`` hold each asked key that has a value, config keys with the defaults merged.\n``secrets`` names the asked secret keys that hold a value and never carries one.\n``facts`` answers each asked fact: ``env:KEY`` a non empty key, ``extra:NAME`` an engine this platform supports, ``module:NAME`` an installed engine, ``binary:NAME`` a program on the path, ``nous.managed_tools``, ``xai.oauth``.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Env",
+            "type": "object"
+          },
+          "secrets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secrets",
+            "type": "array"
+          },
+          "facts": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Facts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "config",
+          "env",
+          "secrets",
+          "facts"
+        ],
+        "title": "SetupSectionLoadResult",
+        "type": "object"
+      },
+      "SetupSectionRemoval": {
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "enum": [
+              "config",
+              "env"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "key"
+        ],
+        "title": "SetupSectionRemoval",
+        "type": "object"
+      },
+      "SetupSectionSaveParams": {
+        "additionalProperties": false,
+        "properties": {
+          "writes": {
+            "items": {
+              "$ref": "#/components/schemas/SetupSectionWrite"
+            },
+            "title": "Writes",
+            "type": "array"
+          },
+          "removals": {
+            "items": {
+              "$ref": "#/components/schemas/SetupSectionRemoval"
+            },
+            "title": "Removals",
+            "type": "array"
+          }
+        },
+        "title": "SetupSectionSaveParams",
+        "type": "object"
+      },
+      "SetupSectionSaveResult": {
+        "additionalProperties": false,
+        "description": "``config`` is what ``config.yaml`` holds for each written key after the save, ``env`` the ``.env`` keys saved,\n``removed`` the keys of either file that existed and are gone.",
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "env": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "config",
+          "env",
+          "removed"
+        ],
+        "title": "SetupSectionSaveResult",
+        "type": "object"
+      },
+      "SetupSectionWrite": {
+        "additionalProperties": false,
+        "description": "One answer: a dotted ``config.yaml`` key or a ``.env`` key, with the type ``value`` is stored as.\nAn ``env`` target takes ``text`` only.",
+        "properties": {
+          "target": {
+            "enum": [
+              "config",
+              "env"
+            ],
+            "title": "Target",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "bool",
+              "whole",
+              "decimal",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value"
+          }
+        },
+        "required": [
+          "target",
+          "key",
+          "kind",
+          "value"
+        ],
+        "title": "SetupSectionWrite",
         "type": "object"
       },
       "SetupStatusResult": {
@@ -47954,7 +48464,7 @@
     },
     {
       "name": "command.observe",
-      "summary": "Fire-only: a recognized command the classic CLI or the TUI runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired).",
+      "summary": "Fire-only: a recognized command the terminal UI or the headless chat runs itself; the gateway fires `pre_command` for it in the session's profile after replying (`queued` false: not fired).",
       "params": [
         {
           "name": "params",
@@ -48350,7 +48860,7 @@
     },
     {
       "name": "rollback.session_diff",
-      "summary": "The classic CLI's /diff session: everything changed since the session's earliest retained checkpoint, as data for its terminal renderer.",
+      "summary": "/diff session: everything changed since the session's earliest retained checkpoint, as data for a terminal renderer.",
       "params": [
         {
           "name": "params",
@@ -48386,7 +48896,7 @@
     },
     {
       "name": "session.automation",
-      "summary": "The classic CLI's /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row.",
+      "summary": "The /goal, /subgoal, /loop, /heartbeat manager calls (state writes, the goal judge, quality gates), run by the owner on the session's row.",
       "params": [
         {
           "name": "params",
@@ -48602,7 +49112,7 @@
     },
     {
       "name": "session.stats",
-      "summary": "The session.usage dict on demand: what main's classic CLI read off its agent.",
+      "summary": "The session.usage dict on demand, read by the terminal UI and the headless chat.",
       "params": [
         {
           "name": "params",

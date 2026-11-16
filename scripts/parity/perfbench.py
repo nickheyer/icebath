@@ -130,7 +130,7 @@ def chat():
     row("chat -q usetool -Q", "wall", "s", *pick("usetool", "wall"))
 
 
-# One interactive classic session under xdrive.py, sampled from outside while it idles
+# One interactive terminal session under xdrive.py, sampled from outside while it idles
 def tty_once(side, n):
     outdir = f"{lane}/cap/perf_tty_{side}_{n}"
     os.makedirs(outdir, exist_ok=True)
@@ -200,17 +200,17 @@ def tty_once(side, n):
             "bytes": float(marks["idle"][1] - marks["ready"][1])}
 
 
-# Interactive classic session rows
+# Interactive terminal session rows
 def tty():
     res = {s: [] for s in SIDES}
     for n in range(RUNS):
         for s in SIDES:
             res[s].append(tty_once(s, n))
     pick = lambda k: ([x[k] for x in res["ref"]], [x[k] for x in res["ib"]])
-    row("interactive classic", "start to painted prompt", "s", *pick("prompt"))
-    row("interactive classic", "idle cpu per %gs" % IDLE, "s", *pick("cpu"))
-    row("interactive classic", "tree rss while idle", "MB", *pick("rss"))
-    row("interactive classic", "tty bytes per %gs idle" % IDLE, "B", *pick("bytes"))
+    row("interactive terminal", "start to painted prompt", "s", *pick("prompt"))
+    row("interactive terminal", "idle cpu per %gs" % IDLE, "s", *pick("cpu"))
+    row("interactive terminal", "tree rss while idle", "MB", *pick("rss"))
+    row("interactive terminal", "tty bytes per %gs idle" % IDLE, "B", *pick("bytes"))
 
 
 # Pid recorded in a side's gateway.pid when that process is alive and belongs to this lane

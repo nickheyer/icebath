@@ -517,35 +517,6 @@ func TestMoAReferenceBlocks(t *testing.T) {
 	})
 }
 
-func TestSubmittedUserMessagePreview(t *testing.T) {
-	t.Run("test_default_preview_shows_first_two_lines_and_last_two_lines", func(t *testing.T) {
-		recordPrints(t)
-		c := configuredCLI(t, map[string]any{"tool_progress": "all", "user_message_preview": map[string]any{"first_lines": 2, "last_lines": 2}}, CLIOptions{})
-		rendered := c.formatSubmittedUserMessagePreview("line1\nline2\nline3\nline4\nline5\nline6")
-		for _, want := range []string{"line1", "line2", "line5", "line6", "(+2 more lines)"} {
-			if !strings.Contains(rendered, want) {
-				t.Fatalf("rendered %q lacks %q", rendered, want)
-			}
-		}
-		if strings.Contains(rendered, "line3") || strings.Contains(rendered, "line4") {
-			t.Fatalf("rendered %q", rendered)
-		}
-	})
-	t.Run("test_preview_can_hide_last_lines", func(t *testing.T) {
-		recordPrints(t)
-		c := configuredCLI(t, map[string]any{"tool_progress": "all", "user_message_preview": map[string]any{"first_lines": 2, "last_lines": 0}}, CLIOptions{})
-		rendered := c.formatSubmittedUserMessagePreview("line1\nline2\nline3\nline4\nline5\nline6")
-		for _, want := range []string{"line1", "line2", "(+4 more lines)"} {
-			if !strings.Contains(rendered, want) {
-				t.Fatalf("rendered %q lacks %q", rendered, want)
-			}
-		}
-		if strings.Contains(rendered, "line5") || strings.Contains(rendered, "line6") {
-			t.Fatalf("rendered %q", rendered)
-		}
-	})
-}
-
 func TestReasoningPreviewBuffering(t *testing.T) {
 	verboseCLI := func(t *testing.T) (*CLI, *printRecorder) {
 		rec := recordPrints(t)

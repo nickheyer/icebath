@@ -161,6 +161,9 @@ func ensureTestIsolation(dbPath string) error {
 	if root, ok := realPlatformStateRoot(); ok {
 		roots = append(roots, root)
 	}
+	if root, ok := developerStateRoot(); ok {
+		roots = append(roots, root)
+	}
 	for _, r := range extra {
 		if p, err := resolvePythonPath(r); err == nil {
 			roots = append(roots, p)

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"weak"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 )
 
@@ -38,6 +39,18 @@ func realPlatformStateRoot() (string, bool) {
 		}
 	}
 	return realpathLax(root), true
+}
+
+// Platform default icebath root of the home the developer launched the test binary with, false outside test binaries
+func developerStateRoot() (string, bool) {
+	original := homeguard.Original()
+	if original == "" || original == homeguard.Home() {
+		return "", false
+	}
+	if runtime.GOOS == "windows" {
+		return realpathLax(filepath.Join(original, "AppData", "Local", "icebath")), true
+	}
+	return realpathLax(filepath.Join(original, ".icebath")), true
 }
 
 // Whether the environment carries a pytest variable or the test isolation marker

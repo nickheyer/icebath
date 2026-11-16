@@ -183,10 +183,6 @@ type seededQueryMessage struct {
 	AdmissionID string
 }
 
-func newSeededQueryMessage(text string, images []string, admissionID string) *seededQueryMessage {
-	return &seededQueryMessage{Text: text, Images: append([]string{}, images...), AdmissionID: admissionID}
-}
-
 func (m *seededQueryMessage) String() string { return m.Text }
 
 // chatTurn holds the per turn state the chat phases and the agent worker share
@@ -550,13 +546,6 @@ var (
 const terminalInputModeResetSeq = "\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l" +
 	"\x1b[?1004l" + "\x1b[?2004l" + "\x1b[?1049l" + "\x1b[<u" + "\x1b[>4m" + "\x1b[0m\x1b[?25h"
 
-// Records that the TUI app started so runCleanup resets input modes
-func markTUIInputModesActive() {
-	tuiInputModesMu.Lock()
-	tuiInputModesActive = true
-	tuiInputModesMu.Unlock()
-}
-
 // Arms the exit backstop at twice the cleanup leash the moment a termination signal arrives
 func armExitWatchdogOnShutdownSignal(ctx context.Context) {
 	signalWatchdogMu.Lock()
@@ -693,12 +682,6 @@ func tuiApp() tuiApplication {
 	return activeTUIApp
 }
 
-func setTUIApp(app tuiApplication) {
-	activeTUIAppMu.Lock()
-	activeTUIApp = app
-	activeTUIAppMu.Unlock()
-}
-
 // Configures the recent CLI output replayed after terminal redraws
 func configureOutputHistory(enabled bool, maxLines any) {
 	outputHistoryMu.Lock()
@@ -821,15 +804,6 @@ func normalizeMoaModel(model string) (string, string) {
 		}
 	}
 	return "", model
-}
-
-// Reports whether -q seeds an interactive session, only on a real TTY without oneshot or quiet
-func shouldSeedInteractive(query, image string, quiet, oneshot bool) bool {
-	if (query == "" && image == "") || oneshot || quiet {
-		return false
-	}
-	c := console()
-	return c.StdinIsTTY() && c.StdoutIsTTY()
 }
 
 // Returns the shortest configured alias for a model name, else the name itself

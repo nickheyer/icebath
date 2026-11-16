@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -371,39 +370,4 @@ func gatewayForward(ctx context.Context, v *GatewayChatView, name, rest string) 
 	}
 	v.println(v.out, output)
 	return nil
-}
-
-// Any slash command the view controls did not take, an alias of a view control answered as its canonical
-func gatewayRunCommand(ctx context.Context, v *GatewayChatView, command, rest string) (bool, error) {
-	name := strings.TrimLeft(command, "/")
-	canonical := name
-	if def := commands.Resolve(name); def != nil {
-		canonical = def.Name
-	}
-	if gatewayViewControls[canonical] && canonical != name {
-		return v.command(ctx, pystr.Rstrip("/"+canonical+" "+rest))
-	}
-	if handler, ok := gatewayCommandHandlers[canonical]; ok {
-		return true, handler(ctx, v, pystr.Strip(rest))
-	}
-	return true, gatewayForward(ctx, v, canonical, pystr.Strip(rest))
-}
-
-// Help line of the classic gateway view, its controls and the reports the owner runs
-func gatewayChatHelpText() string {
-	var names []string
-	for name := range gateway.SessionReadCommands {
-		if name != "help" {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	reports := make([]string, len(names))
-	for i, name := range names {
-		reports[i] = "/" + name
-	}
-	return "/stop, /approve <id> <choice>, /answer <id> <text>, /discard <admission_id> (turn lost during " +
-		"restart), /yolo [on|off], /quit (detach). /branch [title], /model <model> [--provider name], " +
-		"/compress [here [N] | <focus>] [--preview]. /title [name], /undo [N], /retry, /new [title] " +
-		"(/reset), /usage, /tools.\nReports run by the gateway: " + strings.Join(reports, " ") + ".\nParity table: " + gatewayParityDoc
 }

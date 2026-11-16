@@ -66,10 +66,10 @@ var (
 var RefusalHints = map[string]string{
 	"export":   "Run `icebath profile export [name] -o <file>` in a terminal.",
 	"import":   "Run `icebath profile import <archive> [--name <name>]` in a terminal.",
-	"snapshot": "Run `icebath backup --quick` in a terminal (restore: `icebath --cli`, then /snapshot restore).",
+	"snapshot": "Type /snapshot in the terminal UI (bare `icebath`): list, create [label], restore <id>, prune [N]. `icebath backup --quick` creates one from a shell.",
 	"handoff":  "Hand off from the classic CLI: `icebath --cli --resume <session>`, then /handoff <platform>.",
 	"hatch":    "Generate a pet from the classic CLI (`icebath --cli`, then /hatch), or use /pet to pick one.",
-	"worktree": "Start in a fresh worktree with `icebath -w`, or use the classic CLI (`icebath --cli`).",
+	"worktree": "Start in a fresh worktree with `icebath -w`, or run `icebath worktree list` and `icebath worktree prune` in a terminal.",
 	"palette":  "Type / to search commands (the composer completes and filters them).",
 }
 

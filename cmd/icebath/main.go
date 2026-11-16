@@ -121,6 +121,9 @@ func beforeDispatch(cli *commands.CLI, cmd *cobra.Command, args []string) error 
 	if a.Yolo {
 		os.Setenv("ICEBATH_YOLO_MODE", "1")
 	}
+	if code := adoptStdinQuery(a); code != 0 {
+		return &commands.ExitError{Code: code}
+	}
 	prepareAgentStartup(a)
 	if a.Oneshot != "" {
 		return &commands.ExitError{Code: runOneshotFromArgs(a)}

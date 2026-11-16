@@ -379,7 +379,7 @@ func TestOpenSessionInTerminalWritesTheLauncherAndStartsTheUserTerminal(t *testi
 		t.Fatal(err)
 	}
 	want := "#!/bin/sh\ncd '" + h.work + "' || exit 1\nexport ICEBATH_RUNTIME_DIR='/opt/rt'\nexport ICEBATH_HOME='" + h.home + "'\n" +
-		"exec '/opt/icebath/bin/icebath' '--profile' 'work' '--tui' '--resume' 'sess-1'\n"
+		"exec '/opt/icebath/bin/icebath' '--profile' 'work' '--resume' 'sess-1'\n"
 	if string(script) != want {
 		t.Fatalf("launcher script\n%s\nwant\n%s", script, want)
 	}

@@ -8,16 +8,12 @@ import (
 	"regexp"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -104,18 +100,6 @@ func brandGlyph() (string, string) {
 	return modernDefaultBrandGlyph, name
 }
 
-// Prompt symbol of the active skin with its padding removed
-func promptGlyph() string {
-	symbol := modernDefaultPromptSymbol
-	if skin := config.GetActiveSkin(context.Background()); skin != nil {
-		symbol = skin.GetBranding("prompt_symbol", modernDefaultPromptSymbol)
-	}
-	if symbol = pystr.Strip(symbol); symbol != "" {
-		return symbol
-	}
-	return modernDefaultPromptSymbol
-}
-
 // Opening bar of a block, accent for user messages and answers, dim for reasoning, settling any owed gap
 func separator(accent bool) string {
 	modernGapPending.Store(false)
@@ -139,11 +123,6 @@ func takeGap() string {
 		return "\n"
 	}
 	return ""
-}
-
-// Rich markup of a submitted single line user message led by the prompt glyph
-func userEchoMarkup(text, accent, tsSuffix string) string {
-	return "[bold " + accent + "]" + pyrich.Escape(promptGlyph()) + "[/] [bold]" + pyrich.Escape(text) + "[/]" + tsSuffix
 }
 
 // Rows opening an answer, the accent bar then the skin brand glyph and name
@@ -300,20 +279,6 @@ func diffPrinter(printFn func(string)) func(string) {
 	return printFn
 }
 
-// Dim line closing each turn with the summary and the wall clock
-func turnFooter(summary string) string {
-	body := pystr.Strip(pystr.LstripChars(summary, "⋯ "))
-	format := "%-I:%M %p"
-	if IsWindows() {
-		format = "%I:%M %p"
-	}
-	clock := pydatetime.Strftime(time.Now(), format)
-	if body != "" {
-		return takeGap() + modernDim + "─ " + body + " · " + clock + modernRST
-	}
-	return takeGap() + modernDim + "─ " + clock + modernRST
-}
-
 var (
 	hintPairsFor = hintPairs
 	cwdLabelFor  = cwdLabel
@@ -334,96 +299,6 @@ func cwdLabel() string {
 		return short + " (" + branch + ")"
 	}
 	return short
-}
-
-// What the agent is doing, the command status or the spinner text with its face or tool emoji
-func activityText(c *CLI) string {
-	c.uiMu.Lock()
-	commandRunning, commandStatus, spinnerText, agentRunning := c.commandRunning, c.commandStatus, c.spinnerText, c.agentRunning
-	c.uiMu.Unlock()
-	if commandRunning {
-		return commandStatus
-	}
-	if text := pystr.Strip(spinnerText); text != "" {
-		return text
-	}
-	if agentRunning {
-		return c.t("cli.modern.working", nil)
-	}
-	return ""
-}
-
-// Compact time the running turn has taken, empty when no turn runs
-func turnElapsed(c *CLI) string {
-	c.uiMu.Lock()
-	started := c.promptStartTime
-	c.uiMu.Unlock()
-	if started == nil {
-		return ""
-	}
-	return provider.FormatDurationCompact(max(0.0, wallClock()-*started))
-}
-
-// Quiet style of the composer rules, the skin session border
-func ruleStyle() string { return "fg:" + skinHex("session_border", "#8B8682") }
-
-// Fragments drawn on the terminal background instead of the status bar fill
-func noBg(frags []styledFragment) []styledFragment {
-	out := make([]styledFragment, len(frags))
-	for i, f := range frags {
-		out[i] = styledFragment{pystr.Strip(f.Style + " bg:default"), f.Text}
-	}
-	return out
-}
-
-// Fragments as they are when they fit the width, else their plain text trimmed to it
-func fitFragments(frags []styledFragment, width int) []styledFragment {
-	used := 0
-	var plain strings.Builder
-	for _, f := range frags {
-		used += statusBarDisplayWidth(f.Text)
-		plain.WriteString(f.Text)
-	}
-	if used <= width {
-		return frags
-	}
-	return []styledFragment{{ruleStyle(), trimStatusBarText(plain.String(), width)}}
-}
-
-// Top composer rule carrying the live status on the left and the session title on the right
-func topRuleFragments(c *CLI) []styledFragment {
-	width := max(10, tuiTerminalWidthFor(c))
-	rule, accent := ruleStyle(), "fg:"+skinHex("ui_accent", modernDefaultAccent)+" bold"
-	agentRunning, commandRunning := c.busyState()
-	left := []styledFragment{}
-	if agentRunning || commandRunning {
-		spin := []rune(modernSpin)
-		frame := string(spin[int(monotonic()*10)%len(spin)])
-		left = append(left, styledFragment{rule, "── "}, styledFragment{accent, frame + " "}, styledFragment{"", activityText(c)})
-		for _, extra := range []string{turnElapsed(c), c.spinnerTokenFlow()} {
-			if extra != "" {
-				left = append(left, styledFragment{"class:status-bar-dim bg:default", " · " + extra})
-			}
-		}
-		left = append(left, styledFragment{rule, " "})
-	}
-	right := []styledFragment{}
-	if title := c.getStatusBarSessionTitle(); title != "" {
-		right = []styledFragment{{rule, " "}, {"fg:" + skinHex("ui_label", "#DAA520"), title}, {rule, " ─"}}
-	}
-	widthOf := func(frags []styledFragment) int {
-		n := 0
-		for _, f := range frags {
-			n += statusBarDisplayWidth(f.Text)
-		}
-		return n
-	}
-	used := widthOf(left) + widthOf(right)
-	if used >= width {
-		right, used = nil, widthOf(left)
-	}
-	frags := append(append([]styledFragment{}, left...), styledFragment{rule, strings.Repeat("─", max(0, width-used))})
-	return fitFragments(append(frags, right...), width)
 }
 
 // Keys that do something right now, for the right half of the footer
@@ -448,121 +323,4 @@ func hintPairs(c *CLI) [][2]string {
 		return append(pairs, [2]string{"ctrl+c", c.t("cli.modern.hint_stop", nil)})
 	}
 	return [][2]string{{"/", c.t("cli.modern.hint_commands", nil)}, {"@", c.t("cli.modern.hint_files", nil)}, {"!", c.t("cli.modern.hint_shell", nil)}}
-}
-
-// Footer under the composer with the status segments on the left and the live key hints on the right
-func statusLineFragments(c *CLI) []styledFragment {
-	return renderSafely(statusLineFragmentsUnguarded, c, "_status_line_fragments")
-}
-
-// Runs a render callback, a failing frame reducing to a bare line with the model name
-func renderSafely(render func(*CLI) []styledFragment, c *CLI, name string) (frags []styledFragment) {
-	defer func() {
-		if r := recover(); r != nil {
-			cliLogger.Debug(name+" failed", "error", r)
-			frags = []styledFragment{{"", " " + c.statusBarFallbackModel()}}
-		}
-	}()
-	return render(c)
-}
-
-// The classic bar segments, then the working directory and the key hints when there is room
-func statusLineFragmentsUnguarded(c *CLI) []styledFragment {
-	width := max(10, tuiTerminalWidthFor(c))
-	dim, strong := statusBarDim, statusBarStrong
-	snapshot := statusBarSnapshotFor(c)
-	fieldSet := c.getStatusBarFieldSet()
-	on := func(name string) bool { return fieldSet == nil || fieldSet[name] }
-	left := []styledFragment{}
-	for _, seg := range c.statusBarSegments(snapshot, width, fieldSet, c.isSessionYoloActive(), true) {
-		if len(left) > 0 {
-			left = append(left, styledFragment{dim, " · "})
-		}
-		left = append(left, seg...)
-	}
-	if on("stash") {
-		if stash := c.stashIndicator(); stash != "" {
-			left = append(left, styledFragment{dim, " · "}, styledFragment{strong, stash})
-		}
-	}
-	if battery := cliStr(snapshot["battery_label"], ""); battery != "" && on("battery") {
-		left = append([]styledFragment{{"", " "}, {batteryStatusStyle(cliStr(snapshot["battery_category"], "dim")), battery}, {dim, " ·"}}, left...)
-	}
-	if vim := c.vimModeLabel(); vim != "" {
-		left = append(left, styledFragment{dim, " · "}, styledFragment{strong, vim})
-	}
-	right := []styledFragment{}
-	if width >= 76 {
-		for _, pair := range hintPairsFor(c) {
-			if len(right) > 0 {
-				right = append(right, styledFragment{dim, " · "})
-			}
-			right = append(right, styledFragment{strong, pair[0]}, styledFragment{dim, " " + pair[1]})
-		}
-	}
-	widthOf := func(frags []styledFragment) int {
-		n := 0
-		for _, f := range frags {
-			n += statusBarDisplayWidth(f.Text)
-		}
-		return n
-	}
-	usedLeft, usedRight := widthOf(left), widthOf(right)
-	room := width - usedLeft - usedRight - 6
-	if fieldSet == nil && room >= 12 {
-		cwd := cwdLabelFor()
-		if pystr.Len(cwd) > room {
-			cwd = "…" + pystr.Slice(cwd, pystr.Len(cwd)-(room-1), pystr.Len(cwd))
-		}
-		left = append(left, styledFragment{dim, " · "}, styledFragment{dim, cwd})
-		usedLeft += 3 + statusBarDisplayWidth(cwd)
-	}
-	if len(right) > 0 && usedLeft+usedRight+2 > width {
-		right, usedRight = nil, 0
-	}
-	frags := append([]styledFragment{}, left...)
-	if len(right) > 0 {
-		frags = append(frags, styledFragment{"", strings.Repeat(" ", max(1, width-usedLeft-usedRight-1))})
-		frags = append(append(frags, right...), styledFragment{"", " "})
-	}
-	return noBg(fitFragments(frags, width))
-}
-
-// Reports whether Tab queues the composer text while a turn runs
-func canQueueWhileBusy(c *CLI) bool {
-	app := c.tui.app
-	if app == nil {
-		return false
-	}
-	buf := app.buffer
-	text := pystr.Strip(buf.text())
-	agentRunning, _ := c.busyState()
-	return agentRunning && text != "" && buf.completeState == nil && !looksLikeSlashCommand(text) && !strings.HasPrefix(text, "!") && !modalPromptActive(c)
-}
-
-// Builds the composer rules of the glyph layout and binds Tab to queue the draft while a turn runs
-func modernInputRules(c *CLI, kb *ptKeyBindings) (*ptWindow, *ptWindow) {
-	top := &ptWindow{name: "input-rule-top", kind: ptWindowText,
-		fragments: func() []styledFragment { return renderSafely(topRuleFragments, c, "top_rule_fragments") },
-		height:    func() int { return c.tuiInputRuleHeight("top", nil) }}
-	bottom := &ptWindow{name: "input-rule-bottom", kind: ptWindowText,
-		fragments: func() []styledFragment {
-			return []styledFragment{{ruleStyle(), strings.Repeat("─", max(0, tuiTerminalWidthFor(c)))}}
-		},
-		height: func() int { return c.tuiInputRuleHeight("bottom", nil) }}
-	kb.add(func(e *ptEvent) {
-		buf := e.currentBuffer()
-		text := pystr.Strip(buf.text())
-		images := append([]string{}, c.attachedImages...)
-		c.attachedImages = nil
-		var payload any = text
-		if len(images) > 0 {
-			payload = submittedInput{Text: text, Images: images}
-		}
-		c.tuiEnterWhileBusy(text, images, payload, "queue")
-		c.inlinePastes(buf)
-		buf.reset(true)
-		_ = e.app.Invalidate()
-	}, ptBind{filter: func() bool { return canQueueWhileBusy(c) }, eager: true}, "tab")
-	return top, bottom
 }

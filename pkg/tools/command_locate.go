@@ -2,12 +2,13 @@ package tools
 
 import (
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Where a command lookup searches, a nil Path meaning the ambient PATH and an empty one searching nothing
@@ -351,14 +352,14 @@ func osPathExpandUser(p string) string {
 		if h, ok := os.LookupEnv("HOME"); ok {
 			userhome = h
 		} else {
-			u, err := user.LookupId(strconv.Itoa(os.Getuid()))
+			u, err := homeguard.LookupID(strconv.Itoa(os.Getuid()))
 			if err != nil {
 				return p
 			}
 			userhome = u.HomeDir
 		}
 	} else {
-		u, err := user.Lookup(p[1:i])
+		u, err := homeguard.Lookup(p[1:i])
 		if err != nil {
 			return p
 		}

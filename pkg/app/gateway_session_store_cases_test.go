@@ -35,22 +35,6 @@ func (c *storeCaseClient) EventQueue() *gateway.EventQueue { return c.events }
 func (c *storeCaseClient) SendFrame(string) error          { return nil }
 func (c *storeCaseClient) Close() error                    { return nil }
 
-func TestStartAndQuitClosesTheGatewaySessionWithNoAgent(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	host := &CLI{ctx: context.Background(), sessionID: "local-new", gatewaySessionOpen: true}
-	if got := host.closingSessionID(); got != "local-new" {
-		t.Fatalf("closing id %q", got)
-	}
-	host.gatewaySessionOpen = false
-	if got := host.closingSessionID(); got != "" {
-		t.Fatalf("closing id %q with no gateway session", got)
-	}
-	host.setAgent(offlineAgent(t, &CLI{ctx: context.Background(), sessionID: "local-agent"}))
-	if got := host.closingSessionID(); got != "local-agent" {
-		t.Fatalf("closing id %q with an agent", got)
-	}
-}
-
 func TestNewSessionIdOffTheGatewayIsMainsMint(t *testing.T) {
 	host := &CLI{}
 	minted, err := host.newSessionID(time.Date(2026, 10, 12, 1, 2, 3, 0, time.Local), "", "")

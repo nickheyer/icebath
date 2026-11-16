@@ -7,7 +7,7 @@ import (
 
 // Launch arguments of the TUI the chat entry points pass through
 type TUILaunch struct {
-	Resume, Model, Provider, Toolsets, Query, Image                           string
+	Resume, Model, Provider, BaseURL, APIKey, Reasoning, Toolsets             string
 	Native, AcceptHooks, Verbose, Quiet, Worktree, Checkpoints, PassSessionID bool
 	Skills                                                                    []string
 	MaxTurns                                                                  *int

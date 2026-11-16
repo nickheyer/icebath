@@ -268,47 +268,6 @@ func (c *CLI) onReasoning(reasoningText string) {
 // Clock suffix of a submitted message preview, empty unless timestamps are shown
 func (c *CLI) timestampNow() string { return pydatetime.Strftime(time.Now(), c.timestampFormat) }
 
-// Rich markup of the submitted user message, long input cut to its first and last lines
-func (c *CLI) formatSubmittedUserMessagePreview(userInput string) string {
-	tsSuffix := ""
-	if c.showTimestamps {
-		tsSuffix = " [dim]" + c.timestampNow() + "[/]"
-	}
-	lines := strings.Split(userInput, "\n")
-	mark := "●"
-	if isModern(c) {
-		mark = pyrich.Escape(promptGlyph())
-	}
-	accent := accentHex()
-	if len(lines) <= 1 {
-		return "[bold " + accent + "]" + mark + "[/] [bold]" + pyrich.Escape(userInput) + "[/]" + tsSuffix
-	}
-	firstLines := max(1, c.userMessagePreviewFirstLines)
-	lastLines := max(0, c.userMessagePreviewLastLines)
-	head := lines[:min(firstLines, len(lines))]
-	tailCount := min(lastLines, max(0, len(lines)-len(head)))
-	tail := lines[len(lines)-tailCount:]
-	hiddenMiddleCount := len(lines) - len(head) - len(tail)
-	if hiddenMiddleCount < 0 {
-		hiddenMiddleCount, tail = 0, nil
-	}
-	previewLines := []string{"[bold " + accent + "]" + mark + "[/] [bold]" + pyrich.Escape(head[0]) + "[/]" + tsSuffix}
-	for _, line := range head[1:] {
-		previewLines = append(previewLines, "[bold]"+pyrich.Escape(line)+"[/]")
-	}
-	if hiddenMiddleCount > 0 {
-		key := "cli.stream.preview_more_lines_other"
-		if hiddenMiddleCount == 1 {
-			key = "cli.stream.preview_more_lines_one"
-		}
-		previewLines = append(previewLines, "[dim]"+pyrich.Escape(c.t(key, map[string]any{"count": hiddenMiddleCount}))+"[/]")
-	}
-	for _, line := range tail {
-		previewLines = append(previewLines, "[bold]"+pyrich.Escape(line)+"[/]")
-	}
-	return strings.Join(previewLines, "\n")
-}
-
 // Replaces pasted text markers with their file contents, a marker kept when its file is unreadable
 func (c *CLI) expandPasteReferences(text string) (string, error) {
 	if !strings.Contains(text, "[Pasted text #") {
@@ -332,42 +291,6 @@ func (c *CLI) expandPasteReferences(text string) (string, error) {
 		return "", decodeErr
 	}
 	return out, nil
-}
-
-// Renders a submitted user message in the chat scrollback style, a timeline notification as one dim line
-func (c *CLI) printUserMessagePreview(userInput any) {
-	if n, ok := userInput.(tools.TimelineNotification); ok {
-		_, _ = config.RenderNotification(c.ctx, func() error {
-			chatConsolePrint("[dim]◈ " + pyrich.Escape(n.DisplayText) + "[/dim]")
-			return nil
-		}, "cli", n.NotificationCategory == "diagnostic", nil)
-		return
-	}
-	modern := c.modernLayout
-	if modern {
-		cprint("\n" + separator(true))
-	} else {
-		chatConsolePrint("[" + accentHex() + "]" + strings.Repeat("─", 40) + "[/]")
-	}
-	text := ""
-	if pyrepr.Truthy(userInput) {
-		text = pyrepr.Str(userInput)
-	}
-	switch {
-	case strings.Contains(text, "\n"):
-		if modern {
-			defaultChatConsole.PrintSoft(c.formatSubmittedUserMessagePreview(text))
-		} else {
-			chatConsolePrint(c.formatSubmittedUserMessagePreview(text))
-		}
-	case modern:
-		defaultChatConsole.PrintSoft(userEchoMarkup(text, accentHex(), ""))
-	default:
-		chatConsolePrint("[bold " + accentHex() + "]●[/] [bold]" + pyrich.Escape(text) + "[/]")
-	}
-	if modern {
-		cprint(closingSeparator(true))
-	}
 }
 
 // Streams reasoning tokens into the dim block above the response
@@ -797,11 +720,6 @@ func (c *CLI) slowCommandStatus(command string) string {
 		}
 	}
 	return c.t("cli.stream.processing_command", nil)
-}
-
-// Current spinner frame for slow slash commands
-func (c *CLI) commandSpinnerFrame() string {
-	return commandSpinnerFrames[int(monotonic()*10)%len(commandSpinnerFrames)]
 }
 
 // Shows a busy state in the TUI while fn runs, reserving the composer when blocksInput is set

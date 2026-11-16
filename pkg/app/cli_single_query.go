@@ -411,19 +411,8 @@ func configureQuietAgent(a *GatewayAgent) {
 	a.SetToolProgressMode("off")
 }
 
-// Seeds an interactive session on a TTY, else runs the one shot turn and exits with its code
+// Runs the one shot turn and exits with its code
 func runSingleQueryMode(c *CLI, query, image string, quiet, oneshot, streamJSON bool) {
-	if shouldSeedInteractive(query, image, quiet, oneshot) {
-		seededQuery, seededImages, err := collectQueryImages(query, image)
-		if err != nil {
-			fmt.Fprintln(stderrWriter(), err.Error())
-			exitSingleQuery(1)
-		}
-		cliLogger.Info(fmt.Sprintf("Seeding interactive session with -q prompt (%d chars, %d images)", len(seededQuery), len(seededImages)))
-		c.seededFirstMessage = newSeededQueryMessage(seededQuery, seededImages, "")
-		c.run()
-		return
-	}
 	c.singleQueryMode = true
 	_ = os.Setenv("ICEBATH_SINGLE_QUERY_SESSION", "1")
 	if os.Getenv("ICEBATH_KANBAN_TASK") != "" && !kanban.RegisterCurrentWorkerFromEnv(c.ctx) {

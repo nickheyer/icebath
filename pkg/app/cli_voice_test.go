@@ -558,38 +558,6 @@ func TestVoiceFullDuplexListenerStopPhraseMidGenerationInterruptsAndEndsChat(t *
 	}
 }
 
-func TestTypedVoiceStopTypedStopEndsVoiceChatWhenVoiceOn(t *testing.T) {
-	c, rec := voiceCLI(t)
-	writeVoiceConfig(t, "voice:\n  stop_phrases: [stop]\n")
-	swap(t, &voiceStopPlayback, func() {})
-	c.voiceMode = true
-	if !c.typedVoiceStop("stop") {
-		t.Fatal("typed stop passed through")
-	}
-	disabled := c.t("cli.voice.disabled", nil)
-	count := 0
-	for _, line := range rec.plain() {
-		if strings.Contains(line, disabled) {
-			count++
-		}
-	}
-	if c.voiceMode || count != 1 {
-		t.Fatalf("voice mode %v disable prints %d", c.voiceMode, count)
-	}
-}
-
-func TestTypedVoiceStopLongerTypedMessagePassesThroughInVoiceMode(t *testing.T) {
-	c, _ := voiceCLI(t)
-	writeVoiceConfig(t, "voice:\n  stop_phrases: [stop]\n")
-	c.voiceMode = true
-	if c.typedVoiceStop("stop the docker container") {
-		t.Fatal("longer message treated as a stop phrase")
-	}
-	if !c.voiceMode {
-		t.Fatal("voice chat disabled")
-	}
-}
-
 // Continuous voice CLI whose duplex listen signals each arming and whose speech synthesis fails fast
 func fallbackSpeakCLI(t *testing.T, continuous bool) (*CLI, chan struct{}) {
 	t.Helper()

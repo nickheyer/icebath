@@ -51,7 +51,7 @@ func TestDrainHintNamesTheDrainingProfile(t *testing.T) {
 	t.Setenv("HOME", tmp)
 	t.Setenv("ICEBATH_HOME", root)
 	work := []any{map[string]any{"kind": "chat", "session": "s1"}}
-	for h, want := range map[string]string{filepath.Join(root, "profiles", "work"): "`icebath -p work --tui`", root: "`icebath --tui`"} {
+	for h, want := range map[string]string{filepath.Join(root, "profiles", "work"): "`icebath -p work`", root: "`icebath`"} {
 		got, err := formatDrainReport(context.Background(), work, 60, h)
 		if err != nil || !strings.Contains(got, want) {
 			t.Fatalf("%s report %q %v", h, got, err)

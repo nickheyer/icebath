@@ -93,6 +93,10 @@ func (p *openAINativeProvider) SetupSchema() map[string]any {
 		"", "", "", nil)
 }
 
-func init() {
-	RegisterWebProvider(&openAINativeProvider{baseWebProvider{name: "openai-native", display: "OpenAI Native Web Search (Codex Responses)"}})
+// OpenAI native web search provider the web/openai_native plugin registers
+func NewOpenAINativeWebProvider() WebProvider {
+	return &openAINativeProvider{baseWebProvider{name: "openai-native", display: "OpenAI Native Web Search (Codex Responses)"}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*openAINativeProvider) PyTypeName() string { return "OpenAINativeWebSearchProvider" }

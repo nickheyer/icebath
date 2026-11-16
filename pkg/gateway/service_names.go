@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -31,7 +32,7 @@ var (
 	serviceGeteuid       = os.Geteuid
 	serviceGOOS          = runtime.GOOS
 	systemUnitDir        = "/etc/systemd/system"
-	serviceLookupAccount = func() (*user.User, error) { return user.LookupId(strconv.Itoa(os.Getuid())) }
+	serviceLookupAccount = func() (*user.User, error) { return homeguard.LookupID(strconv.Itoa(os.Getuid())) }
 )
 
 // Installs the service naming facts pkg/profiles/manage reaches through profiles.GatewayServiceHooks

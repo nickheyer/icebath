@@ -3,9 +3,10 @@ package pypath
 import (
 	"errors"
 	"os"
-	"os/user"
 	"strconv"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 func TestPathHomeAndExpanduserMatchPathlib(t *testing.T) {
@@ -42,7 +43,7 @@ func TestPathHomeAndExpanduserMatchPathlib(t *testing.T) {
 		t.Fatalf("empty HOME PathHome() = %q, %v", got, err)
 	}
 	os.Unsetenv("HOME")
-	u, err := user.LookupId(strconv.Itoa(os.Getuid()))
+	u, err := homeguard.LookupID(strconv.Itoa(os.Getuid()))
 	if err != nil {
 		if _, err := PathHome(); !errors.As(err, &rt) {
 			t.Fatalf("no HOME and no passwd entry gave %v", err)

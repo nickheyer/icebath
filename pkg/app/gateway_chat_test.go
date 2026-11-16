@@ -160,7 +160,7 @@ func TestRefusalsNameTheReplacementAndARunnableSafeModeExample(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	text := errOut.String()
-	if !strings.Contains(text, "--worktree: use") || !strings.Contains(text, "icebath --tui -w") ||
+	if !strings.Contains(text, "--worktree: use") || !strings.Contains(text, "icebath -w") ||
 		!strings.Contains(text, "--run-budget: use") || !strings.Contains(text, "run_budget_seconds") {
 		t.Fatalf("stderr %q", text)
 	}
@@ -304,33 +304,6 @@ func TestRPCPreservesNotificationsAndErrors(t *testing.T) {
 	}
 }
 
-func TestYoloSlashTogglesTheSessionBypassOnTheOwner(t *testing.T) {
-	out, _ := captureStreams(t)
-	peer := newFakeGatewayPeer(t, func(p *fakeGatewayPeer, method string, params map[string]any) (any, error) {
-		value, ok := params["value"]
-		if !ok {
-			value = "0"
-		}
-		return map[string]any{"key": "yolo", "value": value, "scope": "session"}, nil
-	})
-	view := newGatewayChatView(peer, map[string]any{"stored_session_id": "sid"}, false, nil, "")
-	for _, line := range []string{"/yolo off", "/yolo"} {
-		keep, err := viewCommand(view, line)
-		if err != nil || !keep {
-			t.Fatalf("%s: keep %v err %v", line, keep, err)
-		}
-	}
-	calls := peer.recorded()
-	if len(calls) != 2 || calls[0].method != "config.set" || len(calls[0].params) != 3 || calls[0].params["value"] != "0" ||
-		calls[0].params["session_id"] != "sid" || calls[0].params["key"] != "yolo" ||
-		calls[1].method != "config.set" || len(calls[1].params) != 2 || calls[1].params["key"] != "yolo" {
-		t.Fatalf("calls %v", calls)
-	}
-	if !strings.Contains(out.String(), "YOLO off for this session") {
-		t.Fatalf("stdout %q", out.String())
-	}
-}
-
 func TestEveryRelocationHintNamesACommandThatParses(t *testing.T) {
 	pattern := regexp.MustCompile("`(icebath [^`]*)`")
 	for _, hint := range gatewayChatRelocated {
@@ -347,7 +320,7 @@ func TestOneLetterAliasRefusalNamesAFlagTheUserCanType(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 	text := errOut.String()
-	if !strings.Contains(text, "options: -w.") || !strings.Contains(text, "\n  -w: use `icebath --tui -w`") || strings.Contains(text, "--w") {
+	if !strings.Contains(text, "options: -w.") || !strings.Contains(text, "\n  -w: use `icebath -w`") || strings.Contains(text, "--w") {
 		t.Fatalf("stderr %q", text)
 	}
 }
@@ -426,46 +399,6 @@ func TestLaunchKeyFlagsAreNeverSilentlyDropped(t *testing.T) {
 	for _, c := range newPeer.recorded() {
 		if c.method == "session.create" && c.params["api_key"] != "launch-key" {
 			t.Fatalf("create %v", c.params)
-		}
-	}
-}
-
-func TestNewAndBranchMoveTheTerminalContinuePointer(t *testing.T) {
-	for _, command := range []string{"/new", "/branch"} {
-		h := t.TempDir()
-		t.Setenv("ICEBATH_HOME", h)
-		t.Setenv("TMUX_PANE", "%9")
-		captureStreams(t)
-		peer := newFakeGatewayPeer(t, func(p *fakeGatewayPeer, method string, params map[string]any) (any, error) {
-			switch method {
-			case "runtime.describe":
-				return map[string]any{"session_create": map[string]any{"sources": []any{"cli"}, "parameters": []any{"cwd", "source"}}}, nil
-			case "session.info":
-				return map[string]any{"launch_request": map[string]any{"source": "cli"}, "cwd": h}, nil
-			case "session.mutate":
-				return map[string]any{"status": "applied", "branched_session_id": "moved"}, nil
-			}
-			return map[string]any{"stored_session_id": "moved", "execution_generation": 0, "revision": 1, "info": map[string]any{}}, nil
-		})
-		view := newGatewayChatView(peer, map[string]any{"stored_session_id": "old", "execution_generation": 0, "info": map[string]any{}}, true, nil, "")
-		WriteBreadcrumb(context.Background(), "old", "")
-		var err error
-		if command == "/new" {
-			err = onViewLoop(view, func() error { return gatewayNew(context.Background(), view, "") })
-		} else {
-			err = onViewLoop(view, func() error {
-				keep, err := view.command(context.Background(), command)
-				if err == nil && !keep {
-					t.Fatal("branch detached")
-				}
-				return err
-			})
-		}
-		if err != nil {
-			t.Fatalf("%s: %v", command, err)
-		}
-		if got := ReadBreadcrumb(context.Background())["session_id"]; got != "moved" {
-			t.Fatalf("%s: breadcrumb %v", command, got)
 		}
 	}
 }

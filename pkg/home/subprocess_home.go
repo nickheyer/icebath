@@ -3,11 +3,11 @@ package home
 import (
 	"context"
 	"os"
-	"os/user"
 	"runtime"
 	"strconv"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -68,7 +68,7 @@ func envGet(env map[string]string, key, def string) string {
 func realHomeCandidates(env map[string]string) []string {
 	candidates := []string{envGet(env, "ICEBATH_REAL_HOME", ""), envGet(env, "HOME", "")}
 	if runtime.GOOS != "windows" {
-		if u, err := user.LookupId(strconv.Itoa(os.Getuid())); err == nil {
+		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
 			candidates = append(candidates, pystr.Strip(u.HomeDir))
 		}
 	}

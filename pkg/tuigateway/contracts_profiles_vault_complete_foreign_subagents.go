@@ -60,6 +60,39 @@ var ModelSaveKeyResult = pydantic.NewModel("ModelSaveKeyResult", ClosedConfig,
 
 var _ = Method("model.save_key", ModelSaveKeyParams, ModelSaveKeyResult, "Save an API key for a provider and return its refreshed inventory row.")
 
+var ModelProbeParams = pydantic.NewModel("ModelProbeParams", ParamsConfig,
+	pydantic.Req("base_url", pydantic.Str),
+	pydantic.Def("api_key", pydantic.Str, ""),
+)
+
+var ModelProbeResult = pydantic.NewModel("ModelProbeResult", ClosedConfig,
+	pydantic.Req("base_url", pydantic.Str),
+	pydantic.Req("found", pydantic.Bool),
+	pydantic.Req("models", pydantic.List(pydantic.Str)),
+	pydantic.Req("probed_url", pydantic.Str),
+	pydantic.Req("suggested_base_url", pydantic.Str),
+)
+
+var _ = Method("model.probe", ModelProbeParams, ModelProbeResult, "List the models an OpenAI compatible endpoint serves, with the base URL that answered.")
+
+var ModelAssignParams = pydantic.NewModel("ModelAssignParams", ParamsConfig,
+	pydantic.Req("provider", pydantic.Str),
+	pydantic.Req("model", pydantic.Str),
+	pydantic.Def("base_url", pydantic.Str, ""),
+	pydantic.Def("api_key", pydantic.Str, ""),
+	pydantic.Def("confirm_expensive_model", pydantic.Bool, false),
+)
+
+var ModelAssignResult = pydantic.NewModel("ModelAssignResult", ClosedConfig,
+	pydantic.Req("provider", pydantic.Str),
+	pydantic.Req("model", pydantic.Str),
+	pydantic.Req("base_url", pydantic.Str),
+	pydantic.Req("confirm_required", pydantic.Bool),
+	pydantic.Req("confirm_message", pydantic.Str),
+).Described("``confirm_required`` mirrors ``config.set``: a guarded model pick wrote nothing yet.")
+
+var _ = Method("model.assign", ModelAssignParams, ModelAssignResult, "Write the profile default model and provider, registering a new custom endpoint with its key.")
+
 var ModelDisconnectParams = pydantic.NewModel("ModelDisconnectParams", ParamsConfig,
 	pydantic.Req("slug", pydantic.Str),
 	pydantic.Def("session_id", pydantic.Nullable(pydantic.Str), nil),

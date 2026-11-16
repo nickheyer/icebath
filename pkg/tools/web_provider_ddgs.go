@@ -397,6 +397,10 @@ func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv fun
 	return 0
 }
 
-func init() {
-	RegisterWebProvider(&ddgsProvider{baseWebProvider{name: "ddgs", display: "DuckDuckGo (ddgs)"}})
+// DuckDuckGo search provider the web/ddgs plugin registers
+func NewDDGSWebProvider() WebProvider {
+	return &ddgsProvider{baseWebProvider{name: "ddgs", display: "DuckDuckGo (ddgs)"}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*ddgsProvider) PyTypeName() string { return "DDGSWebSearchProvider" }

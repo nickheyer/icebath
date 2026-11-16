@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/user"
-	"reflect"
 	"slices"
 	"sort"
 	"strconv"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -744,70 +742,6 @@ func (c *CLI) handleWhoamiCommand() {
 	infoPrint("")
 }
 
-// Reports a slash command of the named set typed without images while the agent runs
-func (c *CLI) busyInlineCommand(text string, hasImages bool, names ...string) bool {
-	if text == "" || hasImages || !looksLikeSlashCommand(text) {
-		return false
-	}
-	if running, _ := c.busyState(); !running {
-		return false
-	}
-	words := pystr.SplitWhitespace(text, 1)
-	if len(words) == 0 {
-		return false
-	}
-	cmd := commands.Resolve(pystr.LstripChars(pystr.Lower(words[0]), "/"))
-	if cmd == nil {
-		return false
-	}
-	return slices.Contains(names, cmd.Name)
-}
-
-// Reports a steer or queue command to dispatch at once while the agent runs
-func (c *CLI) shouldHandleSteerCommandInline(text string, hasImages bool) bool {
-	return c.busyInlineCommand(text, hasImages, "steer", "queue")
-}
-
-// Reports a background or side question command to dispatch while the agent runs
-func (c *CLI) shouldHandleBackgroundCommandInline(text string, hasImages bool) bool {
-	return c.busyInlineCommand(text, hasImages, "bg", "btw")
-}
-
-// Reports a stop command to dispatch while the agent runs
-func (c *CLI) shouldHandleStopCommandInline(text string, hasImages bool) bool {
-	return c.busyInlineCommand(text, hasImages, "stop")
-}
-
-// Runs a bang shell submission without a model turn, false when not one or bang mode is off
-func (c *CLI) handleBangShell(text string) bool {
-	if !commands.IsBangCommand(text) || !commands.BangShellEnabled() {
-		return false
-	}
-	command := commands.ParseBangCommand(text)
-	if command == "" {
-		c.consolePrint("[dim]" + commands.BangUsageHint + "[/]")
-		return true
-	}
-	if approval := checkBangApproval(c.ctx, c.env, command); !approval.Approved {
-		message := approval.Message
-		if message == "" {
-			reason := approval.Description
-			if reason == "" {
-				reason = c.t("cli.shell.flagged_as_dangerous", nil)
-			}
-			message = c.t("cli.shell.command_denied", map[string]any{"reason": reason})
-		}
-		c.consolePrint("[bold red]" + pyrich.Escape(message) + "[/]")
-		return true
-	}
-	code := runBangCommand(c.ctx, c.env, command, commands.ResolveBangCwd(c.env, c.sessionID), commands.BangDefaultTimeout,
-		func(line string) { c.consolePrintRenderable(&pyrich.Text{Plain: line}) })
-	if code != 0 {
-		c.consolePrint("[dim]" + c.t("cli.shell.exited", map[string]any{"code": strconv.Itoa(code)}) + "[/]")
-	}
-	return true
-}
-
 // Prints the messaging platforms the profile's gateway config enables
 func (c *CLI) showGatewayStatus() {
 	infoPrint(strings.Join(platformsLines(c.ctx), "\n"))
@@ -1127,61 +1061,6 @@ func isPyDigit(s string) bool {
 		}
 	}
 	return true
-}
-
-// Watches mcp_servers in config.yaml every five seconds and reloads MCP, or only notifies when auto reload is off
-func (c *CLI) checkConfigMCPChanges() {
-	now := monotonic()
-	if now-c.tui.lastConfigCheck < configWatchInterval {
-		return
-	}
-	c.tui.lastConfigCheck = now
-	cfgPath := home.ConfigPath(home.Dir(c.ctx))
-	sig, err := config.ConfigVersionOrNone(c.ctx, cfgPath)
-	if err != nil {
-		panic(err)
-	}
-	if sig == nil || reflect.DeepEqual(sig, c.tui.configSig) {
-		return
-	}
-	c.tui.configSig = sig
-	doc, err := config.ReadConfigDoc(c.ctx, cfgPath)
-	if err != nil {
-		return
-	}
-	newCfg, ok := doc.(map[string]any)
-	if !ok {
-		if pyrepr.Truthy(doc) {
-			panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(doc)))
-		}
-		newCfg = map[string]any{}
-	}
-	rawMCP := newCfg["mcp_servers"]
-	if !pyrepr.Truthy(rawMCP) {
-		rawMCP = map[string]any{}
-	}
-	newMCP := config.Expand(rawMCP, config.EnvRefLookup)
-	if pyrepr.Equal(newMCP, c.tui.configMCPServers) {
-		return
-	}
-	auto := true
-	if mcpCfg, ok := newCfg["mcp"].(map[string]any); ok {
-		if v, present := mcpCfg["auto_reload_on_config_change"]; present {
-			auto = pyrepr.Truthy(v)
-		}
-	}
-	c.tui.configMCPServers = newMCP
-	if !auto {
-		infoPrint("")
-		infoPrint(c.t("cli.mcp_watch.changed_reload_skipped", nil))
-		infoPrint("   " + c.t("cli.mcp_watch.not_applied_run", nil))
-		infoPrint("     /reload-mcp")
-		infoPrint("   " + c.t("cli.mcp_watch.cache_note", nil))
-		return
-	}
-	infoPrint("")
-	infoPrint(c.t("cli.mcp_watch.changed_reloading", nil))
-	go c.reloadMCPEntry()
 }
 
 // Runs the MCP reload, the instance override when a test installed one

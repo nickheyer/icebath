@@ -463,6 +463,10 @@ func (p *exaProvider) SetupSchema() map[string]any {
 		"Semantic + neural web search with content extraction via the Exa SDK. Unthrottled, guaranteed service.")
 }
 
-func init() {
-	RegisterWebProvider(&exaProvider{baseWebProvider{name: "exa", display: "Exa", keyEnv: "EXA_API_KEY", extract: true, keyless: true}})
+// Exa search and extract provider the web/exa plugin registers
+func NewExaWebProvider() WebProvider {
+	return &exaProvider{baseWebProvider{name: "exa", display: "Exa", keyEnv: "EXA_API_KEY", extract: true, keyless: true}}
 }
+
+// Class name the registry log and type errors print, the plugin provider class
+func (*exaProvider) PyTypeName() string { return "ExaWebSearchProvider" }

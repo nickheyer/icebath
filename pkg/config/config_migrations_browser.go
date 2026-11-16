@@ -3,12 +3,13 @@ package config
 import (
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
 
 // Collaborators the agent browser env move reaches outside this package
@@ -56,14 +57,14 @@ func pyExpandUser(p string) string {
 	var dir string
 	if name == "" {
 		if dir = os.Getenv("HOME"); dir == "" {
-			u, err := user.Current()
+			u, err := homeguard.Current()
 			if err != nil {
 				return p
 			}
 			dir = u.HomeDir
 		}
 	} else {
-		u, err := user.Lookup(name)
+		u, err := homeguard.Lookup(name)
 		if err != nil {
 			return p
 		}
