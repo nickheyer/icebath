@@ -51,7 +51,7 @@ func IsPackageManagerInstallMethod(method string) bool { return packageManagerMe
 
 // Reports whether icebath update replaces the binary from a published release for the method
 func IsReleaseBinaryInstallMethod(method string) bool {
-	return method == "script" || method == "setup-app" || method == "unknown"
+	return method == "script" || method == "setup-app"
 }
 
 // Package manager whose install layout a binary path sits in, empty for none

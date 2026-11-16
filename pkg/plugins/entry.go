@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -129,18 +130,23 @@ func scanLevel(base, source string, skip map[string]bool, prefix string, depth i
 	}
 }
 
-// Every plugin the loader sees in load order, compiled-in and bundled first, then user plugins, then entry points
+// Every plugin the loader sees in load order, bundled in sorted tree walk order, then user plugins, then entry points
 func DiscoverAllPlugins(h string) ([]PluginEntry, error) {
-	seen := &entrySet{byKey: map[string]PluginEntry{}}
+	bundled := &entrySet{byKey: map[string]PluginEntry{}}
 	for _, m := range bundledManifests() {
-		if _, dup := seen.byKey[m.Key]; !dup {
-			seen.put(PluginEntry{Name: m.Name, Version: m.Version, Description: m.Description, Source: "bundled", Key: m.Key})
+		if _, dup := bundled.byKey[m.Key]; !dup {
+			bundled.put(PluginEntry{Name: m.Name, Version: m.Version, Description: m.Description, Source: "bundled", Key: m.Key})
 		}
 	}
 	if dir := bundledOverrideDir(); dir != "" {
-		scanLevel(dir, "bundled", listingBundledSkip, "", 0, seen)
+		scanLevel(dir, "bundled", listingBundledSkip, "", 0, bundled)
 	} else {
-		scanCompiledLevel(plugintree.Compiled(), ".", listingBundledSkip, "", 0, seen)
+		scanCompiledLevel(plugintree.Compiled(), ".", listingBundledSkip, "", 0, bundled)
+	}
+	sort.SliceStable(bundled.order, func(i, j int) bool { return bundledKeyLess(bundled.order[i], bundled.order[j]) })
+	seen := &entrySet{byKey: map[string]PluginEntry{}}
+	for _, key := range bundled.order {
+		seen.put(bundled.byKey[key])
 	}
 	user, err := pluginsDir(h)
 	if err != nil {

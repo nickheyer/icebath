@@ -23,6 +23,9 @@ var shippedBundledListingKeys = []string{"browser/browser_use", "browser/browser
 	"teams_pipeline", "video_gen/deepinfra", "video_gen/fal", "video_gen/openrouter", "video_gen/xai", "web/brave_free", "web/ddgs",
 	"web/exa", "web/firecrawl", "web/keenable", "web/openai_native", "web/parallel", "web/perplexity", "web/searxng", "web/tavily", "web/xai"}
 
+// Keys the compiled tree lists for catalog plugins icebath compiles in as left core built ins
+var builtInTreeListingKeys = []string{"platforms/homeassistant"}
+
 // Unsets the bundled override so the test reads the tree compiled into the binary
 func unsetBundledOverride(t *testing.T) {
 	t.Helper()
@@ -49,10 +52,19 @@ func TestDiscoverAllPluginsListsTheShippedBundledTreeWithoutOverride(t *testing.
 			t.Fatalf("bundled %q missing %+v", key, e)
 		}
 	}
-	for key, e := range byKey {
-		if e.Source == "bundled" && !slices.Contains(shippedBundledListingKeys, key) && !slices.Contains(BundledPluginKeys(), key) {
-			t.Fatalf("bundled %q is neither shipped nor compiled in", key)
+	for _, key := range builtInTreeListingKeys {
+		if e, ok := byKey[key]; !ok || e.Source != "bundled" || e.Dir != "" {
+			t.Fatalf("built in %q missing %+v", key, e)
 		}
+	}
+	for key, e := range byKey {
+		if e.Source == "bundled" && !slices.Contains(shippedBundledListingKeys, key) && !slices.Contains(builtInTreeListingKeys, key) &&
+			!slices.Contains(BundledPluginKeys(), key) {
+			t.Fatalf("bundled %q is neither shipped, built in nor compiled in", key)
+		}
+	}
+	if ha := byKey["platforms/homeassistant"]; ha.Name != "homeassistant" || ha.Version != "2.0.1" {
+		t.Fatalf("homeassistant row %+v", ha)
 	}
 	telegram := byKey["platforms/telegram"]
 	if telegram.Name != "telegram-platform" || telegram.Version != "1.0.0" || telegram.Dir != "" ||

@@ -491,7 +491,7 @@ func TestEveryPackagingStampIsAnInstallMethod(t *testing.T) {
 		if IsPackageManagerInstallMethod(method) != managed[method] {
 			t.Fatalf("%s package manager ownership", method)
 		}
-		if IsReleaseBinaryInstallMethod(method) != (method == "script" || method == "setup-app" || method == "unknown") {
+		if IsReleaseBinaryInstallMethod(method) != (method == "script" || method == "setup-app") {
 			t.Fatalf("%s release binary ownership", method)
 		}
 	}

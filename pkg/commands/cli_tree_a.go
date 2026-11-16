@@ -567,6 +567,8 @@ func openclawMigrateFlags(c *CLI, cmd *cobra.Command, defaults bool) {
 	bf(cmd, "json", "", "OpenClaw: print the migration report as JSON on stdout (redacted). Combine with --dry-run for a safe plan-only machine-readable preview.")
 }
 
+func init() { BuiltinSubcommands["import-agent"], BuiltinSubcommands["claw"] = true, true }
+
 // Adds icebath import-agent and icebath claw with their migrate and cleanup subcommands
 func (c *CLI) addImportAgent(root *cobra.Command) {
 	ia := c.newCmd(root, "import-agent", "Import an OpenClaw, Claude Code, Codex CLI, Cursor, Grok Bot or OpenBot setup into Icebath",

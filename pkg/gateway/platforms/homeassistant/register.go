@@ -79,6 +79,11 @@ func (homeAssistantPlugin) Register(ctx *plugins.Context) error {
 	return registerTools(ctx)
 }
 
+// Registers the four smart home tools without the adapter, what discovery runs for the deferred platform
+func (homeAssistantPlugin) RegisterTools(ctx *plugins.Context) error { return registerTools(ctx) }
+
+var _ plugins.ToolsRegistrar = homeAssistantPlugin{}
+
 func init() {
 	gateway.RegisterAdapterModule(adapterClass)
 	plugins.RegisterBundled(homeAssistantPlugin{})

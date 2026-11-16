@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -77,12 +78,25 @@ func BundledPluginKeys() []string {
 	return append([]string(nil), bundledOrder...)
 }
 
-// Manifests of every compiled-in plugin in registration order, tagged bundled with no directory
+// Whether registry key a walks before key b in a sorted scan of a plugins tree holding both
+func bundledKeyLess(a, b string) bool {
+	as, bs := strings.Split(a, "/"), strings.Split(b, "/")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] != bs[i] {
+			return as[i] < bs[i]
+		}
+	}
+	return len(as) < len(bs)
+}
+
+// Manifests of every compiled-in plugin in sorted plugins tree walk order, tagged bundled with no directory
 func bundledManifests() []*Manifest {
 	bundledMu.RLock()
 	defer bundledMu.RUnlock()
-	out := make([]*Manifest, 0, len(bundledOrder))
-	for _, key := range bundledOrder {
+	keys := append([]string(nil), bundledOrder...)
+	sort.SliceStable(keys, func(i, j int) bool { return bundledKeyLess(keys[i], keys[j]) })
+	out := make([]*Manifest, 0, len(keys))
+	for _, key := range keys {
 		m := bundledByKey[key].Manifest()
 		m.Source = "bundled"
 		m.Path = ""

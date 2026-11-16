@@ -190,7 +190,17 @@ func Connect(ctx context.Context, rawURL string, opts Options) (*Conn, error) {
 		}
 		dialer.Proxy = http.ProxyURL(proxyURL)
 	}
-	ws, resp, err := dialer.DialContext(ctx, rawURL, opts.Header)
+	header := opts.Header.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
+	if header.Get("Accept") == "" {
+		header.Set("Accept", "*/*")
+	}
+	if header.Get("Accept-Encoding") == "" {
+		header.Set("Accept-Encoding", "gzip, deflate, zstd")
+	}
+	ws, resp, err := dialer.DialContext(ctx, rawURL, header)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

@@ -1921,14 +1921,6 @@ func (c *kanbanCLI) cmdArchive() (int, error) {
 	return code, err
 }
 
-// Width of the longest name in characters, floor at the least
-func widestName(names []string, floor int) int {
-	for _, name := range names {
-		floor = max(floor, len([]rune(name)))
-	}
-	return floor
-}
-
 // Per status and per assignee counts with the oldest ready age
 func (c *kanbanCLI) cmdStats() (int, error) {
 	var stats *pyjson.Object
@@ -1944,9 +1936,8 @@ func (c *kanbanCLI) cmdStats() (int, error) {
 	}
 	byStatus, _ := stats.GetOr("by_status", pyjson.NewObject()).(*pyjson.Object)
 	fmt.Fprintln(c.w, "By status:")
-	statuses := DefaultWorkflow.Keys()
-	for _, k := range statuses {
-		fmt.Fprintf(c.w, "  %-*s  %s\n", widestName(statuses, 8), k, pyrepr.Str(byStatus.GetOr(k, 0)))
+	for _, k := range DefaultWorkflow.Keys() {
+		fmt.Fprintf(c.w, "  %-8s  %s\n", k, pyrepr.Str(byStatus.GetOr(k, 0)))
 	}
 	if byAssignee, _ := stats.GetOr("by_assignee", nil).(*pyjson.Object); byAssignee != nil && byAssignee.Len() > 0 {
 		fmt.Fprintln(c.w, "\nBy assignee:")
@@ -1954,7 +1945,7 @@ func (c *kanbanCLI) cmdStats() (int, error) {
 		slices.Sort(names)
 		for _, who := range names {
 			counts, _ := byAssignee.GetOr(who, nil).(*pyjson.Object)
-			fmt.Fprintf(c.w, "  %-*s  %s\n", widestName(names, 20), who, fmtCounts(countsMap(counts), ""))
+			fmt.Fprintf(c.w, "  %-20s  %s\n", who, fmtCounts(countsMap(counts), ""))
 		}
 	}
 	if age := stats.GetOr("oldest_ready_age_seconds", nil); age != nil {

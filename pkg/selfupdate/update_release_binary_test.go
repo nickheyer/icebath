@@ -41,7 +41,7 @@ func TestReleaseBinaryInstallFollowsTheStamp(t *testing.T) {
 		method string
 		git    bool
 		want   bool
-	}{{"script", false, true}, {"setup-app", false, true}, {"", false, true}, {"script", true, false}, {"homebrew", false, false}, {"docker", false, false}} {
+	}{{"script", false, true}, {"setup-app", false, true}, {"", false, false}, {"script", true, false}, {"homebrew", false, false}, {"docker", false, false}} {
 		got, err := releaseBinaryInstall(context.Background(), releaseTree(t, tc.method, tc.git))
 		if err != nil || got != tc.want {
 			t.Fatalf("%+v got %v %v", tc, got, err)

@@ -49,7 +49,7 @@ func filterPluginEntries(h string, entries []PluginEntry, opts ListOptions, enab
 
 // Activation state of one discovered row
 func entryStatus(h string, e PluginEntry, enabled, disabled, active map[string]bool) (string, error) {
-	return pluginStatus(h, e, enabled, disabled, active, e.Dir != "")
+	return pluginStatus(h, e, enabled, disabled, active, e.Dir != "" || e.Source == "bundled")
 }
 
 // Lists bundled and user plugins with their activation state, provenance and catalog removals
@@ -81,7 +81,7 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 	}
 	rows := make([]listRow, 0, len(entries))
 	for _, e := range entries {
-		status, err := pluginStatus(h, e, enabled, disabled, active, e.Dir != "")
+		status, err := pluginStatus(h, e, enabled, disabled, active, e.Dir != "" || e.Source == "bundled")
 		if err != nil {
 			return err
 		}

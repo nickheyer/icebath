@@ -32,7 +32,7 @@ func (Plugin) Manifest() plugins.Manifest {
 	return plugins.Manifest{
 		Name:          "disk-cleanup",
 		Version:       "2.0.0",
-		Description:   "Auto-track and clean up ephemeral files (test scripts, temp outputs, cron logs) created during icebath sessions. Runs via plugin hooks \u2014 no agent action required.",
+		Description:   "Auto-track and clean up ephemeral files (test scripts, temp outputs, cron logs) created during Icebath sessions. Runs via plugin hooks \u2014 no agent action required.",
 		Author:        "@LVT382009 (original), NousResearch (plugin port)",
 		ProvidesHooks: []string{"pre_tool_call", "post_tool_call", "on_session_end"},
 	}
