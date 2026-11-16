@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
@@ -115,7 +114,6 @@ func startGatewayStartControlSocket(ctx context.Context, r *GatewayRunner, loop 
 			return nil, err
 		}
 		server.TicketStore = r.sessionTicketStore
-		registerControlVerbs(ctx, r, home.Dir(ctx), server, nil)
 		if !controlServerStart(server) {
 			return nil, nil
 		}

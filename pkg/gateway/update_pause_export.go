@@ -31,11 +31,6 @@ func GetRestartDrainTimeout(ctx context.Context) (float64, error) { return getRe
 // Whether pid is still the icebath process born at the expected start time
 func PidIsHermes(pid int, expectedStartTime any) bool { return pidIsHermes(pid, expectedStartTime) }
 
-// Respawns stopped dashboard and serve backends from their commands, the commands that could not start
-func RespawnDashboardProcesses(ctx context.Context, w io.Writer, commands [][]string) [][]string {
-	return respawnDashboardProcesses(ctx, w, commands)
-}
-
 // Records the gateway pids a start vouched for so a later death is reported
 func WriteStartAttestation(ctx context.Context, pids []int, via string) {
 	writeStartAttestation(ctx, pids, via)

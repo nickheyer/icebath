@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
@@ -28,9 +29,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
-
-// Validated main model write of a profile, the dashboard profiles router's writer, assigned in cmd/icebath/wiring.go
-var WriteProfileModel func(ctx context.Context, profileDir, providerName, model, baseURL string) error
 
 // Asset extensions with their mime, in on disk lookup order
 var assetExts = [][2]string{{"png", "image/png"}, {"jpg", "image/jpeg"}, {"webp", "image/webp"}}
@@ -78,9 +76,110 @@ func profileHandler(name string, code int, fn Handler) {
 	})
 }
 
-// Pins a profile's main model through the validated writer
+// Path resolved strictly when possible, else made absolute
+func resolvedProfilePath(p string) string {
+	if resolved, err := pypath.Resolve(p); err == nil {
+		return resolved
+	}
+	abs, _ := filepath.Abs(p)
+	return abs
+}
+
+// Profile name a directory stands for, empty for the process home and default for the root home
+func profileNameOfDir(dir string) string {
+	resolved := resolvedProfilePath(dir)
+	if resolved == resolvedProfilePath(home.Process()) {
+		return ""
+	}
+	if resolved == resolvedProfilePath(home.Root()) {
+		return "default"
+	}
+	return filepath.Base(dir)
+}
+
+// Context bound to the named profile home and its secret scope, the launch scope for the process profile
+func profileConfigScope(ctx context.Context, profile string) (context.Context, error) {
+	processHome := home.Process()
+	profileDir := ""
+	if profile == "" {
+		if home.Override(ctx) != "" {
+			profileDir = home.Dir(ctx)
+		}
+	} else {
+		if err := profiles.ValidateProfileName(profile); err != nil {
+			return ctx, err
+		}
+		if !profiles.ProfileExists(profile) {
+			return ctx, fmt.Errorf("Profile '%s' does not exist.", profile)
+		}
+		dir, err := profiles.GetProfileDir(profile)
+		if err != nil {
+			return ctx, err
+		}
+		profileDir = dir
+	}
+	scoped := ""
+	if profileDir != "" {
+		resolvedDir, err := pypath.Resolve(profileDir)
+		if err != nil {
+			return ctx, err
+		}
+		resolvedProcess, err := pypath.Resolve(processHome)
+		if err != nil {
+			return ctx, err
+		}
+		if resolvedDir != resolvedProcess {
+			scoped = profileDir
+		}
+	}
+	var secrets map[string]string
+	if scoped != "" {
+		provider.ActivateMultiProfileHosting()
+		provider.HydrateProfileSecretSources(scoped)
+		secrets = provider.BuildProfileSecretScope(scoped)
+	} else {
+		secrets = provider.LaunchSecretScopeCtx(ctx, processHome)
+	}
+	profileHome := processHome
+	if profileDir != "" {
+		ctx = home.WithOverride(ctx, profileDir)
+		profileHome = profileDir
+	}
+	return provider.WithSecretScope(ctx, secrets, profileHome), nil
+}
+
+// Writes the main model into a profile config after validating it against that profile
 func pinProfileModel(ctx context.Context, profileDir, providerName, model, baseURL string) error {
-	return WriteProfileModel(ctx, profileDir, providerName, model, baseURL)
+	scoped, err := profileConfigScope(ctx, profileNameOfDir(profileDir))
+	if err != nil {
+		return err
+	}
+	providerName, model = provider.NormalizeMainModelAssignment(scoped, providerName, model)
+	cfg, err := config.LoadContext(scoped, home.Dir(scoped), config.EnvRefLookupContext(scoped))
+	if err != nil {
+		return err
+	}
+	result, err := provider.ValidatedMainModelSelection(scoped, cfg, providerName, model, baseURL, "", nil)
+	if err != nil {
+		return err
+	}
+	locked, unlock := provider.LockConfigMutation(scoped)
+	defer unlock()
+	cfg, err = config.LoadContext(locked, home.Dir(locked), config.EnvRefLookupContext(locked))
+	if err != nil {
+		return err
+	}
+	current, held := cfg["model"]
+	if !held {
+		current = map[string]any{}
+	}
+	modelCfg, err := provider.ApplyMainModelAssignment(locked, current, result, "")
+	if err != nil {
+		return err
+	}
+	cfg["model"] = modelCfg
+	saving := config.RefusingLockedOmissions(locked, "model")
+	return config.SaveConfig(saving, home.Dir(saving), cfg, config.SaveOptions{})
 }
 
 // Model and provider params stripped

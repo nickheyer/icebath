@@ -4,12 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"strings"
-	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
@@ -219,78 +215,14 @@ func recoverProfileBotMailbox(ctx context.Context, r *GatewayRunner, authority *
 	return nil
 }
 
-// Why the Webapp listener could not start, the gate's own message, the credential file or the bind failure
-func webappListenerFailure(err error, host string, port int) string {
-	var exit *gateway.DashboardExit
-	var credential *gateway.BrowserCredentialError
-	var pathErr *fs.PathError
-	switch {
-	case errors.As(err, &exit):
-		return strings.TrimSpace(exit.Error())
-	case errors.As(err, &credential):
-		return credential.Error()
-	case errors.As(err, &pathErr):
-		return fmt.Sprintf("could not use %s (%s)", pathErr.Path, osStrerror(pathErr.Err))
-	}
-	cause := err.Error()
-	if pypath.IsOSError(err) {
-		cause = osStrerror(err)
-	}
-	return fmt.Sprintf("could not listen on %s:%d (%s)", host, port, cause)
-}
-
-// strerror of an OSError, the error text when it carries no errno
-func osStrerror(err error) string {
-	var errno syscall.Errno
-	if errors.As(err, &errno) {
-		return pypath.Strerror(errno)
-	}
-	return err.Error()
-}
-
 // Listener start of the runtime API, the real function swapped only where a hermes case installs a fake
 var startGatewayAPIFn = startGatewayAPI
 
-// Starts the session API listener, the Webapp's when configured, falling back to the private one
+// Starts the loopback session listener and recovers the Bot Chat mailbox of every served profile
 func startGatewayRuntimeAPI(ctx context.Context, r *GatewayRunner) error {
-	h := home.Dir(ctx)
-	registerControlVerbs(ctx, r, h, nil, nil)
-	host, port, webapp, unusable := gateway.WebappListenerPlan(ctx, h)
-	switch {
-	case unusable != "":
-		r.webappStatus.Store(&webappListenerStatus{State: "unavailable", Reason: &unusable})
-	case webapp == nil:
-		r.webappStatus.Store(&webappListenerStatus{State: "off"})
-	default:
-		r.webappStatus.Store(webappStarting())
-	}
-	var handle *gatewayAPIHandle
-	var err error
-	if webapp != nil {
-		handle, err = startGatewayAPIFn(ctx, r, host, port, webapp)
-	} else {
-		handle, err = startGatewayAPIFn(ctx, r, "127.0.0.1", 0, nil)
-	}
+	handle, err := startGatewayAPIFn(ctx, r)
 	if err != nil {
-		if webapp == nil || isCancellation(err) {
-			return err
-		}
-		reason := webappListenerFailure(err, host, port)
-		runtimeLog().Error(fmt.Sprintf("Webapp unavailable: %s", reason))
-		r.webappStatus.Store(&webappListenerStatus{State: "unavailable", Reason: &reason})
-		if _, writeErr := gateway.BrowserSessionToken(ctx, h, true); writeErr != nil {
-			var credential *gateway.BrowserCredentialError
-			if !errors.As(writeErr, &credential) && !pypath.IsOSError(writeErr) {
-				return writeErr
-			}
-			runtimeLog().Warn(fmt.Sprintf("Could not replace the Webapp's browser credential: %s", writeErr))
-		}
-		if handle, err = startGatewayAPIFn(ctx, r, "127.0.0.1", 0, nil); err != nil {
-			return err
-		}
-	} else if webapp != nil {
-		origin := gateway.WebappDialOrigin(host, port)
-		r.webappStatus.Store(&webappListenerStatus{State: "serving", URL: &origin})
+		return err
 	}
 	r.sessionAPI = handle
 	r.SetRuntimeDescriptorField("api_origin", handle.apiOrigin)

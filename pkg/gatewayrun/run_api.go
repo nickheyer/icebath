@@ -3,138 +3,245 @@ package gatewayrun
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
-	"net/netip"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 func apiLog() *slog.Logger { return slog.Default().With("logger", "gateway.run_api") }
 
-// Dashboard listener builder of pkg/dashboard, the mount and uvicorn server around the runtime API, set by the command wiring
-var BuildGatewayListener func(ctx context.Context, runner gateway.GatewayAPIRunner, state *gateway.ListenerState,
-	webapp *gateway.WebappMount, host string, port int) (gateway.GatewayListenerServer, error)
+// Path of the native session socket on the gateway listener
+const sessionSocketPath = "/api/ws"
 
-// Public URL the listener answers to, the Webapp's own and nil for main's listener
-func listenerPublicURL(webapp *gateway.WebappMount) *string {
-	if webapp == nil {
-		return nil
-	}
-	u := webapp.PublicURL
-	return &u
+// Time open session sockets get to end once the listener stops
+const listenerGrace = 5 * time.Second
+
+// Loopback listener of the gateway with the native session socket as its only route
+type sessionListener struct {
+	runner   *GatewayRunner
+	state    *gateway.ListenerState
+	server   *http.Server
+	serveCtx context.Context
+	cancel   context.CancelFunc
+	exit     chan struct{}
+	exitOnce sync.Once
+	mu       sync.Mutex
+	stopping bool
+	sockets  map[*sessionSocket]struct{}
+	handlers sync.WaitGroup
 }
 
-// First address host resolves to for a stream socket, the getaddrinfo entry the listener binds
-func listenerAddress(ctx context.Context, host string) (netip.Addr, error) {
-	if addr, err := netip.ParseAddr(host); err == nil {
-		return addr, nil
-	}
-	addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-	if err != nil {
-		return netip.Addr{}, err
-	}
-	if len(addrs) == 0 {
-		return netip.Addr{}, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
-	}
-	return addrs[0].Unmap(), nil
-}
-
-// Listener socket opener, the real function swapped only where a hermes case installs a fake
-var listenerSocketFn = openListenerSocket
-
-// Binds the gateway's local listener serving the native session socket and the lazily mounted dashboard
-func startGatewayAPI(ctx context.Context, r *GatewayRunner, host string, port int, webapp *gateway.WebappMount) (*gatewayAPIHandle, error) {
+// Binds the loopback listener on a free port and serves the native session socket on it
+func startGatewayAPI(ctx context.Context, r *GatewayRunner) (*gatewayAPIHandle, error) {
 	if gateway.ActiveAPIRunner() != nil {
 		return nil, errors.New("gateway API already started")
 	}
-	publicURL := listenerPublicURL(webapp)
-	var trusted map[string]bool
-	var authRequired bool
-	if publicURL == nil {
-		trusted = gateway.DashboardPublicHosts(ctx)
-		authRequired = gateway.ListenerAuthRequired(host, trusted)
-	} else {
-		trusted = gateway.PublicURLHosts(*publicURL)
-		authRequired = gateway.ShouldRequireAuth(host) || gateway.PublicHostsEngageGate(trusted)
-	}
-	state := &gateway.ListenerState{BoundHost: host, AuthRequired: authRequired, TrustedPublicHosts: trusted}
-	server, err := BuildGatewayListener(ctx, r, state, webapp, host, port)
+	socket, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-	mount := server.Mount()
-	addr, err := listenerAddress(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	sock, err := listenerSocketFn(addr, port, addr.Is6() && addr == netip.IPv6Unspecified())
-	if err != nil {
-		return nil, err
-	}
+	port := socket.Addr().(*net.TCPAddr).Port
+	serveCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	l := &sessionListener{runner: r, serveCtx: serveCtx, cancel: cancel, exit: make(chan struct{}), sockets: map[*sessionSocket]struct{}{},
+		state: &gateway.ListenerState{BoundHost: "127.0.0.1", BoundPort: port, TrustedPublicHosts: map[string]bool{}}}
+	l.server = &http.Server{Handler: l}
 	gateway.SetActiveAPIRunner(r)
-	listener, err := func() (net.Listener, error) {
-		if err := sock.bind(addr, port); err != nil {
-			return nil, err
-		}
-		if port != 0 {
-			if _, err := sock.listen(server.Backlog()); err != nil {
-				return nil, err
-			}
-		}
-		_, state.BoundPort = sock.sockname()
-		if err := server.Load(ctx); err != nil {
-			return nil, err
-		}
-		if state.AuthRequired || server.DashboardLoaded() || webapp != nil {
-			if _, err := mount.Ensure(ctx); err != nil {
-				return nil, err
-			}
-		}
-		listener, err := sock.listen(server.Backlog())
-		if err != nil {
-			return nil, err
-		}
-		if err := server.Startup(ctx, listener); err != nil {
-			return nil, err
-		}
-		if !server.Started() || server.ShouldExit() {
-			return nil, errors.New("gateway API lifespan startup failed")
-		}
-		return listener, nil
-	}()
-	if err != nil {
-		sock.close()
-		gateway.SetActiveAPIRunner(nil)
-		return nil, errors.Join(err, mount.Close(ctx))
-	}
-	boundIP, _ := sock.sockname()
-	handle := &gatewayAPIHandle{apiOrigin: gateway.WebappDialOrigin(boundIP, state.BoundPort), server: server,
-		task: make(chan struct{}), app: mount, socket: listener}
-	serveCtx := context.WithoutCancel(ctx)
+	handle := &gatewayAPIHandle{apiOrigin: fmt.Sprintf("http://127.0.0.1:%d", port), listener: l, task: make(chan struct{}), socket: socket}
 	go func() {
 		defer close(handle.task)
-		err := server.MainLoop(serveCtx)
-		err = errors.Join(err, server.Shutdown(serveCtx, listener))
-		listener.Close()
-		err = errors.Join(err, mount.Close(serveCtx))
+		handle.serveErr = l.serve(socket)
 		gateway.SetActiveAPIRunner(nil)
-		handle.serveErr = err
 	}()
 	return handle, nil
 }
 
-// Mounts the dashboard in the background once a supervised gateway is ready, logging a failed warm up
-func warmGatewayDashboard(ctx context.Context, r *GatewayRunner) {
-	handle := r.sessionAPI
-	if handle == nil || handle.app == nil || handle.app.Web() != nil {
+// Asks the serve loop to stop accepting and end its sockets
+func (l *sessionListener) requestExit() {
+	l.exitOnce.Do(func() { close(l.exit) })
+}
+
+// Serves until an exit is asked or the server fails, then ends the open sockets within the grace
+func (l *sessionListener) serve(socket net.Listener) error {
+	failed := make(chan error, 1)
+	go func() { failed <- l.server.Serve(socket) }()
+	var failure error
+	select {
+	case <-l.exit:
+	case failure = <-failed:
+	}
+	socket.Close()
+	l.mu.Lock()
+	l.stopping = true
+	open := make([]*sessionSocket, 0, len(l.sockets))
+	for s := range l.sockets {
+		open = append(open, s)
+	}
+	l.mu.Unlock()
+	for _, s := range open {
+		s.goingAway()
+	}
+	ended := make(chan struct{})
+	go func() {
+		l.handlers.Wait()
+		close(ended)
+	}()
+	select {
+	case <-ended:
+	case <-time.After(listenerGrace):
+		apiLog().Error(fmt.Sprintf("Cancel %d running session socket(s), timeout graceful shutdown exceeded", len(open)))
+		l.cancel()
+		for _, s := range open {
+			s.drop()
+		}
+	}
+	l.cancel()
+	l.server.Close()
+	if errors.Is(failure, http.ErrServerClosed) {
+		return nil
+	}
+	return failure
+}
+
+// Counts a session handler in unless the listener is stopping
+func (l *sessionListener) enter() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopping {
+		return false
+	}
+	l.handlers.Add(1)
+	return true
+}
+
+// Records an accepted socket for the stop, false once the listener is stopping
+func (l *sessionListener) track(s *sessionSocket) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopping {
+		return false
+	}
+	l.sockets[s] = struct{}{}
+	return true
+}
+
+func (l *sessionListener) untrack(s *sessionSocket) {
+	l.mu.Lock()
+	delete(l.sockets, s)
+	l.mu.Unlock()
+}
+
+// Answers the session socket upgrade and 404 for every other request
+func (l *sessionListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Path != sessionSocketPath || !websocket.IsWebSocketUpgrade(req) {
+		http.NotFound(w, req)
 		return
 	}
-	mount := handle.app
-	r.gatewayDashboardWarmup = spawnGatewayTask(ctx, "gateway-dashboard-warmup", func(ctx context.Context) (any, error) {
-		if _, err := mount.Ensure(ctx); err != nil && !mount.Closed() {
-			apiLog().Warn("Gateway dashboard API warm-up failed; it loads on first request", "exc_info", err)
+	sock := &sessionSocket{listener: l, w: w, req: req, frames: make(chan socketFrame, 16), done: make(chan struct{})}
+	if !l.enter() {
+		sock.refuse()
+		return
+	}
+	defer l.handlers.Done()
+	err := l.admitSession(sock)
+	if err != nil && !errors.Is(err, context.Canceled) && !sock.wasAccepted() {
+		how := "with HTTP 500"
+		if sock.wasAnswered() {
+			how = "after its handler had refused it"
 		}
-		return nil, nil
-	})
+		apiLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
+			sock.peerText(), how, pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)), "exc_info", err)
+	}
+	sock.finish(err)
+}
+
+// Whether err is the PermissionError a ticket redemption raises
+func ticketRefused(err error) bool {
+	var raised *gateway.PyError
+	return errors.As(err, &raised) && raised.Kind == "PermissionError"
+}
+
+// Admits a ticketed loopback socket against the runtime state and runs its session, refusing every other upgrade
+func (l *sessionListener) admitSession(sock *sessionSocket) error {
+	runner := l.runner
+	descriptor := runner.SessionRuntimeDescriptor()
+	if descriptor == nil {
+		sock.refuse()
+		return nil
+	}
+	var stateMu sync.Mutex
+	lastState := descriptor["state"]
+	notReady := func() bool {
+		stateMu.Lock()
+		if live := runner.SessionRuntimeDescriptor(); live != nil {
+			lastState = live["state"]
+		}
+		state := lastState
+		stateMu.Unlock()
+		return state != "ready" || runner.Draining()
+	}
+	state := descriptor["state"]
+	draining := (state == "ready" || state == "draining") && (runner.Draining() || state == "draining")
+	if (state != "ready" || runner.Draining()) && !draining {
+		sock.refuse()
+		return nil
+	}
+	ticket, reason := gateway.GatewayWSTicketFromSubprotocol(sock)
+	peer, _ := sock.BoundaryClient()
+	if reason != "ok" || sock.req.Header.Get("Origin") != "" || gateway.WSHostOriginReason(sock, l.state) != "" ||
+		gateway.WSClientReason(sock, l.state) != "" || (peer != "127.0.0.1" && peer != "::1") {
+		sock.refuse()
+		return nil
+	}
+	operator := true
+	store := runner.SessionTicketStore()
+	grant, err := store.Redeem(ticket, nil, "interactive")
+	if ticketRefused(err) {
+		operator = false
+		if grant, err = store.Redeem(ticket, nil, "worker-adoption"); ticketRefused(err) {
+			sock.refuse()
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	allowDraining := !operator
+	admittedInWait := gateway.RestartWaitOpen(runner) && !pyrepr.Truthy(grant["refuse_restart_wait"])
+	if notReady() && !allowDraining && !admittedInWait {
+		sock.refuse()
+		return nil
+	}
+	sock.shut = func() bool {
+		return notReady() && !allowDraining && !(admittedInWait && gateway.RestartWaitOpen(runner))
+	}
+	profileID, _ := grant["profile_id"].(string)
+	authority, err := gateway.AuthorityForProfileID(runner, profileID)
+	if err != nil {
+		return err
+	}
+	if authority == nil {
+		sock.refuse()
+		return nil
+	}
+	sock.authority = authority
+	profileScope, scoped := grant["scope"]
+	if !scoped {
+		profileScope = "profile"
+	}
+	owned := gateway.OwnerScope(l.serveCtx, authority, false)
+	release := runner.AttachClient()
+	defer release()
+	protocol := gateway.CanonicalGatewayProtocol
+	return tuiserver.HandleWS(owned, sock, map[string]any{"user_id": grant["subject"], "provider": "local",
+		"profile_id": grant["profile_id"], "instance_id": grant["instance_id"], "capabilities": grant["capabilities"],
+		"native_bootstrap": true, "profile_scope": profileScope}, &protocol, operator)
 }

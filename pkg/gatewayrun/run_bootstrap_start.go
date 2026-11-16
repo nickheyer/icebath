@@ -562,8 +562,6 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 		r.startSystemdWatchdog(ctx)
 		if o.IdleExit {
 			armUnmanagedIdleExit(r)
-		} else {
-			warmGatewayDashboard(ctx, r)
 		}
 		return waitGatewayRuntime(ctx, r)
 	}()

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/desktopplugins"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -68,10 +67,9 @@ func pluginRows(ctx context.Context) ([]map[string]any, error) {
 		row := map[string]any{
 			"name": e.Name, "key": e.Key, "version": e.Version, "description": e.Description,
 			"source": e.Source, "status": status, "portable": portable, "install_dir": e.Dir,
-			"has_desktop_half": e.Dir != "" && desktopplugins.DesktopSource(e.Dir) != "",
-			"settings_schema":  plugins.PluginSettingsFields(ctx, h, e.Key, e.Dir),
-			"servers":          servers,
-			"tools":            owned,
+			"settings_schema": plugins.PluginSettingsFields(ctx, h, e.Key, e.Dir),
+			"servers":         servers,
+			"tools":           owned,
 		}
 		fields, err := plugins.CatalogRowFields(h, e.Dir, pins, versions)
 		if err != nil {
@@ -262,43 +260,6 @@ func pluginsInspect(ctx context.Context, rid any, params map[string]any) (map[st
 	result, err := plugins.InspectPluginSource(ctx, ident, catalogName)
 	if err != nil {
 		return nil, err
-	}
-	return ok(rid, result), nil
-}
-
-// Installs a source's desktop half into desktop-plugins on the host serving this client
-func pluginsInstallDesktop(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	ident := firstParam(params, "identifier", "repo")
-	catalogName := strArg(params, "catalog_name")
-	if ident == "" && catalogName == "" {
-		return rpcErr(rid, 4019, "plugins.manage install_desktop requires 'identifier', 'repo', or 'catalog_name'", nil), nil
-	}
-	ref, isText := params["ref"].(string)
-	if !isText && pyrepr.Truthy(params["ref"]) {
-		return nil, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(params["ref"]))
-	}
-	result, err := desktopplugins.InstallDesktopPlugin(ctx, ident, ref, catalogName, pyrepr.Truthy(params["force"]))
-	if err != nil {
-		return nil, err
-	}
-	if !pyrepr.Truthy(result["ok"]) {
-		return rpcErr(rid, 5026, errorOr(result, "desktop install failed"), sourceMovedData(result)), nil
-	}
-	return ok(rid, result), nil
-}
-
-// Deletes one installed desktop plugin folder from this host
-func pluginsRemoveDesktop(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	name := firstParam(params, "name", "key")
-	if name == "" {
-		return rpcErr(rid, 4019, "plugins.manage remove_desktop requires a 'name'", nil), nil
-	}
-	result, err := desktopplugins.RemoveDesktopPlugin(name, pyrepr.Truthy(params["force"]))
-	if err != nil {
-		return nil, err
-	}
-	if !pyrepr.Truthy(result["ok"]) {
-		return rpcErr(rid, 5026, errorOr(result, "desktop remove failed"), nil), nil
 	}
 	return ok(rid, result), nil
 }
@@ -507,7 +468,6 @@ func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[s
 var pluginsActions = map[string]pluginsAction{
 	"list": pluginsListRows, "onboarding": pluginsOnboarding, "presence": pluginsPresence,
 	"toggle": pluginsToggle, "install": pluginsInstall, "inspect": pluginsInspect,
-	"install_desktop": pluginsInstallDesktop, "remove_desktop": pluginsRemoveDesktop,
 	"update": pluginsUpdate, "remove": pluginsRemove, "settings": pluginsSettings,
 }
 

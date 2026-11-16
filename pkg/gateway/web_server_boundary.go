@@ -41,11 +41,6 @@ type BoundaryPeer interface {
 	BoundaryClient() (string, bool)
 }
 
-// Exact hostname of dashboard.public_url as the trusted public host set
-func DashboardPublicHosts(ctx context.Context) map[string]bool {
-	return PublicURLHosts(ResolvePublicURL(ctx, nil))
-}
-
 // Exact hostname a public URL declares, empty when unset or malformed
 func PublicURLHosts(publicURL string) map[string]bool {
 	out := map[string]bool{}
@@ -221,11 +216,6 @@ func PublicURLOrigins(publicURL string) map[LoopbackOrigin]bool {
 		out[origin] = true
 	}
 	return out
-}
-
-// Trusted loopback origin set of dashboard.public_url
-func DashboardPublicOrigins(ctx context.Context) map[LoopbackOrigin]bool {
-	return PublicURLOrigins(ResolvePublicURL(ctx, nil))
 }
 
 // Whether a loopback origin is on the bound port, the configured public URL, or the desktop dev renderer

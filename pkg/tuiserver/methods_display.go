@@ -2,21 +2,16 @@ package tuiserver
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sync"
 	"sync/atomic"
-	"weak"
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -35,11 +30,8 @@ func init() {
 	displayRegistry.scopedMethod("display.thumbnail", displayThumbnail)
 	displayRegistry.scopedMethod("display.start", displayStart)
 	displayRegistry.scopedMethod("display.stop", displayStop)
-	displayRegistry.scopedMethod("display.observe", displayObserve)
 	displayRegistry.scopedMethod("display.switchSandboxImage", displaySwitchSandboxImage)
 	displayRegistry.scopedMethod("display.install", displayInstall)
-	displayRegistry.scopedMethod("display.lease.acquire", displayLeaseAcquire)
-	displayRegistry.scopedMethod("display.lease.release", displayLeaseRelease)
 	displayRegistry.install()
 }
 
@@ -118,68 +110,6 @@ func displayStop(ctx context.Context, rid any, params map[string]any) map[string
 	return snapshotResponse(ctx, rid, func(snap *pyjson.Object) { snap.Set("stopped", stopped) })
 }
 
-// Viewer ids one weakly held transport minted
-type mintedEntry struct {
-	ref weak.Pointer[byte]
-	ids map[string]bool
-}
-
-var (
-	mintedMu         sync.Mutex
-	mintedViewerIDs  = map[uintptr]*mintedEntry{}
-	unweakableMinted = map[string]bool{}
-)
-
-// Viewer ids minted on the calling connection, one process wide set for a transport that is not a heap object
-func mintedForThisConnection(ctx context.Context) map[string]bool {
-	transport := tuigateway.CurrentTransport(ctx)
-	v := reflect.ValueOf(transport)
-	if transport == nil || v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Type().Size() == 0 {
-		return unweakableMinted
-	}
-	ptr := (*byte)(v.UnsafePointer())
-	for addr, entry := range mintedViewerIDs {
-		if entry.ref.Value() == nil {
-			delete(mintedViewerIDs, addr)
-		}
-	}
-	addr := uintptr(v.UnsafePointer())
-	entry := mintedViewerIDs[addr]
-	if entry == nil || entry.ref.Value() != ptr {
-		entry = &mintedEntry{ref: weak.Make(ptr), ids: map[string]bool{}}
-		mintedViewerIDs[addr] = entry
-	}
-	return entry.ids
-}
-
-// Server minted viewer identity, the requested id kept only when this connection minted it before
-func mintViewerID(ctx context.Context, requested string) string {
-	mintedMu.Lock()
-	defer mintedMu.Unlock()
-	mine := mintedForThisConnection(ctx)
-	if mine[requested] {
-		return requested
-	}
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
-		panic(err)
-	}
-	viewerID := base64.RawURLEncoding.EncodeToString(raw)
-	mine[viewerID] = true
-	return viewerID
-}
-
-// Refusal for a viewer id this connection never minted, nil for one it did
-func foreignViewerID(ctx context.Context, rid any, viewerID string) map[string]any {
-	mintedMu.Lock()
-	minted := mintedForThisConnection(ctx)[viewerID]
-	mintedMu.Unlock()
-	if minted {
-		return nil
-	}
-	return rpcErr(rid, displayErr, "viewer_id was not minted for this connection; call display.observe first", map[string]any{"code": "viewer_mismatch"})
-}
-
 // Starts the distro package install in the background, streaming its log and ending with a status snapshot
 func displayInstall(ctx context.Context, rid any, params map[string]any) map[string]any {
 	env := displayEnv(ctx)
@@ -239,45 +169,6 @@ func installPackagesClaimed(env *tools.Env, askPassword func() (string, error), 
 		}
 	}()
 	return botdesktop.InstallPackagesWith(env, askPassword, line, 900.0, true)
-}
-
-// Human takeover of the screen by a viewer this connection minted, stamped as activity first
-func displayLeaseAcquire(ctx context.Context, rid any, params map[string]any) map[string]any {
-	viewerID := pystr.Strip(strOr(params["viewer_id"]))
-	if viewerID == "" {
-		return rpcErr(rid, displayErr, "viewer_id required", nil)
-	}
-	if refused := foreignViewerID(ctx, rid, viewerID); refused != nil {
-		return refused
-	}
-	botdesktop.TouchActivity(displayEnv(ctx))
-	lease, err := botdesktop.LeaseAcquire(viewerID, home.Dir(ctx), strOr(params["reason"]))
-	if err != nil {
-		panic(err)
-	}
-	return ok(rid, map[string]any{"lease": botdesktop.LeasePublicView(lease)})
-}
-
-// Hands control back, a bare release refused while a human holds unless forced
-func displayLeaseRelease(ctx context.Context, rid any, params map[string]any) map[string]any {
-	var viewerID *string
-	if v := pystr.Strip(strOr(params["viewer_id"])); v != "" {
-		viewerID = &v
-	}
-	force := truthy(params["force"])
-	if viewerID != nil && !force {
-		if refused := foreignViewerID(ctx, rid, *viewerID); refused != nil {
-			return refused
-		}
-	}
-	lease, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ViewerID: viewerID, ProfileKey: home.Dir(ctx), UnlessHuman: viewerID == nil && !force})
-	if err != nil {
-		panic(err)
-	}
-	if viewerID == nil && lease.Holder == botdesktop.LeaseHuman {
-		return rpcErr(rid, displayErr, "viewer_id required to release another viewer's lease (or pass force: true)", map[string]any{"code": "viewer_mismatch"})
-	}
-	return ok(rid, map[string]any{"lease": botdesktop.LeasePublicView(lease)})
 }
 
 // One JPEG grab of the scoped screen, withheld while a human holds the lease or it moved during the grab

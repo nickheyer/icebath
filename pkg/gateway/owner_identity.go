@@ -42,17 +42,9 @@ func PrincipalSubject(identity map[string]any) (string, error) {
 
 var bundledLogins = map[string]bool{"basic": true, "nous": true, "self-hosted": true, "session-token": true, "server-internal": true}
 
-// True for a bundled sign in or a plugin registered dashboard session provider
+// True for a bundled sign in
 func loginProvider(provider string) bool {
-	if bundledLogins[provider] {
-		return true
-	}
-	for _, name := range dashboardSessionProviderNames() {
-		if name == provider {
-			return true
-		}
-	}
-	return false
+	return bundledLogins[provider]
 }
 
 // True when a stored provider and user stamp names the host owner

@@ -11,8 +11,73 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Read only browse opener of a foreign profile session store, the dashboard opener assigned at startup
-var OpenSessionDBAtPath func(ctx context.Context, dbPath string, readOnly bool) (*state.DB, error)
+// Read only session store with every schema probe run, closed again when a probe fails
+func openProbedSessionDB(ctx context.Context, dbPath string) (*state.DB, error) {
+	db, err := state.NewSessionDB(ctx, dbPath, true)
+	if err != nil {
+		return nil, err
+	}
+	err = db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
+		statements, err := state.SchemaReadProbeStatements(ctx)
+		if err != nil {
+			return err
+		}
+		for _, statement := range statements {
+			rows, err := conn.QueryContext(ctx, statement)
+			if err != nil {
+				return err
+			}
+			rows.Next()
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// Read only browse of a profile session store, schema drift reconciled once and an unusable store an error
+func openBrowseSessionDB(ctx context.Context, dbPath string) (*state.DB, error) {
+	info, err := os.Stat(dbPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err != nil || info.Size() <= 0 {
+		return nil, errors.New("Session store is not initialized. Start this profile's gateway to initialize it.")
+	}
+	db, err := openProbedSessionDB(ctx, dbPath)
+	if err != nil && state.IsDeclarativeDriftError(err) {
+		if _, reconcileErr := state.ReconcileDriftForBrowse(ctx, dbPath); reconcileErr != nil {
+			var drift *state.DeclarativeDriftError
+			if errors.As(reconcileErr, &drift) {
+				logger().Warn(fmt.Sprintf("session store at %s is behind SCHEMA_SQL: %s", dbPath, drift.Error()))
+			}
+			return nil, reconcileErr
+		}
+		db, err = openProbedSessionDB(ctx, dbPath)
+	}
+	if err == nil {
+		return db, nil
+	}
+	class, isSQLite := state.SQLiteClassOf(err)
+	if !isSQLite || class == state.SQLiteInterfaceError {
+		return nil, err
+	}
+	detail := "Session store schema is unavailable or corrupt. Start or restart this profile's " +
+		"gateway to reconcile it; if it persists, run `icebath doctor` for diagnosis. " +
+		"Browsing does not repair the store."
+	if class == state.SQLiteOperationalError && state.IsTransientSQLiteError(err) {
+		detail = "Session store is busy (disk I/O or lock). Retry; the list was not cleared."
+	}
+	return nil, fmt.Errorf("%s (%w)", detail, err)
+}
 
 // Seeds the empty or missing session store of a served profile this process is about to own
 func bootstrapServedProfileStore(ctx context.Context, dbPath string) error {
@@ -52,7 +117,7 @@ func profileDB(ctx context.Context, params map[string]any, writer bool) (*state.
 		if err := bootstrapServedProfileStore(ctx, dbPath); err != nil {
 			return nil, err
 		}
-		return OpenSessionDBAtPath(ctx, dbPath, true)
+		return openBrowseSessionDB(ctx, dbPath)
 	}()
 	if err != nil || db == nil {
 		logger().Warn(fmt.Sprintf("TUI profile session store unavailable for %s: %v", profile, err))
