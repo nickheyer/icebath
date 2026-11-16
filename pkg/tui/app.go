@@ -159,13 +159,21 @@ func newApp(ctx context.Context) *app {
 	a.widgets = newWidgetHost(a)
 	a.localCommands = append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...)
 	a.card = newSessionCard(a)
-	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(0))
+	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(bootMotion()))
 	_, open := a.wm.AddWorkspace("session", a.card)
 	a.boot = tea.Batch(a.boot, open)
 	a.wm.SetBar(a.barStatus)
 	a.wm.SetCommands(a.commands())
 	a.wm.SetEmptyHints("palette")
 	return a
+}
+
+// Animation scale of the window manager, still when the environment asks for reduced motion
+func bootMotion() float64 {
+	if trueRe.MatchString(strings.ToLower(trimJS(os.Getenv("ICEBATH_TUI_REDUCED_MOTION")))) {
+		return 0
+	}
+	return 1
 }
 
 // Runs the terminal UI until the user quits, the exit status as the result, profiled into ICEBATH_CPUPROFILE when set

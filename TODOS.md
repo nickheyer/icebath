@@ -4,35 +4,22 @@ Parity target is `references/projects/hermes-agent`. Every item below was observ
 
 Lane owners edit only their own section. Mark `[x]` with the capture that proves it.
 
-## Lane 1: classic chat UI (`pkg/app/pt_*`, `pkg/cliui`, `cmd/icebath/chat.go`)
+## Lane 1: one terminal UI (`cmd/icebath`, `pkg/commands`, `pkg/app`, `pkg/cliui`, `pkg/tui`)
 
-Reference: `cli.py`, `hermes_cli/cli_*_mixin.py`, prompt_toolkit renderer, Rich.
+Product rule from Nick: the surfaces are the desktop app, the web dashboard and the window manager TUI in `pkg/tui`. There is no classic REPL, no setup wizard and no Ink UI. The reference is the target for engine behaviour, never for terminal looks.
 
-- [ ] P0 banner body vanishes. Nick's VS Code terminal (xterm.js, about 203 columns) after `icebath setup` in a fresh home (`/tmp/ib-try3/.icebath`, config has `platform_toolsets.cli` with `homeassistant`) shows `Warning: Unknown toolsets: homeassistant`, the logo, the panel top border, then the input rule directly. Panel body, bottom border, welcome line and tip are gone. Reproduce through the first run path (no config, setup wizard, chat hand off, gateway not yet running) under `scripts/xdrive.py`, find the write that erases or skips the body, fix.
-- [ ] P0 typing while a reply streams garbles the screen. `mkspec2.py` snapshot `15_typed_during_stream`: reference keeps `☤ ❯ redirect now` under the spinner rule; icebath loses the input row, overlaps spinner and status fragments, and leaves a spinner rule inside the transcript.
-- [ ] After a redirect the reference prints `  ↪ Redirected current turn: 'redirect now'`; icebath prints nothing and indents the tip by six spaces (`16_after_redirect`).
-- [ ] Ctrl+C during streaming. Reference stops at once and prints `⚡ Interrupted during API call.`; icebath prints `⚡ Interrupting agent... (press Ctrl+C again to force exit)`, keeps streaming more text, and never prints the interrupted line (`17_after_ctrl_c`).
-- [ ] Terminal protocol differs from prompt_toolkit. icebath sends `ESC[?2026$p`, `ESC[?2027$p`, `ESC[>1u`, `ESC[>4;2m`, `ESC[?5W`, `ESC[?1004h`, `ESC[?u`, insert line (`ESC[nL`), erase chars (`ESC[nX`); the reference sends none of these and wraps each render in `ESC[?7l` / `ESC[?7h` with `ESC[?25l` / `ESC[?25h`. Compare with `scripts/seqstat.py` and make the live region use the reference sequence set.
-- [ ] Resize 120x40 to 80x30 leaves a stale status fragment on the input line and drops the session title rule; shrink under xterm.js leaves two stacked rules above the input.
-- [ ] One extra blank row under the status bar while a tool runs.
-- [ ] prompt_toolkit areas are quantised to 256 colours in the reference (`ffaf00`, `ffffd7`); icebath emits truecolor (`ffbf00`, `fff8dc`). Check with `scripts/attrdiff.py`.
-- [ ] Ctrl+P palette: 158 commands versus 157, box one column narrower, list offset by one row, `/snapshot` text casing, 40 differing rows after Esc (`13_ctrl_p_palette`, `14_palette_closed`).
-- [ ] Bracketed paste of 30 lines: reference input shows `⚠ ❯ [Pasted text #1: 30 lines → …/pastes/paste_1_HHMMSS.txt]`; icebath differs and draws an indented rule (`21_pasted`).
-- [ ] `/status` and `/usage` screens differ; the `─ 1m21s · TIME` turn footer is missing (`23_status`, `24_usage`).
-- [ ] First run consent menu: reference is a radio list `(○)/(●)` with `→` cursor and the hint `↑↓ navigate  ENTER/SPACE select  ESC cancel` above the options; icebath uses `●` title, `❯` cursor and a different hint below.
-- [ ] Output volume in the keys session is 362 KB versus 208 KB; find the redundant redraws.
-- [ ] Sweep every slash command, every key binding, every picker, and every approval, clarify, sudo and secret prompt against the reference and add each difference here.
+- [ ] Bare `icebath` on a terminal opens the window manager TUI. Today `resolveUseTUI` (`cmd/icebath/chat.go`) and `wantsTUIEarly` (`cmd/icebath/startup.go`) pick the classic REPL unless `--tui`, `ICEBATH_TUI=1` or `display.interface: tui` is set.
+- [ ] Remove the `--tui` and `--cli` flags, the `ICEBATH_TUI` switch and the `display.interface` key (`pkg/commands/cli.go`, `cli_toplevel.go`, `cli_argparse_table.go`, `cli_tree_c.go`, `cmd/icebath/fastpaths.go`, completion output, tests).
+- [ ] The TUI launch accepts `--api-key`, `--base-url` and `--reasoning`; today `refuseUnforwardedTUIFlags` rejects them and points at `--cli`.
+- [ ] Remove the classic REPL: the prompt_toolkit port in `pkg/app/pt_*.go` (17 files, 7,866 lines), the interactive branch of `app.ChatMain` and every `pkg/app` and `pkg/cliui` file only it uses. One shot `chat -q` and piped input keep working.
+- [ ] Remove the setup wizard. The TUI `/setup` command and the setup required panel hand the terminal to `icebath setup` (`pkg/tui/slash_control.go:295`, `pkg/tui/eventhelpers.go:143`); first run configuration happens inside the TUI, then `icebath setup` and `firstRunSetupGuard` go.
 
 ## Lane 2: TUI, dashboard, desktop (`pkg/tui`, `pkg/tuiserver`, `pkg/tuigateway`, `pkg/dashboard`, `web`, `pkg/desktop`, `apps/desktop`)
 
-Reference: `ui-tui` (Ink), `tui_gateway`, `web`, `apps/desktop`.
+The TUI view is icebath's own design. Reference for backend behaviour: `tui_gateway`, `web`, `apps/desktop`.
 
-- [ ] Build the reference `ui-tui` in a scratch copy and capture `--tui` on both sides for start, reply, tool call, `/help`, typing mid stream, long output, resize and exit; list and fix every difference. The icebath capture alone is in `/tmp/ib-audit/cap/pty_ib_tui`.
-- [ ] icebath `--tui` truncates long transcript lines with `⋯` instead of wrapping.
-- [x] `--tui` window manager animations wrote 1,446,511 bytes for the session the reference renders in 206,088; motion is off in `pkg/tui/app.go`, now 458,781 (`/tmp/ib-parity/lane2/cap/x_ib_tui_2`).
-- [ ] `--tui` still writes 458,781 bytes versus 206,088: every frame of a stream rewrites the whole status row (ultraviolet `paintLine` repaints rows holding a wide cell, the status face has one), 290 KB versus 57.6 KB for the 30 paragraph reply, and every run carries an explicit background colour (16,125 SGR versus 3,765). Stop the unchanged row repaint, drop the background fill, rerun `scripts/parity/bytecmp.py` until the total is at or below the reference.
+- [ ] During a streamed reply every frame rewrites the whole status row although its text is unchanged (ultraviolet `paintLine` repaints rows holding a wide cell, the status face has one): 290 KB for the 30 paragraph reply (`/tmp/ib-parity/lane2/cap/x_ib_tui_2`). Stop the repaint of unchanged cells.
 - [ ] First agent turn of a fresh install stalls 6.65 s (reference 0.025 s): `relayhost.Load` -> `pm.EnsureRuntimeEnvironment` -> `pm.Toolchain` network probes with 2 s retry pauses, then venv create and nemo_relay wheel install, all inside the turn (`pkg/relayhost/binding.go:896`, `pkg/pm`, Lane 3 owns the fix; dump in `/tmp/ib-parity/lane2/fresh/ib-q/logs/gateway-stdio.log` lines 1272-1307). With `bin/venv` present icebath answers in 0.35 s cold and 0.05 s warm versus 0.66 s and 0.10 s.
-- [ ] Rebuild the `pkg/tui` view region by region to match `ui-tui` following the ordered plan in `/tmp/ib-parity/lane2/PROGRESS.md` (root layout, banner and session panel, transcript rows, tool trail, status rule and scrollbar, prompt row, inline prompts, overlays, remaining panels, resize and exit).
 - [ ] Diff every `tui_gateway` JSON-RPC method and event against `pkg/tuiserver` and `pkg/tuigateway` by driving both servers with the same request script.
 - [ ] Port `tui_gateway/methods_display.py`.
 - [ ] Dashboard: diff every HTTP route, websocket message and the chat page between the reference web server and `pkg/dashboard`; fix differences.
